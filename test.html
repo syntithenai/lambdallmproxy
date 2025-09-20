@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Proxy Test Form</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .form-container {
+            background-color: #fff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .response-container {
+            margin-top: 2rem;
+            padding: 1rem;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            display: none;
+        }
+
+        .response-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .response-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .loading {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<div class="form-container">
+    <h1>Test LLM Proxy Function</h1>
+    <form id="llm-form">
+        <input type="hidden" id="access_secret" name="access_secret" value="">
+        <div>
+            <label for="api_key">OpenAI API Key:</label>
+            <input type="text" id="api_key" name="api_key" value="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" required>
+        </div>
+        <div>
+            <label for="model">Model:</label>
+            <input type="text" id="model" name="model" value="gpt-5-nano" readonly required>
+        </div>
+        <div>
+            <label for="prompt">Prompt:</label>
+            <textarea id="prompt" name="prompt" required>Write a short, encouraging message for a student before their final exam.</textarea>
+        </div>
+        <div>
+            <label for="max_tokens">Max Tokens:</label>
+            <input type="number" id="max_tokens" name="max_tokens" value="3000" min="1">
+        </div>
+        <button type="submit" id="submit-btn">Send Request</button>
+    </form>
+    
+    <div id="response-container" class="response-container">
+        <!-- Response will be displayed here -->
+    </div>
+</div>
+
+<script>
+document.getElementById('llm-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submit-btn');
+    const responseContainer = document.getElementById('response-container');
+    
+    // Disable submit button and show loading state
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending...';
+    
+    // Show loading message
+    responseContainer.className = 'response-container loading';
+    responseContainer.style.display = 'block';
+    responseContainer.textContent = 'Sending request to Lambda function...';
+    
+    // Collect form data
+    const formData = {
+        api_key: document.getElementById('api_key').value,
+        model: document.getElementById('model').value,
+        prompt: document.getElementById('prompt').value,
+        max_tokens: parseInt(document.getElementById('max_tokens').value),
+        access_secret: document.getElementById('access_secret').value
+    };
+    
+    try {
+        const response = await fetch('https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        const responseData = await response.text();
+        
+        if (response.ok) {
+            // Success response
+            responseContainer.className = 'response-container response-success';
+            responseContainer.textContent = `Success (${response.status}):\n\n${responseData}`;
+        } else {
+            // Error response from server
+            responseContainer.className = 'response-container response-error';
+            responseContainer.textContent = `Error (${response.status}):\n\n${responseData}`;
+        }
+    } catch (error) {
+        // Network or other errors
+        responseContainer.className = 'response-container response-error';
+        responseContainer.textContent = `Network Error:\n\n${error.message}`;
+    } finally {
+        // Re-enable submit button
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send Request';
+    }
+});
+</script>
+
+</body>
+</html>
