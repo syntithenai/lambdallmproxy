@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Proxy Test Form</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .form-container {
+            background-color: #fff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .response-container {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: inherit;
+            display: none;
+            line-height: 1.6;
+        }
+
+        .response-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .response-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .loading {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<div class="form-container">
+    <h1>Test LLM Proxy Function</h1> 
+    <form id="llm-form">
+        <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
+        <div>
+            <label for="api_key">OpenAI API Key:</label>
+            <input type="text" id="api_key" name="api_key" value="{{OPENAI_API_KEY}}" required>
+        </div>
+        <div>
+            <label for="model">Model:</label>
+            <select id="model" name="model" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 1rem;">
+                <option value="gpt-5-nano" selected>GPT-5 Nano (Default)</option>
+                <option value="gpt-5-mini">GPT-5 Mini</option>
+                <option value="gpt-5">GPT-5</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; color: #555; font-weight: 500;">Search Mode:</label>
+            <div style="margin-bottom: 1rem;">
+                <label style="display: flex; align-items: center; margin-bottom: 0.5rem; font-weight: normal;">
+                    <input type="radio" id="search_auto" name="search_mode" value="auto" checked style="margin-right: 0.5rem;">
+                    <span>Auto Detect - Let AI decide whether to search</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 0.5rem; font-weight: normal;">
+                    <input type="radio" id="search_force" name="search_mode" value="search" style="margin-right: 0.5rem;">
+                    <span>Use Search - Always search for current information</span>
+                </label>
+                <label style="display: flex; align-items: center; margin-bottom: 0.5rem; font-weight: normal;">
+                    <input type="radio" id="search_skip" name="search_mode" value="direct" style="margin-right: 0.5rem;">
+                    <span>Skip Search - Answer directly without searching</span>
+                </label>
+            </div>
+        </div>
+        <div>
+            <label for="prompt">Prompt:</label>
+            <textarea id="prompt" name="prompt" required>Write a short, encouraging message for a student before their final exam.</textarea>
+        </div>
+       
+        <button type="submit" id="submit-btn">Send Request</button>
+    </form>
+    
+    <div id="response-container" class="response-container">
+        <!-- Response will be displayed here -->
+    </div>
+</div>
+
+<script>
+document.getElementById('llm-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submit-btn');
+    const responseContainer = document.getElementById('response-container');
+    
+    // Disable submit button and show loading state
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending...';
+    
+    // Show loading message
+    responseContainer.className = 'response-container loading';
+    responseContainer.style.display = 'block';
+    responseContainer.textContent = 'Sending request to Lambda function...';
+    
+    // Collect form data
+    const searchMode = document.querySelector('input[name="search_mode"]:checked').value;
+    const formData = {
+        api_key: document.getElementById('api_key').value,
+        model: document.getElementById('model').value,
+        query: document.getElementById('prompt').value,
+        access_secret: document.getElementById('access_secret').value,
+        search_mode: searchMode
+    };
+
+    // Set a reasonable default timeout (60 seconds)
+    const timeoutMs = 60000;
+
+    // Create an AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        controller.abort();
+    }, timeoutMs);
+    
+    try {
+        console.log('Sending request to:', 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/');
+        console.log('Request data:', formData);
+        
+        // Update loading message
+        responseContainer.textContent = 'Sending request to Lambda function...';
+        
+        const response = await fetch('https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData),
+            mode: 'cors',
+            credentials: 'omit',
+            signal: controller.signal // Add timeout signal
+        });
+        
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId);
+        
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
+        
+        const responseData = await response.text();
+        console.log('Response data:', responseData);
+        
+        if (response.ok) {
+            // Success response - parse JSON and extract just the answer
+            try {
+                const jsonData = JSON.parse(responseData);
+                const answer = jsonData.answer || 'No answer found in response';
+                
+                responseContainer.className = 'response-container response-success';
+                responseContainer.style.fontFamily = 'inherit'; // Use normal font instead of monospace
+                responseContainer.textContent = answer;
+            } catch (parseError) {
+                // If JSON parsing fails, show the raw response
+                responseContainer.className = 'response-container response-success';
+                responseContainer.textContent = `Success (${response.status}):\n\n${responseData}`;
+            }
+        } else {
+            // Error response from server
+            responseContainer.className = 'response-container response-error';
+            responseContainer.style.fontFamily = 'monospace'; // Keep monospace for error details
+            responseContainer.textContent = `Error (${response.status}):\n\n${responseData}`;
+        }
+    } catch (error) {
+        // Clear the timeout in case of other errors
+        clearTimeout(timeoutId);
+        
+        // Network or other errors
+        console.error('Request error:', error);
+        
+        responseContainer.className = 'response-container response-error';
+        
+        if (error.name === 'AbortError') {
+            // Request was aborted due to timeout
+            responseContainer.textContent = `Request Timeout Error:\n\nThe request timed out after 60 seconds. The Lambda function may be taking longer than expected to process your request.\n\nYou can try:\n- Simplifying your query\n- Checking if the Lambda function is running properly\n- Trying again in a moment`;
+        } else {
+            // Other network or fetch errors
+            responseContainer.textContent = `Network Error:\n\n${error.message}\n\nCheck browser console for more details.`;
+        }
+    } finally {
+        // Re-enable submit button
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send Request';
+    }
+});
+</script>
+
+</body>
+</html>
