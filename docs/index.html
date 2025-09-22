@@ -106,6 +106,77 @@
             color: #6c757d;
             font-style: italic;
         }
+
+        .advanced-toggle {
+            margin: 15px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+        }
+
+        .advanced-toggle label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .advanced-toggle input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        .advanced-panel {
+            margin: 15px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+            transition: all 0.3s ease;
+        }
+
+        .advanced-panel h3 {
+            margin: 0 0 15px 0;
+            color: #495057;
+            font-size: 1.1em;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 8px;
+        }
+
+        .advanced-panel h3:not(:first-child) {
+            margin-top: 25px;
+        }
+
+        .advanced-panel .form-group {
+            margin-bottom: 20px;
+        }
+
+        .advanced-panel label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .advanced-panel textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            resize: vertical;
+            min-height: 60px;
+            box-sizing: border-box;
+        }
+
+        .advanced-panel textarea:focus {
+            outline: none;
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        }
     </style>
 </head>
 <body>
@@ -116,7 +187,11 @@
         <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
         <div>
             <label for="api_key">OpenAI API Key:</label>
-            <input type="text" id="api_key" name="api_key" value="{{OPENAI_API_KEY}}" required>
+            <div style="position: relative;">
+                <input type="text" id="api_key" name="api_key" value="{{OPENAI_API_KEY}}" required>
+                <small id="api_key_status" style="color: #666; font-size: 0.85em; margin-top: 4px; display: block;"></small>
+                <button type="button" id="clear_api_key" style="position: absolute; right: 8px; top: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px 8px; font-size: 0.8em; color: #6c757d; cursor: pointer; display: none;" title="Clear saved API key">Clear</button>
+            </div>
         </div>
         <div>
             <label for="model">Model:</label>
@@ -143,6 +218,80 @@
                 </label>
             </div>
         </div>
+
+        <!-- Advanced Settings Toggle -->
+        <div class="advanced-toggle">
+            <label>
+                <input type="checkbox" id="advanced-toggle"> 
+                Advanced Prompt Settings
+            </label>
+        </div>
+
+        <!-- Advanced Settings Panel -->
+        <div id="advanced-settings" class="advanced-panel" style="display: none;">
+            <h3>System Prompts</h3>
+            
+            <div class="form-group">
+                <label for="system-prompt-decision">Decision System Prompt:</label>
+                <textarea id="system-prompt-decision" name="system_prompt_decision" rows="3" placeholder="System prompt for deciding whether to search or respond directly">You are a helpful assistant that determines whether a question can be answered directly or requires web search for fact-checking. Always respond with valid JSON only.</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="system-prompt-direct">Direct Response System Prompt:</label>
+                <textarea id="system-prompt-direct" name="system_prompt_direct" rows="3" placeholder="System prompt for direct responses">You are a helpful assistant. Answer the user's question directly based on your knowledge. Be comprehensive and informative.</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="system-prompt-search">Search Response System Prompt:</label>
+                <textarea id="system-prompt-search" name="system_prompt_search" rows="3" placeholder="System prompt for search-based responses">You are a helpful research assistant. Use the provided search results to answer questions comprehensively. Always cite specific sources using the URLs provided when making factual claims. Format your response in a clear, organized manner.</textarea>
+            </div>
+
+            <h3>Prompt Templates</h3>
+            
+            <div class="form-group">
+                <label for="decision-template">Decision Template:</label>
+                <textarea id="decision-template" name="decision_template" rows="8" placeholder="Template for decision prompts (use {{QUERY}} as placeholder)">Analyze this question and determine if you can answer it directly or if it requires web search for fact-checking.
+
+IMPORTANT: Respond ONLY with valid JSON in one of these formats:
+
+For questions you can answer directly (general knowledge, explanations, creative tasks, personal advice):
+{"response": "Your complete answer here"}
+
+For questions requiring current facts, recent events, specific data, or verification:
+{"search_terms": "optimized search terms here"}
+
+Guidelines:
+- Use "response" for: general knowledge, how-to questions, explanations, creative writing, personal advice
+- Use "search_terms" for: current events, recent data, specific facts, company information, recent research
+- If using search_terms, optimize them for web search (remove question words, focus on key terms)
+
+Question: "{{QUERY}}"
+
+JSON Response:</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="search-template">Search Template:</label>
+                <textarea id="search-template" name="search_template" rows="8" placeholder="Template for search prompts (use {{QUERY}} and {{SEARCH_CONTEXT}} as placeholders)">Please answer the following question using the search results provided below. 
+
+IMPORTANT INSTRUCTIONS:
+- Provide a comprehensive, well-structured answer
+- Reference specific sources by including the URLs in your response
+- When stating facts, cite the relevant sources using phrases like "According to [URL]" or "As noted in [URL]"
+- If multiple sources confirm the same information, mention that
+- If sources contradict each other, acknowledge the different perspectives
+- Be clear about what information comes from which source
+- If the search results don't fully answer the question, indicate what's missing
+
+QUESTION: {{QUERY}}
+
+SEARCH RESULTS:
+{{SEARCH_CONTEXT}}
+
+Please provide your answer:</textarea>
+            </div>
+        </div>
+
         <div>
             <label for="prompt">Prompt:</label>
             <textarea id="prompt" name="prompt" required>Write a short, encouraging message for a student before their final exam.</textarea>
@@ -157,6 +306,60 @@
 </div>
 
 <script>
+// Load saved OpenAI API key from localStorage on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const savedApiKey = localStorage.getItem('openai_api_key');
+    const apiKeyInput = document.getElementById('api_key');
+    const statusElement = document.getElementById('api_key_status');
+    const clearButton = document.getElementById('clear_api_key');
+    
+    // If there's a saved API key and the input field is empty or has placeholder value
+    if (savedApiKey && (apiKeyInput.value === '{{OPENAI_API_KEY}}' || apiKeyInput.value === '')) {
+        apiKeyInput.value = savedApiKey;
+        updateApiKeyStatus('Loaded from local storage', '#28a745');
+        clearButton.style.display = 'block';
+    }
+    
+    function updateApiKeyStatus(message, color = '#666') {
+        statusElement.textContent = message;
+        statusElement.style.color = color;
+    }
+    
+    // Save OpenAI API key to localStorage when it changes
+    apiKeyInput.addEventListener('input', function() {
+        const apiKey = this.value.trim();
+        if (apiKey && apiKey !== '{{OPENAI_API_KEY}}') {
+            localStorage.setItem('openai_api_key', apiKey);
+            updateApiKeyStatus('Saved to local storage', '#28a745');
+            clearButton.style.display = 'block';
+        } else if (!apiKey) {
+            updateApiKeyStatus('');
+            clearButton.style.display = 'none';
+        }
+    });
+    
+    // Handle clear button
+    clearButton.addEventListener('click', function() {
+        localStorage.removeItem('openai_api_key');
+        apiKeyInput.value = '{{OPENAI_API_KEY}}';
+        updateApiKeyStatus('Cleared from local storage', '#dc3545');
+        clearButton.style.display = 'none';
+        setTimeout(() => {
+            updateApiKeyStatus('');
+        }, 3000);
+    });
+});
+
+// Handle advanced settings toggle
+document.getElementById('advanced-toggle').addEventListener('change', function() {
+    const advancedPanel = document.getElementById('advanced-settings');
+    if (this.checked) {
+        advancedPanel.style.display = 'block';
+    } else {
+        advancedPanel.style.display = 'none';
+    }
+});
+
 document.getElementById('llm-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     
@@ -181,6 +384,22 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         access_secret: document.getElementById('access_secret').value,
         search_mode: searchMode
     };
+
+    // Include advanced settings if they have values
+    const advancedFields = [
+        'system_prompt_decision',
+        'system_prompt_direct', 
+        'system_prompt_search',
+        'decision_template',
+        'search_template'
+    ];
+
+    advancedFields.forEach(field => {
+        const element = document.getElementById(field.replace('_', '-'));
+        if (element && element.value && element.value.trim()) {
+            formData[field] = element.value;
+        }
+    });
 
     // Set a reasonable default timeout (60 seconds)
     const timeoutMs = 60000;

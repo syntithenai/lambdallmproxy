@@ -11,6 +11,50 @@ import { URL } from 'url';
 // Configuration - Environment variables with defaults
 const OPENAI_API_HOSTNAME = process.env.OPENAI_API_HOSTNAME || 'api.openai.com';
 
+// System prompt configurations - can be overridden via POST request
+const DEFAULT_SYSTEM_PROMPTS = {
+    decision: 'You are a helpful assistant that determines whether a question can be answered directly or requires web search for fact-checking. Always respond with valid JSON only.',
+    direct: 'You are a helpful assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive and informative.',
+    search: 'You are a helpful research assistant. Use the provided search results to answer questions comprehensively. Always cite specific sources using the URLs provided when making factual claims. Format your response in a clear, organized manner.'
+};
+
+const DEFAULT_DECISION_TEMPLATE = `Analyze this question and determine if you can answer it directly or if it requires web search for fact-checking.
+
+IMPORTANT: Respond ONLY with valid JSON in one of these formats:
+
+For questions you can answer directly (general knowledge, explanations, creative tasks, personal advice):
+{"response": "Your complete answer here"}
+
+For questions requiring current facts, recent events, specific data, or verification:
+{"search_terms": "optimized search terms here"}
+
+Guidelines:
+- Use "response" for: general knowledge, how-to questions, explanations, creative writing, personal advice
+- Use "search_terms" for: current events, recent data, specific facts, company information, recent research
+- If using search_terms, optimize them for web search (remove question words, focus on key terms)
+
+Question: "{{QUERY}}"
+
+JSON Response:`;
+
+const DEFAULT_SEARCH_TEMPLATE = `Please answer the following question using the search results provided below. 
+
+IMPORTANT INSTRUCTIONS:
+- Provide a comprehensive, well-structured answer
+- Reference specific sources by including the URLs in your response
+- When stating facts, cite the relevant sources using phrases like "According to [URL]" or "As noted in [URL]"
+- If multiple sources confirm the same information, mention that
+- If sources contradict each other, acknowledge the different perspectives
+- Be clear about what information comes from which source
+- If the search results don't fully answer the question, indicate what's missing
+
+QUESTION: {{QUERY}}
+
+SEARCH RESULTS:
+{{SEARCH_CONTEXT}}
+
+Please provide your answer:`;
+
 /**
  * Simple HTML parser for extracting links and text
  */
@@ -141,7 +185,10 @@ class DuckDuckGoSearcher {
             // Use HTML version of DuckDuckGo for consistent parsing
             const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
             
+            const searchTime = Date.now();
             const html = await this.fetchUrl(searchUrl, timeout * 1000);
+            const parseTime = Date.now();
+            
             const results = this.extractSearchResults(html, query, limit);
             
             // Sort by score and take only the requested limit for final processing
@@ -149,6 +196,7 @@ class DuckDuckGoSearcher {
                 .sort((a, b) => b.score - a.score)
                 .slice(0, limit);
             
+            const contentTime = Date.now();
             // Always fetch content for LLM processing (required for quality responses)
             if (sortedResults.length > 0) {
                 await this.fetchContentForResults(sortedResults, timeout);
@@ -156,6 +204,7 @@ class DuckDuckGoSearcher {
             
             // Return only the requested number of results
             const finalResults = sortedResults.slice(0, limit);
+            const totalTime = Date.now() - searchStartTime;
             
             return {
                 success: true,
@@ -171,9 +220,9 @@ class DuckDuckGoSearcher {
                 metadata: {
                     query: query,
                     totalResults: results.length,
-                    searchTime: searchTime,
-                    parseTime: parseTime,
-                    contentTime: contentTime,
+                    searchTime: parseTime - searchTime,
+                    parseTime: contentTime - parseTime,
+                    contentTime: Date.now() - contentTime,
                     totalTime: totalTime,
                     timeoutMs: timeout * 1000,
                     timestamp: new Date().toISOString()
@@ -737,9 +786,15 @@ class DuckDuckGoSearcher {
  * LLM API client for processing search results
  */
 class LLMClient {
-    constructor(apiKey) {
+    constructor(apiKey, systemPrompts = {}, templates = {}) {
         this.accessSecret = process.env.ACCESS_SECRET;
         this.apiKey = apiKey;
+        this.systemPrompts = {
+            ...DEFAULT_SYSTEM_PROMPTS,
+            ...systemPrompts
+        };
+        this.decisionTemplate = templates.decision || DEFAULT_DECISION_TEMPLATE;
+        this.searchTemplate = templates.search || DEFAULT_SEARCH_TEMPLATE;
         this.retryConfig = {
             maxRetries: 3,
             baseDelay: 1000, // Start with 1 second
@@ -812,15 +867,15 @@ class LLMClient {
         } = options;
 
         try {
-            // Create the decision prompt
-            const prompt = this.buildDecisionPrompt(query);
+            // Create the decision prompt using the template
+            const prompt = this.decisionTemplate.replace('{{QUERY}}', query);
             
             const requestBody = {
                 model: model,
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a helpful assistant that determines whether a question can be answered directly or requires web search for fact-checking. Always respond with valid JSON only.'
+                        content: this.systemPrompts.decision
                     },
                     {
                         role: 'user',
@@ -926,27 +981,6 @@ class LLMClient {
      * @param {string} query - User's original question
      * @returns {string} Formatted decision prompt
      */
-    buildDecisionPrompt(query) {
-        return `Analyze this question and determine if you can answer it directly or if it requires web search for fact-checking.
-
-IMPORTANT: Respond ONLY with valid JSON in one of these formats:
-
-For questions you can answer directly (general knowledge, explanations, creative tasks, personal advice):
-{"response": "Your complete answer here"}
-
-For questions requiring current facts, recent events, specific data, or verification:
-{"search_terms": "optimized search terms here"}
-
-Guidelines:
-- Use "response" for: general knowledge, how-to questions, explanations, creative writing, personal advice
-- Use "search_terms" for: current events, recent data, specific facts, company information, recent research
-- If using search_terms, optimize them for web search (remove question words, focus on key terms)
-
-Question: "${query}"
-
-JSON Response:`;
-    }
-
     /**
      * Generate response directly without search
      * @param {string} query - User's question
@@ -966,7 +1000,7 @@ JSON Response:`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a helpful assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive and informative.'
+                        content: this.systemPrompts.direct
                     },
                     {
                         role: 'user',
@@ -1143,7 +1177,7 @@ JSON Response:`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a helpful research assistant. Use the provided search results to answer questions comprehensively. Always cite specific sources using the URLs provided when making factual claims. Format your response in a clear, organized manner.'
+                        content: this.systemPrompts.search
                     },
                     {
                         role: 'user',
@@ -1173,6 +1207,49 @@ JSON Response:`;
                 }, timeout);
 
                 const req = https.request(requestOptions, (res) => {
+                    let data = '';
+                    const statusCode = res.statusCode;
+                    
+                    res.on('data', chunk => {
+                        data += chunk;
+                    });
+                    
+                    res.on('end', () => {
+                        clearTimeout(requestTimeout);
+                        const responseTime = Date.now() - startTime;
+                        
+                        try {
+                            if (statusCode !== 200) {
+                                const errorData = data ? JSON.parse(data) : {};
+                                const errorMessage = errorData.error?.message || `HTTP ${statusCode}: ${data}`;
+                                reject(new Error(`OpenAI API error (${statusCode}): ${errorMessage}`));
+                                return;
+                            }
+                            
+                            const response = JSON.parse(data);
+                            
+                            if (!response.choices || !Array.isArray(response.choices) || response.choices.length === 0) {
+                                reject(new Error('Invalid OpenAI response: missing or empty choices array'));
+                                return;
+                            }
+                            
+                            const content = response.choices[0]?.message?.content;
+                            if (!content) {
+                                reject(new Error('No content in OpenAI response'));
+                                return;
+                            }
+
+                            resolve({
+                                choices: response.choices,
+                                usage: response.usage,
+                                model: response.model,
+                                processingTime: responseTime
+                            });
+                            
+                        } catch (parseError) {
+                            reject(new Error(`Failed to parse LLM response: ${parseError.message}`));
+                        }
+                    });
                 });
 
                 req.on('error', (error) => {
@@ -1221,23 +1298,9 @@ JSON Response:`;
             })
             .join('\n\n');
 
-        return `Please answer the following question using the search results provided below. 
-
-IMPORTANT INSTRUCTIONS:
-- Provide a comprehensive, well-structured answer
-- Reference specific sources by including the URLs in your response
-- When stating facts, cite the relevant sources using phrases like "According to [URL]" or "As noted in [URL]"
-- If multiple sources confirm the same information, mention that
-- If sources contradict each other, acknowledge the different perspectives
-- Be clear about what information comes from which source
-- If the search results don't fully answer the question, indicate what's missing
-
-QUESTION: ${originalQuery}
-
-SEARCH RESULTS:
-${searchContext}
-
-Please provide your answer:`;
+        return this.searchTemplate
+            .replace('{{QUERY}}', originalQuery)
+            .replace('{{SEARCH_CONTEXT}}', searchContext);
     }
 }
 
@@ -1258,6 +1321,7 @@ export const handler = async (event, context) => {
     try {
         // Extract parameters from request (POST only)
         let limit, fetchContent, timeout, model, accessSecret, apiKey, searchMode;
+        let systemPrompts, decisionTemplate, searchTemplate;
         
         if (event.requestContext.http.method === 'POST') {
             // Check if the body is Base64 encoded and decode if necessary
@@ -1274,6 +1338,15 @@ export const handler = async (event, context) => {
             accessSecret = body.access_secret;
             apiKey = body.api_key;
             searchMode = body.search_mode || 'auto';
+            
+            // Extract system prompt overrides
+            systemPrompts = {};
+            if (body.system_prompt_decision) systemPrompts.decision = body.system_prompt_decision;
+            if (body.system_prompt_direct) systemPrompts.direct = body.system_prompt_direct;
+            if (body.system_prompt_search) systemPrompts.search = body.system_prompt_search;
+            
+            decisionTemplate = body.decision_template || DEFAULT_DECISION_TEMPLATE;
+            searchTemplate = body.search_template || DEFAULT_SEARCH_TEMPLATE;
         } else {
             return {
                 statusCode: 405,
@@ -1320,7 +1393,10 @@ export const handler = async (event, context) => {
         }
 
         // Initialize LLM client for all operations
-        const llmClient = new LLMClient(apiKey);
+        const llmClient = new LLMClient(apiKey, systemPrompts, {
+            decision: decisionTemplate,
+            search: searchTemplate
+        });
 
         let shouldSearch = false;
         let searchTerms = query;
