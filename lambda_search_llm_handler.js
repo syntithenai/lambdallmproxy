@@ -14,7 +14,7 @@ const PROVIDERS = {
         hostname: 'api.openai.com',
         path: '/v1/chat/completions',
         envKey: 'OPENAI_API_KEY',
-        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo']
+        models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']
     },
     groq: {
         hostname: 'api.groq.com',
