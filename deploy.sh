@@ -91,21 +91,42 @@ else
     exit 1
 fi
 
-# Set environment variable for OpenAI URL if not already set
-CURRENT_ENV_JSON=$(aws lambda get-function-configuration \
-    --function-name "$FUNCTION_NAME" \
-    --region "$REGION" \
-    --query 'Environment.Variables' \
-    --output json 2>/dev/null)
-
-if ! echo "$CURRENT_ENV_JSON" | jq -e '.OPENAI_API_URL' > /dev/null 2>&1; then
-    # Get current ACCESS_SECRET and add OPENAI_API_URL
-    ACCESS_SECRET=$(echo "$CURRENT_ENV_JSON" | jq -r '.ACCESS_SECRET // empty')
+# Set environment variables from .env file if it exists
+if [ -f ".env" ]; then
+    echo -e "${BLUE}📁 Loading environment variables from .env...${NC}"
+    
+    # Source .env file to get variables
+    set -a  # automatically export all variables
+    source .env
+    set +a  # stop automatically exporting
+    
+    # Get current environment variables
+    CURRENT_ENV_JSON=$(aws lambda get-function-configuration \
+        --function-name "$FUNCTION_NAME" \
+        --region "$REGION" \
+        --query 'Environment.Variables' \
+        --output json 2>/dev/null)
+    
+    # Build environment variables string
+    ENV_VARS="Variables={"
+    
+    # Add ACCESS_SECRET if it exists
     if [ -n "$ACCESS_SECRET" ]; then
-        ENV_VARS="Variables={ACCESS_SECRET=$ACCESS_SECRET,OPENAI_API_URL=api.openai.com}"
-    else
-        ENV_VARS="Variables={OPENAI_API_URL=api.openai.com}"
+        ENV_VARS="${ENV_VARS}ACCESS_SECRET=$ACCESS_SECRET,"
     fi
+    
+    # Add OPENAI_API_KEY if it exists
+    if [ -n "$OPENAI_API_KEY" ]; then
+        ENV_VARS="${ENV_VARS}OPENAI_API_KEY=$OPENAI_API_KEY,"
+    fi
+    
+    # Add GROQ_API_KEY if it exists
+    if [ -n "$GROQ_API_KEY" ]; then
+        ENV_VARS="${ENV_VARS}GROQ_API_KEY=$GROQ_API_KEY,"
+    fi
+    
+    # Remove trailing comma and close
+    ENV_VARS="${ENV_VARS%,}}"
     
     aws lambda update-function-configuration \
         --function-name "$FUNCTION_NAME" \
@@ -113,7 +134,35 @@ if ! echo "$CURRENT_ENV_JSON" | jq -e '.OPENAI_API_URL' > /dev/null 2>&1; then
         --environment "$ENV_VARS" > /dev/null 2>&1
         
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Environment configured${NC}"
+        echo -e "${GREEN}✅ Environment variables configured from .env${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Warning: Could not update environment variables${NC}"
+    fi
+else
+    # Fallback to original logic for OPENAI_API_URL
+    CURRENT_ENV_JSON=$(aws lambda get-function-configuration \
+        --function-name "$FUNCTION_NAME" \
+        --region "$REGION" \
+        --query 'Environment.Variables' \
+        --output json 2>/dev/null)
+
+    if ! echo "$CURRENT_ENV_JSON" | jq -e '.OPENAI_API_HOSTNAME' > /dev/null 2>&1; then
+        # Get current ACCESS_SECRET and add OPENAI_API_HOSTNAME
+        ACCESS_SECRET=$(echo "$CURRENT_ENV_JSON" | jq -r '.ACCESS_SECRET // empty')
+        if [ -n "$ACCESS_SECRET" ]; then
+            ENV_VARS="Variables={ACCESS_SECRET=$ACCESS_SECRET,OPENAI_API_HOSTNAME=api.openai.com}"
+        else
+            ENV_VARS="Variables={OPENAI_API_HOSTNAME=api.openai.com}"
+        fi
+        
+        aws lambda update-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$REGION" \
+            --environment "$ENV_VARS" > /dev/null 2>&1
+            
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Environment configured${NC}"
+        fi
     fi
 fi
 

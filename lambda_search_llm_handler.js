@@ -8,8 +8,46 @@ import https from 'https';
 import http from 'http';
 import { URL } from 'url';
 
-// Configuration - Environment variables with defaults
-const OPENAI_API_HOSTNAME = process.env.OPENAI_API_HOSTNAME || 'api.openai.com';
+// Provider configuration
+const PROVIDERS = {
+    openai: {
+        hostname: 'api.openai.com',
+        path: '/v1/chat/completions',
+        envKey: 'OPENAI_API_KEY',
+        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo']
+    },
+    groq: {
+        hostname: 'api.groq.com',
+        path: '/openai/v1/chat/completions',
+        envKey: 'GROQ_API_KEY',
+        models: ['llama-3.1-8b-instant', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768', 'gemma-7b-it']
+    }
+};
+
+// Helper function to parse provider and model from model string
+function parseProviderModel(modelString) {
+    if (modelString.includes(':')) {
+        const [provider, model] = modelString.split(':', 2);
+        return { provider, model };
+    }
+    // Fallback for backward compatibility
+    return { provider: 'groq', model: modelString };
+}
+
+// Helper function to get API configuration for a provider
+function getProviderConfig(provider) {
+    const config = PROVIDERS[provider];
+    if (!config) {
+        throw new Error(`Unsupported provider: ${provider}`);
+    }
+    return config;
+}
+
+// Memory management constants
+const LAMBDA_MEMORY_LIMIT_MB = 128;
+const MEMORY_SAFETY_BUFFER_MB = 16; // Reserve 16MB for other operations
+const MAX_CONTENT_SIZE_MB = LAMBDA_MEMORY_LIMIT_MB - MEMORY_SAFETY_BUFFER_MB;
+const BYTES_PER_MB = 1024 * 1024;
 
 // System prompt configurations - can be overridden via POST request
 const DEFAULT_SYSTEM_PROMPTS = {
@@ -54,6 +92,75 @@ SEARCH RESULTS:
 {{SEARCH_CONTEXT}}
 
 Please provide your answer:`;
+
+/**
+ * Memory tracking utility for Lambda function
+ */
+class MemoryTracker {
+    constructor() {
+        this.totalContentSize = 0;
+        this.maxAllowedSize = MAX_CONTENT_SIZE_MB * BYTES_PER_MB;
+    }
+
+    /**
+     * Get current memory usage
+     * @returns {Object} Memory usage statistics
+     */
+    getMemoryUsage() {
+        const usage = process.memoryUsage();
+        return {
+            rss: usage.rss,
+            heapUsed: usage.heapUsed,
+            heapTotal: usage.heapTotal,
+            external: usage.external,
+            rssMB: Math.round(usage.rss / BYTES_PER_MB * 100) / 100,
+            heapUsedMB: Math.round(usage.heapUsed / BYTES_PER_MB * 100) / 100,
+            contentSizeMB: Math.round(this.totalContentSize / BYTES_PER_MB * 100) / 100
+        };
+    }
+
+    /**
+     * Check if adding content would exceed memory limits
+     * @param {number} additionalSize - Size of content to add in bytes
+     * @returns {Object} Check result with allowed status and details
+     */
+    checkMemoryLimit(additionalSize) {
+        const currentUsage = this.getMemoryUsage();
+        const newContentSize = this.totalContentSize + additionalSize;
+        const newContentSizeMB = newContentSize / BYTES_PER_MB;
+        
+        const wouldExceedContentLimit = newContentSize > this.maxAllowedSize;
+        const wouldExceedHeapLimit = (currentUsage.heapUsed + additionalSize) > (LAMBDA_MEMORY_LIMIT_MB * BYTES_PER_MB * 0.8);
+        
+        return {
+            allowed: !wouldExceedContentLimit && !wouldExceedHeapLimit,
+            currentContentSizeMB: Math.round(this.totalContentSize / BYTES_PER_MB * 100) / 100,
+            additionalSizeMB: Math.round(additionalSize / BYTES_PER_MB * 100) / 100,
+            newContentSizeMB: Math.round(newContentSizeMB * 100) / 100,
+            maxAllowedMB: MAX_CONTENT_SIZE_MB,
+            currentHeapUsedMB: currentUsage.heapUsedMB,
+            reason: wouldExceedContentLimit ? 'Content size limit exceeded' : 
+                   wouldExceedHeapLimit ? 'Heap memory limit would be exceeded' : 'OK'
+        };
+    }
+
+    /**
+     * Add content size to tracking
+     * @param {number} size - Size in bytes
+     */
+    addContentSize(size) {
+        this.totalContentSize += size;
+    }
+
+    /**
+     * Get memory usage summary for logging
+     * @returns {string} Formatted memory usage string
+     */
+    getMemorySummary() {
+        const usage = this.getMemoryUsage();
+        return `Memory: RSS=${usage.rssMB}MB, Heap=${usage.heapUsedMB}MB, Content=${usage.contentSizeMB}MB`;
+    }
+}
 
 /**
  * Simple HTML parser for extracting links and text
@@ -161,6 +268,7 @@ class DuckDuckGoSearcher {
     constructor() {
         this.baseUrl = 'https://duckduckgo.com/';
         this.userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+        this.memoryTracker = new MemoryTracker();
         this.stopWords = new Set([
             'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
             'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
@@ -225,7 +333,8 @@ class DuckDuckGoSearcher {
                     contentTime: Date.now() - contentTime,
                     totalTime: totalTime,
                     timeoutMs: timeout * 1000,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    memory: this.memoryTracker.getMemoryUsage()
                 }
             };
             
@@ -671,11 +780,30 @@ class DuckDuckGoSearcher {
     async fetchContentForResults(results, timeout) {
         if (!results || results.length === 0) return;
         
-        const fetchPromises = results.map((result, index) => 
-            this.fetchContentForSingleResult(result, index, results.length, timeout)
-        );
+        console.log(`Starting content fetch for ${results.length} results. ${this.memoryTracker.getMemorySummary()}`);
         
-        await Promise.allSettled(fetchPromises);
+        // Process results sequentially to monitor memory usage
+        let processedCount = 0;
+        let skippedCount = 0;
+        
+        for (let i = 0; i < results.length; i++) {
+            const result = results[i];
+            const memoryCheck = this.memoryTracker.checkMemoryLimit(0); // Initial check
+            
+            if (!memoryCheck.allowed) {
+                console.log(`Skipping remaining ${results.length - i} results due to memory limits. ${this.memoryTracker.getMemorySummary()}`);
+                for (let j = i; j < results.length; j++) {
+                    results[j].contentError = `Skipped due to memory limit (${memoryCheck.reason})`;
+                    skippedCount++;
+                }
+                break;
+            }
+            
+            await this.fetchContentForSingleResult(result, i, results.length, timeout);
+            processedCount++;
+        }
+        
+        console.log(`Content fetch completed: ${processedCount} processed, ${skippedCount} skipped. ${this.memoryTracker.getMemorySummary()}`);
     }
 
     /**
@@ -689,17 +817,46 @@ class DuckDuckGoSearcher {
         const startTime = Date.now();
         
         try {
+            console.log(`[${index + 1}/${total}] Fetching content from: ${result.url}`);
+            
             const content = await this.fetchUrl(result.url, timeout * 1000);
             const parser = new SimpleHTMLParser(content);
             const textContent = parser.convertToText(content);
             
-            result.content = textContent;
-            result.contentLength = textContent.length;
+            // Check memory limit before storing content
+            const contentSize = Buffer.byteLength(textContent, 'utf8');
+            const memoryCheck = this.memoryTracker.checkMemoryLimit(contentSize);
+            
+            if (!memoryCheck.allowed) {
+                console.log(`[${index + 1}/${total}] Content too large, truncating. ${memoryCheck.reason}. Size: ${memoryCheck.additionalSizeMB}MB, Current: ${memoryCheck.currentContentSizeMB}MB`);
+                
+                // Truncate content to fit within memory limits
+                const availableBytes = this.memoryTracker.maxAllowedSize - this.memoryTracker.totalContentSize;
+                const maxContentLength = Math.floor(availableBytes / 2); // Use UTF-8 safe estimate
+                
+                if (maxContentLength > 1000) {
+                    const truncatedContent = textContent.substring(0, maxContentLength);
+                    result.content = truncatedContent + '\n\n[Content truncated due to memory limits]';
+                    result.contentLength = result.content.length;
+                    result.truncated = true;
+                    result.originalLength = textContent.length;
+                    this.memoryTracker.addContentSize(Buffer.byteLength(result.content, 'utf8'));
+                } else {
+                    result.contentError = `Content skipped - insufficient memory remaining (${Math.round(availableBytes / 1024)}KB available)`;
+                }
+            } else {
+                result.content = textContent;
+                result.contentLength = textContent.length;
+                this.memoryTracker.addContentSize(contentSize);
+                console.log(`[${index + 1}/${total}] Content loaded: ${Math.round(contentSize / 1024)}KB. ${this.memoryTracker.getMemorySummary()}`);
+            }
+            
             result.fetchTimeMs = Date.now() - startTime;
             
         } catch (error) {
             result.contentError = error.message;
             result.fetchTimeMs = Date.now() - startTime;
+            console.log(`[${index + 1}/${total}] Error fetching content: ${error.message}`);
         }
     }
 
@@ -862,16 +1019,26 @@ class LLMClient {
     async processInitialDecision(query, options = {}) {
         const startTime = Date.now();
         const {
-            model = 'gpt-5-nano',
+            model = 'groq:llama-3.1-8b-instant',
             timeout = 30000
         } = options;
 
         try {
+            // Parse provider and model
+            const { provider, model: modelName } = parseProviderModel(model);
+            const providerConfig = getProviderConfig(provider);
+            
+            // Use the provided API key (from request body)
+            const apiKey = this.apiKey;
+            if (!apiKey) {
+                throw new Error(`No API key provided for provider: ${provider}`);
+            }
+
             // Create the decision prompt using the template
             const prompt = this.decisionTemplate.replace('{{QUERY}}', query);
             
             const requestBody = {
-                model: model,
+                model: modelName,
                 messages: [
                     {
                         role: 'system',
@@ -886,13 +1053,13 @@ class LLMClient {
 
             const postData = JSON.stringify(requestBody);
             const requestOptions = {
-                hostname: OPENAI_API_HOSTNAME,
+                hostname: providerConfig.hostname,
                 port: 443,
-                path: '/v1/chat/completions',
+                path: providerConfig.path,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'Content-Length': Buffer.byteLength(postData)
                 }
             };
@@ -990,13 +1157,23 @@ class LLMClient {
     async generateResponseWithoutSearch(query, options = {}) {
         const startTime = Date.now();
         const {
-            model = 'gpt-5-nano',
+            model = 'groq:llama-3.1-8b-instant',
             timeout = 30000
         } = options;
 
         try {
+            // Parse provider and model
+            const { provider, model: modelName } = parseProviderModel(model);
+            const providerConfig = getProviderConfig(provider);
+            
+            // Use the provided API key (from request body)
+            const apiKey = this.apiKey;
+            if (!apiKey) {
+                throw new Error(`No API key provided for provider: ${provider}`);
+            }
+
             const requestBody = {
-                model: model,
+                model: modelName,
                 messages: [
                     {
                         role: 'system',
@@ -1011,13 +1188,13 @@ class LLMClient {
 
             const postData = JSON.stringify(requestBody);
             const requestOptions = {
-                hostname: OPENAI_API_HOSTNAME,
+                hostname: providerConfig.hostname,
                 port: 443,
-                path: '/v1/chat/completions',
+                path: providerConfig.path,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'Content-Length': Buffer.byteLength(postData)
                 }
             };
@@ -1143,7 +1320,7 @@ class LLMClient {
     async processWithLLM(originalQuery, searchResults, options = {}) {
         const startTime = Date.now();
         const {
-            model = 'gpt-5-nano',
+            model = 'groq:llama-3.1-8b-instant',
             timeout = 30000 // 30 second timeout for LLM requests
         } = options;
 
@@ -1156,9 +1333,14 @@ class LLMClient {
         });
 
         try {
-            // Validate inputs
-            if (!this.apiKey || typeof this.apiKey !== 'string') {
-                throw new Error('Invalid or missing API key');
+            // Parse provider and model
+            const { provider, model: modelName } = parseProviderModel(model);
+            const providerConfig = getProviderConfig(provider);
+            
+            // Use the provided API key (from request body)
+            const apiKey = this.apiKey;
+            if (!apiKey || typeof apiKey !== 'string') {
+                throw new Error(`Invalid or missing API key for provider: ${provider}`);
             }
             
             if (!originalQuery || typeof originalQuery !== 'string') {
@@ -1173,7 +1355,7 @@ class LLMClient {
             const prompt = this.buildPrompt(originalQuery, searchResults);
             
             const requestBody = {
-                model: model,
+                model: modelName,
                 messages: [
                     {
                         role: 'system',
@@ -1189,13 +1371,13 @@ class LLMClient {
             // Note: access_secret is not sent to OpenAI API - it's used for Lambda authorization only
             const postData = JSON.stringify(requestBody);
             const requestOptions = {
-                hostname: OPENAI_API_HOSTNAME,
+                hostname: providerConfig.hostname,
                 port: 443,
-                path: '/v1/chat/completions',
+                path: providerConfig.path,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'Content-Length': Buffer.byteLength(postData)
                 }
             };
@@ -1310,6 +1492,13 @@ class LLMClient {
 export const handler = async (event, context) => {
     const startTime = Date.now();
     
+    try {
+        const initialMemory = process.memoryUsage();
+        console.log(`Lambda handler started. Initial memory: RSS=${Math.round(initialMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(initialMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB`);
+    } catch (memoryError) {
+        console.log(`Lambda handler started. Memory logging error: ${memoryError.message}`);
+    }
+    
     // Initialize query variable for error handling
     let query = '';
     
@@ -1323,21 +1512,31 @@ export const handler = async (event, context) => {
         let limit, fetchContent, timeout, model, accessSecret, apiKey, searchMode;
         let systemPrompts, decisionTemplate, searchTemplate;
         
+        console.log(`Processing ${event.requestContext.http.method} request`);
+        
         if (event.requestContext.http.method === 'POST') {
+            console.log(`Body received, isBase64Encoded: ${event.isBase64Encoded}`);
+            
             // Check if the body is Base64 encoded and decode if necessary
             const decodedBody = event.isBase64Encoded
                 ? Buffer.from(event.body, 'base64').toString('utf-8')
                 : event.body;
             
+            console.log(`Body decoded, parsing JSON...`);
             const body = JSON.parse(decodedBody || '{}');
+            
+            console.log(`JSON parsed successfully`);
             query = body.query;
             limit = body.limit || 5;
             fetchContent = body.content;
             timeout = body.timeout || 10;
-            model = body.model || 'gpt-5-nano';
+            // Use provider:model format with Groq as default
+            model = body.model || 'groq:llama-3.1-8b-instant';
             accessSecret = body.access_secret;
             apiKey = body.api_key;
             searchMode = body.search_mode || 'auto';
+            
+            console.log(`Basic parameters extracted`);
             
             // Extract system prompt overrides
             systemPrompts = {};
@@ -1345,8 +1544,12 @@ export const handler = async (event, context) => {
             if (body.system_prompt_direct) systemPrompts.direct = body.system_prompt_direct;
             if (body.system_prompt_search) systemPrompts.search = body.system_prompt_search;
             
+            console.log(`System prompts extracted`);
+            
             decisionTemplate = body.decision_template || DEFAULT_DECISION_TEMPLATE;
             searchTemplate = body.search_template || DEFAULT_SEARCH_TEMPLATE;
+            
+            console.log(`Templates assigned`);
         } else {
             return {
                 statusCode: 405,
@@ -1354,6 +1557,8 @@ export const handler = async (event, context) => {
                 body: JSON.stringify({ error: 'Method not allowed', allowed: ['POST'] })
             };
         }
+
+        console.log(`About to validate parameters...`);
 
         // Validate required parameters
         if (!query || typeof query !== 'string' || query.trim().length === 0) {
@@ -1392,11 +1597,15 @@ export const handler = async (event, context) => {
             };
         }
 
+        console.log(`Parameters validated successfully. Query: "${query}", Search mode: ${searchMode}`);
+
         // Initialize LLM client for all operations
         const llmClient = new LLMClient(apiKey, systemPrompts, {
             decision: decisionTemplate,
             search: searchTemplate
         });
+
+        console.log(`LLM client initialized successfully`);
 
         let shouldSearch = false;
         let searchTerms = query;
@@ -1483,7 +1692,6 @@ export const handler = async (event, context) => {
                 body: JSON.stringify({
                     success: true,
                     query: query,
-                    searchResults: searchResults,
                     llmResponse: null,
                     answer: 'No search results found. Unable to provide an answer based on search data.',
                     processingTimeMs: Date.now() - startTime,
@@ -1509,12 +1717,6 @@ export const handler = async (event, context) => {
                 query: query,
                 searchTerms: searchTerms !== query ? searchTerms : undefined,
                 answer: answer,
-                searchResults: {
-                    totalFound: searchResults.totalFound,
-                    returned: searchResults.returned,
-                    results: searchResults.results,
-                    metadata: searchResults.metadata
-                },
                 llmResponse: {
                     model: llmResponse.model,
                     usage: llmResponse.usage,
@@ -1527,6 +1729,9 @@ export const handler = async (event, context) => {
         };
 
         // Return combined results
+        const finalMemory = process.memoryUsage();
+        console.log(`Lambda handler completed successfully. Final memory: RSS=${Math.round(finalMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(finalMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB, Duration: ${Date.now() - startTime}ms`);
+        
         return finalResponse;
 
     } catch (error) {
@@ -1598,6 +1803,9 @@ export const handler = async (event, context) => {
                 processingTimeMs: errorTime
             })
         };
+        
+        const finalMemory = process.memoryUsage();
+        console.log(`Lambda handler completed with error. Final memory: RSS=${Math.round(finalMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(finalMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB, Duration: ${errorTime}ms`);
         
         return errorResponse;
     }
