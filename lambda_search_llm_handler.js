@@ -75,23 +75,21 @@ Question: "{{QUERY}}"
 
 JSON Response:`;
 
-const DEFAULT_SEARCH_TEMPLATE = `Please answer the following question using the search results provided below. 
+const DEFAULT_SEARCH_TEMPLATE = `Answer this question using the sources below. Cite URLs when stating facts.
 
-IMPORTANT INSTRUCTIONS:
-- Provide a comprehensive, well-structured answer
-- Reference specific sources by including the URLs in your response
-- When stating facts, cite the relevant sources using phrases like "According to [URL]" or "As noted in [URL]"
-- If multiple sources confirm the same information, mention that
-- If sources contradict each other, acknowledge the different perspectives
-- Be clear about what information comes from which source
-- If the search results don't fully answer the question, indicate what's missing
+Question: {{QUERY}}
 
-QUESTION: {{QUERY}}
-
-SEARCH RESULTS:
+Sources:
 {{SEARCH_CONTEXT}}
 
-Please provide your answer:`;
+Answer:`;
+
+const COMPACT_SEARCH_TEMPLATE = `Q: {{QUERY}}
+
+Sources:
+{{SEARCH_CONTEXT}}
+
+A:`;
 
 /**
  * Memory tracking utility for Lambda function
@@ -159,6 +157,181 @@ class MemoryTracker {
     getMemorySummary() {
         const usage = this.getMemoryUsage();
         return `Memory: RSS=${usage.rssMB}MB, Heap=${usage.heapUsedMB}MB, Content=${usage.contentSizeMB}MB`;
+    }
+}
+
+/**
+ * Token-aware memory tracker for optimizing LLM token usage
+ */
+class TokenAwareMemoryTracker extends MemoryTracker {
+    constructor() {
+        super();
+        this.maxTokens = 32000; // Increased to 32K for more comprehensive responses
+        this.currentTokens = 0;
+        this.maxContentLengthPerPage = 4000; // Increased per page limit for 32K tokens
+    }
+    
+    /**
+     * Estimate tokens from text (rough approximation: 4 chars = 1 token)
+     * @param {string} text - Text to estimate tokens for
+     * @returns {number} Estimated token count
+     */
+    estimateTokens(text) {
+        return Math.ceil(text.length / 4);
+    }
+    
+    /**
+     * Check if content can be added within token limits
+     * @param {string} content - Content to check
+     * @returns {boolean} Whether content can be added
+     */
+    canAddContent(content) {
+        const estimatedTokens = this.estimateTokens(content);
+        return (this.currentTokens + estimatedTokens) < this.maxTokens;
+    }
+    
+    /**
+     * Add content with token tracking and truncation if needed
+     * @param {string} content - Content to add
+     * @returns {string} Content (potentially truncated)
+     */
+    addContent(content) {
+        if (this.canAddContent(content)) {
+            this.currentTokens += this.estimateTokens(content);
+            return content;
+        }
+        
+        // Truncate to fit within token limit
+        const availableTokens = this.maxTokens - this.currentTokens;
+        const availableChars = Math.max(0, availableTokens * 4);
+        const truncatedContent = content.slice(0, availableChars);
+        this.currentTokens += this.estimateTokens(truncatedContent);
+        return truncatedContent;
+    }
+    
+    /**
+     * Clean and optimize content for token efficiency
+     * @param {string} content - Raw content to clean
+     * @returns {string} Cleaned and optimized content
+     */
+    cleanContent(content) {
+        if (!content || typeof content !== 'string') return '';
+        
+        // Remove extra whitespace and empty lines
+        let cleaned = content
+            .replace(/\n\s*\n\s*\n/g, '\n\n') // Reduce multiple empty lines to double
+            .replace(/[ \t]+/g, ' ') // Normalize spaces and tabs
+            .trim();
+        
+        // Filter out common boilerplate text
+        const boilerplatePatterns = [
+            /Copyright.*?\d{4}.*$/gmi,
+            /Privacy Policy.*$/gmi,
+            /Terms of Service.*$/gmi,
+            /Subscribe to.*newsletter.*$/gmi,
+            /Follow us on.*$/gmi,
+            /Share this article.*$/gmi,
+            /Cookie Policy.*$/gmi,
+            /All rights reserved.*$/gmi,
+            /Sign up for.*$/gmi,
+            /Get the latest.*$/gmi,
+            /Download our app.*$/gmi,
+            /Advertisement.*$/gmi
+        ];
+        
+        boilerplatePatterns.forEach(pattern => {
+            cleaned = cleaned.replace(pattern, '');
+        });
+        
+        // Remove navigation-like content
+        cleaned = cleaned.replace(/^\s*(Home|About|Contact|Menu|Navigation).*$/gmi, '');
+        
+        // Limit content length for token efficiency
+        if (cleaned.length > this.maxContentLengthPerPage) {
+            // Try to cut at sentence boundaries
+            const truncated = cleaned.slice(0, this.maxContentLengthPerPage);
+            const lastSentence = truncated.lastIndexOf('.');
+            if (lastSentence > this.maxContentLengthPerPage * 0.8) {
+                cleaned = truncated.slice(0, lastSentence + 1);
+            } else {
+                cleaned = truncated;
+            }
+        }
+        
+        return cleaned.trim();
+    }
+    
+    /**
+     * Extract meaningful content from HTML using targeted selectors
+     * @param {string} html - HTML content to extract from
+     * @returns {string} Meaningful text content
+     */
+    extractMeaningfulContent(html) {
+        if (!html) return '';
+        
+        // Target main content areas with common CSS selectors
+        const contentSelectors = [
+            'article p',
+            'main p', 
+            '.content p',
+            '.post-content p',
+            '.entry-content p',
+            '[role="main"] p',
+            '.article-body p',
+            '.story-body p',
+            '#content p',
+            '.page-content p'
+        ];
+        
+        let meaningfulText = '';
+        
+        // Simple regex-based content extraction (avoiding heavy HTML parsing)
+        contentSelectors.forEach(selector => {
+            // Convert CSS selector to rough regex pattern
+            let pattern;
+            if (selector.includes('article p')) {
+                pattern = /<article[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>[\s\S]*?<\/article>/gi;
+            } else if (selector.includes('main p')) {
+                pattern = /<main[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>[\s\S]*?<\/main>/gi;
+            } else if (selector.includes('.content p')) {
+                pattern = /<[^>]*class="[^"]*content[^"]*"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/gi;
+            } else {
+                // Generic paragraph extraction
+                pattern = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+            }
+            
+            let match;
+            while ((match = pattern.exec(html)) !== null && meaningfulText.length < 1200) {
+                const text = this.stripHtml(match[1]).trim();
+                if (text.length > 50 && !text.match(/^(Subscribe|Follow|Share|Copyright|Privacy)/i)) {
+                    meaningfulText += text + '\n';
+                }
+            }
+        });
+        
+        // If no structured content found, fall back to all paragraphs
+        if (meaningfulText.length < 200) {
+            const allParagraphs = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+            let match;
+            while ((match = allParagraphs.exec(html)) !== null && meaningfulText.length < 1000) {
+                const text = this.stripHtml(match[1]).trim();
+                if (text.length > 50 && !text.match(/^(Subscribe|Follow|Share|Copyright|Privacy|Advertisement)/i)) {
+                    meaningfulText += text + '\n';
+                }
+            }
+        }
+        
+        return this.cleanContent(meaningfulText);
+    }
+    
+    /**
+     * Strip HTML tags from text
+     * @param {string} html - HTML to strip
+     * @returns {string} Plain text
+     */
+    stripHtml(html) {
+        if (!html) return '';
+        return html.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').replace(/\s+/g, ' ').trim();
     }
 }
 
@@ -268,7 +441,7 @@ class DuckDuckGoSearcher {
     constructor() {
         this.baseUrl = 'https://duckduckgo.com/';
         this.userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-        this.memoryTracker = new MemoryTracker();
+        this.memoryTracker = new TokenAwareMemoryTracker();
         this.stopWords = new Set([
             'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
             'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
@@ -299,19 +472,26 @@ class DuckDuckGoSearcher {
             
             const results = this.extractSearchResults(html, query, limit);
             
-            // Sort by score and take only the requested limit for final processing
-            const sortedResults = results
+            // Filter results by quality score (only keep results with decent relevance)
+            const qualityThreshold = 20; // Minimum score threshold
+            const qualityResults = results.filter(result => result.score >= qualityThreshold);
+            
+            // Limit processing to top results for efficiency (increased for 32K tokens)
+            const maxProcessingLimit = Math.min(8, limit);
+            const sortedResults = qualityResults
                 .sort((a, b) => b.score - a.score)
-                .slice(0, limit);
+                .slice(0, maxProcessingLimit);
+            
+            console.log(`Search results: ${results.length} found, ${qualityResults.length} above quality threshold, ${sortedResults.length} selected for processing`);
             
             const contentTime = Date.now();
-            // Always fetch content for LLM processing (required for quality responses)
+            // Only fetch content for high-quality results to save tokens
             if (sortedResults.length > 0) {
                 await this.fetchContentForResults(sortedResults, timeout);
             }
             
-            // Return only the requested number of results
-            const finalResults = sortedResults.slice(0, limit);
+            // Return the processed results
+            const finalResults = sortedResults;
             const totalTime = Date.now() - searchStartTime;
             
             return {
@@ -819,34 +999,44 @@ class DuckDuckGoSearcher {
         try {
             console.log(`[${index + 1}/${total}] Fetching content from: ${result.url}`);
             
-            const content = await this.fetchUrl(result.url, timeout * 1000);
-            const parser = new SimpleHTMLParser(content);
-            const textContent = parser.convertToText(content);
+            const rawContent = await this.fetchUrl(result.url, timeout * 1000);
             
-            // Check memory limit before storing content
-            const contentSize = Buffer.byteLength(textContent, 'utf8');
+            // First try to extract meaningful content from HTML
+            let optimizedContent = this.memoryTracker.extractMeaningfulContent(rawContent);
+            
+            // If meaningful extraction didn't work well, fall back to text conversion
+            if (optimizedContent.length < 200) {
+                const parser = new SimpleHTMLParser(rawContent);
+                const textContent = parser.convertToText(rawContent);
+                optimizedContent = this.memoryTracker.cleanContent(textContent);
+            }
+            
+            // Apply content summarization for very long content (increased threshold for 32K)
+            if (optimizedContent.length > 5000 && index < 5) { // Increased length threshold and more results
+                console.log(`[${index + 1}/${total}] Content is long (${optimizedContent.length} chars), applying summarization...`);
+                optimizedContent = await this.summarizeContent(optimizedContent, result.title || result.url);
+            }
+            
+            // Apply token-aware content management
+            const finalContent = this.memoryTracker.addContent(optimizedContent);
+            
+            // Check memory limit for the final content
+            const contentSize = Buffer.byteLength(finalContent, 'utf8');
             const memoryCheck = this.memoryTracker.checkMemoryLimit(contentSize);
             
-            if (!memoryCheck.allowed) {
-                console.log(`[${index + 1}/${total}] Content too large, truncating. ${memoryCheck.reason}. Size: ${memoryCheck.additionalSizeMB}MB, Current: ${memoryCheck.currentContentSizeMB}MB`);
-                
-                // Truncate content to fit within memory limits
+            if (!memoryCheck.allowed && finalContent.length > 500) {
+                // Additional truncation if still too large
                 const availableBytes = this.memoryTracker.maxAllowedSize - this.memoryTracker.totalContentSize;
-                const maxContentLength = Math.floor(availableBytes / 2); // Use UTF-8 safe estimate
+                const maxContentLength = Math.max(500, Math.floor(availableBytes / 2));
                 
-                if (maxContentLength > 1000) {
-                    const truncatedContent = textContent.substring(0, maxContentLength);
-                    result.content = truncatedContent + '\n\n[Content truncated due to memory limits]';
-                    result.contentLength = result.content.length;
-                    result.truncated = true;
-                    result.originalLength = textContent.length;
-                    this.memoryTracker.addContentSize(Buffer.byteLength(result.content, 'utf8'));
-                } else {
-                    result.contentError = `Content skipped - insufficient memory remaining (${Math.round(availableBytes / 1024)}KB available)`;
-                }
+                result.content = finalContent.substring(0, maxContentLength) + '\n\n[Content optimized for token efficiency]';
+                result.contentLength = result.content.length;
+                result.truncated = true;
+                result.originalLength = optimizedContent.length;
+                this.memoryTracker.addContentSize(Buffer.byteLength(result.content, 'utf8'));
             } else {
-                result.content = textContent;
-                result.contentLength = textContent.length;
+                result.content = finalContent;
+                result.contentLength = finalContent.length;
                 this.memoryTracker.addContentSize(contentSize);
                 console.log(`[${index + 1}/${total}] Content loaded: ${Math.round(contentSize / 1024)}KB. ${this.memoryTracker.getMemorySummary()}`);
             }
@@ -1468,21 +1658,75 @@ class LLMClient {
      * @returns {string} Formatted prompt
      */
     buildPrompt(originalQuery, searchResults) {
+        // Use expanded format for higher token budget (32K)
         const searchContext = searchResults
-            .slice(0, 10) // Limit to top 10 results to avoid token limits
+            .slice(0, 8) // Increased to top 8 results for 32K token budget
             .map((result, index) => {
-                const content = result.content ? 
-                    `\n   Content: ${result.content.substring(0, 1000)}${result.content.length > 1000 ? '...' : ''}` : '';
+                // Progressive content loading - start with title and description
+                let contextEntry = `${index + 1}. ${result.title}\n${result.url}`;
                 
-                return `${index + 1}. Title: ${result.title}
-   URL: ${result.url}
-   Description: ${result.description}${content}`;
+                // Add description if available (increased length for 32K tokens)
+                if (result.description && result.description.length > 0) {
+                    const shortDesc = result.description.slice(0, 300);
+                    contextEntry += `\n${shortDesc}${result.description.length > 300 ? '...' : ''}`;
+                }
+                
+                // Add content with higher token budget allowance
+                if (result.content && result.content.length > 100) {
+                    // Increased token estimation budget for 32K context
+                    const estimatedTokens = Math.ceil((contextEntry + result.content).length / 4);
+                    if (estimatedTokens < 25000) { // Leave 7K tokens for response
+                        const shortContent = result.content.slice(0, 800); // Increased content length
+                        contextEntry += `\nKey info: ${shortContent}${result.content.length > 800 ? '...' : ''}`;
+                    }
+                }
+                
+                return contextEntry;
             })
             .join('\n\n');
 
-        return this.searchTemplate
+        // Use full template more often with 32K token budget, compact only for many results
+        // But prioritize custom templates if they were provided
+        let template;
+        if (this.searchTemplate !== DEFAULT_SEARCH_TEMPLATE) {
+            // Custom template provided, use it regardless of result count
+            template = this.searchTemplate;
+        } else {
+            // Using default template, apply compact logic for efficiency
+            template = searchResults.length > 6 ? COMPACT_SEARCH_TEMPLATE : this.searchTemplate;
+        }
+        return template
             .replace('{{QUERY}}', originalQuery)
             .replace('{{SEARCH_CONTEXT}}', searchContext);
+    }
+
+    /**
+     * Pre-summarize long content before final LLM call
+     * @param {string} content - Content to summarize
+     * @param {string} query - Original query for context
+     * @returns {Promise<string>} Summarized content
+     */
+    async summarizeContent(content, query) {
+        if (!content || content.length < 3000) return content; // Increased threshold for 32K tokens
+        
+        try {
+            // Allow longer summaries with 32K token budget
+            const summaryPrompt = `Summarize this content relevant to "${query}" in under 300 words, focusing on key facts and details:\n\n${content.slice(0, 4000)}`;
+            
+            const summaryConfig = {
+                provider: 'openai',
+                model: 'gpt-5-mini', // Use smaller model for summarization
+                messages: [{ role: 'user', content: summaryPrompt }],
+                max_tokens: 400, // Increased for longer summaries
+                temperature: 0.3
+            };
+            
+            const summary = await this.callLLM(summaryConfig);
+            return summary.choices[0].message.content;
+        } catch (error) {
+            console.log(`Content summarization failed: ${error.message}, using truncated original`);
+            return content.slice(0, 2000); // Increased fallback length for 32K
+        }
     }
 }
 
