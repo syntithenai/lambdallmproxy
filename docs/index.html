@@ -1380,27 +1380,31 @@ async function handleStreamingResponse(response, responseContainer) {
     // Clear and prepare response container for streaming
     responseContainer.className = 'response-container';
     responseContainer.innerHTML = `
-        <div style="margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 10px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">🔍</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.9;">Connected! Waiting for data...</div>
-        </div>
-        <div id="streaming-steps" style="margin-bottom: 20px;"></div>
-        <div id="streaming-response" style="display: none;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 15px;">
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">📝</span> Final Response
+                    <span style="font-size: 1.2em;">�</span> Final Response
                 </h3>
             </div>
-            <div id="final-answer" style="padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6;"></div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
         </div>
-        <div id="streaming-metadata" style="display: none; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
-            <h4 style="margin: 0 0 15px 0; color: #495057; display: flex; align-items: center; gap: 8px;">
-                <span>📊</span> Search Summary
+        <div id="streaming-metadata" style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+            <h4 style="margin: 0 0 10px 0; color: #495057; display: flex; align-items: center; gap: 8px;">
+                <span>�</span> Search Summary
             </h4>
             <div id="metadata-content"></div>
+            <ul id="search-summary-list" style="margin: 10px 0 0 0; padding-left: 20px;"></ul>
         </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="full-results-tree"></div>
     `;
     
     const statusElement = document.getElementById('streaming-status');
@@ -1409,21 +1413,18 @@ async function handleStreamingResponse(response, responseContainer) {
     const answerElement = document.getElementById('final-answer');
     const metadataElement = document.getElementById('streaming-metadata');
     const metadataContent = document.getElementById('metadata-content');
+    const searchSummaryList = document.getElementById('search-summary-list');
+    const fullResultsTree = document.getElementById('full-results-tree');
     
-    // Live results container (progressively updated)
-    const resultsContainerId = 'live-results';
-    let resultsContainer = document.getElementById(resultsContainerId);
-    if (!resultsContainer) {
-        resultsContainer = document.createElement('div');
-        resultsContainer.id = resultsContainerId;
-        resultsContainer.style.marginTop = '10px';
-        responseContainer.appendChild(resultsContainer);
-    }
+    // Maintain structured state for full results tree
+    const resultsState = { byIteration: {} };
+    // Map of per-search digests: key `${iteration}|${term}` => { summary, links }
+    const digestMap = new Map();
     
     function renderResultsSection(title, results) {
         const details = document.createElement('details');
         details.className = 'search-results-section';
-        details.open = true;
+        details.open = false;
         const summary = document.createElement('summary');
         summary.innerHTML = `<strong>${title}</strong> (${results.length} total)`;
         details.appendChild(summary);
@@ -1455,6 +1456,73 @@ async function handleStreamingResponse(response, responseContainer) {
             <div><strong>Total results so far:</strong> ${total || 0}</div>
             <div><strong>Searches performed:</strong> ${(searches || []).length} across ${iters.length} iteration(s)</div>
         `;
+        // Update list of searches with counts; include placeholder for per-search LLM summaries when available
+        searchSummaryList.innerHTML = '';
+        (searches || []).forEach(s => {
+            const li = document.createElement('li');
+            li.innerHTML = `<strong>Iteration ${s.iteration}</strong>: \"${s.query}\" — ${s.resultsCount} result(s)`;
+            // Show per-search digest if available (from digestMap or inline summary)
+            const key = `${s.iteration}|${s.query}`;
+            const digest = digestMap.get(key) || (s.summary ? { summary: s.summary, links: s.links || [] } : null);
+            if (digest && digest.summary) {
+                const p = document.createElement('div');
+                p.style.cssText = 'margin-top:4px;color:#495057;';
+                p.textContent = digest.summary;
+                li.appendChild(p);
+                if (Array.isArray(digest.links) && digest.links.length) {
+                    const ul = document.createElement('ul');
+                    ul.style.marginTop = '4px';
+                    digest.links.forEach(l => {
+                        const li2 = document.createElement('li');
+                        li2.innerHTML = `<a href="${l.url}" target="_blank" rel="noopener noreferrer">${l.title || l.url}</a>${l.snippet ? ` — <small>${l.snippet}</small>` : ''}`;
+                        ul.appendChild(li2);
+                    });
+                    li.appendChild(ul);
+                }
+            }
+            searchSummaryList.appendChild(li);
+        });
+    }
+
+    function updateFullResultsTree() {
+        // Build a closed-by-default tree grouped by iteration -> query -> results
+        fullResultsTree.innerHTML = '';
+        const top = document.createElement('details');
+        top.open = false;
+        top.className = 'search-results-section';
+        const topSummary = document.createElement('summary');
+        // Count total results
+        let total = 0;
+        Object.values(resultsState.byIteration).forEach(iter => {
+            Object.values(iter).forEach(arr => total += arr.length);
+        });
+        topSummary.innerHTML = `<strong>Full search results</strong> (${total} total)`;
+        top.appendChild(topSummary);
+
+        const container = document.createElement('div');
+        container.style.marginTop = '8px';
+
+        Object.keys(resultsState.byIteration).sort((a,b)=>Number(a)-Number(b)).forEach(iter => {
+            const iterDetails = document.createElement('details');
+            iterDetails.open = false;
+            const iterSummary = document.createElement('summary');
+            // Count iteration total
+            let iterTotal = 0;
+            Object.values(resultsState.byIteration[iter]).forEach(arr => iterTotal += arr.length);
+            iterSummary.innerHTML = `<strong>Iteration ${iter}</strong> (${iterTotal} results)`;
+            iterDetails.appendChild(iterSummary);
+
+            Object.keys(resultsState.byIteration[iter]).forEach(term => {
+                const termResults = resultsState.byIteration[iter][term];
+                const termDetails = renderResultsSection(`"${term}"`, termResults);
+                iterDetails.appendChild(termDetails);
+            });
+
+            container.appendChild(iterDetails);
+        });
+
+        top.appendChild(container);
+        fullResultsTree.appendChild(top);
     }
     
     try {
@@ -1503,6 +1571,19 @@ async function handleStreamingResponse(response, responseContainer) {
                     
                     // Handle different event types
                     switch (eventType) {
+                        case 'search_digest':
+                            {
+                                const { term, iteration, summary, links } = eventData;
+                                const key = `${iteration}|${term}`;
+                                digestMap.set(key, { summary, links: Array.isArray(links) ? links : [] });
+                                // Trigger a refresh of the Search Summary list (uses last known searches from metadata or previous event)
+                                // We can’t access a persistent list of searches here, so rely on latest rendered summary; a full refresh will come with next search_results
+                                // Optional: we could store lastSearches in closure when search_results arrives
+                                if (typeof window.__lastSearches !== 'undefined') {
+                                    updateLiveSummary(window.__lastSearches, undefined);
+                                }
+                            }
+                            break;
                         case 'log':
                             statusElement.textContent = eventData.message || 'Processing...';
                             break;
@@ -1553,6 +1634,12 @@ async function handleStreamingResponse(response, responseContainer) {
                         case 'search_results':
                             {
                                 const { term, iteration, resultsCount, results, cumulativeResultsCount, allResults, searches } = eventData;
+                                // Ignore initial empty placeholder snapshot to avoid a "null" entry
+                                if (term === null || (resultsCount === 0 && iteration === 0)) {
+                                    updateLiveSummary(searches || [], cumulativeResultsCount || 0);
+                                    break;
+                                }
+
                                 stepsElement.innerHTML += `
                                     <div style=\"margin: 5px 0; padding: 12px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); border-radius: 6px; box-shadow: 0 1px 5px rgba(0,0,0,0.1);\">
                                         <div style=\"display: flex; align-items: center; gap: 8px; font-weight: 500;\">
@@ -1565,15 +1652,16 @@ async function handleStreamingResponse(response, responseContainer) {
                                     </div>
                                 `;
                                 statusElement.textContent = `📥 Received ${resultsCount} result(s) for "${term}" (iteration ${iteration}) — total ${cumulativeResultsCount || 0}`;
-                                // Live sections
-                                resultsContainer.innerHTML = '';
-                                if (Array.isArray(results) && results.length) {
-                                    resultsContainer.appendChild(renderResultsSection(`Results for "${term}" (iteration ${iteration})`, results));
-                                }
-                                if (Array.isArray(allResults) && allResults.length) {
-                                    resultsContainer.appendChild(renderResultsSection('All results so far', allResults));
-                                }
-                                updateLiveSummary(searches || [], cumulativeResultsCount || 0);
+
+                                // Update structured state for the full results tree
+                                if (!resultsState.byIteration[iteration]) resultsState.byIteration[iteration] = {};
+                                resultsState.byIteration[iteration][term] = Array.isArray(results) ? results : [];
+
+                                // Update summary and full tree
+                                // Keep last searches for digest refresh convenience
+                                window.__lastSearches = searches || [];
+                                updateLiveSummary(window.__lastSearches, cumulativeResultsCount || 0);
+                                updateFullResultsTree();
                             }
                             break;
                             
@@ -1595,9 +1683,7 @@ async function handleStreamingResponse(response, responseContainer) {
                         case 'final_response':
                             statusElement.textContent = '✅ Search completed! Displaying final response...';
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
-                            responseElement.style.display = 'block';
-                            
-                            // Show metadata
+                            // Keep metadata visible and updated
                             metadataContent.innerHTML = `
                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                                     <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #007bff;">
@@ -1620,12 +1706,14 @@ async function handleStreamingResponse(response, responseContainer) {
                         case 'complete':
                             statusElement.textContent = `✅ Complete! Total time: ${Math.round(eventData.executionTime)}ms`;
                             responseContainer.className = 'response-container response-success';
-                            // Append final snapshot if present
+                            // Ensure the full results tree reflects the final snapshot
                             if (Array.isArray(eventData.allResults) && eventData.allResults.length) {
-                                const finalContainer = document.createElement('div');
-                                finalContainer.style.marginTop = '10px';
-                                finalContainer.appendChild(renderResultsSection('Final results', eventData.allResults));
-                                responseContainer.appendChild(finalContainer);
+                                // If we never received structured iterations, fall back to a flat section
+                                const hasStructure = Object.keys(resultsState.byIteration).length > 0;
+                                if (!hasStructure) {
+                                    resultsState.byIteration[1] = { 'All results': eventData.allResults };
+                                }
+                                updateFullResultsTree();
                             }
                             break;
                             
