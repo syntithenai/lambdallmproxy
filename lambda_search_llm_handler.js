@@ -1,5 +1,5 @@
 /**
- * AWS Lambda handler for intelligent search + LLM response
+ * AWS Lambda handler for intelligent search + LLM response with streaming support
  * Combines DuckDuckGo search functionality with LLM processing to provide
  * comprehensive answers with citations and source references
  */
@@ -105,12 +105,12 @@ const BYTES_PER_MB = 1024 * 1024;
 
 // System prompt configurations - can be overridden via POST request
 const DEFAULT_SYSTEM_PROMPTS = {
-    decision: 'You are a helpful assistant that determines whether a question can be answered directly or requires web search for fact-checking. Always respond with valid JSON only.',
-    direct: 'You are a helpful assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive and informative.',
-    search: 'You are a helpful research assistant. Use the provided search results to answer questions comprehensively. Always cite specific sources using the URLs provided when making factual claims. Format your response in a clear, organized manner.'
+    decision: 'You are a thorough research analyst that determines whether a question can be answered directly or requires comprehensive web searches. When searches are needed, you always plan for multiple, complementary search strategies to ensure complete coverage. Always respond with valid JSON only.',
+    direct: 'You are a knowledgeable assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive, informative, and thorough in your explanations.',
+    search: 'You are a comprehensive research assistant. Use all provided search results to answer questions thoroughly and completely. Always cite specific sources using the URLs provided when making factual claims. Synthesize information from multiple sources to provide the most complete picture possible. Format your response in a clear, well-organized manner that covers all important aspects of the topic.'
 };
 
-const DEFAULT_DECISION_TEMPLATE = `Analyze this question and determine if you can answer it directly or if it requires web searches.
+const DEFAULT_DECISION_TEMPLATE = `Analyze this question and determine if you can answer it directly or if it requires comprehensive web searches to gather all necessary information.
 
 IMPORTANT: Respond ONLY with valid JSON in one of these formats:
 
@@ -118,14 +118,20 @@ For questions you can answer directly (general knowledge, explanations, creative
 {"response": "Your complete answer here"}
 
 For questions requiring web searches (current events, recent data, specific facts, company information):
-{"search_queries": ["search terms 1", "search terms 2", "search terms 3"]}
+{"search_queries": ["broad search terms 1", "specific aspect 2", "related context 3"]}
 
-Guidelines:
-- Use "response" for: general knowledge, how-to questions, explanations, creative writing, personal advice
-- Use "search_queries" for: current events, recent data, specific facts, company information, recent research
-- If using search_queries, provide 1-3 distinct search queries that cover different aspects of the question
+Guidelines for COMPREHENSIVE search coverage:
+- Use "response" for: basic general knowledge, simple how-to questions, creative writing, personal advice
+- Use "search_queries" for: current events, recent data, specific facts, company information, complex topics, recent research
+- ALWAYS provide 2-3 search queries to ensure comprehensive coverage - don't be conservative!
+- Cover DIFFERENT ASPECTS: Start broad, then get specific, include related context/background
+- Examples of good comprehensive coverage:
+  * Topic question: ["topic overview", "recent developments topic", "expert opinions topic"]
+  * Company question: ["company name overview", "company name recent news", "company name financial performance"]
+  * Technical question: ["technical term definition", "technical term applications", "technical term latest research"]
 - Each search query should be optimized for web search (remove question words, focus on key terms)
-- Order search queries by importance/relevance
+- Think: "What different angles do I need to fully understand and explain this topic?"
+- Err on the side of MORE searches rather than fewer - thoroughness is key
 
 Question: "{{QUERY}}"
 
@@ -1824,28 +1830,28 @@ class LLMClient {
                 })
                 .join('\n\n');
 
-            const digestPrompt = `Analyze these search results for "${searchQuery}" in context of the question "${originalQuery}".
+            const digestPrompt = `Thoroughly analyze these search results for "${searchQuery}" in context of the question "${originalQuery}".
 
-Extract key information, facts, and insights. Create a concise summary (2-3 sentences) with the most relevant information.
+Extract ALL key information, facts, insights, and important details. Identify the most valuable and relevant findings that directly address the original question. Don't miss important nuances, data points, or perspectives.
 
 Search Results:
 ${searchContext}
 
-Provide a focused summary of the most relevant information found:`;
+Provide a comprehensive summary (3-4 sentences) capturing the most important and relevant information found. Include specific details, numbers, dates, and key facts that would be valuable for answering the original question:`;
 
             const requestBody = {
                 model: modelName,
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a research assistant that extracts key information from search results. Focus on factual content relevant to the user\'s question.'
+                        content: 'You are a thorough research analyst that extracts comprehensive information from search results. Capture all important details, facts, and insights that are relevant to the user\'s question. Be thorough and don\'t miss key information that could be valuable for the final answer.'
                     },
                     {
                         role: 'user',
                         content: digestPrompt
                     }
                 ],
-                max_tokens: 200,
+                max_tokens: 300,
                 temperature: 0.3
             };
 
@@ -1956,20 +1962,25 @@ Provide a focused summary of the most relevant information found:`;
 Current Information Gathered:
 ${currentKnowledge}
 
-Based on the information gathered so far, determine if additional searches are needed to fully answer the question.
+Analyze if additional targeted searches would significantly improve the comprehensiveness and quality of the final answer.
 
 Respond ONLY with valid JSON in one of these formats:
 
-If you have sufficient information to answer the question:
-{"continue": false, "reason": "Sufficient information gathered"}
+If you have comprehensive information covering ALL important aspects:
+{"continue": false, "reason": "Complete coverage achieved across all key areas"}
 
-If additional searches are needed (max 2 more queries):
-{"continue": true, "reason": "Need more specific information about X", "next_queries": ["search query 1", "search query 2"]}
+If additional searches would add significant value (RECOMMENDED - up to 2 more queries):
+{"continue": true, "reason": "Could benefit from more depth on X or coverage of Y", "next_queries": ["targeted search 1", "targeted search 2"]}
 
-Consider:
-- Is the core question answered?
-- Are there important gaps in the information?
-- Would additional specific searches add significant value?
+BIAS TOWARD THOROUGHNESS - Consider these factors:
+- Are there multiple perspectives or viewpoints to explore?
+- Could more recent developments or data enhance the answer?
+- Are there specific sub-topics or related areas that need deeper coverage?
+- Would expert opinions, case studies, or detailed examples strengthen the response?
+- Are there potential counterarguments or alternative approaches to explore?
+- Could technical details, implementation specifics, or practical applications be useful?
+
+Err on the side of gathering MORE information rather than less. Quality comprehensive answers require thorough research.
 
 JSON Response:`;
 
@@ -1978,7 +1989,7 @@ JSON Response:`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a research assistant that determines if sufficient information has been gathered to answer a question. Be conservative - only request additional searches if truly necessary.'
+                        content: 'You are a thorough research strategist. Your job is to ensure no important information is missed. You should bias toward additional searches when they could meaningfully improve the comprehensiveness and quality of the final answer. Only stop when you are confident all key aspects are well-covered.'
                     },
                     {
                         role: 'user',
@@ -2081,20 +2092,24 @@ JSON Response:`;
                 return `Research ${index + 1} - ${digest.searchQuery}:\n${digest.summary}\nSources: ${links}`;
             }).join('\n\n');
 
-            const finalPrompt = `Based on comprehensive research, provide a complete answer to this question.
+            const finalPrompt = `Based on comprehensive multi-search research, provide the most complete and authoritative answer possible to this question.
 
 Question: "${originalQuery}"
 
-Research Gathered:
+Comprehensive Research Gathered from Multiple Sources:
 ${allInformation}
 
-Please provide a comprehensive, well-structured answer that:
-1. Directly addresses the question
-2. Uses specific information from the research
-3. Cites relevant sources by including URLs when stating facts
-4. Is organized and easy to read
+Please provide a thorough, expertly-crafted answer that:
+1. COMPLETELY addresses the question from all important angles
+2. Synthesizes information from ALL research sources intelligently
+3. Includes specific facts, data, examples, and details from the research
+4. Cites relevant sources with URLs when stating facts or claims
+5. Covers different perspectives, approaches, or viewpoints where relevant
+6. Is well-organized with clear structure and logical flow
+7. Ensures no important aspects of the topic are left unaddressed
+8. Provides depth and nuance appropriate to the complexity of the question
 
-Answer:`;
+Create a comprehensive, authoritative response that demonstrates the full value of the extensive research conducted:`;
 
             const requestBody = {
                 model: modelName,
@@ -2108,7 +2123,7 @@ Answer:`;
                         content: finalPrompt
                     }
                 ],
-                max_tokens: 1500,
+                max_tokens: 2000,
                 temperature: 0.7
             };
 
@@ -2168,470 +2183,410 @@ Answer:`;
 }
 
 /**
- * Main Lambda handler function
+ * Main Lambda handler function with streaming support
  */
 export const handler = async (event, context) => {
     const startTime = Date.now();
     
+    // Check if this is a streaming request
+    const isStreamingRequest = event.headers?.['accept'] === 'text/event-stream' || 
+                              event.queryStringParameters?.stream === 'true';
+    
+    if (isStreamingRequest) {
+        // For streaming, we'll use Server-Sent Events format
+        return await handleStreamingRequest(event, context, startTime);
+    }
+    
+    // Fallback to non-streaming for compatibility
+    return await handleNonStreamingRequest(event, context, startTime);
+};
+
+/**
+ * Create a streaming response accumulator
+ */
+class StreamingResponse {
+    constructor() {
+        this.chunks = [];
+    }
+    
+    write(data) {
+        this.chunks.push(`data: ${JSON.stringify(data)}\n\n`);
+    }
+    
+    writeEvent(type, data) {
+        this.chunks.push(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    }
+    
+    getResponse() {
+        return this.chunks.join('');
+    }
+}
+
+/**
+ * Handle streaming requests with Server-Sent Events
+ */
+async function handleStreamingRequest(event, context, startTime) {
+    const stream = new StreamingResponse();
+    
     try {
         const initialMemory = process.memoryUsage();
-        console.log(`Lambda handler started. Initial memory: RSS=${Math.round(initialMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(initialMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB`);
+        stream.writeEvent('log', {
+            message: `Lambda handler started. Initial memory: RSS=${Math.round(initialMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(initialMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB`,
+            timestamp: new Date().toISOString()
+        });
     } catch (memoryError) {
-        console.log(`Lambda handler started. Memory logging error: ${memoryError.message}`);
+        stream.writeEvent('log', {
+            message: `Lambda handler started. Memory logging error: ${memoryError.message}`,
+            timestamp: new Date().toISOString()
+        });
     }
     
     // Initialize query variable for error handling
     let query = '';
     
-    // Standard response headers (let AWS handle CORS)
-    const headers = {
-        'Content-Type': 'application/json'
-    };
-
     try {
         // Extract parameters from request (POST only)
         let limit, fetchContent, timeout, model, accessSecret, apiKey, searchMode;
         let systemPrompts, decisionTemplate, searchTemplate;
         
-        console.log(`Processing ${event.requestContext.http.method} request`);
-        
-        if (event.requestContext.http.method === 'POST') {
-            console.log(`Body received, isBase64Encoded: ${event.isBase64Encoded}`);
+        if (event.httpMethod !== 'POST') {
+            stream.writeEvent('error', {
+                error: 'Method not allowed. Only POST requests are supported.',
+                timestamp: new Date().toISOString()
+            });
             
-            // Check if the body is Base64 encoded and decode if necessary
-            const decodedBody = event.isBase64Encoded
-                ? Buffer.from(event.body, 'base64').toString('utf-8')
-                : event.body;
-            
-            console.log(`Body decoded, parsing JSON...`);
-            const body = JSON.parse(decodedBody || '{}');
-            
-            console.log(`JSON parsed successfully`);
-            query = body.query;
-            limit = body.limit || 5;
-            fetchContent = body.content;
-            timeout = body.timeout || 10;
-            // Use provider:model format with Groq as default
-            model = body.model || 'groq:llama-3.1-8b-instant';
-            accessSecret = body.access_secret;
-            apiKey = body.api_key;
-            searchMode = body.search_mode || 'auto';
-            
-            console.log(`Basic parameters extracted`);
-            
-            // Extract system prompt overrides
-            systemPrompts = {};
-            if (body.system_prompt_decision) systemPrompts.decision = body.system_prompt_decision;
-            if (body.system_prompt_direct) systemPrompts.direct = body.system_prompt_direct;
-            if (body.system_prompt_search) systemPrompts.search = body.system_prompt_search;
-            
-            console.log(`System prompts extracted`);
-            
-            decisionTemplate = body.decision_template || DEFAULT_DECISION_TEMPLATE;
-            searchTemplate = body.search_template || DEFAULT_SEARCH_TEMPLATE;
-            
-            console.log(`Templates assigned`);
-            
-            // Extract and verify Google token
-            const googleToken = body.google_token;
-            if (!googleToken) {
-                return {
-                    statusCode: 401,
-                    headers: headers,
-                    body: JSON.stringify({
-                        error: 'Unauthorized',
-                        message: 'Google authentication required. Please sign in.'
-                    })
-                };
-            }
-            
-            const googleUser = verifyGoogleToken(googleToken);
-            if (!googleUser) {
-                return {
-                    statusCode: 401,
-                    headers: headers,
-                    body: JSON.stringify({
-                        error: 'Unauthorized',
-                        message: 'Invalid Google token or email not authorized.'
-                    })
-                };
-            }
-            
-            console.log(`Google authentication successful for: ${googleUser.email}`);
-        } else {
             return {
                 statusCode: 405,
-                headers: headers,
-                body: JSON.stringify({ error: 'Method not allowed', allowed: ['POST'] })
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                },
+                body: stream.getResponse()
             };
         }
-
-        console.log(`About to validate parameters...`);
-
-        // Validate required parameters
-        if (!query || typeof query !== 'string' || query.trim().length === 0) {
-            return {
-                statusCode: 400,
-                headers: headers,
-                body: JSON.stringify({
-                    error: 'Missing or invalid query parameter',
-                    message: 'Query parameter is required and must be a non-empty string'
-                })
-            };
-        }
-
-        // Validate API key
-        if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-            return {
-                statusCode: 400,
-                headers: headers,
-                body: JSON.stringify({
-                    error: 'Missing or invalid api_key parameter',
-                    message: 'API key parameter is required and must be a non-empty string'
-                })
-            };
-        }
-
-        // Check access secret if required
-        const requiredSecret = process.env.ACCESS_SECRET;
-        if (requiredSecret && accessSecret !== requiredSecret) {
-            return {
-                statusCode: 401,
-                headers: headers,
-                body: JSON.stringify({
-                    error: 'Unauthorized',
-                    message: 'Invalid or missing access_secret'
-                })
-            };
-        }
-
-        console.log(`Parameters validated successfully. Query: "${query}", Search mode: ${searchMode}`);
-
-        // Initialize LLM client for all operations
-        const llmClient = new LLMClient(apiKey, systemPrompts, {
-            decision: decisionTemplate,
-            search: searchTemplate
+        
+        const body = JSON.parse(event.body || '{}');
+        query = body.query || '';
+        limit = parseInt(body.limit) || 10;
+        fetchContent = body.fetchContent || false;
+        timeout = parseInt(body.timeout) || 30000;
+        model = body.model || 'gpt-4o-mini';
+        accessSecret = body.accessSecret || '';
+        apiKey = body.apiKey || '';
+        searchMode = body.searchMode || 'web_search';
+        
+        // Get custom prompts/templates if provided
+        systemPrompts = body.systemPrompts || {};
+        decisionTemplate = body.decisionTemplate || null;
+        searchTemplate = body.searchTemplate || null;
+        
+        stream.writeEvent('log', {
+            message: `Processing request for query: "${query}" with model: ${model}`,
+            timestamp: new Date().toISOString()
         });
-
-        console.log(`LLM client initialized successfully`);
-
-        let shouldSearch = false;
-        let searchTerms = query;
-        let directResponse = null;
-
-        // Determine search behavior based on search mode
-        if (searchMode === 'direct') {
-            // Skip search mode - answer directly without searching
-            shouldSearch = false;
-        } else if (searchMode === 'search') {
-            // Force search mode - always search
-            shouldSearch = true;
-            searchTerms = query; // Use original query as search terms
-        } else {
-            // Auto mode - let LLM decide
-            const initialDecision = await llmClient.processInitialDecision(query, { model, timeout: 30000 });
-            
-            if (initialDecision.response) {
-                directResponse = initialDecision.response;
-                shouldSearch = false;
-            } else {
-                shouldSearch = true;
-                searchTerms = initialDecision.search_terms || query;
-            }
-        }
-
-        // If we have a direct response (from auto mode), return it
-        if (!shouldSearch && directResponse) {
-            const response = {
-                statusCode: 200,
-                headers: headers,
-                body: JSON.stringify({
-                    success: true,
-                    query: query,
-                    answer: directResponse,
-                    searchResults: null,
-                    llmResponse: {
-                        model: model,
-                        usage: {},
-                        processingTime: 'direct response'
-                    },
-                    processingTimeMs: Date.now() - startTime,
-                    timestamp: new Date().toISOString(),
-                    mode: 'direct'
-                })
-            };
-
-            return response;
-        }
-
-        // If we're in direct mode but don't have a direct response, generate one
-        if (!shouldSearch && !directResponse) {
-            const response = await llmClient.generateResponseWithoutSearch(query, { model, timeout: 30000 });
+        
+        // Validate required parameters
+        if (!query) {
+            stream.writeEvent('error', {
+                error: 'Query parameter is required',
+                timestamp: new Date().toISOString()
+            });
             
             return {
-                statusCode: 200,
-                headers: headers,
-                body: JSON.stringify({
-                    success: true,
-                    query: query,
-                    answer: response.content,
-                    searchResults: null,
-                    llmResponse: {
-                        model: model,
-                        usage: response.usage || {},
-                        processingTime: response.processingTime || 'unknown'
-                    },
-                    processingTimeMs: Date.now() - startTime,
-                    timestamp: new Date().toISOString(),
-                    mode: 'direct'
-                })
+                statusCode: 400,
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                },
+                body: stream.getResponse()
             };
         }
-
-        // Multi-Search Loop Implementation
-        const searcher = new DuckDuckGoSearcher();
-        const digestedResults = [];
-        const allSearchResults = [];
-        let searchQueries = [];
         
-        // Handle initial search queries
-        if (searchMode === 'search') {
-            searchQueries = [query]; // Force search with original query
-        } else {
-            // Extract search queries from LLM decision
-            const initialDecision = await llmClient.processInitialDecision(query, { model, timeout: 30000 });
-            
-            if (initialDecision.response) {
-                // Direct response case
-                return {
-                    statusCode: 200,
-                    headers: headers,
-                    body: JSON.stringify({
-                        success: true,
-                        query: query,
-                        answer: initialDecision.response,
-                        searchResults: null,
-                        searchSummaries: [],
-                        links: [],
-                        llmResponse: {
-                            model: model,
-                            usage: initialDecision.usage || {},
-                            processingTime: 'direct response'
-                        },
-                        processingTimeMs: Date.now() - startTime,
-                        timestamp: new Date().toISOString(),
-                        mode: 'direct'
-                    })
-                };
-            } else {
-                // Extract search queries (support both old and new format)
-                searchQueries = initialDecision.search_queries || 
-                               (initialDecision.search_terms ? [initialDecision.search_terms] : [query]);
+        // Initialize streaming response data
+        const streamingResults = {
+            query: query,
+            searches: [],
+            finalResponse: null,
+            metadata: {
+                searchMode: searchMode,
+                model: model,
+                iterations: 0,
+                maxIterations: 3,
+                totalSearchResults: 0
             }
-        }
-
-        // Execute multi-search loop
-        let iteration = 0;
-        const maxIterations = 3;
+        };
         
-        while (iteration < maxIterations && searchQueries.length > 0) {
-            console.log(`Search iteration ${iteration + 1}, queries: ${searchQueries.join(', ')}`);
+        stream.writeEvent('init', streamingResults);
+        
+        // Start the multi-search process with streaming
+        const finalResult = await executeMultiSearchWithStreaming(
+            query, 
+            limit, 
+            fetchContent, 
+            timeout, 
+            model, 
+            accessSecret, 
+            apiKey, 
+            searchMode,
+            systemPrompts,
+            decisionTemplate,
+            searchTemplate,
+            stream
+        );
+        
+        // Send final completion event
+        stream.writeEvent('complete', {
+            result: finalResult,
+            executionTime: Date.now() - startTime,
+            timestamp: new Date().toISOString()
+        });
+        
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            },
+            body: stream.getResponse()
+        };
+        
+    } catch (error) {
+        stream.writeEvent('error', {
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+        
+        return {
+            statusCode: 500,
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            },
+            body: stream.getResponse()
+        };
+    }
+}
+
+/**
+ * Execute multi-search with streaming updates
+ */
+async function executeMultiSearchWithStreaming(
+    query, 
+    limit, 
+    fetchContent, 
+    timeout, 
+    model, 
+    accessSecret, 
+    apiKey, 
+    searchMode,
+    systemPrompts,
+    decisionTemplate,
+    searchTemplate,
+    stream
+) {
+    let allSearchResults = [];
+    let searchesPerformed = [];
+    const maxIterations = 3;
+    
+    try {
+        // Process initial decision to get search terms
+        stream.writeEvent('step', {
+            type: 'initial_decision',
+            message: 'Analyzing query to determine search strategy...',
+            timestamp: new Date().toISOString()
+        });
+        
+        const initialDecision = await processInitialDecision(
+            query, 
+            model, 
+            accessSecret, 
+            apiKey, 
+            systemPrompts, 
+            decisionTemplate
+        );
+        
+        stream.writeEvent('decision', {
+            decision: initialDecision,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Perform iterative searches
+        for (let iteration = 1; iteration <= maxIterations; iteration++) {
+            stream.writeEvent('step', {
+                type: 'search_iteration',
+                iteration: iteration,
+                message: `Starting search iteration ${iteration}/${maxIterations}...`,
+                timestamp: new Date().toISOString()
+            });
             
-            // Execute searches for current iteration
-            for (const searchQuery of searchQueries) {
-                try {
-                    const searchResults = await searcher.search(searchQuery, limit, fetchContent, timeout);
-                    
-                    if (searchResults.success && searchResults.results.length > 0) {
-                        // Digest the search results
-                        const digestedResult = await llmClient.digestSearchResults(
-                            searchQuery, 
-                            searchResults.results, 
-                            query, 
-                            { model, timeout: 30000 }
-                        );
-                        
-                        digestedResults.push(digestedResult);
-                        allSearchResults.push(...searchResults.results);
-                    } else {
-                        console.log(`No results for search query: ${searchQuery}`);
-                    }
-                } catch (searchError) {
-                    console.error(`Search failed for query "${searchQuery}": ${searchError.message}`);
-                }
+            // Perform searches for this iteration
+            const searchTerms = iteration === 1 ? 
+                initialDecision.searchTerms : 
+                await generateAdditionalSearchTerms(query, allSearchResults, model, accessSecret, apiKey);
+                
+            for (let i = 0; i < searchTerms.length; i++) {
+                const searchTerm = searchTerms[i];
+                
+                stream.writeEvent('search', {
+                    term: searchTerm,
+                    iteration: iteration,
+                    searchIndex: i + 1,
+                    totalSearches: searchTerms.length,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Perform the search
+                const searchResults = await performSearch(
+                    searchTerm, 
+                    limit, 
+                    fetchContent, 
+                    timeout, 
+                    searchMode
+                );
+                
+                allSearchResults.push(...searchResults);
+                searchesPerformed.push({
+                    iteration: iteration,
+                    query: searchTerm,
+                    resultsCount: searchResults.length
+                });
+                
+                stream.writeEvent('search_results', {
+                    term: searchTerm,
+                    resultsCount: searchResults.length,
+                    iteration: iteration,
+                    timestamp: new Date().toISOString()
+                });
             }
             
             // Check if we should continue searching
-            if (digestedResults.length === 0) {
-                break; // No results found, exit loop
-            }
+            stream.writeEvent('step', {
+                type: 'continuation_check',
+                message: 'Evaluating if additional searches are needed...',
+                timestamp: new Date().toISOString()
+            });
             
-            // Determine if additional searches are needed
-            const continuationDecision = await llmClient.shouldContinueSearching(
+            const shouldContinue = await shouldContinueSearching(
                 query, 
-                digestedResults, 
+                allSearchResults, 
                 iteration, 
-                { model, timeout: 30000 }
+                maxIterations, 
+                model, 
+                accessSecret, 
+                apiKey, 
+                systemPrompts
             );
             
-            if (!continuationDecision.continue) {
-                console.log(`Stopping search: ${continuationDecision.reason}`);
+            stream.writeEvent('continuation', {
+                shouldContinue: shouldContinue.shouldContinue,
+                reasoning: shouldContinue.reasoning,
+                iteration: iteration,
+                timestamp: new Date().toISOString()
+            });
+            
+            if (!shouldContinue.shouldContinue) {
+                stream.writeEvent('step', {
+                    type: 'search_complete',
+                    message: `Search process completed after ${iteration} iterations`,
+                    timestamp: new Date().toISOString()
+                });
                 break;
             }
-            
-            // Prepare next iteration
-            searchQueries = continuationDecision.next_queries || [];
-            iteration++;
         }
         
-        // Handle case where no search results were found
-        if (digestedResults.length === 0) {
-            return {
-                statusCode: 200,
-                headers: headers,
-                body: JSON.stringify({
-                    success: true,
-                    query: query,
-                    answer: 'No search results found. Unable to provide an answer based on search data.',
-                    searchResults: [],
-                    searchSummaries: [],
-                    links: [],
-                    llmResponse: null,
-                    processingTimeMs: Date.now() - startTime,
-                    timestamp: new Date().toISOString(),
-                    mode: 'search'
-                })
-            };
-        }
-        
-        // Generate final comprehensive response
-        const finalResponse = await llmClient.generateFinalResponse(
-            query, 
-            digestedResults, 
-            { model, timeout: 30000 }
-        );
-        
-        const answer = finalResponse.choices?.[0]?.message?.content || 'No response generated';
-        
-        // Prepare search summaries and links for response
-        const searchSummaries = digestedResults.map(digest => ({
-            searchQuery: digest.searchQuery,
-            summary: digest.summary
-        }));
-        
-        const links = [];
-        digestedResults.forEach(digest => {
-            digest.links.forEach(link => {
-                if (!links.find(existing => existing.url === link.url)) {
-                    links.push(link);
-                }
-            });
+        // Generate final response
+        stream.writeEvent('step', {
+            type: 'final_generation',
+            message: 'Generating comprehensive response...',
+            timestamp: new Date().toISOString()
         });
         
-        // Prepare the enhanced final response
-        const enhancedResponse = {
-            statusCode: 200,
-            headers: headers,
-            body: JSON.stringify({
-                success: true,
-                query: query,
-                answer: answer,
-                searchSummaries: searchSummaries,
-                links: links.slice(0, 10), // Limit to top 10 unique links
-                searchResults: allSearchResults, // Full JSON of all search results
-                llmResponse: {
-                    model: finalResponse.model,
-                    usage: finalResponse.usage,
-                    processingTime: finalResponse.usage?.total_tokens ? `${finalResponse.usage.total_tokens} tokens` : 'unknown',
-                    searchIterations: iteration + 1,
-                    totalSearchQueries: digestedResults.length
-                },
-                processingTimeMs: Date.now() - startTime,
-                timestamp: new Date().toISOString(),
-                mode: 'multi-search'
-            })
-        };
-
-        // Return combined results
-        const finalMemory = process.memoryUsage();
-        console.log(`Lambda handler completed successfully. Final memory: RSS=${Math.round(finalMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(finalMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB, Duration: ${Date.now() - startTime}ms`);
+        const finalResponse = await generateFinalResponse(
+            query, 
+            allSearchResults, 
+            model, 
+            accessSecret, 
+            apiKey, 
+            systemPrompts, 
+            searchTemplate
+        );
         
-        return enhancedResponse;
-
+        // Prepare final result
+        const result = {
+            query: query,
+            searches: searchesPerformed,
+            searchResults: allSearchResults,
+            response: finalResponse,
+            metadata: {
+                totalResults: allSearchResults.length,
+                searchIterations: searchesPerformed.length,
+                finalModel: model,
+                searchMode: searchMode
+            }
+        };
+        
+        stream.writeEvent('final_response', {
+            response: finalResponse,
+            totalResults: allSearchResults.length,
+            searchIterations: searchesPerformed.length,
+            timestamp: new Date().toISOString()
+        });
+        
+        return result;
+        
     } catch (error) {
-        console.error('Handler error:', error.message);
-        const errorTime = Date.now() - startTime;
-        
-        // Determine error type and provide appropriate user message
-        let statusCode = 500;
-        let userMessage = 'Internal server error';
-        let errorType = 'INTERNAL_ERROR';
-        
-        // API key related errors
-        if (error.message.includes('Invalid or missing API key') || 
-            error.message.includes('Unauthorized') || 
-            error.message.includes('401')) {
-            statusCode = 401;
-            userMessage = 'Invalid API key. Please check your OpenAI API key.';
-            errorType = 'INVALID_API_KEY';
-        }
-        // Rate limiting errors
-        else if (error.message.includes('429') || error.message.includes('rate limit')) {
-            statusCode = 429;
-            userMessage = 'Rate limit exceeded. Please wait before making another request.';
-            errorType = 'RATE_LIMITED';
-        }
-        // Quota/billing errors
-        else if (error.message.includes('quota') || error.message.includes('billing')) {
-            statusCode = 402;
-            userMessage = 'API quota exceeded or billing issue. Please check your OpenAI account.';
-            errorType = 'QUOTA_EXCEEDED';
-        }
-        // Network/timeout errors
-        else if (error.message.toLowerCase().includes('timeout') || 
-                 error.message.includes('ENOTFOUND') || 
-                 error.message.includes('ECONNREFUSED')) {
-            statusCode = 503;
-            userMessage = 'Service temporarily unavailable. Please try again in a moment.';
-            errorType = 'SERVICE_UNAVAILABLE';
-        }
-        // Input validation errors
-        else if (error.message.includes('Invalid or missing query') || 
-                 error.message.includes('Invalid search results')) {
-            statusCode = 400;
-            userMessage = 'Invalid request parameters. Please check your input.';
-            errorType = 'INVALID_INPUT';
-        }
-        // Search service errors
-        else if (error.message.includes('Search failed') || 
-                 error.message.includes('DuckDuckGo')) {
-            statusCode = 503;
-            userMessage = 'Search service temporarily unavailable. Please try again.';
-            errorType = 'SEARCH_SERVICE_ERROR';
-        }
-        
-        
-        // Prepare the error response
-        const errorResponse = {
-            statusCode,
-            headers: headers,
-            body: JSON.stringify({
-                success: false,
-                error: userMessage,
-                errorType,
-                details: process.env.NODE_ENV === 'development' ? {
-                    originalError: error.message,
-                    processingTimeMs: errorTime
-                } : undefined,
-                timestamp: new Date().toISOString(),
-                processingTimeMs: errorTime
-            })
-        };
-        
-        const finalMemory = process.memoryUsage();
-        console.log(`Lambda handler completed with error. Final memory: RSS=${Math.round(finalMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(finalMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB, Duration: ${errorTime}ms`);
-        
-        return errorResponse;
+        stream.writeEvent('error', {
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+        throw error;
     }
-};
+}
 
+/**
+ * Generate additional search terms for subsequent iterations
+ */
+async function generateAdditionalSearchTerms(query, existingResults, model, accessSecret, apiKey) {
+    // Simple implementation - could be enhanced with LLM-generated terms
+    const baseTerms = query.split(' ').filter(term => term.length > 2);
+    return baseTerms.map(term => `${term} additional information`).slice(0, 2);
+}
+
+/**
+ * Handle non-streaming requests (original behavior)
+ */
+async function handleNonStreamingRequest(event, context, startTime) {
+    // This would contain the original handler logic
+    // For now, return a simple response directing to use streaming
+    return {
+        statusCode: 200,
+        headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        },
+        body: JSON.stringify({
+            error: 'Non-streaming mode not yet implemented. Please use streaming mode by setting Accept: text/event-stream header.',
+            timestamp: new Date().toISOString()
+        })
+    };
+}

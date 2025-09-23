@@ -18,15 +18,23 @@ An intelligent AWS Lambda function that combines web search with LLM processing 
 
 ## Multi-Search Enhancement
 
-The system now supports intelligent multi-search loops that can perform up to 3 iterations of searching:
+The system now supports intelligent multi-search loops with **comprehensive coverage bias** that can perform up to 3 iterations of searching:
 
 ### How It Works
 
-1. **Initial Decision**: LLM analyzes the query and determines if it needs search, providing 1-3 optimized search queries
-2. **Search Execution**: Each search query is executed independently against DuckDuckGo
-3. **Result Digestion**: Each set of search results is processed and summarized by the LLM
-4. **Continuation Decision**: LLM analyzes gathered information to determine if additional searches are needed
-5. **Final Synthesis**: All information is combined into a comprehensive, well-cited response
+1. **Comprehensive Initial Decision**: LLM analyzes the query with a bias toward thoroughness, providing 2-3 optimized search queries that cover different aspects and angles
+2. **Multi-Angle Search Execution**: Each search query is executed independently against DuckDuckGo to gather diverse perspectives
+3. **Thorough Result Digestion**: Each set of search results is comprehensively analyzed and summarized with all key details and insights
+4. **Aggressive Continuation Decision**: LLM analyzes gathered information with a strong bias toward additional searches to ensure no important aspects are missed
+5. **Expert-Level Final Synthesis**: All information is expertly combined into a comprehensive, authoritative, well-cited response
+
+### Key Enhancements for Comprehensive Coverage
+
+- **Broader Search Strategy**: Decision templates encourage 2-3 complementary searches covering different aspects
+- **Thorough Analysis**: Each search digest captures comprehensive details, not just summaries  
+- **Aggressive Continuation**: System biases toward additional searches when they could improve answer quality
+- **Expert Synthesis**: Final responses are crafted to be authoritative and comprehensive
+- **Enhanced Prompting**: All prompts emphasize thoroughness, completeness, and multi-angle coverage
 
 ### Enhanced Response Format
 
@@ -34,37 +42,46 @@ The system now supports intelligent multi-search loops that can perform up to 3 
 {
   "success": true,
   "query": "Your question",
-  "answer": "Comprehensive response synthesized from multiple searches",
+  "answer": "Comprehensive, expertly-synthesized response from multiple comprehensive searches",
   "searchSummaries": [
     {
-      "searchQuery": "search terms used",
-      "summary": "Key findings from this search"
+      "searchQuery": "broad overview search terms",
+      "summary": "Comprehensive findings with key details and insights"
+    },
+    {
+      "searchQuery": "specific aspect search terms", 
+      "summary": "Detailed analysis of specific aspects"
+    },
+    {
+      "searchQuery": "related context search terms",
+      "summary": "Background and contextual information"
     }
   ],
   "links": [
     {
-      "title": "Source Title",
+      "title": "Authoritative Source Title",
       "url": "https://example.com",
-      "snippet": "Brief description..."
+      "snippet": "Detailed description of source content"
     }
   ],
-  "searchResults": [...], // Full JSON of all search results
+  "searchResults": [...], // Full JSON of all comprehensive search results
   "llmResponse": {
     "model": "gpt-5-nano",
     "usage": {...},
     "searchIterations": 2,
-    "totalSearchQueries": 3
+    "totalSearchQueries": 5
   },
   "mode": "multi-search"
 }
 ```
 
-### Benefits
+### Benefits of Comprehensive Coverage
 
-- **Comprehensive Coverage**: Multiple targeted searches cover different aspects of complex questions
-- **Iterative Refinement**: Follow-up searches fill knowledge gaps identified in initial results
-- **Better Source Coverage**: Diverse search queries lead to more comprehensive source material
-- **Intelligent Stopping**: System stops when sufficient information is gathered, avoiding unnecessary API calls
+- **Multi-Angle Analysis**: 2-3 complementary searches ensure all important perspectives are covered
+- **Aggressive Thoroughness**: System biases toward more searches rather than fewer to ensure completeness
+- **Expert-Level Responses**: Final synthesis provides authoritative, comprehensive answers
+- **No Stone Unturned**: Continuation logic actively seeks to fill any knowledge gaps
+- **Rich Source Material**: Diverse search strategies lead to comprehensive source coverage
 
 ## Quick Start
 

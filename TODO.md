@@ -1,5 +1,7 @@
 # TODO
 
+remove the feature of posting the templates and prompts from both the UI and the lambda function. store the templates and prompts in the .env file and update the deploy script to set those variables
+
 ## ✅ COMPLETED: Multi-Search Loop Implementation
 
 ✅ Changed the Lambda function to support iterative search cycles (up to 3 iterations)
