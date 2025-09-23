@@ -1099,7 +1099,7 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     // Show loading message
     responseContainer.className = 'response-container loading';
     responseContainer.style.display = 'block';
-    responseContainer.textContent = 'Sending request to Lambda function...';
+    responseContainer.textContent = 'Sending request...';
     
     // Get the selected model to determine which API key to use
     const selectedModel = document.getElementById('model').value;
@@ -1153,11 +1153,11 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     }, timeoutMs);
     
     try {
-        console.log('Sending request to:', 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/');
+    console.log('Sending request to:', 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/');
         console.log('Request data:', formData);
         
         // Update loading message
-        responseContainer.textContent = 'Sending request to Lambda function...';
+        responseContainer.textContent = 'Sending request...';
         
         const response = await fetch('https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/', {
             method: 'POST',
@@ -1342,6 +1342,53 @@ async function handleStreamingResponse(response, responseContainer) {
     const metadataElement = document.getElementById('streaming-metadata');
     const metadataContent = document.getElementById('metadata-content');
     
+    // Live results container (progressively updated)
+    const resultsContainerId = 'live-results';
+    let resultsContainer = document.getElementById(resultsContainerId);
+    if (!resultsContainer) {
+        resultsContainer = document.createElement('div');
+        resultsContainer.id = resultsContainerId;
+        resultsContainer.style.marginTop = '10px';
+        responseContainer.appendChild(resultsContainer);
+    }
+    
+    function renderResultsSection(title, results) {
+        const details = document.createElement('details');
+        details.className = 'search-results-section';
+        details.open = true;
+        const summary = document.createElement('summary');
+        summary.innerHTML = `<strong>${title}</strong> (${results.length} total)`;
+        details.appendChild(summary);
+        const wrap = document.createElement('div');
+        wrap.className = 'search-results';
+        results.slice(0, 20).forEach(r => {
+            const item = document.createElement('div');
+            item.className = 'result-item';
+            item.innerHTML = `
+                <h4><a href="${r.url}" target="_blank" rel="noopener noreferrer">${r.title || r.url}</a></h4>
+                <p class="result-description">${r.description || 'No description available'}</p>
+                <p class="result-url"><small>${r.url}</small></p>
+            `;
+            wrap.appendChild(item);
+        });
+        if (results.length > 20) {
+            const more = document.createElement('p');
+            more.innerHTML = `<em>... and ${results.length - 20} more results</em>`;
+            wrap.appendChild(more);
+        }
+        details.appendChild(wrap);
+        return details;
+    }
+    
+    function updateLiveSummary(searches, total) {
+        metadataElement.style.display = 'block';
+        const iters = [...new Set((searches || []).map(s => s.iteration))];
+        metadataContent.innerHTML = `
+            <div><strong>Total results so far:</strong> ${total || 0}</div>
+            <div><strong>Searches performed:</strong> ${(searches || []).length} across ${iters.length} iteration(s)</div>
+        `;
+    }
+    
     try {
         // Handle streaming response
         const reader = response.body.getReader();
@@ -1397,15 +1444,18 @@ async function handleStreamingResponse(response, responseContainer) {
                             break;
                             
                         case 'decision':
-                            const searchStrategy = eventData.decision.requiresSearch ? 'Multi-search required' : 'Direct response';
-                            stepsElement.innerHTML += `
-                                <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                    <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                        <span>🎯</span> Search Strategy: ${searchStrategy}
+                            {
+                                const needsSearch = (eventData.decision && (eventData.decision.needsSearch ?? eventData.decision.requiresSearch)) || false;
+                                const searchStrategy = needsSearch ? 'Multi-search required' : 'Direct response';
+                                stepsElement.innerHTML += `
+                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                        <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;\">
+                                            <span>🎯</span> Search Strategy: ${searchStrategy}
+                                        </div>
+                                        ${eventData.decision && eventData.decision.searchTerms ? `<div style=\"opacity: 0.9;\"><strong>Search Terms:</strong> ${eventData.decision.searchTerms.join(', ')}</div>` : ''}
                                     </div>
-                                    ${eventData.decision.searchTerms ? `<div style="opacity: 0.9;"><strong>Search Terms:</strong> ${eventData.decision.searchTerms.join(', ')}</div>` : ''}
-                                </div>
-                            `;
+                                `;
+                            }
                             break;
                             
                         case 'step':
@@ -1427,17 +1477,30 @@ async function handleStreamingResponse(response, responseContainer) {
                             break;
                             
                         case 'search_results':
-                            stepsElement.innerHTML += `
-                                <div style="margin: 5px 0; padding: 12px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); border-radius: 6px; box-shadow: 0 1px 5px rgba(0,0,0,0.1);">
-                                    <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
-                                        <span style="color: #28a745;">✅</span>
-                                        <span>"${eventData.term}"</span>
-                                        <span style="background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; color: #333;">
-                                            ${eventData.resultsCount} results
-                                        </span>
+                            {
+                                const { term, iteration, resultsCount, results, cumulativeResultsCount, allResults, searches } = eventData;
+                                stepsElement.innerHTML += `
+                                    <div style=\"margin: 5px 0; padding: 12px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); border-radius: 6px; box-shadow: 0 1px 5px rgba(0,0,0,0.1);\">
+                                        <div style=\"display: flex; align-items: center; gap: 8px; font-weight: 500;\">
+                                            <span style=\"color: #28a745;\">✅</span>
+                                            <span>\"${term}\"</span>
+                                            <span style=\"background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; color: #333;\">
+                                                ${resultsCount} results (total ${cumulativeResultsCount || 0})
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                            `;
+                                `;
+                                statusElement.textContent = `📥 Received ${resultsCount} result(s) for "${term}" (iteration ${iteration}) — total ${cumulativeResultsCount || 0}`;
+                                // Live sections
+                                resultsContainer.innerHTML = '';
+                                if (Array.isArray(results) && results.length) {
+                                    resultsContainer.appendChild(renderResultsSection(`Results for "${term}" (iteration ${iteration})`, results));
+                                }
+                                if (Array.isArray(allResults) && allResults.length) {
+                                    resultsContainer.appendChild(renderResultsSection('All results so far', allResults));
+                                }
+                                updateLiveSummary(searches || [], cumulativeResultsCount || 0);
+                            }
                             break;
                             
                         case 'continuation':
@@ -1483,6 +1546,13 @@ async function handleStreamingResponse(response, responseContainer) {
                         case 'complete':
                             statusElement.textContent = `✅ Complete! Total time: ${Math.round(eventData.executionTime)}ms`;
                             responseContainer.className = 'response-container response-success';
+                            // Append final snapshot if present
+                            if (Array.isArray(eventData.allResults) && eventData.allResults.length) {
+                                const finalContainer = document.createElement('div');
+                                finalContainer.style.marginTop = '10px';
+                                finalContainer.appendChild(renderResultsSection('Final results', eventData.allResults));
+                                responseContainer.appendChild(finalContainer);
+                            }
                             break;
                             
                         case 'error':
