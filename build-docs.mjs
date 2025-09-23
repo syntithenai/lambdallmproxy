@@ -53,7 +53,7 @@ function loadEnvFile() {
 }
 
 function validateEnvVars(envVars) {
-    const required = ['LAMBDA_URL', 'ACCESS_SECRET'];
+    const required = ['LAMBDA_URL', 'ACCESS_SECRET', 'GOOGLE_CLIENT_ID'];
     const missing = required.filter(key => !envVars[key]);
     
     if (missing.length > 0) {
@@ -80,14 +80,15 @@ function buildDocs(envVars) {
     // Replace placeholders with environment variables (excluding OPENAI_API_KEY)
     content = content
         .replace(/\{\{LAMBDA_URL\}\}/g, envVars.LAMBDA_URL)
-        .replace(/\{\{ACCESS_SECRET\}\}/g, envVars.ACCESS_SECRET);
+        .replace(/\{\{ACCESS_SECRET\}\}/g, envVars.ACCESS_SECRET)
+        .replace(/\{\{GOOGLE_CLIENT_ID\}\}/g, envVars.GOOGLE_CLIENT_ID);
 
     // Write output file
     fs.writeFileSync(outputPath, content, 'utf8');
 
     log('info', 'Documentation built successfully!');
     log('info', '📁 Output: docs/index.html');
-    log('warn', '⚠️  The docs/index.html file contains your Lambda URL and access secret');
+    log('warn', '⚠️  The docs/index.html file contains your Lambda URL, access secret, and Google Client ID');
     log('warn', '⚠️  OpenAI API key is kept as placeholder for manual entry');
 }
 

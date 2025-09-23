@@ -39,6 +39,10 @@ if [ -z "$ACCESS_SECRET" ]; then
     missing_vars+=("ACCESS_SECRET")
 fi
 
+if [ -z "$GOOGLE_CLIENT_ID" ]; then
+    missing_vars+=("GOOGLE_CLIENT_ID")
+fi
+
 if [ ${#missing_vars[@]} -gt 0 ]; then
     log_error "Missing required environment variables:"
     for var in "${missing_vars[@]}"; do
@@ -57,11 +61,12 @@ log_info "Building documentation with environment variables..."
 
 # Use sed to replace placeholders with actual environment variables (excluding OPENAI_API_KEY)
 sed "s|{{LAMBDA_URL}}|$LAMBDA_URL|g" test.html | \
-sed "s|{{ACCESS_SECRET}}|$ACCESS_SECRET|g" > docs/index.html
+sed "s|{{ACCESS_SECRET}}|$ACCESS_SECRET|g" | \
+sed "s|{{GOOGLE_CLIENT_ID}}|$GOOGLE_CLIENT_ID|g" > docs/index.html
 
 log_info "Documentation built successfully!"
 log_info "📁 Output: docs/index.html"
-log_warn "⚠️  The docs/index.html file contains your Lambda URL and access secret"
+log_warn "⚠️  The docs/index.html file contains your Lambda URL, access secret, and Google Client ID"
 log_warn "⚠️  OpenAI API key is kept as placeholder for manual entry"
 
 # Verify the file was created

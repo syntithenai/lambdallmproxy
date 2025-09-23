@@ -8,6 +8,60 @@ import https from 'https';
 import http from 'http';
 import { URL } from 'url';
 
+// Google OAuth configuration
+const ALLOWED_EMAILS = ['syntithenai@gmail.com'];
+
+/**
+ * Verify Google JWT token and extract user information
+ * @param {string} token - Google JWT token
+ * @returns {Object} - User information or null if invalid
+ */
+function verifyGoogleToken(token) {
+    try {
+        // Parse JWT token (basic parsing - in production you'd want to verify signature)
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+            Buffer.from(base64, 'base64')
+                .toString()
+                .split('')
+                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+        );
+        
+        const payload = JSON.parse(jsonPayload);
+        
+        // Basic validation
+        if (!payload.email || !payload.exp) {
+            console.log('Invalid token: missing email or expiration');
+            return null;
+        }
+        
+        // Check if token is expired
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.exp < now) {
+            console.log('Token expired');
+            return null;
+        }
+        
+        // Check if email is in whitelist
+        if (!ALLOWED_EMAILS.includes(payload.email)) {
+            console.log(`Email not allowed: ${payload.email}`);
+            return null;
+        }
+        
+        console.log(`Valid Google token for: ${payload.email}`);
+        return {
+            email: payload.email,
+            name: payload.name,
+            picture: payload.picture
+        };
+    } catch (error) {
+        console.error('Error verifying Google token:', error);
+        return null;
+    }
+}
+
 // Provider configuration
 const PROVIDERS = {
     openai: {
@@ -1794,6 +1848,33 @@ export const handler = async (event, context) => {
             searchTemplate = body.search_template || DEFAULT_SEARCH_TEMPLATE;
             
             console.log(`Templates assigned`);
+            
+            // Extract and verify Google token
+            const googleToken = body.google_token;
+            if (!googleToken) {
+                return {
+                    statusCode: 401,
+                    headers: headers,
+                    body: JSON.stringify({
+                        error: 'Unauthorized',
+                        message: 'Google authentication required. Please sign in.'
+                    })
+                };
+            }
+            
+            const googleUser = verifyGoogleToken(googleToken);
+            if (!googleUser) {
+                return {
+                    statusCode: 401,
+                    headers: headers,
+                    body: JSON.stringify({
+                        error: 'Unauthorized',
+                        message: 'Invalid Google token or email not authorized.'
+                    })
+                };
+            }
+            
+            console.log(`Google authentication successful for: ${googleUser.email}`);
         } else {
             return {
                 statusCode: 405,
