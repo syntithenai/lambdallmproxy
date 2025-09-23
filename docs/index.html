@@ -619,6 +619,22 @@
             font-size: 0.9em;
             font-weight: 500;
         }
+
+        /* Auth banner */
+        .auth-banner {
+            margin: 10px 0 15px 0;
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            background: #f8f9fa;
+            color: #495057;
+            display: none;
+        }
+        .auth-banner.info { border-left: 4px solid #17a2b8; }
+        .auth-banner.warn { border-left: 4px solid #ffc107; }
+        .auth-banner.ok { border-left: 4px solid #28a745; }
+        .auth-banner.error { border-left: 4px solid #dc3545; }
+        .auth-banner small { color: #6c757d; }
     </style>
 </head>
 <body>
@@ -664,6 +680,7 @@
 <div class="form-container">
     <form id="llm-form">
         <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
+        <div id="auth-banner" class="auth-banner"></div>
         
         <div class="form-row-top">
             <h1>AI Search</h1>
@@ -703,7 +720,7 @@
                 </div>
             </div>
             
-            <button type="submit" id="submit-btn" disabled>Sign in to Send Request</button>
+            <button type="submit" id="submit-btn" disabled>Sign in or add an API key</button>
         </div>
 
         <div class="form-row-bottom">
@@ -735,6 +752,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const clearOpenaiButton = document.getElementById('clear_openai_api_key');
     const clearGroqButton = document.getElementById('clear_groq_api_key');
     const modelSelect = document.getElementById('model');
+    const authBanner = document.getElementById('auth-banner');
     
     // Login elements
     const loginBtn = document.getElementById('login-btn');
@@ -757,6 +775,20 @@ document.addEventListener('DOMContentLoaded', function() {
         statusElement.style.color = color;
     }
     
+    // Auth banner helpers
+    function setAuthBanner(kind, html) {
+        if (!authBanner) return;
+        authBanner.className = `auth-banner ${kind}`;
+        authBanner.innerHTML = html;
+        authBanner.style.display = 'block';
+    }
+    function clearAuthBanner() {
+        if (!authBanner) return;
+        authBanner.style.display = 'none';
+        authBanner.className = 'auth-banner';
+        authBanner.innerHTML = '';
+    }
+    
     // Google OAuth functions
     function initializeGoogleOAuth() {
         if (typeof google !== 'undefined' && google.accounts) {
@@ -772,7 +804,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 googleAccessToken = savedToken;
                 googleUser = JSON.parse(savedUser);
                 updateLoginUI(true);
-                updateSubmitButton(true);
+                updateSubmitButton();
+                updateModelAvailability();
                 console.log('Restored Google session');
             }
         } else {
@@ -796,7 +829,8 @@ document.addEventListener('DOMContentLoaded', function() {
             localStorage.setItem('google_user', JSON.stringify(googleUser));
             
             updateLoginUI(true);
-            updateSubmitButton(true);
+            updateSubmitButton();
+            updateModelAvailability();
             console.log('Google sign-in successful:', googleUser.email);
         } catch (error) {
             console.error('Error handling Google sign-in:', error);
@@ -821,20 +855,33 @@ document.addEventListener('DOMContentLoaded', function() {
                     <span class="logout-text">Logout</span>
                 </div>
             `;
+            setAuthBanner('ok', `
+                <strong>Signed in as ${googleUser.email}</strong><br>
+                <small>If your account is authorized, the server can use its own provider API keys when you leave the key fields empty.</small>
+            `);
         } else {
             loginBtn.classList.remove('logged-in');
             loginBtn.innerHTML = '<span id="login-text">Sign in with Google</span>';
+            setAuthBanner('warn', `
+                <strong>Not signed in</strong> — Provide your own OpenAI/Groq API key in Settings to enable requests.
+            `);
         }
     }
     
-    function updateSubmitButton(isLoggedIn) {
-        if (isLoggedIn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Send Request';
-        } else {
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Sign in to Send Request';
-        }
+    function hasLocalKeyForModel() {
+        const sel = modelSelect.value || '';
+        const openaiKey = (openaiApiKeyInput.value || '').trim();
+        const groqKey = (groqApiKeyInput.value || '').trim();
+        if (sel.startsWith('openai:')) return !!openaiKey;
+        if (sel.startsWith('groq:')) return !!groqKey;
+        return false;
+    }
+    function updateSubmitButton() {
+        const signedIn = !!googleAccessToken;
+        const localKeyOk = hasLocalKeyForModel();
+        const canSubmit = signedIn || localKeyOk;
+        submitBtn.disabled = !canSubmit;
+        submitBtn.textContent = canSubmit ? 'Send Request' : 'Sign in or add an API key';
     }
     
     function handleLogin() {
@@ -845,6 +892,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // User is not logged in, so show sign-in prompt
             if (typeof google !== 'undefined' && google.accounts) {
                 google.accounts.id.prompt();
+                // After prompt, state may change; attempt to refresh UI shortly
+                setTimeout(() => { updateSubmitButton(); updateModelAvailability(); }, 1500);
             } else {
                 console.error('Google Identity Services not available');
             }
@@ -857,17 +906,19 @@ document.addEventListener('DOMContentLoaded', function() {
         localStorage.removeItem('google_access_token');
         localStorage.removeItem('google_user');
         updateLoginUI(false);
-        updateSubmitButton(false);
+        updateSubmitButton();
+        updateModelAvailability();
         console.log('Logged out');
     }
     
     // Function to update model availability based on API keys
     function updateModelAvailability() {
         console.log('updateModelAvailability called');
-        const hasOpenaiKey = openaiApiKeyInput.value.trim() && openaiApiKeyInput.value !== '';
-        const hasGroqKey = groqApiKeyInput.value.trim() && groqApiKeyInput.value !== '';
+        const hasOpenaiKey = !!(openaiApiKeyInput.value && openaiApiKeyInput.value.trim());
+        const hasGroqKey = !!(groqApiKeyInput.value && groqApiKeyInput.value.trim());
+        const signedIn = !!googleAccessToken;
         
-        console.log('hasOpenaiKey:', hasOpenaiKey, 'hasGroqKey:', hasGroqKey);
+        console.log('hasOpenaiKey:', hasOpenaiKey, 'hasGroqKey:', hasGroqKey, 'signedIn:', signedIn);
         
         // Enable/disable individual options based on available API keys, but keep them visible
         const allOptions = modelSelect.querySelectorAll('option');
@@ -882,14 +933,14 @@ document.addEventListener('DOMContentLoaded', function() {
             
             let shouldEnable = false;
             if (option.value.startsWith('openai:')) {
-                shouldEnable = hasOpenaiKey;
+                shouldEnable = hasOpenaiKey || signedIn;
                 // Add visual indicator for disabled options
                 option.textContent = option.textContent.replace(' (requires API key)', '');
                 if (!shouldEnable) {
                     option.textContent += ' (requires API key)';
                 }
             } else if (option.value.startsWith('groq:')) {
-                shouldEnable = hasGroqKey;
+                shouldEnable = hasGroqKey || signedIn;
                 // Add visual indicator for disabled options
                 option.textContent = option.textContent.replace(' (requires API key)', '');
                 if (!shouldEnable) {
@@ -909,8 +960,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        // If no keys available, disable the entire selector
-        if (!hasAvailableOptions) {
+        // If no keys and not signed in, disable the entire selector
+        if (!hasAvailableOptions && !signedIn) {
             modelSelect.disabled = true;
             console.log('No API keys available, disabling model select');
         } else {
@@ -979,12 +1030,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update model availability on initial load
     updateModelAvailability();
+    updateSubmitButton();
     
     // Set initial default model
     setInitialDefaultModel();
     
     // Also call it after a small delay to ensure localStorage values are set
-    setTimeout(updateModelAvailability, 100);
+    setTimeout(() => { updateModelAvailability(); updateSubmitButton(); }, 100);
     
     // Save OpenAI API key when it changes
     openaiApiKeyInput.addEventListener('input', function() {
@@ -1051,9 +1103,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function checkInitialSettings() {
         const hasOpenaiKey = localStorage.getItem('openai_api_key');
         const hasGroqKey = localStorage.getItem('groq_api_key');
+        const signedIn = !!localStorage.getItem('google_access_token');
         
-        // Open settings dialog by default if no API keys are set
-        if (!hasOpenaiKey && !hasGroqKey) {
+        // Open settings dialog by default if no API keys are set and not signed in
+        if (!hasOpenaiKey && !hasGroqKey && !signedIn) {
             openSettings();
         }
     }
@@ -1084,6 +1137,27 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Check initial settings after everything is loaded
     checkInitialSettings();
+
+    // Keep submit button state in sync with inputs
+    modelSelect.addEventListener('change', () => { updateModelAvailability(); updateSubmitButton(); });
+    openaiApiKeyInput.addEventListener('input', () => { updateModelAvailability(); updateSubmitButton(); });
+    groqApiKeyInput.addEventListener('input', () => { updateModelAvailability(); updateSubmitButton(); });
+
+    // When Tab is pressed inside the textarea, move focus to the Submit button
+    const promptTextarea = document.getElementById('prompt');
+    if (promptTextarea) {
+        promptTextarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault();
+                // Focus the Send Request button
+                if (submitBtn) {
+                    submitBtn.focus();
+                }
+            }
+        });
+    }
+    // Ensure button state is accurate after wiring listeners
+    updateSubmitButton();
 });
 
 document.getElementById('llm-form').addEventListener('submit', async function(e) {
@@ -1114,19 +1188,12 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         apiKey = document.getElementById('openai_api_key').value;
     }
     
-    // Validate API key
-    if (!apiKey || !apiKey.trim()) {
+    // Validate that we have either a local API key or a Google login (server env keys may apply)
+    const hasLocalKey = apiKey && apiKey.trim();
+    const isSignedIn = !!googleAccessToken;
+    if (!hasLocalKey && !isSignedIn) {
         responseContainer.className = 'response-container response-error';
-        responseContainer.textContent = `Error: No API key provided for ${isGroqModel ? 'Groq' : 'OpenAI'} models.`;
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Send Request';
-        return;
-    }
-    
-    // Validate login
-    if (!googleAccessToken) {
-        responseContainer.className = 'response-container response-error';
-        responseContainer.textContent = 'Error: Please sign in with Google to send requests.';
+    responseContainer.textContent = 'Error: Please sign in with Google or provide an API key in Settings to proceed.';
         submitBtn.disabled = false;
         submitBtn.textContent = 'Send Request';
         return;
@@ -1135,16 +1202,17 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     // Collect form data
     const searchMode = document.querySelector('input[name="search_mode"]:checked').value;
     const formData = {
-        apiKey: apiKey,  // Changed from api_key to apiKey
+        // Only include apiKey if user provided one; otherwise server may use env keys for authorized accounts
+        ...(hasLocalKey ? { apiKey: apiKey } : {}),
         model: selectedModel,
         query: document.getElementById('prompt').value,
         accessSecret: document.getElementById('access_secret').value,  // Changed from access_secret to accessSecret
         searchMode: searchMode,  // Changed from search_mode to searchMode
-        google_token: googleAccessToken // Add Google access token
+        ...(isSignedIn ? { google_token: googleAccessToken } : {})
     };
 
-    // Set a reasonable default timeout (60 seconds)
-    const timeoutMs = 60000;
+    // Set a reasonable default timeout (90 seconds)
+    const timeoutMs = 90000;
 
     // Create an AbortController for timeout handling
     const controller = new AbortController();
@@ -1291,7 +1359,7 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         
         if (error.name === 'AbortError') {
             // Request was aborted due to timeout
-            responseContainer.textContent = `Request Timeout Error:\n\nThe request timed out after 60 seconds. The Lambda function may be taking longer than expected to process your request.\n\nYou can try:\n- Simplifying your query\n- Checking if the Lambda function is running properly\n- Trying again in a moment`;
+            responseContainer.textContent = `Request Timeout Error:\n\nThe request timed out after 90 seconds. The Lambda function may be taking longer than expected to process your request.\n\nYou can try:\n- Simplifying your query\n- Checking if the Lambda function is running properly\n- Trying again in a moment`;
         } else {
             // Other network or fetch errors
             responseContainer.textContent = `Network Error:\n\n${error.message}\n\nCheck browser console for more details.`;
@@ -1441,6 +1509,12 @@ async function handleStreamingResponse(response, responseContainer) {
                             
                         case 'init':
                             statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
+                            if (eventData.allowEnvFallback) {
+                                const note = document.createElement('div');
+                                note.style.cssText = 'margin-top:6px;color:#155724;font-size:0.9em;';
+                                note.textContent = 'Note: Using server-managed API keys (authorized user).';
+                                statusElement.parentElement.appendChild(note);
+                            }
                             break;
                             
                         case 'decision':
