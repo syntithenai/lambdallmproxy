@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build script for LLM Proxy documentation
-# Copies test.html to docs/ folder and replaces environment variables
+# Copies index_template.html to docs/ folder and replaces environment variables
 
 set -e
 
@@ -56,11 +56,11 @@ fi
 log_info "Creating docs directory..."
 mkdir -p docs
 
-# Copy test.html to docs/index.html and replace environment variables
+# Copy index_template.html to docs/index.html and replace environment variables
 log_info "Building documentation with environment variables..."
 
 # Use sed to replace placeholders with actual environment variables (excluding OPENAI_API_KEY)
-sed "s|{{LAMBDA_URL}}|$LAMBDA_URL|g" test.html | \
+sed "s|{{LAMBDA_URL}}|$LAMBDA_URL|g" index_template.html | \
 sed "s|{{ACCESS_SECRET}}|$ACCESS_SECRET|g" | \
 sed "s|{{GOOGLE_CLIENT_ID}}|$GOOGLE_CLIENT_ID|g" > docs/index.html
 

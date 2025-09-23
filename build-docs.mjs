@@ -2,7 +2,7 @@
 
 /**
  * Build script for LLM Proxy documentation
- * Copies test.html to docs/ folder and replaces environment variables
+ * Copies index_template.html to docs/ folder and replaces environment variables
  */
 
 import fs from 'fs';
@@ -65,7 +65,7 @@ function validateEnvVars(envVars) {
 }
 
 function buildDocs(envVars) {
-    const testHtmlPath = path.join(__dirname, 'test.html');
+    const testHtmlPath = path.join(__dirname, 'index_template.html');
     const docsDir = path.join(__dirname, 'docs');
     const outputPath = path.join(docsDir, 'index.html');
 

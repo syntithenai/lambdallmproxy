@@ -34,9 +34,30 @@
 
         .form-row {
             display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .form-row-top {
+            display: flex;
             align-items: center;
             gap: 15px;
             flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .form-row-bottom {
+            width: 100%;
+        }
+
+        .form-row-bottom .form-group {
+            width: 100%;
+        }
+
+        .form-row-bottom label {
+            display: block;
+            margin-bottom: 6px;
         }
 
         label {
@@ -73,9 +94,10 @@
 
         #prompt {
             flex: 1;
-            resize: none;
-            height: 36px;
-            min-height: 36px;
+            resize: vertical;
+            height: auto;
+            min-height: 200px;
+            width: 100%;
         }
 
         .search-mode-group {
@@ -364,6 +386,58 @@
             border-bottom: 1px solid #eee;
             padding-bottom: 0.5rem;
         }
+
+        /* Settings form styles */
+        .settings-dialog .form-group {
+            display: block;
+            margin-bottom: 1.5rem;
+        }
+
+        .settings-dialog .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .settings-dialog textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            resize: vertical;
+            min-height: 60px;
+            box-sizing: border-box;
+        }
+
+        .settings-dialog textarea:focus {
+            outline: none;
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        }
+
+        .settings-separator {
+            height: 1px;
+            background: linear-gradient(to right, transparent, #dee2e6, transparent);
+            margin: 2rem 0;
+            position: relative;
+        }
+
+        .settings-separator::before {
+            content: "Templates";
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 0 1rem;
+            color: #6c757d;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
     </style>
 </head>
 <body>
@@ -422,6 +496,9 @@
                 <textarea id="system-prompt-search" name="system_prompt_search" rows="3" placeholder="System prompt for search-based responses">You are a helpful research assistant. Use the provided search results to answer questions comprehensively. Always cite specific sources using the URLs provided when making factual claims. Format your response in a clear, organized manner.</textarea>
             </div>
 
+            <!-- Separator between system prompts and templates -->
+            <div class="settings-separator"></div>
+
             <div class="form-group">
                 <label for="decision-template">Decision Template:</label>
                 <textarea id="decision-template" name="decision_template" rows="8" placeholder="Template for decision prompts (use {{QUERY}} as placeholder)">Analyze this question and determine if you can answer it directly or if it requires web search for fact-checking.
@@ -460,7 +537,7 @@ Please provide a detailed, well-structured response using the search results. In
     <form id="llm-form">
         <input type="hidden" id="access_secret" name="access_secret" value="{{ACCESS_SECRET}}">
         
-        <div class="form-row">
+        <div class="form-row-top">
             <h1>AI Search</h1>
             
             <div class="form-group">
@@ -497,13 +574,15 @@ Please provide a detailed, well-structured response using the search results. In
                     </div>
                 </div>
             </div>
-
-            <div class="form-group query-group">
-                <label for="prompt">Query:</label>
-                <textarea id="prompt" name="prompt" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
-            </div>
             
             <button type="submit" id="submit-btn" disabled>Sign in to Send Request</button>
+        </div>
+
+        <div class="form-row-bottom">
+            <div class="form-group">
+                <label for="prompt">Query:</label>
+                <textarea id="prompt" name="prompt" rows="10" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
+            </div>
         </div>
     </form>
 </div>
@@ -657,8 +736,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Function to update model availability based on API keys
     function updateModelAvailability() {
         console.log('updateModelAvailability called');
-        const hasOpenaiKey = openaiApiKeyInput.value.trim() && openaiApiKeyInput.value !== '{{OPENAI_API_KEY}}' && openaiApiKeyInput.value !== '';
-        const hasGroqKey = groqApiKeyInput.value.trim() && groqApiKeyInput.value !== '{{GROQ_API_KEY}}' && groqApiKeyInput.value !== '';
+        const hasOpenaiKey = openaiApiKeyInput.value.trim() && openaiApiKeyInput.value !== '';
+        const hasGroqKey = groqApiKeyInput.value.trim() && groqApiKeyInput.value !== '';
         
         console.log('hasOpenaiKey:', hasOpenaiKey, 'hasGroqKey:', hasGroqKey);
         
@@ -755,8 +834,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Set initial default model based on available API keys
     function setInitialDefaultModel() {
-        const hasOpenaiKey = savedOpenaiApiKey && savedOpenaiApiKey.trim() && savedOpenaiApiKey !== '{{OPENAI_API_KEY}}';
-        const hasGroqKey = savedGroqApiKey && savedGroqApiKey.trim() && savedGroqApiKey !== '{{GROQ_API_KEY}}';
+        const hasOpenaiKey = savedOpenaiApiKey && savedOpenaiApiKey.trim();
+        const hasGroqKey = savedGroqApiKey && savedGroqApiKey.trim();
         
         // Only set default if no model is currently selected
         if (!modelSelect.value || modelSelect.value === '') {
@@ -782,7 +861,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Save OpenAI API key when it changes
     openaiApiKeyInput.addEventListener('input', function() {
         const apiKey = this.value.trim();
-        if (apiKey && apiKey !== '{{OPENAI_API_KEY}}') {
+        if (apiKey && apiKey.trim()) {
             localStorage.setItem('openai_api_key', apiKey);
             updateApiKeyStatus('openai_api_key_status', 'Saved to local storage', '#28a745');
             clearOpenaiButton.style.display = 'block';
@@ -796,7 +875,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Save Groq API key when it changes
     groqApiKeyInput.addEventListener('input', function() {
         const apiKey = this.value.trim();
-        if (apiKey && apiKey !== '{{GROQ_API_KEY}}') {
+        if (apiKey && apiKey.trim()) {
             localStorage.setItem('groq_api_key', apiKey);
             updateApiKeyStatus('groq_api_key_status', 'Saved to local storage', '#28a745');
             clearGroqButton.style.display = 'block';
@@ -810,7 +889,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle clear OpenAI button
     clearOpenaiButton.addEventListener('click', function() {
         localStorage.removeItem('openai_api_key');
-        openaiApiKeyInput.value = '{{OPENAI_API_KEY}}';
+        openaiApiKeyInput.value = '';
         updateApiKeyStatus('openai_api_key_status', 'Cleared from local storage', '#dc3545');
         clearOpenaiButton.style.display = 'none';
         updateModelAvailability();
@@ -822,7 +901,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle clear Groq button
     clearGroqButton.addEventListener('click', function() {
         localStorage.removeItem('groq_api_key');
-        groqApiKeyInput.value = '{{GROQ_API_KEY}}';
+        groqApiKeyInput.value = '';
         updateApiKeyStatus('groq_api_key_status', 'Cleared from local storage', '#dc3545');
         clearGroqButton.style.display = 'none';
         updateModelAvailability();
@@ -903,10 +982,8 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     let apiKey;
     if (isGroqModel) {
         apiKey = document.getElementById('groq_api_key').value;
-        if (apiKey === '{{GROQ_API_KEY}}') apiKey = '';
     } else if (isOpenaiModel) {
         apiKey = document.getElementById('openai_api_key').value;
-        if (apiKey === '{{OPENAI_API_KEY}}') apiKey = '';
     }
     
     // Validate API key
