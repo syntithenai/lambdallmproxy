@@ -5,6 +5,7 @@ An intelligent AWS Lambda function that combines web search with LLM processing 
 ## Features
 
 - 🔍 **Intelligent Search Decision Making**: AI determines whether to search or respond directly
+- 🔄 **Multi-Search Loop**: Iterative search refinement with up to 3 search cycles
 - 🌐 **DuckDuckGo Integration**: High-quality search results with sophisticated scoring  
 - 🤖 **Multiple OpenAI Models**: Support for GPT-5, GPT-4, and other models
 - 📱 **Multiple Search Modes**: Auto-detect, Force Search, or Direct Response
@@ -13,6 +14,57 @@ An intelligent AWS Lambda function that combines web search with LLM processing 
 - 🌍 **CORS Enabled**: Ready for browser-based cross-origin requests
 - 📄 **Content Extraction**: Full page content fetching and analysis
 - 📊 **Comprehensive Logging**: Detailed processing metrics and debugging
+- 🔗 **Enhanced Response Format**: Search summaries, source links, and full JSON results
+
+## Multi-Search Enhancement
+
+The system now supports intelligent multi-search loops that can perform up to 3 iterations of searching:
+
+### How It Works
+
+1. **Initial Decision**: LLM analyzes the query and determines if it needs search, providing 1-3 optimized search queries
+2. **Search Execution**: Each search query is executed independently against DuckDuckGo
+3. **Result Digestion**: Each set of search results is processed and summarized by the LLM
+4. **Continuation Decision**: LLM analyzes gathered information to determine if additional searches are needed
+5. **Final Synthesis**: All information is combined into a comprehensive, well-cited response
+
+### Enhanced Response Format
+
+```json
+{
+  "success": true,
+  "query": "Your question",
+  "answer": "Comprehensive response synthesized from multiple searches",
+  "searchSummaries": [
+    {
+      "searchQuery": "search terms used",
+      "summary": "Key findings from this search"
+    }
+  ],
+  "links": [
+    {
+      "title": "Source Title",
+      "url": "https://example.com",
+      "snippet": "Brief description..."
+    }
+  ],
+  "searchResults": [...], // Full JSON of all search results
+  "llmResponse": {
+    "model": "gpt-5-nano",
+    "usage": {...},
+    "searchIterations": 2,
+    "totalSearchQueries": 3
+  },
+  "mode": "multi-search"
+}
+```
+
+### Benefits
+
+- **Comprehensive Coverage**: Multiple targeted searches cover different aspects of complex questions
+- **Iterative Refinement**: Follow-up searches fill knowledge gaps identified in initial results
+- **Better Source Coverage**: Diverse search queries lead to more comprehensive source material
+- **Intelligent Stopping**: System stops when sufficient information is gathered, avoiding unnecessary API calls
 
 ## Quick Start
 

@@ -110,20 +110,22 @@ const DEFAULT_SYSTEM_PROMPTS = {
     search: 'You are a helpful research assistant. Use the provided search results to answer questions comprehensively. Always cite specific sources using the URLs provided when making factual claims. Format your response in a clear, organized manner.'
 };
 
-const DEFAULT_DECISION_TEMPLATE = `Analyze this question and determine if you can answer it directly or if it requires web search for fact-checking.
+const DEFAULT_DECISION_TEMPLATE = `Analyze this question and determine if you can answer it directly or if it requires web searches.
 
 IMPORTANT: Respond ONLY with valid JSON in one of these formats:
 
 For questions you can answer directly (general knowledge, explanations, creative tasks, personal advice):
 {"response": "Your complete answer here"}
 
-For questions requiring current facts, recent events, specific data, or verification:
-{"search_terms": "optimized search terms here"}
+For questions requiring web searches (current events, recent data, specific facts, company information):
+{"search_queries": ["search terms 1", "search terms 2", "search terms 3"]}
 
 Guidelines:
 - Use "response" for: general knowledge, how-to questions, explanations, creative writing, personal advice
-- Use "search_terms" for: current events, recent data, specific facts, company information, recent research
-- If using search_terms, optimize them for web search (remove question words, focus on key terms)
+- Use "search_queries" for: current events, recent data, specific facts, company information, recent research
+- If using search_queries, provide 1-3 distinct search queries that cover different aspects of the question
+- Each search query should be optimized for web search (remove question words, focus on key terms)
+- Order search queries by importance/relevance
 
 Question: "{{QUERY}}"
 
@@ -1258,7 +1260,7 @@ class LLMClient {
      * Process initial decision - whether to search or respond directly
      * @param {string} query - User's original question
      * @param {Object} options - LLM options
-     * @returns {Promise<Object>} Decision response with either 'response' or 'search_terms'
+     * @returns {Promise<Object>} Decision response with either 'response' or 'search_queries'
      */
     async processInitialDecision(query, options = {}) {
         const startTime = Date.now();
@@ -1351,8 +1353,8 @@ class LLMClient {
                             try {
                                 decision = JSON.parse(content);
                             } catch (parseError) {
-                                // Fallback: assume search is needed
-                                decision = { search_terms: query };
+                                // Fallback: assume search is needed with original query
+                                decision = { search_queries: [query] };
                             }
 
                             // Add usage information
@@ -1782,6 +1784,387 @@ class LLMClient {
             return content.slice(0, 2000); // Increased fallback length for 32K
         }
     }
+
+    /**
+     * Digest search results for a single search query
+     * @param {string} searchQuery - The search query used
+     * @param {Array} searchResults - Raw search results
+     * @param {string} originalQuery - Original user question
+     * @param {Object} options - LLM options
+     * @returns {Promise<Object>} Digested summary with key information
+     */
+    async digestSearchResults(searchQuery, searchResults, originalQuery, options = {}) {
+        const {
+            model = 'groq:llama-3.1-8b-instant',
+            timeout = 30000
+        } = options;
+
+        try {
+            // Parse provider and model
+            const { provider, model: modelName } = parseProviderModel(model);
+            const providerConfig = getProviderConfig(provider);
+            
+            const apiKey = this.apiKey;
+            if (!apiKey) {
+                throw new Error(`No API key provided for provider: ${provider}`);
+            }
+
+            // Format search results for digestion
+            const searchContext = searchResults
+                .slice(0, 5) // Focus on top 5 results
+                .map((result, index) => {
+                    let contextEntry = `${index + 1}. ${result.title}\n${result.url}`;
+                    if (result.description) {
+                        contextEntry += `\n${result.description.slice(0, 200)}`;
+                    }
+                    if (result.content) {
+                        contextEntry += `\nContent: ${result.content.slice(0, 400)}`;
+                    }
+                    return contextEntry;
+                })
+                .join('\n\n');
+
+            const digestPrompt = `Analyze these search results for "${searchQuery}" in context of the question "${originalQuery}".
+
+Extract key information, facts, and insights. Create a concise summary (2-3 sentences) with the most relevant information.
+
+Search Results:
+${searchContext}
+
+Provide a focused summary of the most relevant information found:`;
+
+            const requestBody = {
+                model: modelName,
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a research assistant that extracts key information from search results. Focus on factual content relevant to the user\'s question.'
+                    },
+                    {
+                        role: 'user',
+                        content: digestPrompt
+                    }
+                ],
+                max_tokens: 200,
+                temperature: 0.3
+            };
+
+            const postData = JSON.stringify(requestBody);
+            const requestOptions = {
+                hostname: providerConfig.hostname,
+                port: 443,
+                path: providerConfig.path,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+
+            return new Promise((resolve, reject) => {
+                const requestTimeout = setTimeout(() => {
+                    reject(new Error(`Search digest timeout after ${timeout}ms`));
+                }, timeout);
+
+                const req = https.request(requestOptions, (res) => {
+                    clearTimeout(requestTimeout);
+                    let data = '';
+
+                    res.on('data', (chunk) => {
+                        data += chunk;
+                    });
+
+                    res.on('end', () => {
+                        try {
+                            const response = JSON.parse(data);
+                            const content = response.choices?.[0]?.message?.content || 'No summary available';
+                            
+                            // Extract top 2 links with titles
+                            const links = searchResults.slice(0, 2).map(result => ({
+                                title: result.title,
+                                url: result.url,
+                                snippet: result.description ? result.description.slice(0, 100) + '...' : ''
+                            }));
+                            
+                            resolve({
+                                searchQuery,
+                                summary: content,
+                                links,
+                                rawResults: searchResults
+                            });
+                        } catch (parseError) {
+                            reject(new Error(`Failed to parse digest response: ${parseError.message}`));
+                        }
+                    });
+                });
+
+                req.on('error', (error) => {
+                    clearTimeout(requestTimeout);
+                    reject(new Error(`Digest network error: ${error.message}`));
+                });
+
+                req.setTimeout(timeout);
+                req.write(postData);
+                req.end();
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Determine if additional searches are needed based on current information
+     * @param {string} originalQuery - Original user question
+     * @param {Array} digestedResults - Array of digested search results
+     * @param {number} currentIteration - Current search iteration (0-based)
+     * @param {Object} options - LLM options
+     * @returns {Promise<Object>} Decision on whether to continue searching
+     */
+    async shouldContinueSearching(originalQuery, digestedResults, currentIteration, options = {}) {
+        const {
+            model = 'groq:llama-3.1-8b-instant',
+            timeout = 30000
+        } = options;
+
+        // Always stop after 3 iterations
+        if (currentIteration >= 3) {
+            return { 
+                continue: false, 
+                reason: 'Maximum search iterations reached',
+                nextQueries: []
+            };
+        }
+
+        try {
+            // Parse provider and model
+            const { provider, model: modelName } = parseProviderModel(model);
+            const providerConfig = getProviderConfig(provider);
+            
+            const apiKey = this.apiKey;
+            if (!apiKey) {
+                throw new Error(`No API key provided for provider: ${provider}`);
+            }
+
+            // Format current knowledge
+            const currentKnowledge = digestedResults.map((digest, index) => {
+                return `Search ${index + 1} (${digest.searchQuery}): ${digest.summary}`;
+            }).join('\n\n');
+
+            const continuationPrompt = `Original Question: "${originalQuery}"
+
+Current Information Gathered:
+${currentKnowledge}
+
+Based on the information gathered so far, determine if additional searches are needed to fully answer the question.
+
+Respond ONLY with valid JSON in one of these formats:
+
+If you have sufficient information to answer the question:
+{"continue": false, "reason": "Sufficient information gathered"}
+
+If additional searches are needed (max 2 more queries):
+{"continue": true, "reason": "Need more specific information about X", "next_queries": ["search query 1", "search query 2"]}
+
+Consider:
+- Is the core question answered?
+- Are there important gaps in the information?
+- Would additional specific searches add significant value?
+
+JSON Response:`;
+
+            const requestBody = {
+                model: modelName,
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a research assistant that determines if sufficient information has been gathered to answer a question. Be conservative - only request additional searches if truly necessary.'
+                    },
+                    {
+                        role: 'user',
+                        content: continuationPrompt
+                    }
+                ],
+                max_tokens: 150,
+                temperature: 0.1
+            };
+
+            const postData = JSON.stringify(requestBody);
+            const requestOptions = {
+                hostname: providerConfig.hostname,
+                port: 443,
+                path: providerConfig.path,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+
+            return new Promise((resolve, reject) => {
+                const requestTimeout = setTimeout(() => {
+                    reject(new Error(`Continuation decision timeout after ${timeout}ms`));
+                }, timeout);
+
+                const req = https.request(requestOptions, (res) => {
+                    clearTimeout(requestTimeout);
+                    let data = '';
+
+                    res.on('data', (chunk) => {
+                        data += chunk;
+                    });
+
+                    res.on('end', () => {
+                        try {
+                            const response = JSON.parse(data);
+                            const content = response.choices?.[0]?.message?.content;
+                            
+                            let decision;
+                            try {
+                                decision = JSON.parse(content);
+                            } catch (parseError) {
+                                // Default to not continuing if parsing fails
+                                decision = { 
+                                    continue: false, 
+                                    reason: 'Parse error - stopping search'
+                                };
+                            }
+                            
+                            resolve(decision);
+                        } catch (parseError) {
+                            reject(new Error(`Failed to parse continuation response: ${parseError.message}`));
+                        }
+                    });
+                });
+
+                req.on('error', (error) => {
+                    clearTimeout(requestTimeout);
+                    reject(new Error(`Continuation decision network error: ${error.message}`));
+                });
+
+                req.setTimeout(timeout);
+                req.write(postData);
+                req.end();
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Generate final response using all gathered information
+     * @param {string} originalQuery - Original user question
+     * @param {Array} digestedResults - Array of digested search results
+     * @param {Object} options - LLM options
+     * @returns {Promise<Object>} Final comprehensive response
+     */
+    async generateFinalResponse(originalQuery, digestedResults, options = {}) {
+        const {
+            model = 'groq:llama-3.1-8b-instant',
+            timeout = 30000
+        } = options;
+
+        try {
+            // Parse provider and model
+            const { provider, model: modelName } = parseProviderModel(model);
+            const providerConfig = getProviderConfig(provider);
+            
+            const apiKey = this.apiKey;
+            if (!apiKey) {
+                throw new Error(`No API key provided for provider: ${provider}`);
+            }
+
+            // Combine all gathered information
+            const allInformation = digestedResults.map((digest, index) => {
+                const links = digest.links.map(link => `${link.title} (${link.url})`).join(', ');
+                return `Research ${index + 1} - ${digest.searchQuery}:\n${digest.summary}\nSources: ${links}`;
+            }).join('\n\n');
+
+            const finalPrompt = `Based on comprehensive research, provide a complete answer to this question.
+
+Question: "${originalQuery}"
+
+Research Gathered:
+${allInformation}
+
+Please provide a comprehensive, well-structured answer that:
+1. Directly addresses the question
+2. Uses specific information from the research
+3. Cites relevant sources by including URLs when stating facts
+4. Is organized and easy to read
+
+Answer:`;
+
+            const requestBody = {
+                model: modelName,
+                messages: [
+                    {
+                        role: 'system',
+                        content: this.systemPrompts.search
+                    },
+                    {
+                        role: 'user',
+                        content: finalPrompt
+                    }
+                ],
+                max_tokens: 1500,
+                temperature: 0.7
+            };
+
+            const postData = JSON.stringify(requestBody);
+            const requestOptions = {
+                hostname: providerConfig.hostname,
+                port: 443,
+                path: providerConfig.path,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+
+            return new Promise((resolve, reject) => {
+                const requestTimeout = setTimeout(() => {
+                    reject(new Error(`Final response timeout after ${timeout}ms`));
+                }, timeout);
+
+                const req = https.request(requestOptions, (res) => {
+                    clearTimeout(requestTimeout);
+                    let data = '';
+
+                    res.on('data', (chunk) => {
+                        data += chunk;
+                    });
+
+                    res.on('end', () => {
+                        try {
+                            const response = JSON.parse(data);
+                            resolve({
+                                choices: response.choices,
+                                usage: response.usage,
+                                model: response.model
+                            });
+                        } catch (parseError) {
+                            reject(new Error(`Failed to parse final response: ${parseError.message}`));
+                        }
+                    });
+                });
+
+                req.on('error', (error) => {
+                    clearTimeout(requestTimeout);
+                    reject(new Error(`Final response network error: ${error.message}`));
+                });
+
+                req.setTimeout(timeout);
+                req.write(postData);
+                req.end();
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
 }
 
 /**
@@ -2005,51 +2388,167 @@ export const handler = async (event, context) => {
             };
         }
 
-        // Step 2: Perform search (if needed)
+        // Multi-Search Loop Implementation
         const searcher = new DuckDuckGoSearcher();
-        const searchResults = await searcher.search(searchTerms, limit, fetchContent, timeout);
+        const digestedResults = [];
+        const allSearchResults = [];
+        let searchQueries = [];
         
-        if (!searchResults.success || searchResults.results.length === 0) {
-            // Prepare the no results response
+        // Handle initial search queries
+        if (searchMode === 'search') {
+            searchQueries = [query]; // Force search with original query
+        } else {
+            // Extract search queries from LLM decision
+            const initialDecision = await llmClient.processInitialDecision(query, { model, timeout: 30000 });
+            
+            if (initialDecision.response) {
+                // Direct response case
+                return {
+                    statusCode: 200,
+                    headers: headers,
+                    body: JSON.stringify({
+                        success: true,
+                        query: query,
+                        answer: initialDecision.response,
+                        searchResults: null,
+                        searchSummaries: [],
+                        links: [],
+                        llmResponse: {
+                            model: model,
+                            usage: initialDecision.usage || {},
+                            processingTime: 'direct response'
+                        },
+                        processingTimeMs: Date.now() - startTime,
+                        timestamp: new Date().toISOString(),
+                        mode: 'direct'
+                    })
+                };
+            } else {
+                // Extract search queries (support both old and new format)
+                searchQueries = initialDecision.search_queries || 
+                               (initialDecision.search_terms ? [initialDecision.search_terms] : [query]);
+            }
+        }
+
+        // Execute multi-search loop
+        let iteration = 0;
+        const maxIterations = 3;
+        
+        while (iteration < maxIterations && searchQueries.length > 0) {
+            console.log(`Search iteration ${iteration + 1}, queries: ${searchQueries.join(', ')}`);
+            
+            // Execute searches for current iteration
+            for (const searchQuery of searchQueries) {
+                try {
+                    const searchResults = await searcher.search(searchQuery, limit, fetchContent, timeout);
+                    
+                    if (searchResults.success && searchResults.results.length > 0) {
+                        // Digest the search results
+                        const digestedResult = await llmClient.digestSearchResults(
+                            searchQuery, 
+                            searchResults.results, 
+                            query, 
+                            { model, timeout: 30000 }
+                        );
+                        
+                        digestedResults.push(digestedResult);
+                        allSearchResults.push(...searchResults.results);
+                    } else {
+                        console.log(`No results for search query: ${searchQuery}`);
+                    }
+                } catch (searchError) {
+                    console.error(`Search failed for query "${searchQuery}": ${searchError.message}`);
+                }
+            }
+            
+            // Check if we should continue searching
+            if (digestedResults.length === 0) {
+                break; // No results found, exit loop
+            }
+            
+            // Determine if additional searches are needed
+            const continuationDecision = await llmClient.shouldContinueSearching(
+                query, 
+                digestedResults, 
+                iteration, 
+                { model, timeout: 30000 }
+            );
+            
+            if (!continuationDecision.continue) {
+                console.log(`Stopping search: ${continuationDecision.reason}`);
+                break;
+            }
+            
+            // Prepare next iteration
+            searchQueries = continuationDecision.next_queries || [];
+            iteration++;
+        }
+        
+        // Handle case where no search results were found
+        if (digestedResults.length === 0) {
             return {
                 statusCode: 200,
                 headers: headers,
                 body: JSON.stringify({
                     success: true,
                     query: query,
-                    llmResponse: null,
                     answer: 'No search results found. Unable to provide an answer based on search data.',
+                    searchResults: [],
+                    searchSummaries: [],
+                    links: [],
+                    llmResponse: null,
                     processingTimeMs: Date.now() - startTime,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    mode: 'search'
                 })
             };
         }
-
-        // Step 3: Process with LLM using search results
-        const llmResponse = await llmClient.processWithLLMWithRetry(query, searchResults.results, {
-            model,
-            timeout: 30000 // 30 second timeout for LLM API calls
+        
+        // Generate final comprehensive response
+        const finalResponse = await llmClient.generateFinalResponse(
+            query, 
+            digestedResults, 
+            { model, timeout: 30000 }
+        );
+        
+        const answer = finalResponse.choices?.[0]?.message?.content || 'No response generated';
+        
+        // Prepare search summaries and links for response
+        const searchSummaries = digestedResults.map(digest => ({
+            searchQuery: digest.searchQuery,
+            summary: digest.summary
+        }));
+        
+        const links = [];
+        digestedResults.forEach(digest => {
+            digest.links.forEach(link => {
+                if (!links.find(existing => existing.url === link.url)) {
+                    links.push(link);
+                }
+            });
         });
-
-        const answer = llmResponse.choices?.[0]?.message?.content || 'No response generated';
-
-        // Prepare the final response
-        const finalResponse = {
+        
+        // Prepare the enhanced final response
+        const enhancedResponse = {
             statusCode: 200,
             headers: headers,
             body: JSON.stringify({
                 success: true,
                 query: query,
-                searchTerms: searchTerms !== query ? searchTerms : undefined,
                 answer: answer,
+                searchSummaries: searchSummaries,
+                links: links.slice(0, 10), // Limit to top 10 unique links
+                searchResults: allSearchResults, // Full JSON of all search results
                 llmResponse: {
-                    model: llmResponse.model,
-                    usage: llmResponse.usage,
-                    processingTime: llmResponse.usage?.total_tokens ? `${llmResponse.usage.total_tokens} tokens` : 'unknown'
+                    model: finalResponse.model,
+                    usage: finalResponse.usage,
+                    processingTime: finalResponse.usage?.total_tokens ? `${finalResponse.usage.total_tokens} tokens` : 'unknown',
+                    searchIterations: iteration + 1,
+                    totalSearchQueries: digestedResults.length
                 },
                 processingTimeMs: Date.now() - startTime,
                 timestamp: new Date().toISOString(),
-                mode: 'search'
+                mode: 'multi-search'
             })
         };
 
@@ -2057,7 +2556,7 @@ export const handler = async (event, context) => {
         const finalMemory = process.memoryUsage();
         console.log(`Lambda handler completed successfully. Final memory: RSS=${Math.round(finalMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(finalMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB, Duration: ${Date.now() - startTime}ms`);
         
-        return finalResponse;
+        return enhancedResponse;
 
     } catch (error) {
         console.error('Handler error:', error.message);

@@ -174,6 +174,99 @@
             margin: 0;
         }
 
+        /* Enhanced response styles */
+        .answer-content {
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .search-summaries {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+
+        .search-summaries h3 {
+            margin: 0 0 15px 0;
+            color: #0056b3;
+            font-size: 1.1em;
+        }
+
+        .search-summary {
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .search-summary:last-child {
+            border-bottom: none;
+        }
+
+        .response-links {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+        }
+
+        .response-links h3 {
+            margin: 0 0 15px 0;
+            color: #1e7e34;
+            font-size: 1.1em;
+        }
+
+        .link-item {
+            margin-bottom: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .link-item:last-child {
+            border-bottom: none;
+        }
+
+        .link-item a {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .link-item a:hover {
+            text-decoration: underline;
+        }
+
+        .link-item small {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .debug-info {
+            margin: 20px 0;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+        }
+
+        .debug-info summary {
+            cursor: pointer;
+            font-weight: 500;
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+
+        .debug-info pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.8em;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
         .advanced-toggle {
             margin: 15px 0;
             padding: 10px;
@@ -496,31 +589,38 @@
                 <textarea id="system-prompt-search" name="system_prompt_search" rows="3" placeholder="System prompt for search-based responses">You are a helpful research assistant. Use the provided search results to answer questions comprehensively. Always cite specific sources using the URLs provided when making factual claims. Format your response in a clear, organized manner.</textarea>
             </div>
 
+            <div class="form-group">
+                <label for="system-prompt-multisearch">Multi-Search System Prompt:</label>
+                <textarea id="system-prompt-multisearch" name="system_prompt_multisearch" rows="3" placeholder="System prompt for multi-search final responses">You are a comprehensive research assistant. Synthesize information from multiple searches to provide thorough, well-cited answers. Organize information logically and include relevant source URLs for factual claims.</textarea>
+            </div>
+
             <!-- Separator between system prompts and templates -->
             <div class="settings-separator"></div>
 
             <div class="form-group">
                 <label for="decision-template">Decision Template:</label>
-                <textarea id="decision-template" name="decision_template" rows="8" placeholder="Template for decision prompts (use {{QUERY}} as placeholder)">Analyze this question and determine if you can answer it directly or if it requires web search for fact-checking.
+                <textarea id="decision-template" name="decision_template" rows="8" placeholder="Template for decision prompts (use {{QUERY}} as placeholder)">Analyze this question and determine if you can answer it directly or if it requires web searches.
 
 IMPORTANT: Respond ONLY with valid JSON in one of these formats:
 
 For questions you can answer directly (general knowledge, explanations, creative tasks, personal advice):
 {"response": "Your complete answer here"}
 
-For questions requiring current facts, recent events, specific data, or verification:
-{"search_terms": "optimized search terms here"}
+For questions requiring web searches (current events, recent data, specific facts, company information):
+{"search_queries": ["search terms 1", "search terms 2", "search terms 3"]}
 
 Guidelines:
-- Use search for: current events, recent developments, specific statistics, factual claims that need verification, breaking news, real-time information
-- Answer directly for: general knowledge, explanations, creative writing, personal advice, theoretical concepts, historical facts (pre-2023)
+- Use "response" for: general knowledge, explanations, creative writing, personal advice, theoretical concepts, historical facts (pre-2023)
+- Use "search_queries" for: current events, recent developments, specific statistics, factual claims that need verification, breaking news, real-time information
+- If using search_queries, provide 1-3 distinct search queries that cover different aspects of the question
+- Each search query should be optimized for web search (remove question words, focus on key terms)
 
 Question: {{QUERY}}</textarea>
             </div>
 
             <div class="form-group">
-                <label for="search-template">Search Template:</label>
-                <textarea id="search-template" name="search_template" rows="6" placeholder="Template for search-based prompts">Based on the search results below, please provide a comprehensive answer to the user's question.
+                <label for="search-template">Search Template (Legacy - for single search mode):</label>
+                <textarea id="search-template" name="search_template" rows="6" placeholder="Template for single search-based prompts">Based on the search results below, please provide a comprehensive answer to the user's question.
 
 Search Results:
 {{SEARCH_CONTEXT}}
@@ -1068,14 +1168,50 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         console.log('Response data:', responseData);
         
         if (response.ok) {
-            // Success response - parse JSON and extract just the answer
+            // Success response - parse JSON and display enhanced response
             try {
                 const jsonData = JSON.parse(responseData);
                 const answer = jsonData.answer || 'No answer found in response';
                 
                 responseContainer.className = 'response-container response-success';
-                responseContainer.style.fontFamily = 'inherit'; // Use normal font instead of monospace
-                responseContainer.textContent = answer;
+                responseContainer.style.fontFamily = 'inherit';
+                
+                // Create enhanced response with answer, summaries, and links
+                let responseHTML = `<div class="answer-content">${answer.replace(/\n/g, '<br>')}</div>`;
+                
+                // Add search summaries if available
+                if (jsonData.searchSummaries && jsonData.searchSummaries.length > 0) {
+                    responseHTML += '<div class="search-summaries"><h3>Search Summaries</h3>';
+                    jsonData.searchSummaries.forEach((summary, index) => {
+                        responseHTML += `<div class="search-summary">
+                            <strong>Search ${index + 1}:</strong> ${summary.searchQuery}<br>
+                            <em>${summary.summary}</em>
+                        </div>`;
+                    });
+                    responseHTML += '</div>';
+                }
+                
+                // Add links if available
+                if (jsonData.links && jsonData.links.length > 0) {
+                    responseHTML += '<div class="response-links"><h3>Sources</h3>';
+                    jsonData.links.forEach((link, index) => {
+                        responseHTML += `<div class="link-item">
+                            <a href="${link.url}" target="_blank">${link.title}</a><br>
+                            <small>${link.snippet}</small>
+                        </div>`;
+                    });
+                    responseHTML += '</div>';
+                }
+                
+                // Add debug info for search results if available
+                if (jsonData.searchResults && jsonData.searchResults.length > 0) {
+                    responseHTML += `<details class="debug-info">
+                        <summary>Full Search Results JSON (${jsonData.searchResults.length} results)</summary>
+                        <pre>${JSON.stringify(jsonData.searchResults, null, 2)}</pre>
+                    </details>`;
+                }
+                
+                responseContainer.innerHTML = responseHTML;
             } catch (parseError) {
                 // If JSON parsing fails, show the raw response
                 responseContainer.className = 'response-container response-success';
