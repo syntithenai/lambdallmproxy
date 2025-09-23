@@ -19,6 +19,17 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}🚀 Deploying Lambda function ${FUNCTION_NAME}...${NC}"
 
+# Check if .env file exists
+if [ ! -f ".env" ]; then
+    echo -e "${RED}❌ Error: .env file not found!${NC}"
+    echo "Please create a .env file with your configuration."
+    exit 1
+fi
+
+# Source the .env file
+echo -e "${YELLOW}📝 Loading configuration from .env file...${NC}"
+source .env
+
 # Check if source file exists
 if [ ! -f "$SOURCE_FILE" ]; then
     echo -e "${RED}❌ Source file $SOURCE_FILE not found!${NC}"
@@ -266,5 +277,11 @@ fi
 
 # Cleanup
 rm -rf "$TEMP_DIR"
+
+# Clean up any temporary env-vars.json files that might have been created
+if [ -f "env-vars.json" ]; then
+    echo -e "${YELLOW}🧹 Cleaning up temporary env-vars.json file...${NC}"
+    rm -f env-vars.json
+fi
 
 echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
