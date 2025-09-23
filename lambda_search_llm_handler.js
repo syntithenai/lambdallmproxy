@@ -539,14 +539,36 @@ class DuckDuckGoSearcher {
         const searchStartTime = Date.now();
         
         try {
-            // Use HTML version of DuckDuckGo for consistent parsing
-            const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+            // Try DuckDuckGo instant answer API first, fall back to HTML scraping
+            const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
             
             const searchTime = Date.now();
-            const html = await this.fetchUrl(searchUrl, timeout * 1000);
+            const response = await this.fetchUrl(searchUrl, timeout * 1000);
             const parseTime = Date.now();
             
-            const results = this.extractSearchResults(html, query, limit);
+            // Try to parse as JSON first (from API), fall back to HTML parsing
+            let results = [];
+            try {
+                const jsonData = JSON.parse(response);
+                console.log(`DuckDuckGo API response for "${query}":`, JSON.stringify(jsonData, null, 2).substring(0, 500));
+                results = this.extractFromDuckDuckGoAPI(jsonData, query, limit);
+                console.log(`Extracted ${results.length} results from API`);
+            } catch (e) {
+                console.log(`JSON parsing failed, trying HTML parsing: ${e.message}`);
+                // Fall back to HTML parsing if JSON parsing fails
+                results = this.extractSearchResults(response, query, limit);
+            }
+            
+            // If API didn't return web results, try HTML scraping as fallback
+            if (results.length === 0) {
+                const htmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+                try {
+                    const html = await this.fetchUrl(htmlUrl, timeout * 1000);
+                    results = this.extractSearchResults(html, query, limit);
+                } catch (fallbackError) {
+                    console.log('Fallback HTML search also failed:', fallbackError.message);
+                }
+            }
             
             // Filter results by quality score (only keep results with decent relevance)
             const qualityThreshold = 20; // Minimum score threshold
@@ -598,6 +620,78 @@ class DuckDuckGoSearcher {
             console.error('Search error:', error);
             throw new Error(`Search failed: ${error.message}`);
         }
+    }
+
+    /**
+     * Extract search results from DuckDuckGo API JSON response
+     * @param {Object} jsonData - JSON response from DuckDuckGo API
+     * @param {string} query - Original search query
+     * @param {number} limit - Maximum results to return
+     * @returns {Array} Array of search results
+     */
+    extractFromDuckDuckGoAPI(jsonData, query, limit = 10) {
+        const results = [];
+        
+        // Check for RelatedTopics which often contain useful links
+        if (jsonData.RelatedTopics && Array.isArray(jsonData.RelatedTopics)) {
+            jsonData.RelatedTopics.forEach(topic => {
+                if (topic.FirstURL && topic.Text) {
+                    const result = {
+                        title: topic.Text.split(' - ')[0] || topic.Text.substring(0, 100),
+                        url: topic.FirstURL,
+                        description: topic.Text,
+                        score: this.calculateRelevanceScore(topic.Text, topic.Text, topic.FirstURL, query, 50),
+                        duckduckgoScore: 50,
+                        state: '',
+                        content: null,
+                        contentLength: 0,
+                        fetchTimeMs: 0
+                    };
+                    results.push(result);
+                }
+            });
+        }
+        
+        // Check for Results array
+        if (jsonData.Results && Array.isArray(jsonData.Results)) {
+            jsonData.Results.forEach(result => {
+                if (result.FirstURL && result.Text) {
+                    const resultObj = {
+                        title: result.Text.split(' - ')[0] || result.Text.substring(0, 100),
+                        url: result.FirstURL,
+                        description: result.Text,
+                        score: this.calculateRelevanceScore(result.Text, result.Text, result.FirstURL, query, 60),
+                        duckduckgoScore: 60,
+                        state: '',
+                        content: null,
+                        contentLength: 0,
+                        fetchTimeMs: 0
+                    };
+                    results.push(resultObj);
+                }
+            });
+        }
+        
+        // Check for Abstract if it has useful links
+        if (jsonData.AbstractURL && jsonData.Abstract) {
+            const abstractResult = {
+                title: jsonData.AbstractSource || 'Abstract',
+                url: jsonData.AbstractURL,
+                description: jsonData.Abstract,
+                score: this.calculateRelevanceScore(jsonData.Abstract, jsonData.Abstract, jsonData.AbstractURL, query, 70),
+                duckduckgoScore: 70,
+                state: '',
+                content: null,
+                contentLength: 0,
+                fetchTimeMs: 0
+            };
+            results.push(abstractResult);
+        }
+        
+        // Sort by score and limit results
+        return results
+            .sort((a, b) => b.score - a.score)
+            .slice(0, limit);
     }
 
     /**
@@ -1155,11 +1249,14 @@ class DuckDuckGoSearcher {
                     path: parsedUrl.pathname + parsedUrl.search,
                     method: 'GET',
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
                         'Accept-Language': 'en-US,en;q=0.9',
                         'Accept-Encoding': 'identity',
-                        'Connection': 'close'
+                        'DNT': '1',
+                        'Connection': 'close',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Cache-Control': 'max-age=0'
                     },
                     timeout: timeoutMs
                 };
@@ -1168,7 +1265,17 @@ class DuckDuckGoSearcher {
                     // Handle redirects
                     if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                         console.log(`Redirecting to: ${res.headers.location}`);
-                        makeRequest(res.headers.location, redirectCount + 1);
+                        // Handle relative URLs in redirects
+                        let redirectUrl;
+                        try {
+                            redirectUrl = new URL(res.headers.location, requestUrl).toString();
+                        } catch (err) {
+                            console.log(`Invalid redirect URL: ${res.headers.location}`);
+                            clearTimeout(timeout);
+                            reject(new Error(`Invalid redirect URL: ${res.headers.location}`));
+                            return;
+                        }
+                        makeRequest(redirectUrl, redirectCount + 1);
                         return;
                     }
 
@@ -1295,9 +1402,15 @@ class LLMClient {
             const providerConfig = getProviderConfig(provider);
             
             // Use the provided API key or fall back to environment variable
-            const apiKey = this.apiKey || process.env[providerConfig.envKey];
-            if (!apiKey) {
+            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
+            }
+            
+            // Clean the API key by removing any whitespace and ensuring it's a valid string
+            const apiKey = String(rawApiKey).trim();
+            if (!apiKey) {
+                throw new Error(`Invalid API key provided for provider: ${provider}`);
             }
 
             // Create the decision prompt using the template
@@ -1433,9 +1546,15 @@ class LLMClient {
             const providerConfig = getProviderConfig(provider);
             
             // Use the provided API key or fall back to environment variable
-            const apiKey = this.apiKey || process.env[providerConfig.envKey];
-            if (!apiKey) {
+            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
+            }
+            
+            // Clean the API key by removing any whitespace and ensuring it's a valid string
+            const apiKey = String(rawApiKey).trim();
+            if (!apiKey) {
+                throw new Error(`Invalid API key provided for provider: ${provider}`);
             }
 
             const requestBody = {
@@ -1604,9 +1723,15 @@ class LLMClient {
             const providerConfig = getProviderConfig(provider);
             
             // Use the provided API key or fall back to environment variable
-            const apiKey = this.apiKey || process.env[providerConfig.envKey];
-            if (!apiKey || typeof apiKey !== 'string') {
+            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            if (!rawApiKey || typeof rawApiKey !== 'string') {
                 throw new Error(`Invalid or missing API key for provider: ${provider}`);
+            }
+            
+            // Clean the API key by removing any whitespace and ensuring it's a valid string
+            const apiKey = String(rawApiKey).trim();
+            if (!apiKey) {
+                throw new Error(`Invalid API key provided for provider: ${provider}`);
             }
             
             if (!originalQuery || typeof originalQuery !== 'string') {
@@ -1825,9 +1950,15 @@ class LLMClient {
             const providerConfig = getProviderConfig(provider);
             
             // Use the provided API key or fall back to environment variable
-            const apiKey = this.apiKey || process.env[providerConfig.envKey];
-            if (!apiKey) {
+            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
+            }
+            
+            // Clean the API key by removing any whitespace and ensuring it's a valid string
+            const apiKey = String(rawApiKey).trim();
+            if (!apiKey) {
+                throw new Error(`Invalid API key provided for provider: ${provider}`);
             }
 
             // Format search results for digestion
@@ -1963,9 +2094,15 @@ Provide a comprehensive summary (3-4 sentences) capturing the most important and
             const providerConfig = getProviderConfig(provider);
             
             // Use the provided API key or fall back to environment variable
-            const apiKey = this.apiKey || process.env[providerConfig.envKey];
-            if (!apiKey) {
+            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
+            }
+            
+            // Clean the API key by removing any whitespace and ensuring it's a valid string
+            const apiKey = String(rawApiKey).trim();
+            if (!apiKey) {
+                throw new Error(`Invalid API key provided for provider: ${provider}`);
             }
 
             // Format current knowledge
@@ -2098,9 +2235,15 @@ JSON Response:`;
             const providerConfig = getProviderConfig(provider);
             
             // Use the provided API key or fall back to environment variable
-            const apiKey = this.apiKey || process.env[providerConfig.envKey];
-            if (!apiKey) {
+            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
+            }
+            
+            // Clean the API key by removing any whitespace and ensuring it's a valid string
+            const apiKey = String(rawApiKey).trim();
+            if (!apiKey) {
+                throw new Error(`Invalid API key provided for provider: ${provider}`);
             }
 
             // Combine all gathered information
@@ -2670,6 +2813,10 @@ async function processInitialDecision(query, model, accessSecret, apiKey, system
  */
 async function performSearch(searchTerm, limit, fetchContent, timeout, searchMode) {
     try {
+        // Add a small random delay to avoid being detected as bot
+        const delay = Math.floor(Math.random() * 1000) + 500; // 500-1500ms delay
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
         const searcher = new DuckDuckGoSearcher();
         const searchResult = await searcher.search(searchTerm, limit, fetchContent, timeout);
         return searchResult.results || [];

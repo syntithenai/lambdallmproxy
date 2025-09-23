@@ -26,7 +26,9 @@ fi
 
 # Source environment variables
 log_info "Loading environment variables from .env..."
-export $(cat .env | grep -v '^#' | grep -v '^$' | xargs)
+set -a  # automatically export all variables
+source .env
+set +a  # disable automatic export
 
 # Validate required environment variables
 missing_vars=()

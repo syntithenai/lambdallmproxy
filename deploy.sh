@@ -46,8 +46,8 @@ fi
 mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR"
 
-# Copy source file and rename to index.mjs (to match the handler)
-cp "$OLDPWD/$SOURCE_FILE" index.mjs
+# Copy source file and rename to index.js (CommonJS module)
+cp "$OLDPWD/$SOURCE_FILE" index.js
 
 # Create package.json for the Lambda function
 cat > package.json << EOF
@@ -55,8 +55,7 @@ cat > package.json << EOF
   "name": "llmproxy-lambda",
   "version": "1.0.0",
   "description": "AWS Lambda handler for intelligent search + LLM response",
-  "main": "index.mjs",
-  "type": "module",
+  "main": "index.js",
   "dependencies": {},
   "engines": {
     "node": ">=18.0.0"
@@ -65,7 +64,7 @@ cat > package.json << EOF
 EOF
 
 # Create the deployment package
-zip -q -r "$ZIP_FILE" index.mjs package.json
+zip -q -r "$ZIP_FILE" index.js package.json
 
 # Get current function configuration for backup
 aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" > function-backup.json 2>/dev/null
