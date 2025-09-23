@@ -5,8 +5,9 @@
 .env.test
 .env.production
 
-# Built documentation (contains secrets)
-docs/
+# AWS Lambda environment configuration with secrets  
+env-vars.json
+env-vars-*.json
 
 # Node.js dependencies
 node_modules/
