@@ -4,9 +4,9 @@
  * comprehensive answers with citations and source references
  */
 
-import https from 'https';
-import http from 'http';
-import { URL } from 'url';
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 
 // Google OAuth configuration
 const ALLOWED_EMAILS = ['syntithenai@gmail.com'];
@@ -105,7 +105,7 @@ const BYTES_PER_MB = 1024 * 1024;
 
 // System prompt configurations - now loaded from environment variables with fallbacks
 const DEFAULT_SYSTEM_PROMPTS = {
-    decision: process.env.SYSTEM_PROMPT_DECISION || 'You are a thorough research analyst that determines whether a question can be answered directly or requires comprehensive web searches. When searches are needed, you always plan for multiple, complementary search strategies to ensure complete coverage. Always respond with valid JSON only.',
+    decision: process.env.SYSTEM_PROMPT_DECISION || 'You are a thorough research analyst that determines whether a question can be answered directly or requires comprehensive web searches. CRITICAL: Always search for current information when questions involve time-sensitive data, current events, weather, location, or use words like "today", "now", "current", "latest". When searches are needed, you always plan for multiple, complementary search strategies to ensure complete coverage. Always respond with valid JSON only.',
     direct: process.env.SYSTEM_PROMPT_DIRECT || 'You are a knowledgeable assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive, informative, and thorough in your explanations.',
     search: process.env.SYSTEM_PROMPT_SEARCH || 'You are a comprehensive research assistant. Use all provided search results to answer questions thoroughly and completely. Always cite specific sources using the URLs provided when making factual claims. Synthesize information from multiple sources to provide the most complete picture possible. Format your response in a clear, well-organized manner that covers all important aspects of the topic.'
 };
@@ -125,10 +125,24 @@ Guidelines for COMPREHENSIVE search coverage:
 - Use "search_queries" for: current events, recent data, specific facts, company information, complex topics, recent research
 - ALWAYS provide 2-3 search queries to ensure comprehensive coverage - don't be conservative!
 - Cover DIFFERENT ASPECTS: Start broad, then get specific, include related context/background
+
+CRITICAL: Always search for current context when relevant:
+- If answer depends on current date/time: Include "current date today" or "what time is it now"
+- If answer depends on weather: Include "current weather [location]" or "weather forecast [location]"
+- If answer depends on location: Include "current location" or "[specific location] information"
+- If answer involves "today", "now", "current", "latest": Always search for current information
+- If answer involves events, news, or time-sensitive information: Always search for recent updates
+- Examples:
+  * "What's the weather like?" → ["current weather today", "weather forecast today", "local weather conditions"]
+  * "What time is it?" → ["current time now", "what time is it today", "current date and time"]
+  * "What's happening today?" → ["current events today", "news today", "what's happening now"]
+  * "Should I wear a coat?" → ["current weather today", "weather forecast today", "temperature today"]
+
 - Examples of good comprehensive coverage:
   * Topic question: ["topic overview", "recent developments topic", "expert opinions topic"]
   * Company question: ["company name overview", "company name recent news", "company name financial performance"]
   * Technical question: ["technical term definition", "technical term applications", "technical term latest research"]
+  * Time-sensitive question: ["current information topic", "latest updates topic", "recent news topic"]
 - Each search query should be optimized for web search (remove question words, focus on key terms)
 - Think: "What different angles do I need to fully understand and explain this topic?"
 - Err on the side of MORE searches rather than fewer - thoroughness is key
@@ -2188,7 +2202,7 @@ Create a comprehensive, authoritative response that demonstrates the full value 
 /**
  * Main Lambda handler function with streaming support
  */
-export const handler = async (event, context) => {
+exports.handler = async (event, context) => {
     const startTime = Date.now();
     
     // Check if this is a streaming request
@@ -2265,10 +2279,7 @@ async function handleStreamingRequest(event, context, startTime) {
                 headers: {
                     'Content-Type': 'text/event-stream',
                     'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                    'Connection': 'keep-alive'
                 },
                 body: stream.getResponse()
             };
@@ -2301,10 +2312,7 @@ async function handleStreamingRequest(event, context, startTime) {
                 headers: {
                     'Content-Type': 'text/event-stream',
                     'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                    'Connection': 'keep-alive'
                 },
                 body: stream.getResponse()
             };
@@ -2354,10 +2362,7 @@ async function handleStreamingRequest(event, context, startTime) {
             headers: {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                'Connection': 'keep-alive'
             },
             body: stream.getResponse()
         };
@@ -2374,10 +2379,7 @@ async function handleStreamingRequest(event, context, startTime) {
             headers: {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                'Connection': 'keep-alive'
             },
             body: stream.getResponse()
         };
@@ -2593,7 +2595,9 @@ async function executeMultiSearchWithStreaming(
                 response: finalResponse,
                 totalResults: allSearchResults.length,
                 searchIterations: searchesPerformed.length,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                searchResults: allSearchResults,
+                searches: searchesPerformed
             });
         }
         
@@ -2697,8 +2701,8 @@ async function shouldContinueSearching(query, allSearchResults, iteration, maxIt
  * Generate final response from search results
  */
 async function generateFinalResponse(query, allSearchResults, model, accessSecret, apiKey, systemPrompts = null, searchTemplate = null) {
-    // Use default templates and prompts
-    const llmClient = new LLMClient(apiKey, {}, {});
+    // Create LLMClient with proper system prompts and search template
+    const llmClient = new LLMClient(apiKey, systemPrompts || {}, { search: searchTemplate });
     
     try {
         const response = await llmClient.processWithLLMWithRetry(query, allSearchResults, { model });
@@ -2732,13 +2736,11 @@ async function handleNonStreamingRequest(event, context, startTime) {
         const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
         
         if (httpMethod === 'OPTIONS') {
+            // Let AWS Lambda Function URL handle CORS preflight
             return {
                 statusCode: 200,
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                    'Content-Type': 'application/json'
                 },
                 body: ''
             };
@@ -2748,10 +2750,7 @@ async function handleNonStreamingRequest(event, context, startTime) {
             return {
                 statusCode: 405,
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     error: 'Method not allowed. Only POST requests are supported.',
@@ -2777,10 +2776,7 @@ async function handleNonStreamingRequest(event, context, startTime) {
             return {
                 statusCode: 400,
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     error: 'Query parameter is required',
@@ -2810,10 +2806,7 @@ async function handleNonStreamingRequest(event, context, startTime) {
         return {
             statusCode: 200,
             headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 ...finalResult,
@@ -2828,10 +2821,7 @@ async function handleNonStreamingRequest(event, context, startTime) {
         return {
             statusCode: 500,
             headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 error: error.message,

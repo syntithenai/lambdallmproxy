@@ -1460,16 +1460,71 @@ async function handleStreamingResponse(response, responseContainer) {
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
                             responseElement.style.display = 'block';
                             
+                            // Process search results if available
+                            if (eventData.searchResults && eventData.searchResults.length > 0) {
+                                let searchResultsHTML = `<details class="search-results-section" style="margin-top: 20px;">
+                                    <summary><strong>Search Results</strong> (${eventData.searchResults.length} total)</summary>
+                                    <div class="search-results">`;
+                                
+                                eventData.searchResults.slice(0, 10).forEach((result, index) => {
+                                    searchResultsHTML += `<div class="result-item" style="margin: 10px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+                                        <h4 style="margin: 0 0 8px 0;"><a href="${result.url}" target="_blank" style="color: #007bff; text-decoration: none;">${result.title}</a></h4>
+                                        <p class="result-description" style="margin: 0 0 8px 0; color: #6c757d;">${result.description || 'No description available'}</p>
+                                        <p class="result-url" style="margin: 0;"><small style="color: #28a745;">${result.url}</small></p>
+                                    </div>`;
+                                });
+                                
+                                if (eventData.searchResults.length > 10) {
+                                    searchResultsHTML += `<p style="text-align: center; font-style: italic; color: #6c757d;"><em>... and ${eventData.searchResults.length - 10} more results</em></p>`;
+                                }
+                                
+                                searchResultsHTML += '</div></details>';
+                                answerElement.innerHTML += searchResultsHTML;
+                            }
+                            
+                            // Process searches summary if available
+                            if (eventData.searches && eventData.searches.length > 0) {
+                                // Group searches by iteration
+                                const searchesByIteration = {};
+                                eventData.searches.forEach(search => {
+                                    if (!searchesByIteration[search.iteration]) {
+                                        searchesByIteration[search.iteration] = [];
+                                    }
+                                    searchesByIteration[search.iteration].push(search);
+                                });
+                                
+                                let searchSummaryHTML = '<div class="search-summary" style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px;">';
+                                searchSummaryHTML += '<h3 style="margin: 0 0 10px 0; color: #1976d2;">Search Summary</h3>';
+                                searchSummaryHTML += `<p style="margin: 0 0 15px 0;"><strong>Total:</strong> ${eventData.totalResults} results from ${eventData.searches.length} searches across ${Object.keys(searchesByIteration).length} iterations</p>`;
+                                
+                                // Display searches by iteration
+                                searchSummaryHTML += '<div class="search-iterations">';
+                                Object.keys(searchesByIteration).sort().forEach(iteration => {
+                                    const searches = searchesByIteration[iteration];
+                                    const iterationResults = searches.reduce((sum, s) => sum + s.resultsCount, 0);
+                                    
+                                    searchSummaryHTML += `<details class="iteration-section" style="margin: 10px 0;">
+                                        <summary style="font-weight: bold; cursor: pointer; padding: 8px; background: #bbdefb; border-radius: 4px;"><strong>Iteration ${iteration}</strong> - ${searches.length} searches, ${iterationResults} results</summary>
+                                        <ul class="search-list" style="margin: 10px 0; padding-left: 20px;">`;
+                                    searches.forEach(search => {
+                                        searchSummaryHTML += `<li style="margin: 4px 0;"><strong>${search.query}</strong> (${search.resultsCount} results)</li>`;
+                                    });
+                                    searchSummaryHTML += '</ul></details>';
+                                });
+                                searchSummaryHTML += '</div></div>';
+                                answerElement.innerHTML += searchSummaryHTML;
+                            }
+                            
                             // Show metadata
                             metadataContent.innerHTML = `
                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                                     <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #007bff;">
                                         <div style="font-weight: bold; color: #007bff; margin-bottom: 4px;">Total Results</div>
-                                        <div style="font-size: 1.2em; color: #333;">${eventData.totalResults}</div>
+                                        <div style="font-size: 1.2em; color: #333;">${eventData.totalResults || 0}</div>
                                     </div>
                                     <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #28a745;">
                                         <div style="font-weight: bold; color: #28a745; margin-bottom: 4px;">Search Iterations</div>
-                                        <div style="font-size: 1.2em; color: #333;">${eventData.searchIterations}</div>
+                                        <div style="font-size: 1.2em; color: #333;">${eventData.searchIterations || 0}</div>
                                     </div>
                                     <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #ffc107;">
                                         <div style="font-weight: bold; color: #ffc107; margin-bottom: 4px;">Completed</div>
