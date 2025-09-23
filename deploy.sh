@@ -75,15 +75,20 @@ if [ $? -eq 0 ]; then
     # Test the function with a simple invocation
     HTTP_TEST_RESULT=$(curl -s -X POST https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/ \
         -H "Content-Type: application/json" \
-        -d '{"query":"test deployment","api_key":"test","access_secret":"test"}' \
+        -d '{"query":"test deployment","apiKey":"test","accessSecret":"test","model":"groq:llama-3.1-8b-instant"}' \
         --max-time 10 || echo '{"error":"timeout"}')
     
     if echo "$HTTP_TEST_RESULT" | grep -q "Invalid API key"; then
-        echo -e "${GREEN}✅ Function test passed${NC}"
-    elif echo "$HTTP_TEST_RESULT" | grep -q "error"; then
-        echo -e "${YELLOW}⚠️  Function test returned error${NC}"
+        echo -e "${GREEN}✅ Function test passed (API key validation working)${NC}"
+    elif echo "$HTTP_TEST_RESULT" | grep -q '"response":' && echo "$HTTP_TEST_RESULT" | grep -q '"metadata":'; then
+        echo -e "${GREEN}✅ Function test passed (successful response)${NC}"
+    elif echo "$HTTP_TEST_RESULT" | grep -q '"searchResults":' && echo "$HTTP_TEST_RESULT" | grep -q '"query":'; then
+        echo -e "${GREEN}✅ Function test passed (search functionality working)${NC}"
+    elif echo "$HTTP_TEST_RESULT" | grep -q "timeout"; then
+        echo -e "${YELLOW}⚠️  Function test timed out${NC}"
     else
-        echo -e "${GREEN}✅ Function test passed${NC}"
+        echo -e "${YELLOW}⚠️  Function test returned unexpected result${NC}"
+        echo "Response: $HTTP_TEST_RESULT"
     fi
     
 else
@@ -92,13 +97,22 @@ else
 fi
 
 # Set environment variables from .env file if it exists
-if [ -f ".env" ]; then
+if [ -f "$OLDPWD/.env" ]; then
     echo -e "${BLUE}📁 Loading environment variables from .env...${NC}"
     
-    # Source .env file to get variables
-    set -a  # automatically export all variables
-    source .env
-    set +a  # stop automatically exporting
+    # Get critical variables
+    ACCESS_SECRET=$(grep '^ACCESS_SECRET=' "$OLDPWD/.env" | cut -d'=' -f2-)
+    OPENAI_API_KEY=$(grep '^OPENAI_API_KEY=' "$OLDPWD/.env" | cut -d'=' -f2-)
+    GROQ_API_KEY=$(grep '^GROQ_API_KEY=' "$OLDPWD/.env" | cut -d'=' -f2-)
+    
+    # Simple system prompts - use defaults in Lambda if these fail
+    SYSTEM_PROMPT_DECISION=$(grep '^SYSTEM_PROMPT_DECISION=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
+    SYSTEM_PROMPT_DIRECT=$(grep '^SYSTEM_PROMPT_DIRECT=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
+    SYSTEM_PROMPT_SEARCH=$(grep '^SYSTEM_PROMPT_SEARCH=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
+    
+    # Get template variables too
+    DECISION_TEMPLATE=$(grep '^DECISION_TEMPLATE=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
+    SEARCH_TEMPLATE=$(grep '^SEARCH_TEMPLATE=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
     
     # Get current environment variables
     CURRENT_ENV_JSON=$(aws lambda get-function-configuration \
@@ -123,6 +137,28 @@ if [ -f ".env" ]; then
     # Add GROQ_API_KEY if it exists
     if [ -n "$GROQ_API_KEY" ]; then
         ENV_VARS="${ENV_VARS}GROQ_API_KEY=$GROQ_API_KEY,"
+    fi
+    
+    # Add system prompt environment variables if they exist
+    if [ -n "$SYSTEM_PROMPT_DECISION" ]; then
+        ENV_VARS="${ENV_VARS}SYSTEM_PROMPT_DECISION=\"$SYSTEM_PROMPT_DECISION\","
+    fi
+    
+    if [ -n "$SYSTEM_PROMPT_DIRECT" ]; then
+        ENV_VARS="${ENV_VARS}SYSTEM_PROMPT_DIRECT=\"$SYSTEM_PROMPT_DIRECT\","
+    fi
+    
+    if [ -n "$SYSTEM_PROMPT_SEARCH" ]; then
+        ENV_VARS="${ENV_VARS}SYSTEM_PROMPT_SEARCH=\"$SYSTEM_PROMPT_SEARCH\","
+    fi
+    
+    # Add template environment variables if they exist
+    if [ -n "$DECISION_TEMPLATE" ]; then
+        ENV_VARS="${ENV_VARS}DECISION_TEMPLATE=\"$DECISION_TEMPLATE\","
+    fi
+    
+    if [ -n "$SEARCH_TEMPLATE" ]; then
+        ENV_VARS="${ENV_VARS}SEARCH_TEMPLATE=\"$SEARCH_TEMPLATE\","
     fi
     
     # Remove trailing comma and close

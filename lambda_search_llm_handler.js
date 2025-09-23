@@ -103,14 +103,14 @@ const MEMORY_SAFETY_BUFFER_MB = 16; // Reserve 16MB for other operations
 const MAX_CONTENT_SIZE_MB = LAMBDA_MEMORY_LIMIT_MB - MEMORY_SAFETY_BUFFER_MB;
 const BYTES_PER_MB = 1024 * 1024;
 
-// System prompt configurations - can be overridden via POST request
+// System prompt configurations - now loaded from environment variables with fallbacks
 const DEFAULT_SYSTEM_PROMPTS = {
-    decision: 'You are a thorough research analyst that determines whether a question can be answered directly or requires comprehensive web searches. When searches are needed, you always plan for multiple, complementary search strategies to ensure complete coverage. Always respond with valid JSON only.',
-    direct: 'You are a knowledgeable assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive, informative, and thorough in your explanations.',
-    search: 'You are a comprehensive research assistant. Use all provided search results to answer questions thoroughly and completely. Always cite specific sources using the URLs provided when making factual claims. Synthesize information from multiple sources to provide the most complete picture possible. Format your response in a clear, well-organized manner that covers all important aspects of the topic.'
+    decision: process.env.SYSTEM_PROMPT_DECISION || 'You are a thorough research analyst that determines whether a question can be answered directly or requires comprehensive web searches. When searches are needed, you always plan for multiple, complementary search strategies to ensure complete coverage. Always respond with valid JSON only.',
+    direct: process.env.SYSTEM_PROMPT_DIRECT || 'You are a knowledgeable assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive, informative, and thorough in your explanations.',
+    search: process.env.SYSTEM_PROMPT_SEARCH || 'You are a comprehensive research assistant. Use all provided search results to answer questions thoroughly and completely. Always cite specific sources using the URLs provided when making factual claims. Synthesize information from multiple sources to provide the most complete picture possible. Format your response in a clear, well-organized manner that covers all important aspects of the topic.'
 };
 
-const DEFAULT_DECISION_TEMPLATE = `Analyze this question and determine if you can answer it directly or if it requires comprehensive web searches to gather all necessary information.
+const DEFAULT_DECISION_TEMPLATE = process.env.DECISION_TEMPLATE || `Analyze this question and determine if you can answer it directly or if it requires comprehensive web searches to gather all necessary information.
 
 IMPORTANT: Respond ONLY with valid JSON in one of these formats:
 
@@ -137,7 +137,7 @@ Question: "{{QUERY}}"
 
 JSON Response:`;
 
-const DEFAULT_SEARCH_TEMPLATE = `Answer this question using the sources below. Cite URLs when stating facts.
+const DEFAULT_SEARCH_TEMPLATE = process.env.SEARCH_TEMPLATE || `Answer this question using the sources below. Cite URLs when stating facts.
 
 Question: {{QUERY}}
 
@@ -1280,8 +1280,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key (from request body)
-            const apiKey = this.apiKey;
+            // Use the provided API key or fall back to environment variable
+            const apiKey = this.apiKey || process.env[providerConfig.envKey];
             if (!apiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -1418,8 +1418,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key (from request body)
-            const apiKey = this.apiKey;
+            // Use the provided API key or fall back to environment variable
+            const apiKey = this.apiKey || process.env[providerConfig.envKey];
             if (!apiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -1589,8 +1589,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key (from request body)
-            const apiKey = this.apiKey;
+            // Use the provided API key or fall back to environment variable
+            const apiKey = this.apiKey || process.env[providerConfig.envKey];
             if (!apiKey || typeof apiKey !== 'string') {
                 throw new Error(`Invalid or missing API key for provider: ${provider}`);
             }
@@ -1810,7 +1810,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            const apiKey = this.apiKey;
+            // Use the provided API key or fall back to environment variable
+            const apiKey = this.apiKey || process.env[providerConfig.envKey];
             if (!apiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -1947,7 +1948,8 @@ Provide a comprehensive summary (3-4 sentences) capturing the most important and
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            const apiKey = this.apiKey;
+            // Use the provided API key or fall back to environment variable
+            const apiKey = this.apiKey || process.env[providerConfig.envKey];
             if (!apiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -2081,7 +2083,8 @@ JSON Response:`;
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            const apiKey = this.apiKey;
+            // Use the provided API key or fall back to environment variable
+            const apiKey = this.apiKey || process.env[providerConfig.envKey];
             if (!apiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -2247,9 +2250,11 @@ async function handleStreamingRequest(event, context, startTime) {
     try {
         // Extract parameters from request (POST only)
         let limit, fetchContent, timeout, model, accessSecret, apiKey, searchMode;
-        let systemPrompts, decisionTemplate, searchTemplate;
         
-        if (event.httpMethod !== 'POST') {
+        // Extract the HTTP method (support both API Gateway and Function URL formats)
+        const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
+        
+        if (httpMethod !== 'POST') {
             stream.writeEvent('error', {
                 error: 'Method not allowed. Only POST requests are supported.',
                 timestamp: new Date().toISOString()
@@ -2274,15 +2279,10 @@ async function handleStreamingRequest(event, context, startTime) {
         limit = parseInt(body.limit) || 10;
         fetchContent = body.fetchContent || false;
         timeout = parseInt(body.timeout) || 30000;
-        model = body.model || 'gpt-4o-mini';
+        model = body.model || 'groq:llama-3.1-8b-instant';
         accessSecret = body.accessSecret || '';
         apiKey = body.apiKey || '';
         searchMode = body.searchMode || 'web_search';
-        
-        // Get custom prompts/templates if provided
-        systemPrompts = body.systemPrompts || {};
-        decisionTemplate = body.decisionTemplate || null;
-        searchTemplate = body.searchTemplate || null;
         
         stream.writeEvent('log', {
             message: `Processing request for query: "${query}" with model: ${model}`,
@@ -2336,9 +2336,9 @@ async function handleStreamingRequest(event, context, startTime) {
             accessSecret, 
             apiKey, 
             searchMode,
-            systemPrompts,
-            decisionTemplate,
-            searchTemplate,
+            null, // No custom systemPrompts
+            null, // No custom decisionTemplate  
+            null, // No custom searchTemplate
             stream
         );
         
@@ -2407,11 +2407,13 @@ async function executeMultiSearchWithStreaming(
     
     try {
         // Process initial decision to get search terms
-        stream.writeEvent('step', {
-            type: 'initial_decision',
-            message: 'Analyzing query to determine search strategy...',
-            timestamp: new Date().toISOString()
-        });
+        if (stream) {
+            stream.writeEvent('step', {
+                type: 'initial_decision',
+                message: 'Analyzing query to determine search strategy...',
+                timestamp: new Date().toISOString()
+            });
+        }
         
         const initialDecision = await processInitialDecision(
             query, 
@@ -2422,35 +2424,69 @@ async function executeMultiSearchWithStreaming(
             decisionTemplate
         );
         
-        stream.writeEvent('decision', {
-            decision: initialDecision,
-            timestamp: new Date().toISOString()
-        });
-        
-        // Perform iterative searches
-        for (let iteration = 1; iteration <= maxIterations; iteration++) {
-            stream.writeEvent('step', {
-                type: 'search_iteration',
-                iteration: iteration,
-                message: `Starting search iteration ${iteration}/${maxIterations}...`,
+        if (stream) {
+            stream.writeEvent('decision', {
+                decision: initialDecision,
                 timestamp: new Date().toISOString()
             });
-            
-            // Perform searches for this iteration
-            const searchTerms = iteration === 1 ? 
-                initialDecision.searchTerms : 
-                await generateAdditionalSearchTerms(query, allSearchResults, model, accessSecret, apiKey);
-                
-            for (let i = 0; i < searchTerms.length; i++) {
-                const searchTerm = searchTerms[i];
-                
-                stream.writeEvent('search', {
-                    term: searchTerm,
-                    iteration: iteration,
-                    searchIndex: i + 1,
-                    totalSearches: searchTerms.length,
+        }
+        
+        // If direct response is possible, return it
+        if (!initialDecision.needsSearch && initialDecision.directResponse) {
+            if (stream) {
+                stream.writeEvent('final_response', {
+                    response: initialDecision.directResponse,
+                    totalResults: 0,
+                    searchIterations: 0,
                     timestamp: new Date().toISOString()
                 });
+            }
+            
+            return {
+                query: query,
+                searches: [],
+                searchResults: [],
+                response: initialDecision.directResponse,
+                metadata: {
+                    totalResults: 0,
+                    searchIterations: 0,
+                    finalModel: model,
+                    searchMode: 'direct',
+                    directResponse: true
+                }
+            };
+        }
+        
+        // Perform iterative searches
+        const searchTerms = initialDecision.searchTerms || [query];
+        
+        for (let iteration = 1; iteration <= maxIterations; iteration++) {
+            if (stream) {
+                stream.writeEvent('step', {
+                    type: 'search_iteration',
+                    iteration: iteration,
+                    message: `Starting search iteration ${iteration}/${maxIterations}...`,
+                    timestamp: new Date().toISOString()
+                });
+            }
+            
+            // Use initial search terms for first iteration
+            const currentSearchTerms = iteration === 1 ? 
+                searchTerms : 
+                await generateAdditionalSearchTerms(query, allSearchResults, model, accessSecret, apiKey);
+                
+            for (let i = 0; i < currentSearchTerms.length; i++) {
+                const searchTerm = currentSearchTerms[i];
+                
+                if (stream) {
+                    stream.writeEvent('search', {
+                        term: searchTerm,
+                        iteration: iteration,
+                        searchIndex: i + 1,
+                        totalSearches: currentSearchTerms.length,
+                        timestamp: new Date().toISOString()
+                    });
+                }
                 
                 // Perform the search
                 const searchResults = await performSearch(
@@ -2468,20 +2504,24 @@ async function executeMultiSearchWithStreaming(
                     resultsCount: searchResults.length
                 });
                 
-                stream.writeEvent('search_results', {
-                    term: searchTerm,
-                    resultsCount: searchResults.length,
-                    iteration: iteration,
-                    timestamp: new Date().toISOString()
-                });
+                if (stream) {
+                    stream.writeEvent('search_results', {
+                        term: searchTerm,
+                        resultsCount: searchResults.length,
+                        iteration: iteration,
+                        timestamp: new Date().toISOString()
+                    });
+                }
             }
             
             // Check if we should continue searching
-            stream.writeEvent('step', {
-                type: 'continuation_check',
-                message: 'Evaluating if additional searches are needed...',
-                timestamp: new Date().toISOString()
-            });
+            if (stream) {
+                stream.writeEvent('step', {
+                    type: 'continuation_check',
+                    message: 'Evaluating if additional searches are needed...',
+                    timestamp: new Date().toISOString()
+                });
+            }
             
             const shouldContinue = await shouldContinueSearching(
                 query, 
@@ -2494,29 +2534,35 @@ async function executeMultiSearchWithStreaming(
                 systemPrompts
             );
             
-            stream.writeEvent('continuation', {
-                shouldContinue: shouldContinue.shouldContinue,
-                reasoning: shouldContinue.reasoning,
-                iteration: iteration,
-                timestamp: new Date().toISOString()
-            });
-            
-            if (!shouldContinue.shouldContinue) {
-                stream.writeEvent('step', {
-                    type: 'search_complete',
-                    message: `Search process completed after ${iteration} iterations`,
+            if (stream) {
+                stream.writeEvent('continuation', {
+                    shouldContinue: shouldContinue.shouldContinue,
+                    reasoning: shouldContinue.reasoning,
+                    iteration: iteration,
                     timestamp: new Date().toISOString()
                 });
+            }
+            
+            if (!shouldContinue.shouldContinue) {
+                if (stream) {
+                    stream.writeEvent('step', {
+                        type: 'search_complete',
+                        message: `Search process completed after ${iteration} iterations`,
+                        timestamp: new Date().toISOString()
+                    });
+                }
                 break;
             }
         }
         
         // Generate final response
-        stream.writeEvent('step', {
-            type: 'final_generation',
-            message: 'Generating comprehensive response...',
-            timestamp: new Date().toISOString()
-        });
+        if (stream) {
+            stream.writeEvent('step', {
+                type: 'final_generation',
+                message: 'Generating comprehensive response...',
+                timestamp: new Date().toISOString()
+            });
+        }
         
         const finalResponse = await generateFinalResponse(
             query, 
@@ -2542,21 +2588,25 @@ async function executeMultiSearchWithStreaming(
             }
         };
         
-        stream.writeEvent('final_response', {
-            response: finalResponse,
-            totalResults: allSearchResults.length,
-            searchIterations: searchesPerformed.length,
-            timestamp: new Date().toISOString()
-        });
+        if (stream) {
+            stream.writeEvent('final_response', {
+                response: finalResponse,
+                totalResults: allSearchResults.length,
+                searchIterations: searchesPerformed.length,
+                timestamp: new Date().toISOString()
+            });
+        }
         
         return result;
         
     } catch (error) {
-        stream.writeEvent('error', {
-            error: error.message,
-            stack: error.stack,
-            timestamp: new Date().toISOString()
-        });
+        if (stream) {
+            stream.writeEvent('error', {
+                error: error.message,
+                stack: error.stack,
+                timestamp: new Date().toISOString()
+            });
+        }
         throw error;
     }
 }
@@ -2571,22 +2621,223 @@ async function generateAdditionalSearchTerms(query, existingResults, model, acce
 }
 
 /**
+ * Process initial decision to determine search strategy
+ */
+async function processInitialDecision(query, model, accessSecret, apiKey, systemPrompts = null, decisionTemplate = null) {
+    // Use default templates and prompts
+    const llmClient = new LLMClient(apiKey, {}, {});
+    
+    try {
+        const decision = await llmClient.processInitialDecision(query, { model });
+        
+        // Convert decision format to search terms
+        if (decision.search_queries && Array.isArray(decision.search_queries)) {
+            return {
+                needsSearch: true,
+                searchTerms: decision.search_queries,
+                usage: decision.usage
+            };
+        } else if (decision.response) {
+            return {
+                needsSearch: false,
+                directResponse: decision.response,
+                usage: decision.usage
+            };
+        } else {
+            // Fallback to search mode
+            return {
+                needsSearch: true,
+                searchTerms: [query],
+                usage: decision.usage
+            };
+        }
+    } catch (error) {
+        console.error('Initial decision error:', error);
+        // Fallback to search mode
+        return {
+            needsSearch: true,
+            searchTerms: [query]
+        };
+    }
+}
+
+/**
+ * Perform search using DuckDuckGo
+ */
+async function performSearch(searchTerm, limit, fetchContent, timeout, searchMode) {
+    try {
+        const searcher = new DuckDuckGoSearcher();
+        const searchResult = await searcher.search(searchTerm, limit, fetchContent, timeout);
+        return searchResult.results || [];
+    } catch (error) {
+        console.error('Search error:', error);
+        return [];
+    }
+}
+
+/**
+ * Check if we should continue searching
+ */
+async function shouldContinueSearching(query, allSearchResults, iteration, maxIterations, model, accessSecret, apiKey, systemPrompts = null) {
+    // Simple logic for now - stop after 2 iterations or if we have enough results
+    if (iteration >= 2 || allSearchResults.length >= 15) {
+        return {
+            shouldContinue: false,
+            reasoning: `Stopping after ${iteration} iterations with ${allSearchResults.length} results`
+        };
+    }
+    
+    return {
+        shouldContinue: true,
+        reasoning: `Continuing search to gather more comprehensive information`
+    };
+}
+
+/**
+ * Generate final response from search results
+ */
+async function generateFinalResponse(query, allSearchResults, model, accessSecret, apiKey, systemPrompts = null, searchTemplate = null) {
+    // Use default templates and prompts
+    const llmClient = new LLMClient(apiKey, {}, {});
+    
+    try {
+        const response = await llmClient.processWithLLMWithRetry(query, allSearchResults, { model });
+        return response.choices[0].message.content;
+    } catch (error) {
+        console.error('Final response generation error:', error);
+        
+        // Fallback response
+        const resultSummary = allSearchResults.slice(0, 5).map((result, index) => 
+            `${index + 1}. ${result.title} (${result.url})\n${result.description || 'No description available'}`
+        ).join('\n\n');
+        
+        return `Based on search results for "${query}":\n\n${resultSummary}\n\nNote: Full AI processing encountered an error, but these search results provide relevant information.`;
+    }
+}
+
+/**
  * Handle non-streaming requests (original behavior)
  */
 async function handleNonStreamingRequest(event, context, startTime) {
-    // This would contain the original handler logic
-    // For now, return a simple response directing to use streaming
-    return {
-        statusCode: 200,
-        headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-        },
-        body: JSON.stringify({
-            error: 'Non-streaming mode not yet implemented. Please use streaming mode by setting Accept: text/event-stream header.',
-            timestamp: new Date().toISOString()
-        })
-    };
+    const initialMemory = process.memoryUsage();
+    console.log(`Lambda handler started. Initial memory: RSS=${Math.round(initialMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(initialMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB`);
+    
+    let query = '';
+    
+    try {
+        // Extract parameters from request
+        let limit, fetchContent, timeout, model, accessSecret, apiKey, searchMode;
+        
+        // Extract the HTTP method (support both API Gateway and Function URL formats)
+        const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
+        
+        if (httpMethod === 'OPTIONS') {
+            return {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                },
+                body: ''
+            };
+        }
+        
+        if (httpMethod !== 'POST') {
+            return {
+                statusCode: 405,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                },
+                body: JSON.stringify({
+                    error: 'Method not allowed. Only POST requests are supported.',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+        
+        const body = JSON.parse(event.body || '{}');
+        query = body.query || '';
+        limit = parseInt(body.limit) || 10;
+        fetchContent = body.fetchContent || false;
+        timeout = parseInt(body.timeout) || 30000;
+        model = body.model || 'groq:llama-3.1-8b-instant';
+        accessSecret = body.accessSecret || '';
+        apiKey = body.apiKey || '';
+        searchMode = body.searchMode || 'web_search';
+        
+        console.log(`Processing non-streaming request for query: "${query}" with model: ${model}`);
+        
+        // Validate required parameters
+        if (!query) {
+            return {
+                statusCode: 400,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+                },
+                body: JSON.stringify({
+                    error: 'Query parameter is required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+        
+        // Execute the multi-search process
+        const finalResult = await executeMultiSearchWithStreaming(
+            query, 
+            limit, 
+            fetchContent, 
+            timeout, 
+            model, 
+            accessSecret, 
+            apiKey, 
+            searchMode,
+            null, // No custom systemPrompts
+            null, // No custom decisionTemplate
+            null, // No custom searchTemplate
+            null // No streaming for non-streaming requests
+        );
+        
+        const processingTime = Date.now() - startTime;
+        
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+            },
+            body: JSON.stringify({
+                ...finalResult,
+                processingTime: processingTime,
+                timestamp: new Date().toISOString()
+            })
+        };
+        
+    } catch (error) {
+        console.error('Lambda handler error:', error);
+        
+        return {
+            statusCode: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+            },
+            body: JSON.stringify({
+                error: error.message,
+                query: query,
+                timestamp: new Date().toISOString()
+            })
+        };
+    }
 }
