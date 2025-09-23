@@ -9,103 +9,147 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, sans-serif;
             background-color: #f4f4f9;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
             margin: 0;
-            padding: 20px;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
         .form-container {
             background-color: #fff;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 500px;
+            padding: 12px 20px;
+            border-bottom: 2px solid #e0e0e0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            flex-shrink: 0;
         }
 
         h1 {
             color: #333;
-            text-align: center;
-            margin-bottom: 1.5rem;
-            font-size: 1.5rem;
+            margin: 0;
+            font-size: 1.2rem;
+            display: inline-block;
+            margin-right: 20px;
+        }
+
+        .form-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
         }
 
         label {
-            display: block;
-            margin-bottom: 0.5rem;
             color: #555;
             font-weight: 500;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+        .form-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group.query-group {
+            flex: 1;
+            min-width: 300px;
         }
 
         input[type="text"],
-        input[type="number"],
         textarea,
         select {
-            width: 100%;
-            padding: 0.75rem;
-            margin-bottom: 1rem;
+            padding: 8px 12px;
             border: 1px solid #ccc;
-            border-radius: 8px;
+            border-radius: 6px;
+            font-size: 0.9rem;
             box-sizing: border-box;
-            font-size: 1rem;
         }
 
-        textarea {
-            resize: vertical;
-            min-height: 100px;
+        #model {
+            width: 180px;
         }
 
-        button {
-            width: 100%;
-            padding: 1rem;
-            background-color: #007bff;
-            color: #fff;
+        #prompt {
+            flex: 1;
+            resize: none;
+            height: 36px;
+            min-height: 36px;
+        }
+
+        .search-mode-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .search-mode-option {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+
+        .search-mode-option input[type="radio"] {
+            margin: 0;
+        }
+
+        button[type="submit"] {
+            background: #007bff;
+            color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            font-weight: bold;
+            padding: 8px 16px;
+            border-radius: 6px;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            font-size: 0.9rem;
+            font-weight: 500;
         }
 
-        button:hover {
-            background-color: #0056b3;
+        button[type="submit"]:hover:not(:disabled) {
+            background: #0056b3;
         }
 
-        button:disabled {
-            background-color: #6c757d;
+        button[type="submit"]:disabled {
+            background: #6c757d;
             cursor: not-allowed;
         }
 
         .response-container {
-            margin-top: 2rem;
-            padding: 1.5rem;
-            border-radius: 8px;
-            white-space: pre-wrap;
-            font-family: inherit;
+            flex: 1;
+            margin: 20px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow-y: auto;
             display: none;
-            line-height: 1.6;
         }
 
-        .response-success {
+        .response-container.loading {
+            color: #6c757d;
+            font-style: italic;
+            text-align: center;
+        }
+
+        .response-container.response-success {
             background-color: #d4edda;
             border: 1px solid #c3e6cb;
             color: #155724;
         }
 
-        .response-error {
+        .response-container.response-error {
             background-color: #f8d7da;
             border: 1px solid #f5c6cb;
             color: #721c24;
         }
 
-        .loading {
-            text-align: center;
-            color: #6c757d;
-            font-style: italic;
+        .response-container pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: inherit;
+            margin: 0;
         }
 
         .advanced-toggle {
@@ -413,54 +457,59 @@ Please provide a detailed, well-structured response using the search results. In
 </div>
 
 <div class="form-container">
-    <h1>AI Search</h1> 
     <form id="llm-form">
-        <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
-        <div>
-            <label for="model">Model:</label>
-            <select id="model" name="model" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 1rem;">
-                <optgroup label="Groq Models" id="groq-models">
-                    <option value="groq:llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
-                    <option value="groq:llama-3.1-70b-versatile">Llama 3.1 70B Versatile</option>
-                    <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
-                    <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
-                </optgroup>
-                <optgroup label="OpenAI Models" id="openai-models">
-                    <option value="openai:gpt-5">GPT-5</option>
-                    <option value="openai:gpt-5-mini">GPT-5 Mini</option>
-                    <option value="openai:gpt-5-nano">GPT-5 Nano</option>
-                </optgroup>
-            </select>
-        </div>
-        <div>
-            <label style="display: block; margin-bottom: 0.5rem; color: #555; font-weight: 500;">Search Mode:</label>
-            <div style="margin-bottom: 1rem;">
-                <label style="display: flex; align-items: center; margin-bottom: 0.5rem; font-weight: normal;">
-                    <input type="radio" id="search_auto" name="search_mode" value="auto" checked style="margin-right: 0.5rem;">
-                    <span>Auto Detect - Let AI decide whether to search</span>
-                </label>
-                <label style="display: flex; align-items: center; margin-bottom: 0.5rem; font-weight: normal;">
-                    <input type="radio" id="search_force" name="search_mode" value="search" style="margin-right: 0.5rem;">
-                    <span>Use Search - Always search for current information</span>
-                </label>
-                <label style="display: flex; align-items: center; margin-bottom: 0.5rem; font-weight: normal;">
-                    <input type="radio" id="search_skip" name="search_mode" value="direct" style="margin-right: 0.5rem;">
-                    <span>Skip Search - Answer directly without searching</span>
-                </label>
+        <input type="hidden" id="access_secret" name="access_secret" value="{{ACCESS_SECRET}}">
+        
+        <div class="form-row">
+            <h1>AI Search</h1>
+            
+            <div class="form-group">
+                <label for="model">Model:</label>
+                <select id="model" name="model">
+                    <optgroup label="Groq Models" id="groq-models">
+                        <option value="groq:llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
+                        <option value="groq:llama-3.1-70b-versatile">Llama 3.1 70B Versatile</option>
+                        <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
+                        <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
+                    </optgroup>
+                    <optgroup label="OpenAI Models" id="openai-models">
+                        <option value="openai:gpt-5">GPT-5</option>
+                        <option value="openai:gpt-5-mini">GPT-5 Mini</option>
+                        <option value="openai:gpt-5-nano">GPT-5 Nano</option>
+                    </optgroup>
+                </select>
             </div>
-        </div>
 
-        <div>
-            <label for="prompt">Prompt:</label>
-            <textarea id="prompt" name="prompt" required>how old is the first child of the king of spain</textarea>
+            <div class="form-group">
+                <label>Search:</label>
+                <div class="search-mode-group">
+                    <div class="search-mode-option">
+                        <input type="radio" id="search_auto" name="search_mode" value="auto" checked>
+                        <label for="search_auto">Auto</label>
+                    </div>
+                    <div class="search-mode-option">
+                        <input type="radio" id="search_force" name="search_mode" value="search">
+                        <label for="search_force">Search</label>
+                    </div>
+                    <div class="search-mode-option">
+                        <input type="radio" id="search_skip" name="search_mode" value="direct">
+                        <label for="search_skip">Direct</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group query-group">
+                <label for="prompt">Query:</label>
+                <textarea id="prompt" name="prompt" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
+            </div>
+            
+            <button type="submit" id="submit-btn" disabled>Sign in to Send Request</button>
         </div>
-       
-        <button type="submit" id="submit-btn" disabled>Sign in to Send Request</button>
     </form>
-    
-    <div id="response-container" class="response-container">
-        <!-- Response will be displayed here -->
-    </div>
+</div>
+
+<div id="response-container" class="response-container">
+    <!-- Response will be displayed here -->
 </div>
 
 <script>
