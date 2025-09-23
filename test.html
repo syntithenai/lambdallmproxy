@@ -464,12 +464,14 @@ Please provide a detailed, well-structured response using the search results. In
 </div>
 
 <script>
+// Global Google OAuth variables
+let googleUser = null;
+let googleAccessToken = null;
+
 // Handle API key persistence and model selection
 document.addEventListener('DOMContentLoaded', function() {
     // Google OAuth configuration
     const GOOGLE_CLIENT_ID = '{{GOOGLE_CLIENT_ID}}'; // Replaced during build process
-    let googleUser = null;
-    let googleAccessToken = null;
 
     // API key elements
     const openaiApiKeyInput = document.getElementById('openai_api_key');
