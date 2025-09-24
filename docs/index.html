@@ -960,6 +960,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (sel.startsWith('groq:')) return !!groqKey;
         return false;
     }
+    
     function updateSubmitButton() {
         const signedIn = isGoogleTokenValid(googleAccessToken);
         const localKeyOk = hasLocalKeyForModel();

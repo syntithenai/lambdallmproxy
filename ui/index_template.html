@@ -644,9 +644,6 @@
     <span id="login-text">Sign in with Google</span>
 </button>
 
-<!-- Google Button Fallback (rendered by GIS) -->
-<div id="google-button-container" style="position: fixed; top: 70px; right: 20px; z-index: 1000;"></div>
-
 <!-- Settings Button -->
 <button class="settings-button" id="settings-btn" title="Settings">⚙️</button>
 
@@ -803,32 +800,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Google OAuth functions
     function initializeGoogleOAuth() {
         if (typeof google !== 'undefined' && google.accounts) {
+            // Initialize without FedCM opt-in to avoid current compatibility issues
             google.accounts.id.initialize({
                 client_id: GOOGLE_CLIENT_ID,
                 callback: handleGoogleSignIn
             });
 
-            // Render a standard Google Sign-In button as a fallback/UI affordance
+            // Attempt authentication prompt with error handling
             try {
-                const btnContainer = document.getElementById('google-button-container');
-                if (btnContainer) {
-                    google.accounts.id.renderButton(btnContainer, {
-                        type: 'standard',
-                        theme: 'filled_blue',
-                        size: 'large',
-                        text: 'signin_with',
-                        shape: 'pill',
-                    });
-                }
+                google.accounts.id.prompt();
             } catch (e) {
-                console.warn('Google button render failed:', e);
-            }
-
-            // Attempt One Tap / FedCM prompt with diagnostics
-            try {
-                google.accounts.id.prompt(promptDiagnostics);
-            } catch (e) {
-                console.warn('Google prompt failed to start:', e);
+                console.warn('Google authentication prompt failed:', e);
             }
             
             // Try to restore previous session
@@ -928,27 +910,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Expose globally for any external references
     window.isGoogleTokenValid = isGoogleTokenValid;
 
-    // FedCM/GIS prompt diagnostics callback
+    // Future: FedCM-compatible diagnostics callback (not currently used)
     function promptDiagnostics(notification) {
         try {
             if (!notification) return;
-            if (notification.isDisplayed && notification.isDisplayed()) {
-                console.log('Google prompt displayed');
-            }
-            if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-                const reason = notification.getNotDisplayedReason && notification.getNotDisplayedReason();
-                console.warn('Google prompt not displayed:', reason);
-            }
-            if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-                const reason = notification.getSkippedReason && notification.getSkippedReason();
-                console.warn('Google prompt skipped:', reason);
-            }
-            if (notification.isDismissedMoment && notification.isDismissedMoment()) {
-                const reason = notification.getDismissedReason && notification.getDismissedReason();
-                console.warn('Google prompt dismissed:', reason);
-            }
+            console.log('Google authentication prompt notification received');
         } catch (e) {
-            console.warn('Google prompt diagnostics error:', e);
+            console.warn('Google authentication prompt error:', e);
         }
     }
     
@@ -987,9 +955,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // User is not logged in, so show sign-in prompt
             if (typeof google !== 'undefined' && google.accounts) {
                 try {
-                    google.accounts.id.prompt(promptDiagnostics);
+                    google.accounts.id.prompt();
                 } catch (e) {
-                    console.warn('Google prompt error:', e);
+                    console.warn('Google authentication error:', e);
                 }
                 // After prompt, state may change; attempt to refresh UI shortly
                 setTimeout(() => { updateSubmitButton(); updateModelAvailability(); }, 1500);
