@@ -644,6 +644,9 @@
     <span id="login-text">Sign in with Google</span>
 </button>
 
+<!-- Google Button Fallback (rendered by GIS) -->
+<div id="google-button-container" style="position: fixed; top: 70px; right: 20px; z-index: 1000;"></div>
+
 <!-- Settings Button -->
 <button class="settings-button" id="settings-btn" title="Settings">⚙️</button>
 
@@ -695,15 +698,16 @@
                 <label for="model">Model:</label>
                 <select id="model" name="model">
                     <optgroup label="Groq Models" id="groq-models">
-                        <option value="groq:llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
+                        <option value="groq:llama-3.1-8b-instant" selected>Llama 3.1 8B Instant (Fastest)</option>
                         <option value="groq:llama-3.1-70b-versatile">Llama 3.1 70B Versatile</option>
                         <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
                         <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
                     </optgroup>
                     <optgroup label="OpenAI Models" id="openai-models">
-                        <option value="openai:gpt-5">GPT-5</option>
-                        <option value="openai:gpt-5-mini">GPT-5 Mini</option>
-                        <option value="openai:gpt-5-nano">GPT-5 Nano</option>
+                        <option value="openai:gpt-4o">GPT-4o</option>
+                        <option value="openai:gpt-4o-mini">GPT-4o Mini</option>
+                        <option value="openai:gpt-4">GPT-4</option>
+                        <option value="openai:gpt-3.5-turbo">GPT-3.5 Turbo</option>
                     </optgroup>
                 </select>
             </div>
@@ -802,17 +806,51 @@ document.addEventListener('DOMContentLoaded', function() {
                 client_id: GOOGLE_CLIENT_ID,
                 callback: handleGoogleSignIn
             });
+
+            // Render a standard Google Sign-In button as a fallback/UI affordance
+            try {
+                const btnContainer = document.getElementById('google-button-container');
+                if (btnContainer) {
+                    google.accounts.id.renderButton(btnContainer, {
+                        type: 'standard',
+                        theme: 'filled_blue',
+                        size: 'large',
+                        text: 'signin_with',
+                        shape: 'pill',
+                    });
+                }
+            } catch (e) {
+                console.warn('Google button render failed:', e);
+            }
+
+            // Attempt One Tap / FedCM prompt with diagnostics
+            try {
+                google.accounts.id.prompt(promptDiagnostics);
+            } catch (e) {
+                console.warn('Google prompt failed to start:', e);
+            }
             
             // Try to restore previous session
             const savedToken = localStorage.getItem('google_access_token');
             const savedUser = localStorage.getItem('google_user');
             if (savedToken && savedUser) {
-                googleAccessToken = savedToken;
-                googleUser = JSON.parse(savedUser);
-                updateLoginUI(true);
-                updateSubmitButton();
-                updateModelAvailability();
-                console.log('Restored Google session');
+                if (isGoogleTokenValid(savedToken)) {
+                    googleAccessToken = savedToken;
+                    googleUser = JSON.parse(savedUser);
+                    updateLoginUI(true);
+                    updateSubmitButton();
+                    updateModelAvailability();
+                    console.log('Restored Google session');
+                } else {
+                    localStorage.removeItem('google_access_token');
+                    localStorage.removeItem('google_user');
+                    googleAccessToken = null;
+                    googleUser = null;
+                    updateLoginUI(false);
+                    updateSubmitButton();
+                    updateModelAvailability();
+                    console.log('Cleared expired Google session; please sign in again');
+                }
             }
         } else {
             console.error('Google Identity Services not loaded');
@@ -874,6 +912,45 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
+    // Validate Google ID token expiry (parse JWT payload; no signature verification)
+    function isGoogleTokenValid(token) {
+        try {
+            if (!token) return false;
+            const payload = parseJwt(token);
+            if (!payload || !payload.exp) return false;
+            const now = Math.floor(Date.now() / 1000);
+            return payload.exp > now;
+        } catch (e) {
+            return false;
+        }
+    }
+    // Expose globally for any external references
+    window.isGoogleTokenValid = isGoogleTokenValid;
+
+    // FedCM/GIS prompt diagnostics callback
+    function promptDiagnostics(notification) {
+        try {
+            if (!notification) return;
+            if (notification.isDisplayed && notification.isDisplayed()) {
+                console.log('Google prompt displayed');
+            }
+            if (notification.isNotDisplayed && notification.isNotDisplayed()) {
+                const reason = notification.getNotDisplayedReason && notification.getNotDisplayedReason();
+                console.warn('Google prompt not displayed:', reason);
+            }
+            if (notification.isSkippedMoment && notification.isSkippedMoment()) {
+                const reason = notification.getSkippedReason && notification.getSkippedReason();
+                console.warn('Google prompt skipped:', reason);
+            }
+            if (notification.isDismissedMoment && notification.isDismissedMoment()) {
+                const reason = notification.getDismissedReason && notification.getDismissedReason();
+                console.warn('Google prompt dismissed:', reason);
+            }
+        } catch (e) {
+            console.warn('Google prompt diagnostics error:', e);
+        }
+    }
+    
     function hasLocalKeyForModel() {
         const sel = modelSelect.value || '';
         const openaiKey = (openaiApiKeyInput.value || '').trim();
@@ -883,13 +960,13 @@ document.addEventListener('DOMContentLoaded', function() {
         return false;
     }
     function updateSubmitButton() {
-        const signedIn = !!googleAccessToken;
+        const signedIn = isGoogleTokenValid(googleAccessToken);
         const localKeyOk = hasLocalKeyForModel();
         const canSubmit = signedIn || localKeyOk;
         
         // Debug logging
         console.log('updateSubmitButton:', {
-            googleAccessToken: googleAccessToken ? 'present' : 'null',
+            googleAccessToken: googleAccessToken ? (signedIn ? 'present-valid' : 'present-expired') : 'null',
             googleUser: googleUser ? googleUser.email : 'null',
             signedIn: signedIn,
             localKeyOk: localKeyOk,
@@ -908,7 +985,11 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             // User is not logged in, so show sign-in prompt
             if (typeof google !== 'undefined' && google.accounts) {
-                google.accounts.id.prompt();
+                try {
+                    google.accounts.id.prompt(promptDiagnostics);
+                } catch (e) {
+                    console.warn('Google prompt error:', e);
+                }
                 // After prompt, state may change; attempt to refresh UI shortly
                 setTimeout(() => { updateSubmitButton(); updateModelAvailability(); }, 1500);
             } else {
@@ -933,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('updateModelAvailability called');
         const hasOpenaiKey = !!(openaiApiKeyInput.value && openaiApiKeyInput.value.trim());
         const hasGroqKey = !!(groqApiKeyInput.value && groqApiKeyInput.value.trim());
-        const signedIn = !!googleAccessToken;
+    const signedIn = isGoogleTokenValid(googleAccessToken);
         
         console.log('hasOpenaiKey:', hasOpenaiKey, 'hasGroqKey:', hasGroqKey, 'signedIn:', signedIn);
         
@@ -1035,12 +1116,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Only set default if no model is currently selected
         if (!modelSelect.value || modelSelect.value === '') {
-            if (hasOpenaiKey) {
-                modelSelect.value = 'openai:gpt-5-nano';
-                console.log('Set initial default model to gpt-5-nano (OpenAI key available)');
-            } else if (hasGroqKey) {
+            if (hasGroqKey) {
                 modelSelect.value = 'groq:llama-3.1-8b-instant';
-                console.log('Set initial default model to llama-3.1-8b-instant (Groq key available)');
+                console.log('Set initial default model to llama-3.1-8b-instant (Groq key available - prioritized for speed)');
+            } else if (hasOpenaiKey) {
+                modelSelect.value = 'openai:gpt-4o-mini';
+                console.log('Set initial default model to gpt-4o-mini (OpenAI key available)');
             }
         }
     }
@@ -1217,7 +1298,7 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     
     // Validate that we have either a local API key or a Google login (server env keys may apply)
     const hasLocalKey = apiKey && apiKey.trim();
-    const isSignedIn = !!googleAccessToken;
+    const isSignedIn = isGoogleTokenValid(googleAccessToken);
     
     // Debug logging
     console.log('Form submission validation:', {

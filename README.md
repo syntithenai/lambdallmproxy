@@ -2,6 +2,40 @@
 
 An intelligent AWS Lambda function that combines web search with LLM processing to provide comprehensive answers with citations and source references.
 
+## Quick Start - Use the Makefile!
+
+**⚡ For all deployments and builds, use the Makefile commands:**
+
+```bash
+# Deploy the Lambda function
+make deploy
+
+# Build and deploy UI (build docs + push to git)
+make deploy_ui
+
+# Test the Lambda function
+make test
+
+# View all available commands
+make help
+```
+
+**The Makefile is your single interface for all operations - it ensures consistent, reliable deployments and builds.**
+
+## Architecture
+
+This project has been reorganized for better maintainability:
+
+- **`src/`** - Modularized source code
+  - `auth.js` - Google OAuth authentication and email validation
+  - `providers.js` - LLM provider configuration (OpenAI, Groq)  
+  - `memory-tracker.js` - Memory management and token optimization
+  - `html-parser.js` - HTML parsing and content extraction
+  - `lambda_search_llm_handler.js` - Main Lambda function (cleaned, imports modules)
+  - `index.js` - Entry point that exports the handler
+- **`scripts/`** - All deployment and build scripts
+- **`Makefile`** - Centralized build automation
+
 ## Features
 
 - 🔍 **Intelligent Search Decision Making**: AI determines whether to search or respond directly

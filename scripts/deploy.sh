@@ -6,7 +6,7 @@ set -e  # Exit on any error
 # Configuration
 FUNCTION_NAME="llmproxy"
 REGION="us-east-1"
-SOURCE_FILE="lambda_search_llm_handler.js"
+SOURCE_FILE="src/lambda_search_llm_handler.js"
 TEMP_DIR="/tmp/lambda-deploy-$$"
 ZIP_FILE="lambda-function.zip"
 
@@ -49,6 +49,14 @@ cd "$TEMP_DIR"
 # Copy source file and rename to index.js (CommonJS module)
 cp "$OLDPWD/$SOURCE_FILE" index.js
 
+# Copy all module files from src/ directory
+mkdir -p src
+cp "$OLDPWD"/src/auth.js ./
+cp "$OLDPWD"/src/providers.js ./  
+cp "$OLDPWD"/src/memory-tracker.js ./
+cp "$OLDPWD"/src/html-parser.js ./
+cp "$OLDPWD"/src/search.js ./ 2>/dev/null || true  # Optional, may not exist yet
+
 # Create package.json for the Lambda function
 cat > package.json << EOF
 {
@@ -64,7 +72,7 @@ cat > package.json << EOF
 EOF
 
 # Create the deployment package
-zip -q -r "$ZIP_FILE" index.js package.json
+zip -q -r "$ZIP_FILE" index.js package.json *.js 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
 
 # Get current function configuration for backup
 aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" > function-backup.json 2>/dev/null
@@ -218,8 +226,8 @@ if [ $? -eq 0 ]; then
         NEEDS_CORS_UPDATE=true
     fi
     
-    if [[ "$CURRENT_INVOKE_MODE" != "BUFFERED" ]]; then
-        echo -e "${YELLOW}⚠️  InvokeMode is '$CURRENT_INVOKE_MODE', should be 'BUFFERED'${NC}"
+    if [[ "$CURRENT_INVOKE_MODE" != "RESPONSE_STREAM" ]]; then
+        echo -e "${YELLOW}⚠️  InvokeMode is '$CURRENT_INVOKE_MODE', should be 'RESPONSE_STREAM'${NC}"
         NEEDS_CORS_UPDATE=true
     fi
     
@@ -237,8 +245,8 @@ if [ $? -eq 0 ]; then
         aws lambda update-function-url-config \
             --function-name "$FUNCTION_NAME" \
             --region "$REGION" \
-            --cors AllowCredentials=true,AllowHeaders=content-type,authorization,origin,AllowMethods=*,AllowOrigins=*,MaxAge=86400 \
-            --invoke-mode BUFFERED > /dev/null
+            --cors AllowCredentials=true,AllowHeaders=content-type,authorization,origin,accept,AllowMethods=*,AllowOrigins=*,MaxAge=86400 \
+            --invoke-mode RESPONSE_STREAM > /dev/null
             
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}✅ CORS configuration updated successfully${NC}"

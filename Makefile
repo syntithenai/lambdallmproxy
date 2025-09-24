@@ -1,16 +1,13 @@
 # Makefile for AWS Lambda deployment
 # Provides simple commands to deploy the llmproxy Lambda function
 
-.PHONY: deploy deploy-bash deploy-node test clean check help cors build-docs env setup deploy-docs
+.PHONY: deploy deploy_ui test clean check help cors build-docs env setup
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  make deploy      - Deploy using bash script (default)"
-	@echo "  make deploy-bash - Deploy using bash script"
-	@echo "  make deploy-node - Deploy using Node.js script"
-	@echo "  make build-docs  - Build documentation with environment variables"
-	@echo "  make deploy-docs - Commit and push docs/ to the current branch"
+	@echo "  make deploy      - Deploy Lambda function"
+	@echo "  make deploy_ui   - Build and deploy UI (commit + push to git)"
 	@echo "  make test        - Test the deployed function"
 	@echo "  make check       - Check prerequisites"
 	@echo "  make cors        - Check CORS configuration"
@@ -19,35 +16,26 @@ help:
 	@echo "  make clean       - Clean up temporary files"
 	@echo "  make help        - Show this help message"
 
-# Default deployment using bash script
-deploy: deploy-bash
+# Deploy Lambda function
+deploy:
+	@echo "🚀 Deploying Lambda function..."
+	./scripts/deploy.sh
 
-# Deploy using bash script
-deploy-bash:
-	@echo "🚀 Deploying Lambda function using bash script..."
-	./deploy.sh
-
-# Deploy using Node.js script
-deploy-node:
-	@echo "🚀 Deploying Lambda function using Node.js script..."
-	./deploy.mjs
-
-# Build documentation with environment variables
-build-docs:
+# Build and deploy UI (build docs and push to git)
+deploy_ui:
+	@echo "🎨 Building and deploying UI..."
 	@echo "📚 Building documentation..."
-	@if [ ! -f .env ]; then \
-		echo "❌ .env file not found. Run 'make env' first."; \
-		exit 1; \
-	fi
-	./build-docs.sh
-
-# Deploy (commit and push) docs folder
-deploy-docs:
-	@echo "⏫ Deploying docs (commit + push)..."
+	./scripts/build-docs.sh
+	@echo "⏫ Committing and pushing to git..."
 	@if [ ! -x scripts/deploy-docs.sh ]; then \
 		chmod +x scripts/deploy-docs.sh; \
 	fi
-	scripts/deploy-docs.sh --build -m "via make deploy-docs"
+	scripts/deploy-docs.sh --build -m "UI deployment via make deploy_ui"
+
+# Build documentation with environment variables
+build-docs:
+	@echo "📚 Building documentation with environment variables..."
+	./scripts/build-docs.sh
 
 # Setup environment file from template
 env:
@@ -105,9 +93,9 @@ info:
 	@echo "📊 Lambda function information:"
 	@aws lambda get-function --function-name llmproxy --region us-east-1 --query 'Configuration.{FunctionName:FunctionName,Runtime:Runtime,LastModified:LastModified,CodeSize:CodeSize,Timeout:Timeout,MemorySize:MemorySize}' --output table
 
-# Show environment variables
-env:
-	@echo "🔧 Environment variables:"
+# Show Lambda environment variables
+show-env:
+	@echo "🔧 Lambda environment variables:"
 	@aws lambda get-function-configuration --function-name llmproxy --region us-east-1 --query 'Environment.Variables' --output table
 
 # Check CORS configuration

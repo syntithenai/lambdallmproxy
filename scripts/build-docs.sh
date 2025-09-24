@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Build script for LLM Proxy documentation
-# Copies index_template.html to docs/ folder and replaces environment variables
+# Copies ui/index_template.html to docs/ folder and replaces environment variables
 
 set -e
 
@@ -58,11 +58,17 @@ fi
 log_info "Creating docs directory..."
 mkdir -p docs
 
-# Copy index_template.html to docs/index.html and replace environment variables
+# Copy ui/index_template.html to docs/index.html and replace environment variables
 log_info "Building documentation with environment variables..."
 
+# Check if template exists
+if [ ! -f "ui/index_template.html" ]; then
+    log_error "Template file ui/index_template.html not found!"
+    exit 1
+fi
+
 # Use sed to replace placeholders with actual environment variables (excluding OPENAI_API_KEY)
-sed "s|{{LAMBDA_URL}}|$LAMBDA_URL|g" index_template.html | \
+sed "s|{{LAMBDA_URL}}|$LAMBDA_URL|g" ui/index_template.html | \
 sed "s|{{ACCESS_SECRET}}|$ACCESS_SECRET|g" | \
 sed "s|{{GOOGLE_CLIENT_ID}}|$GOOGLE_CLIENT_ID|g" > docs/index.html
 

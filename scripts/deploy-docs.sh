@@ -12,7 +12,7 @@ Options:
   -m, --message <msg>   Commit message to append (optional)
   -r, --remote <name>   Git remote name (default: origin)
   -b, --branch <name>   Branch to push (default: current branch)
-      --build           Run ./build-docs.sh before committing
+      --build           Run ./scripts/build-docs.sh before committing
       --skip-verify     Skip git hooks (adds --no-verify to commit)
   -h, --help            Show this help
 
@@ -85,11 +85,11 @@ fi
 
 # Optionally build docs
 if [[ "$run_build" == "true" ]]; then
-  if [[ -x ./build-docs.sh ]]; then
+  if [[ -x ./scripts/build-docs.sh ]]; then
     echo "📚 Building docs..."
-    ./build-docs.sh
+    ./scripts/build-docs.sh
   else
-    echo "⚠️  ./build-docs.sh not found or not executable; skipping build" >&2
+    echo "⚠️  ./scripts/build-docs.sh not found or not executable; skipping build" >&2
   fi
 fi
 

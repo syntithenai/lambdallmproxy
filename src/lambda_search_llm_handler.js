@@ -8,105 +8,18 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 
-// Google OAuth configuration: derive allowed emails from env on-demand, so warm containers pick up changes
-function getAllowedEmails() {
-    const raw = process.env.ALLOWED_EMAILS || '';
-    return raw
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
-}
+// AWS Lambda Response Streaming (available as global in runtime)
 
-/**
- * Verify Google JWT token and extract user information
- * @param {string} token - Google JWT token
- * @returns {Object} - User information or null if invalid
- */
-function verifyGoogleToken(token) {
-    try {
-        console.log(`Debug: Verifying Google token (length: ${token?.length})`);
-        
-        // Parse JWT token (basic parsing - in production you'd want to verify signature)
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-            Buffer.from(base64, 'base64')
-                .toString()
-                .split('')
-                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                .join('')
-        );
-        
-        const payload = JSON.parse(jsonPayload);
-        console.log(`Debug: Token payload parsed, email: ${payload.email}, exp: ${payload.exp}`);
-        
-        // Basic validation
-        if (!payload.email || !payload.exp) {
-            console.log('Invalid token: missing email or expiration');
-            return null;
-        }
-        
-        // Check if token is expired
-        const now = Math.floor(Date.now() / 1000);
-        if (payload.exp < now) {
-            console.log(`Token expired: ${payload.exp} < ${now}`);
-            return null;
-        }
-        
-        // Check if email is in whitelist (read from env dynamically)
-        const allowed = getAllowedEmails();
-        console.log(`Debug: Allowed emails: [${allowed.join(', ')}], checking: ${payload.email}`);
-        if (!allowed.includes(payload.email)) {
-            console.log(`Email not allowed: ${payload.email}`);
-            return null;
-        }
-        
-        console.log(`Valid Google token for: ${payload.email}`);
-        return {
-            email: payload.email,
-            name: payload.name,
-            picture: payload.picture
-        };
-    } catch (error) {
-        console.error('Error verifying Google token:', error);
-        return null;
-    }
-}
+// Import modularized components
+const { getAllowedEmails, verifyGoogleToken } = require('./auth');
+const { PROVIDERS, parseProviderModel, getProviderConfig } = require('./providers');
+const { MemoryTracker, TokenAwareMemoryTracker } = require('./memory-tracker');
+const { SimpleHTMLParser } = require('./html-parser');
 
-// Provider configuration
-const PROVIDERS = {
-    openai: {
-        hostname: 'api.openai.com',
-        path: '/v1/chat/completions',
-        envKey: 'OPENAI_API_KEY',
-        models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']
-    },
-    groq: {
-        hostname: 'api.groq.com',
-        path: '/openai/v1/chat/completions',
-        envKey: 'GROQ_API_KEY',
-        models: ['llama-3.1-8b-instant', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768', 'gemma-7b-it']
-    }
-};
 
-// Helper function to parse provider and model from model string
-function parseProviderModel(modelString) {
-    if (modelString.includes(':')) {
-        const [provider, model] = modelString.split(':', 2);
-        return { provider, model };
-    }
-    // Fallback for backward compatibility
-    return { provider: 'groq', model: modelString };
-}
 
-// Helper function to get API configuration for a provider
-function getProviderConfig(provider) {
-    const config = PROVIDERS[provider];
-    if (!config) {
-        throw new Error(`Unsupported provider: ${provider}`);
-    }
-    return config;
-}
+
+
 
 // Memory management constants
 // Infer memory limit from environment when possible
@@ -161,348 +74,9 @@ Sources:
 
 A:`;
 
-/**
- * Memory tracking utility for Lambda function
- */
-class MemoryTracker {
-    constructor() {
-        this.totalContentSize = 0;
-        this.maxAllowedSize = MAX_CONTENT_SIZE_MB * BYTES_PER_MB;
-    }
 
-    /**
-     * Get current memory usage
-     * @returns {Object} Memory usage statistics
-     */
-    getMemoryUsage() {
-        const usage = process.memoryUsage();
-        return {
-            rss: usage.rss,
-            heapUsed: usage.heapUsed,
-            heapTotal: usage.heapTotal,
-            external: usage.external,
-            rssMB: Math.round(usage.rss / BYTES_PER_MB * 100) / 100,
-            heapUsedMB: Math.round(usage.heapUsed / BYTES_PER_MB * 100) / 100,
-            contentSizeMB: Math.round(this.totalContentSize / BYTES_PER_MB * 100) / 100
-        };
-    }
 
-    /**
-     * Check if adding content would exceed memory limits
-     * @param {number} additionalSize - Size of content to add in bytes
-     * @returns {Object} Check result with allowed status and details
-     */
-    checkMemoryLimit(additionalSize) {
-        const currentUsage = this.getMemoryUsage();
-        const newContentSize = this.totalContentSize + additionalSize;
-        const newContentSizeMB = newContentSize / BYTES_PER_MB;
-        
-        const wouldExceedContentLimit = newContentSize > this.maxAllowedSize;
-        const wouldExceedHeapLimit = (currentUsage.heapUsed + additionalSize) > (LAMBDA_MEMORY_LIMIT_MB * BYTES_PER_MB * 0.8);
-        
-        return {
-            allowed: !wouldExceedContentLimit && !wouldExceedHeapLimit,
-            currentContentSizeMB: Math.round(this.totalContentSize / BYTES_PER_MB * 100) / 100,
-            additionalSizeMB: Math.round(additionalSize / BYTES_PER_MB * 100) / 100,
-            newContentSizeMB: Math.round(newContentSizeMB * 100) / 100,
-            maxAllowedMB: MAX_CONTENT_SIZE_MB,
-            currentHeapUsedMB: currentUsage.heapUsedMB,
-            reason: wouldExceedContentLimit ? 'Content size limit exceeded' : 
-                   wouldExceedHeapLimit ? 'Heap memory limit would be exceeded' : 'OK'
-        };
-    }
 
-    /**
-     * Add content size to tracking
-     * @param {number} size - Size in bytes
-     */
-    addContentSize(size) {
-        this.totalContentSize += size;
-    }
-
-    /**
-     * Get memory usage summary for logging
-     * @returns {string} Formatted memory usage string
-     */
-    getMemorySummary() {
-        const usage = this.getMemoryUsage();
-        return `Memory: RSS=${usage.rssMB}MB, Heap=${usage.heapUsedMB}MB, Content=${usage.contentSizeMB}MB`;
-    }
-}
-
-/**
- * Token-aware memory tracker for optimizing LLM token usage
- */
-class TokenAwareMemoryTracker extends MemoryTracker {
-    constructor() {
-        super();
-        this.maxTokens = 32000; // Increased to 32K for more comprehensive responses
-        this.currentTokens = 0;
-        this.maxContentLengthPerPage = 4000; // Increased per page limit for 32K tokens
-    }
-    
-    /**
-     * Estimate tokens from text (rough approximation: 4 chars = 1 token)
-     * @param {string} text - Text to estimate tokens for
-     * @returns {number} Estimated token count
-     */
-    estimateTokens(text) {
-        return Math.ceil(text.length / 4);
-    }
-    
-    /**
-     * Check if content can be added within token limits
-     * @param {string} content - Content to check
-     * @returns {boolean} Whether content can be added
-     */
-    canAddContent(content) {
-        const estimatedTokens = this.estimateTokens(content);
-        return (this.currentTokens + estimatedTokens) < this.maxTokens;
-    }
-    
-    /**
-     * Add content with token tracking and truncation if needed
-     * @param {string} content - Content to add
-     * @returns {string} Content (potentially truncated)
-     */
-    addContent(content) {
-        if (this.canAddContent(content)) {
-            this.currentTokens += this.estimateTokens(content);
-            return content;
-        }
-        
-        // Truncate to fit within token limit
-        const availableTokens = this.maxTokens - this.currentTokens;
-        const availableChars = Math.max(0, availableTokens * 4);
-        const truncatedContent = content.slice(0, availableChars);
-        this.currentTokens += this.estimateTokens(truncatedContent);
-        return truncatedContent;
-    }
-    
-    /**
-     * Clean and optimize content for token efficiency
-     * @param {string} content - Raw content to clean
-     * @returns {string} Cleaned and optimized content
-     */
-    cleanContent(content) {
-        if (!content || typeof content !== 'string') return '';
-        
-        // Remove extra whitespace and empty lines
-        let cleaned = content
-            .replace(/\n\s*\n\s*\n/g, '\n\n') // Reduce multiple empty lines to double
-            .replace(/[ \t]+/g, ' ') // Normalize spaces and tabs
-            .trim();
-        
-        // Filter out common boilerplate text
-        const boilerplatePatterns = [
-            /Copyright.*?\d{4}.*$/gmi,
-            /Privacy Policy.*$/gmi,
-            /Terms of Service.*$/gmi,
-            /Subscribe to.*newsletter.*$/gmi,
-            /Follow us on.*$/gmi,
-            /Share this article.*$/gmi,
-            /Cookie Policy.*$/gmi,
-            /All rights reserved.*$/gmi,
-            /Sign up for.*$/gmi,
-            /Get the latest.*$/gmi,
-            /Download our app.*$/gmi,
-            /Advertisement.*$/gmi
-        ];
-        
-        boilerplatePatterns.forEach(pattern => {
-            cleaned = cleaned.replace(pattern, '');
-        });
-        
-        // Remove navigation-like content
-        cleaned = cleaned.replace(/^\s*(Home|About|Contact|Menu|Navigation).*$/gmi, '');
-        
-        // Limit content length for token efficiency
-        if (cleaned.length > this.maxContentLengthPerPage) {
-            // Try to cut at sentence boundaries
-            const truncated = cleaned.slice(0, this.maxContentLengthPerPage);
-            const lastSentence = truncated.lastIndexOf('.');
-            if (lastSentence > this.maxContentLengthPerPage * 0.8) {
-                cleaned = truncated.slice(0, lastSentence + 1);
-            } else {
-                cleaned = truncated;
-            }
-        }
-        
-        return cleaned.trim();
-    }
-    
-    /**
-     * Extract meaningful content from HTML using targeted selectors
-     * @param {string} html - HTML content to extract from
-     * @returns {string} Meaningful text content
-     */
-    extractMeaningfulContent(html) {
-        if (!html) return '';
-        
-        // Target main content areas with common CSS selectors
-        const contentSelectors = [
-            'article p',
-            'main p', 
-            '.content p',
-            '.post-content p',
-            '.entry-content p',
-            '[role="main"] p',
-            '.article-body p',
-            '.story-body p',
-            '#content p',
-            '.page-content p'
-        ];
-        
-        let meaningfulText = '';
-        
-        // Simple regex-based content extraction (avoiding heavy HTML parsing)
-        contentSelectors.forEach(selector => {
-            // Convert CSS selector to rough regex pattern
-            let pattern;
-            if (selector.includes('article p')) {
-                pattern = /<article[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>[\s\S]*?<\/article>/gi;
-            } else if (selector.includes('main p')) {
-                pattern = /<main[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>[\s\S]*?<\/main>/gi;
-            } else if (selector.includes('.content p')) {
-                pattern = /<[^>]*class="[^"]*content[^"]*"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/gi;
-            } else {
-                // Generic paragraph extraction
-                pattern = /<p[^>]*>([\s\S]*?)<\/p>/gi;
-            }
-            
-            let match;
-            while ((match = pattern.exec(html)) !== null && meaningfulText.length < 1200) {
-                const text = this.stripHtml(match[1]).trim();
-                if (text.length > 50 && !text.match(/^(Subscribe|Follow|Share|Copyright|Privacy)/i)) {
-                    meaningfulText += text + '\n';
-                }
-            }
-        });
-        
-        // If no structured content found, fall back to all paragraphs
-        if (meaningfulText.length < 200) {
-            const allParagraphs = /<p[^>]*>([\s\S]*?)<\/p>/gi;
-            let match;
-            while ((match = allParagraphs.exec(html)) !== null && meaningfulText.length < 1000) {
-                const text = this.stripHtml(match[1]).trim();
-                if (text.length > 50 && !text.match(/^(Subscribe|Follow|Share|Copyright|Privacy|Advertisement)/i)) {
-                    meaningfulText += text + '\n';
-                }
-            }
-        }
-        
-        return this.cleanContent(meaningfulText);
-    }
-    
-    /**
-     * Strip HTML tags from text
-     * @param {string} html - HTML to strip
-     * @returns {string} Plain text
-     */
-    stripHtml(html) {
-        if (!html) return '';
-        return html.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').replace(/\s+/g, ' ').trim();
-    }
-}
-
-/**
- * Simple HTML parser for extracting links and text
- */
-class SimpleHTMLParser {
-    constructor(html) {
-        this.html = html;
-    }
-
-    /**
-     * Extract all links from HTML
-     * @returns {Array} Array of {href, text, context} objects
-     */
-    extractLinks() {
-        const links = [];
-        const linkRegex = /<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gi;
-        let match;
-
-        while ((match = linkRegex.exec(this.html)) !== null) {
-            const href = match[1];
-            const innerHTML = match[2];
-            const text = this.stripHtml(innerHTML).trim();
-            
-            if (href && text) {
-                // Get context around the link
-                const linkStart = match.index;
-                const contextStart = Math.max(0, linkStart - 200);
-                const contextEnd = Math.min(this.html.length, linkStart + match[0].length + 200);
-                const context = this.stripHtml(this.html.substring(contextStart, contextEnd)).trim();
-                
-                links.push({
-                    href: href,
-                    text: text,
-                    context: context
-                });
-            }
-        }
-
-        return links;
-    }
-
-    /**
-     * Convert HTML to plain text
-     * @param {string} html - HTML content
-     * @returns {string} Plain text content
-     */
-    convertToText(html) {
-        if (!html) return '';
-
-        let text = html;
-
-        // Extract content from main content areas first
-        const mainContentPatterns = [
-            /<main[^>]*>(.*?)<\/main>/is,
-            /<article[^>]*>(.*?)<\/article>/is,
-            /<div[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)<\/div>/is,
-            /<div[^>]*id="[^"]*content[^"]*"[^>]*>(.*?)<\/div>/is,
-        ];
-
-        let mainContent = '';
-        for (const pattern of mainContentPatterns) {
-            const match = text.match(pattern);
-            if (match) {
-                mainContent = match[1];
-                break;
-            }
-        }
-
-        // Use main content if found, otherwise use full page
-        text = mainContent || text;
-
-        // Remove script and style elements
-        text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-        text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-        
-        // Remove navigation and sidebar elements
-        text = text.replace(/<nav\b[^>]*>.*?<\/nav>/gis, '');
-        text = text.replace(/<aside\b[^>]*>.*?<\/aside>/gis, '');
-        text = text.replace(/<header\b[^>]*>.*?<\/header>/gis, '');
-        text = text.replace(/<footer\b[^>]*>.*?<\/footer>/gis, '');
-
-        // Remove all remaining HTML tags
-        text = text.replace(/<[^>]*>/g, ' ');
-        
-        // Clean up whitespace
-        text = text.replace(/\s+/g, ' ').trim();
-        
-        return text;
-    }
-
-    /**
-     * Strip HTML tags from string
-     * @param {string} html - HTML string
-     * @returns {string} Plain text
-     */
-    stripHtml(html) {
-        return html ? html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '';
-    }
-}
 
 /**
  * Integrated DuckDuckGo scraper for search functionality
@@ -2137,24 +1711,18 @@ class LLMClient {
      */
     async summarizeContent(content, query) {
         if (!content || content.length < 3000) return content; // Increased threshold for 32K tokens
-        
+
+        // Local, safe summarization fallback: trim and keep most relevant leading content.
+        // Avoid external API calls here to prevent missing-key failures.
         try {
-            // Allow longer summaries with 32K token budget
-            const summaryPrompt = `Summarize this content relevant to "${query}" in under 300 words, focusing on key facts and details:\n\n${content.slice(0, 4000)}`;
-            
-            const summaryConfig = {
-                provider: 'openai',
-                model: 'gpt-5-mini', // Use smaller model for summarization
-                messages: [{ role: 'user', content: summaryPrompt }],
-                max_tokens: 400, // Increased for longer summaries
-                temperature: 0.3
-            };
-            
-            const summary = await this.callLLM(summaryConfig);
-            return summary.choices[0].message.content;
+            // Prefer keeping sentences whole up to ~2000 chars
+            const trimmed = content.slice(0, 2200);
+            const lastPeriod = trimmed.lastIndexOf('.')
+            const cut = lastPeriod > 1200 ? lastPeriod + 1 : trimmed.length;
+            return trimmed.slice(0, cut);
         } catch (error) {
-            console.log(`Content summarization failed: ${error.message}, using truncated original`);
-            return content.slice(0, 2000); // Increased fallback length for 32K
+            console.log(`Content summarization fallback failed: ${error.message}`);
+            return content.slice(0, 2000);
         }
     }
 
@@ -2571,23 +2139,230 @@ Create a comprehensive, authoritative response that demonstrates the full value 
 }
 
 /**
- * Main Lambda handler function with streaming support
+ * Legacy streaming handler (replaced by awslambda.streamifyResponse)
  */
-exports.handler = async (event, context) => {
+const legacyStreamingHandler = async (event, responseStream, context) => {
     const startTime = Date.now();
     
-    // Check if this is a streaming request
-    const isStreamingRequest = event.headers?.['accept'] === 'text/event-stream' || 
-                              event.queryStringParameters?.stream === 'true';
+    console.log('streamingHandler - responseStream type:', typeof responseStream);
+    console.log('streamingHandler - responseStream methods:', responseStream ? Object.getOwnPropertyNames(responseStream) : 'null');
     
-    if (isStreamingRequest) {
-        // For streaming, we'll use Server-Sent Events format
-        return await handleStreamingRequest(event, context, startTime);
+    try {
+        // Set up headers for Server-Sent Events
+        if (typeof responseStream.setContentType === 'function') {
+            responseStream.setContentType('text/event-stream');
+        }
+        if (typeof responseStream.setHeader === 'function') {
+            responseStream.setHeader('Cache-Control', 'no-cache');
+            responseStream.setHeader('Connection', 'keep-alive');
+            responseStream.setHeader('Access-Control-Allow-Origin', '*');
+            responseStream.setHeader('Access-Control-Allow-Headers', 'content-type, authorization, origin, accept');
+            responseStream.setHeader('Access-Control-Allow-Methods', '*');
+        }
+    } catch (headerError) {
+        console.error('Error setting headers:', headerError);
     }
     
-    // Fallback to non-streaming for compatibility
-    return await handleNonStreamingRequest(event, context, startTime);
+    try {
+        // Initialize query variable for error handling
+        let query = '';
+        let user = null;
+        let allowEnvFallback = false;
+        
+        // Helper function to write events to the stream
+        function writeEvent(type, data) {
+            try {
+                const eventText = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+                responseStream.write(eventText);
+            } catch (writeError) {
+                console.error('Stream write error:', writeError);
+            }
+        }
+        
+        // Send initial connection message
+        writeEvent('log', {
+            message: 'Connected! Processing request...',
+            timestamp: new Date().toISOString()
+        });
+        
+        // Extract parameters from request (POST only)
+        const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
+        
+        if (httpMethod !== 'POST') {
+            writeEvent('error', {
+                error: 'Method not allowed. Only POST requests are supported.',
+                timestamp: new Date().toISOString()
+            });
+            responseStream.end();
+            return;
+        }
+        
+        const body = JSON.parse(event.body || '{}');
+        query = body.query || '';
+        const limit = parseInt(body.limit) || 10;
+        const fetchContent = body.fetchContent || false;
+        const timeout = parseInt(body.timeout) || 30000;
+        const model = body.model || 'groq:llama-3.1-8b-instant';
+        const accessSecret = body.accessSecret || '';
+        const apiKey = body.apiKey || '';
+        const searchMode = body.searchMode || 'web_search';
+        const googleToken = body.google_token || body.googleToken || null;
+
+        // Authentication check
+        if (process.env.ACCESS_SECRET) {
+            if (!accessSecret || accessSecret !== process.env.ACCESS_SECRET) {
+                writeEvent('error', {
+                    error: 'Invalid or missing accessSecret',
+                    code: 'INVALID_ACCESS_SECRET',
+                    timestamp: new Date().toISOString()
+                });
+                responseStream.end();
+                return;
+            }
+        }
+
+        // Google token verification
+        if (googleToken) {
+            const verified = verifyGoogleToken(googleToken);
+            const allowedEmails = getAllowedEmails();
+            const whitelistEnabled = Array.isArray(allowedEmails) && allowedEmails.length > 0;
+            
+            if (verified && whitelistEnabled) {
+                user = verified;
+            }
+            allowEnvFallback = !!(verified && whitelistEnabled);
+        }
+        
+        if (!query) {
+            writeEvent('error', {
+                error: 'Query parameter is required',
+                timestamp: new Date().toISOString()
+            });
+            responseStream.end();
+            return;
+        }
+        
+        if (!apiKey && !allowEnvFallback) {
+            writeEvent('error', {
+                error: 'API key required. Sign in with an allowed Google account or provide an apiKey.',
+                code: 'NO_API_KEY',
+                timestamp: new Date().toISOString()
+            });
+            responseStream.end();
+            return;
+        }
+
+        // Send initialization event
+        writeEvent('init', {
+            query: query,
+            model: model,
+            searchMode: searchMode,
+            user: user ? { email: user.email, name: user.name } : null,
+            timestamp: new Date().toISOString()
+        });
+
+        // Create a stream adapter for real-time streaming
+        const streamAdapter = {
+            writeEvent: writeEvent,
+            write: (data) => writeEvent('data', data)
+        };
+        
+        // Send immediate feedback
+        writeEvent('step', {
+            type: 'starting',
+            message: 'Starting search and analysis...',
+            timestamp: new Date().toISOString()
+        });
+        
+        // Process the request with real-time streaming
+        const finalResult = await executeMultiSearchWithStreaming(
+            query, 
+            limit, 
+            fetchContent, 
+            timeout, 
+            model, 
+            accessSecret, 
+            apiKey, 
+            searchMode,
+            null,
+            null,
+            null,
+            streamAdapter,
+            allowEnvFallback
+        );
+        
+        // Send final completion event
+        writeEvent('complete', {
+            result: finalResult,
+            executionTime: Date.now() - startTime,
+            timestamp: new Date().toISOString()
+        });
+        
+        responseStream.end();
+        
+    } catch (error) {
+        const writeEvent = (type, data) => {
+            try {
+                const eventText = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+                responseStream.write(eventText);
+            } catch (writeError) {
+                console.error('Stream write error:', writeError);
+            }
+        };
+        
+        writeEvent('error', {
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+        
+        responseStream.end();
+    }
 };
+
+// Using native Lambda Response Streaming for real-time SSE
+
+/**
+ * Main Lambda handler function (streamified). Streams SSE when requested,
+ * otherwise responds with JSON. Keeps CORS-friendly headers.
+ */
+exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+    const startTime = Date.now();
+    try {
+        const accept = event.headers?.['accept'] || event.headers?.['Accept'] || '';
+        const wantsSSE = accept.includes('text/event-stream') || event.queryStringParameters?.stream === 'true';
+
+        if (wantsSSE) {
+            // Delegate to legacy streaming handler that writes SSE events progressively
+            return await legacyStreamingHandler(event, responseStream, context);
+        }
+
+        // Non-streaming JSON path: reuse existing logic and write body once
+        const result = await handleNonStreamingRequest(event, context, startTime);
+        try {
+            if (typeof responseStream.setContentType === 'function') responseStream.setContentType('application/json');
+            if (typeof responseStream.setHeader === 'function') {
+                responseStream.setHeader('Cache-Control', 'no-cache');
+                responseStream.setHeader('Connection', 'keep-alive');
+                responseStream.setHeader('Access-Control-Allow-Origin', '*');
+                responseStream.setHeader('Access-Control-Allow-Headers', 'content-type, authorization, origin, accept');
+                responseStream.setHeader('Access-Control-Allow-Methods', '*');
+            }
+        } catch (headerErr) {
+            console.error('Error setting JSON headers:', headerErr);
+        }
+        responseStream.write(result?.body || '');
+        responseStream.end();
+    } catch (err) {
+        // Ensure we always end the stream even on error
+        try {
+            if (typeof responseStream.setContentType === 'function') responseStream.setContentType('application/json');
+        } catch {}
+        const payload = { error: err?.message || 'Unhandled error' };
+        try { responseStream.write(JSON.stringify(payload)); } catch {}
+        try { responseStream.end(); } catch {}
+    }
+});
 
 /**
  * Create a streaming response accumulator
@@ -2690,10 +2465,47 @@ async function handleStreamingRequest(event, context, startTime) {
         }
 
         // Determine if user is allowed to use server-side API keys
+        let tokenExpired = false;
         if (googleToken) {
+            // First, let's check if the token appears to be expired by parsing it ourselves
+            try {
+                const base64Url = googleToken.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(
+                    Buffer.from(base64, 'base64')
+                        .toString()
+                        .split('')
+                        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                        .join('')
+                );
+                const payload = JSON.parse(jsonPayload);
+                const now = Math.floor(Date.now() / 1000);
+                tokenExpired = payload.exp < now;
+            } catch (parseError) {
+                // If we can't parse the token, let the regular verification handle it
+            }
+            
+            if (tokenExpired) {
+                stream.writeEvent('error', {
+                    error: 'Google token has expired. Please clear your browser cache, refresh the page, and sign in again.',
+                    code: 'TOKEN_EXPIRED',
+                    timestamp: new Date().toISOString()
+                });
+                return {
+                    statusCode: 401,
+                    headers: {
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive'
+                    },
+                    body: stream.getResponse()
+                };
+            }
+            
             const verified = verifyGoogleToken(googleToken);
             const allowedEmails = getAllowedEmails();
             const whitelistEnabled = Array.isArray(allowedEmails) && allowedEmails.length > 0;
+            
             if (verified && whitelistEnabled) {
                 user = verified;
             }
@@ -2701,7 +2513,14 @@ async function handleStreamingRequest(event, context, startTime) {
             allowEnvFallback = !!(allowEnvFallback || (verified && whitelistEnabled));
             try {
                 stream.writeEvent('log', {
-                    message: `Auth: googleToken present, verified=${!!verified}, whitelistEnabled=${whitelistEnabled}, allowEnvFallback=${allowEnvFallback}, email=${verified?.email || 'n/a'}`,
+                    message: `Auth Debug: googleToken length=${googleToken?.length}, verified=${!!verified}, whitelistEnabled=${whitelistEnabled}, allowedEmails=[${allowedEmails.join(', ')}], allowEnvFallback=${allowEnvFallback}, email=${verified?.email || 'n/a'}, tokenExpired=${tokenExpired}`,
+                    timestamp: new Date().toISOString()
+                });
+            } catch {}
+        } else {
+            try {
+                stream.writeEvent('log', {
+                    message: `Auth Debug: No googleToken provided`,
                     timestamp: new Date().toISOString()
                 });
             } catch {}
@@ -2766,8 +2585,8 @@ async function handleStreamingRequest(event, context, startTime) {
 
         // Do not emit an empty initial snapshot; the client will render once real results arrive
         
-        // Start the multi-search process with streaming
-        const finalResult = await executeMultiSearchWithStreaming(
+        // Start the multi-search process with immediate streaming feedback
+        const finalResult = await executeMultiSearchWithRealTimeStreaming(
             query, 
             limit, 
             fetchContent, 
@@ -2796,7 +2615,8 @@ async function handleStreamingRequest(event, context, startTime) {
             headers: {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive'
+                'Connection': 'keep-alive',
+                'Transfer-Encoding': 'chunked'
             },
             body: stream.getResponse()
         };
@@ -2818,6 +2638,60 @@ async function handleStreamingRequest(event, context, startTime) {
             body: stream.getResponse()
         };
     }
+}
+
+/**
+ * Handle streaming requests with AWS Lambda Response Streaming
+ */
+async function handleNativeStreamingRequest(event, responseStream, context, startTime) {
+    // Use the existing streaming logic but return the buffered response for now
+    // This is a fallback until we can properly implement native streaming
+    return await handleStreamingRequest(event, context, startTime);
+}
+
+/**
+ * Execute multi-search with immediate streaming feedback
+ */
+async function executeMultiSearchWithRealTimeStreaming(
+    query, 
+    limit, 
+    fetchContent, 
+    timeout, 
+    model, 
+    accessSecret, 
+    apiKey, 
+    searchMode,
+    systemPrompts,
+    decisionTemplate,
+    searchTemplate,
+    stream,
+    allowEnvFallback = false
+) {
+    // Start sending immediate feedback
+    stream.writeEvent('step', {
+        type: 'starting',
+        message: 'Starting search and analysis...',
+        timestamp: new Date().toISOString()
+    });
+    
+    // Simulate immediate response for better UX
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    return await executeMultiSearchWithStreaming(
+        query, 
+        limit, 
+        fetchContent, 
+        timeout, 
+        model, 
+        accessSecret, 
+        apiKey, 
+        searchMode,
+        systemPrompts,
+        decisionTemplate,
+        searchTemplate,
+        stream,
+        allowEnvFallback
+    );
 }
 
 /**
@@ -3277,12 +3151,49 @@ async function handleNonStreamingRequest(event, context, startTime) {
                 };
             }
         }
+        let tokenExpired = false;
         if (googleToken) {
+            // First, let's check if the token appears to be expired by parsing it ourselves
+            try {
+                const base64Url = googleToken.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(
+                    Buffer.from(base64, 'base64')
+                        .toString()
+                        .split('')
+                        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                        .join('')
+                );
+                const payload = JSON.parse(jsonPayload);
+                const now = Math.floor(Date.now() / 1000);
+                tokenExpired = payload.exp < now;
+            } catch (parseError) {
+                // If we can't parse the token, let the regular verification handle it
+            }
+            
+            if (tokenExpired) {
+                return {
+                    statusCode: 401,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        error: 'Google token has expired. Please clear your browser cache, refresh the page, and sign in again.',
+                        code: 'TOKEN_EXPIRED',
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+            
             const verified = verifyGoogleToken(googleToken);
             const allowedEmails = getAllowedEmails();
             const whitelistEnabled = Array.isArray(allowedEmails) && allowedEmails.length > 0;
+            
             // Combine sources: accessSecret OR verified allowlisted googleToken
             allowEnvFallback = !!(allowEnvFallback || (verified && whitelistEnabled));
+            console.log(`Auth Debug (non-streaming): googleToken length=${googleToken?.length}, verified=${!!verified}, whitelistEnabled=${whitelistEnabled}, allowedEmails=[${allowedEmails.join(', ')}], allowEnvFallback=${allowEnvFallback}, email=${verified?.email || 'n/a'}, tokenExpired=${tokenExpired}`);
+        } else {
+            console.log(`Auth Debug (non-streaming): No googleToken provided`);
         }
         
     console.log(`Processing non-streaming request for query: "${query}" with model: ${model}`);

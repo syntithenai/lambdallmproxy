@@ -1,6 +1,8 @@
 # TODO
 
-remove the feature of posting the templates and prompts from both the UI and the lambda function. store the templates and prompts in the .env file and update the deploy script to set those variables
+replace the current system of iterative searching with a more general approach that allows for iterative tools calls. 
+
+
 
 ## ✅ COMPLETED: Multi-Search Loop Implementation
 
@@ -34,6 +36,6 @@ remove the feature of posting the templates and prompts from both the UI and the
 	- [x] Add Search Summary list under the final response with per-search rows
 	- [x] Add closed-by-default Full results tree grouped by iteration → query
 	- [x] Remove the initial empty 'search_results' emission to avoid 'null' row
-	- [ ] Rebuild docs so docs/index.html picks up index_template.html changes
+	- [ ] Rebuild docs so docs/index.html picks up ui/index_template.html changes
 
 
