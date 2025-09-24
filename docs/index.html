@@ -731,6 +731,7 @@
             </div>
             
             <button type="submit" id="submit-btn" disabled>Sign in or add an API key</button>
+            <button type="button" id="stop-btn" style="display: none; background: #dc3545; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500;">Stop</button>
         </div>
 
         <div class="form-row-bottom">
@@ -1274,9 +1275,10 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     const submitBtn = document.getElementById('submit-btn');
     const responseContainer = document.getElementById('response-container');
     
-    // Disable submit button and show loading state
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Sending...';
+    // Hide submit button and show stop button
+    const stopBtn = document.getElementById('stop-btn');
+    submitBtn.style.display = 'none';
+    stopBtn.style.display = 'inline-block';
     
     // Show loading message
     responseContainer.className = 'response-container loading';
@@ -1483,7 +1485,9 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
             responseContainer.textContent = `Network Error:\n\n${error.message}\n\nCheck browser console for more details.`;
         }
     } finally {
-        // Re-enable submit button
+        // Show submit button and hide stop button
+        submitBtn.style.display = 'inline-block';
+        stopBtn.style.display = 'none';
         submitBtn.disabled = false;
         submitBtn.textContent = 'Send Request';
     }
@@ -1519,10 +1523,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 1.2em;">�</span> Real-time Search Progress
             </h3>
-            <div style="display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap;">
-                <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-                <button id="stop-button" type="button" style="background:#dc3545; color:#fff; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:600;">Stop</button>
-            </div>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
         </div>
         <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
         <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
@@ -1537,8 +1538,10 @@ async function handleStreamingResponse(response, responseContainer, controller) 
     const metadataContent = document.getElementById('metadata-content');
     const searchSummaryList = document.getElementById('search-summary-list');
     const fullResultsTree = document.getElementById('full-results-tree');
-    const stopButton = document.getElementById('stop-button');
     const activeSearchesEl = document.getElementById('active-searches');
+    
+    // Get the stop button from the form area
+    const formStopBtn = document.getElementById('stop-btn');
     
     // Maintain structured state for full results tree
     const resultsState = { byIteration: {} };
@@ -1628,12 +1631,12 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         }
     }
 
-    // Wire Stop button
-    if (stopButton) {
-        stopButton.addEventListener('click', () => {
+    // Wire Stop button from form
+    if (formStopBtn) {
+        formStopBtn.addEventListener('click', () => {
             try { controller && controller.abort(); } catch {}
-            stopButton.disabled = true;
-            stopButton.textContent = 'Stopping...';
+            formStopBtn.disabled = true;
+            formStopBtn.textContent = 'Stopping...';
             statusElement.textContent = '⏹️ Stopping — no further requests will be made.';
             stopAllTimers('stopped');
         });
