@@ -78,29 +78,6 @@ UPDATE_RESULT=$(aws lambda update-function-code \
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Function deployed successfully${NC}"
-    
-    # Wait a moment for the function to be ready
-    sleep 2
-    
-    # Test the function with a simple invocation
-    HTTP_TEST_RESULT=$(curl -s -X POST https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/ \
-        -H "Content-Type: application/json" \
-        -d '{"query":"test deployment","apiKey":"test","accessSecret":"test","model":"groq:llama-3.1-8b-instant"}' \
-        --max-time 10 || echo '{"error":"timeout"}')
-    
-    if echo "$HTTP_TEST_RESULT" | grep -q "Invalid API key"; then
-        echo -e "${GREEN}✅ Function test passed (API key validation working)${NC}"
-    elif echo "$HTTP_TEST_RESULT" | grep -q '"response":' && echo "$HTTP_TEST_RESULT" | grep -q '"metadata":'; then
-        echo -e "${GREEN}✅ Function test passed (successful response)${NC}"
-    elif echo "$HTTP_TEST_RESULT" | grep -q '"searchResults":' && echo "$HTTP_TEST_RESULT" | grep -q '"query":'; then
-        echo -e "${GREEN}✅ Function test passed (search functionality working)${NC}"
-    elif echo "$HTTP_TEST_RESULT" | grep -q "timeout"; then
-        echo -e "${YELLOW}⚠️  Function test timed out${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Function test returned unexpected result${NC}"
-        echo "Response: $HTTP_TEST_RESULT"
-    fi
-    
 else
     echo -e "${RED}❌ Failed to update Lambda function!${NC}"
     exit 1
@@ -111,18 +88,25 @@ if [ -f "$OLDPWD/.env" ]; then
     echo -e "${BLUE}📁 Loading environment variables from .env...${NC}"
     
     # Get critical variables
-    ACCESS_SECRET=$(grep '^ACCESS_SECRET=' "$OLDPWD/.env" | cut -d'=' -f2-)
-    OPENAI_API_KEY=$(grep '^OPENAI_API_KEY=' "$OLDPWD/.env" | cut -d'=' -f2-)
-    GROQ_API_KEY=$(grep '^GROQ_API_KEY=' "$OLDPWD/.env" | cut -d'=' -f2-)
+    # Use last occurrence if duplicated; trim CR
+    ACCESS_SECRET=$(grep '^ACCESS_SECRET=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    OPENAI_API_KEY=$(grep '^OPENAI_API_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GROQ_API_KEY=$(grep '^GROQ_API_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    OPENAI_API_BASE_ENV=$(grep '^OPENAI_API_BASE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    OPENAI_MODEL_ENV=$(grep '^OPENAI_MODEL=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GROQ_MODEL_ENV=$(grep '^GROQ_MODEL=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    LAMBDA_MEMORY_ENV=$(grep '^LAMBDA_MEMORY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    LAMBDA_TIMEOUT_ENV=$(grep '^LAMBDA_TIMEOUT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    ALLOWED_EMAILS_ENV=$(grep '^ALLOWED_EMAILS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     
     # Simple system prompts - use defaults in Lambda if these fail
-    SYSTEM_PROMPT_DECISION=$(grep '^SYSTEM_PROMPT_DECISION=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
-    SYSTEM_PROMPT_DIRECT=$(grep '^SYSTEM_PROMPT_DIRECT=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
-    SYSTEM_PROMPT_SEARCH=$(grep '^SYSTEM_PROMPT_SEARCH=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
+    SYSTEM_PROMPT_DECISION=$(grep '^SYSTEM_PROMPT_DECISION=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
+    SYSTEM_PROMPT_DIRECT=$(grep '^SYSTEM_PROMPT_DIRECT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
+    SYSTEM_PROMPT_SEARCH=$(grep '^SYSTEM_PROMPT_SEARCH=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
     
     # Get template variables too
-    DECISION_TEMPLATE=$(grep '^DECISION_TEMPLATE=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
-    SEARCH_TEMPLATE=$(grep '^SEARCH_TEMPLATE=' "$OLDPWD/.env" | cut -d'=' -f2- | sed 's/^"//;s/"$//' | head -1)
+    DECISION_TEMPLATE=$(grep '^DECISION_TEMPLATE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
+    SEARCH_TEMPLATE=$(grep '^SEARCH_TEMPLATE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
     
     # Get current environment variables
     CURRENT_ENV_JSON=$(aws lambda get-function-configuration \
@@ -131,58 +115,53 @@ if [ -f "$OLDPWD/.env" ]; then
         --query 'Environment.Variables' \
         --output json 2>/dev/null)
     
-    # Build environment variables string
-    ENV_VARS="Variables={"
-    
-    # Add ACCESS_SECRET if it exists
-    if [ -n "$ACCESS_SECRET" ]; then
-        ENV_VARS="${ENV_VARS}ACCESS_SECRET=$ACCESS_SECRET,"
-    fi
-    
-    # Add OPENAI_API_KEY if it exists
-    if [ -n "$OPENAI_API_KEY" ]; then
-        ENV_VARS="${ENV_VARS}OPENAI_API_KEY=$OPENAI_API_KEY,"
-    fi
-    
-    # Add GROQ_API_KEY if it exists
-    if [ -n "$GROQ_API_KEY" ]; then
-        ENV_VARS="${ENV_VARS}GROQ_API_KEY=$GROQ_API_KEY,"
-    fi
-    
-    # Add system prompt environment variables if they exist
-    if [ -n "$SYSTEM_PROMPT_DECISION" ]; then
-        ENV_VARS="${ENV_VARS}SYSTEM_PROMPT_DECISION=\"$SYSTEM_PROMPT_DECISION\","
-    fi
-    
-    if [ -n "$SYSTEM_PROMPT_DIRECT" ]; then
-        ENV_VARS="${ENV_VARS}SYSTEM_PROMPT_DIRECT=\"$SYSTEM_PROMPT_DIRECT\","
-    fi
-    
-    if [ -n "$SYSTEM_PROMPT_SEARCH" ]; then
-        ENV_VARS="${ENV_VARS}SYSTEM_PROMPT_SEARCH=\"$SYSTEM_PROMPT_SEARCH\","
-    fi
-    
-    # Add template environment variables if they exist
-    if [ -n "$DECISION_TEMPLATE" ]; then
-        ENV_VARS="${ENV_VARS}DECISION_TEMPLATE=\"$DECISION_TEMPLATE\","
-    fi
-    
-    if [ -n "$SEARCH_TEMPLATE" ]; then
-        ENV_VARS="${ENV_VARS}SEARCH_TEMPLATE=\"$SEARCH_TEMPLATE\","
-    fi
-    
-    # Remove trailing comma and close
-    ENV_VARS="${ENV_VARS%,}}"
-    
+    # Build environment variables JSON robustly with jq (handles quoting safely)
+    ENV_VARS_JSON=$(jq -n \
+        --arg ACCESS_SECRET "$ACCESS_SECRET" \
+        --arg OPENAI_API_KEY "$OPENAI_API_KEY" \
+        --arg GROQ_API_KEY "$GROQ_API_KEY" \
+        --arg OPENAI_API_BASE "$OPENAI_API_BASE_ENV" \
+        --arg OPENAI_MODEL "$OPENAI_MODEL_ENV" \
+        --arg GROQ_MODEL "$GROQ_MODEL_ENV" \
+        --arg SYSTEM_PROMPT_DECISION "$SYSTEM_PROMPT_DECISION" \
+        --arg SYSTEM_PROMPT_DIRECT "$SYSTEM_PROMPT_DIRECT" \
+        --arg SYSTEM_PROMPT_SEARCH "$SYSTEM_PROMPT_SEARCH" \
+        --arg DECISION_TEMPLATE "$DECISION_TEMPLATE" \
+        --arg SEARCH_TEMPLATE "$SEARCH_TEMPLATE" \
+        --arg ALLOWED_EMAILS "$ALLOWED_EMAILS_ENV" \
+        '{Variables: ({} 
+            + (if $ACCESS_SECRET != "" then {ACCESS_SECRET:$ACCESS_SECRET} else {} end)
+            + (if $OPENAI_API_KEY != "" then {OPENAI_API_KEY:$OPENAI_API_KEY} else {} end)
+            + (if $GROQ_API_KEY != "" then {GROQ_API_KEY:$GROQ_API_KEY} else {} end)
+            + (if $OPENAI_API_BASE != "" then {OPENAI_API_BASE:$OPENAI_API_BASE} else {} end)
+            + (if $OPENAI_MODEL != "" then {OPENAI_MODEL:$OPENAI_MODEL} else {} end)
+            + (if $GROQ_MODEL != "" then {GROQ_MODEL:$GROQ_MODEL} else {} end)
+            + (if $SYSTEM_PROMPT_DECISION != "" then {SYSTEM_PROMPT_DECISION:$SYSTEM_PROMPT_DECISION} else {} end)
+            + (if $SYSTEM_PROMPT_DIRECT != "" then {SYSTEM_PROMPT_DIRECT:$SYSTEM_PROMPT_DIRECT} else {} end)
+            + (if $SYSTEM_PROMPT_SEARCH != "" then {SYSTEM_PROMPT_SEARCH:$SYSTEM_PROMPT_SEARCH} else {} end)
+            + (if $DECISION_TEMPLATE != "" then {DECISION_TEMPLATE:$DECISION_TEMPLATE} else {} end)
+            + (if $SEARCH_TEMPLATE != "" then {SEARCH_TEMPLATE:$SEARCH_TEMPLATE} else {} end)
+            + {ALLOWED_EMAILS:$ALLOWED_EMAILS}  # Always set to allow clearing when empty
+        )}' )
+
     aws lambda update-function-configuration \
         --function-name "$FUNCTION_NAME" \
         --region "$REGION" \
-        --environment "$ENV_VARS" > /dev/null 2>&1
+        --environment "$ENV_VARS_JSON" > /dev/null 2>&1
         
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Environment variables configured from .env${NC}"
+        echo -e "${GREEN}✅ Environment variables configured from .env (including ALLOWED_EMAILS)${NC}"
     else
         echo -e "${YELLOW}⚠️  Warning: Could not update environment variables${NC}"
+    fi
+
+    # Update memory and timeout if provided
+    if [ -n "$LAMBDA_MEMORY_ENV" ] || [ -n "$LAMBDA_TIMEOUT_ENV" ]; then
+        echo -e "${YELLOW}🔧 Updating function memory/timeout from .env...${NC}"
+        UPDATE_ARGS=(--function-name "$FUNCTION_NAME" --region "$REGION")
+        if [ -n "$LAMBDA_MEMORY_ENV" ]; then UPDATE_ARGS+=(--memory-size "$LAMBDA_MEMORY_ENV"); fi
+        if [ -n "$LAMBDA_TIMEOUT_ENV" ]; then UPDATE_ARGS+=(--timeout "$LAMBDA_TIMEOUT_ENV"); fi
+        aws lambda update-function-configuration "${UPDATE_ARGS[@]}" >/dev/null 2>&1 || echo -e "${YELLOW}⚠️  Warning: Could not update memory/timeout${NC}"
     fi
 else
     # Fallback to original logic for OPENAI_API_URL

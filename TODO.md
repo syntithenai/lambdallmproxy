@@ -30,10 +30,10 @@ remove the feature of posting the templates and prompts from both the UI and the
 
 ## Next Potential Enhancements
 
-- Add search result caching to avoid duplicate searches
-- Implement search query optimization based on previous results
-- Add support for different search engines (Bing, Google Custom Search)
-- Implement search result ranking and relevance scoring
-- Add support for image and video search results
+	- [x] Move Final Response to the top and show placeholder immediately
+	- [x] Add Search Summary list under the final response with per-search rows
+	- [x] Add closed-by-default Full results tree grouped by iteration → query
+	- [x] Remove the initial empty 'search_results' emission to avoid 'null' row
+	- [ ] Rebuild docs so docs/index.html picks up index_template.html changes
 
 

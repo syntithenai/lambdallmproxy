@@ -8,8 +8,14 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 
-// Google OAuth configuration
-const ALLOWED_EMAILS = ['syntithenai@gmail.com'];
+// Google OAuth configuration: derive allowed emails from env on-demand, so warm containers pick up changes
+function getAllowedEmails() {
+    const raw = process.env.ALLOWED_EMAILS || '';
+    return raw
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+}
 
 /**
  * Verify Google JWT token and extract user information
@@ -44,8 +50,9 @@ function verifyGoogleToken(token) {
             return null;
         }
         
-        // Check if email is in whitelist
-        if (!ALLOWED_EMAILS.includes(payload.email)) {
+        // Check if email is in whitelist (read from env dynamically)
+        const allowed = getAllowedEmails();
+        if (!allowed.includes(payload.email)) {
             console.log(`Email not allowed: ${payload.email}`);
             return null;
         }
@@ -98,58 +105,41 @@ function getProviderConfig(provider) {
 }
 
 // Memory management constants
-const LAMBDA_MEMORY_LIMIT_MB = 128;
+// Infer memory limit from environment when possible
+const LAMBDA_MEMORY_LIMIT_MB = (process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE && parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE, 10))
+    || (process.env.LAMBDA_MEMORY && parseInt(process.env.LAMBDA_MEMORY, 10))
+    || 128;
 const MEMORY_SAFETY_BUFFER_MB = 16; // Reserve 16MB for other operations
 const MAX_CONTENT_SIZE_MB = LAMBDA_MEMORY_LIMIT_MB - MEMORY_SAFETY_BUFFER_MB;
 const BYTES_PER_MB = 1024 * 1024;
 
 // System prompt configurations - now loaded from environment variables with fallbacks
 const DEFAULT_SYSTEM_PROMPTS = {
-    decision: process.env.SYSTEM_PROMPT_DECISION || 'You are a thorough research analyst that determines whether a question can be answered directly or requires comprehensive web searches. CRITICAL: Always search for current information when questions involve time-sensitive data, current events, weather, location, or use words like "today", "now", "current", "latest". When searches are needed, you always plan for multiple, complementary search strategies to ensure complete coverage. Always respond with valid JSON only.',
+    decision: process.env.SYSTEM_PROMPT_DECISION || 'You are a research planner. Your job is to decide if the question can be answered directly or if it needs a comprehensive research plan. When research is needed, produce a thorough set of sub-questions that, if answered, would fully answer the original question. For each sub-question, decide if web search is needed and, if so, provide 2-4 targeted search keywords/phrases tuned for web search quality. IMPORTANT: Respond with JSON ONLY and never include extra text.',
     direct: process.env.SYSTEM_PROMPT_DIRECT || 'You are a knowledgeable assistant. Answer the user\'s question directly based on your knowledge. Be comprehensive, informative, and thorough in your explanations.',
     search: process.env.SYSTEM_PROMPT_SEARCH || 'You are a comprehensive research assistant. Use all provided search results to answer questions thoroughly and completely. Always cite specific sources using the URLs provided when making factual claims. Synthesize information from multiple sources to provide the most complete picture possible. Format your response in a clear, well-organized manner that covers all important aspects of the topic.'
 };
 
-const DEFAULT_DECISION_TEMPLATE = process.env.DECISION_TEMPLATE || `Analyze this question and determine if you can answer it directly or if it requires comprehensive web searches to gather all necessary information.
+const DEFAULT_DECISION_TEMPLATE = process.env.DECISION_TEMPLATE || `Analyze the user's question and decide if you can answer it directly or if a comprehensive research plan is required.
 
-IMPORTANT: Respond ONLY with valid JSON in one of these formats:
+Return ONLY one of these JSON structures:
 
-For questions you can answer directly (general knowledge, explanations, creative tasks, personal advice):
-{"response": "Your complete answer here"}
+1) If you can answer directly without web search:
+{"direct_response": "Your complete answer here"}
 
-For questions requiring web searches (current events, recent data, specific facts, company information):
-{"search_queries": ["broad search terms 1", "specific aspect 2", "related context 3"]}
+2) If research is required, return a plan of sub-questions. Each sub-question should reflect a specific aspect needed to fully answer the original question. For each sub-question, decide if web search is needed and, if so, provide 2-4 high-signal search keywords/phrases (no question words, just search-ready terms):
+{"research_plan": {"questions": [
+    {"question": "First sub-question", "should_search": true, "search_keywords": ["keyword1", "keyword2", "keyword3"]},
+    {"question": "Second sub-question", "should_search": false}
+]}}
 
-Guidelines for COMPREHENSIVE search coverage:
-- Use "response" for: basic general knowledge, simple how-to questions, creative writing, personal advice
-- Use "search_queries" for: current events, recent data, specific facts, company information, complex topics, recent research
-- ALWAYS provide 2-3 search queries to ensure comprehensive coverage - don't be conservative!
-- Cover DIFFERENT ASPECTS: Start broad, then get specific, include related context/background
+Guidelines:
+- Make the sub-questions comprehensive and collectively exhaustive; cover all important facets.
+- Use should_search=true only when external information is required.
+- When should_search=true, choose targeted keywords likely to retrieve authoritative sources.
+- Do NOT include any text outside of the JSON.
 
-CRITICAL: Always search for current context when relevant:
-- If answer depends on current date/time: Include "current date today" or "what time is it now"
-- If answer depends on weather: Include "current weather [location]" or "weather forecast [location]"
-- If answer depends on location: Include "current location" or "[specific location] information"
-- If answer involves "today", "now", "current", "latest": Always search for current information
-- If answer involves events, news, or time-sensitive information: Always search for recent updates
-- Examples:
-  * "What's the weather like?" → ["current weather today", "weather forecast today", "local weather conditions"]
-  * "What time is it?" → ["current time now", "what time is it today", "current date and time"]
-  * "What's happening today?" → ["current events today", "news today", "what's happening now"]
-  * "Should I wear a coat?" → ["current weather today", "weather forecast today", "temperature today"]
-
-- Examples of good comprehensive coverage:
-  * Topic question: ["topic overview", "recent developments topic", "expert opinions topic"]
-  * Company question: ["company name overview", "company name recent news", "company name financial performance"]
-  * Technical question: ["technical term definition", "technical term applications", "technical term latest research"]
-  * Time-sensitive question: ["current information topic", "latest updates topic", "recent news topic"]
-- Each search query should be optimized for web search (remove question words, focus on key terms)
-- Think: "What different angles do I need to fully understand and explain this topic?"
-- Err on the side of MORE searches rather than fewer - thoroughness is key
-
-Question: "{{QUERY}}"
-
-JSON Response:`;
+Original question: "{{QUERY}}"`;
 
 const DEFAULT_SEARCH_TEMPLATE = process.env.SEARCH_TEMPLATE || `Answer this question using the sources below. Cite URLs when stating facts.
 
@@ -559,12 +549,38 @@ class DuckDuckGoSearcher {
                 results = this.extractSearchResults(response, query, limit);
             }
             
-            // If API didn't return web results, try HTML scraping as fallback
+            // If API didn't return web results, try HTML scraping as fallback with enhanced bot avoidance
             if (results.length === 0) {
                 const htmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
                 try {
-                    const html = await this.fetchUrl(htmlUrl, timeout * 1000);
+                    console.log(`Attempting HTML scraping for: ${htmlUrl}`);
+                    const html = await this.fetchUrlWithBotAvoidance(htmlUrl, timeout * 1000);
+                    
+                    // Debug: Log response details
+                    console.log(`HTML Response length: ${html.length}`);
+                    console.log(`HTML Response preview (first 1000 chars):`, html.substring(0, 1000));
+                    
+                    // Check for CAPTCHA or error pages
+                    if (html.includes('anomaly') || html.includes('captcha') || html.includes('challenge')) {
+                        console.log('⚠️  CAPTCHA/Challenge detected in response');
+                    }
+                    if (html.includes('result__title')) {
+                        console.log('✅ Found result__title elements in HTML');
+                    } else {
+                        console.log('❌ No result__title elements found in HTML');
+                    }
+                    
                     results = this.extractSearchResults(html, query, limit);
+                    console.log(`DuckDuckGo HTML scraping with bot avoidance returned ${results.length} results`);
+                    
+                    // Debug: If no results, show what patterns were tried
+                    if (results.length === 0) {
+                        console.log('🔍 Debugging: No results extracted, checking HTML structure...');
+                        const linkCount = (html.match(/href="[^"]*"/g) || []).length;
+                        const titleCount = (html.match(/result__title/g) || []).length;
+                        const bodyCount = (html.match(/result__body/g) || []).length;
+                        console.log(`Found ${linkCount} links, ${titleCount} title elements, ${bodyCount} body elements`);
+                    }
                 } catch (fallbackError) {
                     console.log('Fallback HTML search also failed:', fallbackError.message);
                 }
@@ -718,26 +734,64 @@ class DuckDuckGoSearcher {
     extractResults(parser, requestedLimit = 10, query = '') {
         const results = [];
         
-        // Look for DuckDuckGo specific result structure
-        // HTML version uses table-based results
-        const resultPatterns = [
-            /<table[^>]*class="[^"]*result[^"]*"[^>]*>(.*?)<\/table>/gs,
-            /<div[^>]*class="[^"]*result[^"]*"[^>]*>(.*?)<\/div>/gs,
-            /<div[^>]*class="[^"]*web-result[^"]*"[^>]*>(.*?)<\/div>/gs
-        ];
-        
-        let foundResults = false;
-        for (const pattern of resultPatterns) {
-            let match;
-            while ((match = pattern.exec(parser.html)) !== null) {
-                const resultHtml = match[1];
-                const result = this.extractSingleResultFromHtml(resultHtml, query);
-                if (result) {
-                    results.push(result);
-                    foundResults = true;
+        // First, robustly match anchor blocks: <h2 class="result__title"><a class="result__a" ...>Title</a></h2>
+        // We then take a generous slice of following HTML so snippet extraction can work.
+        const titleAnchorPattern = /<h2[^>]*class=['"][^'\"]*result__title[^'\"]*['"][^>]*>[\s\S]*?<a[^>]*class=['"][^'\"]*result__a[^'\"]*['"][^>]*href=['"][^'\"]+['"][^>]*>[\s\S]*?<\/a>[\s\S]*?<\/h2>/g;
+        let titleMatches = 0;
+        let m;
+        while ((m = titleAnchorPattern.exec(parser.html)) !== null) {
+            titleMatches++;
+            const start = m.index;
+            const slice = parser.html.substring(start, Math.min(start + 3000, parser.html.length));
+            const result = this.extractSingleResultFromHtml(slice, query);
+            if (result) {
+                results.push(result);
+                if (results.length >= requestedLimit * 2) break;
+            }
+        }
+        console.log(`Pattern (result__title anchors) found ${titleMatches} matches, extracted ${results.length} results`);
+
+        // If none captured via anchor blocks, fall back to broader container patterns
+        if (results.length === 0) {
+            // Look for DuckDuckGo specific result structure
+            // HTML version uses result__body class in modern version
+            const resultPatterns = [
+                /<div[^>]*class="[^"]*result__body[^"]*"[^>]*>([\s\S]*?)<\/div>/g,
+                /<table[^>]*class="[^"]*result[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+                /<div[^>]*class="[^"]*result[^"]*"[^>]*>([\s\S]*?)<\/div>/g,
+                /<div[^>]*class="[^"]*web-result[^"]*"[^>]*>([\s\S]*?)<\/div>/g
+            ];
+            
+            console.log(`🔍 Fallback: Attempting to extract ${requestedLimit} results using ${resultPatterns.length} patterns`);
+            
+            let foundResults = false;
+            for (let i = 0; i < resultPatterns.length; i++) {
+                const pattern = resultPatterns[i];
+                console.log(`Trying pattern ${i + 1}: ${pattern.toString().substring(0, 100)}...`);
+                
+                let matchCount = 0;
+                let match;
+                while ((match = pattern.exec(parser.html)) !== null) {
+                    matchCount++;
+                    const resultHtml = match[1];
+                    const result = this.extractSingleResultFromHtml(resultHtml, query);
+                    if (result) {
+                        results.push(result);
+                        foundResults = true;
+                        console.log(`✅ Extracted result ${results.length}: ${result.title.substring(0, 100)}`);
+                    }
+                    
+                    // Stop once we have enough results for good scoring
+                    if (results.length >= requestedLimit * 2) break;
+                }
+                console.log(`Pattern ${i + 1} found ${matchCount} matches, extracted ${results.length} valid results so far`);
+                
+                // If we found results with this pattern, stop trying other patterns
+                if (foundResults) {
+                    console.log(`✅ Found results with pattern ${i + 1}, stopping pattern search`);
+                    break;
                 }
             }
-            if (foundResults) break;
         }
         
         // If no results found with specific pattern, fall back to generic link extraction
@@ -842,94 +896,100 @@ class DuckDuckGoSearcher {
      */
     extractSingleResultFromHtml(resultHtml, query = '') {
         try {
-            // Extract data from hidden input fields first (these contain the canonical data)
+            // Skip ads
+            if (resultHtml.includes('result--ad') || resultHtml.includes('badge--ad')) {
+                return null;
+            }
+
             let url = '';
             let title = '';
             let description = '';
             let score = null;
             let state = '';
-            
-            // Extract URL from hidden input
-            const urlMatch = /<input[^>]*name=["']url["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
-            if (urlMatch) {
-                url = urlMatch[1];
+
+            // 1) Try modern DDG structure: <h2 class="result__title"><a class="result__a" href="...">Title</a></h2>
+            const modernLinkMatch = /<h2[^>]*class=["'][^"']*result__title[^"']*["'][^>]*>\s*<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/s.exec(resultHtml);
+            if (modernLinkMatch) {
+                url = modernLinkMatch[1];
+                title = this.stripHtml(this.decodeHtmlEntities(modernLinkMatch[2])).trim();
             }
-            
-            // Extract title from hidden input
-            const titleMatch = /<input[^>]*name=["']title["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
-            if (titleMatch) {
-                title = this.decodeHtmlEntities(titleMatch[1]).trim();
-            }
-            
-            // Extract description from hidden input
-            const extractMatch = /<input[^>]*name=["']extract["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
-            if (extractMatch) {
-                description = this.decodeHtmlEntities(extractMatch[1]).trim();
-            }
-            
-            // Extract score from hidden input
-            const scoreMatch = /<input[^>]*name=["']score["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
-            if (scoreMatch) {
-                const scoreValue = scoreMatch[1];
-                if (scoreValue !== 'None' && scoreValue !== '') {
-                    score = parseFloat(scoreValue);
+
+            // Decode DuckDuckGo redirect links (uddg param) and normalize URLs
+            if (url) {
+                const uddg = /uddg=([^&]+)/.exec(url);
+                if (uddg) {
+                    try {
+                        url = decodeURIComponent(uddg[1]);
+                    } catch {}
+                } else if (url.startsWith('//')) {
+                    url = 'https:' + url;
                 }
             }
-            
-            // Extract state from hidden input  
-            const stateMatch = /<input[^>]*name=["']state["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
-            if (stateMatch) {
-                state = stateMatch[1];
+
+            // 2) Description from modern snippet element if available
+            const snippetMatch = /<[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/s.exec(resultHtml);
+            if (snippetMatch) {
+                description = this.stripHtml(this.decodeHtmlEntities(snippetMatch[1])).trim();
             }
-            
-            // If we didn't get URL from hidden input, try to extract from link
+
+            // 3) Fallbacks: legacy hidden inputs sometimes appear on older DDG HTML
+            if (!url || !title) {
+                const urlMatch = /<input[^>]*name=["']url["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
+                if (urlMatch && !url) url = urlMatch[1];
+                const titleMatch = /<input[^>]*name=["']title["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
+                if (titleMatch && !title) title = this.decodeHtmlEntities(titleMatch[1]).trim();
+                const extractMatch = /<input[^>]*name=["']extract["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
+                if (extractMatch && !description) description = this.decodeHtmlEntities(extractMatch[1]).trim();
+                const scoreMatch = /<input[^>]*name=["']score["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
+                if (scoreMatch) {
+                    const v = scoreMatch[1];
+                    if (v !== 'None' && v !== '') score = parseFloat(v);
+                }
+                const stateMatch = /<input[^>]*name=["']state["'][^>]*value=["']([^"']*)["']/s.exec(resultHtml);
+                if (stateMatch) state = stateMatch[1];
+            }
+
+            // 4) Generic anchor fallback (prefer result__a if present)
             if (!url) {
-                const linkMatch = /<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/s.exec(resultHtml);
-                if (!linkMatch) return null;
-                url = linkMatch[1];
-            }
-            
-            if (!url || !url.startsWith('http')) return null;
-            
-            // If we didn't get title from hidden input, try to extract from visible elements
-            if (!title) {
-                const visibleTitleMatch = /<p[^>]*class=['"]title['"][^>]*>(.*?)<\/p>/s.exec(resultHtml);
-                if (visibleTitleMatch) {
-                    title = this.stripHtml(visibleTitleMatch[1]).trim();
+                const aMatch = /<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/s.exec(resultHtml)
+                           || /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/s.exec(resultHtml);
+                if (aMatch) {
+                    url = aMatch[1];
+                    if (!title) title = this.stripHtml(this.decodeHtmlEntities(aMatch[2] || '')).trim();
+                    const uddg = /uddg=([^&]+)/.exec(url);
+                    if (uddg) {
+                        try { url = decodeURIComponent(uddg[1]); } catch {}
+                    } else if (url.startsWith('//')) {
+                        url = 'https:' + url;
+                    }
                 }
             }
-            
-            // If we didn't get description from hidden input, try to extract from visible elements
-            if (!description) {
-                const visibleExtractMatch = /<p[^>]*class=['"]extract['"][^>]*>(.*?)<\/p>/s.exec(resultHtml);
-                if (visibleExtractMatch) {
-                    description = this.stripHtml(visibleExtractMatch[1]).trim();
-                }
-            }
-            
-            // If no description found, try to get text from the result
+
+            // Basic validity
+            if (!url || !title) return null;
+            if (this.isNavigationLink(url)) return null;
+
             if (!description || description.length < 10) {
-                description = this.stripHtml(resultHtml)
-                    .replace(title, '')
-                    .replace(url, '')
-                    .trim();
+                description = this.stripHtml(resultHtml).replace(title, '').replace(url, '').trim();
             }
-            
-            // Calculate a composite score if duckduckgo score is not available
+
             let finalScore = score;
             if (finalScore === null || isNaN(finalScore)) {
                 finalScore = this.calculateRelevanceScore(title, description, url, query);
             }
-            
+
             return {
                 title: title.substring(0, 200) || url,
-                url: url,
-                description: (description.substring(0, 500) || "No description available"),
+                url,
+                description: (description.substring(0, 500) || 'No description available'),
                 score: finalScore,
-                duckduckgoScore: score, // Keep original duckduckgo score for reference
-                state: state
+                duckduckgoScore: score,
+                state,
+                content: null,
+                contentLength: 0,
+                fetchTimeMs: 0
             };
-            
+
         } catch (error) {
             console.error(`Error extracting single result: ${error.message}`);
             return null;
@@ -1286,8 +1346,159 @@ class DuckDuckGoSearcher {
                     }
 
                     let data = '';
-                    res.on('data', chunk => data += chunk);
-                    res.on('end', () => {
+                    // Handle compression if any (defensive even though we request identity)
+                    let responseStream = res;
+                    const encoding = (res.headers['content-encoding'] || '').toLowerCase();
+                    try {
+                        if (encoding === 'gzip') {
+                            const zlib = require('zlib');
+                            responseStream = res.pipe(zlib.createGunzip());
+                        } else if (encoding === 'deflate') {
+                            const zlib = require('zlib');
+                            responseStream = res.pipe(zlib.createInflate());
+                        } else if (encoding === 'br') {
+                            const zlib = require('zlib');
+                            if (zlib.createBrotliDecompress) {
+                                responseStream = res.pipe(zlib.createBrotliDecompress());
+                            }
+                        }
+                    } catch (e) {
+                        // If decompression setup fails, fall back to raw stream
+                        responseStream = res;
+                    }
+
+                    responseStream.on('data', chunk => data += chunk);
+                    responseStream.on('end', () => {
+                        clearTimeout(timeout);
+                        resolve(data);
+                    });
+                });
+
+                req.on('error', (err) => {
+                    clearTimeout(timeout);
+                    reject(new Error(`Failed to fetch ${requestUrl}: ${err.message}`));
+                });
+
+                req.on('timeout', () => {
+                    req.destroy();
+                    clearTimeout(timeout);
+                    reject(new Error(`Request timeout after ${timeoutMs}ms`));
+                });
+
+                req.end();
+            };
+
+            makeRequest(url);
+        });
+    }
+
+    /**
+     * Enhanced fetch method with sophisticated bot detection avoidance for search engines
+     * @param {string} url - URL to fetch
+     * @param {number} timeoutMs - Timeout in milliseconds
+     * @returns {Promise<string>} Response content
+     */
+    async fetchUrlWithBotAvoidance(url, timeoutMs = 10000) {
+        // Add random delay to mimic human behavior
+        const delay = Math.floor(Math.random() * 1000) + 500; // 500-1500ms delay
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error(`Request timeout after ${timeoutMs}ms`));
+            }, timeoutMs);
+
+            const makeRequest = (requestUrl, redirectCount = 0) => {
+                if (redirectCount > 5) {
+                    clearTimeout(timeout);
+                    reject(new Error('Too many redirects'));
+                    return;
+                }
+
+                const parsedUrl = new URL(requestUrl);
+                const isHttps = parsedUrl.protocol === 'https:';
+                const client = isHttps ? https : http;
+
+                // Randomize user agents and other headers to appear more human
+                const userAgents = [
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
+                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/119.0'
+                ];
+
+                const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+                
+                // Enhanced headers to mimic real browser behavior
+                const headers = {
+                    'User-Agent': randomUserAgent,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0'
+                };
+
+                // Add referer for search pages to appear as if coming from the search engine's homepage
+                if (requestUrl.includes('duckduckgo.com')) {
+                    headers['Referer'] = 'https://duckduckgo.com/';
+                }
+
+                const options = {
+                    hostname: parsedUrl.hostname,
+                    port: parsedUrl.port || (isHttps ? 443 : 80),
+                    path: parsedUrl.pathname + parsedUrl.search,
+                    method: 'GET',
+                    headers: headers,
+                    timeout: timeoutMs
+                };
+
+                const req = client.request(options, (res) => {
+                    // Handle redirects
+                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        console.log(`Redirecting to: ${res.headers.location}`);
+                        let redirectUrl;
+                        try {
+                            redirectUrl = new URL(res.headers.location, requestUrl).toString();
+                        } catch (e) {
+                            console.log(`Invalid redirect URL: ${res.headers.location}`);
+                            clearTimeout(timeout);
+                            reject(new Error(`Invalid redirect URL: ${res.headers.location}`));
+                            return;
+                        }
+                        makeRequest(redirectUrl, redirectCount + 1);
+                        return;
+                    }
+
+                    let data = '';
+                    
+                    // Handle compression (gzip/deflate/brotli)
+                    let responseStream = res;
+                    const encoding = (res.headers['content-encoding'] || '').toLowerCase();
+                    try {
+                        const zlib = require('zlib');
+                        if (encoding === 'gzip') {
+                            responseStream = res.pipe(zlib.createGunzip());
+                        } else if (encoding === 'deflate') {
+                            responseStream = res.pipe(zlib.createInflate());
+                        } else if (encoding === 'br' && zlib.createBrotliDecompress) {
+                            responseStream = res.pipe(zlib.createBrotliDecompress());
+                        }
+                    } catch (e) {
+                        // If decompression setup fails, stick to raw stream
+                        responseStream = res;
+                    }
+
+                    responseStream.on('data', chunk => data += chunk);
+                    responseStream.on('end', () => {
                         clearTimeout(timeout);
                         resolve(data);
                     });
@@ -1316,9 +1527,10 @@ class DuckDuckGoSearcher {
  * LLM API client for processing search results
  */
 class LLMClient {
-    constructor(apiKey, systemPrompts = {}, templates = {}) {
+    constructor(apiKey, systemPrompts = {}, templates = {}, allowEnvFallback = false) {
         this.accessSecret = process.env.ACCESS_SECRET;
         this.apiKey = apiKey;
+        this.allowEnvFallback = !!allowEnvFallback;
         this.systemPrompts = {
             ...DEFAULT_SYSTEM_PROMPTS,
             ...systemPrompts
@@ -1401,8 +1613,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key or fall back to environment variable
-            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            // Use provided API key; only fall back to env if allowed
+            const rawApiKey = this.allowEnvFallback ? (this.apiKey || process.env[providerConfig.envKey]) : this.apiKey;
             if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -1482,18 +1694,30 @@ class LLMClient {
                             }
 
                             // Parse the JSON response
-                            let decision;
+                            let parsed;
                             try {
-                                decision = JSON.parse(content);
+                                parsed = JSON.parse(content);
                             } catch (parseError) {
-                                // Fallback: assume search is needed with original query
-                                decision = { search_queries: [query] };
+                                // Fallback: minimal plan with a single search on the original query
+                                parsed = { research_plan: { questions: [ { question: query, should_search: true, search_keywords: [query] } ] } };
                             }
 
-                            // Add usage information
-                            decision.usage = response.usage;
-                            
-                            resolve(decision);
+                            // Normalize into a stable shape for the caller
+                            let normalized;
+                            if (parsed.direct_response || parsed.response) {
+                                normalized = { directResponse: parsed.direct_response || parsed.response, needsSearch: false };
+                            } else if (Array.isArray(parsed.search_queries)) {
+                                // Backward compatibility: treat as a single sub-question with keywords
+                                normalized = { needsSearch: true, researchPlan: { questions: [ { question: query, should_search: true, search_keywords: parsed.search_queries } ] } };
+                            } else if (parsed.research_plan && Array.isArray(parsed.research_plan.questions)) {
+                                normalized = { needsSearch: true, researchPlan: parsed.research_plan };
+                            } else {
+                                // Fallback
+                                normalized = { needsSearch: true, researchPlan: { questions: [ { question: query, should_search: true, search_keywords: [query] } ] } };
+                            }
+
+                            normalized.usage = response.usage;
+                            resolve(normalized);
                             
                         } catch (parseError) {
                             reject(new Error(`Failed to parse initial decision response: ${parseError.message}`));
@@ -1545,8 +1769,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key or fall back to environment variable
-            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            // Use provided API key; only fall back to env if allowed
+            const rawApiKey = this.allowEnvFallback ? (this.apiKey || process.env[providerConfig.envKey]) : this.apiKey;
             if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -1722,8 +1946,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key or fall back to environment variable
-            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            // Use provided API key; only fall back to env if allowed
+            const rawApiKey = this.allowEnvFallback ? (this.apiKey || process.env[providerConfig.envKey]) : this.apiKey;
             if (!rawApiKey || typeof rawApiKey !== 'string') {
                 throw new Error(`Invalid or missing API key for provider: ${provider}`);
             }
@@ -1949,8 +2173,8 @@ class LLMClient {
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key or fall back to environment variable
-            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            // Use provided API key; only fall back to env if allowed
+            const rawApiKey = this.allowEnvFallback ? (this.apiKey || process.env[providerConfig.envKey]) : this.apiKey;
             if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -2093,8 +2317,8 @@ Provide a comprehensive summary (3-4 sentences) capturing the most important and
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key or fall back to environment variable
-            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            // Use provided API key; only fall back to env if allowed
+            const rawApiKey = this.allowEnvFallback ? (this.apiKey || process.env[providerConfig.envKey]) : this.apiKey;
             if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -2234,8 +2458,8 @@ JSON Response:`;
             const { provider, model: modelName } = parseProviderModel(model);
             const providerConfig = getProviderConfig(provider);
             
-            // Use the provided API key or fall back to environment variable
-            const rawApiKey = this.apiKey || process.env[providerConfig.envKey];
+            // Use provided API key; only fall back to env if allowed
+            const rawApiKey = this.allowEnvFallback ? (this.apiKey || process.env[providerConfig.envKey]) : this.apiKey;
             if (!rawApiKey) {
                 throw new Error(`No API key provided for provider: ${provider}`);
             }
@@ -2403,6 +2627,8 @@ async function handleStreamingRequest(event, context, startTime) {
     
     // Initialize query variable for error handling
     let query = '';
+    let user = null;
+    let allowEnvFallback = false;
     
     try {
         // Extract parameters from request (POST only)
@@ -2428,7 +2654,7 @@ async function handleStreamingRequest(event, context, startTime) {
             };
         }
         
-        const body = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || '{}');
         query = body.query || '';
         limit = parseInt(body.limit) || 10;
         fetchContent = body.fetchContent || false;
@@ -2437,6 +2663,45 @@ async function handleStreamingRequest(event, context, startTime) {
         accessSecret = body.accessSecret || '';
         apiKey = body.apiKey || '';
         searchMode = body.searchMode || 'web_search';
+        const googleToken = body.google_token || body.googleToken || null;
+
+        // If server has ACCESS_SECRET set, require clients to provide it. Do NOT affect env-key fallback.
+        if (process.env.ACCESS_SECRET) {
+            if (!accessSecret || accessSecret !== process.env.ACCESS_SECRET) {
+                stream.writeEvent('error', {
+                    error: 'Invalid or missing accessSecret',
+                    code: 'INVALID_ACCESS_SECRET',
+                    timestamp: new Date().toISOString()
+                });
+                return {
+                    statusCode: 401,
+                    headers: {
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive'
+                    },
+                    body: stream.getResponse()
+                };
+            }
+        }
+
+        // Determine if user is allowed to use server-side API keys
+        if (googleToken) {
+            const verified = verifyGoogleToken(googleToken);
+            const allowedEmails = getAllowedEmails();
+            const whitelistEnabled = Array.isArray(allowedEmails) && allowedEmails.length > 0;
+            if (verified && whitelistEnabled) {
+                user = verified;
+            }
+            // Combine sources: accessSecret OR verified allowlisted googleToken
+            allowEnvFallback = !!(allowEnvFallback || (verified && whitelistEnabled));
+            try {
+                stream.writeEvent('log', {
+                    message: `Auth: googleToken present, verified=${!!verified}, whitelistEnabled=${whitelistEnabled}, allowEnvFallback=${allowEnvFallback}, email=${verified?.email || 'n/a'}`,
+                    timestamp: new Date().toISOString()
+                });
+            } catch {}
+        }
         
         stream.writeEvent('log', {
             message: `Processing request for query: "${query}" with model: ${model}`,
@@ -2461,6 +2726,24 @@ async function handleStreamingRequest(event, context, startTime) {
             };
         }
         
+        // Enforce auth for server-side usage: require apiKey unless allowEnvFallback is true
+        if (!apiKey && !allowEnvFallback) {
+            stream.writeEvent('error', {
+                error: 'API key required. Sign in with an allowed Google account or provide an apiKey.',
+                code: 'NO_API_KEY',
+                timestamp: new Date().toISOString()
+            });
+            return {
+                statusCode: 401,
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive'
+                },
+                body: stream.getResponse()
+            };
+        }
+
         // Initialize streaming response data
         const streamingResults = {
             query: query,
@@ -2475,7 +2758,9 @@ async function handleStreamingRequest(event, context, startTime) {
             }
         };
         
-        stream.writeEvent('init', streamingResults);
+    stream.writeEvent('init', { ...streamingResults, user: user ? { email: user.email, name: user.name } : null, allowEnvFallback });
+
+        // Do not emit an empty initial snapshot; the client will render once real results arrive
         
         // Start the multi-search process with streaming
         const finalResult = await executeMultiSearchWithStreaming(
@@ -2490,12 +2775,14 @@ async function handleStreamingRequest(event, context, startTime) {
             null, // No custom systemPrompts
             null, // No custom decisionTemplate  
             null, // No custom searchTemplate
-            stream
+            stream,
+            allowEnvFallback
         );
         
         // Send final completion event
         stream.writeEvent('complete', {
             result: finalResult,
+            allResults: finalResult.searchResults,
             executionTime: Date.now() - startTime,
             timestamp: new Date().toISOString()
         });
@@ -2544,11 +2831,19 @@ async function executeMultiSearchWithStreaming(
     systemPrompts,
     decisionTemplate,
     searchTemplate,
-    stream
+    stream,
+    allowEnvFallback = false
 ) {
     let allSearchResults = [];
     let searchesPerformed = [];
     const maxIterations = 3;
+    // Prepare a shared LLM client for digests and final generation
+    const llmClient = new LLMClient(
+        apiKey,
+        systemPrompts || {},
+        { search: searchTemplate },
+        allowEnvFallback
+    );
     
     try {
         // Process initial decision to get search terms
@@ -2566,7 +2861,8 @@ async function executeMultiSearchWithStreaming(
             accessSecret, 
             apiKey, 
             systemPrompts, 
-            decisionTemplate
+            decisionTemplate,
+            allowEnvFallback
         );
         
         if (stream) {
@@ -2576,8 +2872,8 @@ async function executeMultiSearchWithStreaming(
             });
         }
         
-        // If direct response is possible, return it
-        if (!initialDecision.needsSearch && initialDecision.directResponse) {
+    // If direct response is possible, return it
+    if (!initialDecision.needsSearch && initialDecision.directResponse) {
             if (stream) {
                 stream.writeEvent('final_response', {
                     response: initialDecision.directResponse,
@@ -2602,9 +2898,11 @@ async function executeMultiSearchWithStreaming(
             };
         }
         
-        // Perform iterative searches
-        const searchTerms = initialDecision.searchTerms || [query];
-        
+        // Prepare research plan with sub-questions and keywords
+        const planQuestions = (initialDecision.researchPlan && Array.isArray(initialDecision.researchPlan.questions))
+            ? initialDecision.researchPlan.questions
+            : [{ question: query, should_search: true, search_keywords: [query] }];
+
         for (let iteration = 1; iteration <= maxIterations; iteration++) {
             if (stream) {
                 stream.writeEvent('step', {
@@ -2615,47 +2913,85 @@ async function executeMultiSearchWithStreaming(
                 });
             }
             
-            // Use initial search terms for first iteration
-            const currentSearchTerms = iteration === 1 ? 
-                searchTerms : 
-                await generateAdditionalSearchTerms(query, allSearchResults, model, accessSecret, apiKey);
-                
-            for (let i = 0; i < currentSearchTerms.length; i++) {
-                const searchTerm = currentSearchTerms[i];
+            // For iteration 1, execute planned sub-questions; later iterations can add expansions if needed
+            const currentItems = iteration === 1 ? planQuestions : await generateAdditionalSearchTerms(query, allSearchResults, model, accessSecret, apiKey);
+
+            for (let i = 0; i < currentItems.length; i++) {
+                const item = currentItems[i];
+                const subQuestion = typeof item === 'string' ? item : (item.question || item);
+                const shouldSearch = typeof item === 'string' ? true : (item.should_search !== false);
+                const keywords = Array.isArray(item.search_keywords) && item.search_keywords.length ? item.search_keywords : [subQuestion];
+                const searchTerm = keywords.join(' ');
                 
                 if (stream) {
                     stream.writeEvent('search', {
                         term: searchTerm,
                         iteration: iteration,
                         searchIndex: i + 1,
-                        totalSearches: currentSearchTerms.length,
+                        totalSearches: currentItems.length,
+                        subQuestion: subQuestion,
+                        keywords,
                         timestamp: new Date().toISOString()
                     });
                 }
                 
                 // Perform the search
-                const searchResults = await performSearch(
+                const searchResults = shouldSearch ? await performSearch(
                     searchTerm, 
                     limit, 
                     fetchContent, 
                     timeout, 
                     searchMode
-                );
+                ) : [];
                 
                 allSearchResults.push(...searchResults);
-                searchesPerformed.push({
+                const searchRecord = {
                     iteration: iteration,
                     query: searchTerm,
-                    resultsCount: searchResults.length
-                });
+                    resultsCount: searchResults.length,
+                    subQuestion,
+                    keywords
+                };
+                searchesPerformed.push(searchRecord);
                 
                 if (stream) {
+                    // Send full results for this search and cumulative snapshot for live UI
                     stream.writeEvent('search_results', {
                         term: searchTerm,
-                        resultsCount: searchResults.length,
                         iteration: iteration,
+                        resultsCount: searchResults.length,
+                        results: searchResults,
+                        cumulativeResultsCount: allSearchResults.length,
+                        allResults: allSearchResults,
+                        searches: searchesPerformed,
+                        subQuestion,
+                        keywords,
                         timestamp: new Date().toISOString()
                     });
+
+                    // Also compute and stream a digest summary for this specific search
+                    try {
+                        const digest = shouldSearch ? await llmClient.digestSearchResults(searchTerm, searchResults, query, { model }) : { summary: 'No web search needed for this sub-question.', links: [] };
+                        // Attach to the latest search record so future snapshots include it if needed
+                        searchRecord.summary = digest.summary || digest?.summary || '';
+                        searchRecord.links = digest.links || [];
+                        // Emit a dedicated event for immediate UI update
+                        stream.writeEvent('search_digest', {
+                            term: searchTerm,
+                            iteration,
+                            summary: searchRecord.summary,
+                            links: searchRecord.links,
+                            subQuestion,
+                            keywords,
+                            timestamp: new Date().toISOString()
+                        });
+                    } catch (digestError) {
+                        // Non-fatal; just log and continue
+                        stream.writeEvent('log', {
+                            message: `Digest failed for term "${searchTerm}": ${digestError.message}`,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
                 }
             }
             
@@ -2684,6 +3020,8 @@ async function executeMultiSearchWithStreaming(
                     shouldContinue: shouldContinue.shouldContinue,
                     reasoning: shouldContinue.reasoning,
                     iteration: iteration,
+                    totalResultsSoFar: allSearchResults.length,
+                    searchesPerformed: searchesPerformed,
                     timestamp: new Date().toISOString()
                 });
             }
@@ -2716,7 +3054,8 @@ async function executeMultiSearchWithStreaming(
             accessSecret, 
             apiKey, 
             systemPrompts, 
-            searchTemplate
+            searchTemplate,
+            allowEnvFallback
         );
         
         // Prepare final result
@@ -2762,48 +3101,49 @@ async function executeMultiSearchWithStreaming(
  * Generate additional search terms for subsequent iterations
  */
 async function generateAdditionalSearchTerms(query, existingResults, model, accessSecret, apiKey) {
-    // Simple implementation - could be enhanced with LLM-generated terms
-    const baseTerms = query.split(' ').filter(term => term.length > 2);
-    return baseTerms.map(term => `${term} additional information`).slice(0, 2);
+    // Expand by extracting high-signal tokens from previous result titles and descriptions
+    try {
+        const tokens = new Map();
+        const addTokensFrom = (text) => {
+            (text || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).forEach(t => {
+                if (t.length > 3) tokens.set(t, (tokens.get(t) || 0) + 1);
+            });
+        };
+        existingResults.slice(-8).forEach(r => { addTokensFrom(r.title); addTokensFrom(r.description); });
+        const top = [...tokens.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t])=>t);
+        if (top.length) {
+            const expanded = [top.join(' ')];
+            if (top.length >= 4) expanded.push(top.slice(0,4).join(' '));
+            return expanded;
+        }
+    } catch {}
+    // Fallback to the original query
+    return [query];
 }
 
 /**
  * Process initial decision to determine search strategy
  */
-async function processInitialDecision(query, model, accessSecret, apiKey, systemPrompts = null, decisionTemplate = null) {
+async function processInitialDecision(query, model, accessSecret, apiKey, systemPrompts = null, decisionTemplate = null, allowEnvFallback = false) {
     // Use default templates and prompts
-    const llmClient = new LLMClient(apiKey, {}, {});
+    const llmClient = new LLMClient(apiKey, {}, {}, allowEnvFallback);
     
     try {
-        const decision = await llmClient.processInitialDecision(query, { model });
-        
-        // Convert decision format to search terms
-        if (decision.search_queries && Array.isArray(decision.search_queries)) {
-            return {
-                needsSearch: true,
-                searchTerms: decision.search_queries,
-                usage: decision.usage
-            };
-        } else if (decision.response) {
-            return {
-                needsSearch: false,
-                directResponse: decision.response,
-                usage: decision.usage
-            };
-        } else {
-            // Fallback to search mode
-            return {
-                needsSearch: true,
-                searchTerms: [query],
-                usage: decision.usage
-            };
+        const normalized = await llmClient.processInitialDecision(query, { model });
+        // normalized has shape { needsSearch:boolean, directResponse?, researchPlan? }
+        if (!normalized.needsSearch && normalized.directResponse) {
+            return { needsSearch: false, directResponse: normalized.directResponse, usage: normalized.usage };
         }
+        if (normalized.researchPlan) {
+            return { needsSearch: true, researchPlan: normalized.researchPlan, usage: normalized.usage };
+        }
+        return { needsSearch: true, researchPlan: { questions: [ { question: query, should_search: true, search_keywords: [query] } ] }, usage: normalized.usage };
     } catch (error) {
         console.error('Initial decision error:', error);
         // Fallback to search mode
         return {
             needsSearch: true,
-            searchTerms: [query]
+            researchPlan: { questions: [ { question: query, should_search: true, search_keywords: [query] } ] }
         };
     }
 }
@@ -2847,9 +3187,9 @@ async function shouldContinueSearching(query, allSearchResults, iteration, maxIt
 /**
  * Generate final response from search results
  */
-async function generateFinalResponse(query, allSearchResults, model, accessSecret, apiKey, systemPrompts = null, searchTemplate = null) {
+async function generateFinalResponse(query, allSearchResults, model, accessSecret, apiKey, systemPrompts = null, searchTemplate = null, allowEnvFallback = false) {
     // Create LLMClient with proper system prompts and search template
-    const llmClient = new LLMClient(apiKey, systemPrompts || {}, { search: searchTemplate });
+    const llmClient = new LLMClient(apiKey, systemPrompts || {}, { search: searchTemplate }, allowEnvFallback);
     
     try {
         const response = await llmClient.processWithLLMWithRetry(query, allSearchResults, { model });
@@ -2874,6 +3214,7 @@ async function handleNonStreamingRequest(event, context, startTime) {
     console.log(`Lambda handler started. Initial memory: RSS=${Math.round(initialMemory.rss / BYTES_PER_MB * 100) / 100}MB, Heap=${Math.round(initialMemory.heapUsed / BYTES_PER_MB * 100) / 100}MB`);
     
     let query = '';
+    let allowEnvFallback = false;
     
     try {
         // Extract parameters from request
@@ -2906,7 +3247,7 @@ async function handleNonStreamingRequest(event, context, startTime) {
             };
         }
         
-        const body = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || '{}');
         query = body.query || '';
         limit = parseInt(body.limit) || 10;
         fetchContent = body.fetchContent || false;
@@ -2915,10 +3256,34 @@ async function handleNonStreamingRequest(event, context, startTime) {
         accessSecret = body.accessSecret || '';
         apiKey = body.apiKey || '';
         searchMode = body.searchMode || 'web_search';
+        const googleToken = body.google_token || body.googleToken || null;
+        // If server has ACCESS_SECRET set, require clients to provide it. Do NOT affect env-key fallback.
+        if (process.env.ACCESS_SECRET) {
+            if (!accessSecret || accessSecret !== process.env.ACCESS_SECRET) {
+                return {
+                    statusCode: 401,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        error: 'Invalid or missing accessSecret',
+                        code: 'INVALID_ACCESS_SECRET',
+                        timestamp: new Date().toISOString()
+                    })
+                };
+            }
+        }
+        if (googleToken) {
+            const verified = verifyGoogleToken(googleToken);
+            const allowedEmails = getAllowedEmails();
+            const whitelistEnabled = Array.isArray(allowedEmails) && allowedEmails.length > 0;
+            // Combine sources: accessSecret OR verified allowlisted googleToken
+            allowEnvFallback = !!(allowEnvFallback || (verified && whitelistEnabled));
+        }
         
-        console.log(`Processing non-streaming request for query: "${query}" with model: ${model}`);
+    console.log(`Processing non-streaming request for query: "${query}" with model: ${model}`);
         
-        // Validate required parameters
+    // Validate required parameters
         if (!query) {
             return {
                 statusCode: 400,
@@ -2927,6 +3292,21 @@ async function handleNonStreamingRequest(event, context, startTime) {
                 },
                 body: JSON.stringify({
                     error: 'Query parameter is required',
+                    timestamp: new Date().toISOString()
+                })
+            };
+        }
+
+        // Enforce auth for server-side usage: require apiKey unless allowEnvFallback is true
+        if (!apiKey && !allowEnvFallback) {
+            return {
+                statusCode: 401,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    error: 'API key required. Sign in with an allowed Google account or provide an apiKey.',
+                    code: 'NO_API_KEY',
                     timestamp: new Date().toISOString()
                 })
             };
@@ -2945,7 +3325,8 @@ async function handleNonStreamingRequest(event, context, startTime) {
             null, // No custom systemPrompts
             null, // No custom decisionTemplate
             null, // No custom searchTemplate
-            null // No streaming for non-streaming requests
+            null, // No streaming for non-streaming requests
+            allowEnvFallback
         );
         
         const processingTime = Date.now() - startTime;
