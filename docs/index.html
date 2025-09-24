@@ -1249,7 +1249,7 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('text/event-stream')) {
             console.log('Handling streaming response');
-            await handleStreamingResponse(response, responseContainer);
+            await handleStreamingResponse(response, responseContainer, controller);
             return; // Exit early for streaming
         }
         
@@ -1374,7 +1374,7 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
 /**
  * Handle streaming Server-Sent Events response
  */
-async function handleStreamingResponse(response, responseContainer) {
+async function handleStreamingResponse(response, responseContainer, controller) {
     console.log('Starting streaming response handler');
     
     // Clear and prepare response container for streaming
@@ -1401,8 +1401,12 @@ async function handleStreamingResponse(response, responseContainer) {
             <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 1.2em;">�</span> Real-time Search Progress
             </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+            <div style="display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap;">
+                <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+                <button id="stop-button" type="button" style="background:#dc3545; color:#fff; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:600;">Stop</button>
+            </div>
         </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
         <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
         <div id="full-results-tree"></div>
     `;
@@ -1415,6 +1419,8 @@ async function handleStreamingResponse(response, responseContainer) {
     const metadataContent = document.getElementById('metadata-content');
     const searchSummaryList = document.getElementById('search-summary-list');
     const fullResultsTree = document.getElementById('full-results-tree');
+    const stopButton = document.getElementById('stop-button');
+    const activeSearchesEl = document.getElementById('active-searches');
     
     // Maintain structured state for full results tree
     const resultsState = { byIteration: {} };
@@ -1422,6 +1428,98 @@ async function handleStreamingResponse(response, responseContainer) {
     const digestMap = new Map();
     // Map of per-search metadata: key `${iteration}|${term}` => { subQuestion, keywords }
     const metaMap = new Map();
+    // Track active searches and countdowns
+    const activeTimers = new Map(); // key -> { start, maxMs, intervalId, barInner, label }
+    const SEARCH_MAX_MS = 15000; // UI estimate per-search timeout (ms)
+
+    function ensureActiveHeaderVisible() {
+        if (activeTimers.size > 0) {
+            activeSearchesEl.style.display = 'block';
+            if (!activeSearchesEl.__header) {
+                const h = document.createElement('div');
+                h.style.cssText = 'font-weight:600; color:#495057; margin-bottom:8px;';
+                h.textContent = 'Active searches';
+                activeSearchesEl.appendChild(h);
+                activeSearchesEl.__header = h;
+            }
+        } else {
+            activeSearchesEl.style.display = 'none';
+        }
+    }
+
+    function startSearchTimer(iteration, term, index, total) {
+        const key = `${iteration}|${term}`;
+        if (activeTimers.has(key)) return;
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'margin:6px 0;';
+        const label = document.createElement('div');
+        label.style.cssText = 'font-size:0.9em; color:#495057; margin-bottom:4px; display:flex; justify-content:space-between; gap:8px;';
+        label.innerHTML = `<span>(${index}/${total}) "${term}"</span><span class="time">${Math.round(SEARCH_MAX_MS/1000)}s</span>`;
+        const bar = document.createElement('div');
+        bar.style.cssText = 'height:10px; background:#e9ecef; border-radius:6px; overflow:hidden;';
+        const inner = document.createElement('div');
+        inner.style.cssText = 'height:100%; width:0%; background:linear-gradient(90deg, #ffda79, #f0932b); transition:width 0.2s linear;';
+        bar.appendChild(inner);
+        wrap.appendChild(label);
+        wrap.appendChild(bar);
+        activeSearchesEl.appendChild(wrap);
+        ensureActiveHeaderVisible();
+        const start = Date.now();
+        const intervalId = setInterval(() => {
+            const elapsed = Date.now() - start;
+            const pct = Math.min(100, (elapsed/SEARCH_MAX_MS)*100);
+            inner.style.width = pct + '%';
+            const remain = Math.max(0, Math.ceil((SEARCH_MAX_MS - elapsed)/1000));
+            const timeEl = label.querySelector('.time');
+            if (timeEl) timeEl.textContent = `${remain}s`;
+            if (elapsed >= SEARCH_MAX_MS) {
+                // Mark as timed out visually but keep it until we get results or completion
+                inner.style.background = 'linear-gradient(90deg, #ff6b6b, #c44569)';
+                clearInterval(intervalId);
+            }
+        }, 200);
+        activeTimers.set(key, { start, maxMs: SEARCH_MAX_MS, intervalId, barInner: inner, label, wrap });
+    }
+
+    function stopSearchTimer(iteration, term, status = 'done') {
+        const key = `${iteration}|${term}`;
+        const t = activeTimers.get(key);
+        if (!t) return;
+        if (t.intervalId) clearInterval(t.intervalId);
+        // Update color based on status
+        if (status === 'done') {
+            t.barInner.style.width = '100%';
+            t.barInner.style.background = 'linear-gradient(90deg, #2ecc71, #27ae60)';
+        } else if (status === 'stopped') {
+            t.barInner.style.background = 'linear-gradient(90deg, #6c757d, #495057)';
+        } else if (status === 'error') {
+            t.barInner.style.background = 'linear-gradient(90deg, #ff6b6b, #c44569)';
+        }
+        // Remove after short delay to keep feedback visible
+        setTimeout(() => {
+            if (t.wrap && t.wrap.parentElement) t.wrap.parentElement.removeChild(t.wrap);
+            activeTimers.delete(key);
+            ensureActiveHeaderVisible();
+        }, 800);
+    }
+
+    function stopAllTimers(status = 'stopped') {
+        for (const key of Array.from(activeTimers.keys())) {
+            const [iter, term] = key.split('|');
+            stopSearchTimer(iter, term, status);
+        }
+    }
+
+    // Wire Stop button
+    if (stopButton) {
+        stopButton.addEventListener('click', () => {
+            try { controller && controller.abort(); } catch {}
+            stopButton.disabled = true;
+            stopButton.textContent = 'Stopping...';
+            statusElement.textContent = '⏹️ Stopping — no further requests will be made.';
+            stopAllTimers('stopped');
+        });
+    }
     
     function renderResultsSection(title, results, digest, meta) {
         const details = document.createElement('details');
@@ -1703,6 +1801,8 @@ async function handleStreamingResponse(response, responseContainer) {
                             
                         case 'search':
                             statusElement.textContent = `🔍 Searching (${eventData.searchIndex}/${eventData.totalSearches}): "${eventData.term}"`;
+                            // Start a countdown bar for this active search
+                            startSearchTimer(eventData.iteration, eventData.term, eventData.searchIndex, eventData.totalSearches);
                             break;
                             
                         case 'search_results':
@@ -1734,6 +1834,9 @@ async function handleStreamingResponse(response, responseContainer) {
                                 const metaKey = `${iteration}|${term}`;
                                 metaMap.set(metaKey, { subQuestion: subQuestion || null, keywords: Array.isArray(keywords) ? keywords : [] });
 
+                                // Mark this search timer as done
+                                stopSearchTimer(iteration, term, 'done');
+
                                 // Update summary and full tree
                                 // Keep last searches for digest refresh convenience
                                 window.__lastSearches = searches || [];
@@ -1759,6 +1862,8 @@ async function handleStreamingResponse(response, responseContainer) {
                             
                         case 'final_response':
                             statusElement.textContent = '✅ Search completed! Displaying final response...';
+                            if (stopButton) { stopButton.disabled = true; stopButton.textContent = 'Done'; }
+                            stopAllTimers('done');
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
                             // Keep metadata visible and updated
                             metadataContent.innerHTML = `
@@ -1783,6 +1888,8 @@ async function handleStreamingResponse(response, responseContainer) {
                         case 'complete':
                             statusElement.textContent = `✅ Complete! Total time: ${Math.round(eventData.executionTime)}ms`;
                             responseContainer.className = 'response-container response-success';
+                            if (stopButton) { stopButton.disabled = true; stopButton.textContent = 'Done'; }
+                            stopAllTimers('done');
                             // Ensure the full results tree reflects the final snapshot
                             if (Array.isArray(eventData.allResults) && eventData.allResults.length) {
                                 // If we never received structured iterations, fall back to a flat section
@@ -1797,6 +1904,8 @@ async function handleStreamingResponse(response, responseContainer) {
                         case 'error':
                             statusElement.textContent = `❌ Error: ${eventData.error}`;
                             responseContainer.className = 'response-container response-error';
+                            if (stopButton) { stopButton.disabled = true; stopButton.textContent = 'Error'; }
+                            stopAllTimers('error');
                             stepsElement.innerHTML += `
                                 <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); border-radius: 8px; color: #721c24;">
                                     <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
@@ -1816,8 +1925,16 @@ async function handleStreamingResponse(response, responseContainer) {
         
     } catch (streamError) {
         console.error('Streaming error:', streamError);
-        statusElement.textContent = `❌ Streaming Error: ${streamError.message}`;
-        responseContainer.className = 'response-container response-error';
+        if (stopButton) { stopButton.disabled = true; stopButton.textContent = 'Stopped'; }
+        stopAllTimers('stopped');
+        if (streamError.name === 'AbortError') {
+            statusElement.textContent = '⏹️ Stopped by user. Partial results are shown above.';
+            // Keep existing partial results visible without switching to error theme
+            responseContainer.className = 'response-container';
+        } else {
+            statusElement.textContent = `❌ Streaming Error: ${streamError.message}`;
+            responseContainer.className = 'response-container response-error';
+        }
     }
 }
 
