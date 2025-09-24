@@ -1421,13 +1421,35 @@ async function handleStreamingResponse(response, responseContainer) {
     // Map of per-search digests: key `${iteration}|${term}` => { summary, links }
     const digestMap = new Map();
     
-    function renderResultsSection(title, results) {
+    function renderResultsSection(title, results, digest) {
         const details = document.createElement('details');
         details.className = 'search-results-section';
         details.open = false;
         const summary = document.createElement('summary');
         summary.innerHTML = `<strong>${title}</strong> (${results.length} total)`;
         details.appendChild(summary);
+        // If we have a per-search digest summary, render it prominently at the top of this section
+        if (digest && (digest.summary || (Array.isArray(digest.links) && digest.links.length))) {
+            const digestBox = document.createElement('div');
+            digestBox.style.cssText = 'margin:10px 12px; padding:10px; background:#fff; border-left:4px solid #007bff; border:1px solid #e9ecef; border-radius:6px;';
+            if (digest.summary) {
+                const p = document.createElement('div');
+                p.style.cssText = 'color:#212529; line-height:1.5;';
+                p.textContent = digest.summary;
+                digestBox.appendChild(p);
+            }
+            if (Array.isArray(digest.links) && digest.links.length) {
+                const ul = document.createElement('ul');
+                ul.style.cssText = 'margin-top:6px;';
+                digest.links.forEach(l => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<a href="${l.url}" target="_blank" rel="noopener noreferrer">${l.title || l.url}</a>${l.snippet ? ` — <small>${l.snippet}</small>` : ''}`;
+                    ul.appendChild(li);
+                });
+                digestBox.appendChild(ul);
+            }
+            details.appendChild(digestBox);
+        }
         const wrap = document.createElement('div');
         wrap.className = 'search-results';
         results.slice(0, 20).forEach(r => {
@@ -1514,7 +1536,10 @@ async function handleStreamingResponse(response, responseContainer) {
 
             Object.keys(resultsState.byIteration[iter]).forEach(term => {
                 const termResults = resultsState.byIteration[iter][term];
-                const termDetails = renderResultsSection(`"${term}"`, termResults);
+                // Pull digest for this iteration/term if available
+                const key = `${iter}|${term}`;
+                const digest = digestMap.get(key) || null;
+                const termDetails = renderResultsSection(`"${term}"`, termResults, digest);
                 iterDetails.appendChild(termDetails);
             });
 
@@ -1582,6 +1607,8 @@ async function handleStreamingResponse(response, responseContainer) {
                                 if (typeof window.__lastSearches !== 'undefined') {
                                     updateLiveSummary(window.__lastSearches, undefined);
                                 }
+                                // Also refresh the full results tree so digest appears in the expandable section
+                                updateFullResultsTree();
                             }
                             break;
                         case 'log':
