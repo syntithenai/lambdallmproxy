@@ -658,7 +658,10 @@
         <div class="settings-section">
             <h3>API Keys</h3>
             <div>
-                <label for="openai_api_key">OpenAI API Key:</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="openai_api_key">OpenAI API Key:</label>
+                    <button type="button" id="openai_help_button" style="background: #007bff; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;" title="Get OpenAI API Key">?</button>
+                </div>
                 <div style="position: relative;">
                     <input type="text" id="openai_api_key" name="openai_api_key" placeholder="sk-...">
                     <small id="openai_api_key_status" style="color: #666; font-size: 0.85em; margin-top: 4px; display: block;"></small>
@@ -666,7 +669,10 @@
                 </div>
             </div>
             <div>
-                <label for="groq_api_key">Groq API Key:</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="groq_api_key">Groq API Key:</label>
+                    <button type="button" id="groq_help_button" style="background: #007bff; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;" title="Get Groq API Key">?</button>
+                </div>
                 <div style="position: relative;">
                     <input type="text" id="groq_api_key" name="groq_api_key" placeholder="gsk_...">
                     <small id="groq_api_key_status" style="color: #666; font-size: 0.85em; margin-top: 4px; display: block;"></small>
@@ -1088,6 +1094,16 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             updateApiKeyStatus('groq_api_key_status', '');
         }, 3000);
+    });
+    
+    // Handle OpenAI help button
+    document.getElementById('openai_help_button').addEventListener('click', function() {
+        window.open('https://platform.openai.com/api-keys', '_blank');
+    });
+    
+    // Handle Groq help button
+    document.getElementById('groq_help_button').addEventListener('click', function() {
+        window.open('https://console.groq.com/keys', '_blank');
     });
     
     // Settings dialog functionality
