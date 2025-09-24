@@ -1154,41 +1154,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Reset model to fastest/cheapest option after request completion
-    function resetModelToFastest() {
-        const hasGroqKey = hasLocalKeyForModel() && modelSelect.querySelector('option[value="groq:llama-3.1-8b-instant"]') && 
-                          !modelSelect.querySelector('option[value="groq:llama-3.1-8b-instant"]').disabled;
-        const hasOpenaiKey = hasLocalKeyForModel() && modelSelect.querySelector('option[value="openai:gpt-4o-mini"]') && 
-                            !modelSelect.querySelector('option[value="openai:gpt-4o-mini"]').disabled;
-        const signedIn = isGoogleTokenValid(googleAccessToken);
-        
-        let targetModel = null;
-        
-        // Prefer Groq for speed and cost-effectiveness
-        if (hasGroqKey || signedIn) {
-            const groqOption = modelSelect.querySelector('option[value="groq:llama-3.1-8b-instant"]');
-            if (groqOption && !groqOption.disabled) {
-                targetModel = 'groq:llama-3.1-8b-instant';
-            }
-        }
-        
-        // Fallback to OpenAI if Groq not available
-        if (!targetModel && (hasOpenaiKey || signedIn)) {
-            const openaiOption = modelSelect.querySelector('option[value="openai:gpt-4o-mini"]');
-            if (openaiOption && !openaiOption.disabled) {
-                targetModel = 'openai:gpt-4o-mini';
-            }
-        }
-        
-        // Only change if we found a valid target and it's different from current
-        if (targetModel && modelSelect.value !== targetModel) {
-            modelSelect.value = targetModel;
-            console.log(`Reset model to ${targetModel} (fastest/cheapest available option)`);
-            // Trigger change event to update UI
-            modelSelect.dispatchEvent(new Event('change'));
-        }
-    }
-    
     // Update model availability on initial load
     updateModelAvailability();
     updateSubmitButton();
@@ -1660,11 +1625,17 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         </div>
         <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
         <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
         <div id="full-results-tree"></div>
     `;
     
     const statusElement = document.getElementById('streaming-status');
     const stepsElement = document.getElementById('streaming-steps');
+    const toolsPanel = document.getElementById('tools-panel');
+    const toolsLog = document.getElementById('tools-log');
     const responseElement = document.getElementById('streaming-response');
     const answerElement = document.getElementById('final-answer');
     const metadataElement = document.getElementById('streaming-metadata');
@@ -2009,6 +1980,46 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 // Also refresh the full results tree so digest appears in the expandable section
                                 updateFullResultsTree();
                             }
+                            break;
+                        case 'tools':
+                            try {
+                                toolsPanel.style.display = 'block';
+                                const { iteration, pending, calls } = eventData;
+                                const box = document.createElement('div');
+                                box.style.cssText = 'padding:8px; border-left:3px solid #6c757d; background:#fff; margin:6px 0; border-radius:4px;';
+                                const header = document.createElement('div');
+                                header.innerHTML = `<strong>Iteration ${iteration}</strong> • ${pending} pending call(s)`;
+                                box.appendChild(header);
+                                if (Array.isArray(calls)) {
+                                    const list = document.createElement('ul');
+                                    list.style.margin = '6px 0 0 16px';
+                                    calls.forEach(c => {
+                                        const li = document.createElement('li');
+                                        li.textContent = `${c.name} ${c.call_id ? '(' + c.call_id + ')' : ''}`;
+                                        list.appendChild(li);
+                                    });
+                                    box.appendChild(list);
+                                }
+                                toolsLog.appendChild(box);
+                            } catch {}
+                            break;
+                        case 'tool_result':
+                            try {
+                                toolsPanel.style.display = 'block';
+                                const { iteration, call_id, name, args, output } = eventData;
+                                const item = document.createElement('div');
+                                item.style.cssText = 'padding:8px; border-left:3px solid #28a745; background:#fff; margin:6px 0; border-radius:4px;';
+                                const title = document.createElement('div');
+                                title.innerHTML = `<strong>${name}</strong> ${call_id ? '(' + call_id + ')' : ''} • iteration ${iteration}`;
+                                const argsPre = document.createElement('pre');
+                                argsPre.textContent = `args: ${JSON.stringify(args)}`;
+                                const outPre = document.createElement('pre');
+                                outPre.textContent = `output: ${output}`;
+                                item.appendChild(title);
+                                item.appendChild(argsPre);
+                                item.appendChild(outPre);
+                                toolsLog.appendChild(item);
+                            } catch {}
                             break;
                         case 'log':
                             statusElement.textContent = eventData.message || 'Processing...';
