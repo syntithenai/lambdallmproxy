@@ -1311,11 +1311,7 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     
     if (!hasLocalKey && !isSignedIn) {
         responseContainer.className = 'response-container response-error';
-        responseContainer.textContent = 'Error: Please sign in with Google or provide an API key in Settings to proceed.';
-        // Proactively open Google sign-in prompt if available
-        try { if (typeof google !== 'undefined' && google.accounts) google.accounts.id.prompt(); } catch (e) { /* noop */ }
-        // Nudge focus to Login button
-        try { const lb = document.getElementById('login-btn'); if (lb) lb.focus(); } catch (e) { /* noop */ }
+    responseContainer.textContent = 'Error: Please sign in with Google or provide an API key in Settings to proceed.';
         submitBtn.disabled = false;
         submitBtn.textContent = 'Send Request';
         return;
