@@ -59,3 +59,4 @@ temp/
 # Deployment artifacts
 *.zip
 deployment/
+lambda get-function-configuration --function-name llmproxy --region us-east-1 --query Environment.Variables --output json
