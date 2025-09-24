@@ -24,6 +24,8 @@ function getAllowedEmails() {
  */
 function verifyGoogleToken(token) {
     try {
+        console.log(`Debug: Verifying Google token (length: ${token?.length})`);
+        
         // Parse JWT token (basic parsing - in production you'd want to verify signature)
         const base64Url = token.split('.')[1];
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -36,6 +38,7 @@ function verifyGoogleToken(token) {
         );
         
         const payload = JSON.parse(jsonPayload);
+        console.log(`Debug: Token payload parsed, email: ${payload.email}, exp: ${payload.exp}`);
         
         // Basic validation
         if (!payload.email || !payload.exp) {
@@ -46,12 +49,13 @@ function verifyGoogleToken(token) {
         // Check if token is expired
         const now = Math.floor(Date.now() / 1000);
         if (payload.exp < now) {
-            console.log('Token expired');
+            console.log(`Token expired: ${payload.exp} < ${now}`);
             return null;
         }
         
         // Check if email is in whitelist (read from env dynamically)
         const allowed = getAllowedEmails();
+        console.log(`Debug: Allowed emails: [${allowed.join(', ')}], checking: ${payload.email}`);
         if (!allowed.includes(payload.email)) {
             console.log(`Email not allowed: ${payload.email}`);
             return null;
