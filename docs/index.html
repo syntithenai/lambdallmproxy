@@ -1420,14 +1420,39 @@ async function handleStreamingResponse(response, responseContainer) {
     const resultsState = { byIteration: {} };
     // Map of per-search digests: key `${iteration}|${term}` => { summary, links }
     const digestMap = new Map();
+    // Map of per-search metadata: key `${iteration}|${term}` => { subQuestion, keywords }
+    const metaMap = new Map();
     
-    function renderResultsSection(title, results, digest) {
+    function renderResultsSection(title, results, digest, meta) {
         const details = document.createElement('details');
         details.className = 'search-results-section';
         details.open = false;
         const summary = document.createElement('summary');
         summary.innerHTML = `<strong>${title}</strong> (${results.length} total)`;
         details.appendChild(summary);
+        // Sub-question heading and keywords badges
+        if (meta && (meta.subQuestion || (Array.isArray(meta.keywords) && meta.keywords.length))) {
+            const metaBox = document.createElement('div');
+            metaBox.style.cssText = 'margin:10px 12px; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:6px;';
+            if (meta.subQuestion) {
+                const h = document.createElement('div');
+                h.style.cssText = 'font-weight:600; color:#343a40; margin-bottom:6px;';
+                h.textContent = `Sub-question: ${meta.subQuestion}`;
+                metaBox.appendChild(h);
+            }
+            if (Array.isArray(meta.keywords) && meta.keywords.length) {
+                const kwWrap = document.createElement('div');
+                kwWrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px;';
+                meta.keywords.forEach(k => {
+                    const badge = document.createElement('span');
+                    badge.style.cssText = 'background:#e9f5ff; color:#0b6aa2; border:1px solid #b6e0fe; padding:2px 8px; border-radius:12px; font-size:0.85em;';
+                    badge.textContent = k;
+                    kwWrap.appendChild(badge);
+                });
+                metaBox.appendChild(kwWrap);
+            }
+            details.appendChild(metaBox);
+        }
         // If we have a per-search digest summary, render it prominently at the top of this section
         if (digest && (digest.summary || (Array.isArray(digest.links) && digest.links.length))) {
             const digestBox = document.createElement('div');
@@ -1483,6 +1508,24 @@ async function handleStreamingResponse(response, responseContainer) {
         (searches || []).forEach(s => {
             const li = document.createElement('li');
             li.innerHTML = `<strong>Iteration ${s.iteration}</strong>: \"${s.query}\" — ${s.resultsCount} result(s)`;
+            // Sub-question heading inline
+            if (s.subQuestion) {
+                const sub = document.createElement('div');
+                sub.style.cssText = 'margin-top:2px; color:#495057; font-size:0.9em;';
+                sub.textContent = `Sub-question: ${s.subQuestion}`;
+                li.appendChild(sub);
+            }
+            if (Array.isArray(s.keywords) && s.keywords.length) {
+                const kw = document.createElement('div');
+                kw.style.cssText = 'margin-top:4px; display:flex; flex-wrap:wrap; gap:6px;';
+                s.keywords.forEach(k => {
+                    const badge = document.createElement('span');
+                    badge.style.cssText = 'background:#eef7ee; color:#226633; border:1px solid #cde7ce; padding:2px 8px; border-radius:12px; font-size:0.85em;';
+                    badge.textContent = k;
+                    kw.appendChild(badge);
+                });
+                li.appendChild(kw);
+            }
             // Show per-search digest if available (from digestMap or inline summary)
             const key = `${s.iteration}|${s.query}`;
             const digest = digestMap.get(key) || (s.summary ? { summary: s.summary, links: s.links || [] } : null);
@@ -1536,10 +1579,11 @@ async function handleStreamingResponse(response, responseContainer) {
 
             Object.keys(resultsState.byIteration[iter]).forEach(term => {
                 const termResults = resultsState.byIteration[iter][term];
-                // Pull digest for this iteration/term if available
+                // Pull digest and metadata for this iteration/term if available
                 const key = `${iter}|${term}`;
                 const digest = digestMap.get(key) || null;
-                const termDetails = renderResultsSection(`"${term}"`, termResults, digest);
+                const meta = metaMap.get(key) || null;
+                const termDetails = renderResultsSection(`\"${term}\"`, termResults, digest, meta);
                 iterDetails.appendChild(termDetails);
             });
 
@@ -1598,9 +1642,12 @@ async function handleStreamingResponse(response, responseContainer) {
                     switch (eventType) {
                         case 'search_digest':
                             {
-                                const { term, iteration, summary, links } = eventData;
+                                const { term, iteration, summary, links, subQuestion, keywords } = eventData;
                                 const key = `${iteration}|${term}`;
                                 digestMap.set(key, { summary, links: Array.isArray(links) ? links : [] });
+                                if (subQuestion || (Array.isArray(keywords) && keywords.length)) {
+                                    metaMap.set(key, { subQuestion: subQuestion || null, keywords: Array.isArray(keywords) ? keywords : [] });
+                                }
                                 // Trigger a refresh of the Search Summary list (uses last known searches from metadata or previous event)
                                 // We can’t access a persistent list of searches here, so rely on latest rendered summary; a full refresh will come with next search_results
                                 // Optional: we could store lastSearches in closure when search_results arrives
@@ -1660,7 +1707,7 @@ async function handleStreamingResponse(response, responseContainer) {
                             
                         case 'search_results':
                             {
-                                const { term, iteration, resultsCount, results, cumulativeResultsCount, allResults, searches } = eventData;
+                                const { term, iteration, resultsCount, results, cumulativeResultsCount, allResults, searches, subQuestion, keywords } = eventData;
                                 // Ignore initial empty placeholder snapshot to avoid a "null" entry
                                 if (term === null || (resultsCount === 0 && iteration === 0)) {
                                     updateLiveSummary(searches || [], cumulativeResultsCount || 0);
@@ -1683,6 +1730,9 @@ async function handleStreamingResponse(response, responseContainer) {
                                 // Update structured state for the full results tree
                                 if (!resultsState.byIteration[iteration]) resultsState.byIteration[iteration] = {};
                                 resultsState.byIteration[iteration][term] = Array.isArray(results) ? results : [];
+                                // Store metadata for this term
+                                const metaKey = `${iteration}|${term}`;
+                                metaMap.set(metaKey, { subQuestion: subQuestion || null, keywords: Array.isArray(keywords) ? keywords : [] });
 
                                 // Update summary and full tree
                                 // Keep last searches for digest refresh convenience
