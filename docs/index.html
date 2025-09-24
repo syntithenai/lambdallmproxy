@@ -1243,8 +1243,8 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         ...(hasLocalKey ? { apiKey: apiKey } : {}),
         model: selectedModel,
         query: document.getElementById('prompt').value,
-        accessSecret: document.getElementById('access_secret').value,
-        searchMode: searchMode,
+        accessSecret: document.getElementById('access_secret').value,  // Changed from access_secret to accessSecret
+        searchMode: searchMode,  // Changed from search_mode to searchMode
         ...(isSignedIn ? { google_token: googleAccessToken } : {})
     };
 
