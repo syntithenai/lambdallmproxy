@@ -1,6 +1,6 @@
-# Lambda LLM Proxy & Search Functions
+# Lambda LLM Proxy & Intelligent Search System
 
-An intelligent AWS Lambda function that combines web search with LLM processing to provide comprehensive answers with citations and source references.
+An advanced AWS Lambda function that combines comprehensive web search with large language model processing to provide thorough, well-researched answers with citations and source references.
 
 ## Quick Start - Use the Makefile!
 
@@ -24,51 +24,89 @@ make help
 
 ## Architecture
 
-This project has been reorganized for better maintainability:
+### Modular Design
+
+The project is organized for maintainability and scalability:
 
 - **`src/`** - Modularized source code
+  - `lambda_search_llm_handler.js` - Main Lambda function with intelligent multi-search
+  - `index.js` - Entry point that exports the handler
   - `auth.js` - Google OAuth authentication and email validation
   - `providers.js` - LLM provider configuration (OpenAI, Groq)  
   - `memory-tracker.js` - Memory management and token optimization
   - `html-parser.js` - HTML parsing and content extraction
-  - `lambda_search_llm_handler.js` - Main Lambda function (cleaned, imports modules)
-  - `index.js` - Entry point that exports the handler
+  - `search.js` - DuckDuckGo search functionality with intelligent scoring
 - **`scripts/`** - All deployment and build scripts
 - **`Makefile`** - Centralized build automation
 
-## Features
+### System Flow
 
-- 🔍 **Intelligent Search Decision Making**: AI determines whether to search or respond directly
-- 🔄 **Multi-Search Loop**: Iterative search refinement with up to 3 search cycles
-- 🌐 **DuckDuckGo Integration**: High-quality search results with sophisticated scoring  
-- 🤖 **Multiple OpenAI Models**: Support for GPT-5, GPT-4, and other models
-- 📱 **Multiple Search Modes**: Auto-detect, Force Search, or Direct Response
-- 🔒 **Secure Access**: Environment-based API key and access secret protection
-- ⚡ **Optimized Performance**: Buffered invocation and intelligent caching
-- 🌍 **CORS Enabled**: Ready for browser-based cross-origin requests
-- 📄 **Content Extraction**: Full page content fetching and analysis
-- 📊 **Comprehensive Logging**: Detailed processing metrics and debugging
-- 🔗 **Enhanced Response Format**: Search summaries, source links, and full JSON results
+1. **Authentication**: Google OAuth with email allowlist validation
+2. **Request Analysis**: LLM determines optimal search strategy (2-3 complementary queries)
+3. **Multi-Search Execution**: Parallel execution of diverse search queries
+4. **Content Processing**: Intelligent scoring, content extraction, and analysis
+5. **Iterative Research**: Up to 3 search iterations with comprehensive coverage bias
+6. **Expert Synthesis**: Authoritative response generation with full source utilization
 
-## Multi-Search Enhancement
+## Key Features
 
-The system now supports intelligent multi-search loops with **comprehensive coverage bias** that can perform up to 3 iterations of searching:
+### 🔍 Comprehensive Multi-Search System
+- **Intelligent Search Planning**: AI generates 2-3 complementary search queries covering different aspects
+- **Multi-Angle Coverage**: Systematic exploration of overviews, recent developments, and expert opinions
+- **Iterative Research Loop**: Up to 3 search cycles with aggressive continuation bias
+- **Comprehensive Coverage**: System biases toward thoroughness over efficiency
 
-### How It Works
+### 🧠 Advanced LLM Integration
+- **Multiple Model Support**: OpenAI GPT-4, GPT-4o, Groq models (Llama 3.1)
+- **Intelligent Decision Making**: AI determines whether to search or respond directly
+- **Expert-Level Synthesis**: Authoritative responses with comprehensive source integration
+- **Template-Driven Prompts**: Configurable system prompts and response templates
 
-1. **Comprehensive Initial Decision**: LLM analyzes the query with a bias toward thoroughness, providing 2-3 optimized search queries that cover different aspects and angles
-2. **Multi-Angle Search Execution**: Each search query is executed independently against DuckDuckGo to gather diverse perspectives
-3. **Thorough Result Digestion**: Each set of search results is comprehensively analyzed and summarized with all key details and insights
-4. **Aggressive Continuation Decision**: LLM analyzes gathered information with a strong bias toward additional searches to ensure no important aspects are missed
-5. **Expert-Level Final Synthesis**: All information is expertly combined into a comprehensive, authoritative, well-cited response
+### 🌐 Sophisticated Search Engine
+- **DuckDuckGo Integration**: High-quality search with intelligent result scoring
+- **Authority Prioritization**: Wikipedia, academic, and news sources ranked higher
+- **Parallel Processing**: Multiple search queries executed simultaneously
+- **Content Extraction**: Full page content fetching and HTML parsing
 
-### Key Enhancements for Comprehensive Coverage
+### � Secure Authentication
+- **Google OAuth Integration**: Frontend login with JWT token validation  
+- **Email Allowlist**: Configurable authorized user list
+- **Access Control**: Optional secret-based API protection
+- **Token Verification**: Backend validation of Google JWT tokens with expiration checking
 
-- **Broader Search Strategy**: Decision templates encourage 2-3 complementary searches covering different aspects
-- **Thorough Analysis**: Each search digest captures comprehensive details, not just summaries  
-- **Aggressive Continuation**: System biases toward additional searches when they could improve answer quality
-- **Expert Synthesis**: Final responses are crafted to be authoritative and comprehensive
-- **Enhanced Prompting**: All prompts emphasize thoroughness, completeness, and multi-angle coverage
+### ⚡ Performance Optimization
+- **Buffered Invocation**: Optimal Lambda performance mode
+- **Memory Management**: Intelligent token and memory tracking
+- **Timeout Handling**: Configurable timeouts with retry logic
+- **CORS Support**: Full cross-origin request support
+
+## Multi-Search Enhancement Details
+
+### How Comprehensive Search Works
+
+1. **Broad Initial Strategy**: LLM analyzes query and provides 2-3 complementary searches:
+   - Topic overview and definitions
+   - Recent developments and current state  
+   - Expert opinions and detailed analysis
+
+2. **Parallel Execution**: Each search query runs independently against DuckDuckGo
+
+3. **Thorough Analysis**: Each result set gets comprehensive 3-4 sentence summaries capturing:
+   - ALL key information and facts
+   - Important nuances and data points
+   - Specific details, numbers, and dates
+
+4. **Aggressive Continuation**: System evaluates if additional searches would improve answer quality by checking:
+   - Multiple perspectives not yet covered
+   - Recent developments or technical details missing
+   - Expert opinions or case studies needed
+   - Alternative approaches or counterarguments to explore
+
+5. **Expert Synthesis**: Final response combines ALL research into authoritative answer ensuring:
+   - Complete coverage of all important aspects
+   - Synthesis from multiple source perspectives
+   - Depth and nuance appropriate to question complexity
+   - No important information left unaddressed
 
 ### Enhanced Response Format
 
@@ -76,7 +114,7 @@ The system now supports intelligent multi-search loops with **comprehensive cove
 {
   "success": true,
   "query": "Your question",
-  "answer": "Comprehensive, expertly-synthesized response from multiple comprehensive searches",
+  "answer": "Comprehensive, expertly-synthesized response from multiple searches",
   "searchSummaries": [
     {
       "searchQuery": "broad overview search terms",
@@ -87,8 +125,8 @@ The system now supports intelligent multi-search loops with **comprehensive cove
       "summary": "Detailed analysis of specific aspects"
     },
     {
-      "searchQuery": "related context search terms",
-      "summary": "Background and contextual information"
+      "searchQuery": "expert opinions search terms",
+      "summary": "Authority perspectives and expert analysis"
     }
   ],
   "links": [
@@ -100,7 +138,7 @@ The system now supports intelligent multi-search loops with **comprehensive cove
   ],
   "searchResults": [...], // Full JSON of all comprehensive search results
   "llmResponse": {
-    "model": "gpt-5-nano",
+    "model": "gpt-4o",
     "usage": {...},
     "searchIterations": 2,
     "totalSearchQueries": 5
@@ -109,40 +147,89 @@ The system now supports intelligent multi-search loops with **comprehensive cove
 }
 ```
 
-### Benefits of Comprehensive Coverage
+## Authentication System
 
-- **Multi-Angle Analysis**: 2-3 complementary searches ensure all important perspectives are covered
-- **Aggressive Thoroughness**: System biases toward more searches rather than fewer to ensure completeness
-- **Expert-Level Responses**: Final synthesis provides authoritative, comprehensive answers
-- **No Stone Unturned**: Continuation logic actively seeks to fill any knowledge gaps
-- **Rich Source Material**: Diverse search strategies lead to comprehensive source coverage
+### Google OAuth Integration
 
-## Quick Start
+The system includes comprehensive Google OAuth authentication:
 
-### Option 1: Using Makefile (Recommended)
+**Frontend Features**:
+- Login button with Google OAuth integration
+- Profile picture display when authenticated
+- Form disabled until user authentication
+- Automatic token inclusion in all requests
+- Logout functionality with session management
 
+**Backend Validation**:
+- JWT token verification with Google's certificates
+- Email allowlist enforcement (`syntithenai@gmail.com` by default)
+- Token expiration checking
+- User profile extraction (email, name, picture)
+
+**Configuration**:
+- Google Client ID stored in environment variables
+- Build process replaces template placeholders
+- Cross-platform build support (bash and Node.js scripts)
+
+### Setup Authentication
+
+1. **Configure Google OAuth**:
 ```bash
-# Check prerequisites
-make check
-
-# Deploy the function
-make deploy
-
-# Test the deployment
-make test
+# Add to .env file
+GOOGLE_CLIENT_ID=your-google-client-id-here
 ```
 
-### Option 2: Manual Deployment
-
+2. **Build UI with Authentication**:
 ```bash
-# Using bash script
-./deploy.sh
-
-# Using Node.js script
-./deploy.mjs
+make build-docs  # Replaces {{GOOGLE_CLIENT_ID}} placeholder
 ```
+
+3. **Test Authentication**:
+- Open `docs/index.html` in browser
+- Click "Sign in with Google" 
+- Authenticate with allowed email address
+- Submit requests through authenticated interface
 
 ## API Usage
+
+### Basic Request Format
+
+```bash
+curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer google-jwt-token" \
+  -d '{
+    "query": "How does machine learning work?",
+    "mode": "auto",
+    "limit": 5,
+    "model": "gpt-4o"
+  }'
+```
+
+### Request Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Search query or question |
+| `mode` | string | No | "auto" | Search mode: "auto", "search", "direct" |
+| `limit` | number | No | 10 | Number of search results (1-50) |
+| `model` | string | No | "gpt-4o" | LLM model selection |
+| `max_tokens` | number | No | 2000 | Maximum response tokens |
+| `temperature` | number | No | 0.7 | LLM creativity (0.0-1.0) |
+| `access_secret` | string | Conditional | - | API access secret if configured |
+
+### Search Modes
+
+- **`auto`**: LLM intelligently decides whether to search or respond directly
+- **`search`**: Forces comprehensive web search with multi-iteration loop  
+- **`direct`**: Responds directly without web search
+
+### Authentication Headers
+
+When Google OAuth is enabled:
+```bash
+-H "Authorization: Bearer google-jwt-token-here"
+```
 
 ### Basic Request
 
@@ -199,8 +286,37 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
 
 ## Environment Variables
 
-- **`OPENAI_API_URL`** - OpenAI API hostname (default: "api.openai.com")
-- **`ACCESS_SECRET`** - Secret for function access protection
+All environment variables in the `.env` file are actively used in the application. The system has been optimized with no unused configuration variables:
+
+### Lambda Handler Variables
+- **`ALLOWED_EMAILS`** - Email allowlist for authentication validation
+- **`ACCESS_SECRET`** - Secret for function access protection  
+- **`LAMBDA_MEMORY`** - Memory tracking and optimization configuration
+- **`SYSTEM_PROMPT_DIGEST_ANALYST`** - LLM system prompt for search result analysis
+- **`SYSTEM_PROMPT_CONTINUATION_STRATEGIST`** - LLM system prompt for search continuation decisions
+- **`DIGEST_TEMPLATE`** - Template for analyzing search results
+- **`CONTINUATION_TEMPLATE`** - Template for deciding whether to continue searching
+- **`FINAL_TEMPLATE`** - Template for generating final comprehensive answers
+
+### Provider Configuration Variables
+- **`OPENAI_API_KEY`** - OpenAI API authentication token
+- **`GROQ_API_KEY`** - Groq API authentication token
+- **`OPENAI_MODEL`** - OpenAI model selection (e.g., "gpt-4o")
+- **`OPENAI_API_BASE`** - OpenAI API base URL (default: "https://api.openai.com/v1")
+- **`GROQ_MODEL`** - Groq model selection (e.g., "llama-3.1-8b-instant")
+
+### Deployment & UI Variables  
+- **`LAMBDA_URL`** - AWS Lambda function URL for frontend integration
+- **`LAMBDA_TIMEOUT`** - Lambda function timeout setting (seconds)
+- **`GOOGLE_CLIENT_ID`** - Google OAuth client ID for authentication
+- **`NODE_ENV`** - Environment mode (development/production)
+
+### Variable Usage Analysis
+✅ **All variables are actively used** - No dead configuration found  
+✅ **Lambda Handler**: 8 variables for authentication, prompts, and templates  
+✅ **Provider Config**: 5 variables for LLM API configuration  
+✅ **Deployment**: 4 variables for UI build and Lambda deployment  
+✅ **Development**: 1 variable for environment mode
 
 ## Deployment
 
@@ -680,47 +796,28 @@ aws lambda create-function-url-config \
 | `MAX_TIMEOUT` | Maximum allowed timeout in seconds | No (default: 60) |
 | `MAX_RESULTS` | Maximum allowed result limit | No (default: 50) |
 
-## Performance & Costs
+## Performance & Security
 
 ### Performance Characteristics
-- **Search handler**: ~2-5 seconds per request
-- **Combined handler**: ~5-15 seconds per request (includes LLM processing)
-- **Memory usage**: 512MB recommended for content fetching
-- **Cold starts**: First request may take 2-3 seconds longer
-- **10x scraping**: Better result quality through extensive initial scraping
+- **Multi-search handler**: ~8-20 seconds per comprehensive research request
+- **Direct response**: ~2-5 seconds without search
+- **Memory usage**: 512MB recommended for optimal performance
+- **Cold starts**: First request may take additional 2-3 seconds
+- **Comprehensive coverage**: Multiple searches ensure thorough analysis
 
-### Cost Estimation
-- **Execution time**: $0.000001 per request + execution time charges
-- **Memory**: 128-512MB depending on configuration
-- **LLM costs**: Separate OpenAI API charges apply
+### Security Features
+- **Google OAuth**: Secure user authentication with JWT validation
+- **Email Allowlist**: Configurable authorized user restrictions
+- **API Keys**: Never logged or stored in responses
+- **Access Control**: Optional secret-based API protection
+- **CORS**: Controlled cross-origin access configuration
+- **Input Validation**: All parameters validated and sanitized
 
-## Advanced Features
-
-### Intelligent Scoring System
-- **Wikipedia priority**: Highest scores for authoritative sources
-- **Domain authority**: News organizations, academic sites prioritized
-- **Query relevance**: Advanced token matching in titles and descriptions
-- **Content quality**: Longer, more detailed descriptions scored higher
-
-### Content Fetching
-- **Parallel processing**: Multiple URLs fetched simultaneously
-- **Timeout handling**: Individual timeouts per URL
-- **Content extraction**: HTML parsed to clean text for LLM processing
-- **Size limits**: 50KB limit per page to avoid memory issues
-
-### LLM Integration
-- **Automatic content**: Search+LLM handler always fetches content regardless of parameter
-- **Source citations**: LLM responses reference specific search results
-- **Model flexibility**: Support for GPT-4, GPT-3.5-turbo, and other OpenAI models
-- **Parameter control**: Temperature, max_tokens, and other settings configurable
-
-## Security
-
-- **CORS**: Configured for cross-origin requests
-- **Input validation**: All parameters validated and sanitized
-- **Error handling**: Sensitive information not exposed in error messages
-- **Access control**: Optional ACCESS_SECRET for API protection
-- **Rate limiting**: Consider implementing API Gateway throttling for production
+### Cost Optimization
+- **Intelligent Scoring**: Prioritizes high-quality sources efficiently
+- **Parallel Processing**: Multiple operations run simultaneously
+- **Memory Management**: Optimized token usage and content processing
+- **Timeout Controls**: Prevents runaway operations
 
 ## Monitoring & Troubleshooting
 
