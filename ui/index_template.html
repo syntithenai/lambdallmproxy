@@ -1298,7 +1298,7 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     
     // Validate that we have either a local API key or a Google login (server env keys may apply)
     const hasLocalKey = apiKey && apiKey.trim();
-    const isSignedIn = isGoogleTokenValid(googleAccessToken);
+    const isSignedIn = (window.isGoogleTokenValid ? window.isGoogleTokenValid(googleAccessToken) : false);
     
     // Debug logging
     console.log('Form submission validation:', {
