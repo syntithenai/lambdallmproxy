@@ -752,6 +752,30 @@
 let googleUser = null;
 let googleAccessToken = null;
 
+// Reset model selector to a fast/cheap default the user likely has access to
+// Preference order:
+// 1) groq:llama-3.1-8b-instant (fastest, cheap)
+// 2) openai:gpt-4o-mini (fast, cheap)
+// 3) first enabled option
+function resetModelToFastest() {
+    try {
+        const select = document.getElementById('model');
+        if (!select) return;
+        const prefer = ['groq:llama-3.1-8b-instant', 'openai:gpt-4o-mini'];
+        for (const val of prefer) {
+            const opt = select.querySelector(`option[value="${val}"]`);
+            if (opt && !opt.disabled) {
+                select.value = val;
+                return;
+            }
+        }
+        const firstEnabled = Array.from(select.options).find(o => o.value && !o.disabled);
+        if (firstEnabled) select.value = firstEnabled.value;
+    } catch (e) {
+        console.warn('resetModelToFastest failed:', e);
+    }
+}
+
 // Handle API key persistence and model selection
 document.addEventListener('DOMContentLoaded', function() {
     // Google OAuth configuration
@@ -1103,9 +1127,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Priority 1: Groq llama instant if Groq key is available (and no OpenAI key)
                 if (hasGroqKey) {
                     defaultModel = 'groq:llama-3.1-8b-instant';
-                // Priority 2: OpenAI gpt-5-nano if OpenAI key is available
+                // Priority 2: OpenAI gpt-4o-mini if OpenAI key is available
                 } else if (hasOpenaiKey) {
-                    defaultModel = 'openai:gpt-5-nano';
+                    defaultModel = 'openai:gpt-4o-mini';
                 }
                  
                 
