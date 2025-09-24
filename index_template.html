@@ -886,6 +886,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const signedIn = !!googleAccessToken;
         const localKeyOk = hasLocalKeyForModel();
         const canSubmit = signedIn || localKeyOk;
+        
+        // Debug logging
+        console.log('updateSubmitButton:', {
+            googleAccessToken: googleAccessToken ? 'present' : 'null',
+            googleUser: googleUser ? googleUser.email : 'null',
+            signedIn: signedIn,
+            localKeyOk: localKeyOk,
+            canSubmit: canSubmit,
+            savedToken: localStorage.getItem('google_access_token') ? 'present' : 'null'
+        });
+        
         submitBtn.disabled = !canSubmit;
         submitBtn.textContent = canSubmit ? 'Send Request' : 'Sign in or add an API key';
     }
@@ -1207,6 +1218,16 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     // Validate that we have either a local API key or a Google login (server env keys may apply)
     const hasLocalKey = apiKey && apiKey.trim();
     const isSignedIn = !!googleAccessToken;
+    
+    // Debug logging
+    console.log('Form submission validation:', {
+        apiKey: apiKey ? 'present' : 'null',
+        hasLocalKey: hasLocalKey,
+        googleAccessToken: googleAccessToken ? 'present' : 'null',
+        isSignedIn: isSignedIn,
+        googleUser: googleUser ? googleUser.email : 'null'
+    });
+    
     if (!hasLocalKey && !isSignedIn) {
         responseContainer.className = 'response-container response-error';
     responseContainer.textContent = 'Error: Please sign in with Google or provide an API key in Settings to proceed.';
