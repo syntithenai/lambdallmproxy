@@ -258,7 +258,7 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
 | `api_key` | Yes | OpenAI API key |
 | `access_secret` | Yes | Function access secret |
 | `search_mode` | No | Search behavior: "auto", "search", or "direct" |
-| `model` | No | OpenAI model (default: "gpt-5-nano") |
+| `model` | No | Model (default: "openai:gpt-4o-mini") |
 | `limit` | No | Max search results (1-50, default: 5) |
 
 ### Response Format
@@ -274,7 +274,7 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
     "results": [...]
   },
   "llmResponse": {
-    "model": "gpt-5-nano",
+    "model": "openai:gpt-4o-mini",
     "usage": {...},
     "processingTime": 2500
   },

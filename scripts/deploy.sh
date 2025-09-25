@@ -56,6 +56,8 @@ cp "$OLDPWD"/src/providers.js ./
 cp "$OLDPWD"/src/memory-tracker.js ./
 cp "$OLDPWD"/src/html-parser.js ./
 cp "$OLDPWD"/src/search.js ./ 2>/dev/null || true  # Optional, may not exist yet
+cp "$OLDPWD"/src/llm_tools_adapter.js ./ 2>/dev/null || true
+cp "$OLDPWD"/src/tools.js ./ 2>/dev/null || true
 
 # Create package.json for the Lambda function
 cat > package.json << EOF
@@ -94,7 +96,7 @@ fi
 # Set environment variables from .env file if it exists
 if [ -f "$OLDPWD/.env" ]; then
     echo -e "${BLUE}📁 Loading environment variables from .env...${NC}"
-    
+
     # Get critical variables
     # Use last occurrence if duplicated; trim CR
     ACCESS_SECRET=$(grep '^ACCESS_SECRET=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
@@ -106,61 +108,74 @@ if [ -f "$OLDPWD/.env" ]; then
     LAMBDA_MEMORY_ENV=$(grep '^LAMBDA_MEMORY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     LAMBDA_TIMEOUT_ENV=$(grep '^LAMBDA_TIMEOUT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     ALLOWED_EMAILS_ENV=$(grep '^ALLOWED_EMAILS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    
+    REASONING_EFFORT_ENV=$(grep '^REASONING_EFFORT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    MAX_TOOL_ITERATIONS_ENV=$(grep '^MAX_TOOL_ITERATIONS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GROQ_REASONING_MODELS_ENV=$(grep '^GROQ_REASONING_MODELS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+
     # Simple system prompts - use defaults in Lambda if these fail
     SYSTEM_PROMPT_DECISION=$(grep '^SYSTEM_PROMPT_DECISION=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
     SYSTEM_PROMPT_DIRECT=$(grep '^SYSTEM_PROMPT_DIRECT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
     SYSTEM_PROMPT_SEARCH=$(grep '^SYSTEM_PROMPT_SEARCH=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
-    
+
     # Get template variables too
     DECISION_TEMPLATE=$(grep '^DECISION_TEMPLATE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
     SEARCH_TEMPLATE=$(grep '^SEARCH_TEMPLATE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
-    
-    # Get current environment variables
+
+    # Get current environment variables (safe even if jq missing)
     CURRENT_ENV_JSON=$(aws lambda get-function-configuration \
         --function-name "$FUNCTION_NAME" \
         --region "$REGION" \
         --query 'Environment.Variables' \
         --output json 2>/dev/null)
-    
-    # Build environment variables JSON robustly with jq (handles quoting safely)
-    ENV_VARS_JSON=$(jq -n \
-        --arg ACCESS_SECRET "$ACCESS_SECRET" \
-        --arg OPENAI_API_KEY "$OPENAI_API_KEY" \
-        --arg GROQ_API_KEY "$GROQ_API_KEY" \
-        --arg OPENAI_API_BASE "$OPENAI_API_BASE_ENV" \
-        --arg OPENAI_MODEL "$OPENAI_MODEL_ENV" \
-        --arg GROQ_MODEL "$GROQ_MODEL_ENV" \
-        --arg SYSTEM_PROMPT_DECISION "$SYSTEM_PROMPT_DECISION" \
-        --arg SYSTEM_PROMPT_DIRECT "$SYSTEM_PROMPT_DIRECT" \
-        --arg SYSTEM_PROMPT_SEARCH "$SYSTEM_PROMPT_SEARCH" \
-        --arg DECISION_TEMPLATE "$DECISION_TEMPLATE" \
-        --arg SEARCH_TEMPLATE "$SEARCH_TEMPLATE" \
-        --arg ALLOWED_EMAILS "$ALLOWED_EMAILS_ENV" \
-        '{Variables: ({} 
-            + (if $ACCESS_SECRET != "" then {ACCESS_SECRET:$ACCESS_SECRET} else {} end)
-            + (if $OPENAI_API_KEY != "" then {OPENAI_API_KEY:$OPENAI_API_KEY} else {} end)
-            + (if $GROQ_API_KEY != "" then {GROQ_API_KEY:$GROQ_API_KEY} else {} end)
-            + (if $OPENAI_API_BASE != "" then {OPENAI_API_BASE:$OPENAI_API_BASE} else {} end)
-            + (if $OPENAI_MODEL != "" then {OPENAI_MODEL:$OPENAI_MODEL} else {} end)
-            + (if $GROQ_MODEL != "" then {GROQ_MODEL:$GROQ_MODEL} else {} end)
-            + (if $SYSTEM_PROMPT_DECISION != "" then {SYSTEM_PROMPT_DECISION:$SYSTEM_PROMPT_DECISION} else {} end)
-            + (if $SYSTEM_PROMPT_DIRECT != "" then {SYSTEM_PROMPT_DIRECT:$SYSTEM_PROMPT_DIRECT} else {} end)
-            + (if $SYSTEM_PROMPT_SEARCH != "" then {SYSTEM_PROMPT_SEARCH:$SYSTEM_PROMPT_SEARCH} else {} end)
-            + (if $DECISION_TEMPLATE != "" then {DECISION_TEMPLATE:$DECISION_TEMPLATE} else {} end)
-            + (if $SEARCH_TEMPLATE != "" then {SEARCH_TEMPLATE:$SEARCH_TEMPLATE} else {} end)
-            + {ALLOWED_EMAILS:$ALLOWED_EMAILS}  # Always set to allow clearing when empty
-        )}' )
 
-    aws lambda update-function-configuration \
-        --function-name "$FUNCTION_NAME" \
-        --region "$REGION" \
-        --environment "$ENV_VARS_JSON" > /dev/null 2>&1
-        
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Environment variables configured from .env (including ALLOWED_EMAILS)${NC}"
+    # If jq is available, build JSON robustly; otherwise, skip env var update gracefully
+    if command -v jq >/dev/null 2>&1; then
+        ENV_VARS_JSON=$(jq -n \
+            --arg ACCESS_SECRET "$ACCESS_SECRET" \
+            --arg OPENAI_API_KEY "$OPENAI_API_KEY" \
+            --arg GROQ_API_KEY "$GROQ_API_KEY" \
+            --arg OPENAI_API_BASE "$OPENAI_API_BASE_ENV" \
+            --arg OPENAI_MODEL "$OPENAI_MODEL_ENV" \
+            --arg GROQ_MODEL "$GROQ_MODEL_ENV" \
+            --arg SYSTEM_PROMPT_DECISION "$SYSTEM_PROMPT_DECISION" \
+            --arg SYSTEM_PROMPT_DIRECT "$SYSTEM_PROMPT_DIRECT" \
+            --arg SYSTEM_PROMPT_SEARCH "$SYSTEM_PROMPT_SEARCH" \
+            --arg DECISION_TEMPLATE "$DECISION_TEMPLATE" \
+            --arg SEARCH_TEMPLATE "$SEARCH_TEMPLATE" \
+            --arg ALLOWED_EMAILS "$ALLOWED_EMAILS_ENV" \
+            --arg REASONING_EFFORT "$REASONING_EFFORT_ENV" \
+            --arg MAX_TOOL_ITERATIONS "$MAX_TOOL_ITERATIONS_ENV" \
+            --arg GROQ_REASONING_MODELS "$GROQ_REASONING_MODELS_ENV" \
+            '{Variables: ({}
+                + (if $ACCESS_SECRET != "" then {ACCESS_SECRET:$ACCESS_SECRET} else {} end)
+                + (if $OPENAI_API_KEY != "" then {OPENAI_API_KEY:$OPENAI_API_KEY} else {} end)
+                + (if $GROQ_API_KEY != "" then {GROQ_API_KEY:$GROQ_API_KEY} else {} end)
+                + (if $OPENAI_API_BASE != "" then {OPENAI_API_BASE:$OPENAI_API_BASE} else {} end)
+                + (if $OPENAI_MODEL != "" then {OPENAI_MODEL:$OPENAI_MODEL} else {} end)
+                + (if $GROQ_MODEL != "" then {GROQ_MODEL:$GROQ_MODEL} else {} end)
+                + (if $SYSTEM_PROMPT_DECISION != "" then {SYSTEM_PROMPT_DECISION:$SYSTEM_PROMPT_DECISION} else {} end)
+                + (if $SYSTEM_PROMPT_DIRECT != "" then {SYSTEM_PROMPT_DIRECT:$SYSTEM_PROMPT_DIRECT} else {} end)
+                + (if $SYSTEM_PROMPT_SEARCH != "" then {SYSTEM_PROMPT_SEARCH:$SYSTEM_PROMPT_SEARCH} else {} end)
+                + (if $DECISION_TEMPLATE != "" then {DECISION_TEMPLATE:$DECISION_TEMPLATE} else {} end)
+                + (if $SEARCH_TEMPLATE != "" then {SEARCH_TEMPLATE:$SEARCH_TEMPLATE} else {} end)
+                + {ALLOWED_EMAILS:$ALLOWED_EMAILS}
+                + (if $REASONING_EFFORT != "" then {REASONING_EFFORT:$REASONING_EFFORT} else {} end)
+                + (if $MAX_TOOL_ITERATIONS != "" then {MAX_TOOL_ITERATIONS:$MAX_TOOL_ITERATIONS} else {} end)
+                + (if $GROQ_REASONING_MODELS != "" then {GROQ_REASONING_MODELS:$GROQ_REASONING_MODELS} else {} end)
+            )}' )
+
+        aws lambda update-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$REGION" \
+            --environment "$ENV_VARS_JSON" > /dev/null 2>&1
+
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Environment variables configured from .env (including ALLOWED_EMAILS)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Warning: Could not update environment variables${NC}"
+        fi
     else
-        echo -e "${YELLOW}⚠️  Warning: Could not update environment variables${NC}"
+        echo -e "${YELLOW}⚠️  'jq' not found. Skipping environment variables sync. Install 'jq' to enable this step.${NC}"
     fi
 
     # Update memory and timeout if provided

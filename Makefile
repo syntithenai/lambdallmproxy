@@ -1,18 +1,22 @@
 # Makefile for AWS Lambda deployment
 # Provides simple commands to deploy the llmproxy Lambda function
 
-.PHONY: deploy deploy_ui test clean check help cors build-docs env setup
+# Use bash for shell features (e.g., sourcing .env)
+SHELL := /bin/bash
+
+.PHONY: deploy deploy_ui test clean check help cors build-docs env setup serve
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  make deploy      - Deploy Lambda function"
+	@echo "  make deploy      - Deploy Lambda and build+deploy UI from root index_template.html"
 	@echo "  make deploy_ui   - Build and deploy UI (commit + push to git)"
 	@echo "  make test        - Test the deployed function"
 	@echo "  make check       - Check prerequisites"
 	@echo "  make cors        - Check CORS configuration"
 	@echo "  make env         - Setup environment file from template"
 	@echo "  make setup       - Complete setup (env + build docs)"
+	@echo "  make serve       - Serve docs/ locally at http://localhost:8081"
 	@echo "  make clean       - Clean up temporary files"
 	@echo "  make help        - Show this help message"
 
@@ -20,6 +24,29 @@ help:
 deploy:
 	@echo "🚀 Deploying Lambda function..."
 	./scripts/deploy.sh
+	@echo "🎨 Building and deploying UI from root index_template.html..."
+	@if [ ! -f .env ]; then \
+		echo "❌ .env file not found. Run 'make setup' first."; \
+		exit 1; \
+	fi
+	@# Build docs from the root index_template.html (preferred). Fallback to script if not present
+	@if [ -f index_template.html ]; then \
+		echo "📚 Building docs (from index_template.html)..."; \
+		set -a; . .env; set +a; \
+		mkdir -p docs; \
+		sed "s|{{LAMBDA_URL}}|$${LAMBDA_URL}|g" index_template.html | \
+		sed "s|{{ACCESS_SECRET}}|$${ACCESS_SECRET}|g" | \
+		sed "s|{{GOOGLE_CLIENT_ID}}|$${GOOGLE_CLIENT_ID}|g" > docs/index.html; \
+		echo "✅ Built docs/index.html from index_template.html"; \
+	else \
+		echo "⚠️ index_template.html not found. Using scripts/build-docs.sh (ui/index_template.html)..."; \
+		./scripts/build-docs.sh; \
+	fi
+	@echo "⏫ Committing and pushing docs to git (GitHub Pages or similar)..."
+	@if [ ! -x scripts/deploy-docs.sh ]; then \
+		chmod +x scripts/deploy-docs.sh; \
+	fi
+	scripts/deploy-docs.sh --build -m "Deploy Lambda + UI via make deploy"
 
 # Build and deploy UI (build docs and push to git)
 deploy_ui:
@@ -75,7 +102,7 @@ check:
 	@echo -n "jq: "
 	@which jq > /dev/null && echo "✅ Available" || echo "❌ Not found"
 	@echo -n "Source file: "
-	@test -f lambda_search_llm_handler.js && echo "✅ Found" || echo "❌ Not found"
+	@test -f src/lambda_search_llm_handler.js && echo "✅ Found" || echo "❌ Not found (expected src/lambda_search_llm_handler.js)"
 	@echo -n "AWS credentials: "
 	@aws sts get-caller-identity > /dev/null 2>&1 && echo "✅ Configured" || echo "❌ Not configured"
 
@@ -107,3 +134,12 @@ cors:
 logs:
 	@echo "📄 Showing recent logs..."
 	@aws logs tail /aws/lambda/llmproxy --follow
+
+# Serve the built docs locally on port 8081
+serve:
+	@echo "🖥️ Serving docs at http://localhost:8081 (Ctrl+C to stop)"
+	@if [ ! -d docs ]; then \
+		echo "⚠️ docs/ not found. Run 'make build-docs' first."; \
+		exit 1; \
+	fi
+	@python3 -m http.server 8081 --directory docs

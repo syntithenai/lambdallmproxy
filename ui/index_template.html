@@ -752,6 +752,30 @@
 let googleUser = null;
 let googleAccessToken = null;
 
+// Reset model selector to a fast/cheap default the user likely has access to
+// Preference order:
+// 1) groq:llama-3.1-8b-instant (fastest, cheap)
+// 2) openai:gpt-4o-mini (fast, cheap)
+// 3) first enabled option
+function resetModelToFastest() {
+    try {
+        const select = document.getElementById('model');
+        if (!select) return;
+        const prefer = ['groq:llama-3.1-8b-instant', 'openai:gpt-4o-mini'];
+        for (const val of prefer) {
+            const opt = select.querySelector(`option[value="${val}"]`);
+            if (opt && !opt.disabled) {
+                select.value = val;
+                return;
+            }
+        }
+        const firstEnabled = Array.from(select.options).find(o => o.value && !o.disabled);
+        if (firstEnabled) select.value = firstEnabled.value;
+    } catch (e) {
+        console.warn('resetModelToFastest failed:', e);
+    }
+}
+
 // Handle API key persistence and model selection
 document.addEventListener('DOMContentLoaded', function() {
     // Google OAuth configuration
@@ -1103,9 +1127,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Priority 1: Groq llama instant if Groq key is available (and no OpenAI key)
                 if (hasGroqKey) {
                     defaultModel = 'groq:llama-3.1-8b-instant';
-                // Priority 2: OpenAI gpt-5-nano if OpenAI key is available
+                // Priority 2: OpenAI gpt-4o-mini if OpenAI key is available
                 } else if (hasOpenaiKey) {
-                    defaultModel = 'openai:gpt-5-nano';
+                    defaultModel = 'openai:gpt-4o-mini';
                 }
                  
                 
@@ -1625,11 +1649,17 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         </div>
         <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
         <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
         <div id="full-results-tree"></div>
     `;
     
     const statusElement = document.getElementById('streaming-status');
     const stepsElement = document.getElementById('streaming-steps');
+    const toolsPanel = document.getElementById('tools-panel');
+    const toolsLog = document.getElementById('tools-log');
     const responseElement = document.getElementById('streaming-response');
     const answerElement = document.getElementById('final-answer');
     const metadataElement = document.getElementById('streaming-metadata');
@@ -1975,6 +2005,46 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 updateFullResultsTree();
                             }
                             break;
+                        case 'tools':
+                            try {
+                                toolsPanel.style.display = 'block';
+                                const { iteration, pending, calls } = eventData;
+                                const box = document.createElement('div');
+                                box.style.cssText = 'padding:8px; border-left:3px solid #6c757d; background:#fff; margin:6px 0; border-radius:4px;';
+                                const header = document.createElement('div');
+                                header.innerHTML = `<strong>Iteration ${iteration}</strong> • ${pending} pending call(s)`;
+                                box.appendChild(header);
+                                if (Array.isArray(calls)) {
+                                    const list = document.createElement('ul');
+                                    list.style.margin = '6px 0 0 16px';
+                                    calls.forEach(c => {
+                                        const li = document.createElement('li');
+                                        li.textContent = `${c.name} ${c.call_id ? '(' + c.call_id + ')' : ''}`;
+                                        list.appendChild(li);
+                                    });
+                                    box.appendChild(list);
+                                }
+                                toolsLog.appendChild(box);
+                            } catch {}
+                            break;
+                        case 'tool_result':
+                            try {
+                                toolsPanel.style.display = 'block';
+                                const { iteration, call_id, name, args, output } = eventData;
+                                const item = document.createElement('div');
+                                item.style.cssText = 'padding:8px; border-left:3px solid #28a745; background:#fff; margin:6px 0; border-radius:4px;';
+                                const title = document.createElement('div');
+                                title.innerHTML = `<strong>${name}</strong> ${call_id ? '(' + call_id + ')' : ''} • iteration ${iteration}`;
+                                const argsPre = document.createElement('pre');
+                                argsPre.textContent = `args: ${JSON.stringify(args)}`;
+                                const outPre = document.createElement('pre');
+                                outPre.textContent = `output: ${output}`;
+                                item.appendChild(title);
+                                item.appendChild(argsPre);
+                                item.appendChild(outPre);
+                                toolsLog.appendChild(item);
+                            } catch {}
+                            break;
                         case 'log':
                             statusElement.textContent = eventData.message || 'Processing...';
                             break;
@@ -2102,6 +2172,14 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 </div>
                             `;
                             metadataElement.style.display = 'block';
+                            break;
+                            
+                        case 'final_answer':
+                            statusElement.textContent = '✅ Search completed! Displaying final answer...';
+                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
+                            stopAllTimers('done');
+                            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
+                            responseContainer.className = 'response-container response-success';
                             break;
                             
                         case 'complete':

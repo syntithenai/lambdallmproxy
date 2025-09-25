@@ -48,49 +48,29 @@ class DuckDuckGoSearcher {
             let results = [];
             try {
                 const jsonData = JSON.parse(response);
-                console.log(`DuckDuckGo API response for "${query}":`, JSON.stringify(jsonData, null, 2).substring(0, 500));
                 results = this.extractFromDuckDuckGoAPI(jsonData, query, limit);
-                console.log(`Extracted ${results.length} results from API`);
+                console.log(`🔍 Search "${query.substring(0, 60)}${query.length > 60 ? '...' : ''}" → ${results.length} results from API`);
             } catch (e) {
-                console.log(`JSON parsing failed, trying HTML parsing: ${e.message}`);
                 // Fall back to HTML parsing if JSON parsing fails
                 results = this.extractSearchResults(response, query, limit);
+                console.log(`🔍 Search "${query.substring(0, 60)}${query.length > 60 ? '...' : ''}" → ${results.length} results from HTML (API failed)`);
             }
             
             // If API didn't return web results, try HTML scraping as fallback with enhanced bot avoidance
             if (results.length === 0) {
                 const htmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
                 try {
-                    console.log(`Attempting HTML scraping for: ${htmlUrl}`);
                     const html = await this.fetchUrlWithBotAvoidance(htmlUrl, timeout * 1000);
-                    
-                    // Debug: Log response details
-                    console.log(`HTML Response length: ${html.length}`);
-                    console.log(`HTML Response preview (first 1000 chars):`, html.substring(0, 1000));
                     
                     // Check for CAPTCHA or error pages
                     if (html.includes('anomaly') || html.includes('captcha') || html.includes('challenge')) {
-                        console.log('⚠️  CAPTCHA/Challenge detected in response');
-                    }
-                    if (html.includes('result__title')) {
-                        console.log('✅ Found result__title elements in HTML');
-                    } else {
-                        console.log('❌ No result__title elements found in HTML');
+                        console.log('⚠️ CAPTCHA detected, search may be limited');
                     }
                     
                     results = this.extractSearchResults(html, query, limit);
-                    console.log(`DuckDuckGo HTML scraping with bot avoidance returned ${results.length} results`);
-                    
-                    // Debug: If no results, show what patterns were tried
-                    if (results.length === 0) {
-                        console.log('🔍 Debugging: No results extracted, checking HTML structure...');
-                        const linkCount = (html.match(/href="[^"]*"/g) || []).length;
-                        const titleCount = (html.match(/result__title/g) || []).length;
-                        const bodyCount = (html.match(/result__body/g) || []).length;
-                        console.log(`Found ${linkCount} links, ${titleCount} title elements, ${bodyCount} body elements`);
-                    }
+                    console.log(`🔍 Fallback HTML search → ${results.length} results`);
                 } catch (fallbackError) {
-                    console.log('Fallback HTML search also failed:', fallbackError.message);
+                    console.log(`❌ HTML search failed: ${fallbackError.message}`);
                 }
             }
             
@@ -104,12 +84,12 @@ class DuckDuckGoSearcher {
                 .sort((a, b) => b.score - a.score)
                 .slice(0, maxProcessingLimit);
             
-            console.log(`Search results: ${results.length} found, ${qualityResults.length} above quality threshold, ${sortedResults.length} selected for processing`);
+            console.log(`📊 Results: ${sortedResults.length}/${results.length} selected (quality filtered)`);
             
             const contentTime = Date.now();
-            // Only fetch content for high-quality results to save tokens
-            if (sortedResults.length > 0) {
-                await this.fetchContentForResults(sortedResults, timeout);
+            // Fetch content depending on flag; prefer parallel to speed up
+            if (sortedResults.length > 0 && fetchContent) {
+                await this.fetchContentForResultsParallel(sortedResults, timeout);
             }
             
             // Return the processed results
@@ -257,7 +237,7 @@ class DuckDuckGoSearcher {
                 if (results.length >= requestedLimit * 2) break;
             }
         }
-        console.log(`Pattern (result__title anchors) found ${titleMatches} matches, extracted ${results.length} results`);
+        // Pattern matching completed
 
         // If none captured via anchor blocks, fall back to broader container patterns
         if (results.length === 0) {
@@ -270,12 +250,11 @@ class DuckDuckGoSearcher {
                 /<div[^>]*class="[^"]*web-result[^"]*"[^>]*>([\s\S]*?)<\/div>/g
             ];
             
-            console.log(`🔍 Fallback: Attempting to extract ${requestedLimit} results using ${resultPatterns.length} patterns`);
+            // Attempting pattern-based extraction
             
             let foundResults = false;
             for (let i = 0; i < resultPatterns.length; i++) {
                 const pattern = resultPatterns[i];
-                console.log(`Trying pattern ${i + 1}: ${pattern.toString().substring(0, 100)}...`);
                 
                 let matchCount = 0;
                 let match;
@@ -286,17 +265,14 @@ class DuckDuckGoSearcher {
                     if (result) {
                         results.push(result);
                         foundResults = true;
-                        console.log(`✅ Extracted result ${results.length}: ${result.title.substring(0, 100)}`);
                     }
                     
                     // Stop once we have enough results for good scoring
                     if (results.length >= requestedLimit * 2) break;
                 }
-                console.log(`Pattern ${i + 1} found ${matchCount} matches, extracted ${results.length} valid results so far`);
                 
                 // If we found results with this pattern, stop trying other patterns
                 if (foundResults) {
-                    console.log(`✅ Found results with pattern ${i + 1}, stopping pattern search`);
                     break;
                 }
             }
@@ -722,6 +698,30 @@ class DuckDuckGoSearcher {
         }
         
         console.log(`Content fetch completed: ${processedCount} processed, ${skippedCount} skipped. ${this.memoryTracker.getMemorySummary()}`);
+    }
+
+    /**
+     * Fetch content for all results in parallel with basic memory checks
+     * @param {Array} results - Array of search results
+     * @param {number} timeout - Timeout in seconds
+     */
+    async fetchContentForResultsParallel(results, timeout) {
+        if (!results || results.length === 0) return;
+
+        console.log(`Starting parallel content fetch for ${results.length} results. ${this.memoryTracker.getMemorySummary()}`);
+
+        const tasks = results.map((result, idx) => (async () => {
+            const memoryCheck = this.memoryTracker.checkMemoryLimit(0);
+            if (!memoryCheck.allowed) {
+                result.contentError = `Skipped due to memory limit (${memoryCheck.reason})`;
+                return;
+            }
+            await this.fetchContentForSingleResult(result, idx, results.length, timeout);
+        })());
+
+        await Promise.allSettled(tasks);
+
+        console.log(`Parallel content fetch completed. ${this.memoryTracker.getMemorySummary()}`);
     }
 
     /**

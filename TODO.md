@@ -1,8 +1,5 @@
 # TODO
 
-replace the current system of iterative searching with a more general approach that allows for iterative tools calls. 
-	
-
 
 ## ✅ COMPLETED: Multi-Search Loop Implementation
 
