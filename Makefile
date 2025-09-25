@@ -1,23 +1,37 @@
-# Makefile for AWS Lambda deployment
-# Provides simple commands to deploy the llmproxy Lambda function
+# Lambda LLM Proxy Makefile
+# AI-Agent Friendly Deployment Commands
 
 # Use bash for shell features (e.g., sourcing .env)
 SHELL := /bin/bash
 
-.PHONY: deploy deploy_ui test clean check help cors build-docs env setup serve
+.PHONY: help deploy deploy-lambda deploy-docs build-docs test dev full-deploy install watch clean check cors env setup serve
 
-# Default target
+# Default target - Show help with AI-agent recommendations
 help:
-	@echo "Available commands:"
-	@echo "  make deploy      - Deploy Lambda and build+deploy UI from root index_template.html"
-	@echo "  make deploy_ui   - Build and deploy UI (commit + push to git)"
-	@echo "  make test        - Test the deployed function"
-	@echo "  make check       - Check prerequisites"
-	@echo "  make cors        - Check CORS configuration"
-	@echo "  make env         - Setup environment file from template"
-	@echo "  make setup       - Complete setup (env + build docs)"
-	@echo "  make serve       - Serve docs/ locally at http://localhost:8081"
-	@echo "  make clean       - Clean up temporary files"
+	@echo "🚀 Lambda LLM Proxy Deployment Commands"
+	@echo ""
+	@echo "🔥 RECOMMENDED FOR AI AGENTS:"
+	@echo "  make dev          - Quick Lambda deploy (use after code changes)"
+	@echo "  make full-deploy  - Deploy everything (Lambda + docs)"
+	@echo ""
+	@echo "Individual Commands:"
+	@echo "  make deploy       - Deploy Lambda function only"
+	@echo "  make deploy-docs  - Deploy documentation only" 
+	@echo "  make build-docs   - Build documentation locally"
+	@echo "  make test         - Test Lambda function"
+	@echo ""
+	@echo "Development Commands:"
+	@echo "  make watch        - Auto-deploy on file changes"
+	@echo "  make install      - Install dependencies"
+	@echo "  make status       - Check deployment status"
+	@echo ""
+	@echo "Legacy Commands:"
+	@echo "  make deploy_ui    - Legacy UI deploy (use deploy-docs instead)"
+	@echo "  make check        - Check prerequisites"
+	@echo "  make cors         - Check CORS configuration"
+	@echo "  make env          - Setup environment file"
+	@echo "  make serve        - Serve docs locally"
+	@echo "  make clean        - Clean temporary files"
 	@echo "  make help        - Show this help message"
 
 # Deploy Lambda function
@@ -143,3 +157,64 @@ serve:
 		exit 1; \
 	fi
 	@python3 -m http.server 8081 --directory docs
+
+# ======= NEW AI-AGENT FRIENDLY COMMANDS =======
+
+# Quick development deploy - Lambda only (RECOMMENDED for AI agents)
+dev:
+	@echo "🔥 Quick Development Deploy - Lambda Function Only"
+	@echo "This is the recommended command for AI agents after code changes."
+	@echo "Per instructions.md: Using scripts/deploy.sh for Lambda changes"
+	./scripts/deploy.sh > output.txt 2>&1 && cat output.txt
+
+# Deploy Lambda function only (alias for backward compatibility)
+deploy-lambda: dev
+
+# Deploy documentation only
+deploy-docs:
+	@echo "📖 Deploying Documentation..."
+	@echo "Per instructions.md: Using scripts/deploy-docs.sh for UI changes"
+	./scripts/deploy-docs.sh > output.txt 2>&1 && cat output.txt
+
+# Build documentation locally
+build-docs:
+	@echo "🔨 Building Documentation..."
+	./scripts/build-docs.sh > output.txt 2>&1 && cat output.txt
+
+# Full deployment (build docs, deploy Lambda, deploy docs)
+full-deploy:
+	@echo "🚀 Full Deployment - Everything!"
+	@echo "Per instructions.md: Using official deployment scripts with output.txt"
+	@echo "Building docs..."
+	./scripts/build-docs.sh > output.txt 2>&1 && cat output.txt
+	@echo "Deploying Lambda..."
+	./scripts/deploy.sh > output.txt 2>&1 && cat output.txt
+	@echo "Deploying docs..."
+	./scripts/deploy-docs.sh > output.txt 2>&1 && cat output.txt
+	@echo "✅ Full deployment complete!"
+
+# Install dependencies
+install:
+	@echo "📦 Installing Dependencies..."
+	@if [ ! -f package.json ]; then \
+		echo "⚠️ package.json not found."; \
+	else \
+		npm install; \
+	fi
+
+# Watch for changes and auto-deploy (requires nodemon)
+watch:
+	@echo "👀 Watching for changes... (Press Ctrl+C to stop)"
+	@echo "Will auto-deploy Lambda function on file changes in src/"
+	@if command -v nodemon >/dev/null 2>&1; then \
+		nodemon --watch src --ext js --exec 'make dev'; \
+	else \
+		echo "❌ nodemon not found. Installing..."; \
+		npm install -g nodemon; \
+		nodemon --watch src --ext js --exec 'make dev'; \
+	fi
+
+# Show deployment status and configuration
+status:
+	@echo "🔍 Checking deployment status..."
+	./scripts/status.sh > output.txt 2>&1 && cat output.txt

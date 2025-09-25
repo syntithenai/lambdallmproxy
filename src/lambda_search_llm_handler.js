@@ -35,62 +35,123 @@ const BYTES_PER_MB = 1024 * 1024;
 // No legacy templates needed - tools-based approach handles everything dynamically
 
 // --- Tools flow configuration ---
-const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 3); // Allow more thorough research
+const MAX_TOOL_ITERATIONS_ENV = process.env.MAX_TOOL_ITERATIONS;
+console.log(`🔧 MAX_TOOL_ITERATIONS_ENV raw:`, MAX_TOOL_ITERATIONS_ENV, typeof MAX_TOOL_ITERATIONS_ENV);
+const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS) || 3; // Allow more thorough research - force fallback if NaN
+console.log(`🔧 MAX_TOOL_ITERATIONS final:`, MAX_TOOL_ITERATIONS, typeof MAX_TOOL_ITERATIONS);
 const DEFAULT_REASONING_EFFORT = process.env.REASONING_EFFORT || 'medium';
 
 // --- Token limit configuration ---
-const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 300); // Planning query tokens
+const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 300); // Planning query tokens - keep moderate for decision making
 const MAX_TOKENS_TOOL_SYNTHESIS = Number(process.env.MAX_TOKENS_TOOL_SYNTHESIS ?? 512); // Tool synthesis tokens  
-const MAX_TOKENS_FINAL_RESPONSE = Number(process.env.MAX_TOKENS_FINAL_RESPONSE ?? 2048); // Final response tokens - allow longer responses
+
+// Dynamic token allocation based on complexity assessment
+const MAX_TOKENS_LOW_COMPLEXITY = Number(process.env.MAX_TOKENS_LOW_COMPLEXITY ?? 1024); // Simple queries
+const MAX_TOKENS_MEDIUM_COMPLEXITY = Number(process.env.MAX_TOKENS_MEDIUM_COMPLEXITY ?? 2048); // Standard queries  
+const MAX_TOKENS_HIGH_COMPLEXITY = Number(process.env.MAX_TOKENS_HIGH_COMPLEXITY ?? 4096); // Complex analysis queries
+
 const MAX_TOKENS_MATH_RESPONSE = Number(process.env.MAX_TOKENS_MATH_RESPONSE ?? 512); // Mathematical response tokens - concise math answers
 
-// Emergency ultra-minimal system prompt to save tokens
-const COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT = process.env.SYSTEM_PROMPT_SEARCH || `Answer using search results. Cite URLs.`;
+// Legacy fallback (maintain compatibility)
+const MAX_TOKENS_FINAL_RESPONSE = Number(process.env.MAX_TOKENS_FINAL_RESPONSE ?? MAX_TOKENS_MEDIUM_COMPLEXITY); // Default to medium complexity
+
+// Function to determine token allocation based on complexity assessment
+function getTokensForComplexity(complexityAssessment) {
+    switch(complexityAssessment) {
+        case 'low':
+            return MAX_TOKENS_LOW_COMPLEXITY;
+        case 'high':
+            return MAX_TOKENS_HIGH_COMPLEXITY;
+        case 'medium':
+        default:
+            return MAX_TOKENS_MEDIUM_COMPLEXITY;
+    }
+}
+
+// Comprehensive system prompt that encourages tool usage
+const COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT = process.env.SYSTEM_PROMPT_SEARCH || `You are a helpful AI assistant with access to powerful tools. For any query that could benefit from current information, web search, mathematical calculations, or data analysis, you should actively use the available tools.
+
+RESPONSE FORMAT GUIDELINES:
+- Start with a direct, concise answer to the question
+- For calculations: Give the result first, then show the work if needed
+- Minimize descriptive text about your thinking process
+- Be concise and factual rather than verbose
+
+TOOL USAGE GUIDELINES:
+- Use search_web for current information, news, recent events, stock prices, or any factual queries
+- Use execute_javascript for mathematical calculations, data analysis, or computational problems  
+- Use scrape_web_content when you need to extract detailed information from specific websites
+- Always use tools when they can provide more accurate or current information than your training data
+
+CRITICAL TOOL PARAMETER RULES:
+- For execute_javascript: ONLY provide the "code" parameter. NEVER include result, type, executed_at or any other properties.
+- For search_web: ONLY provide the "query" parameter. NEVER include count, results, limit, or any other properties except query.
+- For scrape_web_content: ONLY provide the "url" parameter. NEVER include any additional properties.
+- The tool schemas have additionalProperties: false. Any extra parameters will cause HTTP 400 validation errors.
+- You MUST follow the exact parameter schema. Do NOT invent or add extra properties.
+
+Keep responses focused and direct. Always cite sources with URLs when using web search results.`;
 
 function safeParseJson(s) {
     try { return JSON.parse(s); } catch { return {}; }
 }
 
 async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
+    console.log(`🔧 ENTERED runToolLoop - model: ${model}, apiKey: ${!!apiKey}, userQuery length: ${userQuery?.length || 0}`);
+    console.log(`🔧 runToolLoop userQuery:`, userQuery);
+    console.log(`🔧 runToolLoop systemPrompt:`, systemPrompt);
 
     // Step 1: Initial planning query to determine research strategy and optimal persona
     stream?.writeEvent?.('log', { message: 'Analyzing query and determining research strategy...' });
+    console.log(`🔧 Starting planning phase...`);
     
-    const planningPrompt = `Analyze this user query and determine:
-1. What specific research questions are needed to gather all necessary facts
-2. What expert persona/role would be most qualified to provide the best answer
+    // Initialize researchPlan at function level to ensure availability throughout function
+    let researchPlan = { 
+        research_questions: ["Initial research question"], 
+        optimal_persona: systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT, 
+        reasoning: "Default plan",
+        complexity_assessment: "medium"
+    };
+    
+    const planningPrompt = `Analyze this user query and determine the optimal research strategy and expert approach:
 
 Query: "${userQuery}"
 
-IMPORTANT: Consider whether this query involves mathematical calculations, data processing, algorithmic problems, or computational analysis. If so, plan to use JavaScript code execution alongside research.
+Provide a comprehensive analysis that considers:
+1. What specific research questions are needed to gather all necessary facts
+2. What expert persona/role would be most qualified to provide the best answer
+3. Whether the query requires mathematical calculations, data processing, or computational analysis
+4. The complexity level and depth of analysis needed
+5. Any potential challenges or nuances in answering this query
+
+You may provide detailed reasoning if the query is complex or multi-faceted.
 
 Respond with JSON in this exact format:
 {
   "research_questions": ["Question 1 phrased as a clear search query?", "Question 2?", "Question 3?"],
-  "optimal_persona": "I am a [specific expert role/title] with expertise in [domain]. I specialize in [specific areas and computational tools when relevant].",
-  "reasoning": "Brief explanation of why this approach and persona are optimal, including computational tools if needed"
+  "optimal_persona": "I am a [specific expert role/title] with expertise in [domain]. I specialize in [specific areas and computational tools when relevant]. I provide direct, concise answers that start with the key result.",
+  "reasoning": "Detailed explanation of why this approach and persona are optimal, including analysis complexity, computational tools needed, potential challenges, and research strategy rationale. Be thorough if the query warrants it.",
+  "complexity_assessment": "low|medium|high - IMPORTANT: This determines response token allocation. LOW=1024 tokens (simple facts), MEDIUM=2048 tokens (standard analysis), HIGH=4096 tokens (comprehensive analysis)"
 }
 
-Generate 1-3 specific, targeted research questions that will help answer the user's query comprehensively. Be specific about the expert role (e.g., "financial analyst", "data scientist", "computational researcher") and tailor it to the query domain.`;
+Generate 1-5 specific, targeted research questions based on query complexity. For complex queries, provide more detailed reasoning and additional research questions. Be specific about the expert role and tailor it precisely to the query domain.`;
 
     try {
         const planningResponse = await llmResponsesWithTools({
             model,
             input: [
-                { role: 'system', content: 'You are a research strategist. Analyze queries and determine optimal research approaches and expert personas. Always respond with valid JSON only.' },
+                { role: 'system', content: 'You are a research strategist. Analyze queries and determine optimal research approaches and expert personas. You may provide detailed analysis if the query is complex. Always respond with valid JSON only.' },
                 { role: 'user', content: planningPrompt }
             ],
             tools: [], // No tools needed for planning
             options: {
                 apiKey,
-                reasoningEffort: 'low',
-                temperature: 0.1,
-                max_tokens: MAX_TOKENS_PLANNING,
-                timeoutMs: 15000
+                reasoningEffort: 'medium', // Increased reasoning effort for better planning
+                temperature: 0.2, // Slightly higher temperature for more creative planning
+                max_tokens: MAX_TOKENS_PLANNING, // Now allows up to 1500 tokens
+                timeoutMs: 25000 // Increased timeout for more complex planning
             }
         });
-
-        let researchPlan = { research_questions: ["Initial research question"], optimal_persona: systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT, reasoning: "Default plan" };
         
         if (planningResponse?.text) {
             try {
@@ -98,7 +159,7 @@ Generate 1-3 specific, targeted research questions that will help answer the use
                 if (parsed.research_questions && parsed.optimal_persona) {
                     researchPlan = parsed;
                     stream?.writeEvent?.('log', { 
-                        message: `Research plan: ${researchPlan.research_questions.length} questions, Persona: ${researchPlan.optimal_persona.substring(0, 80)}...`
+                        message: `Research plan: ${researchPlan.research_questions.length} questions, Complexity: ${researchPlan.complexity_assessment || 'medium'}, Persona: ${researchPlan.optimal_persona.substring(0, 80)}...`
                     });
                     
                     // Send dedicated persona event for UI display
@@ -127,27 +188,43 @@ Generate 1-3 specific, targeted research questions that will help answer the use
         const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
 
         // Update system prompt with determined persona and environmental context
-        var dynamicSystemPrompt = researchPlan.optimal_persona + ' Use search tools to gather current information and cite all sources with URLs. For mathematical calculations, data analysis, or computational problems, use the execute_javascript tool to perform accurate calculations and show your work.' + environmentContext;
+        var dynamicSystemPrompt = researchPlan.optimal_persona + ' CRITICAL TOOL RULES: Always use the available search_web and execute_javascript tools when they can enhance your response. Use search tools for current information and calculations tools for math problems. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, ONLY provide the "query" parameter. NEVER add extra properties like count, results, limit, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking. Cite all sources with URLs.' + environmentContext;
         
     } catch (e) {
         console.warn('Planning query failed, proceeding with default approach:', e.message);
+        // Ensure researchPlan fallback is set
+        researchPlan = { 
+            research_questions: ["Initial research question"], 
+            optimal_persona: systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT, 
+            reasoning: "Default plan due to planning failure",
+            complexity_assessment: "medium"
+        };
+        
         // Get current date and time for environmental context (fallback case)
         const now = new Date();
         const currentDateTime = now.toISOString().split('T')[0] + ' ' + now.toTimeString().split(' ')[0] + ' UTC';
         const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
         const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
         
-        var dynamicSystemPrompt = (systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT) + ' For mathematical calculations, data analysis, or computational problems, use the execute_javascript tool to perform accurate calculations and show your work.' + environmentContext;
+        var dynamicSystemPrompt = (systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT) + ' CRITICAL TOOL RULES: Always use available tools (search_web, execute_javascript, scrape_web_content) when they can provide better, more current, or more accurate information. For math questions, always use execute_javascript. For current events or factual queries, always use search_web. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, ONLY provide the "query" parameter. When calling scrape_web_content, ONLY provide the "url" parameter. NEVER add extra properties like count, results, limit, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking.' + environmentContext;
     }
+
+    console.log(`🔧 Final system prompt:`, dynamicSystemPrompt);
+    console.log(`🔧 User query:`, userQuery);
 
     const input = [
         { role: 'system', content: dynamicSystemPrompt },
         { role: 'user', content: userQuery }
     ];
 
+    console.log(`🔧 About to start tool loop. MAX_TOOL_ITERATIONS: ${MAX_TOOL_ITERATIONS}`);
+    console.log(`🔧 Available toolFunctions:`, toolFunctions?.length || 0, typeof toolFunctions);
+    console.log(`🔧 Tool names:`, toolFunctions?.map?.(t => t?.function?.name) || 'N/A');
+
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         try {
             stream?.writeEvent?.('log', { message: `Tools iteration ${iter + 1}` });
+            console.log(`🔧 Starting tools iteration ${iter + 1}, available tools:`, toolFunctions.length);
         } catch {}
 
         const { output, text } = await llmResponsesWithTools({
@@ -163,16 +240,41 @@ Generate 1-3 specific, targeted research questions that will help answer the use
             }
         });
 
+        console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
+        console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
+
         if (!output || output.length === 0) {
             // No more tool calls needed - proceed to final synthesis
+            console.log(`🔧 No tool calls in iteration ${iter + 1}, proceeding to final synthesis`);
             break;
         }
 
         const calls = output.filter(x => x.type === 'function_call');
         
+        console.log(`🔧 Found ${calls.length} function calls:`, calls.map(c => c.name));
+        console.log(`🔧 Raw output items:`, JSON.stringify(output, null, 2));
+        
         if (calls.length > 0) {
+            console.log(`🔧 EMITTING TOOLS EVENT - Iteration ${iter + 1}, ${calls.length} calls`);
             stream?.writeEvent?.('log', { 
                 message: `Executing ${calls.length} tool${calls.length !== 1 ? 's' : ''}: ${calls.map(c => c.name).join(', ')}` 
+            });
+            
+            // Add assistant message with tool calls to conversation history
+            // This is required for OpenAI API - tool messages must be preceded by assistant message with tool_calls
+            const toolCalls = calls.map(call => ({
+                id: call.call_id || call.id,
+                type: 'function',
+                function: {
+                    name: call.name,
+                    arguments: call.arguments || '{}'
+                }
+            }));
+            
+            input.push({
+                role: 'assistant',
+                content: text || null,
+                tool_calls: toolCalls
             });
         }
         
@@ -184,8 +286,12 @@ Generate 1-3 specific, targeted research questions that will help answer the use
                 name: tc.name,
                 args: safeParseJson(tc.arguments || '{}')
             }));
+            console.log(`🔧 EMITTING 'tools' EVENT:`, JSON.stringify({ iteration: iter + 1, pending: calls.length, calls: detailedCalls }, null, 2));
             stream?.writeEvent?.('tools', { iteration: iter + 1, pending: calls.length, calls: detailedCalls });
-        } catch {}
+            console.log(`🔧 'tools' EVENT EMITTED SUCCESSFULLY`);
+        } catch (error) {
+            console.log(`🔧 ERROR emitting 'tools' event:`, error);
+        }
 
         const results = await Promise.allSettled(
             calls.map(async (tc, idx) => {
@@ -198,7 +304,13 @@ Generate 1-3 specific, targeted research questions that will help answer the use
                 }
                 const call_id = tc.call_id || tc.id || `iter-${iter + 1}-call-${idx + 1}`;
                 const result = { iteration: iter + 1, call_id, name: tc.name, args, output: String(output) };
-                try { stream?.writeEvent?.('tool_result', result); } catch {}
+                try { 
+                    console.log(`🔧 EMITTING 'tool_result' EVENT for ${tc.name}:`, JSON.stringify(result, null, 2));
+                    stream?.writeEvent?.('tool_result', result); 
+                    console.log(`🔧 'tool_result' EVENT EMITTED SUCCESSFULLY for ${tc.name}`);
+                } catch (error) {
+                    console.log(`🔧 ERROR emitting 'tool_result' event for ${tc.name}:`, error);
+                }
                 return result;
             })
         );
@@ -218,11 +330,12 @@ Generate 1-3 specific, targeted research questions that will help answer the use
         const estimatedTokens = Math.ceil(contextStr.length / 4); // Rough token estimate
         if (estimatedTokens > 3000) { // Emergency context limit
             console.warn(`🚨 EMERGENCY: Context too large (${estimatedTokens} tokens), pruning...`);
-            // Keep only system prompt, user query, and last 2 tool results
+            // Keep only system prompt, user query, last assistant message with tool calls, and last 2 tool results
             const systemMsg = input.find(m => m.role === 'system');
             const userMsg = input.find(m => m.role === 'user');
+            const lastAssistantMsg = input.filter(m => m.role === 'assistant' && m.tool_calls).slice(-1)[0];
             const lastToolResults = input.filter(m => m.type === 'function_call_output').slice(-2);
-            input = [systemMsg, userMsg, ...lastToolResults].filter(Boolean);
+            input = [systemMsg, userMsg, lastAssistantMsg, ...lastToolResults].filter(Boolean);
         }
     }
 
@@ -270,13 +383,28 @@ Answer with URLs:`;
         // Detect mathematical queries for concise responses
         const isMathQuery = /\b(calculate|compute|solve|equation|formula|math|add|subtract|multiply|divide|percentage|percent|interest|probability|statistics|algebra|geometry|trigonometry|\+|\-|\*|\/|\=|\^|√|∫|∑|\d+[\+\-\*\/]\d+)\b/i.test(userQuery);
         
-        // Adjust system prompt and token limits for mathematical queries
+        // Adjust system prompt and token limits based on query type and complexity
         let mathSystemPrompt = dynamicSystemPrompt;
-        let maxTokens = MAX_TOKENS_FINAL_RESPONSE;
+        let maxTokens;
         
         if (isMathQuery) {
-            maxTokens = MAX_TOKENS_MATH_RESPONSE; // Use dedicated math response limit
-            mathSystemPrompt = `${dynamicSystemPrompt}\n\nFor mathematical questions: Provide direct, concise answers. Show calculations clearly but keep explanations brief. Focus on the solution rather than lengthy descriptions.`;
+            maxTokens = MAX_TOKENS_MATH_RESPONSE; // Use dedicated math response limit for concise answers
+            mathSystemPrompt = `${dynamicSystemPrompt}\n\nFor mathematical questions: Start with the answer first (e.g., "The result is X."), then show calculations if helpful. Be direct and concise. Avoid lengthy explanations about your process or thinking. Focus on the solution.`;
+        } else {
+            // Use complexity-based token allocation from planning phase
+            const complexityAssessment = researchPlan?.complexity_assessment || 'medium';
+            maxTokens = getTokensForComplexity(complexityAssessment);
+            
+            // Log the dynamic token allocation
+            console.log(`🔧 Dynamic token allocation: complexity=${complexityAssessment}, tokens=${maxTokens}`);
+            stream?.writeEvent?.('log', { 
+                message: `Using ${maxTokens} tokens for ${complexityAssessment} complexity analysis` 
+            });
+            
+            // Enhance system prompt for high complexity queries
+            if (complexityAssessment === 'high') {
+                mathSystemPrompt = `${dynamicSystemPrompt}\n\nFor this high-complexity analysis: Provide comprehensive, detailed responses with thorough analysis. You have expanded token allocation to deliver in-depth insights, multiple perspectives, and detailed explanations as needed.`;
+            }
         }
 
         const finalSynthesisInput = [
@@ -306,7 +434,10 @@ Answer with URLs:`;
             timestamp: new Date().toISOString()
         });
         
-        return { finalText: result };
+        return { 
+            finalText: result,
+            researchPlan: researchPlan
+        };
     } catch (e) {
         console.error('Final synthesis failed:', e?.message || e);
         const errorMsg = 'I apologize, but I encountered an issue while synthesizing the final answer.';
@@ -317,7 +448,10 @@ Answer with URLs:`;
             timestamp: new Date().toISOString()
         });
         
-        return { finalText: errorMsg };
+        return { 
+            finalText: errorMsg,
+            researchPlan: researchPlan || { complexity_assessment: 'medium' }
+        };
     }
 }
 

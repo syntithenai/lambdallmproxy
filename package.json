@@ -2,5 +2,20 @@
   "name": "lambdallmproxy",
   "version": "1.0.0",
   "description": "Lambda LLM Proxy Functions",
-  "main": "src/index.js"
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "./scripts/deploy.sh > output.txt 2>&1 && cat output.txt",
+    "deploy-docs": "./scripts/deploy-docs.sh > output.txt 2>&1 && cat output.txt",
+    "build-docs": "./scripts/build-docs.sh > output.txt 2>&1 && cat output.txt",
+    "test": "./scripts/test-lambda.sh > output.txt 2>&1 && cat output.txt",
+    "dev": "./scripts/deploy.sh > output.txt 2>&1 && cat output.txt",
+    "full-deploy": "npm run build-docs && npm run deploy && npm run deploy-docs",
+    "watch": "nodemon --watch src --ext js --exec 'npm run dev'"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

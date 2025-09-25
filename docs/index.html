@@ -699,7 +699,7 @@
                 <select id="model" name="model">
                     <optgroup label="Groq Models" id="groq-models">
                         <option value="groq:llama-3.1-8b-instant" selected>Llama 3.1 8B Instant (Fastest)</option>
-                        <option value="groq:llama-3.1-70b-versatile">Llama 3.1 70B Versatile</option>
+                        <option value="groq:llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
                         <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
                         <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
                     </optgroup>
@@ -1180,6 +1180,14 @@ document.addEventListener('DOMContentLoaded', function() {
         updateApiKeyStatus('groq_api_key_status', 'Loaded from local storage', '#28a745');
         clearGroqButton.style.display = 'block';
     }
+
+    // Load saved query on page load
+    const promptInput = document.getElementById('prompt');
+    const savedQuery = localStorage.getItem('saved_query');
+    if (savedQuery && promptInput) {
+        promptInput.value = savedQuery;
+        console.log('Loaded saved query from local storage');
+    }
     
     // Set initial default model based on available API keys
     function setInitialDefaultModel() {
@@ -1235,6 +1243,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         updateModelAvailability();
     });
+    
+    // Save query when it changes
+    if (promptInput) {
+        promptInput.addEventListener('input', function() {
+            const query = this.value;
+            if (query && query.trim()) {
+                localStorage.setItem('saved_query', query);
+                console.log('Query saved to local storage');
+            } else {
+                localStorage.removeItem('saved_query');
+                console.log('Empty query - removed from local storage');
+            }
+        });
+    }
     
     // Handle clear OpenAI button
     clearOpenaiButton.addEventListener('click', function() {

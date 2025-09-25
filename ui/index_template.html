@@ -699,7 +699,7 @@
                 <select id="model" name="model">
                     <optgroup label="Groq Models" id="groq-models">
                         <option value="groq:llama-3.1-8b-instant" selected>Llama 3.1 8B Instant (Fastest)</option>
-                        <option value="groq:llama-3.1-70b-versatile">Llama 3.1 70B Versatile</option>
+                        <option value="groq:llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
                         <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
                         <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
                     </optgroup>
@@ -734,19 +734,27 @@
             <button type="button" id="stop-btn" style="display: none; background: #dc3545; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500;">Stop</button>
         </div>
 
+        <!-- Persona Display - moved above query textarea -->
+        <div id="persona-container" style="display: none; margin: 15px 0; padding: 12px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 4px;">Answering as</div>
+            <div id="persona-text" style="font-size: 0.95rem; line-height: 1.4;"></div>
+        </div>
+
         <div class="form-row-bottom">
             <div class="form-group">
                 <label for="prompt">Query:</label>
                 <textarea id="prompt" name="prompt" rows="10" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
+                <div style="margin-top: 8px;">
+                    <button type="button" id="sample-queries-btn" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.9em; cursor: pointer;">
+                        📝 Sample Queries
+                    </button>
+                    <div id="sample-queries-dropdown" style="display: none; position: absolute; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; max-width: 400px; max-height: 300px; overflow-y: auto;">
+                        <!-- Sample queries will be populated by JavaScript -->
+                    </div>
+                </div>
             </div>
         </div>
     </form>
-</div>
-
-<!-- Persona Display -->
-<div id="persona-container" style="display: none; margin: 15px 0; padding: 12px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-    <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 4px;">Answering as</div>
-    <div id="persona-text" style="font-size: 0.95rem; line-height: 1.4;"></div>
 </div>
 
 <!-- Research Questions Display -->
@@ -1172,6 +1180,14 @@ document.addEventListener('DOMContentLoaded', function() {
         updateApiKeyStatus('groq_api_key_status', 'Loaded from local storage', '#28a745');
         clearGroqButton.style.display = 'block';
     }
+
+    // Load saved query on page load
+    const promptInput = document.getElementById('prompt');
+    const savedQuery = localStorage.getItem('saved_query');
+    if (savedQuery && promptInput) {
+        promptInput.value = savedQuery;
+        console.log('Loaded saved query from local storage');
+    }
     
     // Set initial default model based on available API keys
     function setInitialDefaultModel() {
@@ -1228,6 +1244,20 @@ document.addEventListener('DOMContentLoaded', function() {
         updateModelAvailability();
     });
     
+    // Save query when it changes
+    if (promptInput) {
+        promptInput.addEventListener('input', function() {
+            const query = this.value;
+            if (query && query.trim()) {
+                localStorage.setItem('saved_query', query);
+                console.log('Query saved to local storage');
+            } else {
+                localStorage.removeItem('saved_query');
+                console.log('Empty query - removed from local storage');
+            }
+        });
+    }
+    
     // Handle clear OpenAI button
     clearOpenaiButton.addEventListener('click', function() {
         localStorage.removeItem('openai_api_key');
@@ -1271,16 +1301,14 @@ document.addEventListener('DOMContentLoaded', function() {
         settingsDialog.style.display = 'none';
     }
     
-    // Check if API keys are available, open settings if not
+    // Check if API keys are available, but don't force settings page
     function checkInitialSettings() {
         const hasOpenaiKey = localStorage.getItem('openai_api_key');
         const hasGroqKey = localStorage.getItem('groq_api_key');
         const signedIn = !!localStorage.getItem('google_access_token');
         
-        // Open settings dialog by default if no API keys are set and not signed in
-        if (!hasOpenaiKey && !hasGroqKey && !signedIn) {
-            openSettings();
-        }
+        // Allow user to login naturally instead of forcing settings dialog
+        // User can manually open settings if needed
     }
     
     // Settings button event listeners
@@ -1403,11 +1431,202 @@ document.addEventListener('DOMContentLoaded', function() {
     updateSubmitButton();
 });
 
+// Tool execution tracking
+let toolExecutions = [];
+
+function toggleToolsDetails() {
+    const content = document.getElementById('expandable-tools-content');
+    const icon = document.getElementById('tools-toggle-icon');
+    
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '▲';
+    } else {
+        content.style.display = 'none';
+        icon.textContent = '▼';
+    }
+}
+
+function addToolExecution(call) {
+    const execution = {
+        id: call.call_id || `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: call.name,
+        args: call.args,
+        timestamp: new Date().toLocaleTimeString(),
+        result: null
+    };
+    
+    toolExecutions.push(execution);
+    updateToolsDisplay();
+    
+    return execution.id;
+}
+
+function addToolResult(callId, result) {
+    const execution = toolExecutions.find(exec => exec.id === callId);
+    if (execution) {
+        execution.result = result;
+        updateToolsDisplay();
+    }
+}
+
+function updateToolsDisplay() {
+    const section = document.getElementById('expandable-tools-section');
+    const content = document.getElementById('expandable-tools-content');
+    const badge = document.getElementById('tools-count-badge');
+    
+    // If DOM elements don't exist yet, just return (they'll be updated later)
+    if (!section || !content || !badge) {
+        return;
+    }
+    
+    if (toolExecutions.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+    
+    section.style.display = 'block';
+    badge.textContent = toolExecutions.length;
+    
+    content.innerHTML = toolExecutions.map((execution, index) => `
+        <div class="tool-execution" style="border-bottom: 1px solid #dee2e6; padding: 15px;">
+            <div onclick="toggleToolDetails(${index})" style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: bold; color: #495057;">
+                <span class="tool-toggle-icon">▼</span>
+                🔧 ${execution.name}
+                <span style="margin-left: auto; font-size: 0.9em; color: #6c757d;">${execution.timestamp}</span>
+                ${execution.result ? '<span style="color: #28a745;">✅</span>' : '<span style="color: #ffc107;">⏳</span>'}
+            </div>
+            <div class="tool-details" style="display: none; margin-top: 10px;">
+                ${execution.args && Object.keys(execution.args).length > 0 ? `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Parameters:</strong>
+                        <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em;">${JSON.stringify(execution.args, null, 2)}</pre>
+                    </div>
+                ` : ''}
+                ${execution.result ? `
+                    <div>
+                        <strong>Result:</strong>
+                        <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em; max-height: 200px; overflow-y: auto;">${typeof execution.result === 'string' ? execution.result : JSON.stringify(execution.result, null, 2)}</pre>
+                    </div>
+                ` : '<div style="color: #6c757d; font-style: italic;">Executing...</div>'}
+            </div>
+        </div>
+    `).join('');
+}
+
+function toggleToolDetails(index) {
+    const toolElement = document.querySelectorAll('.tool-execution')[index];
+    const details = toolElement.querySelector('.tool-details');
+    const icon = toolElement.querySelector('.tool-toggle-icon');
+    
+    if (details.style.display === 'none') {
+        details.style.display = 'block';
+        icon.textContent = '▲';
+    } else {
+        details.style.display = 'none';
+        icon.textContent = '▼';
+    }
+}
+
+function clearToolExecutions() {
+    toolExecutions = [];
+    updateToolsDisplay();
+}
+
+// Sample queries functionality
+const sampleQueries = {
+    'Web Search & Current Events': [
+        'What are the latest developments in artificial intelligence this week?',
+        'Find current news about climate change policy updates',
+        'What is the current stock price of Tesla and recent news about the company?',
+        'Search for recent scientific discoveries in quantum computing'
+    ],
+    'Mathematical & Computational': [
+        'Calculate the compound interest on $10,000 invested at 7% annual rate for 15 years',
+        'What is the square root of 12,345 and show me the calculation steps?',
+        'Generate a multiplication table for numbers 1-12',
+        'Calculate the area and perimeter of a circle with radius 8.5 meters'
+    ],
+    'Data Analysis & Research': [
+        'Compare the population growth rates of the top 5 most populous countries',
+        'What are the key differences between Python and JavaScript programming languages?',
+        'Analyze the pros and cons of renewable energy sources',
+        'Research the history and impact of the Internet on global communication'
+    ],
+    'Complex Multi-Step': [
+        'Plan a 7-day itinerary for visiting Japan, including costs and recommendations',
+        'Explain how to start a small business, including legal requirements and funding options',
+        'Create a study plan for learning machine learning from beginner to intermediate level',
+        'Design a home workout routine for someone with limited equipment and 30 minutes per day'
+    ]
+};
+
+function toggleSampleQueries() {
+    const dropdown = document.getElementById('sample-queries-dropdown');
+    const isVisible = dropdown.style.display === 'block';
+    
+    if (isVisible) {
+        dropdown.style.display = 'none';
+    } else {
+        populateSampleQueries();
+        dropdown.style.display = 'block';
+    }
+}
+
+function populateSampleQueries() {
+    const dropdown = document.getElementById('sample-queries-dropdown');
+    dropdown.innerHTML = '';
+    
+    Object.entries(sampleQueries).forEach(([category, queries]) => {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid #eee; font-weight: bold; background: #f8f9fa;';
+        categoryDiv.textContent = category;
+        dropdown.appendChild(categoryDiv);
+        
+        queries.forEach(query => {
+            const queryDiv = document.createElement('div');
+            queryDiv.style.cssText = 'padding: 8px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background-color 0.2s;';
+            queryDiv.textContent = query;
+            
+            queryDiv.addEventListener('mouseenter', () => {
+                queryDiv.style.backgroundColor = '#e9ecef';
+            });
+            
+            queryDiv.addEventListener('mouseleave', () => {
+                queryDiv.style.backgroundColor = 'transparent';
+            });
+            
+            queryDiv.addEventListener('click', () => {
+                document.getElementById('prompt').value = query;
+                dropdown.style.display = 'none';
+            });
+            
+            dropdown.appendChild(queryDiv);
+        });
+    });
+}
+
+// Hide dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('sample-queries-dropdown');
+    const button = document.getElementById('sample-queries-btn');
+    
+    if (dropdown && button && !dropdown.contains(e.target) && !button.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
+});
+
+// Add event listener for sample queries button
+document.getElementById('sample-queries-btn').addEventListener('click', toggleSampleQueries);
+
 document.getElementById('llm-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     
     const submitBtn = document.getElementById('submit-btn');
     const responseContainer = document.getElementById('response-container');
+    
+    // Clear previous tool executions
+    clearToolExecutions();
     
     // Hide submit button and show stop button
     const stopBtn = document.getElementById('stop-btn');
@@ -1677,6 +1896,17 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             <div id="tools-log"></div>
         </div>
         <div id="full-results-tree"></div>
+        
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
     `;
     
     const statusElement = document.getElementById('streaming-status');
@@ -2038,6 +2268,11 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 header.innerHTML = `<strong>Iteration ${iteration}</strong> • ${pending} pending call(s)`;
                                 box.appendChild(header);
                                 if (Array.isArray(calls)) {
+                                    // Add each tool call to the expandable tools section
+                                    calls.forEach(call => {
+                                        addToolExecution(call);
+                                    });
+                                    
                                     const list = document.createElement('ul');
                                     list.style.margin = '6px 0 0 16px';
                                     calls.forEach(c => {
@@ -2054,6 +2289,12 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             try {
                                 toolsPanel.style.display = 'block';
                                 const { iteration, call_id, name, args, output } = eventData;
+                                
+                                // Add result to the expandable tools section
+                                if (call_id) {
+                                    addToolResult(call_id, output);
+                                }
+                                
                                 const item = document.createElement('div');
                                 item.style.cssText = 'padding:8px; border-left:3px solid #28a745; background:#fff; margin:6px 0; border-radius:4px;';
                                 const title = document.createElement('div');

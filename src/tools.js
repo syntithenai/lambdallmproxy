@@ -84,7 +84,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'search_web',
-      description: 'Search the web for results relevant to a query and return an LLM-generated summary that considers the initial query.',
+      description: 'Search the web for results relevant to a query and return an LLM-generated summary that considers the initial query. CRITICAL: Only provide the "query" parameter. Do NOT include count, results, limit, or any other properties.',
       parameters: {
         type: 'object',
         properties: {
@@ -102,7 +102,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'scrape_web_content',
-      description: 'Fetch and extract the readable content of a URL.',
+      description: 'Fetch and extract the readable content of a URL. CRITICAL: Only provide the "url" parameter. Do NOT include any other properties.',
       parameters: {
         type: 'object',
         properties: {
@@ -118,13 +118,13 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'execute_javascript',
-      description: 'Execute JavaScript code in a secure sandbox environment. Perfect for mathematical calculations, data processing, algorithm implementation, and computational problems. For math questions, focus on providing direct numerical answers. Supports all standard JavaScript features including Math functions, array operations, loops, and object manipulation.',
+      description: 'Execute JavaScript code in a secure sandbox environment. Perfect for mathematical calculations, data processing, algorithm implementation, and computational problems. For math questions, focus on providing direct numerical answers. Supports all standard JavaScript features including Math functions, array operations, loops, and object manipulation. IMPORTANT: Only provide the "code" parameter - do not include result, type, or executed_at properties.',
       parameters: {
         type: 'object',
         properties: {
           code: { 
             type: 'string', 
-            description: 'JavaScript code to execute. Should include a final expression or console.log to show the result. Example: "Math.sqrt(144)" or "const result = 5 * 7; console.log(result);"'
+            description: 'JavaScript code to execute. Should include a final expression or console.log to show the result. Example: "Math.sqrt(144)" or "const result = 5 * 7; console.log(result);". ONLY provide the code to execute - the tool will automatically return the result.'
           },
           timeout: { type: 'integer', minimum: 1, maximum: 10, default: 5, description: 'Execution timeout in seconds' }
         },

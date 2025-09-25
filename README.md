@@ -7,8 +7,14 @@ An advanced AWS Lambda function that combines comprehensive web search with larg
 **⚡ For all deployments and builds, use the Makefile commands:**
 
 ```bash
-# Deploy the Lambda function
+# 🔥 RECOMMENDED FOR AI AGENTS - Quick deploy after code changes
+make dev
+
+# Deploy the Lambda function (legacy)
 make deploy
+
+# Deploy everything (Lambda + docs)
+make full-deploy
 
 # Build and deploy UI (build docs + push to git)
 make deploy_ui
@@ -16,11 +22,22 @@ make deploy_ui
 # Test the Lambda function
 make test
 
-# View all available commands
+# View all available commands (with AI agent recommendations)
 make help
 ```
 
 **The Makefile is your single interface for all operations - it ensures consistent, reliable deployments and builds.**
+
+## 🤖 AI Agent Workflow
+
+**For AI agents making code changes (per instructions.md):**
+
+1. **Make Lambda code changes** in `src/` → **Always run `make dev`** (uses `scripts/deploy.sh`)
+2. **Make UI changes** in `ui/index_template.html` → **Always run `make deploy-docs`** (uses `scripts/deploy-docs.sh`)
+3. **Test immediately**: Visit https://lambdallmproxy.pages.dev
+4. **Check output**: All commands pipe to `output.txt` for Copilot to read
+
+See [AI_AGENT_WORKFLOW.md](AI_AGENT_WORKFLOW.md) for detailed AI agent instructions and [instructions.md](instructions.md) for project-specific requirements.
 
 ## Architecture
 
