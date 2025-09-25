@@ -797,6 +797,16 @@ function resetModelToFastest() {
     }
 }
 
+// Global auto-continue timer management variables
+let autoContinueTimer = null;
+let autoContinueCountdown = null;
+const AUTO_CONTINUE_DELAY = 60; // 60 seconds delay
+
+// Global retry state management variables (needed by auto-continue functions)
+let currentQueryId = null;
+let interruptState = null;
+let previousSteps = [];
+
 // Handle API key persistence and model selection
 document.addEventListener('DOMContentLoaded', function() {
     // Google OAuth configuration
@@ -815,16 +825,71 @@ document.addEventListener('DOMContentLoaded', function() {
     const loginText = document.getElementById('login-text');
     const submitBtn = document.getElementById('submit-btn');
     
-    // Retry state management
-    let currentQueryId = null;
-    let interruptState = null;
-    let previousSteps = [];
+    // Retry state management (currentRequest stays local to DOMContentLoaded scope)
     let currentRequest = null;
     
-    // Auto-continue timer management
-    let autoContinueTimer = null;
-    let autoContinueCountdown = null;
-    const AUTO_CONTINUE_DELAY = 60; // 60 seconds delay
+    // Auto-continue timer functions
+    function startAutoContinueTimer() {
+        // Clear any existing timer
+        stopAutoContinueTimer();
+        
+        const continueBtn = document.getElementById('continue-btn');
+        if (!continueBtn) return;
+        
+        let secondsRemaining = AUTO_CONTINUE_DELAY;
+        
+        // Store original button text
+        const originalText = 'Continue';
+        
+        // Update button text immediately
+        continueBtn.textContent = `Continue (${secondsRemaining}s)`;
+        
+        // Start countdown timer
+        autoContinueCountdown = setInterval(() => {
+            secondsRemaining--;
+            continueBtn.textContent = `Continue (${secondsRemaining}s)`;
+            
+            if (secondsRemaining <= 0) {
+                // Time's up - auto-continue
+                stopAutoContinueTimer();
+                continueBtn.textContent = originalText;
+                
+                // Trigger continue action if interrupt state still exists
+                if (interruptState) {
+                    console.log('Auto-continuing after timeout');
+                    resumeFromInterrupt();
+                }
+            }
+        }, 1000);
+        
+        // Set main timer to auto-continue
+        autoContinueTimer = setTimeout(() => {
+            if (interruptState) {
+                console.log('Auto-continuing after 60 second delay');
+                resumeFromInterrupt();
+            }
+        }, AUTO_CONTINUE_DELAY * 1000);
+    }
+    
+    function stopAutoContinueTimer() {
+        // Clear countdown timer
+        if (autoContinueCountdown) {
+            clearInterval(autoContinueCountdown);
+            autoContinueCountdown = null;
+        }
+        
+        // Clear main timer
+        if (autoContinueTimer) {
+            clearTimeout(autoContinueTimer);
+            autoContinueTimer = null;
+        }
+        
+        // Reset button text if it exists
+        const continueBtn = document.getElementById('continue-btn');
+        if (continueBtn && continueBtn.style.display !== 'none') {
+            continueBtn.textContent = 'Continue';
+        }
+    }
     
     // Settings dialog elements
     const settingsBtn = document.getElementById('settings-btn');
@@ -1584,69 +1649,6 @@ function clearToolExecutions() {
     updateToolsDisplay();
     // Also clear cost data for new queries
     window.__currentCostData = null;
-}
-
-// Auto-continue timer functions
-function startAutoContinueTimer() {
-    // Clear any existing timer
-    stopAutoContinueTimer();
-    
-    const continueBtn = document.getElementById('continue-btn');
-    if (!continueBtn) return;
-    
-    let secondsRemaining = AUTO_CONTINUE_DELAY;
-    
-    // Store original button text
-    const originalText = 'Continue';
-    
-    // Update button text immediately
-    continueBtn.textContent = `Continue (${secondsRemaining}s)`;
-    
-    // Start countdown timer
-    autoContinueCountdown = setInterval(() => {
-        secondsRemaining--;
-        continueBtn.textContent = `Continue (${secondsRemaining}s)`;
-        
-        if (secondsRemaining <= 0) {
-            // Time's up - auto-continue
-            stopAutoContinueTimer();
-            continueBtn.textContent = originalText;
-            
-            // Trigger continue action if interrupt state still exists
-            if (interruptState) {
-                console.log('Auto-continuing after timeout');
-                resumeFromInterrupt();
-            }
-        }
-    }, 1000);
-    
-    // Set main timer to auto-continue
-    autoContinueTimer = setTimeout(() => {
-        if (interruptState) {
-            console.log('Auto-continuing after 60 second delay');
-            resumeFromInterrupt();
-        }
-    }, AUTO_CONTINUE_DELAY * 1000);
-}
-
-function stopAutoContinueTimer() {
-    // Clear countdown timer
-    if (autoContinueCountdown) {
-        clearInterval(autoContinueCountdown);
-        autoContinueCountdown = null;
-    }
-    
-    // Clear main timer
-    if (autoContinueTimer) {
-        clearTimeout(autoContinueTimer);
-        autoContinueTimer = null;
-    }
-    
-    // Reset button text if it exists
-    const continueBtn = document.getElementById('continue-btn');
-    if (continueBtn && continueBtn.style.display !== 'none') {
-        continueBtn.textContent = 'Continue';
-    }
 }
 
 // Sample queries functionality
