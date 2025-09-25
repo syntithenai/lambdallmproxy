@@ -2174,6 +2174,14 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             metadataElement.style.display = 'block';
                             break;
                             
+                        case 'final_answer':
+                            statusElement.textContent = '✅ Search completed! Displaying final answer...';
+                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
+                            stopAllTimers('done');
+                            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
+                            responseContainer.className = 'response-container response-success';
+                            break;
+                            
                         case 'complete':
                             statusElement.textContent = `✅ Complete! Total time: ${Math.round(eventData.executionTime)}ms`;
                             responseContainer.className = 'response-container response-success';
