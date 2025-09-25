@@ -1504,7 +1504,269 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
     // Form submission handler
+    document.getElementById('llm-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const submitBtn = document.getElementById('submit-btn');
+        const responseContainer = document.getElementById('response-container');
+        
+        // Clear previous tool executions
+        clearToolExecutions();
+        
+        // Stop any existing auto-continue timer when starting new query
+        stopAutoContinueTimer();
+        
+        // Hide submit button and show stop button, hide continue button
+        const stopBtn = document.getElementById('stop-btn');
+        const continueBtn = document.getElementById('continue-btn');
+        submitBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        if (continueBtn) continueBtn.style.display = 'none';
+        
+        // Show loading message
+        responseContainer.className = 'response-container loading';
+        responseContainer.style.display = 'block';
+        responseContainer.textContent = 'Sending request...';
+        
+        // Hide persona and research questions containers from previous requests
+        const personaContainer = document.getElementById('persona-container');
+        if (personaContainer) {
+            personaContainer.style.display = 'none';
+        }
+        
+        const researchQuestionsContainer = document.getElementById('research-questions-container');
+        if (researchQuestionsContainer) {
+            researchQuestionsContainer.style.display = 'none';
+        }
+        
+        // Get the selected model to determine which API key to use
+        const selectedModel = document.getElementById('model').value;
+        const isGroqModel = selectedModel.startsWith('groq:');
+        const isOpenaiModel = selectedModel.startsWith('openai:');
+        
+        // Get the appropriate API key
+        let apiKey;
+        if (isGroqModel) {
+            apiKey = document.getElementById('groq_api_key').value;
+        } else if (isOpenaiModel) {
+            apiKey = document.getElementById('openai_api_key').value;
+        }
+        
+        // Validate that we have either a local API key or a Google login (server env keys may apply)
+        const hasLocalKey = apiKey && apiKey.trim();
+        const isSignedIn = (window.isGoogleTokenValid ? window.isGoogleTokenValid(googleAccessToken) : false);
+        
+        // Debug logging
+        console.log('Form submission validation:', {
+            apiKey: apiKey ? 'present' : 'null',
+            hasLocalKey: hasLocalKey,
+            googleAccessToken: googleAccessToken ? 'present' : 'null',
+            isSignedIn: isSignedIn,
+            googleUser: googleUser ? googleUser.email : 'null'
+        });
+        
+        if (!hasLocalKey && !isSignedIn) {
+            responseContainer.className = 'response-container response-error';
+        responseContainer.textContent = 'Error: Please sign in with Google or provide an API key in Settings to proceed.';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Send Request';
+            return;
+        }
+
+        // Reset retry state for new request
+        currentQueryId = 'query_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        previousSteps = [];
+        interruptState = null;
+
+        // Collect form data
+        const searchMode = document.querySelector('input[name="search_mode"]:checked').value;
+        const formData = {
+            // Only include apiKey if user provided one; otherwise server may use env keys for authorized accounts
+            ...(hasLocalKey ? { apiKey: apiKey } : {}),
+            model: selectedModel,
+            query: document.getElementById('prompt').value,
+            accessSecret: document.getElementById('access_secret').value,  // Changed from access_secret to accessSecret
+            searchMode: searchMode,  // Changed from search_mode to searchMode
+            ...(isSignedIn ? { google_token: googleAccessToken } : {}),
+            // Add query ID for new request
+            queryId: currentQueryId,
+            tokensPerMinute: 6000  // Default rate limit
+        };
+
+        // Set a reasonable default timeout (90 seconds)
+        const timeoutMs = 90000;
+
+        // Create an AbortController for timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, timeoutMs);
+        
+        try {
+        console.log('Sending request to:', 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/');
+            console.log('Request data:', formData);
+            
+            // Update loading message
+            responseContainer.textContent = 'Sending request...';
+            
+            const response = await fetch('https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'  // Request streaming response
+                },
+                body: JSON.stringify(formData),
+                mode: 'cors',
+                credentials: 'omit',
+                signal: controller.signal // Add timeout signal
+            });
+            
+            // Clear the timeout since we got a response
+            clearTimeout(timeoutId);
+            
+            console.log('Response status:', response.status);
+            console.log('Response headers:', response.headers);
+            
+            // Check if response is streaming
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('text/event-stream')) {
+                await handleStreamingResponse(response, responseContainer, controller);
+                return; // Exit early for streaming
+            }
+            
+            // Handle regular JSON response (existing logic)
+            const responseData = await response.text();
+            console.log('Response data:', responseData);
+            
+            if (response.ok) {
+                // Success response - parse JSON and display enhanced response
+                try {
+                    const jsonData = JSON.parse(responseData);
+                    // Use 'response' field from Lambda function, fallback to 'answer'
+                    const answer = jsonData.response || jsonData.answer || 'No response found';
+                    
+                    responseContainer.className = 'response-container response-success';
+                    responseContainer.style.fontFamily = 'inherit';
+                    
+                    // Create enhanced response with answer, search info, and results
+                    let responseHTML = `<div class="answer-content">${answer.replace(/\n/g, '<br>')}</div>`;
+                    
+                    // Add search summary if available
+                    if (jsonData.searches && jsonData.searches.length > 0) {
+                        const totalResults = jsonData.searchResults ? jsonData.searchResults.length : 0;
+                        const totalSearches = jsonData.searches.length;
+                        
+                        // Count iterations
+                        const iterations = [...new Set(jsonData.searches.map(s => s.iteration))];
+                        
+                        responseHTML += `<div class="search-summary">
+                            <h3>Search Summary</h3>
+                            <p><strong>${iterations.length}</strong> iteration${iterations.length !== 1 ? 's' : ''} with <strong>${totalSearches}</strong> search${totalSearches !== 1 ? 'es' : ''} yielding <strong>${totalResults}</strong> result${totalResults !== 1 ? 's' : ''}</p>
+                        </div>`;
+                        
+                        // Group searches by iteration
+                        const searchesByIteration = {};
+                        jsonData.searches.forEach(search => {
+                            if (!searchesByIteration[search.iteration]) {
+                                searchesByIteration[search.iteration] = [];
+                            }
+                            searchesByIteration[search.iteration].push(search);
+                        });
+                        
+                        // Create expandable sections for each iteration
+                        Object.keys(searchesByIteration).sort((a, b) => parseInt(a) - parseInt(b)).forEach(iteration => {
+                            const searches = searchesByIteration[iteration];
+                            responseHTML += `
+                                <details class="iteration-section" style="margin: 20px 0; border: 1px solid #ddd; border-radius: 8px;">
+                                    <summary style="padding: 15px; font-weight: bold; background: #f8f9fa; border-radius: 8px 8px 0 0; cursor: pointer;">
+                                        Iteration ${iteration} (${searches.length} search${searches.length !== 1 ? 'es' : ''})
+                                    </summary>
+                                    <div style="padding: 15px;">
+                            `;
+                            
+                            searches.forEach(search => {
+                                // Get results for this specific search
+                                const searchResults = jsonData.searchResults ? 
+                                    jsonData.searchResults.filter(result => 
+                                        result.iteration === search.iteration && 
+                                        result.searchTerm === search.searchTerm
+                                    ) : [];
+                                
+                                responseHTML += `
+                                    <div class="search-item" style="margin-bottom: 20px; padding: 15px; border: 1px solid #e9ecef; border-radius: 6px; background: white;">
+                                        <h4 style="margin: 0 0 10px 0; color: #495057;">🔍 "${search.searchTerm}"</h4>
+                                        <p style="margin: 5px 0; color: #6c757d; font-size: 0.9em;">
+                                            <strong>Iteration:</strong> ${search.iteration} | 
+                                            <strong>Results found:</strong> ${searchResults.length}
+                                        </p>
+                                `;
+                                
+                                if (searchResults.length > 0) {
+                                    responseHTML += `<div class="search-results" style="margin-top: 10px;">`;
+                                    searchResults.slice(0, 3).forEach((result, index) => {
+                                        responseHTML += `
+                                            <div class="search-result" style="margin: 8px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid #007bff;">
+                                                <a href="${result.url}" target="_blank" style="font-weight: 500; color: #007bff; text-decoration: none;">${result.title}</a>
+                                                <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #6c757d;">${result.content ? result.content.substring(0, 150) + '...' : 'No preview available'}</p>
+                                            </div>
+                                        `;
+                                    });
+                                    if (searchResults.length > 3) {
+                                        responseHTML += `<p style="margin: 8px 0 0 0; font-size: 0.9em; color: #6c757d; font-style: italic;">... and ${searchResults.length - 3} more result${searchResults.length - 3 !== 1 ? 's' : ''}</p>`;
+                                    }
+                                    responseHTML += `</div>`;
+                                } else {
+                                    responseHTML += `<p style="color: #6c757d; font-style: italic; margin: 10px 0;">No results found for this search.</p>`;
+                                }
+                                
+                                responseHTML += `</div>`;
+                            });
+                            
+                            responseHTML += `</div></details>`;
+                        });
+                    }
+                    
+                    responseContainer.innerHTML = responseHTML;
+                    
+                } catch (parseError) {
+                    console.error('Error parsing response JSON:', parseError);
+                    responseContainer.className = 'response-container response-error';
+                    responseContainer.style.fontFamily = 'monospace';
+                    responseContainer.textContent = `JSON Parse Error:\n\n${responseData}`;
+                }
+            } else {
+                // Error response
+                responseContainer.className = 'response-container response-error';
+                responseContainer.style.fontFamily = 'monospace'; // Keep monospace for error details
+                responseContainer.textContent = `Error (${response.status}):\n\n${responseData}`;
+            }
+        } catch (error) {
+            // Clear the timeout in case of other errors
+            clearTimeout(timeoutId);
+            
+            // Network or other errors
+            console.error('Request error:', error);
+            
+            responseContainer.className = 'response-container response-error';
+            
+            if (error.name === 'AbortError') {
+                // Request was aborted due to timeout
+                responseContainer.textContent = `Request Timeout Error:\n\nThe request timed out after 90 seconds. The Lambda function may be taking longer than expected to process your request.\n\nYou can try:\n- Simplifying your query\n- Checking if the Lambda function is running properly\n- Trying again in a moment`;
+            } else {
+                // Other network or fetch errors
+                responseContainer.textContent = `Network Error:\n\n${error.message}\n\nCheck browser console for more details.`;
+            }
+        } finally {
+            // Show submit button and hide stop button
+            submitBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Send Request';
+        }
+    });
+
     // Ensure button state is accurate after wiring listeners
     updateSubmitButton();
 });
@@ -1741,8 +2003,6 @@ document.addEventListener('click', function(e) {
 
 // Add event listener for sample queries button
 document.getElementById('sample-queries-btn').addEventListener('click', toggleSampleQueries);
-
-document.getElementById('llm-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     
     const submitBtn = document.getElementById('submit-btn');
