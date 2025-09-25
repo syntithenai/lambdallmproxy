@@ -1447,6 +1447,11 @@ function updateToolsDisplay() {
     const content = document.getElementById('expandable-tools-content');
     const badge = document.getElementById('tools-count-badge');
     
+    // If DOM elements don't exist yet, just return (they'll be updated later)
+    if (!section || !content || !badge) {
+        return;
+    }
+    
     if (toolExecutions.length === 0) {
         section.style.display = 'none';
         return;
