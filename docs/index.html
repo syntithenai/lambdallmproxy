@@ -1403,6 +1403,103 @@ document.addEventListener('DOMContentLoaded', function() {
     updateSubmitButton();
 });
 
+// Tool execution tracking
+let toolExecutions = [];
+
+function toggleToolsDetails() {
+    const content = document.getElementById('expandable-tools-content');
+    const icon = document.getElementById('tools-toggle-icon');
+    
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '▲';
+    } else {
+        content.style.display = 'none';
+        icon.textContent = '▼';
+    }
+}
+
+function addToolExecution(call) {
+    const execution = {
+        id: call.call_id || `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: call.name,
+        args: call.args,
+        timestamp: new Date().toLocaleTimeString(),
+        result: null
+    };
+    
+    toolExecutions.push(execution);
+    updateToolsDisplay();
+    
+    return execution.id;
+}
+
+function addToolResult(callId, result) {
+    const execution = toolExecutions.find(exec => exec.id === callId);
+    if (execution) {
+        execution.result = result;
+        updateToolsDisplay();
+    }
+}
+
+function updateToolsDisplay() {
+    const section = document.getElementById('expandable-tools-section');
+    const content = document.getElementById('expandable-tools-content');
+    const badge = document.getElementById('tools-count-badge');
+    
+    if (toolExecutions.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+    
+    section.style.display = 'block';
+    badge.textContent = toolExecutions.length;
+    
+    content.innerHTML = toolExecutions.map((execution, index) => `
+        <div class="tool-execution" style="border-bottom: 1px solid #dee2e6; padding: 15px;">
+            <div onclick="toggleToolDetails(${index})" style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: bold; color: #495057;">
+                <span class="tool-toggle-icon">▼</span>
+                🔧 ${execution.name}
+                <span style="margin-left: auto; font-size: 0.9em; color: #6c757d;">${execution.timestamp}</span>
+                ${execution.result ? '<span style="color: #28a745;">✅</span>' : '<span style="color: #ffc107;">⏳</span>'}
+            </div>
+            <div class="tool-details" style="display: none; margin-top: 10px;">
+                ${execution.args && Object.keys(execution.args).length > 0 ? `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Parameters:</strong>
+                        <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em;">${JSON.stringify(execution.args, null, 2)}</pre>
+                    </div>
+                ` : ''}
+                ${execution.result ? `
+                    <div>
+                        <strong>Result:</strong>
+                        <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em; max-height: 200px; overflow-y: auto;">${typeof execution.result === 'string' ? execution.result : JSON.stringify(execution.result, null, 2)}</pre>
+                    </div>
+                ` : '<div style="color: #6c757d; font-style: italic;">Executing...</div>'}
+            </div>
+        </div>
+    `).join('');
+}
+
+function toggleToolDetails(index) {
+    const toolElement = document.querySelectorAll('.tool-execution')[index];
+    const details = toolElement.querySelector('.tool-details');
+    const icon = toolElement.querySelector('.tool-toggle-icon');
+    
+    if (details.style.display === 'none') {
+        details.style.display = 'block';
+        icon.textContent = '▲';
+    } else {
+        details.style.display = 'none';
+        icon.textContent = '▼';
+    }
+}
+
+function clearToolExecutions() {
+    toolExecutions = [];
+    updateToolsDisplay();
+}
+
 document.getElementById('llm-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     
@@ -1976,103 +2073,6 @@ async function handleStreamingResponse(response, responseContainer, controller) 
 
         top.appendChild(container);
         fullResultsTree.appendChild(top);
-    }
-
-    // Tool execution tracking
-    let toolExecutions = [];
-
-    function toggleToolsDetails() {
-        const content = document.getElementById('expandable-tools-content');
-        const icon = document.getElementById('tools-toggle-icon');
-        
-        if (content.style.display === 'none') {
-            content.style.display = 'block';
-            icon.textContent = '▲';
-        } else {
-            content.style.display = 'none';
-            icon.textContent = '▼';
-        }
-    }
-
-    function addToolExecution(call) {
-        const execution = {
-            id: call.call_id || `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            name: call.name,
-            args: call.args,
-            timestamp: new Date().toLocaleTimeString(),
-            result: null
-        };
-        
-        toolExecutions.push(execution);
-        updateToolsDisplay();
-        
-        return execution.id;
-    }
-
-    function addToolResult(callId, result) {
-        const execution = toolExecutions.find(exec => exec.id === callId);
-        if (execution) {
-            execution.result = result;
-            updateToolsDisplay();
-        }
-    }
-
-    function updateToolsDisplay() {
-        const section = document.getElementById('expandable-tools-section');
-        const content = document.getElementById('expandable-tools-content');
-        const badge = document.getElementById('tools-count-badge');
-        
-        if (toolExecutions.length === 0) {
-            section.style.display = 'none';
-            return;
-        }
-        
-        section.style.display = 'block';
-        badge.textContent = toolExecutions.length;
-        
-        content.innerHTML = toolExecutions.map((execution, index) => `
-            <div class="tool-execution" style="border-bottom: 1px solid #dee2e6; padding: 15px;">
-                <div onclick="toggleToolDetails(${index})" style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: bold; color: #495057;">
-                    <span class="tool-toggle-icon">▼</span>
-                    🔧 ${execution.name}
-                    <span style="margin-left: auto; font-size: 0.9em; color: #6c757d;">${execution.timestamp}</span>
-                    ${execution.result ? '<span style="color: #28a745;">✅</span>' : '<span style="color: #ffc107;">⏳</span>'}
-                </div>
-                <div class="tool-details" style="display: none; margin-top: 10px;">
-                    ${execution.args && Object.keys(execution.args).length > 0 ? `
-                        <div style="margin-bottom: 10px;">
-                            <strong>Parameters:</strong>
-                            <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em;">${JSON.stringify(execution.args, null, 2)}</pre>
-                        </div>
-                    ` : ''}
-                    ${execution.result ? `
-                        <div>
-                            <strong>Result:</strong>
-                            <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em; max-height: 200px; overflow-y: auto;">${typeof execution.result === 'string' ? execution.result : JSON.stringify(execution.result, null, 2)}</pre>
-                        </div>
-                    ` : '<div style="color: #6c757d; font-style: italic;">Executing...</div>'}
-                </div>
-            </div>
-        `).join('');
-    }
-
-    function toggleToolDetails(index) {
-        const toolElement = document.querySelectorAll('.tool-execution')[index];
-        const details = toolElement.querySelector('.tool-details');
-        const icon = toolElement.querySelector('.tool-toggle-icon');
-        
-        if (details.style.display === 'none') {
-            details.style.display = 'block';
-            icon.textContent = '▲';
-        } else {
-            details.style.display = 'none';
-            icon.textContent = '▼';
-        }
-    }
-
-    function clearToolExecutions() {
-        toolExecutions = [];
-        updateToolsDisplay();
     }
     
     try {
