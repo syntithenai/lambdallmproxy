@@ -732,6 +732,7 @@
             
             <button type="submit" id="submit-btn" disabled>Sign in or add an API key</button>
             <button type="button" id="stop-btn" style="display: none; background: #dc3545; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500;">Stop</button>
+            <button type="button" id="continue-btn" style="display: none; background: #28a745; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; margin-left: 10px;">Continue</button>
         </div>
 
         <!-- Persona Display - moved above query textarea -->
@@ -813,6 +814,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const loginBtn = document.getElementById('login-btn');
     const loginText = document.getElementById('login-text');
     const submitBtn = document.getElementById('submit-btn');
+    
+    // Retry state management
+    let currentQueryId = null;
+    let interruptState = null;
+    let previousSteps = [];
+    let currentRequest = null;
     
     // Settings dialog elements
     const settingsBtn = document.getElementById('settings-btn');
@@ -1447,6 +1454,19 @@ function toggleToolsDetails() {
     }
 }
 
+function toggleCostDetails() {
+    const content = document.getElementById('expandable-cost-content');
+    const icon = document.getElementById('cost-toggle-icon');
+    
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '▲';
+    } else {
+        content.style.display = 'none';
+        icon.textContent = '▼';
+    }
+}
+
 function addToolExecution(call) {
     const execution = {
         id: call.call_id || `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1488,15 +1508,40 @@ function updateToolsDisplay() {
     section.style.display = 'block';
     badge.textContent = toolExecutions.length;
     
-    content.innerHTML = toolExecutions.map((execution, index) => `
+    // Get cost data if available
+    const costData = window.__currentCostData;
+    
+    content.innerHTML = toolExecutions.map((execution, index) => {
+        // Find matching cost data for this tool execution
+        let toolCost = null;
+        if (costData && costData.stepCosts) {
+            toolCost = costData.stepCosts.find(step => 
+                step.stepName.includes('tool') || 
+                step.stepName.toLowerCase().includes(execution.name.toLowerCase())
+            );
+        }
+        
+        return `
         <div class="tool-execution" style="border-bottom: 1px solid #dee2e6; padding: 15px;">
             <div onclick="toggleToolDetails(${index})" style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: bold; color: #495057;">
                 <span class="tool-toggle-icon">▼</span>
                 🔧 ${execution.name}
                 <span style="margin-left: auto; font-size: 0.9em; color: #6c757d;">${execution.timestamp}</span>
+                ${toolCost ? `<span style="background: #fff3cd; color: #856404; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; margin-left: 8px;">$${toolCost.cost.toFixed(6)}</span>` : ''}
                 ${execution.result ? '<span style="color: #28a745;">✅</span>' : '<span style="color: #ffc107;">⏳</span>'}
             </div>
             <div class="tool-details" style="display: none; margin-top: 10px;">
+                ${toolCost ? `
+                    <div style="margin-bottom: 10px; padding: 10px; background: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107;">
+                        <div style="font-weight: bold; color: #856404; margin-bottom: 4px;">💰 Cost Information</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 0.9em; color: #856404;">
+                            <div><strong>Cost:</strong> $${toolCost.cost.toFixed(6)}</div>
+                            <div><strong>Model:</strong> ${toolCost.model}</div>
+                            <div><strong>Input:</strong> ${toolCost.inputTokens.toLocaleString()} tokens</div>
+                            <div><strong>Output:</strong> ${toolCost.outputTokens.toLocaleString()} tokens</div>
+                        </div>
+                    </div>
+                ` : ''}
                 ${execution.args && Object.keys(execution.args).length > 0 ? `
                     <div style="margin-bottom: 10px;">
                         <strong>Parameters:</strong>
@@ -1511,7 +1556,8 @@ function updateToolsDisplay() {
                 ` : '<div style="color: #6c757d; font-style: italic;">Executing...</div>'}
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function toggleToolDetails(index) {
@@ -1531,6 +1577,8 @@ function toggleToolDetails(index) {
 function clearToolExecutions() {
     toolExecutions = [];
     updateToolsDisplay();
+    // Also clear cost data for new queries
+    window.__currentCostData = null;
 }
 
 // Sample queries functionality
@@ -1628,10 +1676,12 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     // Clear previous tool executions
     clearToolExecutions();
     
-    // Hide submit button and show stop button
+    // Hide submit button and show stop button, hide continue button
     const stopBtn = document.getElementById('stop-btn');
+    const continueBtn = document.getElementById('continue-btn');
     submitBtn.style.display = 'none';
     stopBtn.style.display = 'inline-block';
+    if (continueBtn) continueBtn.style.display = 'none';
     
     // Show loading message
     responseContainer.className = 'response-container loading';
@@ -1683,6 +1733,11 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         return;
     }
 
+    // Reset retry state for new request
+    currentQueryId = 'query_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    previousSteps = [];
+    interruptState = null;
+
     // Collect form data
     const searchMode = document.querySelector('input[name="search_mode"]:checked').value;
     const formData = {
@@ -1692,7 +1747,10 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         query: document.getElementById('prompt').value,
         accessSecret: document.getElementById('access_secret').value,  // Changed from access_secret to accessSecret
         searchMode: searchMode,  // Changed from search_mode to searchMode
-        ...(isSignedIn ? { google_token: googleAccessToken } : {})
+        ...(isSignedIn ? { google_token: googleAccessToken } : {}),
+        // Add query ID for new request
+        queryId: currentQueryId,
+        tokensPerMinute: 6000  // Default rate limit
     };
 
     // Set a reasonable default timeout (90 seconds)
@@ -1732,7 +1790,6 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
         // Check if response is streaming
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('text/event-stream')) {
-            console.log('Handling streaming response');
             await handleStreamingResponse(response, responseContainer, controller);
             return; // Exit early for streaming
         }
@@ -1861,7 +1918,6 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
  * Handle streaming Server-Sent Events response
  */
 async function handleStreamingResponse(response, responseContainer, controller) {
-    console.log('Starting streaming response handler');
     
     // Clear and prepare response container for streaming
     responseContainer.className = 'response-container';
@@ -1905,6 +1961,19 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             </div>
             <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
                 <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+        
+        <!-- Expandable Cost Section -->
+        <div id="expandable-cost-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleCostDetails()" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="cost-toggle-icon">▼</span> Cost & Token Usage
+                <span id="cost-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">$0.000000</span>
+            </div>
+            <div id="expandable-cost-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none; padding: 15px;">
+                <div id="cost-breakdown-content">
+                    <!-- Cost breakdown will be dynamically added here -->
+                </div>
             </div>
         </div>
     `;
@@ -2020,6 +2089,17 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             formStopBtn.textContent = 'Stopping...';
             statusElement.textContent = '⏹️ Stopping — no further requests will be made.';
             stopAllTimers('stopped');
+        });
+    }
+    
+    // Wire Continue button from form
+    const continueBtn = document.getElementById('continue-btn');
+    if (continueBtn) {
+        continueBtn.addEventListener('click', () => {
+            if (interruptState) {
+                // Resume from interrupted state
+                resumeFromInterrupt();
+            }
         });
     }
     
@@ -2204,7 +2284,6 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             const { done, value } = await reader.read();
             
             if (done) {
-                console.log('Stream ended');
                 statusElement.textContent = 'Stream completed';
                 break;
             }
@@ -2236,7 +2315,10 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                     if (!data) continue;
                     
                     const eventData = JSON.parse(data);
-                    console.log('Received event:', eventType, eventData);
+                    // Only log cost_summary events for debugging
+                    if (eventType === 'cost_summary') {
+                        console.log('💰 Cost Summary:', eventData);
+                    }
                     
                     // Handle different event types
                     switch (eventType) {
@@ -2449,6 +2531,22 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
                             stopAllTimers('done');
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
+                            
+                            // Update the "Final Response" header to include cost if available
+                            const responseHeaderElement = responseElement.querySelector('h3');
+                            if (responseHeaderElement && window.__currentCostData) {
+                                const totalCost = window.__currentCostData.totalCost;
+                                responseHeaderElement.innerHTML = `
+                                    <span style="font-size: 1.2em;">✨</span> Final Response
+                                    <span style="margin-left: auto; font-size: 0.9em; color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 12px;">
+                                        Total Cost: $${totalCost.toFixed(6)}
+                                    </span>
+                                `;
+                                responseHeaderElement.style.display = 'flex';
+                                responseHeaderElement.style.alignItems = 'center';
+                                responseHeaderElement.style.justifyContent = 'space-between';
+                            }
+                            
                             // Keep metadata visible and updated
                             metadataContent.innerHTML = `
                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
@@ -2474,7 +2572,111 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
                             stopAllTimers('done');
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
+                            
+                            // Update header with cost if available
+                            const finalAnswerHeaderElement = responseElement?.querySelector('h3');
+                            if (finalAnswerHeaderElement && window.__currentCostData) {
+                                const costData = window.__currentCostData;
+                                finalAnswerHeaderElement.innerHTML = `
+                                    <span style="font-size: 1.2em;">✨</span> Final Response
+                                    <span style="margin-left: auto; font-size: 0.9em; color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 12px;">
+                                        💰 $${costData.totalCost.toFixed(6)} • 📊 ${costData.tokenCounts ? (costData.tokenCounts.input + costData.tokenCounts.output).toLocaleString() : 0} tokens
+                                    </span>
+                                `;
+                                finalAnswerHeaderElement.style.display = 'flex';
+                                finalAnswerHeaderElement.style.alignItems = 'center';
+                                finalAnswerHeaderElement.style.justifyContent = 'space-between';
+                            }
                             responseContainer.className = 'response-container response-success';
+                            break;
+                            
+                        case 'cost_summary':
+                            {
+                                const { totalCost, stepCosts, tokenCounts } = eventData;
+                                
+                                // Store cost data globally
+                                window.__currentCostData = { totalCost, stepCosts, tokenCounts };
+                                
+                                // Update the expandable cost section
+                                const costSection = document.getElementById('expandable-cost-section');
+                                const costBadge = document.getElementById('cost-badge');
+                                const costContent = document.getElementById('cost-breakdown-content');
+                                
+                                if (costSection && totalCost > 0) {
+                                    costSection.style.display = 'block';
+                                    if (costBadge) {
+                                        costBadge.textContent = `$${totalCost.toFixed(6)}`;
+                                    }
+                                    
+                                    if (costContent) {
+                                        let detailedCostHtml = `
+                                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                                                <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                                    <div style="font-weight: bold; color: #dc3545; margin-bottom: 8px; font-size: 1.1em;">💰 Total Cost</div>
+                                                    <div style="font-size: 1.4em; color: #333; font-weight: bold;">$${totalCost.toFixed(6)}</div>
+                                                </div>
+                                        `;
+                                        
+                                        if (tokenCounts) {
+                                            detailedCostHtml += `
+                                                <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                                    <div style="font-weight: bold; color: #007bff; margin-bottom: 8px; font-size: 1.1em;">📊 Total Tokens</div>
+                                                    <div style="font-size: 1.3em; color: #333; font-weight: bold;">${(tokenCounts.input + tokenCounts.output).toLocaleString()}</div>
+                                                    <div style="font-size: 0.9em; color: #6c757d; margin-top: 4px;">
+                                                        Input: ${tokenCounts.input.toLocaleString()} • Output: ${tokenCounts.output.toLocaleString()}
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }
+                                        
+                                        detailedCostHtml += `</div>`;
+                                        
+                                        // Add detailed step breakdown
+                                        if (stepCosts && stepCosts.length > 0) {
+                                            detailedCostHtml += `
+                                                <h4 style="margin: 0 0 15px 0; color: #495057; font-size: 1.2em;">📋 Step-by-Step Breakdown</h4>
+                                                <div style="space-y: 8px;">
+                                            `;
+                                            
+                                            stepCosts.forEach((step, index) => {
+                                                detailedCostHtml += `
+                                                    <div style="background: white; padding: 12px; margin-bottom: 8px; border-radius: 6px; border-left: 4px solid #28a745; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;">
+                                                        <div style="flex: 1;">
+                                                            <div style="font-weight: bold; color: #333; margin-bottom: 4px;">${step.stepName}</div>
+                                                            <div style="color: #6c757d; font-size: 0.9em;">
+                                                                Model: ${step.model} • 
+                                                                ${step.inputTokens.toLocaleString()} input + ${step.outputTokens.toLocaleString()} output tokens
+                                                            </div>
+                                                        </div>
+                                                        <div style="text-align: right; margin-left: 15px;">
+                                                            <div style="font-weight: bold; color: #dc3545; font-size: 1.1em;">$${step.cost.toFixed(6)}</div>
+                                                            <div style="font-size: 0.8em; color: #6c757d;">${(step.inputTokens + step.outputTokens).toLocaleString()} total</div>
+                                                        </div>
+                                                    </div>
+                                                `;
+                                            });
+                                            
+                                            detailedCostHtml += `</div>`;
+                                        }
+                                        
+                                        costContent.innerHTML = detailedCostHtml;
+                                    }
+                                }
+                                
+                                // Also update the final response header if it exists
+                                const costSummaryHeaderElement = responseElement?.querySelector('h3');
+                                if (costSummaryHeaderElement) {
+                                    costSummaryHeaderElement.innerHTML = `
+                                        <span style="font-size: 1.2em;">✨</span> Final Response
+                                        <span style="margin-left: auto; font-size: 0.9em; color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 12px;">
+                                            💰 $${totalCost.toFixed(6)} • 📊 ${tokenCounts ? (tokenCounts.input + tokenCounts.output).toLocaleString() : 0} tokens
+                                        </span>
+                                    `;
+                                    costSummaryHeaderElement.style.display = 'flex';
+                                    costSummaryHeaderElement.style.alignItems = 'center';
+                                    costSummaryHeaderElement.style.justifyContent = 'space-between';
+                                }
+                            }
                             break;
                             
                         case 'complete':
@@ -2565,6 +2767,45 @@ ${truncatedOutput}
                                 </div>
                             `;
                             break;
+                            
+                        case 'interrupt_state':
+                            {
+                                // Handle interrupted state - save state for resumption
+                                interruptState = eventData;
+                                currentQueryId = eventData.queryId;
+                                previousSteps = eventData.costSteps || [];
+                                
+                                // Hide stop button, show continue button
+                                if (formStopBtn) {
+                                    formStopBtn.style.display = 'none';
+                                }
+                                const continueBtn = document.getElementById('continue-btn');
+                                if (continueBtn) {
+                                    continueBtn.style.display = 'inline-block';
+                                }
+                                
+                                // Update status
+                                const interruptReason = eventData.reason === 'timeout' ? 'timeout' : 'rate limit';
+                                statusElement.textContent = `⏸️ Paused due to ${interruptReason}. Click Continue to resume.`;
+                                responseContainer.className = 'response-container';
+                                stopAllTimers('paused');
+                                
+                                // Display interrupt message in the answer area
+                                answerElement.innerHTML = `
+                                    <div style="padding: 20px; background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%); border-radius: 8px; color: #333; margin: 10px 0;">
+                                        <div style="font-weight: bold; font-size: 1.1em; margin-bottom: 10px;">
+                                            ⏸️ Query Paused
+                                        </div>
+                                        <div style="margin-bottom: 10px;">
+                                            ${eventData.message || 'Processing was paused to prevent timeouts or rate limits.'}
+                                        </div>
+                                        <div style="font-size: 0.9em; color: #666;">
+                                            Progress has been saved. Click the Continue button to resume from where you left off.
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                            break;
                     }
                     
                 } catch (parseError) {
@@ -2584,6 +2825,115 @@ ${truncatedOutput}
         } else {
             statusElement.textContent = `❌ Streaming Error: ${streamError.message}`;
             responseContainer.className = 'response-container response-error';
+        }
+    }
+    
+    // Resume from interrupted state
+    async function resumeFromInterrupt() {
+        if (!interruptState) {
+            console.error('No interrupt state available to resume from');
+            return;
+        }
+        
+        const continueBtn = document.getElementById('continue-btn');
+        const submitBtn = document.getElementById('submit-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        
+        // Update UI state
+        if (continueBtn) continueBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'inline-block';
+        if (submitBtn) submitBtn.style.display = 'none';
+        
+        // Get form data for retry
+        const selectedModel = document.getElementById('model').value;
+        const isGroqModel = selectedModel.startsWith('groq:');
+        const isOpenaiModel = selectedModel.startsWith('openai:');
+        
+        let apiKey;
+        if (isGroqModel) {
+            apiKey = document.getElementById('groq_api_key').value;
+        } else if (isOpenaiModel) {
+            apiKey = document.getElementById('openai_api_key').value;
+        }
+        
+        const hasLocalKey = apiKey && apiKey.trim();
+        const isSignedIn = (window.isGoogleTokenValid ? window.isGoogleTokenValid(googleAccessToken) : false);
+        
+        const searchMode = document.querySelector('input[name="search_mode"]:checked').value;
+        const formData = {
+            ...(hasLocalKey ? { apiKey: apiKey } : {}),
+            model: selectedModel,
+            query: document.getElementById('prompt').value,
+            accessSecret: document.getElementById('access_secret').value,
+            searchMode: searchMode,
+            ...(isSignedIn ? { google_token: googleAccessToken } : {}),
+            // Retry parameters
+            queryId: currentQueryId,
+            previousSteps: previousSteps,
+            tokensPerMinute: 6000 // Default rate limit
+        };
+        
+        // Clear interrupt state
+        interruptState = null;
+        
+        // Update status
+        const statusElement = document.getElementById('status');
+        statusElement.textContent = 'Resuming query processing...';
+        
+        // Create new request
+        try {
+            const response = await fetch('https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            // Process the response stream
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+                
+                for (let line of lines) {
+                    if (line.startsWith('data: ') && line.length > 6) {
+                        try {
+                            const eventData = JSON.parse(line.slice(6));
+                            const eventType = line.match(/^event: (\w+)/)?.[1];
+                            
+                            // Process the event using the same handler logic
+                            if (eventType && eventData) {
+                                handleEventData(eventType, eventData);
+                            }
+                        } catch (parseError) {
+                            console.error('Error parsing resumed event:', parseError);
+                        }
+                    } else if (line.startsWith('event: ')) {
+                        // Store event type for next data line
+                        currentEventType = line.slice(7);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error resuming query:', error);
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = `❌ Error resuming query: ${error.message}`;
+            
+            // Reset UI state
+            if (continueBtn) continueBtn.style.display = 'none';
+            if (stopBtn) stopBtn.style.display = 'none';
+            if (submitBtn) submitBtn.style.display = 'inline-block';
         }
     }
 }
