@@ -1409,6 +1409,9 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     const submitBtn = document.getElementById('submit-btn');
     const responseContainer = document.getElementById('response-container');
     
+    // Clear previous tool executions
+    clearToolExecutions();
+    
     // Hide submit button and show stop button
     const stopBtn = document.getElementById('stop-btn');
     submitBtn.style.display = 'none';
@@ -1677,6 +1680,17 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             <div id="tools-log"></div>
         </div>
         <div id="full-results-tree"></div>
+        
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
     `;
     
     const statusElement = document.getElementById('streaming-status');
@@ -1963,6 +1977,103 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         top.appendChild(container);
         fullResultsTree.appendChild(top);
     }
+
+    // Tool execution tracking
+    let toolExecutions = [];
+
+    function toggleToolsDetails() {
+        const content = document.getElementById('expandable-tools-content');
+        const icon = document.getElementById('tools-toggle-icon');
+        
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            icon.textContent = '▲';
+        } else {
+            content.style.display = 'none';
+            icon.textContent = '▼';
+        }
+    }
+
+    function addToolExecution(call) {
+        const execution = {
+            id: call.call_id || `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            name: call.name,
+            args: call.args,
+            timestamp: new Date().toLocaleTimeString(),
+            result: null
+        };
+        
+        toolExecutions.push(execution);
+        updateToolsDisplay();
+        
+        return execution.id;
+    }
+
+    function addToolResult(callId, result) {
+        const execution = toolExecutions.find(exec => exec.id === callId);
+        if (execution) {
+            execution.result = result;
+            updateToolsDisplay();
+        }
+    }
+
+    function updateToolsDisplay() {
+        const section = document.getElementById('expandable-tools-section');
+        const content = document.getElementById('expandable-tools-content');
+        const badge = document.getElementById('tools-count-badge');
+        
+        if (toolExecutions.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+        
+        section.style.display = 'block';
+        badge.textContent = toolExecutions.length;
+        
+        content.innerHTML = toolExecutions.map((execution, index) => `
+            <div class="tool-execution" style="border-bottom: 1px solid #dee2e6; padding: 15px;">
+                <div onclick="toggleToolDetails(${index})" style="cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: bold; color: #495057;">
+                    <span class="tool-toggle-icon">▼</span>
+                    🔧 ${execution.name}
+                    <span style="margin-left: auto; font-size: 0.9em; color: #6c757d;">${execution.timestamp}</span>
+                    ${execution.result ? '<span style="color: #28a745;">✅</span>' : '<span style="color: #ffc107;">⏳</span>'}
+                </div>
+                <div class="tool-details" style="display: none; margin-top: 10px;">
+                    ${execution.args && Object.keys(execution.args).length > 0 ? `
+                        <div style="margin-bottom: 10px;">
+                            <strong>Parameters:</strong>
+                            <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em;">${JSON.stringify(execution.args, null, 2)}</pre>
+                        </div>
+                    ` : ''}
+                    ${execution.result ? `
+                        <div>
+                            <strong>Result:</strong>
+                            <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 5px; overflow-x: auto; font-size: 0.9em; max-height: 200px; overflow-y: auto;">${typeof execution.result === 'string' ? execution.result : JSON.stringify(execution.result, null, 2)}</pre>
+                        </div>
+                    ` : '<div style="color: #6c757d; font-style: italic;">Executing...</div>'}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function toggleToolDetails(index) {
+        const toolElement = document.querySelectorAll('.tool-execution')[index];
+        const details = toolElement.querySelector('.tool-details');
+        const icon = toolElement.querySelector('.tool-toggle-icon');
+        
+        if (details.style.display === 'none') {
+            details.style.display = 'block';
+            icon.textContent = '▲';
+        } else {
+            details.style.display = 'none';
+            icon.textContent = '▼';
+        }
+    }
+
+    function clearToolExecutions() {
+        toolExecutions = [];
+        updateToolsDisplay();
+    }
     
     try {
         // Handle streaming response
@@ -2038,6 +2149,11 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 header.innerHTML = `<strong>Iteration ${iteration}</strong> • ${pending} pending call(s)`;
                                 box.appendChild(header);
                                 if (Array.isArray(calls)) {
+                                    // Add each tool call to the expandable tools section
+                                    calls.forEach(call => {
+                                        addToolExecution(call);
+                                    });
+                                    
                                     const list = document.createElement('ul');
                                     list.style.margin = '6px 0 0 16px';
                                     calls.forEach(c => {
@@ -2054,6 +2170,12 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             try {
                                 toolsPanel.style.display = 'block';
                                 const { iteration, call_id, name, args, output } = eventData;
+                                
+                                // Add result to the expandable tools section
+                                if (call_id) {
+                                    addToolResult(call_id, output);
+                                }
+                                
                                 const item = document.createElement('div');
                                 item.style.cssText = 'padding:8px; border-left:3px solid #28a745; background:#fff; margin:6px 0; border-radius:4px;';
                                 const title = document.createElement('div');
