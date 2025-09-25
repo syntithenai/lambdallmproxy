@@ -738,6 +738,18 @@
     </form>
 </div>
 
+<!-- Persona Display -->
+<div id="persona-container" style="display: none; margin: 15px 0; padding: 12px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+    <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 4px;">Answering as</div>
+    <div id="persona-text" style="font-size: 0.95rem; line-height: 1.4;"></div>
+</div>
+
+<!-- Research Questions Display -->
+<div id="research-questions-container" style="display: none; margin: 15px 0; padding: 12px 16px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+    <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 8px;">Research Strategy</div>
+    <div id="research-questions-text" style="font-size: 0.9rem; line-height: 1.4;"></div>
+</div>
+
 <div id="response-container" class="response-container">
     <!-- Response will be displayed here -->
 </div>
@@ -1201,6 +1213,17 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     responseContainer.className = 'response-container loading';
     responseContainer.style.display = 'block';
     responseContainer.textContent = 'Sending request...';
+    
+    // Hide persona and research questions containers from previous requests
+    const personaContainer = document.getElementById('persona-container');
+    if (personaContainer) {
+        personaContainer.style.display = 'none';
+    }
+    
+    const researchQuestionsContainer = document.getElementById('research-questions-container');
+    if (researchQuestionsContainer) {
+        researchQuestionsContainer.style.display = 'none';
+    }
     
     // Get the selected model to determine which API key to use
     const selectedModel = document.getElementById('model').value;
@@ -1807,6 +1830,37 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             }
                             break;
                             
+                        case 'persona':
+                            {
+                                const personaContainer = document.getElementById('persona-container');
+                                const personaText = document.getElementById('persona-text');
+                                if (personaContainer && personaText && eventData.persona) {
+                                    personaText.textContent = eventData.persona;
+                                    personaContainer.style.display = 'block';
+                                }
+                            }
+                            break;
+                            
+                        case 'research_questions':
+                            {
+                                const researchContainer = document.getElementById('research-questions-container');
+                                const researchText = document.getElementById('research-questions-text');
+                                if (researchContainer && researchText && eventData.questions) {
+                                    let questionsHtml = `<div style="margin-bottom: 8px;"><strong>Questions to research (${eventData.questions_needed || eventData.questions.length}):</strong></div>`;
+                                    questionsHtml += '<ul style="margin: 0; padding-left: 20px;">';
+                                    eventData.questions.forEach((q, i) => {
+                                        questionsHtml += `<li style="margin-bottom: 4px;">${q}</li>`;
+                                    });
+                                    questionsHtml += '</ul>';
+                                    if (eventData.reasoning) {
+                                        questionsHtml += `<div style="margin-top: 8px; font-size: 0.85rem; opacity: 0.9;"><em>${eventData.reasoning}</em></div>`;
+                                    }
+                                    researchText.innerHTML = questionsHtml;
+                                    researchContainer.style.display = 'block';
+                                }
+                            }
+                            break;
+                            
                         case 'decision':
                             {
                                 const needsSearch = (eventData.decision && (eventData.decision.needsSearch ?? eventData.decision.requiresSearch)) || false;
@@ -1936,6 +1990,60 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 }
                                 updateFullResultsTree();
                             }
+                            break;
+                        
+                        case 'tools':
+                            {
+                                const { iteration, pending, calls } = eventData;
+                                const toolsHtml = calls.map(call => `
+                                    <div style="background: #e8f4fd; border: 1px solid #91c7ec; border-radius: 6px; padding: 8px; margin: 4px 0;">
+                                        <strong>🔧 ${call.name}</strong>
+                                        ${call.args && Object.keys(call.args).length > 0 ? 
+                                            `<div style="margin-top: 4px; font-family: monospace; font-size: 0.9em; color: #666;">
+                                                ${JSON.stringify(call.args, null, 2).slice(0, 200)}${Object.keys(call.args).length > 0 && JSON.stringify(call.args).length > 200 ? '...' : ''}
+                                            </div>` 
+                                            : ''
+                                        }
+                                    </div>
+                                `).join('');
+                                
+                                stepsElement.innerHTML += `
+                                    <div style="margin: 10px 0; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+                                        <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                            <span>⚙️</span> Tool Execution (Iteration ${iteration}) - ${pending} tool${pending !== 1 ? 's' : ''}
+                                        </div>
+                                        ${toolsHtml}
+                                    </div>
+                                `;
+                            }
+                            break;
+                            
+                        case 'tool_result':
+                            {
+                                const { call_id, name, args, output, iteration } = eventData;
+                                // Find the corresponding tool call in the DOM and update it with results
+                                const displayOutput = typeof output === 'string' ? output : JSON.stringify(output);
+                                const truncatedOutput = displayOutput.length > 300 ? displayOutput.substring(0, 300) + '...' : displayOutput;
+                                
+                                stepsElement.innerHTML += `
+                                    <div style="margin: 5px 0 5px 20px; padding: 10px; background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 6px;">
+                                        <div style="font-weight: bold; color: #0369a1; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                            <span>✅</span> ${name} Result
+                                        </div>
+                                        <div style="font-family: monospace; font-size: 0.9em; background: white; padding: 8px; border-radius: 4px; border: 1px solid #e0e7ff; white-space: pre-wrap; word-break: break-word;">
+${truncatedOutput}
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                            break;
+                            
+                        case 'final_answer':
+                            statusElement.textContent = '✅ Analysis completed! Displaying final answer...';
+                            if (stopButton) { stopButton.disabled = true; stopButton.textContent = 'Done'; }
+                            stopAllTimers('done');
+                            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
+                            responseContainer.className = 'response-container response-success';
                             break;
                             
                         case 'error':

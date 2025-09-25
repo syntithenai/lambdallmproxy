@@ -6,6 +6,7 @@
 const { DuckDuckGoSearcher } = require('./search');
 const { SimpleHTMLParser } = require('./html-parser');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
+const vm = require('vm');
 
 // Simple token estimation (rough approximation: 4 chars ≈ 1 token)
 function estimateTokens(text) {
@@ -112,6 +113,25 @@ const toolFunctions = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'execute_javascript',
+      description: 'Execute JavaScript code in a secure sandbox environment. Perfect for mathematical calculations, data processing, algorithm implementation, and computational problems. For math questions, focus on providing direct numerical answers. Supports all standard JavaScript features including Math functions, array operations, loops, and object manipulation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          code: { 
+            type: 'string', 
+            description: 'JavaScript code to execute. Should include a final expression or console.log to show the result. Example: "Math.sqrt(144)" or "const result = 5 * 7; console.log(result);"'
+          },
+          timeout: { type: 'integer', minimum: 1, maximum: 10, default: 5, description: 'Execution timeout in seconds' }
+        },
+        required: ['code'],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -120,7 +140,10 @@ function clampInt(v, min, max, def) {
   return Math.max(min, Math.min(max, n));
 }
 
-async function callFunction(name, args = {}) {
+async function callFunction(name, args = {}, context = {}) {
+  // Extract model and apiKey from context for consistent LLM usage
+  const { model, apiKey } = context;
+  
   switch (name) {
     case 'search_web': {
       const query = String(args.query || '').trim();
@@ -157,7 +180,7 @@ async function callFunction(name, args = {}) {
       let summary_model = null;
       let summary_error = null;
       try {
-        const { model, apiKey } = selectSummaryModel();
+        // Use the passed model and apiKey from context for consistency
         if (model && apiKey) {
           summary_model = model;
           // Enhance results with source credibility analysis
@@ -218,6 +241,62 @@ async function callFunction(name, args = {}) {
         return JSON.stringify({ url, content: text });
       } catch (e) {
         return JSON.stringify({ url, error: String(e?.message || e) });
+      }
+    }
+    case 'execute_javascript': {
+      const code = String(args.code || '').trim();
+      if (!code) return JSON.stringify({ error: 'code required' });
+      const timeout = clampInt(args.timeout, 1, 10, 5) * 1000; // Convert to milliseconds
+      
+      try {
+        // Create a secure context with limited built-in objects
+        const context = {
+          Math, 
+          Date, 
+          JSON, 
+          Array, 
+          Object, 
+          String, 
+          Number, 
+          Boolean,
+          parseInt, 
+          parseFloat, 
+          isNaN, 
+          isFinite,
+          console: {
+            log: (...args) => { 
+              context._output = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+              ).join(' '); 
+            }
+          },
+          _output: null
+        };
+        
+        // Create VM context
+        const vmContext = vm.createContext(context);
+        
+        // Execute code with timeout
+        const result = vm.runInContext(code, vmContext, { 
+          timeout,
+          displayErrors: true 
+        });
+        
+        // Return console output if available, otherwise the result
+        const output = context._output !== null ? context._output : result;
+        
+        return JSON.stringify({ 
+          code, 
+          result: output, 
+          type: typeof result,
+          executed_at: new Date().toISOString()
+        });
+      } catch (e) {
+        return JSON.stringify({ 
+          code, 
+          error: String(e?.message || e),
+          type: 'error'
+        });
       }
     }
     default:

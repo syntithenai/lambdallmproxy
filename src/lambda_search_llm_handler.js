@@ -35,8 +35,14 @@ const BYTES_PER_MB = 1024 * 1024;
 // No legacy templates needed - tools-based approach handles everything dynamically
 
 // --- Tools flow configuration ---
-const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 1); // Emergency: Only 1 iteration
-const DEFAULT_REASONING_EFFORT = process.env.REASONING_EFFORT || 'low';
+const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 3); // Allow more thorough research
+const DEFAULT_REASONING_EFFORT = process.env.REASONING_EFFORT || 'medium';
+
+// --- Token limit configuration ---
+const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 300); // Planning query tokens
+const MAX_TOKENS_TOOL_SYNTHESIS = Number(process.env.MAX_TOKENS_TOOL_SYNTHESIS ?? 512); // Tool synthesis tokens  
+const MAX_TOKENS_FINAL_RESPONSE = Number(process.env.MAX_TOKENS_FINAL_RESPONSE ?? 2048); // Final response tokens - allow longer responses
+const MAX_TOKENS_MATH_RESPONSE = Number(process.env.MAX_TOKENS_MATH_RESPONSE ?? 512); // Mathematical response tokens - concise math answers
 
 // Emergency ultra-minimal system prompt to save tokens
 const COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT = process.env.SYSTEM_PROMPT_SEARCH || `Answer using search results. Cite URLs.`;
@@ -47,8 +53,95 @@ function safeParseJson(s) {
 
 async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
 
+    // Step 1: Initial planning query to determine research strategy and optimal persona
+    stream?.writeEvent?.('log', { message: 'Analyzing query and determining research strategy...' });
+    
+    const planningPrompt = `Analyze this user query and determine:
+1. What specific research questions are needed to gather all necessary facts
+2. What expert persona/role would be most qualified to provide the best answer
+
+Query: "${userQuery}"
+
+IMPORTANT: Consider whether this query involves mathematical calculations, data processing, algorithmic problems, or computational analysis. If so, plan to use JavaScript code execution alongside research.
+
+Respond with JSON in this exact format:
+{
+  "research_questions": ["Question 1 phrased as a clear search query?", "Question 2?", "Question 3?"],
+  "optimal_persona": "I am a [specific expert role/title] with expertise in [domain]. I specialize in [specific areas and computational tools when relevant].",
+  "reasoning": "Brief explanation of why this approach and persona are optimal, including computational tools if needed"
+}
+
+Generate 1-3 specific, targeted research questions that will help answer the user's query comprehensively. Be specific about the expert role (e.g., "financial analyst", "data scientist", "computational researcher") and tailor it to the query domain.`;
+
+    try {
+        const planningResponse = await llmResponsesWithTools({
+            model,
+            input: [
+                { role: 'system', content: 'You are a research strategist. Analyze queries and determine optimal research approaches and expert personas. Always respond with valid JSON only.' },
+                { role: 'user', content: planningPrompt }
+            ],
+            tools: [], // No tools needed for planning
+            options: {
+                apiKey,
+                reasoningEffort: 'low',
+                temperature: 0.1,
+                max_tokens: MAX_TOKENS_PLANNING,
+                timeoutMs: 15000
+            }
+        });
+
+        let researchPlan = { research_questions: ["Initial research question"], optimal_persona: systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT, reasoning: "Default plan" };
+        
+        if (planningResponse?.text) {
+            try {
+                const parsed = JSON.parse(planningResponse.text.trim());
+                if (parsed.research_questions && parsed.optimal_persona) {
+                    researchPlan = parsed;
+                    stream?.writeEvent?.('log', { 
+                        message: `Research plan: ${researchPlan.research_questions.length} questions, Persona: ${researchPlan.optimal_persona.substring(0, 80)}...`
+                    });
+                    
+                    // Send dedicated persona event for UI display
+                    stream?.writeEvent?.('persona', {
+                        persona: researchPlan.optimal_persona,
+                        research_questions_needed: researchPlan.research_questions?.length || 1,
+                        reasoning: researchPlan.reasoning
+                    });
+                    
+                    // Send research questions event for UI display
+                    stream?.writeEvent?.('research_questions', {
+                        questions: researchPlan.research_questions,
+                        questions_needed: researchPlan.research_questions?.length || 1,
+                        reasoning: researchPlan.reasoning
+                    });
+                }
+            } catch (e) {
+                console.warn('Failed to parse planning response, using defaults:', e.message);
+            }
+        }
+
+        // Get current date and time for environmental context
+        const now = new Date();
+        const currentDateTime = now.toISOString().split('T')[0] + ' ' + now.toTimeString().split(' ')[0] + ' UTC';
+        const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+        const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
+
+        // Update system prompt with determined persona and environmental context
+        var dynamicSystemPrompt = researchPlan.optimal_persona + ' Use search tools to gather current information and cite all sources with URLs. For mathematical calculations, data analysis, or computational problems, use the execute_javascript tool to perform accurate calculations and show your work.' + environmentContext;
+        
+    } catch (e) {
+        console.warn('Planning query failed, proceeding with default approach:', e.message);
+        // Get current date and time for environmental context (fallback case)
+        const now = new Date();
+        const currentDateTime = now.toISOString().split('T')[0] + ' ' + now.toTimeString().split(' ')[0] + ' UTC';
+        const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+        const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
+        
+        var dynamicSystemPrompt = (systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT) + ' For mathematical calculations, data analysis, or computational problems, use the execute_javascript tool to perform accurate calculations and show your work.' + environmentContext;
+    }
+
     const input = [
-        { role: 'system', content: systemPrompt || 'You can call functions to gather information before answering.' },
+        { role: 'system', content: dynamicSystemPrompt },
         { role: 'user', content: userQuery }
     ];
 
@@ -65,7 +158,7 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
                 apiKey,
                 reasoningEffort: DEFAULT_REASONING_EFFORT,
                 temperature: 0.2,
-                max_tokens: 256,
+                max_tokens: MAX_TOKENS_TOOL_SYNTHESIS,
                 timeoutMs: 30000
             }
         });
@@ -76,6 +169,13 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
         }
 
         const calls = output.filter(x => x.type === 'function_call');
+        
+        if (calls.length > 0) {
+            stream?.writeEvent?.('log', { 
+                message: `Executing ${calls.length} tool${calls.length !== 1 ? 's' : ''}: ${calls.map(c => c.name).join(', ')}` 
+            });
+        }
+        
         // Emit detailed tool call info for UI
         try {
             const detailedCalls = calls.map((tc, idx) => ({
@@ -92,7 +192,7 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
                 const args = safeParseJson(tc.arguments || '{}');
                 let output;
                 try {
-                    output = await callFunction(tc.name, args);
+                    output = await callFunction(tc.name, args, { model, apiKey });
                 } catch (e) {
                     output = JSON.stringify({ error: String(e?.message || e) });
                 }
@@ -150,17 +250,37 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
             })
             .join('\n');
 
-        // Emergency ultra-minimal template to save tokens  
-        const finalTemplate = `Q: {{ORIGINAL_QUERY}}
+        // Get current date and time for environmental context
+        const now = new Date();
+        const currentDateTime = now.toISOString().split('T')[0] + ' ' + now.toTimeString().split(' ')[0] + ' UTC';
+        const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+        
+        // Use the comprehensive final template from environment variables
+        const finalTemplate = process.env.FINAL_TEMPLATE || `Q: {{ORIGINAL_QUERY}}
 Data: {{ALL_INFORMATION}}
 Answer with URLs:`;
 
+        // Add environmental context to the final prompt
+        const environmentalContext = `\n\nCurrent Environmental Context:\n- Date: ${dayOfWeek}, ${currentDateTime}\n- Analysis conducted in real-time with current information\n`;
+        
         const finalPrompt = finalTemplate
             .replace('{{ORIGINAL_QUERY}}', userQuery)
-            .replace('{{ALL_INFORMATION}}', allInformation);
+            .replace('{{ALL_INFORMATION}}', allInformation) + environmentalContext;
+
+        // Detect mathematical queries for concise responses
+        const isMathQuery = /\b(calculate|compute|solve|equation|formula|math|add|subtract|multiply|divide|percentage|percent|interest|probability|statistics|algebra|geometry|trigonometry|\+|\-|\*|\/|\=|\^|√|∫|∑|\d+[\+\-\*\/]\d+)\b/i.test(userQuery);
+        
+        // Adjust system prompt and token limits for mathematical queries
+        let mathSystemPrompt = dynamicSystemPrompt;
+        let maxTokens = MAX_TOKENS_FINAL_RESPONSE;
+        
+        if (isMathQuery) {
+            maxTokens = MAX_TOKENS_MATH_RESPONSE; // Use dedicated math response limit
+            mathSystemPrompt = `${dynamicSystemPrompt}\n\nFor mathematical questions: Provide direct, concise answers. Show calculations clearly but keep explanations brief. Focus on the solution rather than lengthy descriptions.`;
+        }
 
         const finalSynthesisInput = [
-            { role: 'system', content: process.env.SYSTEM_PROMPT_SEARCH || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT },
+            { role: 'system', content: mathSystemPrompt },
             { role: 'user', content: finalPrompt }
         ];
 
@@ -172,7 +292,7 @@ Answer with URLs:`;
                 apiKey,
                 reasoningEffort: DEFAULT_REASONING_EFFORT,
                 temperature: 0.2,
-                max_tokens: 200, // Emergency rate limit: much smaller final answers
+                max_tokens: maxTokens, // Adjust based on query type
                 timeoutMs: 30000
             }
         });
