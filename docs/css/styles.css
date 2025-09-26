@@ -95,6 +95,11 @@
             background: #5a6268;
         }
 
+        .sample-queries-container {
+            position: relative;
+            display: inline-block;
+        }
+
         .btn-primary {
             background: #007bff;
             color: white;
