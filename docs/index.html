@@ -92,6 +92,36 @@
             </h3>
             <div id="research-questions-text" style="line-height: 1.6; opacity: 0.95;"></div>
         </div>
+
+        <!-- Tools Panel (for legacy streaming events) -->
+        <div id="tools-panel" style="display: none; margin: 15px 0; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;">
+            <h4 style="margin: 0 0 10px 0; color: #495057;">🔧 Tool Execution Log</h4>
+            <div id="tools-log"></div>
+        </div>
+
+        <!-- Expandable Tools Section -->
+        <details id="expandable-tools-section" style="display: none; margin: 20px 0; border: 1px solid #dee2e6; border-radius: 8px; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.1);" ontoggle="if (typeof toggleToolsDetails === 'function') toggleToolsDetails()">
+            <summary style="padding: 12px 16px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; font-weight: bold; cursor: pointer; border-radius: 8px 8px 0 0; user-select: none;">
+                🔧 Tool Executions 
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; margin-left: 8px; font-size: 0.9em;">0</span>
+                <span id="tools-toggle-icon" style="float: right; font-size: 0.9em;">▼</span>
+            </summary>
+            <div id="expandable-tools-content" style="padding: 15px; background: #f8f9fa; max-height: 500px; overflow-y: auto;">
+                <!-- Tool execution details will be populated here -->
+            </div>
+        </details>
+
+        <!-- Expandable Cost Section -->
+        <details id="expandable-cost-section" style="display: none; margin: 20px 0; border: 1px solid #dee2e6; border-radius: 8px; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.1);" ontoggle="if (typeof toggleCostDetails === 'function') toggleCostDetails()">
+            <summary style="padding: 12px 16px; background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%); color: white; font-weight: bold; cursor: pointer; border-radius: 8px 8px 0 0; user-select: none;">
+                💰 Cost Breakdown 
+                <span id="cost-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; margin-left: 8px; font-size: 0.9em;">$0.00</span>
+                <span id="cost-toggle-icon" style="float: right; font-size: 0.9em;">▼</span>
+            </summary>
+            <div id="cost-breakdown-content" style="padding: 15px; background: #f8f9fa;">
+                <!-- Cost breakdown details will be populated here -->
+            </div>
+        </details>
     </div>
 
     <!-- Settings Dialog -->
