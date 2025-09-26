@@ -5,7 +5,7 @@ let googleUser = null;
 let googleAccessToken = null;
 
 // Google OAuth configuration
-const GOOGLE_CLIENT_ID = '{{GOOGLE_CLIENT_ID}}'; // Replaced during build process
+const GOOGLE_CLIENT_ID = '927667106833-7od90q7nh5oage0shc3kka5s9vtg2loj.apps.googleusercontent.com'; // Replaced during build process
 
 // Auth banner helpers
 function setAuthBanner(kind, html) {
