@@ -1,9 +1,18 @@
-[0;32m✅ Loading environment variables from .env...[0m
-[0;32m✅ Creating docs directory...[0m
-[0;32m✅ Building documentation with environment variables...[0m
-[0;32m✅ Documentation built successfully![0m
-[0;32m✅ 📁 Output: docs/index.html[0m
-[1;33m⚠️  ⚠️  The docs/index.html file contains your Lambda URL, access secret, and Google Client ID[0m
-[1;33m⚠️  ⚠️  OpenAI API key is kept as placeholder for manual entry[0m
-[0;32m✅ Build completed successfully![0m
-[0;32m✅ You can now serve the docs folder locally or deploy it securely[0m
+➕ Staging docs/ changes...
+💬 Committing: docs: update built site (2025-09-26 06:04:42 UTC)
+
+🔥 DEPLOYMENT REMINDER 🔥
+Code has been committed but NOT deployed yet!
+
+To deploy your changes:
+  make dev          # Quick Lambda deploy (recommended)
+  make full-deploy  # Deploy everything (Lambda + docs)
+
+Test after deploy: https://lambdallmproxy.pages.dev
+
+[agent b6b639c] docs: update built site (2025-09-26 06:04:42 UTC)
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+⏫ Pushing to origin agent...
+To https://github.com/syntithenai/lambdallmproxy.git
+   c8a8647..b6b639c  agent -> agent
+✅ Docs deployed successfully.

@@ -732,7 +732,7 @@
         <div class="form-row-bottom">
             <div class="form-group">
                 <label for="prompt">Query:</label>
-                <textarea id="prompt" name="prompt" rows="10" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
+                <textarea id="prompt" name="prompt" rows="5" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
             </div>
         </div>
     </form>
@@ -752,6 +752,49 @@
 
 <div id="response-container" class="response-container">
     <!-- Response will be displayed here -->
+</div>
+
+<!-- Real-time Event Monitoring Sections -->
+<div id="realtime-monitoring" style="margin-top: 20px; padding: 0 20px;">
+    <!-- LLM Query Activity -->
+    <details id="llm-activity-section" style="margin-bottom: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;">
+        <summary style="padding: 12px 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-weight: bold; cursor: pointer; border-radius: 8px 8px 0 0; user-select: none;">
+            🤖 LLM Query Activity <span id="llm-activity-count" style="background: rgba(255,255,255,0.3); padding: 2px 6px; border-radius: 10px; margin-left: 8px; font-size: 0.9em;">0 events</span>
+        </summary>
+        <div id="llm-activity-log" style="padding: 15px; max-height: 300px; overflow-y: auto; background: #fafafa;">
+            <div style="color: #666; text-align: center; font-style: italic;">No LLM activity yet...</div>
+        </div>
+    </details>
+
+    <!-- Tool Usage Activity -->
+    <details id="tool-activity-section" style="margin-bottom: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;">
+        <summary style="padding: 12px 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; font-weight: bold; cursor: pointer; border-radius: 8px 8px 0 0; user-select: none;">
+            🔧 Tool Usage Activity <span id="tool-activity-count" style="background: rgba(255,255,255,0.3); padding: 2px 6px; border-radius: 10px; margin-left: 8px; font-size: 0.9em;">0 events</span>
+        </summary>
+        <div id="tool-activity-log" style="padding: 15px; max-height: 300px; overflow-y: auto; background: #fafafa;">
+            <div style="color: #666; text-align: center; font-style: italic;">No tool activity yet...</div>
+        </div>
+    </details>
+
+    <!-- Search Activity -->
+    <details id="search-activity-section" style="margin-bottom: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;">
+        <summary style="padding: 12px 15px; background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%); color: white; font-weight: bold; cursor: pointer; border-radius: 8px 8px 0 0; user-select: none;">
+            🔍 Search Activity <span id="search-activity-count" style="background: rgba(255,255,255,0.3); padding: 2px 6px; border-radius: 10px; margin-left: 8px; font-size: 0.9em;">0 events</span>
+        </summary>
+        <div id="search-activity-log" style="padding: 15px; max-height: 300px; overflow-y: auto; background: #fafafa;">
+            <div style="color: #666; text-align: center; font-style: italic;">No search activity yet...</div>
+        </div>
+    </details>
+
+    <!-- System Events -->
+    <details id="system-activity-section" style="margin-bottom: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;">
+        <summary style="padding: 12px 15px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; font-weight: bold; cursor: pointer; border-radius: 8px 8px 0 0; user-select: none;">
+            ⚙️ System Events <span id="system-activity-count" style="background: rgba(255,255,255,0.3); padding: 2px 6px; border-radius: 10px; margin-left: 8px; font-size: 0.9em;">0 events</span>
+        </summary>
+        <div id="system-activity-log" style="padding: 15px; max-height: 300px; overflow-y: auto; background: #fafafa;">
+            <div style="color: #666; text-align: center; font-style: italic;">No system events yet...</div>
+        </div>
+    </details>
 </div>
 
 <script>
@@ -1204,6 +1247,11 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     
     const submitBtn = document.getElementById('submit-btn');
     const responseContainer = document.getElementById('response-container');
+    
+    // Clear real-time monitoring from previous requests
+    if (window.realtimeMonitoring) {
+        window.realtimeMonitoring.clearAll();
+    }
     
     // Disable submit button and show loading state
     submitBtn.disabled = true;
@@ -1818,6 +1866,14 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             break;
                         case 'log':
                             statusElement.textContent = eventData.message || 'Processing...';
+                            
+                            // Add to real-time monitoring
+                            if (window.realtimeMonitoring) {
+                                window.realtimeMonitoring.addSystemEvent('log', {
+                                    message: eventData.message || 'Processing...',
+                                    status: 'logging'
+                                });
+                            }
                             break;
                             
                         case 'init':
@@ -1827,6 +1883,21 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 note.style.cssText = 'margin-top:6px;color:#155724;font-size:0.9em;';
                                 note.textContent = 'Note: Using server-managed API keys (authorized user).';
                                 statusElement.parentElement.appendChild(note);
+                            }
+                            
+                            // Add to real-time monitoring
+                            if (window.realtimeMonitoring) {
+                                window.realtimeMonitoring.addSystemEvent('init', {
+                                    message: `Starting search for: "${eventData.query}"`,
+                                    query: eventData.query,
+                                    status: 'initialized'
+                                });
+                                
+                                // Add initial LLM query start event
+                                window.realtimeMonitoring.addLLMEvent('query_start', {
+                                    model: 'Research Planning Model',
+                                    query: eventData.query
+                                });
                             }
                             break;
                             
@@ -1894,6 +1965,16 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             statusElement.textContent = `🔍 Searching (${eventData.searchIndex}/${eventData.totalSearches}): "${eventData.term}"`;
                             // Start a countdown bar for this active search
                             startSearchTimer(eventData.iteration, eventData.term, eventData.searchIndex, eventData.totalSearches);
+                            
+                            // Add to real-time monitoring
+                            if (window.realtimeMonitoring) {
+                                window.realtimeMonitoring.addSearchEvent('search', {
+                                    term: eventData.term,
+                                    iteration: eventData.iteration,
+                                    searchIndex: eventData.searchIndex,
+                                    totalSearches: eventData.totalSearches
+                                });
+                            }
                             break;
                             
                         case 'search_results':
@@ -1933,6 +2014,16 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 window.__lastSearches = searches || [];
                                 updateLiveSummary(window.__lastSearches, cumulativeResultsCount || 0);
                                 updateFullResultsTree();
+                                
+                                // Add to real-time monitoring
+                                if (window.realtimeMonitoring) {
+                                    window.realtimeMonitoring.addSearchEvent('search_results', {
+                                        term: term,
+                                        iteration: iteration,
+                                        resultsCount: resultsCount,
+                                        cumulativeResultsCount: cumulativeResultsCount
+                                    });
+                                }
                             }
                             break;
                             
@@ -2015,6 +2106,25 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                         ${toolsHtml}
                                     </div>
                                 `;
+                                
+                                // Add to real-time monitoring
+                                if (window.realtimeMonitoring && Array.isArray(calls)) {
+                                    // Add LLM completion event (LLM analyzed and decided to use tools)
+                                    window.realtimeMonitoring.addLLMEvent('query_end', {
+                                        model: 'Tool Planning Model',
+                                        response: `Decided to use ${calls.length} tool${calls.length !== 1 ? 's' : ''}: ${calls.map(c => c.name).join(', ')}`,
+                                        tokens: calls.length * 50 // Estimated tokens for planning
+                                    });
+                                    
+                                    calls.forEach(call => {
+                                        window.realtimeMonitoring.addToolEvent('tool_start', {
+                                            name: call.name,
+                                            call_id: call.call_id,
+                                            iteration: iteration,
+                                            args: call.args
+                                        });
+                                    });
+                                }
                             }
                             break;
                             
@@ -2035,6 +2145,17 @@ ${truncatedOutput}
                                         </div>
                                     </div>
                                 `;
+                                
+                                // Add to real-time monitoring
+                                if (window.realtimeMonitoring) {
+                                    window.realtimeMonitoring.addToolEvent('tool_result', {
+                                        name: name,
+                                        call_id: call_id,
+                                        iteration: iteration,
+                                        args: args,
+                                        output: displayOutput
+                                    });
+                                }
                             }
                             break;
                             
@@ -2044,6 +2165,15 @@ ${truncatedOutput}
                             stopAllTimers('done');
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
                             responseContainer.className = 'response-container response-success';
+                            
+                            // Add final LLM completion event
+                            if (window.realtimeMonitoring) {
+                                window.realtimeMonitoring.addLLMEvent('query_end', {
+                                    model: 'Final Answer Model',
+                                    response: eventData.content ? `Generated final answer (${eventData.content.length} characters)` : 'Generated final answer',
+                                    tokens: Math.ceil((eventData.content ? eventData.content.length : 0) / 4) // Rough token estimate
+                                });
+                            }
                             break;
                             
                         case 'error':
@@ -2082,6 +2212,186 @@ ${truncatedOutput}
         }
     }
 }
+
+// Real-time Activity Monitoring Functions
+window.realtimeMonitoring = {
+    eventCounts: {
+        llm: 0,
+        tool: 0, 
+        search: 0,
+        system: 0
+    },
+
+    clearAll() {
+        // Reset all counters and clear logs
+        this.eventCounts = { llm: 0, tool: 0, search: 0, system: 0 };
+        this.updateCounts();
+        
+        const logs = ['llm-activity-log', 'tool-activity-log', 'search-activity-log', 'system-activity-log'];
+        logs.forEach(logId => {
+            const logElement = document.getElementById(logId);
+            if (logElement) {
+                logElement.innerHTML = '<div style="color: #666; text-align: center; font-style: italic;">No activity yet...</div>';
+            }
+        });
+    },
+
+    updateCounts() {
+        const counts = [
+            { id: 'llm-activity-count', count: this.eventCounts.llm },
+            { id: 'tool-activity-count', count: this.eventCounts.tool },
+            { id: 'search-activity-count', count: this.eventCounts.search },
+            { id: 'system-activity-count', count: this.eventCounts.system }
+        ];
+        
+        counts.forEach(({ id, count }) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = `${count} event${count !== 1 ? 's' : ''}`;
+            }
+        });
+    },
+
+    addLLMEvent(type, data, timestamp = new Date()) {
+        this.eventCounts.llm++;
+        this.updateCounts();
+        
+        const logElement = document.getElementById('llm-activity-log');
+        if (!logElement) return;
+        
+        if (this.eventCounts.llm === 1) {
+            logElement.innerHTML = ''; // Clear placeholder
+        }
+        
+        const eventDiv = document.createElement('div');
+        eventDiv.style.cssText = 'margin-bottom: 10px; padding: 10px; background: white; border-left: 4px solid #667eea; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+        
+        let eventContent = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                <div style="font-weight: bold; color: #667eea;">${this.getEventIcon(type)} ${type.toUpperCase()}</div>
+                <div style="font-size: 0.85em; color: #666;">${timestamp.toLocaleTimeString()}</div>
+            </div>
+        `;
+        
+        if (data.model) eventContent += `<div><strong>Model:</strong> ${data.model}</div>`;
+        if (data.query) eventContent += `<div><strong>Query:</strong> ${data.query.substring(0, 100)}${data.query.length > 100 ? '...' : ''}</div>`;
+        if (data.tokens) eventContent += `<div><strong>Tokens:</strong> ${data.tokens}</div>`;
+        if (data.cost) eventContent += `<div><strong>Cost:</strong> $${data.cost.toFixed(6)}</div>`;
+        if (data.response) eventContent += `<div><strong>Response:</strong> ${data.response.substring(0, 150)}${data.response.length > 150 ? '...' : ''}</div>`;
+        
+        eventDiv.innerHTML = eventContent;
+        logElement.appendChild(eventDiv);
+        logElement.scrollTop = logElement.scrollHeight;
+    },
+
+    addToolEvent(type, data, timestamp = new Date()) {
+        this.eventCounts.tool++;
+        this.updateCounts();
+        
+        const logElement = document.getElementById('tool-activity-log');
+        if (!logElement) return;
+        
+        if (this.eventCounts.tool === 1) {
+            logElement.innerHTML = ''; // Clear placeholder
+        }
+        
+        const eventDiv = document.createElement('div');
+        eventDiv.style.cssText = 'margin-bottom: 10px; padding: 10px; background: white; border-left: 4px solid #11998e; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+        
+        let eventContent = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                <div style="font-weight: bold; color: #11998e;">${this.getEventIcon(type)} ${type.toUpperCase()}</div>
+                <div style="font-size: 0.85em; color: #666;">${timestamp.toLocaleTimeString()}</div>
+            </div>
+        `;
+        
+        if (data.name) eventContent += `<div><strong>Tool:</strong> ${data.name}</div>`;
+        if (data.call_id) eventContent += `<div><strong>Call ID:</strong> ${data.call_id}</div>`;
+        if (data.args) eventContent += `<div><strong>Args:</strong> ${JSON.stringify(data.args).substring(0, 100)}...</div>`;
+        if (data.output) eventContent += `<div><strong>Output:</strong> ${data.output.substring(0, 150)}${data.output.length > 150 ? '...' : ''}</div>`;
+        
+        eventDiv.innerHTML = eventContent;
+        logElement.appendChild(eventDiv);
+        logElement.scrollTop = logElement.scrollHeight;
+    },
+
+    addSearchEvent(type, data, timestamp = new Date()) {
+        this.eventCounts.search++;
+        this.updateCounts();
+        
+        const logElement = document.getElementById('search-activity-log');
+        if (!logElement) return;
+        
+        if (this.eventCounts.search === 1) {
+            logElement.innerHTML = ''; // Clear placeholder
+        }
+        
+        const eventDiv = document.createElement('div');
+        eventDiv.style.cssText = 'margin-bottom: 10px; padding: 10px; background: white; border-left: 4px solid #ff6b6b; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+        
+        let eventContent = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                <div style="font-weight: bold; color: #ff6b6b;">${this.getEventIcon(type)} ${type.toUpperCase()}</div>
+                <div style="font-size: 0.85em; color: #666;">${timestamp.toLocaleTimeString()}</div>
+            </div>
+        `;
+        
+        if (data.term) eventContent += `<div><strong>Search Term:</strong> ${data.term}</div>`;
+        if (data.resultsCount !== undefined) eventContent += `<div><strong>Results:</strong> ${data.resultsCount}</div>`;
+        if (data.iteration !== undefined) eventContent += `<div><strong>Iteration:</strong> ${data.iteration}</div>`;
+        
+        eventDiv.innerHTML = eventContent;
+        logElement.appendChild(eventDiv);
+        logElement.scrollTop = logElement.scrollHeight;
+    },
+
+    addSystemEvent(type, data, timestamp = new Date()) {
+        this.eventCounts.system++;
+        this.updateCounts();
+        
+        const logElement = document.getElementById('system-activity-log');
+        if (!logElement) return;
+        
+        if (this.eventCounts.system === 1) {
+            logElement.innerHTML = ''; // Clear placeholder
+        }
+        
+        const eventDiv = document.createElement('div');
+        eventDiv.style.cssText = 'margin-bottom: 10px; padding: 10px; background: white; border-left: 4px solid #4facfe; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+        
+        let eventContent = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                <div style="font-weight: bold; color: #4facfe;">${this.getEventIcon(type)} ${type.toUpperCase()}</div>
+                <div style="font-size: 0.85em; color: #666;">${timestamp.toLocaleTimeString()}</div>
+            </div>
+        `;
+        
+        if (data.message) eventContent += `<div><strong>Message:</strong> ${data.message}</div>`;
+        if (data.status) eventContent += `<div><strong>Status:</strong> ${data.status}</div>`;
+        
+        eventDiv.innerHTML = eventContent;
+        logElement.appendChild(eventDiv);
+        logElement.scrollTop = logElement.scrollHeight;
+    },
+
+    getEventIcon(type) {
+        const icons = {
+            'query_start': '🚀',
+            'query_end': '✅',
+            'tool_start': '🔧',
+            'tool_result': '✅',
+            'search': '🔍',
+            'search_results': '📥',
+            'log': '📝',
+            'init': '🏁',
+            'persona': '👤',
+            'step': '📋',
+            'decision': '🎯',
+            'default': '⚡'
+        };
+        return icons[type] || icons.default;
+    }
+};
 
 </script>
 

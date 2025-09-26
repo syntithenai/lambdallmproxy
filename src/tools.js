@@ -84,7 +84,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'search_web',
-      description: 'Search the web for results relevant to a query and return an LLM-generated summary that considers the initial query. CRITICAL: Only provide the "query" parameter. Do NOT include count, results, limit, or any other properties.',
+      description: 'Search the web for results relevant to a query and return an LLM-generated summary. CRITICAL: This function makes a search request and returns results. Only provide input parameters: "query" (required) and optionally "limit" (max 3), "timeout" (max 60), "load_content" (boolean). For comprehensive research, make multiple separate calls with different queries rather than using high limits. Do NOT include output like count, results, summary, etc.',
       parameters: {
         type: 'object',
         properties: {
@@ -102,7 +102,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'scrape_web_content',
-      description: 'Fetch and extract the readable content of a URL. CRITICAL: Only provide the "url" parameter. Do NOT include any other properties.',
+      description: 'Fetch and extract the readable content of a URL. This function fetches content and returns it. Only provide input parameters: "url" (required) and optionally "timeout". Do NOT include output like content, text, etc.',
       parameters: {
         type: 'object',
         properties: {

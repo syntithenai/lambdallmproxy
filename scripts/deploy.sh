@@ -58,6 +58,7 @@ cp "$OLDPWD"/src/html-parser.js ./
 cp "$OLDPWD"/src/search.js ./ 2>/dev/null || true  # Optional, may not exist yet
 cp "$OLDPWD"/src/llm_tools_adapter.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/tools.js ./ 2>/dev/null || true
+cp "$OLDPWD"/src/pricing_scraper.js ./
 
 # Create package.json for the Lambda function
 cat > package.json << EOF
@@ -73,8 +74,12 @@ cat > package.json << EOF
 }
 EOF
 
+# List files before packaging
+echo -e "${YELLOW}📦 Files to be packaged:${NC}"
+ls -la *.js
+
 # Create the deployment package
-zip -q -r "$ZIP_FILE" index.js package.json *.js 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
+zip -r "$ZIP_FILE" index.js package.json *.js
 
 # Get current function configuration for backup
 aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" > function-backup.json 2>/dev/null

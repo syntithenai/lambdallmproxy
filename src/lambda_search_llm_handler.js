@@ -17,11 +17,109 @@ const { SimpleHTMLParser } = require('./html-parser');
 const { DuckDuckGoSearcher } = require('./search');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
 const { toolFunctions, callFunction } = require('./tools');
+const { getPricingData, calculateCost, validateContextSize, countTokens } = require('./pricing_scraper');
 
+// Timeout configuration
+const LAMBDA_TIMEOUT_MS = Number(process.env.LAMBDA_TIMEOUT_MS ?? 900000); // 15 minutes default
+const GRACEFUL_STOP_BUFFER_MS = 30000; // Stop 30 seconds before timeout
 
+/**
+ * Query state manager for retry functionality
+ */
+class QueryStateManager {
+    constructor() {
+        this.queryId = this.generateQueryId();
+        this.startTime = Date.now();
+        this.state = {
+            originalQuery: '',
+            systemPrompt: '',
+            modelId: '',
+            toolResults: [],
+            conversationHistory: [],
+            completedSteps: [],
+            totalCost: 0,
+            totalTokensUsed: 0,
+            stepCosts: [],
+            searchResults: {},
+            currentIteration: 0,
+            isRetry: false,
+            retryCount: 0,
+            lastError: null,
+            interrupted: false,
+            interruptReason: null
+        };
+    }
 
+    generateQueryId() {
+        return `query_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
 
+    updateState(updates) {
+        this.state = { ...this.state, ...updates };
+    }
 
+    addCompletedStep(stepName, result, tokens, cost) {
+        this.state.completedSteps.push({
+            stepName,
+            result,
+            tokens,
+            cost,
+            timestamp: new Date().toISOString(),
+            iteration: this.state.currentIteration
+        });
+        this.state.totalTokensUsed += tokens;
+        this.state.totalCost += cost;
+    }
+
+    addToolResult(toolName, args, result, tokens, cost) {
+        this.state.toolResults.push({
+            toolName,
+            args,
+            result,
+            tokens,
+            cost,
+            timestamp: new Date().toISOString(),
+            iteration: this.state.currentIteration
+        });
+    }
+
+    addConversationMessage(role, content, tokens) {
+        this.state.conversationHistory.push({
+            role,
+            content,
+            tokens,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    shouldGracefullyStop() {
+        const elapsedTime = Date.now() - this.startTime;
+        return elapsedTime > (LAMBDA_TIMEOUT_MS - GRACEFUL_STOP_BUFFER_MS);
+    }
+
+    createInterruptState(reason) {
+        this.state.interrupted = true;
+        this.state.interruptReason = reason;
+        return {
+            queryId: this.queryId,
+            state: this.state,
+            resumeData: {
+                lastIteration: this.state.currentIteration,
+                toolResults: this.state.toolResults,
+                conversationHistory: this.state.conversationHistory,
+                completedSteps: this.state.completedSteps,
+                searchResults: this.state.searchResults
+            }
+        };
+    }
+
+    static fromRetryData(retryData) {
+        const manager = new QueryStateManager();
+        manager.queryId = retryData.queryId;
+        manager.state = { ...retryData.state, isRetry: true, retryCount: (retryData.state.retryCount || 0) + 1 };
+        return manager;
+    }
+}
 
 // Memory management constants
 // Infer memory limit from environment when possible
@@ -36,9 +134,7 @@ const BYTES_PER_MB = 1024 * 1024;
 
 // --- Tools flow configuration ---
 const MAX_TOOL_ITERATIONS_ENV = process.env.MAX_TOOL_ITERATIONS;
-console.log(`🔧 MAX_TOOL_ITERATIONS_ENV raw:`, MAX_TOOL_ITERATIONS_ENV, typeof MAX_TOOL_ITERATIONS_ENV);
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS) || 3; // Allow more thorough research - force fallback if NaN
-console.log(`🔧 MAX_TOOL_ITERATIONS final:`, MAX_TOOL_ITERATIONS, typeof MAX_TOOL_ITERATIONS);
 const DEFAULT_REASONING_EFFORT = process.env.REASONING_EFFORT || 'medium';
 
 // --- Token limit configuration ---
@@ -85,10 +181,11 @@ TOOL USAGE GUIDELINES:
 
 CRITICAL TOOL PARAMETER RULES:
 - For execute_javascript: ONLY provide the "code" parameter. NEVER include result, type, executed_at or any other properties.
-- For search_web: ONLY provide the "query" parameter. NEVER include count, results, limit, or any other properties except query.
-- For scrape_web_content: ONLY provide the "url" parameter. NEVER include any additional properties.
+- For search_web: Required parameter is "query". Optional parameters are "limit" (1-3 max), "timeout" (1-60 max), "load_content" (boolean). For comprehensive research, make multiple separate calls with different queries rather than using high limits. NEVER include summary, count, results, or any other properties not in the schema.
+- For scrape_web_content: Required parameter is "url". Optional parameter is "timeout" (1-60 max). NEVER include any other properties.
 - The tool schemas have additionalProperties: false. Any extra parameters will cause HTTP 400 validation errors.
 - You MUST follow the exact parameter schema. Do NOT invent or add extra properties.
+- IMPORTANT: Tool functions make requests and return results. Do NOT try to include results in the function call parameters.
 
 Keep responses focused and direct. Always cite sources with URLs when using web search results.`;
 
@@ -96,14 +193,148 @@ function safeParseJson(s) {
     try { return JSON.parse(s); } catch { return {}; }
 }
 
-async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
-    console.log(`🔧 ENTERED runToolLoop - model: ${model}, apiKey: ${!!apiKey}, userQuery length: ${userQuery?.length || 0}`);
-    console.log(`🔧 runToolLoop userQuery:`, userQuery);
-    console.log(`🔧 runToolLoop systemPrompt:`, systemPrompt);
+// Global pricing data cache - initialized on first Lambda invocation
+let globalPricingData = null;
+
+/**
+ * Initialize pricing data if not already loaded
+ */
+async function initializePricingData() {
+    if (!globalPricingData) {
+        console.log('💰 Initializing pricing data...');
+        globalPricingData = await getPricingData();
+        console.log(`💰 Pricing data loaded: ${Object.keys(globalPricingData.models).length} models available`);
+    }
+    return globalPricingData;
+}
+
+/**
+ * Cost tracking for a query session
+ */
+class QueryCostTracker {
+    constructor(modelId, pricingData, previousSteps = []) {
+        this.modelId = modelId;
+        this.pricingData = pricingData;
+        this.steps = [...previousSteps]; // Include previous steps from retries
+        this.sessionSteps = []; // Steps from current session only
+        this.totalInputTokens = 0;
+        this.totalOutputTokens = 0;
+        this.totalCost = 0;
+        this.sessionInputTokens = 0;
+        this.sessionOutputTokens = 0;
+        this.sessionCost = 0;
+        
+        // Calculate totals from previous steps
+        this.steps.forEach(step => {
+            this.totalInputTokens += step.inputTokens;
+            this.totalOutputTokens += step.outputTokens;
+            this.totalCost += step.cost;
+        });
+    }
+
+    addStep(stepName, inputText, outputText, description = '', requestNumber = 1) {
+        const inputTokens = countTokens(inputText);
+        const outputTokens = countTokens(outputText);
+        const cost = calculateCost(this.modelId, inputTokens, outputTokens, this.pricingData);
+        
+        const step = {
+            stepName,
+            description,
+            inputTokens,
+            outputTokens,
+            cost: cost.totalCost,
+            costDetails: cost,
+            timestamp: new Date().toISOString(),
+            requestNumber, // Track which request/retry this step belongs to
+            sessionStep: true // Mark as current session step
+        };
+        
+        this.steps.push(step);
+        this.sessionSteps.push(step);
+        this.totalInputTokens += inputTokens;
+        this.totalOutputTokens += outputTokens;
+        this.totalCost += cost.totalCost;
+        this.sessionInputTokens += inputTokens;
+        this.sessionOutputTokens += outputTokens;
+        this.sessionCost += cost.totalCost;
+        
+        console.log(`💰 ${stepName}: ${inputTokens}in + ${outputTokens}out = $${cost.totalCost.toFixed(4)} (Total: $${this.totalCost.toFixed(4)})`);
+        return step;
+    }
+
+    getSummary() {
+        const totalCost = calculateCost(this.modelId, this.totalInputTokens, this.totalOutputTokens, this.pricingData);
+        return {
+            modelId: this.modelId,
+            modelName: totalCost.modelName || this.modelId,
+            provider: totalCost.provider,
+            totalSteps: this.steps.length,
+            sessionSteps: this.sessionSteps.length,
+            totalInputTokens: this.totalInputTokens,
+            totalOutputTokens: this.totalOutputTokens,
+            totalTokens: this.totalInputTokens + this.totalOutputTokens,
+            sessionInputTokens: this.sessionInputTokens,
+            sessionOutputTokens: this.sessionOutputTokens,
+            sessionTokens: this.sessionInputTokens + this.sessionOutputTokens,
+            totalCost: this.totalCost,
+            sessionCost: this.sessionCost,
+            costDetails: totalCost,
+            steps: this.steps,
+            sessionSteps: this.sessionSteps,
+            allRequests: this.groupStepsByRequest()
+        };
+    }
+
+    groupStepsByRequest() {
+        const requestGroups = {};
+        this.steps.forEach(step => {
+            const reqNum = step.requestNumber || 1;
+            if (!requestGroups[reqNum]) {
+                requestGroups[reqNum] = {
+                    requestNumber: reqNum,
+                    steps: [],
+                    totalCost: 0,
+                    totalTokens: 0
+                };
+            }
+            requestGroups[reqNum].steps.push(step);
+            requestGroups[reqNum].totalCost += step.cost;
+            requestGroups[reqNum].totalTokens += step.inputTokens + step.outputTokens;
+        });
+        return Object.values(requestGroups);
+    }
+}
+
+async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream, queryId, previousSteps }) {
+    // Starting tool loop for model: ${model}
+
+    // Initialize pricing data and cost tracking
+    const pricingData = await initializePricingData();
+    const { provider, model: modelName } = parseProviderModel(model);
+    const modelId = modelName;
+    const costTracker = new QueryCostTracker(modelId, pricingData, previousSteps);
+    
+    // Initialize state manager
+    const stateManager = new QueryStateManager(queryId);
+    
+    // Track Lambda execution timing
+    const startTime = Date.now();
+    const maxDuration = 14.5 * 60 * 1000; // 14.5 minutes, 30 second buffer
+    
+    // Validate context size for the initial query
+    const queryTokens = countTokens(userQuery + systemPrompt);
+    const contextValidation = validateContextSize(modelId, queryTokens, pricingData);
+    
+    console.log(`💰 Model: ${modelId} (${contextValidation.modelName})`);
+    console.log(`💰 Context: ${queryTokens}/${contextValidation.maxTokens} tokens (${contextValidation.utilizationPercent.toFixed(1)}%)`);
+    
+    if (!contextValidation.valid) {
+        throw new Error(`Query too long: ${queryTokens} tokens exceeds model limit of ${contextValidation.maxTokens}`);
+    }
 
     // Step 1: Initial planning query to determine research strategy and optimal persona
     stream?.writeEvent?.('log', { message: 'Analyzing query and determining research strategy...' });
-    console.log(`🔧 Starting planning phase...`);
+    // Planning phase
     
     // Initialize researchPlan at function level to ensure availability throughout function
     let researchPlan = { 
@@ -152,6 +383,9 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                 timeoutMs: 25000 // Increased timeout for more complex planning
             }
         });
+
+        // Track cost for planning step
+        costTracker.addStep('Planning', planningPrompt, planningResponse?.text || '', 'Query analysis and research strategy');
         
         if (planningResponse?.text) {
             try {
@@ -188,7 +422,7 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
 
         // Update system prompt with determined persona and environmental context
-        var dynamicSystemPrompt = researchPlan.optimal_persona + ' CRITICAL TOOL RULES: Always use the available search_web and execute_javascript tools when they can enhance your response. Use search tools for current information and calculations tools for math problems. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, ONLY provide the "query" parameter. NEVER add extra properties like count, results, limit, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking. Cite all sources with URLs.' + environmentContext;
+        var dynamicSystemPrompt = researchPlan.optimal_persona + ' CRITICAL TOOL RULES: Always use the available search_web and execute_javascript tools when they can enhance your response. Use search tools for current information and calculations tools for math problems. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, provide "query" parameter and optionally "limit" (1-3 max), "timeout" (1-60 max), "load_content" (boolean). For comprehensive research, make multiple separate calls with different queries. NEVER add extra properties like count, results, summary, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. Do NOT include results in function call parameters - tools return results automatically. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking. Cite all sources with URLs.' + environmentContext;
         
     } catch (e) {
         console.warn('Planning query failed, proceeding with default approach:', e.message);
@@ -206,52 +440,111 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
         const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
         
-        var dynamicSystemPrompt = (systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT) + ' CRITICAL TOOL RULES: Always use available tools (search_web, execute_javascript, scrape_web_content) when they can provide better, more current, or more accurate information. For math questions, always use execute_javascript. For current events or factual queries, always use search_web. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, ONLY provide the "query" parameter. When calling scrape_web_content, ONLY provide the "url" parameter. NEVER add extra properties like count, results, limit, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking.' + environmentContext;
+        var dynamicSystemPrompt = (systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT) + ' CRITICAL TOOL RULES: Always use available tools (search_web, execute_javascript, scrape_web_content) when they can provide better, more current, or more accurate information. For math questions, always use execute_javascript. For current events or factual queries, always use search_web. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, provide "query" and optionally "limit" (1-3 max), "timeout" (1-60 max), "load_content" (boolean). When calling scrape_web_content, provide "url" and optionally "timeout" (1-60 max). For comprehensive research, make multiple separate calls with different queries. NEVER add extra properties like count, results, summary, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. Do NOT include results in function call parameters - tools return results automatically. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking.' + environmentContext;
     }
 
-    console.log(`🔧 Final system prompt:`, dynamicSystemPrompt);
-    console.log(`🔧 User query:`, userQuery);
+    // System prompt and user query prepared
 
     const input = [
         { role: 'system', content: dynamicSystemPrompt },
         { role: 'user', content: userQuery }
     ];
 
-    console.log(`🔧 About to start tool loop. MAX_TOOL_ITERATIONS: ${MAX_TOOL_ITERATIONS}`);
-    console.log(`🔧 Available toolFunctions:`, toolFunctions?.length || 0, typeof toolFunctions);
-    console.log(`🔧 Tool names:`, toolFunctions?.map?.(t => t?.function?.name) || 'N/A');
+    // Starting tool loop with ${toolFunctions?.length || 0} available tools
 
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         try {
             stream?.writeEvent?.('log', { message: `Tools iteration ${iter + 1}` });
-            console.log(`🔧 Starting tools iteration ${iter + 1}, available tools:`, toolFunctions.length);
+            // Tool iteration ${iter + 1}
         } catch {}
 
-        const { output, text } = await llmResponsesWithTools({
-            model,
-            input,
-            tools: toolFunctions,
-            options: {
-                apiKey,
-                reasoningEffort: DEFAULT_REASONING_EFFORT,
-                temperature: 0.2,
-                max_tokens: MAX_TOKENS_TOOL_SYNTHESIS,
-                timeoutMs: 30000
-            }
-        });
+        // Check if we should gracefully stop due to timeout
+        const elapsed = Date.now() - startTime;
+        if (stateManager.shouldGracefullyStop(elapsed, maxDuration)) {
+            console.log('🕒 Approaching timeout limit, stopping gracefully...');
+            const interruptState = stateManager.createInterruptState(
+                input, costTracker, 'timeout', 
+                'Lambda function approaching timeout limit'
+            );
+            
+            stream?.writeEvent?.('interrupt_state', interruptState);
+            stream?.writeEvent?.('log', { 
+                message: 'Execution paused due to timeout. Use continue button to resume.' 
+            });
+            
+            return {
+                finalText: `Query execution was paused due to approaching timeout limit. Click the continue button below to resume processing.`,
+                costTracker,
+                interrupted: true,
+                interruptState
+            };
+        }
 
-        console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
-        console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
+        let llmResponse;
+        try {
+            llmResponse = await llmResponsesWithTools({
+                model,
+                input,
+                tools: toolFunctions,
+                options: {
+                    apiKey,
+                    reasoningEffort: DEFAULT_REASONING_EFFORT,
+                    temperature: 0.2,
+                    max_tokens: MAX_TOKENS_TOOL_SYNTHESIS,
+                    timeoutMs: 30000
+                }
+            });
+        } catch (error) {
+            // Handle API rate limits and quota issues
+            if (error.message?.includes('Rate limit') || 
+                error.message?.includes('429') ||
+                error.message?.includes('quota') ||
+                error.message?.includes('Quota') ||
+                error.status === 429) {
+                console.log('🚫 API Rate limit or quota hit, creating interrupt state...');
+                
+                const interruptState = stateManager.createInterruptState(
+                    input, costTracker, 'rate_limit', 
+                    `API rate limit or quota exceeded. Please wait a few seconds and continue.`
+                );
+                
+                stream?.writeEvent?.('interrupt_state', interruptState);
+                stream?.writeEvent?.('log', { 
+                    message: 'API rate limit or quota reached. Click continue to resume processing.' 
+                });
+                
+                return {
+                    finalText: `Query execution was paused due to API rate limiting or quota. Click the continue button below to resume processing.`,
+                    costTracker,
+                    interrupted: true,
+                    interruptState
+                };
+            }
+            
+            // Re-throw other errors
+            throw error;
+        }
+
+        const { output, text } = llmResponse;
+
+        // Track cost for tool iteration
+        const iterationInputText = JSON.stringify(input);
+        costTracker.addStep(`Tool Iteration ${iter + 1}`, iterationInputText, text || '', `LLM reasoning and tool calls`);
+        
+        // Update state manager with completed step
+        stateManager.addCompletedStep(`Tool Iteration ${iter + 1}`, 'llm_call');
+
+        // LLM response received: ${output?.length || 0} items, ${text?.length || 0} chars
 
         if (!output || output.length === 0) {
             // No more tool calls needed - proceed to final synthesis
-            console.log(`🔧 No tool calls in iteration ${iter + 1}, proceeding to final synthesis`);
+            // No tool calls, proceeding to synthesis
             break;
         }
 
         const calls = output.filter(x => x.type === 'function_call');
         
-        console.log(`🔧 Found ${calls.length} function calls:`, calls.map(c => c.name));
+        // Found ${calls.length} function calls
         console.log(`🔧 Raw output items:`, JSON.stringify(output, null, 2));
         
         if (calls.length > 0) {
@@ -412,45 +705,136 @@ Answer with URLs:`;
             { role: 'user', content: finalPrompt }
         ];
 
-        const finalResponse = await llmResponsesWithTools({
-            model,
-            input: finalSynthesisInput,
-            tools: [], // No more tools, just final answer
-            options: {
-                apiKey,
-                reasoningEffort: DEFAULT_REASONING_EFFORT,
-                temperature: 0.2,
-                max_tokens: maxTokens, // Adjust based on query type
-                timeoutMs: 30000
+        // Check limits before final synthesis
+        const elapsed = Date.now() - startTime;
+        if (stateManager.shouldGracefullyStop(elapsed, maxDuration)) {
+            console.log('🕒 Timeout approaching during final synthesis, creating interrupt...');
+            const interruptState = stateManager.createInterruptState(
+                input, costTracker, 'timeout', 
+                'Lambda function approaching timeout during final synthesis'
+            );
+            
+            stream?.writeEvent?.('interrupt_state', interruptState);
+            return {
+                finalText: `Query execution was paused during final synthesis due to timeout. Click continue to resume.`,
+                costTracker,
+                interrupted: true,
+                interruptState
+            };
+        }
+
+        let finalResponse;
+        try {
+            finalResponse = await llmResponsesWithTools({
+                model,
+                input: finalSynthesisInput,
+                tools: [], // No more tools, just final answer
+                options: {
+                    apiKey,
+                    reasoningEffort: DEFAULT_REASONING_EFFORT,
+                    temperature: 0.2,
+                    max_tokens: maxTokens, // Adjust based on query type
+                    timeoutMs: 30000
+                }
+            });
+        } catch (error) {
+            // Handle API rate limits and quota issues during final synthesis
+            if (error.message?.includes('Rate limit') || 
+                error.message?.includes('429') ||
+                error.message?.includes('quota') ||
+                error.message?.includes('Quota') ||
+                error.status === 429) {
+                console.log('🚫 API Rate limit or quota hit during final synthesis, creating interrupt state...');
+                
+                const interruptState = stateManager.createInterruptState(
+                    input, costTracker, 'rate_limit', 
+                    `API rate limit or quota exceeded during final synthesis. Please wait and continue.`
+                );
+                
+                stream?.writeEvent?.('interrupt_state', interruptState);
+                
+                return {
+                    finalText: `Query execution was paused during final synthesis due to API rate limiting. Click the continue button below to resume processing.`,
+                    costTracker,
+                    interrupted: true,
+                    interruptState
+                };
             }
-        });
+            
+            // Re-throw other errors
+            throw error;
+        }
+
+        // Track cost for final synthesis
+        const synthesisInputText = JSON.stringify(finalSynthesisInput);
+        costTracker.addStep('Final Synthesis', synthesisInputText, finalResponse?.text || '', 'Comprehensive answer generation');
         
         const result = finalResponse?.text || 'I was unable to provide a comprehensive answer based on the research conducted.';
         
+        // Get cost summary
+        const costSummary = costTracker.getSummary();
+        console.log(`💰 Total Query Cost: $${costSummary.totalCost.toFixed(4)} (${costSummary.totalTokens} tokens)`);
+        
+        // Send cost information to the UI in the format expected by the UI
+        stream?.writeEvent?.('cost_summary', {
+            totalCost: costSummary.totalCost,
+            tokenCounts: {
+                input: costSummary.totalInputTokens,
+                output: costSummary.totalOutputTokens,
+                total: costSummary.totalTokens
+            },
+            stepCosts: costSummary.steps.map(step => ({
+                stepName: step.stepName,
+                model: costSummary.modelName || costSummary.modelId,
+                cost: step.cost,
+                inputTokens: step.inputTokens,
+                outputTokens: step.outputTokens,
+                description: step.description || '',
+                timestamp: step.timestamp
+            })),
+            modelName: costSummary.modelName,
+            provider: costSummary.provider
+        });
+        
         // Send the final response to the UI
-        console.log('🎯 Sending final_answer event with content:', result?.substring?.(0, 100));
+        // Sending final answer (${result?.length || 0} chars)
         stream?.writeEvent?.('final_answer', { 
             content: result,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            costSummary: {
+                totalCost: costSummary.totalCost,
+                totalTokens: costSummary.totalTokens,
+                modelName: costSummary.modelName
+            }
         });
         
         return { 
             finalText: result,
-            researchPlan: researchPlan
+            researchPlan: researchPlan,
+            costSummary: costSummary
         };
     } catch (e) {
         console.error('Final synthesis failed:', e?.message || e);
         const errorMsg = 'I apologize, but I encountered an issue while synthesizing the final answer.';
         
+        // Get cost summary even for errors
+        const costSummary = costTracker?.getSummary() || { totalCost: 0, totalTokens: 0, steps: [] };
+        
         // Send error as final answer
         stream?.writeEvent?.('final_answer', { 
             content: errorMsg,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            costSummary: {
+                totalCost: costSummary.totalCost,
+                totalTokens: costSummary.totalTokens,
+                modelName: costSummary.modelName || modelId
+            }
         });
         
         return { 
             finalText: errorMsg,
-            researchPlan: researchPlan || { complexity_assessment: 'medium' }
+            researchPlan: researchPlan || { complexity_assessment: 'medium' },
+            costSummary: costSummary
         };
     }
 }
@@ -524,6 +908,10 @@ const legacyStreamingHandler = async (event, responseStream, context) => {
         const apiKey = body.apiKey || '';
         const searchMode = body.searchMode || 'web_search';
         const googleToken = body.google_token || body.googleToken || null;
+        
+        // Retry parameters
+        const queryId = body.queryId || null;
+        const previousSteps = body.previousSteps || [];
 
         // Authentication check
         if (process.env.ACCESS_SECRET) {
@@ -597,7 +985,9 @@ const legacyStreamingHandler = async (event, responseStream, context) => {
             apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
             userQuery: query,
             systemPrompt: COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT,
-            stream: streamAdapter
+            stream: streamAdapter,
+            queryId,
+            previousSteps
         });
         
         const finalResult = {
@@ -609,7 +999,10 @@ const legacyStreamingHandler = async (event, responseStream, context) => {
                 totalResults: 0,
                 searchIterations: 0,
                 finalModel: model,
-                searchMode: 'tools'
+                searchMode: 'tools',
+                totalCost: toolsRun.costSummary?.totalCost || 0,
+                totalTokens: toolsRun.costSummary?.totalTokens || 0,
+                costBreakdown: toolsRun.costSummary?.steps || []
             }
         };
         
@@ -765,6 +1158,10 @@ async function handleStreamingRequest(event, context, startTime) {
         apiKey = body.apiKey || '';
         searchMode = body.searchMode || 'web_search';
         const googleToken = body.google_token || body.googleToken || null;
+        
+        // Retry parameters
+        const queryId = body.queryId || null;
+        const previousSteps = body.previousSteps || [];
 
         // If server has ACCESS_SECRET set, require clients to provide it. Do NOT affect env-key fallback.
         if (process.env.ACCESS_SECRET) {
@@ -915,7 +1312,9 @@ async function handleStreamingRequest(event, context, startTime) {
                 apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
                 userQuery: query,
                 systemPrompt: COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT,
-                stream
+                stream,
+                queryId,
+                previousSteps
             });
             
             finalResult = {
@@ -923,7 +1322,12 @@ async function handleStreamingRequest(event, context, startTime) {
                 mode: 'tools',
                 answer: toolsRun.finalText || 'I apologize, but I encountered an issue while processing your request. Please try rephrasing your question.',
                 searchResults: [],
-                metadata: { tools: true }
+                metadata: { 
+                    tools: true,
+                    totalCost: toolsRun.costSummary?.totalCost || 0,
+                    totalTokens: toolsRun.costSummary?.totalTokens || 0,
+                    costBreakdown: toolsRun.costSummary?.steps || []
+                }
             };
         } catch (e) {
             stream.writeEvent('error', {
@@ -1043,6 +1447,11 @@ async function handleNonStreamingRequest(event, context, startTime) {
         apiKey = body.apiKey || '';
         searchMode = body.searchMode || 'web_search';
         const googleToken = body.google_token || body.googleToken || null;
+        
+        // Retry parameters
+        const queryId = body.queryId || null;
+        const previousSteps = body.previousSteps || [];
+        
         // If server has ACCESS_SECRET set, require clients to provide it. Do NOT affect env-key fallback.
         if (process.env.ACCESS_SECRET) {
             if (!accessSecret || accessSecret !== process.env.ACCESS_SECRET) {
@@ -1143,7 +1552,9 @@ async function handleNonStreamingRequest(event, context, startTime) {
                 apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
                 userQuery: query,
                 systemPrompt: COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT,
-                stream: null
+                stream: null,
+                queryId,
+                previousSteps
             });
             
             finalResult = {
@@ -1151,7 +1562,13 @@ async function handleNonStreamingRequest(event, context, startTime) {
                 searches: [],
                 searchResults: [],
                 response: toolsRun.finalText || 'I apologize, but I encountered an issue while processing your request. Please try rephrasing your question.',
-                metadata: { finalModel: model, mode: 'tools' }
+                metadata: { 
+                    finalModel: model, 
+                    mode: 'tools',
+                    totalCost: toolsRun.costSummary?.totalCost || 0,
+                    totalTokens: toolsRun.costSummary?.totalTokens || 0,
+                    costBreakdown: toolsRun.costSummary?.steps || []
+                }
             };
         } catch (e) {
             console.error('Tools flow failed:', e?.message || e);

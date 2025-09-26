@@ -222,7 +222,7 @@ async function handleFormSubmission(e) {
     
     try {
         // Make the request
-        const response = await fetch('https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/', {
+        const response = await fetch('{{LAMBDA_URL}}', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

@@ -38,24 +38,14 @@ help:
 deploy:
 	@echo "🚀 Deploying Lambda function..."
 	./scripts/deploy.sh
-	@echo "🎨 Building and deploying UI from root index_template.html..."
+	@echo "🎨 Building and deploying UI..."
 	@if [ ! -f .env ]; then \
 		echo "❌ .env file not found. Run 'make setup' first."; \
 		exit 1; \
 	fi
-	@# Build docs from the root index_template.html (preferred). Fallback to script if not present
-	@if [ -f index_template.html ]; then \
-		echo "📚 Building docs (from index_template.html)..."; \
-		set -a; . .env; set +a; \
-		mkdir -p docs; \
-		sed "s|{{LAMBDA_URL}}|$${LAMBDA_URL}|g" index_template.html | \
-		sed "s|{{ACCESS_SECRET}}|$${ACCESS_SECRET}|g" | \
-		sed "s|{{GOOGLE_CLIENT_ID}}|$${GOOGLE_CLIENT_ID}|g" > docs/index.html; \
-		echo "✅ Built docs/index.html from index_template.html"; \
-	else \
-		echo "⚠️ index_template.html not found. Using scripts/build-docs.sh (ui/index_template.html)..."; \
-		./scripts/build-docs.sh; \
-	fi
+	@# Use the build-docs.sh script which handles both modular and legacy templates
+	@echo "📚 Building docs with build-docs.sh (supports modular structure)..."; \
+	./scripts/build-docs.sh
 	@echo "⏫ Committing and pushing docs to git (GitHub Pages or similar)..."
 	@if [ ! -x scripts/deploy-docs.sh ]; then \
 		chmod +x scripts/deploy-docs.sh; \
