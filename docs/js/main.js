@@ -47,13 +47,12 @@ async function resumeFromInterrupt() {
     const hasLocalKey = apiKey && apiKey.trim();
     const isSignedIn = (window.isGoogleTokenValid ? window.isGoogleTokenValid(window.googleAccessToken) : false);
     
-    const searchMode = document.querySelector('input[name="search_mode"]:checked')?.value || 'web_search';
     const retryFormData = {
         ...(hasLocalKey ? { apiKey: apiKey } : {}),
         model: selectedModel,
         query: document.getElementById('prompt').value,
         accessSecret: document.getElementById('access_secret').value,
-        searchMode: searchMode,
+        searchMode: 'web_search',
         ...(isSignedIn ? { google_token: window.googleAccessToken } : {}),
         // Retry parameters from interrupt state
         queryId: window.currentQueryId,
@@ -194,14 +193,13 @@ async function handleFormSubmission(e) {
     window.interruptState = null;
 
     // Collect form data
-    const searchMode = document.querySelector('input[name="search_mode"]:checked').value;
     const formData = {
         // Only include apiKey if user provided one; otherwise server may use env keys for authorized accounts
         ...(hasLocalKey ? { apiKey: apiKey } : {}),
         model: selectedModel,
         query: document.getElementById('prompt').value,
         accessSecret: document.getElementById('access_secret').value,
-        searchMode: searchMode,
+        searchMode: 'web_search',
         ...(isSignedIn ? { google_token: window.googleAccessToken } : {}),
         // Add query ID for new request
         queryId: window.currentQueryId,

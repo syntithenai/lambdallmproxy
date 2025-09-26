@@ -92,24 +92,6 @@
             width: 100%;
         }
 
-        .search-mode-group {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .search-mode-option {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 0.85rem;
-            white-space: nowrap;
-        }
-
-        .search-mode-option input[type="radio"] {
-            margin: 0;
-        }
-
         button[type="submit"] {
             background: #007bff;
             color: white;
