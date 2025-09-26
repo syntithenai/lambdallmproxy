@@ -96,7 +96,30 @@ function handleGoogleSignIn(response) {
         updateLoginUI(true);
         updateSubmitButton();
         updateModelAvailability();
-        console.log('Google sign-in successful:', googleUser.email);
+        console.log('OAuth sign-in successful (ID token):', googleUser.email);
+        
+        // Save to localStorage first
+        localStorage.setItem('google_access_token', googleAccessToken);
+        localStorage.setItem('google_user', JSON.stringify(googleUser));
+        
+        // Update window globals
+        window.googleUser = googleUser;
+        window.googleAccessToken = googleAccessToken;
+        
+        console.log('Token validation after storage:', isGoogleTokenValid(googleAccessToken));
+        console.log('Window globals updated:', {
+            googleUser: window.googleUser ? window.googleUser.email : 'null',
+            googleAccessToken: window.googleAccessToken ? 'present' : 'null',
+            localStorageToken: localStorage.getItem('google_access_token') ? 'present' : 'null'
+        });
+        
+        updateLoginUI(true);
+        
+        // Small delay to ensure all state is properly propagated
+        setTimeout(() => {
+            updateSubmitButton();
+            updateModelAvailability();
+        }, 100);
     } catch (error) {
         console.error('Error handling Google sign-in:', error);
     }
