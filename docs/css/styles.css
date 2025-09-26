@@ -193,9 +193,8 @@
             margin-bottom: 12px;
         }
 
-        .form-group:first-child {
+        .form-group.query-input-group {
             flex: 1;
-            align-items: stretch;
         }
 
         .input-container {
@@ -226,11 +225,10 @@
         }
 
         #prompt {
-            flex: 1;
-            resize: none;
             width: 100%;
-            min-height: 300px;
+            resize: vertical;
             font-family: inherit;
+            line-height: 1.5;
         }
 
         button[type="submit"] {

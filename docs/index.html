@@ -29,17 +29,6 @@
 
         <!-- Main Form -->
         <form id="llm-form" class="form-container">
-            <!-- Query Input -->
-            <div class="form-group">
-                <div class="input-container">
-                    <textarea id="prompt" name="prompt" placeholder="Enter your question or search query..." rows="4" required></textarea>
-                    <div class="sample-queries-container">
-                        <button type="button" id="sample-queries-btn" class="btn btn-samples">Sample Queries ▼</button>
-                        <div id="sample-queries-dropdown" class="sample-queries-dropdown"></div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Model Selection -->
             <div class="form-group">
                 <label for="model">Model:</label>
@@ -61,11 +50,21 @@
                 </select>
             </div>
 
-            <!-- Access Secret -->
+            <!-- Sample Queries -->
             <div class="form-group">
-                <label for="access_secret">Access Secret (if required):</label>
-                <input type="password" id="access_secret" name="access_secret" placeholder="Optional access secret">
+                <div class="sample-queries-container">
+                    <button type="button" id="sample-queries-btn" class="btn btn-samples">Sample Queries ▼</button>
+                    <div id="sample-queries-dropdown" class="sample-queries-dropdown"></div>
+                </div>
             </div>
+
+            <!-- Query Input -->
+            <div class="form-group query-input-group">
+                <textarea id="prompt" name="prompt" placeholder="Enter your question or search query..." rows="8" required></textarea>
+            </div>
+
+            <!-- Hidden Access Secret -->
+            <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
 
             <!-- Submit Buttons -->
             <div class="button-group">
