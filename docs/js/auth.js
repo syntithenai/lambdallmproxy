@@ -43,6 +43,11 @@ function initializeGoogleOAuth() {
             if (isGoogleTokenValid(savedToken)) {
                 googleAccessToken = savedToken;
                 googleUser = JSON.parse(savedUser);
+                
+                // Update window globals
+                window.googleUser = googleUser;
+                window.googleAccessToken = googleAccessToken;
+                
                 updateLoginUI(true);
                 updateSubmitButton();
                 updateModelAvailability();
@@ -53,6 +58,11 @@ function initializeGoogleOAuth() {
                 localStorage.removeItem('google_user');
                 googleAccessToken = null;
                 googleUser = null;
+                
+                // Update window globals
+                window.googleUser = null;
+                window.googleAccessToken = null;
+                
                 updateLoginUI(false);
                 updateSubmitButton();
                 updateModelAvailability();
@@ -78,6 +88,10 @@ function handleGoogleSignIn(response) {
         // Save to localStorage
         localStorage.setItem('google_access_token', googleAccessToken);
         localStorage.setItem('google_user', JSON.stringify(googleUser));
+        
+        // Update window globals
+        window.googleUser = googleUser;
+        window.googleAccessToken = googleAccessToken;
         
         updateLoginUI(true);
         updateSubmitButton();
@@ -201,6 +215,11 @@ function handleLogin() {
 function logout() {
     googleUser = null;
     googleAccessToken = null;
+    
+    // Update window globals
+    window.googleUser = null;
+    window.googleAccessToken = null;
+    
     localStorage.removeItem('google_access_token');
     localStorage.removeItem('google_user');
     updateLoginUI(false);

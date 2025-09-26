@@ -50,14 +50,16 @@ function updateSubmitButton() {
 // Function to update model availability based on API keys
 function updateModelAvailability() {
     console.log('updateModelAvailability called');
-    const openaiApiKeyInput = document.getElementById('openai_api_key');
-    const groqApiKeyInput = document.getElementById('groq_api_key');
     const modelSelect = document.getElementById('model');
     
-    if (!openaiApiKeyInput || !groqApiKeyInput || !modelSelect) return;
+    if (!modelSelect) return;
     
-    const hasOpenaiKey = !!(openaiApiKeyInput.value && openaiApiKeyInput.value.trim());
-    const hasGroqKey = !!(groqApiKeyInput.value && groqApiKeyInput.value.trim());
+    // Get API key inputs - they might not exist if settings dialog hasn't been opened
+    const openaiApiKeyInput = document.getElementById('openai_api_key');
+    const groqApiKeyInput = document.getElementById('groq_api_key');
+    
+    const hasOpenaiKey = !!(openaiApiKeyInput && openaiApiKeyInput.value && openaiApiKeyInput.value.trim());
+    const hasGroqKey = !!(groqApiKeyInput && groqApiKeyInput.value && groqApiKeyInput.value.trim());
     const signedIn = isGoogleTokenValid(window.googleAccessToken);
     
     console.log('hasOpenaiKey:', hasOpenaiKey, 'hasGroqKey:', hasGroqKey, 'signedIn:', signedIn);
