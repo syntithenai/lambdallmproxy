@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lambda LLM Proxy</title>
+    <title>AI Search</title>
     
     <!-- External CSS -->
     <link rel="stylesheet" href="css/styles.css">
@@ -16,23 +16,13 @@
     <div id="auth-banner" class="auth-banner" style="display: none;"></div>
 
     <div class="container">
-        <!-- Header -->
+        <!-- Header with Controls -->
         <div class="header">
-            <h1>Lambda LLM Proxy</h1>
-            <div class="header-buttons">
-                <button type="button" id="login-btn" class="btn btn-login">
-                    <span id="login-text">👤 Sign in with Google</span>
-                </button>
-                <button type="button" id="settings-btn" class="btn btn-secondary" title="Settings">⚙️</button>
-            </div>
-        </div>
-
-        <!-- Main Form -->
-        <form id="llm-form" class="form-container">
-            <!-- Model Selection -->
-            <div class="form-group">
-                <label for="model">Model:</label>
-                <select id="model" name="model" required>
+            <div class="header-left">
+                <h1>AI Search</h1>
+                
+                <!-- Model Selection -->
+                <select id="model" name="model" required form="llm-form">
                     <option value="">Select a model</option>
                     <optgroup label="OpenAI">
                         <option value="openai:gpt-4o">GPT-4o (Latest)</option>
@@ -48,30 +38,32 @@
                         <option value="groq:gemma2-9b-it">Gemma 2 9B IT</option>
                     </optgroup>
                 </select>
-            </div>
 
-            <!-- Sample Queries -->
-            <div class="form-group">
-                <div class="sample-queries-container">
-                    <button type="button" id="sample-queries-btn" class="btn btn-samples">Sample Queries ▼</button>
-                    <div id="sample-queries-dropdown" class="sample-queries-dropdown"></div>
-                </div>
-            </div>
+                <!-- Sample Queries -->
+                <button type="button" id="sample-queries-btn" class="btn btn-samples">Sample Queries ▼</button>
+                <div id="sample-queries-dropdown" class="sample-queries-dropdown"></div>
 
-            <!-- Query Input -->
-            <div class="form-group query-input-group">
-                <textarea id="prompt" name="prompt" placeholder="Enter your question or search query..." rows="8" required></textarea>
-            </div>
-
-            <!-- Hidden Access Secret -->
-            <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
-
-            <!-- Submit Buttons -->
-            <div class="button-group">
-                <button type="submit" id="submit-btn" class="btn btn-primary" disabled>Sign in or add an API key</button>
+                <!-- Action Buttons -->
+                <button type="submit" id="submit-btn" class="btn btn-primary" form="llm-form" disabled>Sign in or add an API key</button>
                 <button type="button" id="stop-btn" class="btn btn-danger" style="display: none;">Stop</button>
                 <button type="button" id="continue-btn" class="btn btn-warning" style="display: none;">Continue</button>
             </div>
+            
+            <div class="header-right">
+                <button type="button" id="login-btn" class="btn btn-login">
+                    <span id="login-text">👤 Sign in with Google</span>
+                </button>
+                <button type="button" id="settings-btn" class="btn btn-secondary" title="Settings">⚙️</button>
+            </div>
+        </div>
+
+        <!-- Main Form - Just the textarea -->
+        <form id="llm-form" class="form-container">
+            <!-- Hidden Access Secret -->
+            <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
+            
+            <!-- Query Input -->
+            <textarea id="prompt" name="prompt" placeholder="Enter your question or search query..." rows="8" required></textarea>
         </form>
 
         <!-- Response Container -->
