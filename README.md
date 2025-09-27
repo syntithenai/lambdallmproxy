@@ -256,16 +256,9 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
   -d '{
     "query": "What are the latest developments in AI?",
     "api_key": "your-openai-api-key",
-    "access_secret": "your-access-secret",
-    "search_mode": "auto"
+    "access_secret": "your-access-secret"
   }'
 ```
-
-### Search Modes
-
-- **`auto`** - Let AI decide whether to search or respond directly (default)
-- **`search`** - Always search for current information
-- **`direct`** - Answer directly without searching
 
 ### Request Parameters
 
@@ -274,7 +267,7 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
 | `query` | Yes | Your question or request |
 | `api_key` | Yes | OpenAI API key |
 | `access_secret` | Yes | Function access secret |
-| `search_mode` | No | Search behavior: "auto", "search", or "direct" |
+
 | `model` | No | Model (default: "openai:gpt-4o-mini") |
 | `limit` | No | Max search results (1-50, default: 5) |
 

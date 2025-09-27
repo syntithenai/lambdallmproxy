@@ -10,18 +10,44 @@
     </style>
 </head>
 <body>
-<body>
 
-<!-- Login Button -->
-<button class="login-button" id="login-btn">
-    <span id="login-text">Sign in with Google</span>
-</button>
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Compact Top Bar -->
+<div class="top-bar">
+    <div class="top-bar-left">
+        <h1 class="compact-title">AI Search</h1>
+        <div class="inline-controls">
+            <select id="model" name="model" class="compact-select">
+                <optgroup label="Groq Models" id="groq-models">
+                    <option value="groq:llama-3.1-8b-instant" selected>Llama 3.1 8B Instant</option>
+                    <option value="groq:llama-3.3-70b-versatile">Llama 3.3 70B</option>
+                    <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B</option>
+                    <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
+                </optgroup>
+                <optgroup label="OpenAI Models" id="openai-models">
+                    <option value="openai:gpt-4o">GPT-4o</option>
+                    <option value="openai:gpt-4o-mini">GPT-4o Mini</option>
+                    <option value="openai:gpt-4">GPT-4</option>
+                    <option value="openai:gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                </optgroup>
+            </select>
+            <button type="button" id="sample-queries-btn" class="compact-btn sample-btn">📝 Samples</button>
+            <button type="submit" id="submit-btn" class="compact-btn submit-btn" disabled>Sign in or add API key</button>
+            <button type="button" id="stop-btn" class="compact-btn stop-btn" style="display: none;">Stop</button>
+        </div>
+    </div>
+    <div class="top-bar-right">
+        <button class="login-button" id="login-btn">
+            <span id="login-text">Sign in with Google</span>
+        </button>
+        <button class="settings-button" id="settings-btn" title="Settings">⚙️</button>
+    </div>
+</div>
 
 <!-- Google Button Fallback (rendered by GIS) -->
 <div id="google-button-container" style="position: fixed; top: 70px; right: 20px; z-index: 1000;"></div>
-
-<!-- Settings Button -->
-<button class="settings-button" id="settings-btn" title="Settings">⚙️</button>
 
 <!-- Settings Dialog -->
 <div class="settings-dialog" id="settings-dialog">
@@ -59,84 +85,43 @@
     </div>
 </div>
 
-<div class="form-container">
+<!-- Compact Form Container -->
+<div class="compact-form-container">
     <form id="llm-form">
         <input type="hidden" id="access_secret" name="access_secret" value="{{ACCESS_SECRET}}">
-        <div id="auth-banner" class="auth-banner"></div>
+        <script>
+            // Global Lambda URL configuration
+            window.LAMBDA_URL = 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/';
+        </script>
         
-        <div class="form-row-top">
-            <h1>AI Search</h1>
-            
-            <div class="form-group">
-                <label for="model">Model:</label>
-                <select id="model" name="model">
-                    <optgroup label="Groq Models" id="groq-models">
-                        <option value="groq:llama-3.1-8b-instant" selected>Llama 3.1 8B Instant (Fastest)</option>
-                        <option value="groq:llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
-                        <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
-                        <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
-                    </optgroup>
-                    <optgroup label="OpenAI Models" id="openai-models">
-                        <option value="openai:gpt-4o">GPT-4o</option>
-                        <option value="openai:gpt-4o-mini">GPT-4o Mini</option>
-                        <option value="openai:gpt-4">GPT-4</option>
-                        <option value="openai:gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                    </optgroup>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>Search:</label>
-                <div class="search-mode-group">
-                    <div class="search-mode-option">
-                        <input type="radio" id="search_auto" name="search_mode" value="auto" checked>
-                        <label for="search_auto">Auto</label>
-                    </div>
-                    <div class="search-mode-option">
-                        <input type="radio" id="search_force" name="search_mode" value="search">
-                        <label for="search_force">Search</label>
-                    </div>
-                    <div class="search-mode-option">
-                        <input type="radio" id="search_skip" name="search_mode" value="direct">
-                        <label for="search_skip">Direct</label>
-                    </div>
-                </div>
-            </div>
-            
-            <button type="submit" id="submit-btn" disabled>Sign in or add an API key</button>
-            <button type="button" id="stop-btn" style="display: none; background: #dc3545; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500;">Stop</button>
+        <!-- Compact Query Input -->
+        <div class="query-container">
+            <textarea id="prompt" name="prompt" rows="1" required placeholder="Enter your question here..." class="auto-resize-textarea">how old is the first child of the king of spain</textarea>
         </div>
 
-        <!-- Persona Display - moved above query textarea -->
-        <div id="persona-container" style="display: none; margin: 15px 0; padding: 12px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 4px;">Answering as</div>
-            <div id="persona-text" style="font-size: 0.95rem; line-height: 1.4;"></div>
-        </div>
-
-        <div class="form-row-bottom">
-            <div class="form-group">
-                <label for="prompt">Query:</label>
-                <textarea id="prompt" name="prompt" rows="10" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
-                <div style="margin-top: 8px;">
-                    <button type="button" id="sample-queries-btn" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.9em; cursor: pointer;">
-                        📝 Sample Queries
-                    </button>
-                    <div id="sample-queries-dropdown" style="display: none; position: absolute; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; max-width: 400px; max-height: 300px; overflow-y: auto;">
-                        <!-- Sample queries will be populated by JavaScript -->
-                    </div>
-                </div>
-            </div>
+        <!-- Sample Queries Dropdown (positioned relative to button in top bar) -->
+        <div id="sample-queries-dropdown" class="sample-dropdown" style="display: none;">
+            <!-- Sample queries will be populated by JavaScript -->
         </div>
     </form>
 </div>
 
-<!-- Research Questions Display -->
-<div id="research-questions-container" style="display: none; margin: 15px 0; padding: 12px 16px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-    <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 8px;">Research Strategy</div>
-    <div id="research-questions-text" style="font-size: 0.9rem; line-height: 1.4;"></div>
+<!-- Compact Status Sections -->
+<div class="status-sections">
+    <!-- Persona Display -->
+    <div id="persona-container" class="status-card" style="display: none;">
+        <div class="status-card-header">🎭 Persona</div>
+        <div id="persona-text" class="status-card-content"></div>
+    </div>
+
+    <!-- Research Questions Display -->
+    <div id="research-questions-container" class="status-card" style="display: none;">
+        <div class="status-card-header">🔍 Research Strategy</div>
+        <div id="research-questions-text" class="status-card-content"></div>
+    </div>
 </div>
 
-<div id="response-container" class="response-container">
+<div id="response-container" class="compact-response-container">
     <!-- Response will be displayed here -->
 </div>
 

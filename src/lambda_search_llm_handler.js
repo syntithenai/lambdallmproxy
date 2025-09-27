@@ -522,7 +522,6 @@ const legacyStreamingHandler = async (event, responseStream, context) => {
         const model = body.model || 'groq:llama-3.1-8b-instant';
         const accessSecret = body.accessSecret || '';
         const apiKey = body.apiKey || '';
-        const searchMode = body.searchMode || 'web_search';
         const googleToken = body.google_token || body.googleToken || null;
 
         // Authentication check
@@ -573,7 +572,6 @@ const legacyStreamingHandler = async (event, responseStream, context) => {
         writeEvent('init', {
             query: query,
             model: model,
-            searchMode: searchMode,
             user: user ? { email: user.email, name: user.name } : null,
             timestamp: new Date().toISOString()
         });
@@ -608,8 +606,7 @@ const legacyStreamingHandler = async (event, responseStream, context) => {
             metadata: {
                 totalResults: 0,
                 searchIterations: 0,
-                finalModel: model,
-                searchMode: 'tools'
+                finalModel: model
             }
         };
         
@@ -733,7 +730,7 @@ async function handleStreamingRequest(event, context, startTime) {
     
     try {
         // Extract parameters from request (POST only)
-        let limit, fetchContent, timeout, model, accessSecret, apiKey, searchMode;
+        let limit, fetchContent, timeout, model, accessSecret, apiKey;
         
         // Extract the HTTP method (support both API Gateway and Function URL formats)
         const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
@@ -763,7 +760,6 @@ async function handleStreamingRequest(event, context, startTime) {
         model = body.model || 'groq:llama-3.1-8b-instant';
         accessSecret = body.accessSecret || '';
         apiKey = body.apiKey || '';
-        searchMode = body.searchMode || 'web_search';
         const googleToken = body.google_token || body.googleToken || null;
 
         // If server has ACCESS_SECRET set, require clients to provide it. Do NOT affect env-key fallback.
@@ -895,7 +891,6 @@ async function handleStreamingRequest(event, context, startTime) {
             searches: [],
             finalResponse: null,
             metadata: {
-                searchMode: searchMode,
                 model: model,
                 iterations: 0,
                 maxIterations: 3,
@@ -1004,7 +999,7 @@ async function handleNonStreamingRequest(event, context, startTime) {
     
     try {
         // Extract parameters from request
-        let limit, fetchContent, timeout, model, accessSecret, apiKey, searchMode;
+        let limit, fetchContent, timeout, model, accessSecret, apiKey;
         
         // Extract the HTTP method (support both API Gateway and Function URL formats)
         const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
@@ -1041,7 +1036,6 @@ async function handleNonStreamingRequest(event, context, startTime) {
         model = body.model || 'groq:llama-3.1-8b-instant';
         accessSecret = body.accessSecret || '';
         apiKey = body.apiKey || '';
-        searchMode = body.searchMode || 'web_search';
         const googleToken = body.google_token || body.googleToken || null;
         // If server has ACCESS_SECRET set, require clients to provide it. Do NOT affect env-key fallback.
         if (process.env.ACCESS_SECRET) {

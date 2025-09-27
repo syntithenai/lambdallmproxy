@@ -709,24 +709,6 @@
                 </select>
             </div>
 
-            <div class="form-group">
-                <label>Search:</label>
-                <div class="search-mode-group">
-                    <div class="search-mode-option">
-                        <input type="radio" id="search_auto" name="search_mode" value="auto" checked>
-                        <label for="search_auto">Auto</label>
-                    </div>
-                    <div class="search-mode-option">
-                        <input type="radio" id="search_force" name="search_mode" value="search">
-                        <label for="search_force">Search</label>
-                    </div>
-                    <div class="search-mode-option">
-                        <input type="radio" id="search_skip" name="search_mode" value="direct">
-                        <label for="search_skip">Direct</label>
-                    </div>
-                </div>
-            </div>
-            
             <button type="submit" id="submit-btn" disabled>Sign in or add an API key</button>
         </div>
 
@@ -1458,14 +1440,12 @@ document.getElementById('llm-form').addEventListener('submit', async function(e)
     }
 
     // Collect form data
-    const searchMode = document.querySelector('input[name="search_mode"]:checked').value;
     const formData = {
         // Only include apiKey if user provided one; otherwise server may use env keys for authorized accounts
         ...(hasLocalKey ? { apiKey: apiKey } : {}),
         model: selectedModel,
         query: document.getElementById('prompt').value,
         accessSecret: document.getElementById('access_secret').value,  // Changed from access_secret to accessSecret
-        searchMode: searchMode,  // Changed from search_mode to searchMode
         ...(isSignedIn ? { google_token: googleAccessToken } : {})
     };
 

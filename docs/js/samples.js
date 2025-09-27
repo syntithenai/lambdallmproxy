@@ -33,15 +33,31 @@ const sampleQueries = {
 
 function toggleSampleQueries() {
     const dropdown = document.getElementById('sample-queries-dropdown');
-    if (!dropdown) return;
+    const button = document.getElementById('sample-queries-btn');
+    
+    console.log('Toggle samples clicked', { dropdown: !!dropdown, button: !!button });
+    
+    if (!dropdown) {
+        console.error('Sample dropdown not found');
+        return;
+    }
     
     const isVisible = dropdown.style.display === 'block';
     
     if (isVisible) {
         dropdown.style.display = 'none';
+        console.log('Hiding dropdown');
     } else {
         populateSampleQueries();
         dropdown.style.display = 'block';
+        console.log('Showing dropdown');
+        
+        // Position dropdown relative to button if needed
+        if (button) {
+            const rect = button.getBoundingClientRect();
+            const parentRect = button.offsetParent.getBoundingClientRect();
+            console.log('Button position:', { rect, parentRect });
+        }
     }
 }
 
@@ -105,9 +121,29 @@ function selectSampleQuery(query) {
 }
 
 function initializeSampleQueries() {
+    console.log('Initializing sample queries...');
+    
     const sampleBtn = document.getElementById('sample-queries-btn');
+    console.log('Sample button found:', !!sampleBtn);
+    
     if (sampleBtn) {
+        // Create the dropdown element if it doesn't exist
+        let dropdown = document.getElementById('sample-queries-dropdown');
+        if (!dropdown) {
+            dropdown = document.createElement('div');
+            dropdown.id = 'sample-queries-dropdown';
+            dropdown.className = 'sample-dropdown';
+            dropdown.style.display = 'none';
+            
+            // Insert dropdown right after the sample button
+            sampleBtn.parentNode.appendChild(dropdown);
+            console.log('Created sample dropdown element');
+        }
+        
         sampleBtn.addEventListener('click', toggleSampleQueries);
+        console.log('Click listener added to sample button');
+    } else {
+        console.error('Sample queries button not found!');
     }
     
     // Close dropdown when clicking outside
@@ -121,4 +157,6 @@ function initializeSampleQueries() {
             dropdown.style.display = 'none';
         }
     });
+    
+    console.log('Sample queries initialization complete');
 }
