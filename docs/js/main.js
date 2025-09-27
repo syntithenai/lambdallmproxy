@@ -267,15 +267,24 @@ function setupAutoResizeTextarea() {
     if (!textarea) return;
 
     function resizeTextarea() {
+        // Reset height to auto to get the correct scrollHeight
         textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+        // Set the new height, with min height of one row (38px) and max of 200px
+        const newHeight = Math.max(38, Math.min(textarea.scrollHeight, 200));
+        textarea.style.height = newHeight + 'px';
     }
 
     textarea.addEventListener('input', resizeTextarea);
     textarea.addEventListener('paste', () => setTimeout(resizeTextarea, 0));
+    textarea.addEventListener('keydown', (e) => {
+        // Handle Enter key
+        if (e.key === 'Enter') {
+            setTimeout(resizeTextarea, 0);
+        }
+    });
     
-    // Initial resize
-    resizeTextarea();
+    // Initial resize to ensure proper starting height
+    setTimeout(resizeTextarea, 0);
 }
 
 // Initialize the application
@@ -1164,7 +1173,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             
                         case 'final_response':
                             statusElement.textContent = '✅ Search completed! Displaying final response...';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
+                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stop'; }
                             stopAllTimers('done');
                             hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
@@ -1190,7 +1199,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             
                         case 'final_answer':
                             statusElement.textContent = '✅ Search completed! Displaying final answer...';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
+                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stop'; }
                             stopAllTimers('done');
                             hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
@@ -1200,7 +1209,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                         case 'complete':
                             statusElement.textContent = `✅ Complete! Total time: ${Math.round(eventData.executionTime)}ms`;
                             responseContainer.className = 'response-container response-success';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
+                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stop'; }
                             stopAllTimers('done');
                             hideContinuationUI();
                             // Ensure the full results tree reflects the final snapshot
@@ -1251,39 +1260,57 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             
                         case 'interrupt_state':
                             console.log('Interrupt state received:', eventData);
-                            // Check if this is a quota/rate limit interruption
-                            if (eventData && (eventData.reason || eventData.message || eventData.error)) {
-                                const interruptReason = eventData.reason || eventData.message || eventData.error;
-                                console.log('Checking interrupt reason for quota error:', interruptReason);
-                                
-                                if (isQuotaLimitError(interruptReason)) {
-                                    console.log('Quota limit detected in interrupt_state');
-                                    // Get existing response content for continuation
-                                    const existingResponse = answerElement ? answerElement.innerHTML : '';
-                                    
-                                    // Handle quota error with continuation
-                                    handleQuotaError(interruptReason, window.lastFormData, existingResponse);
-                                    stopAllTimers('quota_limit');
+                            
+                            // Check multiple possible sources for the interrupt reason
+                            let interruptReason = null;
+                            
+                            // Check different properties where the reason might be stored
+                            if (eventData.reason) {
+                                interruptReason = eventData.reason;
+                            } else if (eventData.message) {
+                                interruptReason = eventData.message;
+                            } else if (eventData.error) {
+                                interruptReason = eventData.error;
+                            } else if (eventData.state && eventData.state.interruptReason) {
+                                // The reason might be in the state object
+                                if (Array.isArray(eventData.state.interruptReason)) {
+                                    // Look for content in the array
+                                    const reasonContent = eventData.state.interruptReason.find(item => item.content);
+                                    interruptReason = reasonContent ? reasonContent.content : JSON.stringify(eventData.state.interruptReason);
                                 } else {
-                                    // Handle as regular interruption
-                                    statusElement.textContent = `⏸️ Processing interrupted: ${interruptReason}`;
-                                    stepsElement.innerHTML += `
-                                        <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%); border-radius: 8px; color: white;">
-                                            <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                                <span>⏸️</span> Processing Interrupted
-                                            </div>
-                                            <div style="opacity: 0.9;">${interruptReason}</div>
-                                        </div>
-                                    `;
+                                    interruptReason = eventData.state.interruptReason;
                                 }
+                            }
+                            
+                            console.log('Extracted interrupt reason:', interruptReason);
+                            
+                            // For rate limits, we know from the log message, so let's also check that
+                            // If no specific reason found, but we received this interrupt_state, assume it's rate limiting
+                            if (!interruptReason) {
+                                interruptReason = "API rate limit or quota reached";
+                                console.log('No specific reason found, assuming rate limit');
+                            }
+                            
+                            console.log('Checking interrupt reason for quota error:', interruptReason);
+                            
+                            if (isQuotaLimitError(interruptReason)) {
+                                console.log('QUOTA LIMIT DETECTED in interrupt_state - calling handleQuotaError');
+                                // Get existing response content for continuation
+                                const existingResponse = answerElement ? answerElement.innerHTML : '';
+                                
+                                // Handle quota error with continuation
+                                handleQuotaError(interruptReason, window.lastFormData, existingResponse);
+                                stopAllTimers('quota_limit');
                             } else {
-                                // Generic interrupt handling
-                                statusElement.textContent = '⏸️ Processing was interrupted';
+                                console.log('NOT a quota error - handling as regular interruption');
+                                // Handle as regular interruption
+                                statusElement.textContent = `⏸️ Processing interrupted: ${interruptReason}`;
                                 stepsElement.innerHTML += `
-                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #6c757d 0%, #495057 100%); border-radius: 8px; color: white;">
-                                        <div style="font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%); border-radius: 8px; color: white;">
+                                        <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
                                             <span>⏸️</span> Processing Interrupted
                                         </div>
+                                        <div style="opacity: 0.9;">${interruptReason}</div>
                                     </div>
                                 `;
                             }

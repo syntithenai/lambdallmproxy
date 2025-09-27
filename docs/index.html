@@ -152,6 +152,20 @@
             background: #c82333;
         }
 
+        .continue-btn {
+            background: #28a745;
+            color: white;
+        }
+
+        .continue-btn:hover {
+            background: #218838;
+        }
+
+        .continue-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
         /* Compact Form Container */
         .compact-form-container {
             background-color: #fff;
@@ -1016,6 +1030,7 @@
             <button type="button" id="sample-queries-btn" class="compact-btn sample-btn">📝 Samples</button>
             <button type="submit" id="submit-btn" class="compact-btn submit-btn" disabled>Sign in or add API key</button>
             <button type="button" id="stop-btn" class="compact-btn stop-btn" style="display: none;">Stop</button>
+            <button type="button" id="continue-btn" class="compact-btn continue-btn" style="display: none;">Continue in 60s</button>
         </div>
     </div>
     <div class="top-bar-right">
@@ -1076,7 +1091,7 @@
         
         <!-- Compact Query Input -->
         <div class="query-container">
-            <textarea id="prompt" name="prompt" rows="1" required placeholder="Enter your question here..." class="auto-resize-textarea">how old is the first child of the king of spain</textarea>
+            <textarea id="prompt" name="prompt" rows="1" required placeholder="Enter your question here..." class="auto-resize-textarea"></textarea>
         </div>
 
         <!-- Sample Queries Dropdown (positioned relative to button in top bar) -->
