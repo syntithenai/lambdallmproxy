@@ -186,9 +186,11 @@
             border-radius: 6px;
             font-size: 0.95rem;
             resize: none;
-            transition: border-color 0.2s ease;
+            transition: height 0.1s ease, border-color 0.2s ease;
             font-family: inherit;
             line-height: 1.4;
+            overflow-y: hidden;
+            box-sizing: border-box;
         }
 
         .auto-resize-textarea:focus {

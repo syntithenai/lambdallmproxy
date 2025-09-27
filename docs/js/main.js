@@ -266,25 +266,40 @@ function setupAutoResizeTextarea() {
     const textarea = document.getElementById('prompt');
     if (!textarea) return;
 
+    // Calculate actual one-row height based on line-height and padding
+    const computedStyle = window.getComputedStyle(textarea);
+    const lineHeight = parseFloat(computedStyle.lineHeight) || 20;
+    const paddingTop = parseFloat(computedStyle.paddingTop) || 8;
+    const paddingBottom = parseFloat(computedStyle.paddingBottom) || 8;
+    const borderTop = parseFloat(computedStyle.borderTopWidth) || 2;
+    const borderBottom = parseFloat(computedStyle.borderBottomWidth) || 2;
+    const minHeight = lineHeight + paddingTop + paddingBottom + borderTop + borderBottom;
+
     function resizeTextarea() {
-        // Reset height to auto to get the correct scrollHeight
+        // Reset height to get accurate scrollHeight
         textarea.style.height = 'auto';
-        // Set the new height, with min height of one row (38px) and max of 200px
-        const newHeight = Math.max(38, Math.min(textarea.scrollHeight, 200));
+        
+        // Calculate new height with proper bounds
+        const scrollHeight = textarea.scrollHeight;
+        const newHeight = Math.max(minHeight, Math.min(scrollHeight, 200));
+        
         textarea.style.height = newHeight + 'px';
     }
 
+    // Add event listeners
     textarea.addEventListener('input', resizeTextarea);
     textarea.addEventListener('paste', () => setTimeout(resizeTextarea, 0));
     textarea.addEventListener('keydown', (e) => {
-        // Handle Enter key
         if (e.key === 'Enter') {
             setTimeout(resizeTextarea, 0);
         }
     });
     
-    // Initial resize to ensure proper starting height
-    setTimeout(resizeTextarea, 0);
+    // Set initial height - ensure it starts at one row
+    textarea.style.height = minHeight + 'px';
+    
+    // Also resize after a short delay to handle any dynamic content
+    setTimeout(resizeTextarea, 100);
 }
 
 // Initialize the application
