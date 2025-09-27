@@ -3,6 +3,15 @@
 // Global request state
 let currentRequest = null;
 
+// Quota/limits error handling state
+let continuationState = {
+    isActive: false,
+    savedFormData: null,
+    savedContext: null,
+    countdownTimer: null,
+    remainingSeconds: 0
+};
+
 // Toast notification system
 function showToast(message, type = 'info', duration = 5000) {
     const container = document.getElementById('toast-container');
@@ -23,6 +32,233 @@ function showToast(message, type = 'info', duration = 5000) {
             }
         }, 300);
     }, duration);
+}
+
+// Quota/limits error detection
+function isQuotaLimitError(errorMessage) {
+    if (!errorMessage) {
+        console.log('isQuotaLimitError: No error message provided');
+        return false;
+    }
+    
+    const quotaIndicators = [
+        'quota exceeded',
+        'rate limit',
+        'rate limited',
+        'too many requests',
+        'retry after',
+        'usage limit',
+        'billing limit',
+        'insufficient quota',
+        'api limit exceeded',
+        'requests per minute',
+        'requests per hour',
+        'requests per day',
+        'rate_limit_exceeded',
+        'quota_exceeded',
+        'insufficient_quota',
+        'billing_quota_exceeded',
+        'daily_limit_exceeded',
+        'monthly_limit_exceeded',
+        'throttled',
+        'throttling',
+        '429', // HTTP status code for Too Many Requests
+        'overloaded',
+        'capacity exceeded'
+    ];
+    
+    const lowerMessage = errorMessage.toLowerCase();
+    console.log('isQuotaLimitError: Checking message:', lowerMessage);
+    
+    const isQuotaError = quotaIndicators.some(indicator => lowerMessage.includes(indicator));
+    console.log('isQuotaLimitError: Result:', isQuotaError);
+    
+    return isQuotaError;
+}
+
+// Start countdown timer for continuation
+function startContinuationCountdown() {
+    const continueBtn = document.getElementById('continue-btn');
+    if (!continueBtn) return;
+    
+    continuationState.remainingSeconds = 60;
+    continuationState.isActive = true;
+    
+    function updateCountdown() {
+        if (!continuationState.isActive) return;
+        
+        if (continuationState.remainingSeconds > 0) {
+            continueBtn.textContent = `Continue in ${continuationState.remainingSeconds}s`;
+            continuationState.remainingSeconds--;
+            continuationState.countdownTimer = setTimeout(updateCountdown, 1000);
+        } else {
+            // Auto-trigger continuation
+            continueBtn.textContent = 'Continuing...';
+            continueBtn.disabled = true;
+            setTimeout(() => {
+                triggerContinuation();
+            }, 500);
+        }
+    }
+    
+    updateCountdown();
+}
+
+// Stop countdown timer
+function stopContinuationCountdown() {
+    continuationState.isActive = false;
+    if (continuationState.countdownTimer) {
+        clearTimeout(continuationState.countdownTimer);
+        continuationState.countdownTimer = null;
+    }
+}
+
+// Handle quota/limits error
+function handleQuotaError(errorMessage, formData, existingResponse) {
+    console.log('=== HANDLING QUOTA ERROR ===');
+    console.log('Error message:', errorMessage);
+    console.log('Form data:', formData);
+    console.log('Existing response length:', existingResponse?.length || 0);
+    
+    // Save state for continuation
+    continuationState.savedFormData = { ...formData };
+    continuationState.savedContext = {
+        existingResponse: existingResponse,
+        timestamp: new Date().toISOString()
+    };
+    console.log('Saved continuation state:', continuationState);
+    
+    // Show/hide buttons
+    console.log('Calling showContinuationUI()');
+    showContinuationUI();
+    
+    // Start countdown
+    console.log('Starting continuation countdown');
+    startContinuationCountdown();
+    
+    // Show error message but preserve existing content
+    const statusElement = document.getElementById('status');
+    if (statusElement) {
+        statusElement.textContent = `⏳ Rate limit reached. Will continue automatically in 60 seconds...`;
+        console.log('Updated status element');
+    } else {
+        console.error('Status element not found!');
+    }
+    
+    // Add information to steps
+    const stepsElement = document.getElementById('steps');
+    if (stepsElement) {
+        stepsElement.innerHTML += `
+            <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%); border-radius: 8px; color: white;">
+                <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                    <span>⏳</span> Rate Limit Reached
+                </div>
+                <div style="opacity: 0.9; margin-bottom: 8px;">${errorMessage}</div>
+                <div style="opacity: 0.8; font-size: 0.9em;">Continuing automatically in 60 seconds. You can also click Continue to proceed immediately.</div>
+            </div>
+        `;
+        console.log('Added quota error step');
+    } else {
+        console.error('Steps element not found!');
+    }
+    console.log('=== QUOTA ERROR HANDLING COMPLETE ===');
+}
+
+// Show continuation UI (hide submit/stop, show continue)
+function showContinuationUI() {
+    console.log('=== SHOWING CONTINUATION UI ===');
+    const submitBtn = document.getElementById('submit-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const continueBtn = document.getElementById('continue-btn');
+    
+    console.log('Button elements found:', {
+        submitBtn: !!submitBtn,
+        stopBtn: !!stopBtn,
+        continueBtn: !!continueBtn
+    });
+    
+    if (submitBtn) {
+        submitBtn.style.display = 'none';
+        console.log('Hidden submit button');
+    } else {
+        console.error('Submit button not found!');
+    }
+    
+    if (stopBtn) {
+        stopBtn.style.display = 'none';
+        console.log('Hidden stop button');
+    } else {
+        console.error('Stop button not found!');
+    }
+    
+    if (continueBtn) {
+        continueBtn.style.display = 'inline-block';
+        continueBtn.disabled = false;
+        continueBtn.onclick = triggerContinuation;
+        console.log('Showed continue button, display:', continueBtn.style.display);
+    } else {
+        console.error('Continue button not found!');
+    }
+    console.log('=== CONTINUATION UI SETUP COMPLETE ===');
+}
+
+// Hide continuation UI (show submit, hide continue)
+function hideContinuationUI() {
+    const submitBtn = document.getElementById('submit-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const continueBtn = document.getElementById('continue-btn');
+    
+    if (submitBtn) submitBtn.style.display = 'inline-block';
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (continueBtn) continueBtn.style.display = 'none';
+    
+    // Reset continuation state
+    stopContinuationCountdown();
+    continuationState.isActive = false;
+    continuationState.savedFormData = null;
+    continuationState.savedContext = null;
+}
+
+// Trigger continuation
+function triggerContinuation() {
+    if (!continuationState.savedFormData) {
+        console.error('No saved form data for continuation');
+        return;
+    }
+    
+    console.log('Triggering continuation with saved data:', continuationState.savedFormData);
+    
+    // Stop countdown
+    stopContinuationCountdown();
+    
+    // Add continuation context to form data
+    const formData = {
+        ...continuationState.savedFormData,
+        continuation: true,
+        continuationContext: continuationState.savedContext
+    };
+    
+    // Reset state
+    continuationState.savedFormData = null;
+    continuationState.savedContext = null;
+    
+    // Hide continuation UI and show stop button
+    const submitBtn = document.getElementById('submit-btn');
+    const continueBtn = document.getElementById('continue-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    
+    if (submitBtn) submitBtn.style.display = 'none';
+    if (continueBtn) continueBtn.style.display = 'none';
+    if (stopBtn) stopBtn.style.display = 'inline-block';
+    
+    // Show status
+    const statusElement = document.getElementById('status');
+    if (statusElement) {
+        statusElement.textContent = 'Continuing request...';
+    }
+    
+    // Make the request
+    makeStreamingRequest(formData);
 }
 
 // Auto-resize textarea functionality
@@ -186,6 +422,19 @@ async function handleFormSubmission(e) {
         ...(isAuthenticated && window.googleAccessToken ? { google_token: window.googleAccessToken } : {})
     };
 
+    // Save form data for potential continuation
+    window.lastFormData = { ...formData };
+
+    // Make the streaming request
+    return makeStreamingRequest(formData);
+}
+
+// Make streaming request (can be called for initial request or continuation)
+async function makeStreamingRequest(formData) {
+    const responseContainer = document.getElementById('response-container');
+    const submitBtn = document.getElementById('submit-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    
     // Set a reasonable default timeout (90 seconds)
     const timeoutMs = 90000;
     const controller = new AbortController();
@@ -275,11 +524,14 @@ async function handleFormSubmission(e) {
             responseContainer.textContent = `Network Error:\n\n${error.message}`;
         }
     } finally {
-        // Show submit button and hide stop button
-        submitBtn.style.display = 'inline-block';
-        if (stopBtn) stopBtn.style.display = 'none';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Send Request';
+        // Reset UI unless we're in continuation mode
+        if (!continuationState.isActive) {
+            // Show submit button and hide stop button
+            submitBtn.style.display = 'inline-block';
+            if (stopBtn) stopBtn.style.display = 'none';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Send Request';
+        }
     }
 }
 
@@ -465,6 +717,8 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             formStopBtn.textContent = 'Stopping...';
             statusElement.textContent = '⏹️ Stopping — no further requests will be made.';
             stopAllTimers('stopped');
+            // Also stop any continuation countdown and reset UI
+            hideContinuationUI();
         });
     }
     
@@ -912,6 +1166,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             statusElement.textContent = '✅ Search completed! Displaying final response...';
                             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
                             stopAllTimers('done');
+                            hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
                             // Keep metadata visible and updated
                             metadataContent.innerHTML = `
@@ -937,6 +1192,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             statusElement.textContent = '✅ Search completed! Displaying final answer...';
                             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
                             stopAllTimers('done');
+                            hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
                             responseContainer.className = 'response-container response-success';
                             break;
@@ -946,6 +1202,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             responseContainer.className = 'response-container response-success';
                             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
                             stopAllTimers('done');
+                            hideContinuationUI();
                             // Ensure the full results tree reflects the final snapshot
                             if (Array.isArray(eventData.allResults) && eventData.allResults.length) {
                                 // If we never received structured iterations, fall back to a flat section
@@ -960,18 +1217,76 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             break;
                         
                         case 'error':
-                            statusElement.textContent = `❌ Error: ${eventData.error}`;
-                            responseContainer.className = 'response-container response-error';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Error'; }
-                            stopAllTimers('error');
-                            stepsElement.innerHTML += `
-                                <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); border-radius: 8px; color: #721c24;">
-                                    <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                        <span>❌</span> Error Occurred
+                            console.log('=== ERROR EVENT RECEIVED ===');
+                            console.log('Error data:', eventData);
+                            console.log('Error message:', eventData.error);
+                            
+                            // Check if this is a quota/rate limit error
+                            if (isQuotaLimitError(eventData.error)) {
+                                console.log('QUOTA ERROR DETECTED - calling handleQuotaError');
+                                // Get existing response content for continuation
+                                const existingResponse = answerElement ? answerElement.innerHTML : '';
+                                
+                                // Handle quota error with continuation
+                                handleQuotaError(eventData.error, window.lastFormData, existingResponse);
+                                stopAllTimers('quota_limit');
+                            } else {
+                                console.log('REGULAR ERROR - not a quota error');
+                                // Handle regular errors
+                                statusElement.textContent = `❌ Error: ${eventData.error}`;
+                                responseContainer.className = 'response-container response-error';
+                                if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Error'; }
+                                stopAllTimers('error');
+                                hideContinuationUI(); // Ensure continuation UI is hidden for regular errors
+                                stepsElement.innerHTML += `
+                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); border-radius: 8px; color: #721c24;">
+                                        <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                            <span>❌</span> Error Occurred
+                                        </div>
+                                        <div>${eventData.error}</div>
                                     </div>
-                                    <div>${eventData.error}</div>
-                                </div>
-                            `;
+                                `;
+                            }
+                            break;
+                            
+                        case 'interrupt_state':
+                            console.log('Interrupt state received:', eventData);
+                            // Check if this is a quota/rate limit interruption
+                            if (eventData && (eventData.reason || eventData.message || eventData.error)) {
+                                const interruptReason = eventData.reason || eventData.message || eventData.error;
+                                console.log('Checking interrupt reason for quota error:', interruptReason);
+                                
+                                if (isQuotaLimitError(interruptReason)) {
+                                    console.log('Quota limit detected in interrupt_state');
+                                    // Get existing response content for continuation
+                                    const existingResponse = answerElement ? answerElement.innerHTML : '';
+                                    
+                                    // Handle quota error with continuation
+                                    handleQuotaError(interruptReason, window.lastFormData, existingResponse);
+                                    stopAllTimers('quota_limit');
+                                } else {
+                                    // Handle as regular interruption
+                                    statusElement.textContent = `⏸️ Processing interrupted: ${interruptReason}`;
+                                    stepsElement.innerHTML += `
+                                        <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%); border-radius: 8px; color: white;">
+                                            <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                                                <span>⏸️</span> Processing Interrupted
+                                            </div>
+                                            <div style="opacity: 0.9;">${interruptReason}</div>
+                                        </div>
+                                    `;
+                                }
+                            } else {
+                                // Generic interrupt handling
+                                statusElement.textContent = '⏸️ Processing was interrupted';
+                                stepsElement.innerHTML += `
+                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #6c757d 0%, #495057 100%); border-radius: 8px; color: white;">
+                                        <div style="font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                                            <span>⏸️</span> Processing Interrupted
+                                        </div>
+                                    </div>
+                                `;
+                            }
                             break;
                             
                         default:
@@ -989,6 +1304,7 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         console.error('Streaming error:', streamError);
         if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stopped'; }
         stopAllTimers('stopped');
+        hideContinuationUI(); // Reset UI on streaming errors
         if (streamError.name === 'AbortError') {
             statusElement.textContent = '⏹️ Stopped by user. Partial results are shown above.';
             // Keep existing partial results visible without switching to error theme
