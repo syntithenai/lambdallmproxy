@@ -328,6 +328,12 @@ function showContinuationUI() {
 
 // Hide continuation UI (show submit, hide continue)
 function hideContinuationUI() {
+    // Don't hide continuation UI if quota handling is active
+    if (continuationState.isActive) {
+        console.log('🔄 Prevented hideContinuationUI() - quota handling is active');
+        return;
+    }
+    
     const submitBtn = document.getElementById('submit-btn');
     const stopBtn = document.getElementById('stop-btn');
     const continueBtn = document.getElementById('continue-btn');
@@ -1947,20 +1953,33 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             const formStopBtn = document.getElementById('stop-btn');
                             const formContinueBtn = document.getElementById('continue-btn');
                             
-                            if (formSubmitBtn) {
-                                formSubmitBtn.style.display = 'none';
-                                console.log('🔄 Hidden submit button for quota exceeded');
+                            function enforceQuotaButtonStates() {
+                                const submitBtn = document.getElementById('submit-btn');
+                                const stopBtn = document.getElementById('stop-btn');
+                                const continueBtn = document.getElementById('continue-btn');
+                                
+                                if (submitBtn) {
+                                    submitBtn.style.display = 'none';
+                                    console.log('🔄 Enforced: Hidden submit button for quota exceeded');
+                                }
+                                if (stopBtn) {
+                                    stopBtn.style.display = 'inline-block';
+                                    stopBtn.disabled = false;
+                                    stopBtn.textContent = 'Stop';
+                                    console.log('🔄 Enforced: Showed stop button for quota exceeded');
+                                }
+                                if (continueBtn) {
+                                    continueBtn.style.display = 'inline-block';
+                                    console.log('🔄 Enforced: Showed continue button for quota exceeded');
+                                }
                             }
-                            if (formStopBtn) {
-                                formStopBtn.style.display = 'inline-block';
-                                formStopBtn.disabled = false;
-                                formStopBtn.textContent = 'Stop';
-                                console.log('🔄 Showed stop button for quota exceeded');
-                            }
-                            if (formContinueBtn) {
-                                formContinueBtn.style.display = 'inline-block';
-                                console.log('🔄 Showed continue button for quota exceeded');
-                            }
+                            
+                            // Immediately enforce button states
+                            enforceQuotaButtonStates();
+                            
+                            // Re-enforce button states after a short delay to override any interference
+                            setTimeout(enforceQuotaButtonStates, 100);
+                            setTimeout(enforceQuotaButtonStates, 500);
                             break;
                             
                         case 'interrupt_state':
