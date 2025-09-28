@@ -2,7 +2,34 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewp<!-- Persona and Questions Layout -->
+<div class="persona-questions-layout">
+    <!-- Persona Display -->
+    <div id="persona-container" class="persona-card">
+        <div class="persona-card-header">🎭 Persona</div>
+        <div id="persona-text" class="persona-card-content"></div>
+    </div>
+
+    <!-- Research Questions Display -->
+    <div id="research-questions-container" class="questions-card">
+        <div class="questions-card-header">🔍 Research Strategy</div>
+        <div id="research-questions-text" class="questions-card-content"></div>
+    </div>
+</div>
+
+<!-- Compact Form Container -->
+<div class="compact-form-container">
+    <form id="llm-form">
+        <input type="hidden" id="access_secret" name="access_secret" value="FUCKoffNOW2">
+        <script>
+            // Global Lambda URL configuration
+            window.LAMBDA_URL = 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/';
+        </script>
+        
+        <!-- Compact Query Input -->
+        <div class="query-container">
+            <textarea id="prompt" name="prompt" rows="1" required placeholder="Enter your question here..." class="auto-resize-textarea"></textarea>
+        </div>"width=device-width, initial-scale=1.0">
     <title>AI Search</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
@@ -285,6 +312,65 @@
             max-height: 400px;
             overflow-y: auto;
             display: none;
+        }
+
+        /* Persona and Questions Layout */
+        .persona-questions-layout {
+            display: flex;
+            gap: 16px;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .persona-card, .questions-card {
+            flex: 1;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-height: 120px;
+        }
+
+        .persona-card {
+            background: #fff3e0;
+            border: 1px solid #ffcc80;
+        }
+
+        .questions-card {
+            background: #e8f5e8;
+            border: 1px solid #a5d6a7;
+        }
+
+        .persona-card-header {
+            background: linear-gradient(135deg, #ff9800 0%, #ff6f00 100%);
+            color: white;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .questions-card-header {
+            background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+            color: white;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .persona-card-content, .questions-card-content {
+            padding: 12px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            color: #495057;
+            min-height: 80px;
+        }
+
+        /* Responsive design for persona/questions layout */
+        @media (max-width: 768px) {
+            .persona-questions-layout {
+                flex-direction: column;
+                gap: 12px;
+            }
         }
 
         /* Status Sections */
@@ -1177,17 +1263,7 @@
 
 <!-- Compact Status Sections -->
 <div class="status-sections">
-    <!-- Persona Display -->
-    <div id="persona-container" class="status-card" style="display: none;">
-        <div class="status-card-header">🎭 Persona</div>
-        <div id="persona-text" class="status-card-content"></div>
-    </div>
-
-    <!-- Research Questions Display -->
-    <div id="research-questions-container" class="status-card" style="display: none;">
-        <div class="status-card-header">🔍 Research Strategy</div>
-        <div id="research-questions-text" class="status-card-content"></div>
-    </div>
+    <!-- Other status cards can go here if needed -->
 </div>
 
 <div id="response-container" class="compact-response-container">
