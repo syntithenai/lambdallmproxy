@@ -98,6 +98,14 @@ function startContinuationCountdown() {
             // Auto-trigger continuation
             continueBtn.textContent = 'Continuing...';
             continueBtn.disabled = true;
+            
+            // Also disable stop button during auto-continuation
+            const stopBtn = document.getElementById('stop-btn');
+            if (stopBtn) {
+                stopBtn.disabled = true;
+                stopBtn.textContent = 'Continuing...';
+            }
+            
             setTimeout(() => {
                 triggerContinuation();
             }, 500);
@@ -179,6 +187,46 @@ function stopContinuationCountdown() {
     }
 }
 
+// Stop countdown and reset to normal UI state
+function stopCountdownAndReset() {
+    console.log('🛑 User stopped countdown timer');
+    
+    // Stop the countdown
+    stopContinuationCountdown();
+    
+    // Reset continuation state
+    continuationState.isActive = false;
+    continuationState.savedFormData = null;
+    continuationState.savedContext = null;
+    
+    // Reset UI to normal state
+    const submitBtn = document.getElementById('submit-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const continueBtn = document.getElementById('continue-btn');
+    const statusElement = document.getElementById('status');
+    
+    if (submitBtn) {
+        submitBtn.style.display = 'inline-block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send Request';
+    }
+    
+    if (stopBtn) {
+        stopBtn.style.display = 'none';
+    }
+    
+    if (continueBtn) {
+        continueBtn.style.display = 'none';
+    }
+    
+    if (statusElement) {
+        statusElement.textContent = 'Countdown stopped by user. You can start a new request.';
+    }
+    
+    // Update button state
+    updateSubmitButton();
+}
+
 // Handle quota/limits error
 function handleQuotaError(errorMessage, formData, existingResponse) {
     
@@ -222,13 +270,13 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
                     <span>⏳</span> Rate Limit Reached
                 </div>
                 <div style="opacity: 0.9; margin-bottom: 8px;">${errorMessage}</div>
-                <div style="opacity: 0.8; font-size: 0.9em;">Continuing automatically in ${waitSeconds} seconds. You can also click Continue to proceed immediately.</div>
+                <div style="opacity: 0.8; font-size: 0.9em;">Continuing automatically in ${waitSeconds} seconds. You can click Continue to proceed immediately, or Stop to cancel.</div>
             </div>
         `;
     }
 }
 
-// Show continuation UI (hide submit/stop, show continue)
+// Show continuation UI (hide submit, show continue and stop)
 function showContinuationUI() {
     const submitBtn = document.getElementById('submit-btn');
     const stopBtn = document.getElementById('stop-btn');
@@ -239,7 +287,10 @@ function showContinuationUI() {
     }
     
     if (stopBtn) {
-        stopBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        stopBtn.disabled = false;
+        stopBtn.textContent = 'Stop';
+        stopBtn.onclick = stopCountdownAndReset;
     }
     
     if (continueBtn) {
@@ -293,14 +344,20 @@ function triggerContinuation() {
     continuationState.savedFormData = null;
     continuationState.savedContext = null;
     
-    // Hide continuation UI and show stop button
+    // Hide continuation UI and show stop button for actual request
     const submitBtn = document.getElementById('submit-btn');
     const continueBtn = document.getElementById('continue-btn');
     const stopBtn = document.getElementById('stop-btn');
     
     if (submitBtn) submitBtn.style.display = 'none';
     if (continueBtn) continueBtn.style.display = 'none';
-    if (stopBtn) stopBtn.style.display = 'inline-block';
+    if (stopBtn) {
+        stopBtn.style.display = 'inline-block';
+        stopBtn.disabled = false;
+        stopBtn.textContent = 'Stop';
+        // Reset stop button onclick to normal request stopping behavior
+        stopBtn.onclick = null;
+    }
     
     // Show status
     const statusElement = document.getElementById('status');
