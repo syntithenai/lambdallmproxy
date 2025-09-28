@@ -9,7 +9,10 @@ let continuationState = {
     savedFormData: null,
     savedContext: null,
     countdownTimer: null,
-    remainingSeconds: 0
+    remainingSeconds: 0,
+    retryCount: 0,
+    maxAutoRetries: 3,
+    autoRetryEnabled: true
 };
 
 // Toast notification system
@@ -104,6 +107,38 @@ function startContinuationCountdown() {
     updateCountdown();
 }
 
+// Parse wait time from error message
+function parseWaitTimeFromMessage(errorMessage) {
+    console.log('Parsing wait time from message:', errorMessage);
+    
+    // Common patterns for wait times
+    const patterns = [
+        /wait\s+(\d+)\s*seconds?/i,
+        /try again in\s+(\d+)\s*seconds?/i,
+        /rate limit.+?(\d+)\s*seconds?/i,
+        /limit.+?(\d+)\s*seconds?/i,
+        /wait\s+(\d+)\s*minutes?/i,
+        /try again in\s+(\d+)\s*minutes?/i,
+        /rate limit.+?(\d+)\s*minutes?/i,
+        /limit.+?(\d+)\s*minutes?/i
+    ];
+    
+    for (const pattern of patterns) {
+        const match = errorMessage.match(pattern);
+        if (match) {
+            const value = parseInt(match[1]);
+            const isMinutes = /minutes?/i.test(match[0]);
+            const seconds = isMinutes ? value * 60 : value;
+            console.log(`Found wait time: ${value} ${isMinutes ? 'minutes' : 'seconds'} = ${seconds} seconds`);
+            return seconds;
+        }
+    }
+    
+    // Default fallback
+    console.log('No specific wait time found, using default 60 seconds');
+    return 60;
+}
+
 // Stop countdown timer
 function stopContinuationCountdown() {
     continuationState.isActive = false;
@@ -119,6 +154,11 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
     console.log('Error message:', errorMessage);
     console.log('Form data:', formData);
     console.log('Existing response length:', existingResponse?.length || 0);
+    console.log('Current retry count:', continuationState.retryCount);
+    
+    // Parse wait time from error message
+    const waitSeconds = parseWaitTimeFromMessage(errorMessage);
+    continuationState.remainingSeconds = waitSeconds;
     
     // Save state for continuation
     continuationState.savedFormData = { ...formData };
@@ -132,15 +172,18 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
     console.log('Calling showContinuationUI()');
     showContinuationUI();
     
-    // Start countdown
-    console.log('Starting continuation countdown');
+    // Start countdown with parsed timing
+    console.log(`Starting continuation countdown for ${waitSeconds} seconds`);
     startContinuationCountdown();
     
-    // Show error message but preserve existing content
+    // Show error message with dynamic timing
     const statusElement = document.getElementById('status');
     if (statusElement) {
-        statusElement.textContent = `⏳ Rate limit reached. Will continue automatically in 60 seconds...`;
-        console.log('Updated status element');
+        const autoRetryText = continuationState.autoRetryEnabled && continuationState.retryCount < continuationState.maxAutoRetries 
+            ? ` (Auto-retry ${continuationState.retryCount + 1}/${continuationState.maxAutoRetries})`
+            : ' (Manual continue required)';
+        statusElement.textContent = `⏳ Rate limit reached. Will continue in ${waitSeconds} seconds...${autoRetryText}`;
+        console.log('Updated status element with dynamic timing');
     } else {
         console.error('Status element not found!');
     }
@@ -212,11 +255,15 @@ function hideContinuationUI() {
     if (stopBtn) stopBtn.style.display = 'none';
     if (continueBtn) continueBtn.style.display = 'none';
     
-    // Reset continuation state
+    // Reset continuation state completely (successful completion)
     stopContinuationCountdown();
     continuationState.isActive = false;
     continuationState.savedFormData = null;
     continuationState.savedContext = null;
+    continuationState.retryCount = 0;
+    continuationState.autoRetryEnabled = true;
+    
+    console.log('Continuation UI hidden, retry state reset');
 }
 
 // Trigger continuation
@@ -227,6 +274,7 @@ function triggerContinuation() {
     }
     
     console.log('Triggering continuation with saved data:', continuationState.savedFormData);
+    console.log('Current retry count:', continuationState.retryCount);
     
     // Stop countdown
     stopContinuationCountdown();
@@ -235,10 +283,14 @@ function triggerContinuation() {
     const formData = {
         ...continuationState.savedFormData,
         continuation: true,
-        continuationContext: continuationState.savedContext
+        continuationContext: continuationState.savedContext,
+        retryAttempt: continuationState.retryCount
     };
     
-    // Reset state
+    // Reset form state but keep retry tracking
+    const currentRetryCount = continuationState.retryCount;
+    const autoRetryEnabled = continuationState.autoRetryEnabled;
+    
     continuationState.savedFormData = null;
     continuationState.savedContext = null;
     
@@ -254,7 +306,8 @@ function triggerContinuation() {
     // Show status
     const statusElement = document.getElementById('status');
     if (statusElement) {
-        statusElement.textContent = 'Continuing request...';
+        const retryText = currentRetryCount > 0 ? ` (Retry ${currentRetryCount})` : '';
+        statusElement.textContent = `Continuing request...${retryText}`;
     }
     
     // Make the request
