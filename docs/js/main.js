@@ -309,7 +309,7 @@ function triggerContinuation() {
         statusElement.textContent = `Continuing request...${retryText}`;
     }
     
-    // Make the request
+    // Make the request with continuation context
     makeStreamingRequest(formData);
 }
 
@@ -590,6 +590,16 @@ async function makeStreamingRequest(formData) {
     const submitBtn = document.getElementById('submit-btn');
     const stopBtn = document.getElementById('stop-btn');
     
+    // Check if this is a continuation request
+    const isContinuation = formData.continuation === true;
+    let existingContent = '';
+    
+    if (isContinuation && continuationState.savedContext?.existingResponse) {
+        // Save existing content to preserve it
+        existingContent = continuationState.savedContext.existingResponse;
+        console.log('🔄 Continuation request - preserving existing content');
+    }
+    
     // Set a reasonable default timeout (90 seconds)
     const timeoutMs = 90000;
     const controller = new AbortController();
@@ -608,8 +618,14 @@ async function makeStreamingRequest(formData) {
         
 
         
-        // Update loading message
-        responseContainer.textContent = 'Sending request...';
+        // Update loading message (don't clear existing content for continuation)
+        if (isContinuation) {
+            // For continuation, just update status
+            const statusElement = document.getElementById('status');
+            if (statusElement) statusElement.textContent = 'Continuing request...';
+        } else {
+            responseContainer.textContent = 'Sending request...';
+        }
         
         const response = await fetch(effectiveLambdaUrl, {
             method: 'POST',
@@ -631,7 +647,7 @@ async function makeStreamingRequest(formData) {
         
         if (contentType && contentType.includes('text/event-stream')) {
             if (typeof handleStreamingResponse === 'function') {
-                await handleStreamingResponse(response, responseContainer, controller);
+                await handleStreamingResponse(response, responseContainer, controller, existingContent);
             } else {
                 console.error('handleStreamingResponse function not found');
                 responseContainer.textContent = 'Error: Streaming handler not available';
@@ -706,16 +722,26 @@ function resetModelToFastest() {
 /**
  * Handle streaming Server-Sent Events response
  */
-async function handleStreamingResponse(response, responseContainer, controller) {
+async function handleStreamingResponse(response, responseContainer, controller, existingContent = '') {
     
     // Initialize state variables for streaming
     const digestMap = new Map();
     const metaMap = new Map();
     const resultsState = { byIteration: {} };
     
-    // Clear and prepare response container for streaming
+    // Check if we're in continuation mode
+    const isContinuation = existingContent && existingContent.length > 0;
+    
+    // Clear and prepare response container for streaming (preserve existing content in continuation mode)
     responseContainer.className = 'response-container';
-    responseContainer.innerHTML = `
+    if (isContinuation) {
+        // For continuation, keep existing content and add continuation marker
+        console.log('🔄 Preserving existing content for continuation');
+        const continuationMarker = `
+        <div style="margin: 16px 0; padding: 12px; background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%); border-radius: 8px; color: white; text-align: center; font-weight: bold;">
+            <span>🔄</span> Continuing after rate limit...
+        </div>`;
+        responseContainer.innerHTML = existingContent + continuationMarker + `
         <div id="streaming-response" style="margin-bottom: 16px;">
             <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
@@ -758,6 +784,52 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             </div>
         </div>
     `;
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div id="streaming-metadata" style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+            <h4 style="margin: 0 0 10px 0; color: #495057; display: flex; align-items: center; gap: 8px;">
+                <span>📊</span> Search Summary
+            </h4>
+            <div id="metadata-content"></div>
+            <ul id="search-summary-list" style="margin: 10px 0 0 0; padding-left: 20px;"></ul>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">🔄</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
+        <div id="full-results-tree"></div>
+        
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+    `;
+    }
     
     const statusElement = document.getElementById('streaming-status');
     const stepsElement = document.getElementById('streaming-steps');
