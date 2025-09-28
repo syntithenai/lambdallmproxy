@@ -109,8 +109,15 @@ function startContinuationCountdown() {
 
 // Parse wait time from error message
 function parseWaitTimeFromMessage(errorMessage) {
-    // Enhanced patterns for wait times including decimal seconds
+    // Enhanced patterns for wait times including milliseconds, decimal seconds, and minutes
     const patterns = [
+        // Milliseconds patterns (e.g., "Please try again in 28ms")
+        /try again in\s+(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
+        /wait\s+(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
+        /retry after\s+(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
+        /rate limit.+?(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
+        /limit.+?(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
+        
         // Decimal seconds patterns (e.g., "Please try again in 15.446s")
         /try again in\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
         /wait\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
@@ -138,13 +145,24 @@ function parseWaitTimeFromMessage(errorMessage) {
         if (match) {
             const value = parseFloat(match[1]);
             const isMinutes = /minutes?/i.test(match[0]);
-            let seconds = isMinutes ? value * 60 : value;
+            const isMilliseconds = /ms(?:illiseconds?)?/i.test(match[0]);
             
-            // Round up decimal seconds to ensure we don't retry too early
+            let seconds;
+            if (isMilliseconds) {
+                seconds = value / 1000; // Convert milliseconds to seconds
+            } else if (isMinutes) {
+                seconds = value * 60; // Convert minutes to seconds
+            } else {
+                seconds = value; // Already in seconds
+            }
+            
+            // Round up to ensure we don't retry too early
             seconds = Math.ceil(seconds);
             
             // Ensure minimum wait time of 1 second
-            return Math.max(1, seconds);
+            const result = Math.max(1, seconds);
+            console.log(`🔍 Parsed "${match[0]}" from error -> ${result}s (original: ${value}${isMilliseconds ? 'ms' : isMinutes ? 'min' : 's'})`);
+            return result;
         }
     }
     
