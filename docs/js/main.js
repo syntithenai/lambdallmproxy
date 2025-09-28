@@ -3,6 +3,16 @@
 // Global request state
 let currentRequest = null;
 
+// Comprehensive tool call and LLM tracking
+let toolCallCycles = []; // Nested array: [cycle1[], cycle2[], ...]
+let llmCalls = [];
+let totalCost = 0;
+let totalTokens = 0;
+let currentPersona = '';
+let currentQuestions = [];
+let currentSetupData = {};
+let currentFormData = {};
+
 // Quota/limits error handling state
 let continuationState = {
     isActive: false,
@@ -16,10 +26,15 @@ let continuationState = {
     // State tracking for true continuation
     workState: {
         researchPlan: null,
-        completedToolCalls: [],
+        toolCallCycles: [],
+        llmCalls: [],
         searchResults: [],
         currentIteration: 0,
-        allInformation: null
+        totalCost: 0,
+        totalTokens: 0,
+        persona: '',
+        questions: [],
+        setupData: {}
     }
 };
 
@@ -259,17 +274,23 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
     }
     continuationState.remainingSeconds = waitSeconds;
     
-    // Save state for continuation
+    // Save comprehensive state for continuation
     continuationState.savedFormData = { ...formData };
     continuationState.savedContext = {
         existingResponse: existingResponse,
         timestamp: new Date().toISOString(),
-        // Include captured work state for true continuation
+        // Include comprehensive work state for true continuation
         workState: {
             researchPlan: continuationState.workState.researchPlan,
-            completedToolCalls: [...continuationState.workState.completedToolCalls],
+            toolCallCycles: [...toolCallCycles],
+            llmCalls: [...llmCalls],
             searchResults: [...continuationState.workState.searchResults],
-            currentIteration: continuationState.workState.currentIteration
+            currentIteration: continuationState.workState.currentIteration,
+            totalCost: totalCost,
+            totalTokens: totalTokens,
+            persona: currentPersona,
+            questions: [...currentQuestions],
+            setupData: { ...currentSetupData }
         }
     };
     
@@ -361,13 +382,37 @@ function triggerContinuation() {
     // Stop countdown
     stopContinuationCountdown();
     
-    // Add continuation context to form data
+    // Add comprehensive continuation context to form data
     const formData = {
         ...continuationState.savedFormData,
         continuation: true,
-        continuationContext: continuationState.savedContext,
+        continuationContext: {
+            ...continuationState.savedContext,
+            workState: {
+                researchPlan: continuationState.savedContext?.workState?.researchPlan,
+                toolCallCycles: toolCallCycles,
+                llmCalls: llmCalls,
+                searchResults: continuationState.savedContext?.workState?.searchResults || [],
+                currentIteration: toolCallCycles.length,
+                totalCost: totalCost,
+                totalTokens: totalTokens,
+                persona: currentPersona,
+                questions: currentQuestions,
+                setupData: currentSetupData
+            }
+        },
         retryAttempt: continuationState.retryCount
     };
+    
+    console.log('📤 Comprehensive continuation data:', {
+        persona: currentPersona,
+        questions: currentQuestions.length,
+        toolCallCycles: toolCallCycles.length,
+        totalToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
+        llmCalls: llmCalls.length,
+        totalCost: totalCost,
+        totalTokens: totalTokens
+    });
     
     // Reset form state but keep retry tracking
     const currentRetryCount = continuationState.retryCount;
@@ -699,8 +744,25 @@ async function handleFormSubmission(e) {
 
     console.log('🔧 DEBUG: Form data being sent:', JSON.stringify(formData, null, 2));
 
-    // Save form data for potential continuation
+    // Save comprehensive form data for potential continuation
     window.lastFormData = { ...formData };
+    currentFormData = {
+        query: formData.query,
+        model: formData.model,
+        accessSecret: formData.accessSecret,
+        google_token: formData.google_token
+    };
+    
+    // Reset tracking state for new request if not continuing
+    if (!formData.continuation) {
+        toolCallCycles = [];
+        llmCalls = [];
+        totalCost = 0;
+        totalTokens = 0;
+        currentPersona = '';
+        currentQuestions = [];
+        currentSetupData = {};
+    }
 
     // Make the streaming request
     return makeStreamingRequest(formData);
@@ -1461,6 +1523,27 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 note.textContent = 'Note: Using server-managed API keys (authorized user).';
                                 statusElement.parentElement.appendChild(note);
                             }
+                            
+                            // Capture initial setup data for tracking
+                            if (eventData.continuation) {
+                                console.log('📋 Continuation init received');
+                                currentPersona = eventData.persona || currentPersona;
+                                currentQuestions = eventData.questions || currentQuestions;
+                                currentSetupData = {
+                                    response_length: eventData.response_length || currentSetupData.response_length,
+                                    reasoning_level: eventData.reasoning_level || currentSetupData.reasoning_level,
+                                    temperature: eventData.temperature || currentSetupData.temperature
+                                };
+                            } else {
+                                // Fresh start - reset all tracking
+                                toolCallCycles = [];
+                                llmCalls = [];
+                                totalCost = 0;
+                                totalTokens = 0;
+                                currentPersona = '';
+                                currentQuestions = [];
+                                currentSetupData = {};
+                            }
                             break;
                             
                         case 'setup_complete':
@@ -1513,7 +1596,144 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 }
                                 
                                 statusElement.textContent = `✅ Setup complete! Starting research with ${eventData.questions.length} questions...`;
+                                
+                                // Update global tracking variables
+                                currentPersona = eventData.persona || currentPersona;
+                                currentQuestions = eventData.questions || currentQuestions;
+                                currentSetupData = {
+                                    response_length: eventData.response_length,
+                                    reasoning_level: eventData.reasoning_level,
+                                    temperature: eventData.temperature
+                                };
                             }
+                            break;
+                            
+                        case 'tools':
+                            console.log('🔧 Tools event received:', eventData);
+                            
+                            // Track tool calls for current cycle - ensure we have enough cycles
+                            while (toolCallCycles.length < eventData.iteration) {
+                                toolCallCycles.push([]);
+                            }
+                            
+                            // Add pending tool calls to current cycle
+                            const pendingToolCalls = eventData.calls.map(call => ({
+                                request: {
+                                    id: call.call_id || call.id,
+                                    type: 'function',
+                                    function: {
+                                        name: call.name,
+                                        arguments: JSON.stringify(call.args || {})
+                                    }
+                                },
+                                response: null, // Will be filled when tool_result events arrive
+                                duration: 0,
+                                tokenUse: 0,
+                                cost: 0,
+                                cycle: eventData.iteration,
+                                completed: false,
+                                timestamp: new Date().toISOString()
+                            }));
+                            
+                            toolCallCycles[eventData.iteration - 1] = pendingToolCalls;
+                            
+                            // Update UI tracking display
+                            updateToolCallsDisplay();
+                            break;
+
+                        case 'tool_result':
+                            console.log('🔧 Tool result received:', eventData);
+                            
+                            // Update tool call with response
+                            const cycleIndex = eventData.iteration - 1;
+                            if (toolCallCycles[cycleIndex]) {
+                                const toolCall = toolCallCycles[cycleIndex].find(tc => 
+                                    tc.request.id === eventData.call_id
+                                );
+                                if (toolCall) {
+                                    toolCall.response = eventData.output;
+                                    toolCall.duration = eventData.duration || 0;
+                                    toolCall.tokenUse = eventData.tokenUse || 0;
+                                    toolCall.cost = eventData.cost || 0;
+                                    toolCall.completed = true;
+                                    
+                                    // Update totals
+                                    totalTokens += toolCall.tokenUse;
+                                    totalCost += toolCall.cost;
+                                }
+                            }
+                            
+                            updateToolCallsDisplay();
+                            updateCostDisplay();
+                            break;
+
+                        case 'tool_error':
+                            console.log('❌ Tool error received:', eventData);
+                            
+                            // Update tool call with error
+                            const errorCycleIndex = eventData.iteration - 1;
+                            if (toolCallCycles[errorCycleIndex]) {
+                                const errorToolCall = toolCallCycles[errorCycleIndex].find(tc => 
+                                    tc.request.id === eventData.call_id
+                                );
+                                if (errorToolCall) {
+                                    errorToolCall.response = { error: eventData.error };
+                                    errorToolCall.duration = eventData.duration || 0;
+                                    errorToolCall.completed = true; // Completed with error
+                                }
+                            }
+                            
+                            updateToolCallsDisplay();
+                            break;
+
+                        case 'llm_call':
+                            console.log('🤖 LLM call event received:', eventData);
+                            
+                            // Track LLM calls
+                            const llmCallData = {
+                                type: eventData.type,
+                                model: eventData.model,
+                                iteration: eventData.iteration,
+                                persona: eventData.persona,
+                                questions: eventData.questions,
+                                timestamp: eventData.timestamp,
+                                request: {
+                                    model: eventData.model,
+                                    type: eventData.type
+                                },
+                                response: null,
+                                duration: 0,
+                                tokenUse: 0,
+                                cost: 0
+                            };
+                            
+                            llmCalls.push(llmCallData);
+                            updateLLMCallsDisplay();
+                            break;
+
+                        case 'llm_response':
+                            console.log('🤖 LLM response received:', eventData);
+                            
+                            // Update most recent LLM call with response data
+                            if (llmCalls.length > 0) {
+                                const lastCall = llmCalls[llmCalls.length - 1];
+                                lastCall.response = {
+                                    content: eventData.content,
+                                    tool_calls: eventData.tool_calls || [],
+                                    usage: eventData.usage,
+                                    cost: eventData.cost
+                                };
+                                lastCall.duration = eventData.duration || 0;
+                                lastCall.tokenUse = eventData.usage?.total_tokens || 0;
+                                lastCall.cost = eventData.cost || 0;
+                                
+                                // Update totals
+                                totalTokens += lastCall.tokenUse;
+                                totalCost += lastCall.cost;
+                            }
+                            
+                            updateLLMCallsDisplay();
+                            updateCostDisplay();
                             break;
                             
                         case 'llm_call':
@@ -2080,6 +2300,285 @@ function initializeActionButtons() {
         // Clear button click handler
         clearQueryBtn.addEventListener('click', () => {
             promptTextarea.value = '';
+            
+// =================================================================
+// COMPREHENSIVE TOOL CALL AND LLM TRACKING UI FUNCTIONS
+// =================================================================
+
+function updateToolCallsDisplay() {
+    let container = document.getElementById('tool-calls-display');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'tool-calls-display';
+        container.className = 'expandable-section';
+        
+        const responseContainer = document.getElementById('response');
+        if (responseContainer && !responseContainer.querySelector('#tool-calls-display')) {
+            responseContainer.appendChild(container);
+        }
+    }
+    
+    const totalCalls = toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0);
+    const completedCalls = toolCallCycles.reduce((sum, cycle) => 
+        sum + cycle.filter(tc => tc.completed).length, 0
+    );
+    
+    if (totalCalls === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="section-header" onclick="toggleSection('tool-calls-content')">
+            🔧 Tool Calls (${completedCalls}/${totalCalls} completed) - ${toolCallCycles.length} cycles
+        </div>
+        <div id="tool-calls-content" class="section-content" style="display: none;">
+            ${toolCallCycles.map((cycle, cycleIndex) => {
+                if (cycle.length === 0) return '';
+                return `
+                    <div class="cycle-section">
+                        <h4>Cycle ${cycleIndex + 1} (${cycle.length} calls)</h4>
+                        ${cycle.map((call, callIndex) => `
+                            <div class="tool-call-item ${call.completed ? 'completed' : 'pending'}">
+                                <strong>${call.request.function.name}</strong>
+                                <span class="status-badge ${call.completed ? 'completed' : 'pending'}">
+                                    ${call.completed ? '✅ Completed' : '⏳ Pending'}
+                                </span>
+                                <div class="call-details">
+                                    <div><strong>Args:</strong> <code>${call.request.function.arguments}</code></div>
+                                    ${call.completed && call.response ? `
+                                        <div><strong>Response:</strong> 
+                                            <details>
+                                                <summary>Show response</summary>
+                                                <pre>${JSON.stringify(call.response, null, 2)}</pre>
+                                            </details>
+                                        </div>
+                                    ` : ''}
+                                    ${call.duration > 0 ? `<div><strong>Duration:</strong> ${call.duration}ms</div>` : ''}
+                                    ${call.cost > 0 ? `<div><strong>Cost:</strong> $${call.cost.toFixed(4)}</div>` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }).filter(Boolean).join('')}
+        </div>
+    `;
+}
+
+function updateLLMCallsDisplay() {
+    let container = document.getElementById('llm-calls-display');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'llm-calls-display';
+        container.className = 'expandable-section';
+        
+        const responseContainer = document.getElementById('response');
+        if (responseContainer && !responseContainer.querySelector('#llm-calls-display')) {
+            responseContainer.appendChild(container);
+        }
+    }
+    
+    if (llmCalls.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="section-header" onclick="toggleSection('llm-calls-content')">
+            🤖 LLM Calls (${llmCalls.length}) - Total Tokens: ${totalTokens.toLocaleString()}
+        </div>
+        <div id="llm-calls-content" class="section-content" style="display: none;">
+            ${llmCalls.map((call, index) => `
+                <div class="llm-call-item">
+                    <h4>Call ${index + 1}: ${call.type} (${call.model})</h4>
+                    <div class="call-details">
+                        ${call.response ? `
+                            <div><strong>Content:</strong> ${call.response.content.substring(0, 200)}${call.response.content.length > 200 ? '...' : ''}</div>
+                            <div><strong>Tool Calls:</strong> ${call.response.tool_calls?.length || 0}</div>
+                        ` : '<div><em>Response pending...</em></div>'}
+                        <div><strong>Duration:</strong> ${call.duration}ms</div>
+                        <div><strong>Tokens:</strong> ${call.tokenUse.toLocaleString()}</div>
+                        <div><strong>Cost:</strong> $${(call.cost || 0).toFixed(4)}</div>
+                        ${call.response ? `
+                            <details>
+                                <summary>Show full request/response</summary>
+                                <div><strong>Request:</strong> <pre>${JSON.stringify(call.request, null, 2)}</pre></div>
+                                <div><strong>Response:</strong> <pre>${JSON.stringify(call.response, null, 2)}</pre></div>
+                            </details>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function updateCostDisplay() {
+    let container = document.getElementById('cost-display');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'cost-display';
+        container.className = 'cost-summary';
+        
+        const responseContainer = document.getElementById('response');
+        if (responseContainer && !responseContainer.querySelector('#cost-display')) {
+            responseContainer.appendChild(container);
+        }
+    }
+    
+    container.innerHTML = `
+        <div class="cost-header">
+            💰 Total Cost: $${totalCost.toFixed(4)} | Tokens: ${totalTokens.toLocaleString()}
+        </div>
+    `;
+}
+
+function toggleSection(contentId) {
+    const content = document.getElementById(contentId);
+    if (content) {
+        content.style.display = content.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+// Apply enhanced styles for tracking displays
+function applyTrackingStyles() {
+    if (document.getElementById('enhanced-tracking-styles')) return;
+    
+    const styleElement = document.createElement('style');
+    styleElement.id = 'enhanced-tracking-styles';
+    styleElement.textContent = `
+        .expandable-section {
+            margin: 15px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section-header {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 12px 15px;
+            cursor: pointer;
+            font-weight: bold;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .section-header:hover {
+            background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+        }
+
+        .section-content {
+            padding: 15px;
+            background: #fafbfc;
+        }
+
+        .tool-call-item, .llm-call-item {
+            border: 1px solid #e1e8ed;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            background: white;
+            position: relative;
+        }
+
+        .tool-call-item.completed {
+            border-left: 4px solid #28a745;
+        }
+
+        .tool-call-item.pending {
+            border-left: 4px solid #ffc107;
+        }
+
+        .status-badge {
+            float: right;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-badge.completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-badge.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .call-details {
+            margin-top: 8px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .call-details code {
+            background: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .call-details pre {
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 5px 0;
+        }
+
+        .call-details details {
+            margin-top: 8px;
+        }
+
+        .call-details summary {
+            cursor: pointer;
+            color: #007bff;
+            font-weight: 500;
+        }
+
+        .call-details summary:hover {
+            text-decoration: underline;
+        }
+
+        .cost-summary {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            text-align: center;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(40, 167, 69, 0.3);
+        }
+
+        .cycle-section {
+            margin-bottom: 25px;
+            border-left: 4px solid #007bff;
+            padding-left: 15px;
+            background: #f8f9fa;
+            border-radius: 0 6px 6px 0;
+            padding: 15px;
+        }
+
+        .cycle-section h4 {
+            margin: 0 0 15px 0;
+            color: #007bff;
+            font-size: 16px;
+        }
+    `;
+    document.head.appendChild(styleElement);
+}
+
+// Initialize tracking styles on page load
+applyTrackingStyles();
             promptTextarea.style.height = 'auto';
             clearQueryBtn.style.display = 'none';
             promptTextarea.focus();
