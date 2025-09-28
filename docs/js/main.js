@@ -675,6 +675,7 @@ async function handleFormSubmission(e) {
 
 // Make streaming request (can be called for initial request or continuation)
 async function makeStreamingRequest(formData) {
+    console.log('🚀 Starting streaming request with formData:', Object.fromEntries(formData));
     const responseContainer = document.getElementById('response-container');
     const submitBtn = document.getElementById('submit-btn');
     const stopBtn = document.getElementById('stop-btn');
@@ -708,7 +709,8 @@ async function makeStreamingRequest(formData) {
         url.searchParams.set('stream', 'true');
         effectiveLambdaUrl = url.toString();
         
-
+        console.log('🌐 Making request to:', effectiveLambdaUrl);
+        console.log('📝 Request payload keys:', Array.from(formData.keys()));
         
         // Update loading message (don't clear existing content for continuation)
         if (isContinuation) {
@@ -731,11 +733,19 @@ async function makeStreamingRequest(formData) {
             signal: controller.signal
         });
         
+        console.log('📡 Response received:', {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok,
+            headers: Object.fromEntries(response.headers.entries())
+        });
+        
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);
         
         // Check if response is streaming
         const contentType = response.headers.get('content-type');
+        console.log('📋 Content-Type:', contentType);
         
         if (contentType && contentType.includes('text/event-stream')) {
             if (typeof handleStreamingResponse === 'function') {
@@ -815,6 +825,7 @@ function resetModelToFastest() {
  * Handle streaming Server-Sent Events response
  */
 async function handleStreamingResponse(response, responseContainer, controller, existingContent = '') {
+    console.log('🔄 Starting streaming response handler with existingContent:', existingContent ? 'yes' : 'no');
     
     // Initialize state variables for streaming
     const digestMap = new Map();
@@ -1243,11 +1254,14 @@ async function handleStreamingResponse(response, responseContainer, controller, 
             
             // Decode and process chunk
             const chunk = decoder.decode(value, { stream: true });
+            console.log('📦 Received chunk:', chunk.substring(0, 100) + (chunk.length > 100 ? '...' : ''));
             buffer += chunk;
             
             // Process complete events (separated by double newlines)
             const events = buffer.split('\n\n');
             buffer = events.pop(); // Keep incomplete event in buffer
+            
+            console.log('🔍 Processing', events.length, 'complete events');
             
             for (const event of events) {
                 if (!event.trim()) continue;
@@ -1268,11 +1282,20 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                     
                     if (!data) continue;
                     
-                    const eventData = JSON.parse(data);
+                    let eventData;
+                    try {
+                        eventData = JSON.parse(data);
+                    } catch (parseError) {
+                        console.error('❌ Failed to parse event data:', data, parseError);
+                        continue;
+                    }
                     
-                    // Log important LLM response events
+                    // Log ALL events for debugging
+                    console.log(`🔄 Event received: ${eventType}`, eventData);
+                    
+                    // Log important LLM response events with more detail
                     if (['final_response', 'final_answer', 'complete', 'error'].includes(eventType)) {
-                        console.log('LLM Event:', eventType, eventData);
+                        console.log('🎯 LLM Event:', eventType, eventData);
                     }
                     
                     // Handle different event types
@@ -1280,6 +1303,21 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                         case 'search_digest':
                             {
                                 const { term, iteration, summary, links, subQuestion, keywords } = eventData;
+                                console.log('📝 Processing search_digest:', {
+                                    term,
+                                    iteration,
+                                    hasSummary: !!summary,
+                                    summaryLength: summary ? summary.length : 0,
+                                    hasLinks: Array.isArray(links),
+                                    linksCount: Array.isArray(links) ? links.length : 0,
+                                    subQuestion,
+                                    keywords
+                                });
+                                
+                                if (!summary || summary.includes('disabled')) {
+                                    console.warn('⚠️ Summary appears to be disabled or missing:', summary);
+                                }
+                                
                                 const key = `${iteration}|${term}`;
                                 digestMap.set(key, { summary, links: Array.isArray(links) ? links : [] });
                                 if (subQuestion || (Array.isArray(keywords) && keywords.length)) {
@@ -1296,8 +1334,21 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             
                         case 'tools':
                             try {
+                                console.log('🔧 Processing tools event:', eventData);
                                 toolsPanel.style.display = 'block';
                                 const { iteration, pending, calls } = eventData;
+                                
+                                // Log search tool calls specifically
+                                if (Array.isArray(calls)) {
+                                    const searchCalls = calls.filter(call => call.name === 'search_web');
+                                    if (searchCalls.length > 0) {
+                                        console.log('🔍 Search tool calls detected:', searchCalls.map(call => ({
+                                            query: call.arguments?.query,
+                                            generate_summary: call.arguments?.generate_summary,
+                                            load_content: call.arguments?.load_content
+                                        })));
+                                    }
+                                }
                                 const box = document.createElement('div');
                                 box.style.cssText = 'padding:8px; border-left:3px solid #6c757d; background:#fff; margin:6px 0; border-radius:4px;';
                                 const header = document.createElement('div');
@@ -1628,8 +1679,34 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                         case 'search_results':
                             {
                                 const { term, iteration, resultsCount, results, cumulativeResultsCount, allResults, searches, subQuestion, keywords } = eventData;
+                                console.log('🔍 Processing search_results:', {
+                                    term,
+                                    iteration,
+                                    resultsCount,
+                                    hasResults: Array.isArray(results),
+                                    resultsLength: Array.isArray(results) ? results.length : 'not array',
+                                    cumulativeResultsCount,
+                                    hasSearches: Array.isArray(searches),
+                                    searchesLength: Array.isArray(searches) ? searches.length : 'not array',
+                                    subQuestion,
+                                    keywords
+                                });
+                                
+                                // Check for empty results warning
+                                if (resultsCount === 0) {
+                                    console.warn('⚠️ Empty search results received for term:', term);
+                                }
+                                
+                                // Log the actual results structure
+                                if (Array.isArray(results) && results.length > 0) {
+                                    console.log('📊 First search result structure:', results[0]);
+                                } else {
+                                    console.warn('⚠️ No results array or empty results for:', term);
+                                }
+                                
                                 // Ignore initial empty placeholder snapshot to avoid a "null" entry
                                 if (term === null || (resultsCount === 0 && iteration === 0)) {
+                                    console.log('🚫 Ignoring empty placeholder snapshot');
                                     updateLiveSummary(searches || [], cumulativeResultsCount || 0);
                                     break;
                                 }
