@@ -1857,6 +1857,8 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                         case 'final_answer':
                             statusElement.textContent = '✅ Search completed! Displaying final answer...';
                             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stop'; }
+                            const answerStopBtn = document.getElementById('stop-btn');
+                            if (answerStopBtn) { answerStopBtn.disabled = true; answerStopBtn.textContent = 'Stop'; }
                             stopAllTimers('done');
                             hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
@@ -1867,7 +1869,8 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                         case 'complete':
                             statusElement.textContent = `✅ Complete! Total time: ${Math.round(eventData.executionTime)}ms`;
                             responseContainer.className = 'response-container response-success';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stop'; }
+                            const stopBtn = document.getElementById('stop-btn');
+                            if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = 'Stop'; }
                             stopAllTimers('done');
                             hideContinuationUI();
                             // Ensure the full results tree reflects the final snapshot
@@ -1898,7 +1901,8 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 // Handle regular errors
                                 statusElement.textContent = `❌ Error: ${eventData.error}`;
                                 responseContainer.className = 'response-container response-error';
-                                if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Error'; }
+                                const errorStopBtn = document.getElementById('stop-btn');
+                                if (errorStopBtn) { errorStopBtn.disabled = true; errorStopBtn.textContent = 'Error'; }
                                 stopAllTimers('error');
                                 hideContinuationUI(); // Ensure continuation UI is hidden for regular errors
                                 stepsElement.innerHTML += `
