@@ -156,8 +156,13 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
     console.log('Existing response length:', existingResponse?.length || 0);
     console.log('Current retry count:', continuationState.retryCount);
     
-    // Parse wait time from error message
-    const waitSeconds = parseWaitTimeFromMessage(errorMessage);
+    // Always use the error message from the LLM response for quota/rate error determination
+    // Parse wait time from error message, default to 60s if not found
+    let waitSeconds = 60;
+    if (typeof errorMessage === 'string' && errorMessage.length > 0) {
+        waitSeconds = parseWaitTimeFromMessage(errorMessage);
+        if (!waitSeconds || isNaN(waitSeconds) || waitSeconds < 1) waitSeconds = 60;
+    }
     continuationState.remainingSeconds = waitSeconds;
     
     // Save state for continuation
@@ -187,7 +192,6 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
     } else {
         console.error('Status element not found!');
     }
-    
     // Add information to steps
     const stepsElement = document.getElementById('steps');
     if (stepsElement) {
@@ -197,7 +201,7 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
                     <span>⏳</span> Rate Limit Reached
                 </div>
                 <div style="opacity: 0.9; margin-bottom: 8px;">${errorMessage}</div>
-                <div style="opacity: 0.8; font-size: 0.9em;">Continuing automatically in 60 seconds. You can also click Continue to proceed immediately.</div>
+                <div style="opacity: 0.8; font-size: 0.9em;">Continuing automatically in ${waitSeconds} seconds. You can also click Continue to proceed immediately.</div>
             </div>
         `;
         console.log('Added quota error step');
@@ -366,12 +370,67 @@ function setupAutoResizeTextarea() {
     setTimeout(resizeTextarea, 100);
 }
 
+// Button state management
+function setButtonState(state, options = {}) {
+    const submitBtn = document.getElementById('submit-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const continueBtn = document.getElementById('continue-btn');
+    if (!submitBtn || !stopBtn || !continueBtn) return;
+
+    // Hide all by default
+    submitBtn.style.display = 'none';
+    stopBtn.style.display = 'none';
+    continueBtn.style.display = 'none';
+
+    if (state === 'signin') {
+        submitBtn.textContent = 'Sign in or add API key';
+        submitBtn.className = 'compact-btn submit-btn disabled-btn';
+        submitBtn.disabled = true;
+        submitBtn.style.display = 'inline-block';
+    } else if (state === 'send') {
+        submitBtn.textContent = 'Send Request';
+        submitBtn.className = 'compact-btn submit-btn';
+        submitBtn.disabled = !!options.disabled;
+        submitBtn.style.display = 'inline-block';
+    } else if (state === 'stop') {
+        stopBtn.textContent = 'Stop';
+        stopBtn.className = 'compact-btn stop-btn';
+        stopBtn.disabled = false;
+        stopBtn.style.display = 'inline-block';
+    } else if (state === 'paused') {
+        continueBtn.textContent = options.text || 'Paused';
+        continueBtn.className = 'compact-btn continue-btn paused-btn';
+        continueBtn.disabled = !!options.disabled;
+        continueBtn.style.display = 'inline-block';
+    } else if (state === 'retry') {
+        continueBtn.textContent = options.text || 'Retry';
+        continueBtn.className = 'compact-btn continue-btn retry-btn';
+        continueBtn.disabled = !!options.disabled;
+        continueBtn.style.display = 'inline-block';
+        stopBtn.textContent = 'Stop';
+        stopBtn.className = 'compact-btn stop-btn';
+        stopBtn.disabled = false;
+        stopBtn.style.display = 'inline-block';
+    }
+}
+
 // Disable submit button if prompt is empty
 function updateSubmitButton() {
     const promptInput = document.getElementById('prompt');
     const submitBtn = document.getElementById('submit-btn');
-    if (!promptInput || !submitBtn) return;
-    submitBtn.disabled = promptInput.value.trim() === '';
+    // Check auth and API key
+    let isAuthenticated = false;
+    if (window.ensureValidToken) {
+        isAuthenticated = window.isGoogleTokenValid && window.isGoogleTokenValid(window.googleAccessToken);
+    }
+    const groqKeyInput = document.getElementById('groq_api_key');
+    const openaiKeyInput = document.getElementById('openai_api_key');
+    const hasLocalKey = (groqKeyInput && groqKeyInput.value.trim()) || (openaiKeyInput && openaiKeyInput.value.trim());
+    if (!isAuthenticated && !hasLocalKey) {
+        setButtonState('signin');
+    } else {
+        setButtonState('send', { disabled: !promptInput || promptInput.value.trim() === '' });
+    }
 }
 
 // Initialize the application
