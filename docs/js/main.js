@@ -627,6 +627,7 @@ async function handleFormSubmission(e) {
     
     // Get the selected model to determine which API key to use
     const selectedModel = document.getElementById('model').value;
+    console.log('🔧 DEBUG: Selected model value:', selectedModel);
     const isGroqModel = selectedModel.startsWith('groq:');
     const isOpenaiModel = selectedModel.startsWith('openai:');
     
@@ -680,6 +681,8 @@ async function handleFormSubmission(e) {
         // Include Google token if authenticated
         ...(isAuthenticated && window.googleAccessToken ? { google_token: window.googleAccessToken } : {})
     };
+
+    console.log('🔧 DEBUG: Form data being sent:', JSON.stringify(formData, null, 2));
 
     // Save form data for potential continuation
     window.lastFormData = { ...formData };
