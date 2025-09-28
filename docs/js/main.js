@@ -2055,7 +2055,8 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             
                         case 'final_response':
                             statusElement.textContent = '✅ Search completed! Displaying final response...';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stop'; }
+                            const finalResponseStopBtn = document.getElementById('stop-btn');
+                            if (finalResponseStopBtn) { finalResponseStopBtn.disabled = true; finalResponseStopBtn.textContent = 'Stop'; }
                             stopAllTimers('done');
                             hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
@@ -2082,9 +2083,8 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             
                         case 'final_answer':
                             statusElement.textContent = '✅ Search completed! Displaying final answer...';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stop'; }
-                            const answerStopBtn = document.getElementById('stop-btn');
-                            if (answerStopBtn) { answerStopBtn.disabled = true; answerStopBtn.textContent = 'Stop'; }
+                            const finalAnswerStopBtn = document.getElementById('stop-btn');
+                            if (finalAnswerStopBtn) { finalAnswerStopBtn.disabled = true; finalAnswerStopBtn.textContent = 'Stop'; }
                             stopAllTimers('done');
                             hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
@@ -2170,7 +2170,7 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             // Ensure button states are correct after quota handling
                             console.log('🔄 Quota exceeded - ensuring correct button states');
                             const formSubmitBtn = document.getElementById('submit-btn');
-                            const formStopBtn = document.getElementById('stop-btn');
+                            const quotaStopBtn = document.getElementById('stop-btn');
                             const formContinueBtn = document.getElementById('continue-btn');
                             
                             function enforceQuotaButtonStates() {
@@ -2263,7 +2263,8 @@ async function handleStreamingResponse(response, responseContainer, controller, 
         
     } catch (streamError) {
         console.error('Streaming error:', streamError);
-        if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stopped'; }
+        const stopBtn = document.getElementById('stop-btn');
+        if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = 'Stopped'; }
         stopAllTimers('stopped');
         hideContinuationUI(); // Reset UI on streaming errors
         if (streamError.name === 'AbortError') {
