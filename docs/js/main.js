@@ -40,7 +40,6 @@ function showToast(message, type = 'info', duration = 5000) {
 // Quota/limits error detection
 function isQuotaLimitError(errorMessage) {
     if (!errorMessage) {
-        console.log('isQuotaLimitError: No error message provided');
         return false;
     }
     
@@ -71,10 +70,7 @@ function isQuotaLimitError(errorMessage) {
     ];
     
     const lowerMessage = errorMessage.toLowerCase();
-    console.log('isQuotaLimitError: Checking message:', lowerMessage);
-    
     const isQuotaError = quotaIndicators.some(indicator => lowerMessage.includes(indicator));
-    console.log('isQuotaLimitError: Result:', isQuotaError);
     
     return isQuotaError;
 }
@@ -109,8 +105,6 @@ function startContinuationCountdown() {
 
 // Parse wait time from error message
 function parseWaitTimeFromMessage(errorMessage) {
-    console.log('Parsing wait time from message:', errorMessage);
-    
     // Common patterns for wait times
     const patterns = [
         /wait\s+(\d+)\s*seconds?/i,
@@ -129,13 +123,11 @@ function parseWaitTimeFromMessage(errorMessage) {
             const value = parseInt(match[1]);
             const isMinutes = /minutes?/i.test(match[0]);
             const seconds = isMinutes ? value * 60 : value;
-            console.log(`Found wait time: ${value} ${isMinutes ? 'minutes' : 'seconds'} = ${seconds} seconds`);
             return seconds;
         }
     }
     
     // Default fallback
-    console.log('No specific wait time found, using default 60 seconds');
     return 60;
 }
 
@@ -150,11 +142,6 @@ function stopContinuationCountdown() {
 
 // Handle quota/limits error
 function handleQuotaError(errorMessage, formData, existingResponse) {
-    console.log('=== HANDLING QUOTA ERROR ===');
-    console.log('Error message:', errorMessage);
-    console.log('Form data:', formData);
-    console.log('Existing response length:', existingResponse?.length || 0);
-    console.log('Current retry count:', continuationState.retryCount);
     
     // Always use the error message from the LLM response for quota/rate error determination
     // Parse wait time from error message, default to 60s if not found
@@ -171,14 +158,11 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
         existingResponse: existingResponse,
         timestamp: new Date().toISOString()
     };
-    console.log('Saved continuation state:', continuationState);
     
     // Show/hide buttons
-    console.log('Calling showContinuationUI()');
     showContinuationUI();
     
     // Start countdown with parsed timing
-    console.log(`Starting continuation countdown for ${waitSeconds} seconds`);
     startContinuationCountdown();
     
     // Show error message with dynamic timing
@@ -188,9 +172,6 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
             ? ` (Auto-retry ${continuationState.retryCount + 1}/${continuationState.maxAutoRetries})`
             : ' (Manual continue required)';
         statusElement.textContent = `⏳ Rate limit reached. Will continue in ${waitSeconds} seconds...${autoRetryText}`;
-        console.log('Updated status element with dynamic timing');
-    } else {
-        console.error('Status element not found!');
     }
     // Add information to steps
     const stepsElement = document.getElementById('steps');
@@ -204,49 +185,28 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
                 <div style="opacity: 0.8; font-size: 0.9em;">Continuing automatically in ${waitSeconds} seconds. You can also click Continue to proceed immediately.</div>
             </div>
         `;
-        console.log('Added quota error step');
-    } else {
-        console.error('Steps element not found!');
     }
-    console.log('=== QUOTA ERROR HANDLING COMPLETE ===');
 }
 
 // Show continuation UI (hide submit/stop, show continue)
 function showContinuationUI() {
-    console.log('=== SHOWING CONTINUATION UI ===');
     const submitBtn = document.getElementById('submit-btn');
     const stopBtn = document.getElementById('stop-btn');
     const continueBtn = document.getElementById('continue-btn');
     
-    console.log('Button elements found:', {
-        submitBtn: !!submitBtn,
-        stopBtn: !!stopBtn,
-        continueBtn: !!continueBtn
-    });
-    
     if (submitBtn) {
         submitBtn.style.display = 'none';
-        console.log('Hidden submit button');
-    } else {
-        console.error('Submit button not found!');
     }
     
     if (stopBtn) {
         stopBtn.style.display = 'none';
-        console.log('Hidden stop button');
-    } else {
-        console.error('Stop button not found!');
     }
     
     if (continueBtn) {
         continueBtn.style.display = 'inline-block';
         continueBtn.disabled = false;
         continueBtn.onclick = triggerContinuation;
-        console.log('Showed continue button, display:', continueBtn.style.display);
-    } else {
-        console.error('Continue button not found!');
     }
-    console.log('=== CONTINUATION UI SETUP COMPLETE ===');
 }
 
 // Hide continuation UI (show submit, hide continue)
@@ -266,8 +226,6 @@ function hideContinuationUI() {
     continuationState.savedContext = null;
     continuationState.retryCount = 0;
     continuationState.autoRetryEnabled = true;
-    
-    console.log('Continuation UI hidden, retry state reset');
 }
 
 // Trigger continuation
@@ -276,9 +234,6 @@ function triggerContinuation() {
         console.error('No saved form data for continuation');
         return;
     }
-    
-    console.log('Triggering continuation with saved data:', continuationState.savedFormData);
-    console.log('Current retry count:', continuationState.retryCount);
     
     // Stop countdown
     stopContinuationCountdown();
@@ -489,8 +444,6 @@ function initializeApp() {
     // Update UI state
     updateModelAvailability();
     updateSubmitButton();
-    
-    console.log('Application initialized');
 }
 
 // Handle form submission for LLM requests
@@ -556,15 +509,7 @@ async function handleFormSubmission(e) {
         isAuthenticated = window.isGoogleTokenValid && window.isGoogleTokenValid(window.googleAccessToken);
     }
     
-    // Debug logging
-    console.log('Form submission validation:', {
-        selectedModel,
-        apiKey: apiKey ? 'present' : 'null',
-        hasLocalKey,
-        googleAccessToken: window.googleAccessToken ? 'present' : 'null',
-        isAuthenticated,
-        googleUser: window.googleUser ? window.googleUser.email : 'null'
-    });
+
     
     if (!hasLocalKey && !isAuthenticated) {
         responseContainer.className = 'response-container response-error';
@@ -621,8 +566,7 @@ async function makeStreamingRequest(formData) {
         url.searchParams.set('stream', 'true');
         effectiveLambdaUrl = url.toString();
         
-        console.log('Sending request to:', effectiveLambdaUrl);
-        console.log('Request data:', formData);
+
         
         // Update loading message
         responseContainer.textContent = 'Sending request...';
@@ -642,15 +586,10 @@ async function makeStreamingRequest(formData) {
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);
         
-        console.log('Response status:', response.status);
-        console.log('Response headers:', response.headers);
-        
         // Check if response is streaming
         const contentType = response.headers.get('content-type');
-        console.log('Response content-type:', contentType);
         
         if (contentType && contentType.includes('text/event-stream')) {
-            console.log('Handling streaming response');
             if (typeof handleStreamingResponse === 'function') {
                 await handleStreamingResponse(response, responseContainer, controller);
             } else {
@@ -662,8 +601,7 @@ async function makeStreamingRequest(formData) {
         
         // Handle regular JSON response
         const responseData = await response.text();
-        console.log('Non-streaming response data:', responseData);
-        console.log('Response data length:', responseData.length);
+        console.log('LLM Response:', responseData);
         
         if (response.ok) {
             try {
@@ -729,7 +667,6 @@ function resetModelToFastest() {
  * Handle streaming Server-Sent Events response
  */
 async function handleStreamingResponse(response, responseContainer, controller) {
-    console.log('Starting streaming response handler');
     
     // Initialize state variables for streaming
     const digestMap = new Map();
@@ -1076,13 +1013,10 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         const decoder = new TextDecoder();
         let buffer = '';
         
-        console.log('Starting streaming reader loop');
-        
         while (true) {
             const { done, value } = await reader.read();
             
             if (done) {
-                console.log('Stream ended');
                 statusElement.textContent = 'Stream completed';
                 break;
             }
@@ -1090,17 +1024,13 @@ async function handleStreamingResponse(response, responseContainer, controller) 
             // Decode and process chunk
             const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
-            console.log('Received chunk:', chunk);
             
             // Process complete events (separated by double newlines)
             const events = buffer.split('\n\n');
             buffer = events.pop(); // Keep incomplete event in buffer
-            console.log('Processing', events.length, 'events');
             
             for (const event of events) {
                 if (!event.trim()) continue;
-                
-                console.log('Processing event:', event);
                 
                 try {
                     // Parse Server-Sent Events format
@@ -1116,12 +1046,14 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                         }
                     }
                     
-                    console.log('Parsed event - type:', eventType, 'data:', data);
-                    
                     if (!data) continue;
                     
                     const eventData = JSON.parse(data);
-                    console.log('Received event:', eventType, eventData);
+                    
+                    // Log important LLM response events
+                    if (['final_response', 'final_answer', 'complete', 'error'].includes(eventType)) {
+                        console.log('LLM Event:', eventType, eventData);
+                    }
                     
                     // Handle different event types
                     switch (eventType) {
@@ -1387,13 +1319,10 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             break;
                         
                         case 'error':
-                            console.log('=== ERROR EVENT RECEIVED ===');
-                            console.log('Error data:', eventData);
-                            console.log('Error message:', eventData.error);
+                            console.error('LLM Error:', eventData.error);
                             
                             // Check if this is a quota/rate limit error
                             if (isQuotaLimitError(eventData.error)) {
-                                console.log('QUOTA ERROR DETECTED - calling handleQuotaError');
                                 // Get existing response content for continuation
                                 const existingResponse = answerElement ? answerElement.innerHTML : '';
                                 
@@ -1401,7 +1330,6 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 handleQuotaError(eventData.error, window.lastFormData, existingResponse);
                                 stopAllTimers('quota_limit');
                             } else {
-                                console.log('REGULAR ERROR - not a quota error');
                                 // Handle regular errors
                                 statusElement.textContent = `❌ Error: ${eventData.error}`;
                                 responseContainer.className = 'response-container response-error';
@@ -1420,8 +1348,6 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             break;
                             
                         case 'interrupt_state':
-                            console.log('Interrupt state received:', eventData);
-                            
                             // Check multiple possible sources for the interrupt reason
                             let interruptReason = null;
                             
@@ -1443,19 +1369,13 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 }
                             }
                             
-                            console.log('Extracted interrupt reason:', interruptReason);
-                            
                             // For rate limits, we know from the log message, so let's also check that
                             // If no specific reason found, but we received this interrupt_state, assume it's rate limiting
                             if (!interruptReason) {
                                 interruptReason = "API rate limit or quota reached";
-                                console.log('No specific reason found, assuming rate limit');
                             }
                             
-                            console.log('Checking interrupt reason for quota error:', interruptReason);
-                            
                             if (isQuotaLimitError(interruptReason)) {
-                                console.log('QUOTA LIMIT DETECTED in interrupt_state - calling handleQuotaError');
                                 // Get existing response content for continuation
                                 const existingResponse = answerElement ? answerElement.innerHTML : '';
                                 
@@ -1463,7 +1383,6 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                                 handleQuotaError(interruptReason, window.lastFormData, existingResponse);
                                 stopAllTimers('quota_limit');
                             } else {
-                                console.log('NOT a quota error - handling as regular interruption');
                                 // Handle as regular interruption
                                 statusElement.textContent = `⏸️ Processing interrupted: ${interruptReason}`;
                                 stepsElement.innerHTML += `
@@ -1478,7 +1397,6 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                             break;
                             
                         default:
-                            console.log('Unhandled event type:', eventType, eventData);
                             break;
                     }
                     
