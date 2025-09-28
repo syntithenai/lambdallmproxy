@@ -850,10 +850,10 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 1.2em;">🎯</span> Final Response
                     <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy" disabled title="Copy response to clipboard">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
                             📋 Copy
                         </button>
-                        <button type="button" id="share-response-btn" class="action-btn share" disabled title="Share response via email">
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
                             📧 Share
                         </button>
                     </div>
@@ -903,10 +903,10 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 1.2em;">🎯</span> Final Response
                     <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy" disabled title="Copy response to clipboard">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
                             📋 Copy
                         </button>
-                        <button type="button" id="share-response-btn" class="action-btn share" disabled title="Share response via email">
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
                             📧 Share
                         </button>
                     </div>
