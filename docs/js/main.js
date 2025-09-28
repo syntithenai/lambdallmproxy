@@ -266,6 +266,10 @@ function setupAutoResizeTextarea() {
     const textarea = document.getElementById('prompt');
     if (!textarea) return;
 
+    // Force textarea to start empty and at 1 row
+    textarea.value = '';
+    textarea.rows = 1;
+    
     // Calculate actual one-row height based on line-height and padding
     const computedStyle = window.getComputedStyle(textarea);
     const lineHeight = parseFloat(computedStyle.lineHeight) || 20;
@@ -278,6 +282,12 @@ function setupAutoResizeTextarea() {
     function resizeTextarea() {
         // Reset height to get accurate scrollHeight
         textarea.style.height = 'auto';
+        
+        // For empty textarea, force it to minimum height
+        if (textarea.value.trim() === '') {
+            textarea.style.height = minHeight + 'px';
+            return;
+        }
         
         // Calculate new height with proper bounds
         const scrollHeight = textarea.scrollHeight;
@@ -295,8 +305,9 @@ function setupAutoResizeTextarea() {
         }
     });
     
-    // Set initial height - ensure it starts at one row
+    // Force initial height to exactly 1 row, override any CSS
     textarea.style.height = minHeight + 'px';
+    textarea.style.minHeight = minHeight + 'px';
     
     // Also resize after a short delay to handle any dynamic content
     setTimeout(resizeTextarea, 100);
