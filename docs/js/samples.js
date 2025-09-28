@@ -49,23 +49,28 @@ function toggleSampleQueries() {
         console.log('Hiding dropdown');
     } else {
         populateSampleQueries();
-        dropdown.style.display = 'block';
-        dropdown.style.visibility = 'visible';
-        console.log('Showing dropdown with display:', dropdown.style.display);
         
-        // Position dropdown relative to button
+        // Position dropdown relative to button using fixed positioning
         if (button) {
             const rect = button.getBoundingClientRect();
-            const parentRect = button.offsetParent ? button.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
-            console.log('Button position:', { rect, parentRect });
-            console.log('Dropdown computed styles:', {
-                display: window.getComputedStyle(dropdown).display,
-                position: window.getComputedStyle(dropdown).position,
-                zIndex: window.getComputedStyle(dropdown).zIndex,
-                top: window.getComputedStyle(dropdown).top,
-                left: window.getComputedStyle(dropdown).left
+            const scrollY = window.scrollY || document.documentElement.scrollTop;
+            
+            dropdown.style.position = 'fixed';
+            dropdown.style.top = (rect.bottom + 8) + 'px';
+            dropdown.style.left = rect.left + 'px';
+            dropdown.style.width = '450px';
+            
+            console.log('Positioning dropdown:', {
+                buttonRect: rect,
+                dropdownTop: rect.bottom + 8,
+                dropdownLeft: rect.left,
+                scrollY: scrollY
             });
         }
+        
+        dropdown.style.display = 'block';
+        dropdown.style.visibility = 'visible';
+        console.log('Showing dropdown positioned below button');
     }
 }
 
@@ -143,9 +148,9 @@ function initializeSampleQueries() {
             dropdown.className = 'sample-dropdown';
             dropdown.style.display = 'none';
             
-            // Insert dropdown right after the sample button
-            sampleBtn.parentNode.appendChild(dropdown);
-            console.log('Created sample dropdown element');
+            // Append to body for fixed positioning
+            document.body.appendChild(dropdown);
+            console.log('Created sample dropdown element in body');
         }
         
         sampleBtn.addEventListener('click', toggleSampleQueries);
@@ -165,6 +170,21 @@ function initializeSampleQueries() {
             dropdown.style.display = 'none';
         }
     });
+    
+    // Reposition dropdown on window resize/scroll
+    function repositionDropdown() {
+        const dropdown = document.getElementById('sample-queries-dropdown');
+        const button = document.getElementById('sample-queries-btn');
+        
+        if (dropdown && button && dropdown.style.display === 'block') {
+            const rect = button.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + 8) + 'px';
+            dropdown.style.left = rect.left + 'px';
+        }
+    }
+    
+    window.addEventListener('resize', repositionDropdown);
+    window.addEventListener('scroll', repositionDropdown);
     
     console.log('Sample queries initialization complete');
 }
