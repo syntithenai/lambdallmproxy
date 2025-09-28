@@ -50,13 +50,21 @@ function toggleSampleQueries() {
     } else {
         populateSampleQueries();
         dropdown.style.display = 'block';
-        console.log('Showing dropdown');
+        dropdown.style.visibility = 'visible';
+        console.log('Showing dropdown with display:', dropdown.style.display);
         
-        // Position dropdown relative to button if needed
+        // Position dropdown relative to button
         if (button) {
             const rect = button.getBoundingClientRect();
-            const parentRect = button.offsetParent.getBoundingClientRect();
+            const parentRect = button.offsetParent ? button.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
             console.log('Button position:', { rect, parentRect });
+            console.log('Dropdown computed styles:', {
+                display: window.getComputedStyle(dropdown).display,
+                position: window.getComputedStyle(dropdown).position,
+                zIndex: window.getComputedStyle(dropdown).zIndex,
+                top: window.getComputedStyle(dropdown).top,
+                left: window.getComputedStyle(dropdown).left
+            });
         }
     }
 }
