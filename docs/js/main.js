@@ -2300,7 +2300,12 @@ function initializeActionButtons() {
         // Clear button click handler
         clearQueryBtn.addEventListener('click', () => {
             promptTextarea.value = '';
-            
+            promptTextarea.focus();
+            toggleClearButton();
+        });
+    }
+}
+
 // =================================================================
 // COMPREHENSIVE TOOL CALL AND LLM TRACKING UI FUNCTIONS
 // =================================================================
@@ -2579,16 +2584,6 @@ function applyTrackingStyles() {
 
 // Initialize tracking styles on page load
 applyTrackingStyles();
-            promptTextarea.style.height = 'auto';
-            clearQueryBtn.style.display = 'none';
-            promptTextarea.focus();
-            showToast('Query cleared', 'info', 2000);
-        });
-        
-        // Initial check
-        toggleClearButton();
-    }
-}
 
 function enableResponseActions() {
     const copyBtn = document.getElementById('copy-response-btn');
