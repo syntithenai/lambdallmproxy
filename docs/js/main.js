@@ -404,14 +404,45 @@ function triggerContinuation() {
         retryAttempt: continuationState.retryCount
     };
     
-    console.log('📤 Comprehensive continuation data:', {
+    // Debug: Log the exact continuation structure being sent
+    console.log('📦 CONTINUATION PAYLOAD STRUCTURE:', {
+        continuation: formData.continuation,
+        hasContext: !!formData.continuationContext,
+        hasWorkState: !!formData.continuationContext?.workState,
+        workStateKeys: formData.continuationContext?.workState ? Object.keys(formData.continuationContext.workState) : [],
+        toolCallCyclesData: {
+            length: toolCallCycles.length,
+            structure: toolCallCycles.map((cycle, i) => ({
+                cycle: i + 1,
+                calls: cycle.length,
+                completed: cycle.filter(tc => tc.completed).length,
+                sample: cycle[0] ? {
+                    hasRequest: !!cycle[0].request,
+                    hasResponse: !!cycle[0].response,
+                    requestKeys: cycle[0].request ? Object.keys(cycle[0].request) : [],
+                    functionName: cycle[0].request?.function?.name
+                } : null
+            }))
+        }
+    });
+    
+    console.log('📤 CONTINUATION REQUEST:', {
         persona: currentPersona,
         questions: currentQuestions.length,
         toolCallCycles: toolCallCycles.length,
         totalToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
+        completedToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.filter(tc => tc.completed).length, 0),
         llmCalls: llmCalls.length,
         totalCost: totalCost,
-        totalTokens: totalTokens
+        totalTokens: totalTokens,
+        fullContinuationData: {
+            workState: {
+                toolCallCycles: toolCallCycles.map((cycle, i) => `Cycle ${i+1}: ${cycle.length} calls`),
+                llmCalls: llmCalls.length,
+                persona: currentPersona ? 'present' : 'missing',
+                questions: currentQuestions.length
+            }
+        }
     });
     
     // Reset form state but keep retry tracking
@@ -742,8 +773,6 @@ async function handleFormSubmission(e) {
         ...(isAuthenticated && window.googleAccessToken ? { google_token: window.googleAccessToken } : {})
     };
 
-    console.log('🔧 DEBUG: Form data being sent:', JSON.stringify(formData, null, 2));
-
     // Save comprehensive form data for potential continuation
     window.lastFormData = { ...formData };
     currentFormData = {
@@ -770,7 +799,6 @@ async function handleFormSubmission(e) {
 
 // Make streaming request (can be called for initial request or continuation)
 async function makeStreamingRequest(formData) {
-    console.log('🚀 Starting streaming request with formData:', formData);
     const responseContainer = document.getElementById('response-container');
     const submitBtn = document.getElementById('submit-btn');
     const stopBtn = document.getElementById('stop-btn');
@@ -1386,7 +1414,11 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                     }
                     
                     // Log ALL events for debugging
-                    console.log(`🔄 Event received: ${eventType}`, eventData);
+                    // Log only tool-related and continuation events
+                    if (eventType === 'tools' || eventType === 'tool_result' || eventType === 'tool_error' || 
+                        eventType === 'quota_exceeded' || eventType === 'init' && eventData.continuation) {
+                        console.log(`🔄 ${eventType}:`, eventData);
+                    }
                     
                     // Log important LLM response events with more detail
                     if (['final_response', 'final_answer', 'complete', 'error'].includes(eventType)) {
@@ -1609,7 +1641,13 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             break;
                             
                         case 'tools':
-                            console.log('🔧 Tools event received:', eventData);
+                            console.log('🔧 TOOLS EVENT:', {
+                                iteration: eventData.iteration,
+                                pending: eventData.pending,
+                                calls: eventData.calls,
+                                currentCycles: toolCallCycles.length,
+                                totalTracked: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0)
+                            });
                             
                             // Track tool calls for current cycle - ensure we have enough cycles
                             while (toolCallCycles.length < eventData.iteration) {
@@ -1642,7 +1680,13 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             break;
 
                         case 'tool_result':
-                            console.log('🔧 Tool result received:', eventData);
+                            console.log('🔧 TOOL RESULT:', {
+                                iteration: eventData.iteration,
+                                call_id: eventData.call_id,
+                                name: eventData.name,
+                                hasOutput: !!eventData.output,
+                                currentCycles: toolCallCycles.length
+                            });
                             
                             // Update tool call with response
                             const cycleIndex = eventData.iteration - 1;
