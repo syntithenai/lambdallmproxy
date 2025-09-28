@@ -1533,7 +1533,12 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 } else if (responseType === 'final_response') {
                                     // Final response - update main display
                                     if (eventData.content) {
-                                        responseElement.innerHTML = marked.parse(eventData.content);
+                                        if (typeof marked !== 'undefined') {
+                                            responseElement.innerHTML = marked.parse(eventData.content);
+                                        } else {
+                                            // Fallback: simple text with line breaks
+                                            responseElement.innerHTML = eventData.content.replace(/\n/g, '<br>');
+                                        }
                                         statusElement.textContent = '✅ Research completed!';
                                         
                                         // Display cost summary if available
