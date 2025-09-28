@@ -1912,6 +1912,53 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             }
                             break;
                             
+                        case 'quota_exceeded':
+                            console.log('📊 Quota exceeded event received:', eventData);
+                            
+                            // Get existing response content for continuation
+                            const existingResponse = answerElement ? answerElement.innerHTML : '';
+                            
+                            // Use the waitTime from the event data if available, otherwise fallback to parsing from message
+                            let waitTime = eventData.waitTime || 60;
+                            if (eventData.error && typeof eventData.error === 'string') {
+                                const parsedWait = parseWaitTimeFromMessage(eventData.error);
+                                if (parsedWait && !isNaN(parsedWait) && parsedWait > 0) {
+                                    waitTime = parsedWait;
+                                }
+                            }
+                            
+                            console.log(`🔄 Quota exceeded - wait time: ${waitTime}s`);
+                            
+                            // Create a formatted error message for the handler
+                            const errorMessage = eventData.error || `Rate limit exceeded. Please wait ${waitTime} seconds before continuing.`;
+                            
+                            // Handle quota error with continuation using the waitTime
+                            continuationState.remainingSeconds = waitTime;
+                            handleQuotaError(errorMessage, window.lastFormData, existingResponse);
+                            stopAllTimers('quota_limit');
+                            
+                            // Ensure button states are correct after quota handling
+                            console.log('🔄 Quota exceeded - ensuring correct button states');
+                            const formSubmitBtn = document.getElementById('submit-btn');
+                            const formStopBtn = document.getElementById('stop-btn');
+                            const formContinueBtn = document.getElementById('continue-btn');
+                            
+                            if (formSubmitBtn) {
+                                formSubmitBtn.style.display = 'none';
+                                console.log('🔄 Hidden submit button for quota exceeded');
+                            }
+                            if (formStopBtn) {
+                                formStopBtn.style.display = 'inline-block';
+                                formStopBtn.disabled = false;
+                                formStopBtn.textContent = 'Stop';
+                                console.log('🔄 Showed stop button for quota exceeded');
+                            }
+                            if (formContinueBtn) {
+                                formContinueBtn.style.display = 'inline-block';
+                                console.log('🔄 Showed continue button for quota exceeded');
+                            }
+                            break;
+                            
                         case 'interrupt_state':
                             // Check multiple possible sources for the interrupt reason
                             let interruptReason = null;
