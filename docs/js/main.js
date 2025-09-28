@@ -80,7 +80,11 @@ function startContinuationCountdown() {
     const continueBtn = document.getElementById('continue-btn');
     if (!continueBtn) return;
     
-    continuationState.remainingSeconds = 60;
+    // Use the remainingSeconds value already set by handleQuotaError (don't overwrite)
+    // If not set, default to 60 seconds
+    if (!continuationState.remainingSeconds || continuationState.remainingSeconds < 1) {
+        continuationState.remainingSeconds = 60;
+    }
     continuationState.isActive = true;
     
     function updateCountdown() {
@@ -105,14 +109,26 @@ function startContinuationCountdown() {
 
 // Parse wait time from error message
 function parseWaitTimeFromMessage(errorMessage) {
-    // Common patterns for wait times
+    // Enhanced patterns for wait times including decimal seconds
     const patterns = [
+        // Decimal seconds patterns (e.g., "Please try again in 15.446s")
+        /try again in\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
+        /wait\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
+        /retry after\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
+        /rate limit.+?(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
+        /limit.+?(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
+        
+        // Integer seconds patterns
         /wait\s+(\d+)\s*seconds?/i,
         /try again in\s+(\d+)\s*seconds?/i,
+        /retry after\s+(\d+)\s*seconds?/i,
         /rate limit.+?(\d+)\s*seconds?/i,
         /limit.+?(\d+)\s*seconds?/i,
+        
+        // Minutes patterns
         /wait\s+(\d+)\s*minutes?/i,
         /try again in\s+(\d+)\s*minutes?/i,
+        /retry after\s+(\d+)\s*minutes?/i,
         /rate limit.+?(\d+)\s*minutes?/i,
         /limit.+?(\d+)\s*minutes?/i
     ];
@@ -120,10 +136,15 @@ function parseWaitTimeFromMessage(errorMessage) {
     for (const pattern of patterns) {
         const match = errorMessage.match(pattern);
         if (match) {
-            const value = parseInt(match[1]);
+            const value = parseFloat(match[1]);
             const isMinutes = /minutes?/i.test(match[0]);
-            const seconds = isMinutes ? value * 60 : value;
-            return seconds;
+            let seconds = isMinutes ? value * 60 : value;
+            
+            // Round up decimal seconds to ensure we don't retry too early
+            seconds = Math.ceil(seconds);
+            
+            // Ensure minimum wait time of 1 second
+            return Math.max(1, seconds);
         }
     }
     
@@ -149,6 +170,7 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
     if (typeof errorMessage === 'string' && errorMessage.length > 0) {
         waitSeconds = parseWaitTimeFromMessage(errorMessage);
         if (!waitSeconds || isNaN(waitSeconds) || waitSeconds < 1) waitSeconds = 60;
+        console.log(`🔄 Quota error - parsed wait time: ${waitSeconds}s from message: "${errorMessage}"`);
     }
     continuationState.remainingSeconds = waitSeconds;
     
