@@ -12,7 +12,15 @@ let continuationState = {
     remainingSeconds: 0,
     retryCount: 0,
     maxAutoRetries: 3,
-    autoRetryEnabled: true
+    autoRetryEnabled: true,
+    // State tracking for true continuation
+    workState: {
+        researchPlan: null,
+        completedToolCalls: [],
+        searchResults: [],
+        currentIteration: 0,
+        allInformation: null
+    }
 };
 
 // Toast notification system
@@ -227,6 +235,17 @@ function stopCountdownAndReset() {
     updateSubmitButton();
 }
 
+// Reset work state for new requests
+function resetWorkState() {
+    continuationState.workState = {
+        researchPlan: null,
+        completedToolCalls: [],
+        searchResults: [],
+        currentIteration: 0,
+        allInformation: null
+    };
+}
+
 // Handle quota/limits error
 function handleQuotaError(errorMessage, formData, existingResponse) {
     
@@ -244,7 +263,14 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
     continuationState.savedFormData = { ...formData };
     continuationState.savedContext = {
         existingResponse: existingResponse,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        // Include captured work state for true continuation
+        workState: {
+            researchPlan: continuationState.workState.researchPlan,
+            completedToolCalls: [...continuationState.workState.completedToolCalls],
+            searchResults: [...continuationState.workState.searchResults],
+            currentIteration: continuationState.workState.currentIteration
+        }
     };
     
     // Show/hide buttons
@@ -655,6 +681,9 @@ async function makeStreamingRequest(formData) {
         // Save existing content to preserve it
         existingContent = continuationState.savedContext.existingResponse;
         console.log('🔄 Continuation request - preserving existing content');
+    } else {
+        // Reset work state for new requests
+        resetWorkState();
     }
     
     // Set a reasonable default timeout (90 seconds)
@@ -1278,6 +1307,22 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 toolsPanel.style.display = 'block';
                                 const { iteration, call_id, name, args, output } = eventData;
                                 
+                                // Capture tool result for continuation
+                                continuationState.workState.completedToolCalls.push({
+                                    iteration,
+                                    call_id,
+                                    name,
+                                    args,
+                                    output,
+                                    timestamp: new Date().toISOString()
+                                });
+                                
+                                // Update current iteration tracker
+                                continuationState.workState.currentIteration = Math.max(
+                                    continuationState.workState.currentIteration, 
+                                    iteration || 0
+                                );
+                                
                                 // Add result to the expandable tools section
                                 if (call_id && typeof addToolResult === 'function') {
                                     addToolResult(call_id, output);
@@ -1406,6 +1451,24 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 // Store metadata for this term
                                 const metaKey = `${iteration}|${term}`;
                                 metaMap.set(metaKey, { subQuestion: subQuestion || null, keywords: Array.isArray(keywords) ? keywords : [] });
+                                
+                                // Capture search results for continuation
+                                continuationState.workState.searchResults.push({
+                                    term,
+                                    iteration,
+                                    resultsCount,
+                                    results: Array.isArray(results) ? results : [],
+                                    cumulativeResultsCount,
+                                    subQuestion,
+                                    keywords: Array.isArray(keywords) ? keywords : [],
+                                    timestamp: new Date().toISOString()
+                                });
+                                
+                                // Update current iteration tracker
+                                continuationState.workState.currentIteration = Math.max(
+                                    continuationState.workState.currentIteration, 
+                                    iteration || 0
+                                );
 
                                 // Mark this search timer as done
                                 stopSearchTimer(iteration, term, 'done');
