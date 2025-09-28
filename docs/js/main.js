@@ -396,6 +396,11 @@ function triggerContinuation() {
     makeStreamingRequest(formData);
 }
 
+// Global function for continuation button clicks (referenced in HTML)
+function continueRequest() {
+    triggerContinuation();
+}
+
 // Auto-resize textarea functionality
 function setupAutoResizeTextarea() {
     const textarea = document.getElementById('prompt');
@@ -590,6 +595,7 @@ async function handleFormSubmission(e) {
     
     // Show loading message
     responseContainer.className = 'response-container loading';
+    disableResponseActions();
     responseContainer.style.display = 'block';
     responseContainer.textContent = 'Sending request...';
     
@@ -832,6 +838,14 @@ async function handleStreamingResponse(response, responseContainer, controller, 
             <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
                 </h3>
             </div>
             <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
@@ -877,6 +891,14 @@ async function handleStreamingResponse(response, responseContainer, controller, 
             <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
                 </h3>
             </div>
             <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
@@ -1357,6 +1379,186 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             }
                             break;
                             
+                        case 'setup_complete':
+                            {
+                                // Display persona information
+                                const personaContainer = document.getElementById('persona-container');
+                                const personaText = document.getElementById('persona-text');
+                                if (personaContainer && personaText && eventData.persona) {
+                                    personaText.textContent = eventData.persona;
+                                    personaContainer.style.display = 'block';
+                                }
+                                
+                                // Display research questions
+                                const researchContainer = document.getElementById('research-questions-container');
+                                const researchText = document.getElementById('research-questions-text');
+                                if (researchContainer && researchText && eventData.questions) {
+                                    let questionsHtml = `<div style="margin-bottom: 8px;"><strong>Research Questions:</strong></div>`;
+                                    questionsHtml += '<ul style="margin: 0; padding-left: 20px;">';
+                                    eventData.questions.forEach((q, i) => {
+                                        questionsHtml += `<li style="margin-bottom: 4px;">${q}</li>`;
+                                    });
+                                    questionsHtml += '</ul>';
+                                    questionsHtml += `<div style="margin-top: 8px; font-size: 0.85rem; opacity: 0.9;"><em>Response Length: ${eventData.response_length} | Reasoning: ${eventData.reasoning_level}</em></div>`;
+                                    researchText.innerHTML = questionsHtml;
+                                    researchContainer.style.display = 'block';
+                                }
+                                
+                                // Save setup data for continuation
+                                continuationState.workState.setupData = {
+                                    persona: eventData.persona,
+                                    questions: eventData.questions,
+                                    response_length: eventData.response_length,
+                                    reasoning_level: eventData.reasoning_level,
+                                    temperature: eventData.temperature
+                                };
+                                
+                                // Display cost information if available
+                                if (eventData.cost && eventData.cost.totalCost) {
+                                    showToast(`Setup query cost: $${eventData.cost.totalCost.toFixed(6)}`, 'info', 3000);
+                                }
+                                
+                                statusElement.textContent = `✅ Setup complete! Starting research with ${eventData.questions.length} questions...`;
+                            }
+                            break;
+                            
+                        case 'llm_call':
+                            {
+                                // Display LLM call information
+                                const callType = eventData.type || 'unknown';
+                                if (callType === 'setup_query') {
+                                    statusElement.textContent = '🧠 Analyzing query to determine research approach...';
+                                } else if (callType === 'query_cycle') {
+                                    statusElement.textContent = `🔬 Conducting research with persona: ${eventData.persona ? eventData.persona.substring(0, 50) + '...' : 'Expert researcher'}`;
+                                }
+                            }
+                            break;
+                            
+                        case 'llm_response':
+                            {
+                                // Handle streaming LLM response
+                                const responseType = eventData.type || 'unknown';
+                                if (responseType === 'setup_response') {
+                                    statusElement.textContent = '📝 Processing setup response...';
+                                } else if (responseType === 'research_response') {
+                                    statusElement.textContent = '📖 Generating research response...';
+                                } else if (responseType === 'final_response') {
+                                    // Final response - update main display
+                                    if (eventData.content) {
+                                        responseElement.innerHTML = marked.parse(eventData.content);
+                                        statusElement.textContent = '✅ Research completed!';
+                                        
+                                        // Display cost summary if available
+                                        if (eventData.cost && eventData.cost.totalCost) {
+                                            const costContainer = document.getElementById('cost-container');
+                                            const costText = document.getElementById('cost-text');
+                                            if (costContainer && costText) {
+                                                const cost = eventData.cost;
+                                                let costHtml = `<div style="margin-bottom: 8px;"><strong>LLM Costs:</strong></div>`;
+                                                costHtml += `<div>Model: ${cost.model} (${cost.provider})</div>`;
+                                                costHtml += `<div>Input tokens: ${cost.inputTokens.toLocaleString()} ($${cost.inputCost.toFixed(6)})</div>`;
+                                                costHtml += `<div>Output tokens: ${cost.outputTokens.toLocaleString()} ($${cost.outputCost.toFixed(6)})</div>`;
+                                                costHtml += `<div style="font-weight: bold; margin-top: 8px;">Total: $${cost.totalCost.toFixed(6)}</div>`;
+                                                costText.innerHTML = costHtml;
+                                                costContainer.style.display = 'block';
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                            
+                        case 'tool_calls_planned':
+                            {
+                                // Display planned tool calls
+                                if (eventData.tools && Array.isArray(eventData.tools)) {
+                                    toolsPanel.style.display = 'block';
+                                    const box = document.createElement('div');
+                                    box.style.cssText = 'padding:8px; border-left:3px solid #6c757d; background:#fff; margin:6px 0; border-radius:4px;';
+                                    const header = document.createElement('div');
+                                    header.innerHTML = `<strong>Planned Tool Calls</strong> • ${eventData.tools.length} call(s)`;
+                                    box.appendChild(header);
+                                    
+                                    const list = document.createElement('ul');
+                                    list.style.margin = '6px 0 0 16px';
+                                    eventData.tools.forEach(tool => {
+                                        const li = document.createElement('li');
+                                        li.textContent = `${tool.name || tool.function?.name || 'unknown'} ${tool.id ? '(' + tool.id + ')' : ''}`;
+                                        list.appendChild(li);
+                                    });
+                                    box.appendChild(list);
+                                    toolsLog.appendChild(box);
+                                    
+                                    statusElement.textContent = `🔧 Executing ${eventData.tools.length} tool call(s)...`;
+                                }
+                            }
+                            break;
+                            
+                        case 'tool_call_result':
+                            {
+                                // Display tool call result
+                                const { tool, result } = eventData;
+                                if (tool && result) {
+                                    toolsPanel.style.display = 'block';
+                                    
+                                    // Capture tool result for continuation
+                                    continuationState.workState.completedToolCalls.push({
+                                        tool: tool.name || tool.function?.name || 'unknown',
+                                        args: tool.arguments || tool.function?.arguments || {},
+                                        result: result,
+                                        timestamp: new Date().toISOString()
+                                    });
+                                    
+                                    const item = document.createElement('div');
+                                    item.style.cssText = 'padding:8px; border-left:3px solid #28a745; background:#fff; margin:6px 0; border-radius:4px;';
+                                    const title = document.createElement('div');
+                                    title.innerHTML = `<strong>${tool.name || tool.function?.name || 'unknown'}</strong> completed`;
+                                    const resultPre = document.createElement('pre');
+                                    resultPre.style.cssText = 'white-space: pre-wrap; max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 4px;';
+                                    resultPre.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+                                    item.appendChild(title);
+                                    item.appendChild(resultPre);
+                                    toolsLog.appendChild(item);
+                                }
+                            }
+                            break;
+                            
+                        case 'pause':
+                            {
+                                // Handle pause event (for rate limits)
+                                if (eventData.reason === 'rate_limit') {
+                                    const continuationData = eventData.continuationData;
+                                    if (continuationData) {
+                                        // Save continuation data for retry
+                                        continuationState.savedContext = {
+                                            query: continuationData.query,
+                                            setupData: continuationData.setupData,
+                                            model: continuationData.model,
+                                            workState: continuationData.workState
+                                        };
+                                        continuationState.savedFormData = {
+                                            query: continuationData.query,
+                                            model: continuationData.model
+                                        };
+                                        continuationState.isActive = true;
+                                        
+                                        statusElement.innerHTML = `
+                                            <div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                                                ⏸️ Paused due to rate limit. You can continue the request when ready.
+                                                <div style="margin-top: 8px;">
+                                                    <button onclick="continueRequest()" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">
+                                                        Continue Request
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `;
+                                        
+                                        showToast(`Request paused due to rate limit: ${eventData.error}`, 'warning', 8000);
+                                    }
+                                }
+                            }
+                            break;
+                            
                         case 'persona':
                             {
                                 const personaContainer = document.getElementById('persona-container');
@@ -1502,6 +1704,7 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             stopAllTimers('done');
                             hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
+                            enableResponseActions();
                             // Keep metadata visible and updated
                             metadataContent.innerHTML = `
                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
@@ -1528,6 +1731,7 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             stopAllTimers('done');
                             hideContinuationUI();
                             answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
+                            enableResponseActions();
                             responseContainer.className = 'response-container response-success';
                             break;
                             
@@ -1654,9 +1858,146 @@ async function handleStreamingResponse(response, responseContainer, controller, 
     }
 }
 
+// Action button functionality
+function initializeActionButtons() {
+    // Clear query button functionality
+    const promptTextarea = document.getElementById('prompt');
+    const clearQueryBtn = document.getElementById('clear-query-btn');
+    
+    if (promptTextarea && clearQueryBtn) {
+        // Show/hide clear button based on textarea content
+        function toggleClearButton() {
+            if (promptTextarea.value.trim()) {
+                clearQueryBtn.style.display = 'block';
+            } else {
+                clearQueryBtn.style.display = 'none';
+            }
+        }
+        
+        // Listen for input changes
+        promptTextarea.addEventListener('input', toggleClearButton);
+        promptTextarea.addEventListener('paste', () => setTimeout(toggleClearButton, 10));
+        
+        // Clear button click handler
+        clearQueryBtn.addEventListener('click', () => {
+            promptTextarea.value = '';
+            promptTextarea.style.height = 'auto';
+            clearQueryBtn.style.display = 'none';
+            promptTextarea.focus();
+            showToast('Query cleared', 'info', 2000);
+        });
+        
+        // Initial check
+        toggleClearButton();
+    }
+}
+
+function enableResponseActions() {
+    const copyBtn = document.getElementById('copy-response-btn');
+    const shareBtn = document.getElementById('share-response-btn');
+    
+    if (copyBtn) copyBtn.disabled = false;
+    if (shareBtn) shareBtn.disabled = false;
+}
+
+function disableResponseActions() {
+    const copyBtn = document.getElementById('copy-response-btn');
+    const shareBtn = document.getElementById('share-response-btn');
+    
+    if (copyBtn) copyBtn.disabled = true;
+    if (shareBtn) shareBtn.disabled = true;
+}
+
+function setupResponseActionHandlers() {
+    // Use event delegation to handle dynamically created buttons
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'copy-response-btn' && !e.target.disabled) {
+            copyResponseToClipboard();
+        } else if (e.target.id === 'share-response-btn' && !e.target.disabled) {
+            shareResponseByEmail();
+        }
+    });
+}
+
+async function copyResponseToClipboard() {
+    const answerElement = document.getElementById('final-answer');
+    if (!answerElement) {
+        showToast('No response to copy', 'warning');
+        return;
+    }
+    
+    // Get text content, preserving line breaks
+    const responseText = answerElement.innerText || answerElement.textContent || '';
+    
+    if (!responseText.trim() || responseText.includes('Working on it…')) {
+        showToast('Response not ready yet', 'warning');
+        return;
+    }
+    
+    try {
+        await navigator.clipboard.writeText(responseText);
+        showToast('Response copied to clipboard!', 'success', 3000);
+    } catch (err) {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = responseText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            showToast('Response copied to clipboard!', 'success', 3000);
+        } catch (fallbackErr) {
+            showToast('Failed to copy to clipboard', 'error');
+        }
+        document.body.removeChild(textArea);
+    }
+}
+
+function shareResponseByEmail() {
+    const answerElement = document.getElementById('final-answer');
+    const promptTextarea = document.getElementById('prompt');
+    
+    if (!answerElement) {
+        showToast('No response to share', 'warning');
+        return;
+    }
+    
+    const responseText = answerElement.innerText || answerElement.textContent || '';
+    const queryText = promptTextarea ? promptTextarea.value : '';
+    
+    if (!responseText.trim() || responseText.includes('Working on it…')) {
+        showToast('Response not ready yet', 'warning');
+        return;
+    }
+    
+    // Create email content for Gmail
+    const subject = encodeURIComponent('AI Search Response' + (queryText ? `: ${queryText.substring(0, 50)}${queryText.length > 50 ? '...' : ''}` : ''));
+    const body = encodeURIComponent(
+        `Query: ${queryText}\n\n` +
+        `Response:\n${responseText}\n\n` +
+        `Generated by AI Search at ${new Date().toLocaleString()}`
+    );
+    
+    // Create Gmail compose URL
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`;
+    
+    try {
+        window.open(gmailUrl, '_blank');
+        showToast('Gmail opened in new tab', 'success', 3000);
+    } catch (err) {
+        showToast('Failed to open Gmail', 'error');
+    }
+}
+
 // Wait for DOM to be fully loaded
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeApp);
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeApp();
+        initializeActionButtons();
+        setupResponseActionHandlers();
+    });
 } else {
     initializeApp();
+    initializeActionButtons();
+    setupResponseActionHandlers();
 }
