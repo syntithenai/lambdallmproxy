@@ -366,6 +366,14 @@ function setupAutoResizeTextarea() {
     setTimeout(resizeTextarea, 100);
 }
 
+// Disable submit button if prompt is empty
+function updateSubmitButton() {
+    const promptInput = document.getElementById('prompt');
+    const submitBtn = document.getElementById('submit-btn');
+    if (!promptInput || !submitBtn) return;
+    submitBtn.disabled = promptInput.value.trim() === '';
+}
+
 // Initialize the application
 function initializeApp() {
     // Check for OAuth redirect first, then initialize Google services
@@ -382,26 +390,33 @@ function initializeApp() {
     
     // Set up auto-resize textarea
     setupAutoResizeTextarea();
-    
+
     // Set up login button handler
     const loginBtn = document.getElementById('login-btn');
     if (loginBtn) {
         loginBtn.addEventListener('click', handleLogin);
     }
-    
+
     // Set up form submission handler
     const form = document.getElementById('llm-form');
     const submitBtn = document.getElementById('submit-btn');
-    
+    const promptInput = document.getElementById('prompt');
+
     if (form) {
         form.addEventListener('submit', handleFormSubmission);
     }
-    
+
     if (submitBtn) {
         submitBtn.addEventListener('click', (e) => {
             e.preventDefault();
             handleFormSubmission(e);
         });
+    }
+
+    if (promptInput) {
+        promptInput.addEventListener('input', updateSubmitButton);
+        // Initial state
+        updateSubmitButton();
     }
     
     // Update UI state
