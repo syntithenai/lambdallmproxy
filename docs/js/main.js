@@ -710,7 +710,7 @@ async function makeStreamingRequest(formData) {
         effectiveLambdaUrl = url.toString();
         
         console.log('🌐 Making request to:', effectiveLambdaUrl);
-        console.log('📝 Request payload keys:', Array.from(formData.keys()));
+        console.log('📝 Request payload keys:', Object.keys(formData));
         
         // Update loading message (don't clear existing content for continuation)
         if (isContinuation) {
