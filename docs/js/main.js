@@ -586,6 +586,21 @@ async function handleFormSubmission(e) {
         resetToolExecutions();
     }
     
+    // Hide persona and questions containers at start of new search
+    const personaEl = document.getElementById('persona-container');
+    const researchEl = document.getElementById('research-questions-container');
+    const layoutEl = document.querySelector('.persona-questions-layout');
+    
+    if (personaEl) {
+        personaEl.style.display = 'none';
+    }
+    if (researchEl) {
+        researchEl.style.display = 'none';
+    }
+    if (layoutEl) {
+        layoutEl.classList.add('hidden');
+    }
+    
     // Hide submit button and show stop button
     const stopBtn = document.getElementById('stop-btn');
     if (stopBtn) {
@@ -1438,6 +1453,11 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 if (personaContainer && personaText && eventData.persona) {
                                     personaText.textContent = eventData.persona;
                                     personaContainer.style.display = 'block';
+                                    // Show the layout container
+                                    const layoutContainer = document.querySelector('.persona-questions-layout');
+                                    if (layoutContainer) {
+                                        layoutContainer.classList.remove('hidden');
+                                    }
                                 }
                                 
                                 // Display research questions
@@ -1453,6 +1473,11 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                     questionsHtml += `<div style="margin-top: 8px; font-size: 0.85rem; opacity: 0.9;"><em>Response Length: ${eventData.response_length} | Reasoning: ${eventData.reasoning_level}</em></div>`;
                                     researchText.innerHTML = questionsHtml;
                                     researchContainer.style.display = 'block';
+                                    // Show the layout container
+                                    const layoutContainer = document.querySelector('.persona-questions-layout');
+                                    if (layoutContainer) {
+                                        layoutContainer.classList.remove('hidden');
+                                    }
                                 }
                                 
                                 // Save setup data for continuation
@@ -1617,6 +1642,11 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                 if (personaContainer && personaText && eventData.persona) {
                                     personaText.textContent = eventData.persona;
                                     personaContainer.style.display = 'block';
+                                    // Show the layout container
+                                    const layoutContainer = document.querySelector('.persona-questions-layout');
+                                    if (layoutContainer) {
+                                        layoutContainer.classList.remove('hidden');
+                                    }
                                 }
                             }
                             break;
@@ -1632,6 +1662,11 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                         questionsHtml += `<li style="margin-bottom: 4px;">${q}</li>`;
                                     });
                                     questionsHtml += '</ul>';
+                                    // Show the layout container
+                                    const layoutContainer = document.querySelector('.persona-questions-layout');
+                                    if (layoutContainer) {
+                                        layoutContainer.classList.remove('hidden');
+                                    }
                                     if (eventData.reasoning) {
                                         questionsHtml += `<div style="margin-top: 8px; font-size: 0.85rem; opacity: 0.9;"><em>${eventData.reasoning}</em></div>`;
                                     }

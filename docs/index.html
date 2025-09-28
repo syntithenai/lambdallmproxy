@@ -296,6 +296,11 @@
             border-bottom: 1px solid #e0e0e0;
         }
 
+        /* Hide layout container by default when both cards are hidden */
+        .persona-questions-layout.hidden {
+            display: none;
+        }
+
         .persona-card, .questions-card {
             flex: 1;
             border-radius: 8px;
@@ -1214,15 +1219,15 @@
 </div>
 
 <!-- Persona and Questions Layout -->
-<div class="persona-questions-layout">
+<div class="persona-questions-layout hidden">
     <!-- Persona Display -->
-    <div id="persona-container" class="persona-card">
+    <div id="persona-container" class="persona-card" style="display: none;">
         <div class="persona-card-header">🎭 Persona</div>
         <div id="persona-text" class="persona-card-content"></div>
     </div>
 
     <!-- Research Questions Display -->
-    <div id="research-questions-container" class="questions-card">
+    <div id="research-questions-container" class="questions-card" style="display: none;">
         <div class="questions-card-header">🔍 Research Strategy</div>
         <div id="research-questions-text" class="questions-card-content"></div>
     </div>
