@@ -626,8 +626,17 @@ async function handleFormSubmission(e) {
     }
     
     // Get the selected model to determine which API key to use
-    const selectedModel = document.getElementById('model').value;
-    console.log('🔧 DEBUG: Selected model value:', selectedModel);
+    const modelElement = document.getElementById('model');
+    console.log('🔧 DEBUG: Model element:', modelElement);
+    let selectedModel = modelElement ? modelElement.value : '';
+    console.log('🔧 DEBUG: Selected model value (raw):', selectedModel);
+    
+    // Fallback to default if model is empty or undefined
+    if (!selectedModel) {
+        selectedModel = 'groq:llama-3.1-8b-instant';
+        console.log('🔧 DEBUG: Using fallback model:', selectedModel);
+    }
+    
     const isGroqModel = selectedModel.startsWith('groq:');
     const isOpenaiModel = selectedModel.startsWith('openai:');
     
