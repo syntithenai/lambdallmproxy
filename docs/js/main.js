@@ -473,7 +473,15 @@ function initializeApp() {
     }
 
     if (promptInput) {
-        promptInput.addEventListener('input', updateSubmitButton);
+        // Restore prompt from localStorage if available
+        const savedPrompt = localStorage.getItem('llmproxy_prompt');
+        if (savedPrompt !== null) {
+            promptInput.value = savedPrompt;
+        }
+        promptInput.addEventListener('input', () => {
+            localStorage.setItem('llmproxy_prompt', promptInput.value);
+            updateSubmitButton();
+        });
         // Initial state
         updateSubmitButton();
     }
