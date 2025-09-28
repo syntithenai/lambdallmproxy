@@ -675,7 +675,7 @@ async function handleFormSubmission(e) {
 
 // Make streaming request (can be called for initial request or continuation)
 async function makeStreamingRequest(formData) {
-    console.log('🚀 Starting streaming request with formData:', Object.fromEntries(formData));
+    console.log('🚀 Starting streaming request with formData:', formData);
     const responseContainer = document.getElementById('response-container');
     const submitBtn = document.getElementById('submit-btn');
     const stopBtn = document.getElementById('stop-btn');
