@@ -42,7 +42,7 @@ let continuationState = {
 function showToast(message, type = 'info', duration = 5000) {
     const container = document.getElementById('toast-container');
     if (!container) return;
-
+ 
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.innerHTML = message;
@@ -1012,18 +1012,46 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                 <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
             </div>
         </div>
-        <div id="streaming-metadata" style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
-            <h4 style="margin: 0 0 10px 0; color: #495057; display: flex; align-items: center; gap: 8px;">
-                <span>📊</span> Search Summary
-            </h4>
-            <div id="metadata-content"></div>
-            <ul id="search-summary-list" style="margin: 10px 0 0 0; padding-left: 20px;"></ul>
-        </div>
         <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
             <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">🔄</span> Real-time Search Progress
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
             </h3>
             <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
         </div>
         <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
         <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
@@ -1065,18 +1093,46 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                 <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
             </div>
         </div>
-        <div id="streaming-metadata" style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
-            <h4 style="margin: 0 0 10px 0; color: #495057; display: flex; align-items: center; gap: 8px;">
-                <span>📊</span> Search Summary
-            </h4>
-            <div id="metadata-content"></div>
-            <ul id="search-summary-list" style="margin: 10px 0 0 0; padding-left: 20px;"></ul>
-        </div>
         <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
             <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">🔄</span> Real-time Search Progress
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
             </h3>
             <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
         </div>
         <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
         <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
