@@ -405,24 +405,43 @@ function triggerContinuation() {
     };
     
     // Debug: Log the exact continuation structure being sent
-    console.log('📦 CONTINUATION PAYLOAD STRUCTURE:', {
+    console.log('� GLOBAL STATE BEFORE CONTINUATION CREATION:', {
+        toolCallCyclesLength: toolCallCycles.length,
+        toolCallCyclesType: typeof toolCallCycles,
+        toolCallCyclesIsArray: Array.isArray(toolCallCycles),
+        totalToolCallsCalculated: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
+        cycleDetails: toolCallCycles.map((cycle, i) => ({
+            cycleIndex: i,
+            isArray: Array.isArray(cycle),
+            length: cycle.length,
+            firstCallName: cycle[0]?.request?.function?.name
+        })),
+        llmCallsLength: llmCalls.length,
+        currentPersona: currentPersona,
+        currentQuestions: currentQuestions.length,
+        totalCost,
+        totalTokens
+    });
+    
+    console.log('�📦 CONTINUATION PAYLOAD STRUCTURE:', {
         continuation: formData.continuation,
         hasContext: !!formData.continuationContext,
         hasWorkState: !!formData.continuationContext?.workState,
         workStateKeys: formData.continuationContext?.workState ? Object.keys(formData.continuationContext.workState) : [],
-        toolCallCyclesData: {
-            length: toolCallCycles.length,
-            structure: toolCallCycles.map((cycle, i) => ({
+        toolCallCyclesInPayload: {
+            length: formData.continuationContext?.workState?.toolCallCycles?.length || 'undefined',
+            isArray: Array.isArray(formData.continuationContext?.workState?.toolCallCycles),
+            structure: formData.continuationContext?.workState?.toolCallCycles?.map((cycle, i) => ({
                 cycle: i + 1,
-                calls: cycle.length,
-                completed: cycle.filter(tc => tc.completed).length,
-                sample: cycle[0] ? {
+                calls: cycle?.length || 'undefined',
+                completed: cycle?.filter ? cycle.filter(tc => tc.completed).length : 'not filterable',
+                sample: cycle?.[0] ? {
                     hasRequest: !!cycle[0].request,
                     hasResponse: !!cycle[0].response,
                     requestKeys: cycle[0].request ? Object.keys(cycle[0].request) : [],
                     functionName: cycle[0].request?.function?.name
                 } : null
-            }))
+            })) || 'undefined'
         }
     });
     
@@ -784,6 +803,7 @@ async function handleFormSubmission(e) {
     
     // Reset tracking state for new request if not continuing
     if (!formData.continuation) {
+        console.log('🛫 RESETTING TRACKING STATE (fresh request)');
         toolCallCycles = [];
         llmCalls = [];
         totalCost = 0;
@@ -791,6 +811,12 @@ async function handleFormSubmission(e) {
         currentPersona = '';
         currentQuestions = [];
         currentSetupData = {};
+    } else {
+        console.log('🛫 PRESERVING TRACKING STATE (continuation):', {
+            toolCallCycles: toolCallCycles.length,
+            totalToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
+            llmCalls: llmCalls.length
+        });
     }
 
     // Make the streaming request
@@ -1476,6 +1502,52 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                         })));
                                     }
                                 }
+                                
+                                // CRITICAL: Track tool calls for current cycle - ensure we have enough cycles
+                                console.log('🚛 BEFORE toolCallCycles modification:', {
+                                    currentLength: toolCallCycles.length,
+                                    neededIteration: iteration,
+                                    willAddCycles: Math.max(0, iteration - toolCallCycles.length)
+                                });
+                                
+                                while (toolCallCycles.length < iteration) {
+                                    toolCallCycles.push([]);
+                                    console.log('📦 Added empty cycle, new length:', toolCallCycles.length);
+                                }
+                                
+                                // Add pending tool calls to current cycle
+                                if (Array.isArray(calls)) {
+                                    const pendingToolCalls = calls.map(call => ({
+                                        request: {
+                                            id: call.call_id || call.id,
+                                            type: 'function',
+                                            function: {
+                                                name: call.name,
+                                                arguments: JSON.stringify(call.arguments || call.args || {})
+                                            }
+                                        },
+                                        response: null, // Will be filled when tool_result events arrive
+                                        duration: 0,
+                                        tokenUse: 0,
+                                        cost: 0,
+                                        cycle: iteration,
+                                        completed: false,
+                                        timestamp: new Date().toISOString()
+                                    }));
+                                    
+                                    toolCallCycles[iteration - 1] = pendingToolCalls;
+                                    
+                                    console.log('🚛 AFTER toolCallCycles modification:', {
+                                        totalCycles: toolCallCycles.length,
+                                        currentCycleSize: pendingToolCalls.length,
+                                        totalToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
+                                        cycleStructure: toolCallCycles.map((cycle, i) => `Cycle ${i+1}: ${cycle.length} calls`)
+                                    });
+                                    
+                                    // Update displays
+                                    updateToolCallsDisplay();
+                                    updateCostDisplay();
+                                }
                                 const box = document.createElement('div');
                                 box.style.cssText = 'padding:8px; border-left:3px solid #6c757d; background:#fff; margin:6px 0; border-radius:4px;';
                                 const header = document.createElement('div');
@@ -1506,6 +1578,50 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             try {
                                 toolsPanel.style.display = 'block';
                                 const { iteration, call_id, name, args, output } = eventData;
+                                
+                                // CRITICAL: Update tool call with response in toolCallCycles
+                                const cycleIndex = iteration - 1;
+                                console.log('🚛 TOOL RESULT PROCESSING:', {
+                                    cycleIndex,
+                                    cycleExists: !!toolCallCycles[cycleIndex],
+                                    cycleSize: toolCallCycles[cycleIndex]?.length || 0,
+                                    lookingForId: call_id
+                                });
+                                
+                                if (toolCallCycles[cycleIndex]) {
+                                    const toolCall = toolCallCycles[cycleIndex].find(tc => 
+                                        tc.request.id === call_id
+                                    );
+                                    
+                                    console.log('🚛 TOOL CALL FOUND:', {
+                                        found: !!toolCall,
+                                        callId: toolCall?.request?.id,
+                                        functionName: toolCall?.request?.function?.name
+                                    });
+                                    
+                                    if (toolCall) {
+                                        toolCall.response = output;
+                                        toolCall.duration = eventData.duration || 0;
+                                        toolCall.tokenUse = eventData.tokenUse || 0;
+                                        toolCall.cost = eventData.cost || 0;
+                                        toolCall.completed = true;
+                                        
+                                        // Update totals
+                                        totalTokens += toolCall.tokenUse;
+                                        totalCost += toolCall.cost;
+                                        
+                                        console.log('🚛 TOOL CALL UPDATED:', {
+                                            completed: toolCall.completed,
+                                            hasResponse: !!toolCall.response,
+                                            totalCompleted: toolCallCycles.reduce((sum, cycle) => sum + cycle.filter(tc => tc.completed).length, 0),
+                                            totalCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0)
+                                        });
+                                        
+                                        // Update displays
+                                        updateToolCallsDisplay();
+                                        updateCostDisplay();
+                                    }
+                                }
                                 
                                 // Capture tool result for continuation
                                 continuationState.workState.completedToolCalls.push({
@@ -1641,42 +1757,7 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             break;
                             
                         case 'tools':
-                            console.log('🔧 TOOLS EVENT:', {
-                                iteration: eventData.iteration,
-                                pending: eventData.pending,
-                                calls: eventData.calls,
-                                currentCycles: toolCallCycles.length,
-                                totalTracked: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0)
-                            });
-                            
-                            // Track tool calls for current cycle - ensure we have enough cycles
-                            while (toolCallCycles.length < eventData.iteration) {
-                                toolCallCycles.push([]);
-                            }
-                            
-                            // Add pending tool calls to current cycle
-                            const pendingToolCalls = eventData.calls.map(call => ({
-                                request: {
-                                    id: call.call_id || call.id,
-                                    type: 'function',
-                                    function: {
-                                        name: call.name,
-                                        arguments: JSON.stringify(call.args || {})
-                                    }
-                                },
-                                response: null, // Will be filled when tool_result events arrive
-                                duration: 0,
-                                tokenUse: 0,
-                                cost: 0,
-                                cycle: eventData.iteration,
-                                completed: false,
-                                timestamp: new Date().toISOString()
-                            }));
-                            
-                            toolCallCycles[eventData.iteration - 1] = pendingToolCalls;
-                            
-                            // Update UI tracking display
-                            updateToolCallsDisplay();
+                            // This case is handled by the main tools event handler above
                             break;
 
                         case 'tool_result':
@@ -1690,10 +1771,24 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                             
                             // Update tool call with response
                             const cycleIndex = eventData.iteration - 1;
+                            console.log('🛫 TOOL RESULT PROCESSING:', {
+                                cycleIndex,
+                                cycleExists: !!toolCallCycles[cycleIndex],
+                                cycleSize: toolCallCycles[cycleIndex]?.length || 0,
+                                lookingForId: eventData.call_id
+                            });
+                            
                             if (toolCallCycles[cycleIndex]) {
                                 const toolCall = toolCallCycles[cycleIndex].find(tc => 
                                     tc.request.id === eventData.call_id
                                 );
+                                
+                                console.log('🛫 TOOL CALL FOUND:', {
+                                    found: !!toolCall,
+                                    callId: toolCall?.request?.id,
+                                    functionName: toolCall?.request?.function?.name
+                                });
+                                
                                 if (toolCall) {
                                     toolCall.response = eventData.output;
                                     toolCall.duration = eventData.duration || 0;
@@ -1704,6 +1799,13 @@ async function handleStreamingResponse(response, responseContainer, controller, 
                                     // Update totals
                                     totalTokens += toolCall.tokenUse;
                                     totalCost += toolCall.cost;
+                                    
+                                    console.log('🛫 TOOL CALL UPDATED:', {
+                                        completed: toolCall.completed,
+                                        hasResponse: !!toolCall.response,
+                                        totalCompleted: toolCallCycles.reduce((sum, cycle) => sum + cycle.filter(tc => tc.completed).length, 0),
+                                        totalCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0)
+                                    });
                                 }
                             }
                             
