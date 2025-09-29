@@ -53,6 +53,7 @@
 
         .form-row-bottom .form-group {
             width: 100%;
+            position: relative; /* Add this for positioning the button */
         }
 
         .form-row-bottom label {
@@ -92,12 +93,44 @@
             width: 180px;
         }
 
+        .query-container {
+            position: relative;
+            width: 100%;
+        }
+
         #prompt {
             flex: 1;
             resize: vertical;
             height: auto;
             min-height: 200px;
             width: 100%;
+            padding-right: 40px; /* Space for the clear button */
+        }
+
+        .clear-query-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: bold;
+            line-height: 1;
+            padding: 0;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .clear-query-btn:hover {
+            opacity: 1;
         }
 
         .search-mode-group {
@@ -695,21 +728,33 @@
             <h1>AI Search</h1>
             
             <div class="form-group">
-                <label for="model">Model:</label>
-                <select id="model" name="model">
-                    <optgroup label="Groq Models" id="groq-models">
-                        <option value="groq:llama-3.1-8b-instant" selected>Llama 3.1 8B Instant (Fastest)</option>
-                        <option value="groq:llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
-                        <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
-                        <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
-                    </optgroup>
-                    <optgroup label="OpenAI Models" id="openai-models">
-                        <option value="openai:gpt-4o">GPT-4o</option>
-                        <option value="openai:gpt-4o-mini">GPT-4o Mini</option>
-                        <option value="openai:gpt-4">GPT-4</option>
-                        <option value="openai:gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                    </optgroup>
-                </select>
+                <div style="display: flex; align-items: flex-end; gap: 12px;">
+                    <div style="flex: 1;">
+                        <label for="model">Model:</label>
+                        <select id="model" name="model">
+                            <optgroup label="Groq Models" id="groq-models">
+                                <option value="groq:llama-3.1-8b-instant" selected>Llama 3.1 8B Instant (Fastest)</option>
+                                <option value="groq:llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
+                                <option value="groq:llama-3.1-405b-reasoning">Llama 3.1 405B Reasoning</option>
+                                <option value="groq:mixtral-8x7b-32768">Mixtral 8x7B</option>
+                            </optgroup>
+                            <optgroup label="OpenAI Models" id="openai-models">
+                                <option value="openai:gpt-4o">GPT-4o</option>
+                                <option value="openai:gpt-4o-mini">GPT-4o Mini</option>
+                                <option value="openai:gpt-4">GPT-4</option>
+                                <option value="openai:gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div style="position: relative;">
+                        <button type="button" id="sample-queries-btn" style="background: #28a745; color: white; border: none; padding: 8px 12px; border-radius: 4px; font-size: 0.9em; cursor: pointer; white-space: nowrap;">
+                            📝 Examples
+                        </button>
+                        <div id="sample-queries-dropdown" style="display: none; position: absolute; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; max-width: 400px; max-height: 300px; overflow-y: auto; top: 100%; right: 0; margin-top: 4px;">
+                            <!-- Sample queries will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <button type="submit" id="submit-btn" disabled>Sign in or add an API key</button>
@@ -722,17 +767,14 @@
             <div id="persona-text" style="font-size: 0.95rem; line-height: 1.4;"></div>
         </div>
 
+
+
         <div class="form-row-bottom">
             <div class="form-group">
                 <label for="prompt">Query:</label>
-                <textarea id="prompt" name="prompt" rows="10" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
-                <div style="margin-top: 8px;">
-                    <button type="button" id="sample-queries-btn" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.9em; cursor: pointer;">
-                        📝 Sample Queries
-                    </button>
-                    <div id="sample-queries-dropdown" style="display: none; position: absolute; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; max-width: 400px; max-height: 300px; overflow-y: auto;">
-                        <!-- Sample queries will be populated by JavaScript -->
-                    </div>
+                <div class="query-container">
+                    <textarea id="prompt" name="prompt" rows="10" required placeholder="Enter your question here...">how old is the first child of the king of spain</textarea>
+                    <button type="button" class="clear-query-btn" id="clear-query-btn" title="Clear query">×</button>
                 </div>
             </div>
         </div>
@@ -810,6 +852,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const statusElement = document.getElementById(elementId);
         statusElement.textContent = message;
         statusElement.style.color = color;
+    }
+    
+    const clearQueryBtn = document.getElementById('clear-query-btn');
+    const promptTextarea = document.getElementById('prompt');
+
+    if (clearQueryBtn && promptTextarea) {
+        clearQueryBtn.addEventListener('click', () => {
+            promptTextarea.value = '';
+            promptTextarea.focus();
+        });
     }
     
     // Auth banner helpers
@@ -1397,7 +1449,6 @@ document.addEventListener('DOMContentLoaded', function() {
     groqApiKeyInput.addEventListener('input', () => { updateModelAvailability(); updateSubmitButton(); });
 
     // When Tab is pressed inside the textarea, move focus to the Submit button
-    const promptTextarea = document.getElementById('prompt');
     if (promptTextarea) {
         promptTextarea.addEventListener('keydown', function(e) {
             if (e.key === 'Tab' && !e.shiftKey) {
@@ -2521,50 +2572,22 @@ ${truncatedOutput}
                             }
                             break;
                             
-                        case 'final_answer':
-                            statusElement.textContent = '✅ Analysis completed! Displaying final answer...';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
-                            stopAllTimers('done');
-                            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
-                            responseContainer.className = 'response-container response-success';
-                            // Reset model to fastest/cheapest option for next request
-                            resetModelToFastest();
-                            break;
-                            
-                        case 'error':
-                            statusElement.textContent = `❌ Error: ${eventData.error}`;
-                            responseContainer.className = 'response-container response-error';
-                            if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Error'; }
-                            stopAllTimers('error');
-                            stepsElement.innerHTML += `
-                                <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); border-radius: 8px; color: #721c24;">
-                                    <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                        <span>❌</span> Error Occurred
-                                    </div>
-                                    <div>${eventData.error}</div>
-                                </div>
-                            `;
+                        default:
+                            console.log('Unknown event type:', eventType, eventData);
                             break;
                     }
-                    
-                } catch (parseError) {
-                    console.error('Error parsing event:', parseError, event);
+                } catch (error) {
+                    console.error('Error processing SSE event:', error);
                 }
             }
         }
-        
-    } catch (streamError) {
-        console.error('Streaming error:', streamError);
-        if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stopped'; }
-        stopAllTimers('stopped');
-        if (streamError.name === 'AbortError') {
-            statusElement.textContent = '⏹️ Stopped by user. Partial results are shown above.';
-            // Keep existing partial results visible without switching to error theme
-            responseContainer.className = 'response-container';
-        } else {
-            statusElement.textContent = `❌ Streaming Error: ${streamError.message}`;
-            responseContainer.className = 'response-container response-error';
-        }
+    } catch (error) {
+        console.error('SSE connection error:', error);
+        statusElement.textContent = '❌ Connection error';
+        responseContainer.className = 'response-container response-error';
+    } finally {
+        if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
+        stopAllTimers('error');
     }
 }
 

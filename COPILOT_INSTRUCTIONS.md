@@ -1,282 +1,96 @@
 # GitHub Copilot Instructions for Lambda LLM Proxy
 
-## Project Overview
+This document provides comprehensive instructions for GitHub Copilot to effectively assist in the development of the Lambda LLM Proxy project.
 
-This is a serverless Lambda function that provides an LLM proxy with web search capabilities, streaming responses, and continuation support for rate limit handling. The system integrates multiple LLM providers (Groq, OpenAI) with DuckDuckGo search and JavaScript execution tools.
+## 1. Core Project Directives & Workflow
 
-## Architecture
+### 1.1. Deployment and Build Process
 
-- **Entry Point**: `src/index.js` - Lambda handler with streaming support
-- **Core Logic**: `src/lambda_search_llm_handler.js` - Main processing logic with tool loop
-- **Tools**: `src/tools.js` - Tool functions (search_web, execute_javascript, scrape_web_content)
-- **Search**: `src/search.js` - DuckDuckGo search integration
-- **Auth**: `src/auth.js` - Google OAuth token verification
-- **Providers**: `src/providers.js` - LLM provider configurations
-- **UI**: `docs/` - Frontend with streaming UI and continuation support
+- **Lambda Deployment**: After any modification to the backend source code in `src/`, you MUST deploy the Lambda function using the `scripts/deploy.sh` script.
+- **UI/Documentation Workflow**:
+    1.  **Source of Truth**: All UI and documentation changes MUST be made in the `ui/` directory (e.g., `ui/index_template.html`, `ui/styles.css`).
+    2.  **NEVER Edit `docs/` Directly**: The `docs/` directory is a build artifact and should not be edited manually. Its contents are generated from the `ui/` directory.
+    3.  **Build Step**: After making changes in `ui/`, you MUST run `scripts/build-docs.sh` to compile the changes into the `docs/` directory.
+    4.  **Deploy Docs**: After a successful build, you MUST run `scripts/deploy-docs.sh` to publish the documentation and UI changes.
+    5.  **Combined Command**: The `make deploy-docs` command conveniently runs both the build and deploy steps.
+- **Testing**: When testing the Lambda function, ensure all required parameters, including the API key, are provided, unless a test specifically requires their omission.
 
-## Testing Guidelines
+### 1.2. Terminal Command Execution
 
-### Running Tests
+- **Output Redirection**: When you run a terminal command, you MUST redirect its output to a file named `output.txt`. Overwrite the file for each new command to prevent it from growing too large.
+    - Example: `ls -l > output.txt`
+- **Reading Command Output**: You MUST read the `output.txt` file to see the results of your commands. This is a workaround for a known issue where direct command output is not reliably read.
 
-```bash
-# Run all tests
-npm test
+### 1.3. Local Development Server
 
-# Run with coverage
-npm test:coverage
+- **Port**: The local development server MUST run on port **8081**.
+- **Commands**:
+    - `cd docs && python3 -m http.server 8081`
+    - `cd docs && npx http-server -p 8081`
+- **Access**: The local application is available at `http://localhost:8081`.
 
-# Run in watch mode during development
-npm test:watch
+### 1.4. Test-Driven Development (TDD)
 
-# Run specific test types
-npm run test:unit
-npm run test:integration
+- **New Features**: When a new feature is requested, you MUST first create a test for that feature.
+- **Iteration**: You MUST iterate on the implementation until the test passes. This ensures that all new functionality is covered by tests and helps prevent regressions.
+- **Existing Features**: When modifying existing features, you MUST first run the existing tests to ensure that your changes do not break existing functionality. If the changes are significant, you should create new tests to cover the new functionality.
+- **Test Location**: All tests are located in the `tests/` directory. Unit tests are in `tests/unit/` and integration tests are in `tests/integration/`.
+- **Running Tests**: Use the `npm test` command to run all tests. You can also run specific tests by providing the path to the test file, e.g., `npm test tests/unit/auth.test.js`.
+- **Test-First Workflow**:
+    1.  **Write a failing test**: Before writing any implementation code, write a test that asserts the desired behavior of the new feature.
+    2.  **Run the test**: Confirm that the test fails as expected.
+    3.  **Write the implementation**: Write the minimum amount of code required to make the test pass.
+    4.  **Run the test again**: Confirm that the test now passes.
+    5.  **Refactor**: Refactor the code as needed, ensuring that the test continues to pass.
 
-# Debug tests
-DEBUG_TESTS=1 npm test
-```
+## 2. Code and Architecture
 
-### Test Structure
+### 2.1. Project Overview
 
-- **Unit Tests** (`tests/unit/`): Test individual modules in isolation
-- **Integration Tests** (`tests/integration/`): Test Lambda functions end-to-end
-- **Fixtures** (`tests/fixtures/`): Mock data and test responses
-- **Helpers** (`tests/helpers/`): Test utilities and common functions
+This is a serverless AWS Lambda function that acts as an LLM proxy. It features web search capabilities, streaming responses, and a continuation mechanism to handle API rate limits. It integrates multiple LLM providers (Groq, OpenAI) with DuckDuckGo search and provides tools for JavaScript execution and web scraping.
 
-### Writing Tests
+### 2.2. Key Architectural Components
 
-When creating tests, follow these patterns:
+- **Entry Point**: `src/index.js` (Lambda handler with streaming support)
+- **Core Logic**: `src/lambda_search_llm_handler.js` (Main processing loop, tool orchestration)
+- **Tools**: `src/tools.js` (`search_web`, `execute_javascript`, `scrape_web_content`)
+- **Search**: `src/search.js` (DuckDuckGo search integration)
+- **Authentication**: `src/auth.js` (Google OAuth token verification)
+- **LLM Providers**: `src/providers.js` (Configurations for Groq, OpenAI, etc.)
+- **Frontend**: `docs/` (Generated static files for the user interface)
 
-```javascript
-const { createMockStream, createMockEvent } = require('../helpers/testUtils');
-const mockData = require('../fixtures/mockData');
+### 2.3. Important Implementation Details
 
-describe('ModuleName', () => {
-  let mockStream;
-  
-  beforeEach(() => {
-    mockStream = createMockStream();
-    jest.clearAllMocks();
-  });
+- **Rate Limit Handling**: The system parses wait times from API error messages and emits a `quota_exceeded` event containing the full `continuationState`.
+- **Continuation System**: To resume operations, the system collects search results and tool progress. On continuation, it re-emits previous results and uses a research summary to guide the LLM.
+- **Memory Management**: A `TokenAwareMemoryTracker` is used to monitor and control token usage. Content is aggressively truncated to prevent memory overflow.
+- **Security**: All tool parameters are validated against schemas. HTML from web scraping is sanitized. Google OAuth tokens are verified for all authenticated requests.
 
-  test('should handle expected scenario', async () => {
-    // Arrange
-    const input = mockData.validInput;
-    
-    // Act
-    const result = await functionUnderTest(input);
-    
-    // Assert
-    expect(result).toEqual(expectedOutput);
-    expect(mockStream.writeEvent).toHaveBeenCalledWith('event_type', expect.any(Object));
-  });
-});
-```
+## 3. Testing
 
-### Mocking Guidelines
+### 3.1. Running Tests
 
-1. **External APIs**: Always mock Groq, OpenAI, and DuckDuckGo calls
-2. **AWS Services**: Mock Lambda runtime and streaming responses
-3. **File System**: Mock file operations for security
-4. **Network Requests**: Use fixtures for consistent test data
-5. **Time-dependent**: Mock timers and dates for deterministic tests
+- **All Tests**: `npm test`
+- **Coverage**: `npm test:coverage`
+- **Watch Mode**: `npm test:watch`
+- **Debug Mode**: `DEBUG_TESTS=1 npm test`
 
-### Test Coverage Focus
+### 3.2. Test Structure
 
-- **Authentication**: Token verification, email validation
-- **Search Functionality**: Query processing, result parsing, error handling
-- **LLM Integration**: Provider switching, token management, streaming
-- **Tool Execution**: Function calling, parameter validation, error recovery
-- **Rate Limiting**: Quota detection, continuation state, retry logic
-- **Streaming**: Event emission, connection management, error propagation
+- **Unit**: `tests/unit/` (Isolate individual modules)
+- **Integration**: `tests/integration/` (Test the Lambda handler end-to-end)
+- **Fixtures**: `tests/fixtures/` (Mock data)
+- **Helpers**: `tests/helpers/` (Test utilities)
 
-## Code Style and Patterns
+### 3.3. Test Authoring Guidelines
 
-### Function Naming
-- Use descriptive names: `parseWaitTimeFromMessage()` not `parseTime()`
-- Async functions should be clear: `async searchWeb()` not `search()`
-- Event handlers: `handleStreamEvent()`, `processToolResult()`
+- **Mock Dependencies**: Always mock external APIs (LLMs, Search), AWS services, and file system operations.
+- **Focus Areas**:
+    - **Authentication**: Token verification and email validation.
+    - **Rate Limiting**: Correct state preservation and recovery on continuation.
+    - **Tool Execution**: Parameter validation and error handling.
+    - **Search**: Query processing and result parsing.
+    - **Memory Safety**: No memory leaks or overflow conditions.
 
-### Error Handling
-```javascript
-try {
-  const result = await riskyOperation();
-  return { success: true, data: result };
-} catch (error) {
-  console.error('Operation failed:', error.message);
-  return { success: false, error: error.message };
-}
-```
-
-### Streaming Events
-```javascript
-stream?.writeEvent?.('event_type', {
-  message: 'Human readable message',
-  data: relevantData,
-  timestamp: new Date().toISOString()
-});
-```
-
-### Tool Function Pattern
-```javascript
-async function toolFunction(args, context) {
-  // Validate parameters
-  if (!args.requiredParam) {
-    throw new Error('Missing required parameter');
-  }
-  
-  // Execute with error handling
-  try {
-    const result = await performOperation(args);
-    return JSON.stringify(result);
-  } catch (error) {
-    return JSON.stringify({ error: error.message });
-  }
-}
-```
-
-## Key Implementation Details
-
-### Rate Limit Handling
-- Parse wait times from error messages: `parseWaitTimeFromMessage()`
-- Emit `quota_exceeded` events with continuation state
-- Preserve search results and tool progress for continuation
-
-### Continuation System
-- Collect search results during execution: `collectedSearchResults`
-- Re-emit previous results on continuation: `continuationState.searchResults`
-- Guide LLM with previous research summary
-
-### Memory Management
-- Use `TokenAwareMemoryTracker` for large operations
-- Implement aggressive content truncation to prevent overflow
-- Monitor heap usage during search operations
-
-### Security
-- Validate all tool parameters against schemas
-- Sanitize HTML content extraction
-- Verify Google OAuth tokens for authentication
-- Respect CORS policies for web UI
-
-## Performance Considerations
-
-### Token Optimization
-- Disabled planning phase to reduce API calls
-- Reduced token allocations: LOW=512, MEDIUM=768, HIGH=1024
-- Disabled search summaries to prevent cascading API calls
-- Aggressive context pruning when conversations get large
-
-### Search Optimization
-- Limit search results to prevent token overflow
-- Use HTML fallback when API fails
-- Implement quality scoring for result filtering
-- Cache-friendly result structure
-
-### Streaming Optimization
-- Emit events incrementally for UI responsiveness
-- Use Server-Sent Events for real-time updates
-- Implement connection health checks
-- Handle network interruptions gracefully
-
-## Common Patterns to Use
-
-### Environment Configuration
-```javascript
-const CONFIG_VALUE = Number(process.env.CONFIG_VALUE) || DEFAULT_VALUE;
-```
-
-### Safe JSON Parsing
-```javascript
-function safeParseJson(str, fallback = {}) {
-  try {
-    return JSON.parse(str);
-  } catch (e) {
-    return fallback;
-  }
-}
-```
-
-### Tool Parameter Validation
-```javascript
-// Always validate against schemas - they have additionalProperties: false
-const args = safeParseJson(toolCall.arguments || '{}');
-if (!args.query) {
-  throw new Error('Missing required parameter: query');
-}
-```
-
-### Event Emission Pattern
-```javascript
-try {
-  stream?.writeEvent?.('event_type', eventData);
-  console.log('Event emitted successfully');
-} catch (error) {
-  console.log('Event emission failed:', error.message);
-}
-```
-
-## Testing Priorities
-
-1. **Rate Limit Recovery**: Test continuation with preserved state
-2. **Tool Integration**: Verify all tools work with proper parameter validation
-3. **Authentication**: Ensure security measures work correctly
-4. **Search Quality**: Test result filtering and relevance scoring
-5. **Memory Safety**: Verify no memory leaks or overflow conditions
-6. **Error Resilience**: Test graceful degradation in failure scenarios
-
-## Debugging Tips
-
-- Use `DEBUG_TESTS=1` to see console output during tests
-- Check Lambda logs with: `aws logs tail /aws/lambda/llmproxy --since=5m`
-- Monitor memory usage with `MemoryTracker`
-- Use streaming events to trace execution flow
-- Test rate limit scenarios with mock quota errors
-
-## When Adding New Features
-
-1. **Write Tests First**: Create unit and integration tests
-2. **Mock External Dependencies**: Don't make real API calls in tests
-3. **Test Error Conditions**: Verify graceful failure handling
-4. **Document Streaming Events**: Add new event types to documentation
-5. **Consider Rate Limits**: Ensure new features don't increase token usage
-6. **Test Continuation**: Verify features work with continuation system
-
-## Development Server Configuration
-
-### Local Testing Server
-
-**ALWAYS use port 8081 for the local development server**
-
-```bash
-# Correct command for local testing
-cd docs && python3 -m http.server 8081
-
-# Alternative with Node.js
-cd docs && npx http-server -p 8081
-
-# Access the application at:
-# http://localhost:8081
-```
-
-### Why Port 8081?
-
-- Avoids conflicts with common development ports (8000, 8080)
-- Consistent across all development environments
-- Easy to remember and document
-- Leaves other ports free for additional services
-
-### Development Workflow
-
-1. Make changes to source files in `ui/` or `src/`
-2. Build docs: `./scripts/deploy-docs.sh --build`
-3. Start server: `cd docs && python3 -m http.server 8081`
-4. Test at: http://localhost:8081
-5. Run tests: `npm test`
-
-### Port Usage Guidelines
-
-- **8081**: Main development server (REQUIRED)
-- **8080**: Reserved for Lambda local testing
-- **8000**: Available for other services
-- **3000**: Available for React/Node.js apps
-- **5000**: Available for Flask/Python apps
+---
+*This document was compiled from `COPILOT_INSTRUCTIONS.md` and `instructions.md`.*

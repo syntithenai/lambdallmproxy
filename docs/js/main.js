@@ -293,6 +293,18 @@ function handleQuotaError(errorMessage, formData, existingResponse) {
             setupData: { ...currentSetupData }
         }
     };
+
+    console.log('🚨 QUOTA ERROR: State saved for continuation', {
+        waitSeconds,
+        retryCount: continuationState.retryCount,
+        savedWorkState: continuationState.savedContext.workState,
+        toolCallCyclesSummary: continuationState.savedContext.workState.toolCallCycles.map((cycle, i) => ({
+            cycle: i + 1,
+            numCalls: cycle.length,
+            completed: cycle.filter(c => c.completed).length,
+            firstTool: cycle.length > 0 ? cycle[0].request?.function?.name : 'N/A'
+        }))
+    });
     
     // Show/hide buttons
     showContinuationUI();
@@ -405,7 +417,7 @@ function triggerContinuation() {
     };
     
     // Debug: Log the exact continuation structure being sent
-    console.log('� GLOBAL STATE BEFORE CONTINUATION CREATION:', {
+    console.log(' GLOBAL STATE BEFORE CONTINUATION CREATION:', {
         toolCallCyclesLength: toolCallCycles.length,
         toolCallCyclesType: typeof toolCallCycles,
         toolCallCyclesIsArray: Array.isArray(toolCallCycles),
@@ -423,7 +435,7 @@ function triggerContinuation() {
         totalTokens
     });
     
-    console.log('�📦 CONTINUATION PAYLOAD STRUCTURE:', {
+    console.log('📦 CONTINUATION PAYLOAD STRUCTURE:', {
         continuation: formData.continuation,
         hasContext: !!formData.continuationContext,
         hasWorkState: !!formData.continuationContext?.workState,
@@ -464,6 +476,15 @@ function triggerContinuation() {
         }
     });
     
+    // Add another comprehensive log of the final payload
+    console.log('FINAL CONTINUATION PAYLOAD TO BE SENT:', JSON.stringify(formData, (key, value) => {
+        // Avoid circular references if any
+        if (key === 'savedFormData' || key === 'savedContext') {
+            return '[omitted]';
+        }
+        return value;
+    }, 2));
+
     // Reset form state but keep retry tracking
     const currentRetryCount = continuationState.retryCount;
     const autoRetryEnabled = continuationState.autoRetryEnabled;
@@ -1153,564 +1174,543 @@ async function handleStreamingResponse(response, responseContainer, controller, 
             </div>
         </div>
     `;
-    }
-    
-    const statusElement = document.getElementById('streaming-status');
-    const stepsElement = document.getElementById('streaming-steps');
-    const toolsPanel = document.getElementById('tools-panel');
-    const toolsLog = document.getElementById('tools-log');
-    const responseElement = document.getElementById('streaming-response');
-    const answerElement = document.getElementById('final-answer');
-    const metadataElement = document.getElementById('streaming-metadata');
-    const metadataContent = document.getElementById('metadata-content');
-    const searchSummaryList = document.getElementById('search-summary-list');
-    const fullResultsTree = document.getElementById('full-results-tree');
-    const activeSearchesEl = document.getElementById('active-searches');
-    
-    // Get the stop button from the form area
-    const formStopBtn = document.getElementById('stop-btn');
-    
-    // Track active searches and countdowns
-    const activeTimers = new Map(); // key -> { start, maxMs, intervalId, barInner, label }
-    const SEARCH_MAX_MS = 15000; // UI estimate per-search timeout (ms)
-
-    function ensureActiveHeaderVisible() {
-        if (activeTimers.size > 0) {
-            activeSearchesEl.style.display = 'block';
-            if (!activeSearchesEl.__header) {
-                const h = document.createElement('div');
-                h.style.cssText = 'font-weight:600; color:#495057; margin-bottom:8px;';
-                h.textContent = 'Active searches';
-                activeSearchesEl.appendChild(h);
-                activeSearchesEl.__header = h;
-            }
-        } else {
-            activeSearchesEl.style.display = 'none';
-        }
-    }
-
-    function startSearchTimer(iteration, term, index, total) {
-        const key = `${iteration}|${term}`;
-        if (activeTimers.has(key)) return;
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'margin:6px 0;';
-        const label = document.createElement('div');
-        label.style.cssText = 'font-size:0.9em; color:#495057; margin-bottom:4px; display:flex; justify-content:space-between; gap:8px;';
-        label.innerHTML = `<span>(${index}/${total}) "${term}"</span><span class="time">${Math.round(SEARCH_MAX_MS/1000)}s</span>`;
-        const bar = document.createElement('div');
-        bar.style.cssText = 'height:10px; background:#e9ecef; border-radius:6px; overflow:hidden;';
-        const inner = document.createElement('div');
-        inner.style.cssText = 'height:100%; width:0%; background:linear-gradient(90deg, #ffda79, #f0932b); transition:width 0.2s linear;';
-        bar.appendChild(inner);
-        wrap.appendChild(label);
-        wrap.appendChild(bar);
-        activeSearchesEl.appendChild(wrap);
-        ensureActiveHeaderVisible();
-        const start = Date.now();
-        const intervalId = setInterval(() => {
-            const elapsed = Date.now() - start;
-            const pct = Math.min(100, (elapsed/SEARCH_MAX_MS)*100);
-            inner.style.width = pct + '%';
-            const remain = Math.max(0, Math.ceil((SEARCH_MAX_MS - elapsed)/1000));
-            const timeEl = label.querySelector('.time');
-            if (timeEl) timeEl.textContent = `${remain}s`;
-            if (elapsed >= SEARCH_MAX_MS) {
-                // Mark as timed out visually but keep it until we get results or completion
-                inner.style.background = 'linear-gradient(90deg, #ff6b6b, #c44569)';
-                clearInterval(intervalId);
-            }
-        }, 200);
-        activeTimers.set(key, { start, maxMs: SEARCH_MAX_MS, intervalId, barInner: inner, label, wrap });
-    }
-
-    function stopSearchTimer(iteration, term, status = 'done') {
-        const key = `${iteration}|${term}`;
-        const t = activeTimers.get(key);
-        if (!t) return;
-        if (t.intervalId) clearInterval(t.intervalId);
-        // Update color based on status
-        if (status === 'done') {
-            t.barInner.style.width = '100%';
-            t.barInner.style.background = 'linear-gradient(90deg, #2ecc71, #27ae60)';
-        } else if (status === 'stopped') {
-            t.barInner.style.background = 'linear-gradient(90deg, #6c757d, #495057)';
-        } else if (status === 'error') {
-            t.barInner.style.background = 'linear-gradient(90deg, #ff6b6b, #c44569)';
-        }
-        // Remove after short delay to keep feedback visible
-        setTimeout(() => {
-            if (t.wrap && t.wrap.parentElement) t.wrap.parentElement.removeChild(t.wrap);
-            activeTimers.delete(key);
-            ensureActiveHeaderVisible();
-        }, 800);
-    }
-
-    function stopAllTimers(status = 'stopped') {
-        for (const key of Array.from(activeTimers.keys())) {
-            const [iter, term] = key.split('|');
-            stopSearchTimer(iter, term, status);
-        }
-    }
-
-    // Wire Stop button from form
-    if (formStopBtn) {
-        formStopBtn.addEventListener('click', () => {
-            try { controller && controller.abort(); } catch {}
-            formStopBtn.disabled = true;
-            formStopBtn.textContent = 'Stopping...';
-            statusElement.textContent = '⏹️ Stopping — no further requests will be made.';
-            stopAllTimers('stopped');
-            // Also stop any continuation countdown and reset UI
-            hideContinuationUI();
-        });
-    }
-    
-    function renderResultsSection(title, results, digest, meta) {
-        const details = document.createElement('details');
-        details.className = 'search-results-section';
-        details.open = false;
-        const summary = document.createElement('summary');
-        summary.innerHTML = `<strong>${title}</strong> (${results.length} total)`;
-        details.appendChild(summary);
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
+        <div id="full-results-tree"></div>
         
-        // Sub-question heading and keywords badges
-        if (meta && (meta.subQuestion || (Array.isArray(meta.keywords) && meta.keywords.length))) {
-            const metaBox = document.createElement('div');
-            metaBox.style.cssText = 'margin:10px 12px; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:6px;';
-            if (meta.subQuestion) {
-                const h = document.createElement('div');
-                h.style.cssText = 'font-weight:600; color:#343a40; margin-bottom:6px;';
-                h.textContent = `Sub-question: ${meta.subQuestion}`;
-                metaBox.appendChild(h);
-            }
-            if (Array.isArray(meta.keywords) && meta.keywords.length) {
-                const kwWrap = document.createElement('div');
-                kwWrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px;';
-                meta.keywords.forEach(k => {
-                    const badge = document.createElement('span');
-                    badge.style.cssText = 'background:#e9f5ff; color:#0b6aa2; border:1px solid #b6e0fe; padding:2px 8px; border-radius:12px; font-size:0.85em;';
-                    badge.textContent = k;
-                    kwWrap.appendChild(badge);
-                });
-                metaBox.appendChild(kwWrap);
-            }
-            details.appendChild(metaBox);
-        }
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+    `;
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
+ </div>
         
-        // If we have a per-search digest summary, render it prominently at the top of this section
-        if (digest && (digest.summary || (Array.isArray(digest.links) && digest.links.length))) {
-            const digestBox = document.createElement('div');
-            digestBox.style.cssText = 'margin:10px 12px; padding:10px; background:#fff; border-left:4px solid #007bff; border:1px solid #e9ecef; border-radius:6px;';
-            if (digest.summary) {
-                const p = document.createElement('div');
-                p.style.cssText = 'color:#212529; line-height:1.5;';
-                p.textContent = digest.summary;
-                digestBox.appendChild(p);
-            }
-            if (Array.isArray(digest.links) && digest.links.length) {
-                const ul = document.createElement('ul');
-                ul.style.cssText = 'margin-top:6px;';
-                digest.links.forEach(l => {
-                    const li = document.createElement('li');
-                    li.innerHTML = `<a href="${l.url}" target="_blank" rel="noopener noreferrer">${l.title || l.url}</a>${l.snippet ? ` — <small>${l.snippet}</small>` : ''}`;
-                    ul.appendChild(li);
-                });
-                digestBox.appendChild(ul);
-            }
-            details.appendChild(digestBox);
-        }
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+    `;
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
+        <div id="full-results-tree"></div>
         
-        const wrap = document.createElement('div');
-        wrap.className = 'search-results';
-        results.slice(0, 20).forEach(r => {
-            const item = document.createElement('div');
-            item.className = 'result-item';
-            item.innerHTML = `
-                <h4><a href="${r.url}" target="_blank" rel="noopener noreferrer">${r.title || r.url}</a></h4>
-                <p class="result-description">${r.description || 'No description available'}</p>
-                <p class="result-url"><small>${r.url}</small></p>
-            `;
-            wrap.appendChild(item);
-        });
-        if (results.length > 20) {
-            const more = document.createElement('p');
-            more.innerHTML = `<em>... and ${results.length - 20} more results</em>`;
-            wrap.appendChild(more);
-        }
-        details.appendChild(wrap);
-        return details;
-    }
-    
-    function updateLiveSummary(searches, total) {
-        metadataElement.style.display = 'block';
-        const iters = [...new Set((searches || []).map(s => s.iteration))];
-        metadataContent.innerHTML = `
-            <div><strong>Total results so far:</strong> ${total || 0}</div>
-            <div><strong>Searches performed:</strong> ${(searches || []).length} across ${iters.length} iteration(s)</div>
-        `;
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+    `;
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
+        <div id="full-results-tree"></div>
         
-        // Update list of searches with counts; include placeholder for per-search LLM summaries when available
-        searchSummaryList.innerHTML = '';
-        (searches || []).forEach(s => {
-            const li = document.createElement('li');
-            li.innerHTML = `<strong>Iteration ${s.iteration}</strong>: "${s.query}" — ${s.resultsCount} result(s)`;
-            
-            // Sub-question heading inline
-            if (s.subQuestion) {
-                const sub = document.createElement('div');
-                sub.style.cssText = 'margin-top:2px; color:#495057; font-size:0.9em;';
-                sub.textContent = `Sub-question: ${s.subQuestion}`;
-                li.appendChild(sub);
-            }
-            
-            if (Array.isArray(s.keywords) && s.keywords.length) {
-                const kw = document.createElement('div');
-                kw.style.cssText = 'margin-top:4px; display:flex; flex-wrap:wrap; gap:6px;';
-                s.keywords.forEach(k => {
-                    const badge = document.createElement('span');
-                    badge.style.cssText = 'background:#eef7ee; color:#226633; border:1px solid #cde7ce; padding:2px 8px; border-radius:12px; font-size:0.85em;';
-                    badge.textContent = k;
-                    kw.appendChild(badge);
-                });
-                li.appendChild(kw);
-            }
-            
-            // Show per-search digest if available (from digestMap or inline summary)
-            const key = `${s.iteration}|${s.query}`;
-            const digest = digestMap.get(key) || (s.summary ? { summary: s.summary, links: s.links || [] } : null);
-            if (digest && digest.summary) {
-                const p = document.createElement('div');
-                p.style.cssText = 'margin-top:4px;color:#495057;';
-                p.textContent = digest.summary;
-                li.appendChild(p);
-                if (Array.isArray(digest.links) && digest.links.length) {
-                    const ul = document.createElement('ul');
-                    ul.style.marginTop = '4px';
-                    digest.links.forEach(l => {
-                        const li2 = document.createElement('li');
-                        li2.innerHTML = `<a href="${l.url}" target="_blank" rel="noopener noreferrer">${l.title || l.url}</a>${l.snippet ? ` — <small>${l.snippet}</small>` : ''}`;
-                        ul.appendChild(li2);
-                    });
-                    li.appendChild(ul);
-                }
-            }
-            searchSummaryList.appendChild(li);
-        });
-    }
-
-    function updateFullResultsTree() {
-        // Build a closed-by-default tree grouped by iteration -> query -> results
-        fullResultsTree.innerHTML = '';
-        const top = document.createElement('details');
-        top.open = false;
-        top.className = 'search-results-section';
-        const topSummary = document.createElement('summary');
-        // Count total results
-        let total = 0;
-        Object.values(resultsState.byIteration).forEach(iter => {
-            Object.values(iter).forEach(arr => total += arr.length);
-        });
-        topSummary.innerHTML = `<strong>Full search results</strong> (${total} total)`;
-        top.appendChild(topSummary);
-
-        const container = document.createElement('div');
-        container.style.marginTop = '8px';
-
-        Object.keys(resultsState.byIteration).sort((a,b)=>Number(a)-Number(b)).forEach(iter => {
-            const iterDetails = document.createElement('details');
-            iterDetails.open = false;
-            const iterSummary = document.createElement('summary');
-            // Count iteration total
-            let iterTotal = 0;
-            Object.values(resultsState.byIteration[iter]).forEach(arr => iterTotal += arr.length);
-            iterSummary.innerHTML = `<strong>Iteration ${iter}</strong> (${iterTotal} results)`;
-            iterDetails.appendChild(iterSummary);
-
-            Object.keys(resultsState.byIteration[iter]).forEach(term => {
-                const termResults = resultsState.byIteration[iter][term];
-                // Pull digest and metadata for this iteration/term if available
-                const key = `${iter}|${term}`;
-                const digest = digestMap.get(key) || null;
-                const meta = metaMap.get(key) || null;
-                const termDetails = renderResultsSection(`"${term}"`, termResults, digest, meta);
-                iterDetails.appendChild(termDetails);
-            });
-
-            container.appendChild(iterDetails);
-        });
-
-        top.appendChild(container);
-        fullResultsTree.appendChild(top);
-    }
-    
-    try {
-        // Handle streaming response
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+    `;
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
+        <div id="full-results-tree"></div>
         
-        while (true) {
-            const { done, value } = await reader.read();
-            
-            if (done) {
-                statusElement.textContent = 'Stream completed';
-                break;
-            }
-            
-            // Decode and process chunk
-            const chunk = decoder.decode(value, { stream: true });
-            console.log('📦 Received chunk:', chunk.substring(0, 100) + (chunk.length > 100 ? '...' : ''));
-            buffer += chunk;
-            
-            // Process complete events (separated by double newlines)
-            const events = buffer.split('\n\n');
-            buffer = events.pop(); // Keep incomplete event in buffer
-            
-            console.log('🔍 Processing', events.length, 'complete events');
-            
-            for (const event of events) {
-                if (!event.trim()) continue;
-                
-                try {
-                    // Parse Server-Sent Events format
-                    const lines = event.trim().split('\n');
-                    let eventType = 'message';
-                    let data = '';
-                    
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            eventType = line.substring(7);
-                        } else if (line.startsWith('data: ')) {
-                            data = line.substring(6);
-                        }
-                    }
-                    
-                    if (!data) continue;
-                    
-                    let eventData;
-                    try {
-                        eventData = JSON.parse(data);
-                    } catch (parseError) {
-                        console.error('❌ Failed to parse event data:', data, parseError);
-                        continue;
-                    }
-                    
-                    // Log ALL events for debugging
-                    // Log only tool-related and continuation events
-                    if (eventType === 'tools' || eventType === 'tool_result' || eventType === 'tool_error' || 
-                        eventType === 'quota_exceeded' || eventType === 'init' && eventData.continuation) {
-                        console.log(`🔄 ${eventType}:`, eventData);
-                    }
-                    
-                    // Log important LLM response events with more detail
-                    if (['final_response', 'final_answer', 'complete', 'error'].includes(eventType)) {
-                        console.log('🎯 LLM Event:', eventType, eventData);
-                    }
-                    
-                    // Handle different event types
-                    switch (eventType) {
-                        case 'search_digest':
-                            {
-                                const { term, iteration, summary, links, subQuestion, keywords } = eventData;
-                                console.log('📝 Processing search_digest:', {
-                                    term,
-                                    iteration,
-                                    hasSummary: !!summary,
-                                    summaryLength: summary ? summary.length : 0,
-                                    hasLinks: Array.isArray(links),
-                                    linksCount: Array.isArray(links) ? links.length : 0,
-                                    subQuestion,
-                                    keywords
-                                });
-                                
-                                if (!summary || summary.includes('disabled')) {
-                                    console.warn('⚠️ Summary appears to be disabled or missing:', summary);
-                                }
-                                
-                                const key = `${iteration}|${term}`;
-                                digestMap.set(key, { summary, links: Array.isArray(links) ? links : [] });
-                                if (subQuestion || (Array.isArray(keywords) && keywords.length)) {
-                                    metaMap.set(key, { subQuestion: subQuestion || null, keywords: Array.isArray(keywords) ? keywords : [] });
-                                }
-                                // Trigger a refresh of the Search Summary list (uses last known searches from metadata or previous event)
-                                if (typeof window.__lastSearches !== 'undefined') {
-                                    updateLiveSummary(window.__lastSearches, undefined);
-                                }
-                                // Also refresh the full results tree so digest appears in the expandable section
-                                updateFullResultsTree();
-                            }
-                            break;
-                            
-                        case 'tools':
-                            try {
-                                console.log('🔧 Processing tools event:', eventData);
-                                toolsPanel.style.display = 'block';
-                                const { iteration, pending, calls } = eventData;
-                                
-                                // Log search tool calls specifically
-                                if (Array.isArray(calls)) {
-                                    const searchCalls = calls.filter(call => call.name === 'search_web');
-                                    if (searchCalls.length > 0) {
-                                        console.log('🔍 Search tool calls detected:', searchCalls.map(call => ({
-                                            query: call.arguments?.query,
-                                            generate_summary: call.arguments?.generate_summary,
-                                            load_content: call.arguments?.load_content
-                                        })));
-                                    }
-                                }
-                                
-                                // CRITICAL: Track tool calls for current cycle - ensure we have enough cycles
-                                console.log('🚛 BEFORE toolCallCycles modification:', {
-                                    currentLength: toolCallCycles.length,
-                                    neededIteration: iteration,
-                                    willAddCycles: Math.max(0, iteration - toolCallCycles.length)
-                                });
-                                
-                                while (toolCallCycles.length < iteration) {
-                                    toolCallCycles.push([]);
-                                    console.log('📦 Added empty cycle, new length:', toolCallCycles.length);
-                                }
-                                
-                                // Add pending tool calls to current cycle
-                                if (Array.isArray(calls)) {
-                                    const pendingToolCalls = calls.map(call => ({
-                                        request: {
-                                            id: call.call_id || call.id,
-                                            type: 'function',
-                                            function: {
-                                                name: call.name,
-                                                arguments: JSON.stringify(call.arguments || call.args || {})
-                                            }
-                                        },
-                                        response: null, // Will be filled when tool_result events arrive
-                                        duration: 0,
-                                        tokenUse: 0,
-                                        cost: 0,
-                                        cycle: iteration,
-                                        completed: false,
-                                        timestamp: new Date().toISOString()
-                                    }));
-                                    
-                                    toolCallCycles[iteration - 1] = pendingToolCalls;
-                                    
-                                    console.log('🚛 AFTER toolCallCycles modification:', {
-                                        totalCycles: toolCallCycles.length,
-                                        currentCycleSize: pendingToolCalls.length,
-                                        totalToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
-                                        cycleStructure: toolCallCycles.map((cycle, i) => `Cycle ${i+1}: ${cycle.length} calls`)
-                                    });
-                                    
-                                    // Update displays
-                                    updateToolCallsDisplay();
-                                    updateCostDisplay();
-                                }
-                                const box = document.createElement('div');
-                                box.style.cssText = 'padding:8px; border-left:3px solid #6c757d; background:#fff; margin:6px 0; border-radius:4px;';
-                                const header = document.createElement('div');
-                                header.innerHTML = `<strong>Iteration ${iteration}</strong> • ${pending} pending call(s)`;
-                                box.appendChild(header);
-                                if (Array.isArray(calls)) {
-                                    // Add each tool call to the expandable tools section
-                                    calls.forEach(call => {
-                                        if (typeof addToolExecution === 'function') {
-                                            addToolExecution(call);
-                                        }
-                                    });
-                                    
-                                    const list = document.createElement('ul');
-                                    list.style.margin = '6px 0 0 16px';
-                                    calls.forEach(c => {
-                                        const li = document.createElement('li');
-                                        li.textContent = `${c.name} ${c.call_id ? '(' + c.call_id + ')' : ''}`;
-                                        list.appendChild(li);
-                                    });
-                                    box.appendChild(list);
-                                }
-                                toolsLog.appendChild(box);
-                            } catch {}
-                            break;
-                            
-                        case 'tool_result':
-                            try {
-                                toolsPanel.style.display = 'block';
-                                const { iteration, call_id, name, args, output } = eventData;
-                                
-                                // CRITICAL: Update tool call with response in toolCallCycles
-                                const cycleIndex = iteration - 1;
-                                console.log('🚛 TOOL RESULT PROCESSING:', {
-                                    cycleIndex,
-                                    cycleExists: !!toolCallCycles[cycleIndex],
-                                    cycleSize: toolCallCycles[cycleIndex]?.length || 0,
-                                    lookingForId: call_id
-                                });
-                                
-                                if (toolCallCycles[cycleIndex]) {
-                                    const toolCall = toolCallCycles[cycleIndex].find(tc => 
-                                        tc.request.id === call_id
-                                    );
-                                    
-                                    console.log('🚛 TOOL CALL FOUND:', {
-                                        found: !!toolCall,
-                                        callId: toolCall?.request?.id,
-                                        functionName: toolCall?.request?.function?.name
-                                    });
-                                    
-                                    if (toolCall) {
-                                        toolCall.response = output;
-                                        toolCall.duration = eventData.duration || 0;
-                                        toolCall.tokenUse = eventData.tokenUse || 0;
-                                        toolCall.cost = eventData.cost || 0;
-                                        toolCall.completed = true;
-                                        
-                                        // Update totals
-                                        totalTokens += toolCall.tokenUse;
-                                        totalCost += toolCall.cost;
-                                        
-                                        console.log('🚛 TOOL CALL UPDATED:', {
-                                            completed: toolCall.completed,
-                                            hasResponse: !!toolCall.response,
-                                            totalCompleted: toolCallCycles.reduce((sum, cycle) => sum + cycle.filter(tc => tc.completed).length, 0),
-                                            totalCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0)
-                                        });
-                                        
-                                        // Update displays
-                                        updateToolCallsDisplay();
-                                        updateCostDisplay();
-                                    }
-                                }
-                                
-                                // Capture tool result for continuation
-                                continuationState.workState.completedToolCalls.push({
-                                    iteration,
-                                    call_id,
-                                    name,
-                                    args,
-                                    output,
-                                    timestamp: new Date().toISOString()
-                                });
-                                
-                                // Update current iteration tracker
-                                continuationState.workState.currentIteration = Math.max(
-                                    continuationState.workState.currentIteration, 
-                                    iteration || 0
-                                );
-                                
-                                // Add result to the expandable tools section
-                                if (call_id && typeof addToolResult === 'function') {
-                                    addToolResult(call_id, output);
-                                }
-                                
-                                const item = document.createElement('div');
-                                item.style.cssText = 'padding:8px; border-left:3px solid #28a745; background:#fff; margin:6px 0; border-radius:4px;';
-                                const title = document.createElement('div');
-                                title.innerHTML = `<strong>${name}</strong> ${call_id ? '(' + call_id + ')' : ''} • iteration ${iteration}`;
-                                const argsPre = document.createElement('pre');
-                                argsPre.textContent = `args: ${JSON.stringify(args)}`;
-                                const outPre = document.createElement('pre');
-                                outPre.textContent = `output: ${output}`;
-                                item.appendChild(title);
-                                item.appendChild(argsPre);
-                                item.appendChild(outPre);
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+    `;
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
+                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
+                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
+                    </div>
+                </div>
+                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div id="tool-calls-detail" style="display: none;"></div>
+                    <div id="llm-calls-detail" style="display: none;"></div>
+                    <div id="search-results-detail" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
+        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
+        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
+            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
+            <div id="tools-log"></div>
+        </div>
+        <div id="full-results-tree"></div>
+        
+        <!-- Expandable Tools Section -->
+        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
+            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span id="tools-toggle-icon">▼</span> Tool Executions
+                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
+            </div>
+            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Tool executions will be dynamically added here -->
+            </div>
+        </div>
+    `;
+    } else {
+        // For new requests, create fresh HTML structure
+        responseContainer.innerHTML = `
+        <div id="streaming-response" style="margin-bottom: 16px;">
+            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
+                </h3>
+            </div>
+            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
+                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
+            </h3>
+            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
+        </div>
+        <div id="continuation-tracking-section" style="margin-top: 16px;">
+            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
+                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
+            </div>
+            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
+                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
+                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
+                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
+                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
+                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
+                    </div>
+                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
                                 toolsLog.appendChild(item);
                             } catch {}
                             break;
