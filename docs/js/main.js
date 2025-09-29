@@ -801,24 +801,6 @@ async function handleFormSubmission(e) {
         google_token: formData.google_token
     };
     
-    // Reset tracking state for new request if not continuing
-    if (!formData.continuation) {
-        console.log('🛫 RESETTING TRACKING STATE (fresh request)');
-        toolCallCycles = [];
-        llmCalls = [];
-        totalCost = 0;
-        totalTokens = 0;
-        currentPersona = '';
-        currentQuestions = [];
-        currentSetupData = {};
-    } else {
-        console.log('🛫 PRESERVING TRACKING STATE (continuation):', {
-            toolCallCycles: toolCallCycles.length,
-            totalToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
-            llmCalls: llmCalls.length
-        });
-    }
-
     // Make the streaming request
     return makeStreamingRequest(formData);
 }
@@ -833,13 +815,31 @@ async function makeStreamingRequest(formData) {
     const isContinuation = formData.continuation === true;
     let existingContent = '';
     
+    // Reset tracking state for new request if not continuing
+    if (!isContinuation) {
+        console.log('🛫 RESETTING TRACKING STATE (fresh request)');
+        toolCallCycles = [];
+        llmCalls = [];
+        totalCost = 0;
+        totalTokens = 0;
+        currentPersona = '';
+        currentQuestions = [];
+        currentSetupData = {};
+        
+        // Reset work state for new requests
+        resetWorkState();
+    } else {
+        console.log('🛫 PRESERVING TRACKING STATE (continuation):', {
+            toolCallCycles: toolCallCycles.length,
+            totalToolCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0),
+            llmCalls: llmCalls.length
+        });
+    }
+    
     if (isContinuation && continuationState.savedContext?.existingResponse) {
         // Save existing content to preserve it
         existingContent = continuationState.savedContext.existingResponse;
         console.log('🔄 Continuation request - preserving existing content');
-    } else {
-        // Reset work state for new requests
-        resetWorkState();
     }
     
     // Set a reasonable default timeout (90 seconds)
