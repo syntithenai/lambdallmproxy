@@ -1900,7 +1900,15 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         <div id="streaming-response" style="margin-bottom: 16px;">
             <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">�</span> Final Response
+                    <span style="font-size: 1.2em;">🎯</span> Final Response
+                    <div class="response-header-actions">
+                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
+                            📋 Copy
+                        </button>
+                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
+                            📧 Share
+                        </button>
+                    </div>
                 </h3>
             </div>
             <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">

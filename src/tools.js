@@ -16,32 +16,32 @@ function estimateTokens(text) {
 
 // Intelligent content extraction to minimize tokens while preserving key information
 function extractKeyContent(content, originalQuery) {
-  if (!content || content.length < 100) return content;
+  if (!content || typeof content !== 'string') return '';
   
-  // Convert to lowercase for analysis
-  const queryTerms = originalQuery.toLowerCase().split(/\s+/).filter(term => term.length > 2);
-  const lines = content.split(/[.\n!?]+/).filter(line => line.trim().length > 20);
+  const lines = content.split('\n').filter(Boolean);
+  const queryWords = originalQuery ? originalQuery.toLowerCase().split(/\s+/) : [];
   
-  // Extract content patterns
+  // Categorize lines by importance
   const patterns = {
-    queryRelevant: [],  // High priority: contains query terms
-    numerical: [],      // Facts, statistics, prices
-    dates: [],         // Temporal relevance 
-    headers: [],       // Structural importance
-    contextual: []     // First/last content
+    queryRelevant: [],
+    numerical: [],
+    dates: [],
+    headers: [],
+    contextual: []
   };
   
   lines.forEach((line, idx) => {
-    const lineLower = line.toLowerCase();
     const trimmed = line.trim();
+    if (!trimmed || trimmed.length < 10) return;
     
-    // Query-relevant sentences (highest priority)
-    if (queryTerms.some(term => lineLower.includes(term))) {
+    // Query relevance (contains query terms)
+    const lineWords = trimmed.toLowerCase();
+    if (queryWords.some(word => word.length > 2 && lineWords.includes(word))) {
       patterns.queryRelevant.push(trimmed);
     }
     
-    // Numerical data (facts, statistics, prices, percentages)
-    if (/\d+[%$,.\d]*|\b\d{4}\b|\b\d+\.\d+\b|\d+\s*(percent|million|billion|thousand)/.test(trimmed)) {
+    // Numerical data (numbers, percentages, measurements)
+    if (/\d+[%$€£¥]|\d+[\.\,]\d+|\d+\s*(million|billion|thousand|percent|kg|lbs|miles|km|hours|days|years)/i.test(trimmed)) {
       patterns.numerical.push(trimmed);
     }
     
@@ -198,23 +198,53 @@ async function callFunction(name, args = {}, context = {}) {
             const prompt = buildSummaryPrompt(query, enhancedResults, loadContent);
             
             const { llmResponsesWithTools } = require('./llm_tools_adapter');
-            const resp = await llmResponsesWithTools({
-              provider: model.includes(':') ? model.split(':')[0] : 'groq',
-              model: model.includes(':') ? model.split(':')[1] : model,
-              apiKey,
-              messages: [
-                { role: 'system', content: process.env.SYSTEM_PROMPT_DIGEST_ANALYST || 'You are a thorough research analyst. Provide concise, accurate summaries based on search results.' },
-                { role: 'user', content: prompt }
-              ],
-              temperature: 0.2,
-              max_tokens: 150,
-              tools: []
-            });
+            const summaryInput = [
+              { role: 'system', content: process.env.SYSTEM_PROMPT_DIGEST_ANALYST || 'You are a thorough research analyst. Provide concise, accurate summaries based on search results.' },
+              { role: 'user', content: prompt }
+            ];
+            
+            const summaryRequestBody = {
+              model,
+              input: summaryInput,
+              tools: [],
+              options: {
+                apiKey,
+                temperature: 0.2,
+                max_tokens: 150,
+                timeoutMs: 30000
+              }
+            };
+            
+            // Emit LLM request event if context has writeEvent function
+            if (context?.writeEvent) {
+              context.writeEvent('llm_request', {
+                phase: 'tool_summary',
+                tool: 'search_web',
+                model,
+                request: summaryRequestBody,
+                timestamp: new Date().toISOString()
+              });
+            }
+            
+            const resp = await llmResponsesWithTools(summaryRequestBody);
+            
+            // Emit LLM response event if context has writeEvent function
+            if (context?.writeEvent) {
+              context.writeEvent('llm_response', {
+                phase: 'tool_summary',
+                tool: 'search_web',
+                model,
+                response: resp,
+                timestamp: new Date().toISOString()
+              });
+            }
+            
             summary = resp?.text || resp?.finalText || null;
           } else {
             summary_error = "Summary generation requires model and apiKey in context";
           }
         } catch (e) {
+          console.error('🚨 LLM summary generation error:', e);
           summary_error = String(e?.message || e);
         }
       }

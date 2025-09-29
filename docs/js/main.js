@@ -1174,1309 +1174,212 @@ async function handleStreamingResponse(response, responseContainer, controller, 
             </div>
         </div>
     `;
-    } else {
-        // For new requests, create fresh HTML structure
-        responseContainer.innerHTML = `
-        <div id="streaming-response" style="margin-bottom: 16px;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">🎯</span> Final Response
-                    <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
-                            📋 Copy
-                        </button>
-                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
-                            📧 Share
-                        </button>
-                    </div>
-                </h3>
-            </div>
-            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
-                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
-            </div>
-        </div>
-        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-        </div>
-        <div id="continuation-tracking-section" style="margin-top: 16px;">
-            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
-                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
-            </div>
-            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
-                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
-                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
-                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
-                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
-                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
-                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
-                    </div>
-                </div>
-                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div id="tool-calls-detail" style="display: none;"></div>
-                    <div id="llm-calls-detail" style="display: none;"></div>
-                    <div id="search-results-detail" style="display: none;"></div>
-                </div>
-            </div>
-        </div>
-        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
-        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
-        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
-            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
-            <div id="tools-log"></div>
-        </div>
-        <div id="full-results-tree"></div>
-        
-        <!-- Expandable Tools Section -->
-        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
-            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                <span id="tools-toggle-icon">▼</span> Tool Executions
-                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
-            </div>
-            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
-                <!-- Tool executions will be dynamically added here -->
-            </div>
-        </div>
-    `;
-    } else {
-        // For new requests, create fresh HTML structure
-        responseContainer.innerHTML = `
-        <div id="streaming-response" style="margin-bottom: 16px;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">🎯</span> Final Response
-                    <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
-                            📋 Copy
-                        </button>
-                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
-                            📧 Share
-                        </button>
-                    </div>
-                </h3>
-            </div>
-            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
-                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
-            </div>
-        </div>
-        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-        </div>
-        <div id="continuation-tracking-section" style="margin-top: 16px;">
-            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
-                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
-            </div>
-            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
-                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
-                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
-                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
-                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
-                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
-                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
-                    </div>
-                </div>
-                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div id="tool-calls-detail" style="display: none;"></div>
-                    <div id="llm-calls-detail" style="display: none;"></div>
-                    <div id="search-results-detail" style="display: none;"></div>
-                </div>
-            </div>
-        </div>
-        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
-        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
-        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
-            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
-            <div id="tools-log"></div>
-        </div>
- </div>
-        
-        <!-- Expandable Tools Section -->
-        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
-            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                <span id="tools-toggle-icon">▼</span> Tool Executions
-                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
-            </div>
-            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
-                <!-- Tool executions will be dynamically added here -->
-            </div>
-        </div>
-    `;
-    } else {
-        // For new requests, create fresh HTML structure
-        responseContainer.innerHTML = `
-        <div id="streaming-response" style="margin-bottom: 16px;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">🎯</span> Final Response
-                    <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
-                            📋 Copy
-                        </button>
-                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
-                            📧 Share
-                        </button>
-                    </div>
-                </h3>
-            </div>
-            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
-                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
-            </div>
-        </div>
-        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-        </div>
-        <div id="continuation-tracking-section" style="margin-top: 16px;">
-            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
-                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
-            </div>
-            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
-                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
-                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
-                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
-                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
-                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
-                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
-                    </div>
-                </div>
-                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div id="tool-calls-detail" style="display: none;"></div>
-                    <div id="llm-calls-detail" style="display: none;"></div>
-                    <div id="search-results-detail" style="display: none;"></div>
-                </div>
-            </div>
-        </div>
-        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
-        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
-        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
-            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
-            <div id="tools-log"></div>
-        </div>
-        <div id="full-results-tree"></div>
-        
-        <!-- Expandable Tools Section -->
-        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
-            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                <span id="tools-toggle-icon">▼</span> Tool Executions
-                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
-            </div>
-            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
-                <!-- Tool executions will be dynamically added here -->
-            </div>
-        </div>
-    `;
-    } else {
-        // For new requests, create fresh HTML structure
-        responseContainer.innerHTML = `
-        <div id="streaming-response" style="margin-bottom: 16px;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">🎯</span> Final Response
-                    <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
-                            📋 Copy
-                        </button>
-                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
-                            📧 Share
-                        </button>
-                    </div>
-                </h3>
-            </div>
-            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
-                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
-            </div>
-        </div>
-        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-        </div>
-        <div id="continuation-tracking-section" style="margin-top: 16px;">
-            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
-                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
-            </div>
-            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
-                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
-                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
-                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
-                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
-                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
-                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
-                    </div>
-                </div>
-                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div id="tool-calls-detail" style="display: none;"></div>
-                    <div id="llm-calls-detail" style="display: none;"></div>
-                    <div id="search-results-detail" style="display: none;"></div>
-                </div>
-            </div>
-        </div>
-        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
-        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
-        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
-            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
-            <div id="tools-log"></div>
-        </div>
-        <div id="full-results-tree"></div>
-        
-        <!-- Expandable Tools Section -->
-        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
-            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                <span id="tools-toggle-icon">▼</span> Tool Executions
-                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
-            </div>
-            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
-                <!-- Tool executions will be dynamically added here -->
-            </div>
-        </div>
-    `;
-    } else {
-        // For new requests, create fresh HTML structure
-        responseContainer.innerHTML = `
-        <div id="streaming-response" style="margin-bottom: 16px;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">🎯</span> Final Response
-                    <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
-                            📋 Copy
-                        </button>
-                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
-                            📧 Share
-                        </button>
-                    </div>
-                </h3>
-            </div>
-            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
-                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
-            </div>
-        </div>
-        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-        </div>
-        <div id="continuation-tracking-section" style="margin-top: 16px;">
-            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
-                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
-            </div>
-            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
-                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
-                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
-                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
-                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
-                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
-                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
-                    </div>
-                </div>
-                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div id="tool-calls-detail" style="display: none;"></div>
-                    <div id="llm-calls-detail" style="display: none;"></div>
-                    <div id="search-results-detail" style="display: none;"></div>
-                </div>
-            </div>
-        </div>
-        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
-        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
-        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
-            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
-            <div id="tools-log"></div>
-        </div>
-        <div id="full-results-tree"></div>
-        
-        <!-- Expandable Tools Section -->
-        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
-            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                <span id="tools-toggle-icon">▼</span> Tool Executions
-                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
-            </div>
-            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
-                <!-- Tool executions will be dynamically added here -->
-            </div>
-        </div>
-    `;
-    } else {
-        // For new requests, create fresh HTML structure
-        responseContainer.innerHTML = `
-        <div id="streaming-response" style="margin-bottom: 16px;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">🎯</span> Final Response
-                    <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
-                            📋 Copy
-                        </button>
-                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
-                            📧 Share
-                        </button>
-                    </div>
-                </h3>
-            </div>
-            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
-                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
-            </div>
-        </div>
-        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-        </div>
-        <div id="continuation-tracking-section" style="margin-top: 16px;">
-            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
-                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
-            </div>
-            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
-                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
-                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
-                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
-                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
-                        <div id="persona-summary" style="font-size: 1.1em; font-weight: bold;">Setting up...</div>
-                        <div id="questions-summary" style="font-size: 0.9em; color: #6c757d;">0 research questions</div>
-                    </div>
-                </div>
-                <div id="detailed-tracking" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div id="tool-calls-detail" style="display: none;"></div>
-                    <div id="llm-calls-detail" style="display: none;"></div>
-                    <div id="search-results-detail" style="display: none;"></div>
-                </div>
-            </div>
-        </div>
-        <div id="active-searches" style="margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; display:none;"></div>
-        <div id="streaming-steps" style="margin: 10px 0 16px 0;"></div>
-        <div id="tools-panel" class="tools-panel" style="display:none; margin:10px 0; padding:10px; background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px;">
-            <h3 style="margin:0 0 8px 0; color:#495057;">Tool calls</h3>
-            <div id="tools-log"></div>
-        </div>
-        <div id="full-results-tree"></div>
-        
-        <!-- Expandable Tools Section -->
-        <div id="expandable-tools-section" style="margin-top: 20px; display: none;">
-            <div onclick="toggleToolsDetails()" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                <span id="tools-toggle-icon">▼</span> Tool Executions
-                <span id="tools-count-badge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; margin-left: auto;">0</span>
-            </div>
-            <div id="expandable-tools-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; max-height: 400px; overflow-y: auto; display: none;">
-                <!-- Tool executions will be dynamically added here -->
-            </div>
-        </div>
-    `;
-    } else {
-        // For new requests, create fresh HTML structure
-        responseContainer.innerHTML = `
-        <div id="streaming-response" style="margin-bottom: 16px;">
-            <div style="padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2em;">🎯</span> Final Response
-                    <div class="response-header-actions">
-                        <button type="button" id="copy-response-btn" class="action-btn copy-btn" disabled title="Copy response to clipboard">
-                            📋 Copy
-                        </button>
-                        <button type="button" id="share-response-btn" class="action-btn share-btn" disabled title="Share response via email">
-                            📧 Share
-                        </button>
-                    </div>
-                </h3>
-            </div>
-            <div id="final-answer" style="padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745; line-height: 1.6; color:#212529;">
-                <em>Working on it… you'll see the final answer here as soon as it's ready.</em>
-            </div>
-        </div>
-        <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2em;">�</span> Real-time Search Progress
-            </h3>
-            <div id="streaming-status" style="opacity: 0.95;">Connected! Waiting for data...</div>
-        </div>
-        <div id="continuation-tracking-section" style="margin-top: 16px;">
-            <div class="section-header" onclick="toggleSection('continuation-tracking-content')" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <span id="continuation-toggle-icon">▼</span> 📊 Continuation Tracking
-                <span id="continuation-summary" style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 16px; font-size: 0.9em; margin-left: auto;">Initializing...</span>
-            </div>
-            <div id="continuation-tracking-content" class="section-content" style="background: #f8f9fa; border: 1px solid #dee2e6; border-top: none; border-radius: 0 0 8px 8px; padding: 16px; display: none; max-height: 600px; overflow-y: auto;">
-                <div id="tracking-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #007bff;">🔧 Tool Calls</h5>
-                        <div id="tool-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 completed, 0 pending</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #6f42c1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #6f42c1;">🤖 LLM Calls</h5>
-                        <div id="llm-calls-summary" style="font-size: 1.1em; font-weight: bold;">0 total</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">0 tokens used</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #28a745;">💰 Cost Tracking</h5>
-                        <div id="cost-summary" style="font-size: 1.1em; font-weight: bold;">$0.0000</div>
-                        <div style="font-size: 0.9em; color: #6c757d;">Across all calls</div>
-                    </div>
-                    <div class="tracking-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #fd7e14; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <h5 style="margin: 0 0 8px 0; color: #fd7e14;">👤 Current State</h5>
-                                toolsLog.appendChild(item);
-                            } catch {}
-                            break;
-                            
-                        case 'log':
-                            statusElement.textContent = eventData.message || 'Processing...';
-                            break;
-                            
-                        case 'init':
-                            statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
-                            if (eventData.allowEnvFallback) {
-                                const note = document.createElement('div');
-                                note.style.cssText = 'margin-top:6px;color:#155724;font-size:0.9em;';
-                                note.textContent = 'Note: Using server-managed API keys (authorized user).';
-                                statusElement.parentElement.appendChild(note);
-                            }
-                            
-                            // Capture initial setup data for tracking
-                            if (eventData.continuation) {
-                                console.log('📋 Continuation init received');
-                                currentPersona = eventData.persona || currentPersona;
-                                currentQuestions = eventData.questions || currentQuestions;
-                                currentSetupData = {
-                                    response_length: eventData.response_length || currentSetupData.response_length,
-                                    reasoning_level: eventData.reasoning_level || currentSetupData.reasoning_level,
-                                    temperature: eventData.temperature || currentSetupData.temperature
-                                };
-                            } else {
-                                // Fresh start - reset all tracking
-                                toolCallCycles = [];
-                                llmCalls = [];
-                                totalCost = 0;
-                                totalTokens = 0;
-                                currentPersona = '';
-                                currentQuestions = [];
-                                currentSetupData = {};
-                            }
-                            break;
-                            
-                        case 'setup_complete':
-                            {
-                                // Display persona information
-                                const personaContainer = document.getElementById('persona-container');
-                                const personaText = document.getElementById('persona-text');
-                                if (personaContainer && personaText && eventData.persona) {
-                                    personaText.textContent = eventData.persona;
-                                    personaContainer.style.display = 'block';
-                                    // Show the layout container
-                                    const layoutContainer = document.querySelector('.persona-questions-layout');
-                                    if (layoutContainer) {
-                                        layoutContainer.classList.remove('hidden');
-                                    }
-                                }
-                                
-                                // Display research questions
-                                const researchContainer = document.getElementById('research-questions-container');
-                                const researchText = document.getElementById('research-questions-text');
-                                if (researchContainer && researchText && eventData.questions) {
-                                    let questionsHtml = `<div style="margin-bottom: 8px;"><strong>Research Questions:</strong></div>`;
-                                    questionsHtml += '<ul style="margin: 0; padding-left: 20px;">';
-                                    eventData.questions.forEach((q, i) => {
-                                        questionsHtml += `<li style="margin-bottom: 4px;">${q}</li>`;
-                                    });
-                                    questionsHtml += '</ul>';
-                                    questionsHtml += `<div style="margin-top: 8px; font-size: 0.85rem; opacity: 0.9;"><em>Response Length: ${eventData.response_length} | Reasoning: ${eventData.reasoning_level}</em></div>`;
-                                    researchText.innerHTML = questionsHtml;
-                                    researchContainer.style.display = 'block';
-                                    // Show the layout container
-                                    const layoutContainer = document.querySelector('.persona-questions-layout');
-                                    if (layoutContainer) {
-                                        layoutContainer.classList.remove('hidden');
-                                    }
-                                }
-                                
-                                // Save setup data for continuation
-                                continuationState.workState.setupData = {
-                                    persona: eventData.persona,
-                                    questions: eventData.questions,
-                                    response_length: eventData.response_length,
-                                    reasoning_level: eventData.reasoning_level,
-                                    temperature: eventData.temperature
-                                };
-                                
-                                // Display cost information if available
-                                if (eventData.cost && eventData.cost.totalCost) {
-                                    showToast(`Setup query cost: $${eventData.cost.totalCost.toFixed(6)}`, 'info', 3000);
-                                }
-                                
-                                statusElement.textContent = `✅ Setup complete! Starting research with ${eventData.questions.length} questions...`;
-                                
-                                // Update global tracking variables
-                                currentPersona = eventData.persona || currentPersona;
-                                currentQuestions = eventData.questions || currentQuestions;
-                                currentSetupData = {
-                                    response_length: eventData.response_length,
-                                    reasoning_level: eventData.reasoning_level,
-                                    temperature: eventData.temperature
-                                };
-                            }
-                            break;
-                            
-                        case 'tools':
-                            // This case is handled by the main tools event handler above
-                            break;
 
-                        case 'tool_result':
-                            console.log('🔧 TOOL RESULT:', {
-                                iteration: eventData.iteration,
-                                call_id: eventData.call_id,
-                                name: eventData.name,
-                                hasOutput: !!eventData.output,
-                                currentCycles: toolCallCycles.length
-                            });
-                            
-                            // Update tool call with response
-                            const cycleIndex = eventData.iteration - 1;
-                            console.log('🛫 TOOL RESULT PROCESSING:', {
-                                cycleIndex,
-                                cycleExists: !!toolCallCycles[cycleIndex],
-                                cycleSize: toolCallCycles[cycleIndex]?.length || 0,
-                                lookingForId: eventData.call_id
-                            });
-                            
-                            if (toolCallCycles[cycleIndex]) {
-                                const toolCall = toolCallCycles[cycleIndex].find(tc => 
-                                    tc.request.id === eventData.call_id
-                                );
-                                
-                                console.log('🛫 TOOL CALL FOUND:', {
-                                    found: !!toolCall,
-                                    callId: toolCall?.request?.id,
-                                    functionName: toolCall?.request?.function?.name
-                                });
-                                
-                                if (toolCall) {
-                                    toolCall.response = eventData.output;
-                                    toolCall.duration = eventData.duration || 0;
-                                    toolCall.tokenUse = eventData.tokenUse || 0;
-                                    toolCall.cost = eventData.cost || 0;
-                                    toolCall.completed = true;
-                                    
-                                    // Update totals
-                                    totalTokens += toolCall.tokenUse;
-                                    totalCost += toolCall.cost;
-                                    
-                                    console.log('🛫 TOOL CALL UPDATED:', {
-                                        completed: toolCall.completed,
-                                        hasResponse: !!toolCall.response,
-                                        totalCompleted: toolCallCycles.reduce((sum, cycle) => sum + cycle.filter(tc => tc.completed).length, 0),
-                                        totalCalls: toolCallCycles.reduce((sum, cycle) => sum + cycle.length, 0)
-                                    });
-                                }
-                            }
-                            
-                            updateToolCallsDisplay();
-                            updateCostDisplay();
-                            break;
+    // Process the actual streaming response
+    try {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const finalAnswerElement = document.getElementById('final-answer');
+        let accumulatedContent = '';
+        let partialLine = ''; // Buffer for incomplete lines
 
-                        case 'tool_error':
-                            console.log('❌ Tool error received:', eventData);
-                            
-                            // Update tool call with error
-                            const errorCycleIndex = eventData.iteration - 1;
-                            if (toolCallCycles[errorCycleIndex]) {
-                                const errorToolCall = toolCallCycles[errorCycleIndex].find(tc => 
-                                    tc.request.id === eventData.call_id
-                                );
-                                if (errorToolCall) {
-                                    errorToolCall.response = { error: eventData.error };
-                                    errorToolCall.duration = eventData.duration || 0;
-                                    errorToolCall.completed = true; // Completed with error
-                                }
-                            }
-                            
-                            updateToolCallsDisplay();
-                            break;
+        // Initially disable the action buttons
+        disableResponseActions();
 
-                        case 'llm_call':
-                            console.log('🤖 LLM call event received:', eventData);
-                            
-                            // Track LLM calls
-                            const llmCallData = {
-                                type: eventData.type,
-                                model: eventData.model,
-                                iteration: eventData.iteration,
-                                persona: eventData.persona,
-                                questions: eventData.questions,
-                                timestamp: eventData.timestamp,
-                                request: {
-                                    model: eventData.model,
-                                    type: eventData.type
-                                },
-                                response: null,
-                                duration: 0,
-                                tokenUse: 0,
-                                cost: 0
-                            };
-                            
-                            llmCalls.push(llmCallData);
-                            updateLLMCallsDisplay();
-                            break;
-
-                        case 'llm_response':
-                            console.log('🤖 LLM response received:', eventData);
-                            
-                            // Update most recent LLM call with response data
-                            if (llmCalls.length > 0) {
-                                const lastCall = llmCalls[llmCalls.length - 1];
-                                lastCall.response = {
-                                    content: eventData.content,
-                                    tool_calls: eventData.tool_calls || [],
-                                    usage: eventData.usage,
-                                    cost: eventData.cost
-                                };
-                                lastCall.duration = eventData.duration || 0;
-                                lastCall.tokenUse = eventData.usage?.total_tokens || 0;
-                                lastCall.cost = eventData.cost || 0;
-                                
-                                // Update totals
-                                totalTokens += lastCall.tokenUse;
-                                totalCost += lastCall.cost;
-                            }
-                            
-                            updateLLMCallsDisplay();
-                            updateCostDisplay();
-                            break;
-                            
-                        case 'llm_call':
-                            {
-                                // Display LLM call information
-                                const callType = eventData.type || 'unknown';
-                                if (callType === 'setup_query') {
-                                    statusElement.textContent = '🧠 Analyzing query to determine research approach...';
-                                } else if (callType === 'query_cycle') {
-                                    statusElement.textContent = `🔬 Conducting research with persona: ${eventData.persona ? eventData.persona.substring(0, 50) + '...' : 'Expert researcher'}`;
-                                }
-                            }
-                            break;
-                            
-                        case 'llm_response':
-                            {
-                                // Handle streaming LLM response
-                                const responseType = eventData.type || 'unknown';
-                                if (responseType === 'setup_response') {
-                                    statusElement.textContent = '📝 Processing setup response...';
-                                } else if (responseType === 'research_response') {
-                                    statusElement.textContent = '📖 Generating research response...';
-                                } else if (responseType === 'final_response') {
-                                    // Final response - update main display
-                                    if (eventData.content) {
-                                        if (typeof marked !== 'undefined') {
-                                            responseElement.innerHTML = marked.parse(eventData.content);
-                                        } else {
-                                            // Fallback: simple text with line breaks
-                                            responseElement.innerHTML = eventData.content.replace(/\n/g, '<br>');
-                                        }
-                                        statusElement.textContent = '✅ Research completed!';
-                                        
-                                        // Display cost summary if available
-                                        if (eventData.cost && eventData.cost.totalCost) {
-                                            const costContainer = document.getElementById('cost-container');
-                                            const costText = document.getElementById('cost-text');
-                                            if (costContainer && costText) {
-                                                const cost = eventData.cost;
-                                                let costHtml = `<div style="margin-bottom: 8px;"><strong>LLM Costs:</strong></div>`;
-                                                costHtml += `<div>Model: ${cost.model} (${cost.provider})</div>`;
-                                                costHtml += `<div>Input tokens: ${cost.inputTokens.toLocaleString()} ($${cost.inputCost.toFixed(6)})</div>`;
-                                                costHtml += `<div>Output tokens: ${cost.outputTokens.toLocaleString()} ($${cost.outputCost.toFixed(6)})</div>`;
-                                                costHtml += `<div style="font-weight: bold; margin-top: 8px;">Total: $${cost.totalCost.toFixed(6)}</div>`;
-                                                costText.innerHTML = costHtml;
-                                                costContainer.style.display = 'block';
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                            
-                        case 'tool_calls_planned':
-                            {
-                                // Display planned tool calls
-                                if (eventData.tools && Array.isArray(eventData.tools)) {
-                                    toolsPanel.style.display = 'block';
-                                    const box = document.createElement('div');
-                                    box.style.cssText = 'padding:8px; border-left:3px solid #6c757d; background:#fff; margin:6px 0; border-radius:4px;';
-                                    const header = document.createElement('div');
-                                    header.innerHTML = `<strong>Planned Tool Calls</strong> • ${eventData.tools.length} call(s)`;
-                                    box.appendChild(header);
-                                    
-                                    const list = document.createElement('ul');
-                                    list.style.margin = '6px 0 0 16px';
-                                    eventData.tools.forEach(tool => {
-                                        const li = document.createElement('li');
-                                        li.textContent = `${tool.name || tool.function?.name || 'unknown'} ${tool.id ? '(' + tool.id + ')' : ''}`;
-                                        list.appendChild(li);
-                                    });
-                                    box.appendChild(list);
-                                    toolsLog.appendChild(box);
-                                    
-                                    statusElement.textContent = `🔧 Executing ${eventData.tools.length} tool call(s)...`;
-                                }
-                            }
-                            break;
-                            
-                        case 'tool_call_result':
-                            {
-                                // Display tool call result
-                                const { tool, result } = eventData;
-                                if (tool && result) {
-                                    toolsPanel.style.display = 'block';
-                                    
-                                    // Capture tool result for continuation
-                                    continuationState.workState.completedToolCalls.push({
-                                        tool: tool.name || tool.function?.name || 'unknown',
-                                        args: tool.arguments || tool.function?.arguments || {},
-                                        result: result,
-                                        timestamp: new Date().toISOString()
-                                    });
-                                    
-                                    const item = document.createElement('div');
-                                    item.style.cssText = 'padding:8px; border-left:3px solid #28a745; background:#fff; margin:6px 0; border-radius:4px;';
-                                    const title = document.createElement('div');
-                                    title.innerHTML = `<strong>${tool.name || tool.function?.name || 'unknown'}</strong> completed`;
-                                    const resultPre = document.createElement('pre');
-                                    resultPre.style.cssText = 'white-space: pre-wrap; max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 4px;';
-                                    resultPre.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-                                    item.appendChild(title);
-                                    item.appendChild(resultPre);
-                                    toolsLog.appendChild(item);
-                                }
-                            }
-                            break;
-                            
-                        case 'pause':
-                            {
-                                // Handle pause event (for rate limits)
-                                if (eventData.reason === 'rate_limit') {
-                                    const continuationData = eventData.continuationData;
-                                    if (continuationData) {
-                                        // Save continuation data for retry
-                                        continuationState.savedContext = {
-                                            query: continuationData.query,
-                                            setupData: continuationData.setupData,
-                                            model: continuationData.model,
-                                            workState: continuationData.workState
-                                        };
-                                        continuationState.savedFormData = {
-                                            query: continuationData.query,
-                                            model: continuationData.model
-                                        };
-                                        continuationState.isActive = true;
-                                        
-                                        statusElement.innerHTML = `
-                                            <div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0;">
-                                                ⏸️ Paused due to rate limit. You can continue the request when ready.
-                                                <div style="margin-top: 8px;">
-                                                    <button onclick="continueRequest()" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">
-                                                        Continue Request
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        `;
-                                        
-                                        showToast(`Request paused due to rate limit: ${eventData.error}`, 'warning', 8000);
-                                    }
-                                }
-                            }
-                            break;
-                            
-                        case 'persona':
-                            {
-                                const personaContainer = document.getElementById('persona-container');
-                                const personaText = document.getElementById('persona-text');
-                                if (personaContainer && personaText && eventData.persona) {
-                                    personaText.textContent = eventData.persona;
-                                    personaContainer.style.display = 'block';
-                                    // Show the layout container
-                                    const layoutContainer = document.querySelector('.persona-questions-layout');
-                                    if (layoutContainer) {
-                                        layoutContainer.classList.remove('hidden');
-                                    }
-                                }
-                            }
-                            break;
-                            
-                        case 'research_questions':
-                            {
-                                const researchContainer = document.getElementById('research-questions-container');
-                                const researchText = document.getElementById('research-questions-text');
-                                if (researchContainer && researchText && eventData.questions) {
-                                    let questionsHtml = `<div style="margin-bottom: 8px;"><strong>Questions to research (${eventData.questions_needed || eventData.questions.length}):</strong></div>`;
-                                    questionsHtml += '<ul style="margin: 0; padding-left: 20px;">';
-                                    eventData.questions.forEach((q, i) => {
-                                        questionsHtml += `<li style="margin-bottom: 4px;">${q}</li>`;
-                                    });
-                                    questionsHtml += '</ul>';
-                                    // Show the layout container
-                                    const layoutContainer = document.querySelector('.persona-questions-layout');
-                                    if (layoutContainer) {
-                                        layoutContainer.classList.remove('hidden');
-                                    }
-                                    if (eventData.reasoning) {
-                                        questionsHtml += `<div style="margin-top: 8px; font-size: 0.85rem; opacity: 0.9;"><em>${eventData.reasoning}</em></div>`;
-                                    }
-                                    researchText.innerHTML = questionsHtml;
-                                    researchContainer.style.display = 'block';
-                                }
-                            }
-                            break;
-                            
-                        case 'decision':
-                            {
-                                const needsSearch = (eventData.decision && (eventData.decision.needsSearch ?? eventData.decision.requiresSearch)) || false;
-                                const searchStrategy = needsSearch ? 'Multi-search required' : 'Direct response';
-                                stepsElement.innerHTML += `
-                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                        <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                            <span>🎯</span> Search Strategy: ${searchStrategy}
-                                        </div>
-                                        ${eventData.decision && eventData.decision.searchTerms ? `<div style="opacity: 0.9;"><strong>Search Terms:</strong> ${eventData.decision.searchTerms.join(', ')}</div>` : ''}
-                                    </div>
-                                `;
-                            }
-                            break;
-                            
-                        case 'step':
-                            if (eventData.type === 'search_iteration') {
-                                stepsElement.innerHTML += `
-                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                        <div style="font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                                            <span>🔄</span> Iteration ${eventData.iteration}: ${eventData.message}
-                                        </div>
-                                    </div>
-                                `;
-                            } else {
-                                statusElement.textContent = eventData.message;
-                            }
-                            break;
-                            
-                        case 'search':
-                            statusElement.textContent = `🔍 Searching (${eventData.searchIndex}/${eventData.totalSearches}): "${eventData.term}"`;
-                            // Start a countdown bar for this active search
-                            startSearchTimer(eventData.iteration, eventData.term, eventData.searchIndex, eventData.totalSearches);
-                            break;
-                            
-                        case 'search_results':
-                            {
-                                const { term, iteration, resultsCount, results, cumulativeResultsCount, allResults, searches, subQuestion, keywords } = eventData;
-                                console.log('🔍 Processing search_results:', {
-                                    term,
-                                    iteration,
-                                    resultsCount,
-                                    hasResults: Array.isArray(results),
-                                    resultsLength: Array.isArray(results) ? results.length : 'not array',
-                                    cumulativeResultsCount,
-                                    hasSearches: Array.isArray(searches),
-                                    searchesLength: Array.isArray(searches) ? searches.length : 'not array',
-                                    subQuestion,
-                                    keywords
-                                });
-                                
-                                // Check for empty results warning
-                                if (resultsCount === 0) {
-                                    console.warn('⚠️ Empty search results received for term:', term);
-                                }
-                                
-                                // Log the actual results structure
-                                if (Array.isArray(results) && results.length > 0) {
-                                    console.log('📊 First search result structure:', results[0]);
-                                } else {
-                                    console.warn('⚠️ No results array or empty results for:', term);
-                                }
-                                
-                                // Ignore initial empty placeholder snapshot to avoid a "null" entry
-                                if (term === null || (resultsCount === 0 && iteration === 0)) {
-                                    console.log('🚫 Ignoring empty placeholder snapshot');
-                                    updateLiveSummary(searches || [], cumulativeResultsCount || 0);
-                                    break;
-                                }
-
-                                stepsElement.innerHTML += `
-                                    <div style="margin: 5px 0; padding: 12px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); border-radius: 6px; box-shadow: 0 1px 5px rgba(0,0,0,0.1);">
-                                        <div style="display: flex; align-items: center; gap: 8px; font-weight: 500;">
-                                            <span style="color: #28a745;">✅</span>
-                                            <span>"${term}"</span>
-                                            <span style="background: rgba(255,255,255,0.8); padding: 2px 8px; border-radius: 12px; font-size: 0.9em; color: #333;">
-                                                ${resultsCount} results (total ${cumulativeResultsCount || 0})
-                                            </span>
-                                        </div>
-                                    </div>
-                                `;
-                                statusElement.textContent = `📥 Received ${resultsCount} result(s) for "${term}" (iteration ${iteration}) — total ${cumulativeResultsCount || 0}`;
-
-                                // Update structured state for the full results tree
-                                if (!resultsState.byIteration[iteration]) resultsState.byIteration[iteration] = {};
-                                resultsState.byIteration[iteration][term] = Array.isArray(results) ? results : [];
-                                // Store metadata for this term
-                                const metaKey = `${iteration}|${term}`;
-                                metaMap.set(metaKey, { subQuestion: subQuestion || null, keywords: Array.isArray(keywords) ? keywords : [] });
-                                
-                                // Capture search results for continuation
-                                continuationState.workState.searchResults.push({
-                                    term,
-                                    iteration,
-                                    resultsCount,
-                                    results: Array.isArray(results) ? results : [],
-                                    cumulativeResultsCount,
-                                    subQuestion,
-                                    keywords: Array.isArray(keywords) ? keywords : [],
-                                    timestamp: new Date().toISOString()
-                                });
-                                
-                                // Update current iteration tracker
-                                continuationState.workState.currentIteration = Math.max(
-                                    continuationState.workState.currentIteration, 
-                                    iteration || 0
-                                );
-
-                                // Mark this search timer as done
-                                stopSearchTimer(iteration, term, 'done');
-
-                                // Update summary and full tree
-                                // Keep last searches for digest refresh convenience
-                                window.__lastSearches = searches || [];
-                                updateLiveSummary(window.__lastSearches, cumulativeResultsCount || 0);
-                                updateFullResultsTree();
-                            }
-                            break;
-                            
-                        case 'continuation':
-                            const continueGradient = eventData.shouldContinue ? 
-                                'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)' : 
-                                'linear-gradient(135deg, #a8e6cf 0%, #dcedc1 100%)';
-                            stepsElement.innerHTML += `
-                                <div style="margin: 10px 0; padding: 15px; background: ${continueGradient}; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                    <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                        <span>${eventData.shouldContinue ? '🔄' : '✋'}</span>
-                                        ${eventData.shouldContinue ? 'Continuing:' : 'Stopping:'}
-                                    </div>
-                                    <div style="opacity: 0.8;">${eventData.reasoning}</div>
-                                </div>
-                            `;
-                            break;
-                            
-                        case 'final_response':
-                            statusElement.textContent = '✅ Search completed! Displaying final response...';
-                            const finalResponseStopBtn = document.getElementById('stop-btn');
-                            if (finalResponseStopBtn) { finalResponseStopBtn.disabled = true; finalResponseStopBtn.textContent = 'Stop'; }
-                            stopAllTimers('done');
-                            hideContinuationUI();
-                            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
-                            enableResponseActions();
-                            // Keep metadata visible and updated
-                            metadataContent.innerHTML = `
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                                    <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #007bff;">
-                                        <div style="font-weight: bold; color: #007bff; margin-bottom: 4px;">Total Results</div>
-                                        <div style="font-size: 1.2em; color: #333;">${eventData.totalResults}</div>
-                                    </div>
-                                    <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #28a745;">
-                                        <div style="font-weight: bold; color: #28a745; margin-bottom: 4px;">Search Iterations</div>
-                                        <div style="font-size: 1.2em; color: #333;">${eventData.searchIterations}</div>
-                                    </div>
-                                    <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #ffc107;">
-                                        <div style="font-weight: bold; color: #ffc107; margin-bottom: 4px;">Completed</div>
-                                        <div style="font-size: 1.1em; color: #333;">${new Date(eventData.timestamp).toLocaleTimeString()}</div>
-                                    </div>
-                                </div>
-                            `;
-                            metadataElement.style.display = 'block';
-                            break;
-                            
-                        case 'final_answer':
-                            statusElement.textContent = '✅ Search completed! Displaying final answer...';
-                            const finalAnswerStopBtn = document.getElementById('stop-btn');
-                            if (finalAnswerStopBtn) { finalAnswerStopBtn.disabled = true; finalAnswerStopBtn.textContent = 'Stop'; }
-                            stopAllTimers('done');
-                            hideContinuationUI();
-                            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.content}</div>`;
-                            enableResponseActions();
-                            responseContainer.className = 'response-container response-success';
-                            break;
-                            
-                        case 'complete':
-                            statusElement.textContent = `✅ Complete! Total time: ${Math.round(eventData.executionTime)}ms`;
-                            responseContainer.className = 'response-container response-success';
-                            const stopBtn = document.getElementById('stop-btn');
-                            if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = 'Stop'; }
-                            stopAllTimers('done');
-                            hideContinuationUI();
-                            // Ensure the full results tree reflects the final snapshot
-                            if (Array.isArray(eventData.allResults) && eventData.allResults.length) {
-                                // If we never received structured iterations, fall back to a flat section
-                                const hasStructure = Object.keys(resultsState.byIteration).length > 0;
-                                if (!hasStructure) {
-                                    resultsState.byIteration[1] = { 'All results': eventData.allResults };
-                                }
-                                updateFullResultsTree();
-                            }
-                            // Reset model to fastest/cheapest option for next request
-                            resetModelToFastest();
-                            break;
-                        
-                        case 'error':
-                            console.error('LLM Error:', eventData.error);
-                            
-                            // Check if this is a quota/rate limit error
-                            if (isQuotaLimitError(eventData.error)) {
-                                // Get existing response content for continuation
-                                const existingResponse = answerElement ? answerElement.innerHTML : '';
-                                
-                                // Handle quota error with continuation
-                                handleQuotaError(eventData.error, window.lastFormData, existingResponse);
-                                stopAllTimers('quota_limit');
-                            } else {
-                                // Handle regular errors
-                                statusElement.textContent = `❌ Error: ${eventData.error}`;
-                                responseContainer.className = 'response-container response-error';
-                                const errorStopBtn = document.getElementById('stop-btn');
-                                if (errorStopBtn) { errorStopBtn.disabled = true; errorStopBtn.textContent = 'Error'; }
-                                stopAllTimers('error');
-                                hideContinuationUI(); // Ensure continuation UI is hidden for regular errors
-                                stepsElement.innerHTML += `
-                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); border-radius: 8px; color: #721c24;">
-                                        <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                            <span>❌</span> Error Occurred
-                                        </div>
-                                        <div>${eventData.error}</div>
-                                    </div>
-                                `;
-                            }
-                            break;
-                            
-                        case 'quota_exceeded':
-                            console.log('📊 Quota exceeded event received:', eventData);
-                            
-                            // Get existing response content for continuation
-                            const existingResponse = answerElement ? answerElement.innerHTML : '';
-                            
-                            // Use the waitTime from the event data if available, otherwise fallback to parsing from message
-                            let waitTime = eventData.waitTime || 60;
-                            if (eventData.error && typeof eventData.error === 'string') {
-                                const parsedWait = parseWaitTimeFromMessage(eventData.error);
-                                if (parsedWait && !isNaN(parsedWait) && parsedWait > 0) {
-                                    waitTime = parsedWait;
-                                }
-                            }
-                            
-                            console.log(`🔄 Quota exceeded - wait time: ${waitTime}s`);
-                            
-                            // Create a formatted error message for the handler
-                            const errorMessage = eventData.error || `Rate limit exceeded. Please wait ${waitTime} seconds before continuing.`;
-                            
-                            // Handle quota error with continuation using the waitTime
-                            continuationState.remainingSeconds = waitTime;
-                            handleQuotaError(errorMessage, window.lastFormData, existingResponse);
-                            stopAllTimers('quota_limit');
-                            
-                            // Ensure button states are correct after quota handling
-                            console.log('🔄 Quota exceeded - ensuring correct button states');
-                            const formSubmitBtn = document.getElementById('submit-btn');
-                            const quotaStopBtn = document.getElementById('stop-btn');
-                            const formContinueBtn = document.getElementById('continue-btn');
-                            
-                            function enforceQuotaButtonStates() {
-                                const submitBtn = document.getElementById('submit-btn');
-                                const stopBtn = document.getElementById('stop-btn');
-                                const continueBtn = document.getElementById('continue-btn');
-                                
-                                if (submitBtn) {
-                                    submitBtn.style.display = 'none';
-                                    console.log('🔄 Enforced: Hidden submit button for quota exceeded');
-                                }
-                                if (stopBtn) {
-                                    stopBtn.style.display = 'inline-block';
-                                    stopBtn.disabled = false;
-                                    stopBtn.textContent = 'Stop';
-                                    console.log('🔄 Enforced: Showed stop button for quota exceeded');
-                                }
-                                if (continueBtn) {
-                                    continueBtn.style.display = 'inline-block';
-                                    console.log('🔄 Enforced: Showed continue button for quota exceeded');
-                                }
-                            }
-                            
-                            // Immediately enforce button states
-                            enforceQuotaButtonStates();
-                            
-                            // Re-enforce button states after a short delay to override any interference
-                            setTimeout(enforceQuotaButtonStates, 100);
-                            setTimeout(enforceQuotaButtonStates, 500);
-                            break;
-                            
-                        case 'interrupt_state':
-                            // Check multiple possible sources for the interrupt reason
-                            let interruptReason = null;
-                            
-                            // Check different properties where the reason might be stored
-                            if (eventData.reason) {
-                                interruptReason = eventData.reason;
-                            } else if (eventData.message) {
-                                interruptReason = eventData.message;
-                            } else if (eventData.error) {
-                                interruptReason = eventData.error;
-                            } else if (eventData.state && eventData.state.interruptReason) {
-                                // The reason might be in the state object
-                                if (Array.isArray(eventData.state.interruptReason)) {
-                                    // Look for content in the array
-                                    const reasonContent = eventData.state.interruptReason.find(item => item.content);
-                                    interruptReason = reasonContent ? reasonContent.content : JSON.stringify(eventData.state.interruptReason);
-                                } else {
-                                    interruptReason = eventData.state.interruptReason;
-                                }
-                            }
-                            
-                            // For rate limits, we know from the log message, so let's also check that
-                            // If no specific reason found, but we received this interrupt_state, assume it's rate limiting
-                            if (!interruptReason) {
-                                interruptReason = "API rate limit or quota reached";
-                            }
-                            
-                            if (isQuotaLimitError(interruptReason)) {
-                                // Get existing response content for continuation
-                                const existingResponse = answerElement ? answerElement.innerHTML : '';
-                                
-                                // Handle quota error with continuation
-                                handleQuotaError(interruptReason, window.lastFormData, existingResponse);
-                                stopAllTimers('quota_limit');
-                            } else {
-                                // Handle as regular interruption
-                                statusElement.textContent = `⏸️ Processing interrupted: ${interruptReason}`;
-                                stepsElement.innerHTML += `
-                                    <div style="margin: 10px 0; padding: 15px; background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%); border-radius: 8px; color: white;">
-                                        <div style="font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                                            <span>⏸️</span> Processing Interrupted
-                                        </div>
-                                        <div style="opacity: 0.9;">${interruptReason}</div>
-                                    </div>
-                                `;
-                            }
-                            break;
-                            
-                        default:
-                            break;
+        async function processStream() {
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                    console.log('Stream complete');
+                    // Process any remaining partial line
+                    if (partialLine.trim()) {
+                        processLine(partialLine);
                     }
-                    
-                } catch (parseError) {
-                    console.error('Error parsing event:', parseError, event);
+                    // Enable the copy/share buttons when response is complete
+                    enableResponseActions();
+                    break;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                // Combine with any partial line from previous chunk
+                const fullChunk = partialLine + chunk;
+                const lines = fullChunk.split('\n');
+                
+                // Keep the last line as it might be incomplete
+                partialLine = lines.pop() || '';
+                
+                // Process complete lines
+                for (const line of lines) {
+                    processLine(line);
                 }
             }
         }
-        
-    } catch (streamError) {
-        console.error('Streaming error:', streamError);
-        const stopBtn = document.getElementById('stop-btn');
-        if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = 'Stopped'; }
-        stopAllTimers('stopped');
-        hideContinuationUI(); // Reset UI on streaming errors
-        if (streamError.name === 'AbortError') {
-            statusElement.textContent = '⏹️ Stopped by user. Partial results are shown above.';
-            // Keep existing partial results visible without switching to error theme
-            responseContainer.className = 'response-container';
-        } else {
-            statusElement.textContent = `❌ Streaming Error: ${streamError.message}`;
-            responseContainer.className = 'response-container response-error';
+
+        function processLine(line) {
+            if (line.trim().startsWith('data: ')) {
+                const jsonStr = line.slice(6).trim();
+                
+                // Skip empty data lines
+                if (!jsonStr) return;
+                
+                try {
+                    const data = JSON.parse(jsonStr);
+                    
+                    // Handle different types of streaming events
+                    if (data.type === 'final_response') {
+                        // Final response received - check both content and response fields
+                        const responseContent = data.content || data.response;
+                        if (responseContent) {
+                            console.log('Final response received:', responseContent.substring(0, 100) + '...');
+                            finalAnswerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${responseContent}</div>`;
+                            enableResponseActions();
+                        } else {
+                            console.warn('Final response event but no content found:', data);
+                        }
+                    } else if (data.type === 'response_complete') {
+                        // Alternative format for final response
+                        const responseContent = data.content || data.response;
+                        if (responseContent) {
+                            console.log('Response complete received:', responseContent.substring(0, 100) + '...');
+                            finalAnswerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${responseContent}</div>`;
+                            enableResponseActions();
+                        }
+                    } else if (data.delta && data.delta.content) {
+                        // Incremental content update
+                        accumulatedContent += data.delta.content;
+                        finalAnswerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${accumulatedContent}</div>`;
+                    } else if (data.type === 'error' || (data.type === 'final_response' && data.content && data.content.includes('Error from LLM provider'))) {
+                        // Handle error responses
+                        const errorContent = data.content || data.message || 'An error occurred';
+                        console.error('Error in streaming response:', errorContent);
+                        
+                        // Check if it's a rate limit error
+                        if (errorContent.includes('rate_limit_exceeded') || errorContent.includes('HTTP 429')) {
+                            finalAnswerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7; color: #856404; background: #fff3cd; padding: 12px; border-radius: 6px; border-left: 4px solid #ffc107;">
+                                <strong>⏳ Rate Limit Reached</strong><br>
+                                The LLM provider has rate limited the request. This usually means too many requests in a short time period.<br><br>
+                                <strong>What to do:</strong><br>
+                                • Wait a few seconds and try again<br>
+                                • Use the Continue button if it appears<br>
+                                • Try a simpler query to reduce processing time<br><br>
+                                <details style="margin-top: 8px;">
+                                    <summary style="cursor: pointer; color: #6c757d;">Technical Details</summary>
+                                    <code style="font-size: 0.9em; color: #6c757d;">${errorContent}</code>
+                                </details>
+                            </div>`;
+                        } else {
+                            finalAnswerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7; color: #dc3545; background: #f8d7da; padding: 12px; border-radius: 6px; border-left: 4px solid #dc3545;">
+                                <strong>⚠️ Error:</strong><br>${errorContent}
+                            </div>`;
+                        }
+                        enableResponseActions(); // Enable buttons even for errors so user can copy error message
+                    } else if (data.message && data.message.includes('Rate limit reached') && data.waitTime) {
+                        // Handle rate limit warning with continuation info
+                        console.log('Rate limit warning detected, wait time:', data.waitTime);
+                        finalAnswerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7; color: #856404; background: #fff3cd; padding: 12px; border-radius: 6px; border-left: 4px solid #ffc107;">
+                            <strong>⏳ Rate Limit Warning</strong><br>
+                            ${data.message}<br><br>
+                            <em>The system will attempt to continue automatically, or you can use the Continue button when it appears.</em>
+                        </div>`;
+                    } else {
+                        // Log important event types for debugging (but reduce noise)
+                        const importantTypes = ['setup_query', 'query_cycle', 'error', 'complete'];
+                        const llmPhases = ['initial_setup', 'planning', 'tool_iteration', 'final_synthesis'];
+                        const noisyMessages = ['Connected!', 'Starting', 'Analyzing', 'Determining', 'Tools iteration', 'Executing'];
+                        
+                        // Show LLM request/response phases
+                        if (data.phase && llmPhases.includes(data.phase)) {
+                            if (data.request) {
+                                console.log(`🤖 LLM Request [${data.phase}]:`, {
+                                    model: data.model,
+                                    phase: data.phase,
+                                    iteration: data.iteration,
+                                    timestamp: data.timestamp,
+                                    prompt_length: data.request.input ? data.request.input.length : 'N/A'
+                                });
+                            } else if (data.response) {
+                                console.log(`✅ LLM Response [${data.phase}]:`, {
+                                    model: data.model,
+                                    phase: data.phase,
+                                    iteration: data.iteration,
+                                    timestamp: data.timestamp,
+                                    response_length: typeof data.response === 'string' ? data.response.length : JSON.stringify(data.response).length,
+                                    usage: data.response.usage || 'N/A'
+                                });
+                            }
+                        }
+                        // Show tool execution events
+                        else if (data.iteration && data.call_id && data.name) {
+                            console.log(`🔧 Tool [${data.name}]:`, {
+                                iteration: data.iteration,
+                                call_id: data.call_id,
+                                name: data.name,
+                                args: data.args,
+                                output_length: data.output ? data.output.length : 0
+                            });
+                        }
+                        // Show tool summary events  
+                        else if (data.iteration && data.pending && data.calls) {
+                            console.log(`🛠️ Tools Summary [Iteration ${data.iteration}]:`, {
+                                pending: data.pending,
+                                total_calls: data.calls.length,
+                                tool_names: data.calls.map(call => call.name || 'unknown')
+                            });
+                        }
+                        // Show research planning events
+                        else if (data.persona && data.questions) {
+                            console.log('🎯 Research Plan:', {
+                                persona: data.persona,
+                                questions: data.questions,
+                                response_length: data.response_length,
+                                reasoning_level: data.reasoning_level,
+                                temperature: data.temperature
+                            });
+                        }
+                        // Show important event types
+                        else if (data.type && importantTypes.includes(data.type)) {
+                            console.log('📡 Streaming event:', data.type, data);
+                        } 
+                        // Show rate limit info
+                        else if (data.message && data.message.includes('Rate limit')) {
+                            console.log('⏳ Rate limit info:', data.message);
+                        } 
+                        // Show other important messages (but filter noise)
+                        else if (data.message && !noisyMessages.some(noise => data.message.includes(noise))) {
+                            console.log('💬 Stream message:', data.message);
+                        }
+                        // Silently ignore noisy progress messages
+                    }
+                } catch (e) {
+                    // More detailed error logging
+                    if (e instanceof SyntaxError) {
+                        console.warn('JSON Syntax Error:', e.message);
+                        console.warn('JSON string length:', jsonStr.length);
+                        console.warn('First 100 chars:', jsonStr.substring(0, 100));
+                        console.warn('Last 100 chars:', jsonStr.substring(Math.max(0, jsonStr.length - 100)));
+                        
+                        // Try to identify the position of the error
+                        const match = e.message.match(/position (\d+)/);
+                        if (match) {
+                            const pos = parseInt(match[1]);
+                            console.warn('Error around position:', jsonStr.substring(Math.max(0, pos - 20), pos + 20));
+                        }
+                    } else {
+                        console.warn('Failed to parse streaming data:', e.message);
+                        console.warn('Problematic line:', jsonStr.substring(0, 200) + (jsonStr.length > 200 ? '...' : ''));
+                    }
+                }
+            }
         }
+
+        await processStream();
+        
+    } catch (error) {
+        console.error('Error in streaming response:', error);
+        // Enable buttons even on error so user can copy any partial content
+        enableResponseActions();
+    }
     }
 }
 
@@ -2649,6 +1552,22 @@ function toggleSection(contentId) {
     }
 }
 
+// Toggle tools details section
+function toggleToolsDetails() {
+    const content = document.getElementById('expandable-tools-content');
+    const icon = document.getElementById('tools-toggle-icon');
+    
+    if (content) {
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            if (icon) icon.textContent = '▲';
+        } else {
+            content.style.display = 'none';
+            if (icon) icon.textContent = '▼';
+        }
+    }
+}
+
 // Apply enhanced styles for tracking displays
 function applyTrackingStyles() {
     if (document.getElementById('enhanced-tracking-styles')) return;
@@ -2789,11 +1708,23 @@ function applyTrackingStyles() {
 applyTrackingStyles();
 
 function enableResponseActions() {
+    console.log('enableResponseActions called');
     const copyBtn = document.getElementById('copy-response-btn');
     const shareBtn = document.getElementById('share-response-btn');
     
-    if (copyBtn) copyBtn.disabled = false;
-    if (shareBtn) shareBtn.disabled = false;
+    if (copyBtn) {
+        copyBtn.disabled = false;
+        console.log('Copy button enabled');
+    } else {
+        console.error('Copy button not found');
+    }
+    
+    if (shareBtn) {
+        shareBtn.disabled = false;
+        console.log('Share button enabled');
+    } else {
+        console.error('Share button not found');
+    }
 }
 
 function disableResponseActions() {
@@ -2804,26 +1735,43 @@ function disableResponseActions() {
     if (shareBtn) shareBtn.disabled = true;
 }
 
+// Flag to prevent duplicate event listeners
+let responseActionHandlersSetup = false;
+
 function setupResponseActionHandlers() {
+    // Prevent duplicate event listeners
+    if (responseActionHandlersSetup) {
+        console.log('Response action handlers already set up');
+        return;
+    }
+    
     // Use event delegation to handle dynamically created buttons
     document.addEventListener('click', (e) => {
         if (e.target.id === 'copy-response-btn' && !e.target.disabled) {
+            console.log('Copy button clicked');
             copyResponseToClipboard();
         } else if (e.target.id === 'share-response-btn' && !e.target.disabled) {
+            console.log('Share button clicked');
             shareResponseByEmail();
         }
     });
+    
+    responseActionHandlersSetup = true;
+    console.log('Response action handlers set up');
 }
 
 async function copyResponseToClipboard() {
+    console.log('copyResponseToClipboard called');
     const answerElement = document.getElementById('final-answer');
     if (!answerElement) {
+        console.error('final-answer element not found');
         showToast('No response to copy', 'warning');
         return;
     }
     
     // Get text content, preserving line breaks
     const responseText = answerElement.innerText || answerElement.textContent || '';
+    console.log('Response text length:', responseText.length);
     
     if (!responseText.trim() || responseText.includes('Working on it…')) {
         showToast('Response not ready yet', 'warning');
@@ -2850,10 +1798,12 @@ async function copyResponseToClipboard() {
 }
 
 function shareResponseByEmail() {
+    console.log('shareResponseByEmail called');
     const answerElement = document.getElementById('final-answer');
     const promptTextarea = document.getElementById('prompt');
     
     if (!answerElement) {
+        console.error('final-answer element not found');
         showToast('No response to share', 'warning');
         return;
     }
@@ -2908,9 +1858,29 @@ if (document.readyState === 'loading') {
         initializeApp();
         initializeActionButtons();
         setupResponseActionHandlers();
+        
+        // Add test content and enable buttons for testing (temporary)
+        setTimeout(() => {
+            const finalAnswer = document.getElementById('final-answer');
+            if (finalAnswer && finalAnswer.textContent.includes('Working on it')) {
+                finalAnswer.innerHTML = '<div style="white-space: pre-wrap; line-height: 1.7;">This is test content for the copy and share buttons. You can copy this text or share it via email.</div>';
+                enableResponseActions();
+                console.log('Test content added and buttons enabled');
+            }
+        }, 1000);
     });
 } else {
     initializeApp();
     initializeActionButtons();
     setupResponseActionHandlers();
+    
+    // Add test content and enable buttons for testing (temporary)
+    setTimeout(() => {
+        const finalAnswer = document.getElementById('final-answer');
+        if (finalAnswer && finalAnswer.textContent.includes('Working on it')) {
+            finalAnswer.innerHTML = '<div style="white-space: pre-wrap; line-height: 1.7;">This is test content for the copy and share buttons. You can copy this text or share it via email.</div>';
+            enableResponseActions();
+            console.log('Test content added and buttons enabled');
+        }
+    }, 1000);
 }

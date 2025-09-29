@@ -19,225 +19,36 @@ const { llmResponsesWithTools } = require('./llm_tools_adapter');
 const { toolFunctions, callFunction } = require('./tools');
 const { loadAllPricing, calculateLLMCost } = require('./pricing');
 
-// Tool call and LLM call tracking functions
-function trackToolCall(toolCall, response = null, duration = 0, tokenUse = 0, cost = 0) {
-    return {
-        request: {
-            id: toolCall.id,
-            type: toolCall.type,
-            function: {
-                name: toolCall.function?.name,
-                arguments: toolCall.function?.arguments
-            }
-        },
-        response: response,
-        duration: duration,
-        tokenUse: tokenUse,
-        cost: cost,
-        timestamp: new Date().toISOString()
-    };
-}
+// Import refactored modules
+const { 
+    MAX_TOKENS_PLANNING, 
+    MAX_TOKENS_TOOL_SYNTHESIS, 
+    MAX_TOKENS_MATH_RESPONSE,
+    MAX_TOKENS_FINAL_RESPONSE,
+    getTokensForComplexity 
+} = require('./config/tokens');
+const { LAMBDA_MEMORY_LIMIT_MB, MEMORY_SAFETY_BUFFER_MB, MAX_CONTENT_SIZE_MB, BYTES_PER_MB } = require('./config/memory');
+const { MAX_TOOL_ITERATIONS, DEFAULT_REASONING_EFFORT, COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT } = require('./config/prompts');
+const { isQuotaLimitError, parseWaitTimeFromMessage } = require('./utils/error-handling');
+const { safeParseJson } = require('./utils/token-estimation');
+const { trackToolCall, trackLLMCall } = require('./services/tracking-service');
+const { StreamingResponse } = require('./streaming/sse-writer');
+const { formatJsonResponse, formatStreamingResponse, formatErrorResponse, formatCORSResponse } = require('./streaming/response-formatter');
 
-function trackLLMCall(request, response, duration = 0, tokenUse = 0, cost = 0) {
-    return {
-        request: {
-            model: request.model,
-            messages: request.messages?.map(m => ({ role: m.role, content: m.content })),
-            tools: request.tools?.length || 0,
-            temperature: request.temperature,
-            max_tokens: request.max_tokens
-        },
-        response: {
-            content: response.content || response.text || '',
-            tool_calls: response.tool_calls || [],
-            finish_reason: response.finish_reason,
-            usage: response.usage
-        },
-        duration: duration,
-        tokenUse: tokenUse,
-        cost: cost,
-        timestamp: new Date().toISOString()
-    };
-}
+// Tool call and LLM call tracking functions moved to src/services/tracking-service.js
 
 // Global pricing cache - loaded once per Lambda container
 let globalPricingCache = null;
 
-// Memory management constants
-// Infer memory limit from environment when possible
-const LAMBDA_MEMORY_LIMIT_MB = (process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE && parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE, 10))
-    || (process.env.LAMBDA_MEMORY && parseInt(process.env.LAMBDA_MEMORY, 10))
-    || 128;
-const MEMORY_SAFETY_BUFFER_MB = 16; // Reserve 16MB for other operations
-const MAX_CONTENT_SIZE_MB = LAMBDA_MEMORY_LIMIT_MB - MEMORY_SAFETY_BUFFER_MB;
-const BYTES_PER_MB = 1024 * 1024;
-
 // No legacy templates needed - tools-based approach handles everything dynamically
 
-// Quota/rate limit error detection function (matches UI logic)
-function isQuotaLimitError(errorMessage) {
-    if (!errorMessage) {
-        return false;
-    }
-    
-    const quotaIndicators = [
-        'quota exceeded',
-        'rate limit',
-        'rate limited',
-        'too many requests',
-        'retry after',
-        'usage limit',
-        'billing limit',
-        'insufficient quota',
-        'api limit exceeded',
-        'requests per minute',
-        'requests per hour',
-        'requests per day',
-        'rate_limit_exceeded',
-        'quota_exceeded',
-        'insufficient_quota',
-        'billing_quota_exceeded',
-        'daily_limit_exceeded',
-        'monthly_limit_exceeded',
-        'throttled',
-        'throttling',
-        '429', // HTTP status code for Too Many Requests
-        'overloaded',
-        'capacity exceeded'
-    ];
-    
-    const lowerMessage = errorMessage.toLowerCase();
-    const isQuotaError = quotaIndicators.some(indicator => lowerMessage.includes(indicator));
-    
-    console.log(`🔍 Quota error check: "${errorMessage}" -> ${isQuotaError}`);
-    return isQuotaError;
-}
+// Quota/rate limit error detection function moved to utils/error-handling.js
 
-// Parse wait time from error message (matches UI logic)
-function parseWaitTimeFromMessage(errorMessage) {
-    // Enhanced patterns for wait times including milliseconds, decimal seconds, and minutes
-    const patterns = [
-        // Milliseconds patterns (e.g., "Please try again in 28ms")
-        /try again in\s+(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
-        /wait\s+(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
-        /retry after\s+(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
-        /rate limit.+?(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
-        /limit.+?(\d+(?:\.\d+)?)\s*ms(?:illiseconds?)?/i,
-        
-        // Decimal seconds patterns (e.g., "Please try again in 15.446s")
-        /try again in\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
-        /wait\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
-        /retry after\s+(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
-        /rate limit.+?(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
-        /limit.+?(\d+(?:\.\d+)?)\s*s(?:econds?)?/i,
-        
-        // Integer seconds patterns
-        /wait\s+(\d+)\s*seconds?/i,
-        /try again in\s+(\d+)\s*seconds?/i,
-        /retry after\s+(\d+)\s*seconds?/i,
-        /rate limit.+?(\d+)\s*seconds?/i,
-        /limit.+?(\d+)\s*seconds?/i,
-        
-        // Minutes patterns
-        /wait\s+(\d+)\s*minutes?/i,
-        /try again in\s+(\d+)\s*minutes?/i,
-        /retry after\s+(\d+)\s*minutes?/i,
-        /rate limit.+?(\d+)\s*minutes?/i,
-        /limit.+?(\d+)\s*minutes?/i
-    ];
-    
-    for (const pattern of patterns) {
-        const match = errorMessage.match(pattern);
-        if (match) {
-            const value = parseFloat(match[1]);
-            const isMinutes = /minutes?/i.test(match[0]);
-            const isMilliseconds = /ms(?:illiseconds?)?/i.test(match[0]);
-            
-            let seconds;
-            if (isMilliseconds) {
-                seconds = value / 1000; // Convert milliseconds to seconds
-            } else if (isMinutes) {
-                seconds = value * 60; // Convert minutes to seconds
-            } else {
-                seconds = value; // Already in seconds
-            }
-            
-            // Round up to ensure we don't retry too early
-            seconds = Math.ceil(seconds);
-            
-            // Ensure minimum wait time of 1 second
-            const waitTime = Math.max(1, seconds);
-            console.log(`🔍 Parsed wait time from "${errorMessage}": ${waitTime}s (original: ${value}${isMilliseconds ? 'ms' : isMinutes ? 'min' : 's'})`);
-            return waitTime;
-        }
-    }
-    
-    // Default fallback
-    console.log(`🔍 No wait time found in "${errorMessage}", using default 60s`);
-    return 60;
-}
+// parseWaitTimeFromMessage function moved to src/utils/error-handling.js
 
-// --- Tools flow configuration ---
-const MAX_TOOL_ITERATIONS_ENV = process.env.MAX_TOOL_ITERATIONS;
-console.log(`🔧 MAX_TOOL_ITERATIONS_ENV raw:`, MAX_TOOL_ITERATIONS_ENV, typeof MAX_TOOL_ITERATIONS_ENV);
-const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS) || 3; // Allow more thorough research - force fallback if NaN
-console.log(`🔧 MAX_TOOL_ITERATIONS final:`, MAX_TOOL_ITERATIONS, typeof MAX_TOOL_ITERATIONS);
-const DEFAULT_REASONING_EFFORT = process.env.REASONING_EFFORT || 'medium';
+// Token configuration and tool flow configuration moved to src/config/tokens.js
 
-// --- Token limit configuration ---
-const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 300); // Planning query tokens - keep moderate for decision making
-const MAX_TOKENS_TOOL_SYNTHESIS = Number(process.env.MAX_TOKENS_TOOL_SYNTHESIS ?? 512); // Tool synthesis tokens  
-
-// Dynamic token allocation based on complexity assessment
-const MAX_TOKENS_LOW_COMPLEXITY = Number(process.env.MAX_TOKENS_LOW_COMPLEXITY ?? 512); // Reduced from 1024
-const MAX_TOKENS_MEDIUM_COMPLEXITY = Number(process.env.MAX_TOKENS_MEDIUM_COMPLEXITY ?? 768); // Reduced from 2048  
-const MAX_TOKENS_HIGH_COMPLEXITY = Number(process.env.MAX_TOKENS_HIGH_COMPLEXITY ?? 1024); // Reduced from 4096
-
-const MAX_TOKENS_MATH_RESPONSE = Number(process.env.MAX_TOKENS_MATH_RESPONSE ?? 512); // Mathematical response tokens - concise math answers
-
-// Legacy fallback (maintain compatibility)
-const MAX_TOKENS_FINAL_RESPONSE = Number(process.env.MAX_TOKENS_FINAL_RESPONSE ?? MAX_TOKENS_MEDIUM_COMPLEXITY); // Default to medium complexity
-
-// Function to determine token allocation based on complexity assessment
-function getTokensForComplexity(complexityAssessment) {
-    switch(complexityAssessment) {
-        case 'low':
-            return MAX_TOKENS_LOW_COMPLEXITY;
-        case 'high':
-            return MAX_TOKENS_HIGH_COMPLEXITY;
-        case 'medium':
-        default:
-            return MAX_TOKENS_MEDIUM_COMPLEXITY;
-    }
-}
-
-// Comprehensive system prompt that encourages tool usage
-const COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT = process.env.SYSTEM_PROMPT_SEARCH || `You are a helpful AI assistant with access to powerful tools. For any query that could benefit from current information, web search, mathematical calculations, or data analysis, you should actively use the available tools.
-
-RESPONSE FORMAT GUIDELINES:
-- Start with a direct, concise answer to the question
-- For calculations: Give the result first, then show the work if needed
-- Minimize descriptive text about your thinking process
-- Be concise and factual rather than verbose
-
-TOOL USAGE GUIDELINES:
-- Use search_web for current information, news, recent events, stock prices, or any factual queries
-- Use execute_javascript for mathematical calculations, data analysis, or computational problems  
-- Use scrape_web_content when you need to extract detailed information from specific websites
-- Always use tools when they can provide more accurate or current information than your training data
-
-CRITICAL TOOL PARAMETER RULES:
-- For execute_javascript: ONLY provide the "code" parameter. NEVER include result, type, executed_at or any other properties.
-- For search_web: ONLY provide the "query" parameter. NEVER include count, results, limit, or any other properties except query.
-- For scrape_web_content: ONLY provide the "url" parameter. NEVER include any additional properties.
-- The tool schemas have additionalProperties: false. Any extra parameters will cause HTTP 400 validation errors.
-- You MUST follow the exact parameter schema. Do NOT invent or add extra properties.
-
-Keep responses focused and direct. Always cite sources with URLs when using web search results.`;
-
-function safeParseJson(s) {
-    try { return JSON.parse(s); } catch { return {}; }
-}
+// System prompt and safeParseJson moved to config/prompts.js and utils/token-estimation.js respectively
 
 async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream, continuationState = null }) {
     console.log(`🔧 ENTERED runToolLoop - model: ${model}, apiKey: ${!!apiKey}, userQuery length: ${userQuery?.length || 0}`);
@@ -350,8 +161,8 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream, con
         }
     } else {
         // Step 1: Initial planning query to determine research strategy and optimal persona
-        stream?.writeEvent?.('log', { message: 'Using default research strategy (planning disabled to avoid rate limits)...' });
-        console.log(`🔧 Skipping planning phase to avoid rate limit issues...`);
+        stream?.writeEvent?.('log', { message: 'Analyzing query to determine optimal research strategy...' });
+        console.log(`🔧 Executing planning phase to optimize research approach...`);
         
         // Initialize researchPlan at function level to ensure availability throughout function
         researchPlan = { 
@@ -385,23 +196,43 @@ Respond with JSON in this exact format:
 Generate 1-5 specific, targeted research questions based on query complexity. For complex queries, provide more detailed reasoning and additional research questions. Be specific about the expert role and tailor it precisely to the query domain.`;
 
     try {
-        // DISABLED: Planning API call that was causing rate limit issues
-        console.log('🔧 Skipping planning API call to conserve tokens and avoid rate limits');
-        const planningResponse = null; // await llmResponsesWithTools({
-        //     model,
-        //     input: [
-        //         { role: 'system', content: 'You are a research strategist. Analyze queries and determine optimal research approaches and expert personas. You may provide detailed analysis if the query is complex. Always respond with valid JSON only.' },
-        //         { role: 'user', content: planningPrompt }
-        //     ],
-        //     tools: [], // No tools needed for planning
-        //     options: {
-        //         apiKey,
-        //         reasoningEffort: 'medium', // Increased reasoning effort for better planning
-        //         temperature: 0.2, // Slightly higher temperature for more creative planning
-        //         max_tokens: MAX_TOKENS_PLANNING, // Now allows up to 1500 tokens
-        //         timeoutMs: 25000 // Increased timeout for more complex planning
-        //     }
-        // });
+        // Execute planning API call to determine optimal research strategy
+        console.log('🔧 Making planning API call to determine research strategy...');
+        stream?.writeEvent?.('log', { message: 'Determining optimal research approach and expert persona...' });
+        
+        const planningRequestBody = {
+            model,
+            input: [
+                { role: 'system', content: 'You are a research strategist. Analyze queries and determine optimal research approaches and expert personas. You may provide detailed analysis if the query is complex. Always respond with valid JSON only.' },
+                { role: 'user', content: planningPrompt }
+            ],
+            tools: [], // No tools needed for planning
+            options: {
+                apiKey,
+                reasoningEffort: DEFAULT_REASONING_EFFORT, // Use configurable reasoning effort
+                temperature: 0.2, // Slightly higher temperature for more creative planning
+                max_tokens: MAX_TOKENS_PLANNING, // Now allows up to 300 tokens for planning
+                timeoutMs: 25000 // Increased timeout for more complex planning
+            }
+        };
+        
+        // Emit LLM request event
+        stream?.writeEvent?.('llm_request', {
+            phase: 'planning',
+            model,
+            request: planningRequestBody,
+            timestamp: new Date().toISOString()
+        });
+        
+        const planningResponse = await llmResponsesWithTools(planningRequestBody);
+        
+        // Emit LLM response event
+        stream?.writeEvent?.('llm_response', {
+            phase: 'planning',
+            model,
+            response: planningResponse,
+            timestamp: new Date().toISOString()
+        });
         
         if (planningResponse?.text) {
             try {
@@ -614,7 +445,7 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             console.log(`🔧 Starting tools iteration ${iter + 1}, available tools:`, toolFunctions.length);
         } catch {}
 
-        const { output, text } = await llmResponsesWithTools({
+        const toolIterationRequestBody = {
             model,
             input,
             tools: toolFunctions,
@@ -625,6 +456,26 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                 max_tokens: MAX_TOKENS_TOOL_SYNTHESIS,
                 timeoutMs: 30000
             }
+        };
+        
+        // Emit LLM request event
+        stream?.writeEvent?.('llm_request', {
+            phase: 'tool_iteration',
+            iteration: iter + 1,
+            model,
+            request: toolIterationRequestBody,
+            timestamp: new Date().toISOString()
+        });
+        
+        const { output, text } = await llmResponsesWithTools(toolIterationRequestBody);
+        
+        // Emit LLM response event
+        stream?.writeEvent?.('llm_response', {
+            phase: 'tool_iteration',
+            iteration: iter + 1,
+            model,
+            response: { output, text },
+            timestamp: new Date().toISOString()
         });
         console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
         console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
@@ -684,7 +535,7 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                 const args = safeParseJson(tc.arguments || '{}');
                 let output;
                 try {
-                    output = await callFunction(tc.name, args, { model, apiKey });
+                    output = await callFunction(tc.name, args, { model, apiKey, writeEvent: stream?.writeEvent });
                 } catch (e) {
                     output = JSON.stringify({ error: String(e?.message || e) });
                 }
@@ -817,7 +668,7 @@ Answer with URLs:`;
             { role: 'user', content: finalPrompt }
         ];
 
-        const finalResponse = await llmResponsesWithTools({
+        const finalRequestBody = {
             model,
             input: finalSynthesisInput,
             tools: [], // No more tools, just final answer
@@ -828,6 +679,24 @@ Answer with URLs:`;
                 max_tokens: maxTokens, // Adjust based on query type
                 timeoutMs: 30000
             }
+        };
+        
+        // Emit LLM request event
+        stream?.writeEvent?.('llm_request', {
+            phase: 'final_synthesis',
+            model,
+            request: finalRequestBody,
+            timestamp: new Date().toISOString()
+        });
+        
+        const finalResponse = await llmResponsesWithTools(finalRequestBody);
+        
+        // Emit LLM response event
+        stream?.writeEvent?.('llm_response', {
+            phase: 'final_synthesis',
+            model,
+            response: finalResponse,
+            timestamp: new Date().toISOString()
         });
         
         const result = finalResponse?.text || 'I was unable to provide a comprehensive answer based on the research conducted.';
@@ -933,7 +802,7 @@ Provide ONLY valid JSON, no other text.`;
         });
         
         // Make LLM call for setup
-        const setupResponse = await llmResponsesWithTools({
+        const setupRequestBody = {
             model: `${provider}:${modelName}`,
             input: [
                 {
@@ -947,6 +816,24 @@ Provide ONLY valid JSON, no other text.`;
                 temperature: 0.3,
                 timeoutMs: 30000
             }
+        };
+        
+        // Emit LLM request event
+        writeEvent('llm_request', {
+            phase: 'initial_setup',
+            model: `${provider}:${modelName}`,
+            request: setupRequestBody,
+            timestamp: new Date().toISOString()
+        });
+        
+        const setupResponse = await llmResponsesWithTools(setupRequestBody);
+        
+        // Emit LLM response event
+        writeEvent('llm_response', {
+            phase: 'initial_setup',
+            model: `${provider}:${modelName}`,
+            response: setupResponse,
+            timestamp: new Date().toISOString()
         });
         
         let setupData;
@@ -1466,26 +1353,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
     }
 });
 
-/**
- * Create a streaming response accumulator
- */
-class StreamingResponse {
-    constructor() {
-        this.chunks = [];
-    }
-    
-    write(data) {
-        this.chunks.push(`data: ${JSON.stringify(data)}\n\n`);
-    }
-    
-    writeEvent(type, data) {
-        this.chunks.push(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-    }
-    
-    getResponse() {
-        return this.chunks.join('');
-    }
-}
+// StreamingResponse class moved to src/streaming/sse-writer.js
 
 /**
  * Handle streaming requests with Server-Sent Events
@@ -1954,9 +1822,12 @@ async function handleNonStreamingRequest(event, context, startTime) {
             };
         }
         
-        // Use tools-based approach only
+        // Use tools-based approach with planning
         let finalResult;
         try {
+            // Execute planning phase for non-streaming requests to optimize research
+            console.log('🔧 Executing planning phase for non-streaming request...');
+            
             const toolsRun = await runToolLoop({
                 model,
                 apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
