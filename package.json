@@ -7,12 +7,19 @@
     "deploy": "./scripts/deploy.sh > output.txt 2>&1 && cat output.txt",
     "deploy-docs": "./scripts/deploy-docs.sh > output.txt 2>&1 && cat output.txt",
     "build-docs": "./scripts/build-docs.sh > output.txt 2>&1 && cat output.txt",
-    "test": "./scripts/test-lambda.sh > output.txt 2>&1 && cat output.txt",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:integration": "jest tests/integration",
+    "test:unit": "jest tests/unit",
+    "lambda-test": "./scripts/test-lambda.sh > output.txt 2>&1 && cat output.txt",
     "dev": "./scripts/deploy.sh > output.txt 2>&1 && cat output.txt",
     "full-deploy": "npm run build-docs && npm run deploy && npm run deploy-docs",
     "watch": "nodemon --watch src --ext js --exec 'npm run dev'"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
     "nodemon": "^3.0.1"
   },
   "engines": {

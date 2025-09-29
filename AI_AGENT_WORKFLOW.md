@@ -45,8 +45,12 @@ npm run build-docs      # Build docs locally
 ## Development Tips for AI Agents (per instructions.md)
 
 1. **Always deploy after Lambda code changes**: Use `make dev` (uses `scripts/deploy.sh`)
-2. **Always deploy after UI changes**: Use `make deploy-docs` (uses `scripts/deploy-docs.sh`)
-3. **Make UI changes in `ui/index_template.html`** (not `docs/index.html` directly)
+2. **🚨 CRITICAL UI WORKFLOW** (per user requirement):
+   - **ALWAYS make UI changes in `ui/` subdirectory files** (ui/index_template.html, ui/index_template_modular.html, ui/styles.css)
+   - **NEVER edit docs/index.html or docs/js/ files directly** - these are built/generated files
+   - **ALWAYS run build script after UI changes**: Use `make deploy-docs` or `scripts/build-docs.sh`
+   - **ALWAYS deploy after building**: Use `scripts/deploy-docs.sh` if not using make
+3. **JavaScript files are managed separately**: docs/js/ files (auth.js, main.js, settings.js, samples.js, utils.js) are not built from ui/ - they exist independently
 4. **Output is piped to `output.txt`**: All commands save output to this file for Copilot to read
 5. **Test immediately**: Visit https://lambdallmproxy.pages.dev after deploy
 6. **Check logs if issues**: `make logs` or check `output.txt` for command results

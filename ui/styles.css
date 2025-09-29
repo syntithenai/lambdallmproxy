@@ -60,11 +60,10 @@
         .top-bar-left {
             display: flex;
             align-items: center;
-            gap: 16px;
-            flex: 1;
-        }
-
-        .top-bar-right {
+            flex-wrap: wrap;
+            gap: 8px;
+            position: relative;
+        }        .top-bar-right {
             display: flex;
             align-items: center;
             gap: 12px;
@@ -144,6 +143,99 @@
             background: #c82333;
         }
 
+        .continue-btn {
+            background: #28a745;
+            color: white;
+        }
+
+        .continue-btn:hover {
+            background: #218838;
+        }
+
+        .continue-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        /* Action buttons for response headers */
+        .response-header-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            align-items: center;
+            margin-top: 15px;
+            margin-bottom: 15px;
+            float: right;
+            clear: both;
+        }
+
+        .action-btn {
+            padding: 10px 16px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: #f8f9fa;
+            color: #495057;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 100px;
+            justify-content: center;
+        }
+
+        .action-btn:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+            color: #212529;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .action-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .action-btn.copy-btn {
+            background: #e3f2fd;
+            border-color: #2196f3;
+            color: #1976d2;
+        }
+
+        .action-btn.copy-btn:hover {
+            background: #bbdefb;
+            border-color: #1976d2;
+            color: #0d47a1;
+        }
+
+        .action-btn.share-btn {
+            background: #e8f5e8;
+            border-color: #4caf50;
+            color: #2e7d32;
+        }
+
+        .action-btn.share-btn:hover {
+            background: #c8e6c9;
+            border-color: #2e7d32;
+            color: #1b5e20;
+        }
+
+        .action-btn.clear-btn {
+            background: #fff3e0;
+            border-color: #ff9800;
+            color: #e65100;
+        }
+
+        .action-btn.clear-btn:hover {
+            background: #ffe0b2;
+            border-color: #e65100;
+            color: #bf360c;
+        }
+
         /* Compact Form Container */
         .compact-form-container {
             background-color: #fff;
@@ -158,15 +250,17 @@
 
         .auto-resize-textarea {
             width: 100%;
-            min-height: 38px;
+            height: auto;
             padding: 8px 12px;
             border: 2px solid #ddd;
             border-radius: 6px;
             font-size: 0.95rem;
             resize: none;
-            transition: border-color 0.2s ease;
+            transition: height 0.1s ease, border-color 0.2s ease;
             font-family: inherit;
             line-height: 1.4;
+            overflow-y: hidden;
+            box-sizing: border-box;
         }
 
         .auto-resize-textarea:focus {
@@ -177,18 +271,80 @@
 
         /* Sample Queries Dropdown */
         .sample-dropdown {
-            position: absolute;
+            position: fixed;
             background: white;
-            border: 1px solid #ccc;
+            border: 2px solid #007bff;
             border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            z-index: 1500;
-            max-width: 400px;
-            max-height: 300px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            z-index: 2000;
+            width: 450px;
+            max-height: 400px;
             overflow-y: auto;
-            top: 100%;
-            left: 0;
-            margin-top: 4px;
+            display: none;
+        }
+
+        /* Persona and Questions Layout */
+        .persona-questions-layout {
+            display: flex;
+            gap: 16px;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        /* Hide layout container by default when both cards are hidden */
+        .persona-questions-layout.hidden {
+            display: none;
+        }
+
+        .persona-card, .questions-card {
+            flex: 1;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-height: 120px;
+        }
+
+        .persona-card {
+            background: #fff3e0;
+            border: 1px solid #ffcc80;
+        }
+
+        .questions-card {
+            background: #e8f5e8;
+            border: 1px solid #a5d6a7;
+        }
+
+        .persona-card-header {
+            background: linear-gradient(135deg, #ff9800 0%, #ff6f00 100%);
+            color: white;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .questions-card-header {
+            background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+            color: white;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .persona-card-content, .questions-card-content {
+            padding: 12px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            color: #495057;
+            min-height: 80px;
+        }
+
+        /* Responsive design for persona/questions layout */
+        @media (max-width: 768px) {
+            .persona-questions-layout {
+                flex-direction: column;
+                gap: 12px;
+            }
         }
 
         /* Status Sections */

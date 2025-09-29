@@ -23,17 +23,108 @@ class DuckDuckGoSearcher {
             'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
             'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can'
         ]);
+        
+        // Enhanced anti-blocking session management
+        this.requestHistory = [];
+        this.lastRequestTime = 0;
+        this.failureCount = 0;
+        this.circuitBreakerOpen = false;
+        this.circuitBreakerOpenTime = 0;
+        this.minRequestInterval = 2000; // Minimum 2 seconds between requests
+        this.maxRequestInterval = 8000; // Maximum 8 seconds for backoff
+        this.circuitBreakerTimeout = 60000; // 1 minute timeout for circuit breaker
+        this.maxFailures = 3; // Circuit breaker triggers after 3 failures
     }
 
     /**
-     * Perform search on DuckDuckGo
+     * Enhanced request spacing to avoid burst patterns that trigger rate limiting
+     * @returns {Promise<void>} - Resolves after appropriate delay
+     */
+    async ensureRequestSpacing() {
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRequestTime;
+        
+        // Check circuit breaker status
+        if (this.circuitBreakerOpen) {
+            if (now - this.circuitBreakerOpenTime > this.circuitBreakerTimeout) {
+                console.log('🔧 Circuit breaker timeout expired, attempting to close');
+                this.circuitBreakerOpen = false;
+                this.failureCount = 0;
+            } else {
+                const timeLeft = Math.ceil((this.circuitBreakerTimeout - (now - this.circuitBreakerOpenTime)) / 1000);
+                throw new Error(`Search temporarily disabled due to repeated failures. Retry in ${timeLeft} seconds.`);
+            }
+        }
+        
+        // Calculate appropriate delay based on failure count (exponential backoff)
+        const baseDelay = this.minRequestInterval;
+        const backoffMultiplier = Math.min(Math.pow(2, this.failureCount), 4); // Cap at 4x
+        const adaptiveDelay = baseDelay * backoffMultiplier;
+        const requiredDelay = Math.min(adaptiveDelay, this.maxRequestInterval);
+        
+        // Add some randomization to avoid predictable patterns
+        const jitter = Math.random() * 1000; // 0-1000ms jitter
+        const totalDelay = requiredDelay + jitter;
+        
+        if (timeSinceLastRequest < totalDelay) {
+            const waitTime = totalDelay - timeSinceLastRequest;
+            console.log(`⏱️ Request spacing: waiting ${Math.round(waitTime)}ms (failures: ${this.failureCount})`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+        
+        this.lastRequestTime = Date.now();
+    }
+    
+    /**
+     * Track request success/failure for circuit breaker pattern
+     * @param {boolean} success - Whether the request was successful
+     * @param {string} error - Error message if failed
+     */
+    trackRequestResult(success, error = null) {
+        const now = Date.now();
+        
+        // Add to request history (keep last 10 requests)
+        this.requestHistory.push({
+            timestamp: now,
+            success: success,
+            error: error
+        });
+        
+        if (this.requestHistory.length > 10) {
+            this.requestHistory.shift();
+        }
+        
+        if (success) {
+            this.failureCount = Math.max(0, this.failureCount - 1); // Reduce failure count on success
+            if (this.circuitBreakerOpen && this.failureCount === 0) {
+                console.log('✅ Search recovered, closing circuit breaker');
+                this.circuitBreakerOpen = false;
+            }
+        } else {
+            this.failureCount++;
+            console.log(`❌ Request failed (${this.failureCount}/${this.maxFailures}): ${error}`);
+            
+            // Open circuit breaker if too many failures
+            if (this.failureCount >= this.maxFailures && !this.circuitBreakerOpen) {
+                console.log('🚫 Opening circuit breaker due to repeated failures');
+                this.circuitBreakerOpen = true;
+                this.circuitBreakerOpenTime = now;
+            }
+        }
+    }
+
+    /**
+     * Execute search query with intelligent result processing
      * @param {string} query - Search query
-     * @param {number} limit - Maximum number of results to return (default 10)
+     * @param {number} limit - Maximum number of results (default 10)
      * @param {boolean} fetchContent - Whether to fetch full content (default false)
      * @param {number} timeout - Timeout in seconds (default 10)
      * @returns {Promise<Object>} Search results
      */
     async search(query, limit = 10, fetchContent = false, timeout = 10) {
+        // Apply enhanced request spacing before any search attempt
+        await this.ensureRequestSpacing();
+        
         const searchStartTime = Date.now();
         
         try {
@@ -62,9 +153,12 @@ class DuckDuckGoSearcher {
                 try {
                     const html = await this.fetchUrlWithBotAvoidance(htmlUrl, timeout * 1000);
                     
-                    // Check for CAPTCHA or error pages
-                    if (html.includes('anomaly') || html.includes('captcha') || html.includes('challenge')) {
-                        console.log('⚠️ CAPTCHA detected, search may be limited');
+                    // Check for CAPTCHA or error pages - treat as failure for circuit breaker
+                    if (html.includes('anomaly') || html.includes('captcha') || html.includes('challenge') || 
+                        html.includes('blocked') || html.includes('rate limit') || html.includes('too many requests')) {
+                        console.log('⚠️ Bot detection or rate limiting detected');
+                        this.trackRequestResult(false, 'CAPTCHA or bot detection triggered');
+                        // Don't throw here, let the method complete but with tracking
                     }
                     
                     results = this.extractSearchResults(html, query, limit);
@@ -96,6 +190,9 @@ class DuckDuckGoSearcher {
             const finalResults = sortedResults;
             const totalTime = Date.now() - searchStartTime;
             
+            // Track successful request
+            this.trackRequestResult(true);
+            
             return {
                 success: true,
                 query: query,
@@ -122,7 +219,12 @@ class DuckDuckGoSearcher {
             
         } catch (error) {
             console.error('Search error:', error);
-            throw new Error(`Search failed: ${error.message}`);
+            
+            // Track failed request with specific error context
+            const errorMessage = error.message || 'Unknown error';
+            this.trackRequestResult(false, errorMessage);
+            
+            throw new Error(`Search failed: ${errorMessage}`);
         }
     }
 
@@ -515,7 +617,7 @@ class DuckDuckGoSearcher {
     }
 
     /**
-     * Calculate relevance score for a search result
+     * Calculate relevance score for a search result using multiple weighted techniques
      * @param {string} title - Result title
      * @param {string} description - Result description
      * @param {string} url - Result URL
@@ -526,46 +628,90 @@ class DuckDuckGoSearcher {
     calculateRelevanceScore(title, description, url, query, duckduckgoScore) {
         let score = 0;
         
-        // Start with duckduckgo's native score if available (highly weighted)
+        // Start with duckduckgo's native score if available (heavily weighted - 40% of base)
         if (duckduckgoScore !== null && duckduckgoScore !== undefined) {
-            score += duckduckgoScore;
+            score += duckduckgoScore * 1.2; // Boost DDG score by 20%
         }
         
         // Tokenize query for matching
         const queryTokens = this.tokenizeQuery(query);
-        
-        // Title relevance (high weight)
         const titleLower = title.toLowerCase();
+        const descLower = description.toLowerCase();
+        const urlLower = url.toLowerCase();
+        
+        // 1. EXACT PHRASE MATCHING (highest priority)
+        const queryLower = query.toLowerCase();
+        if (titleLower.includes(queryLower)) {
+            score += 80; // Full query phrase in title
+        }
+        if (descLower.includes(queryLower)) {
+            score += 40; // Full query phrase in description
+        }
+        
+        // 2. TERM FREQUENCY AND POSITION SCORING
+        const titleTermFreq = this.calculateTermFrequency(titleLower, queryTokens);
+        const descTermFreq = this.calculateTermFrequency(descLower, queryTokens);
+        
+        // Title term frequency (high weight)
+        score += titleTermFreq * 15;
+        
+        // Description term frequency (medium weight)
+        score += descTermFreq * 8;
+        
+        // 3. POSITION-BASED SCORING (earlier mentions = higher relevance)
+        score += this.calculatePositionScore(titleLower, queryTokens, 30); // Title position weight
+        score += this.calculatePositionScore(descLower, queryTokens, 15); // Description position weight
+        
+        // 4. INDIVIDUAL TERM MATCHING (word boundary matching)
+        let titleMatches = 0;
+        let descMatches = 0;
+        
         for (const token of queryTokens) {
             if (token.length > 2) { // Skip very short tokens
                 const wordBoundaryRegex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                
                 if (wordBoundaryRegex.test(titleLower)) {
                     score += 25; // Exact word match in title
+                    titleMatches++;
                 }
-            }
-        }
-        
-        // Bonus for multiple token matches in title
-        const titleMatches = queryTokens.filter(token => 
-            token.length > 2 && new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(titleLower)
-        ).length;
-        if (titleMatches > 1) {
-            score += titleMatches * 10; // Bonus for multiple matches
-        }
-        
-        // Description relevance (medium weight)
-        const descLower = description.toLowerCase();
-        for (const token of queryTokens) {
-            if (token.length > 2) {
-                const wordBoundaryRegex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                
                 if (wordBoundaryRegex.test(descLower)) {
-                    score += 10; // Exact word match in description
+                    score += 12; // Exact word match in description
+                    descMatches++;
+                }
+                
+                // URL path matching (for technical content)
+                if (wordBoundaryRegex.test(urlLower)) {
+                    score += 8; // Word match in URL path
                 }
             }
         }
         
-        // URL quality indicators - heavily weighted toward authoritative sources
-        const urlLower = url.toLowerCase();
+        // 5. COVERAGE BONUS (percentage of query terms found)
+        const totalTokens = queryTokens.filter(t => t.length > 2).length;
+        if (totalTokens > 0) {
+            const titleCoverage = titleMatches / totalTokens;
+            const descCoverage = descMatches / totalTokens;
+            
+            score += titleCoverage * 50; // Title coverage bonus
+            score += descCoverage * 25;  // Description coverage bonus
+            
+            // Extra bonus for complete coverage
+            if (titleCoverage >= 0.8) score += 30;
+            if (descCoverage >= 0.8) score += 15;
+        }
+        
+        // 6. TERM PROXIMITY SCORING (terms appearing close together)
+        score += this.calculateProximityScore(titleLower, queryTokens, 20);
+        score += this.calculateProximityScore(descLower, queryTokens, 10);
+        
+        // 7. URL QUALITY INDICATORS - heavily weighted toward authoritative sources
+        // Domain authority scoring with recency and freshness factors
+        const domainScore = this.calculateDomainAuthorityScore(urlLower);
+        score += domainScore;
+        
+        // 8. URL STRUCTURE QUALITY
+        score += this.calculateUrlStructureScore(urlLower, queryTokens);
         
         // Wikipedia and major wikis (highest priority)
         if (urlLower.includes('wikipedia.org')) score += 200;
@@ -651,6 +797,153 @@ class DuckDuckGoSearcher {
         if (urlLower.includes('.net')) score += 20;
         
         return Math.round(score);
+    }
+
+    /**
+     * Calculate term frequency for given tokens in text
+     * @param {string} text - Text to analyze
+     * @param {Array<string>} tokens - Tokens to count
+     * @returns {number} Total frequency score
+     */
+    calculateTermFrequency(text, tokens) {
+        let totalFreq = 0;
+        for (const token of tokens) {
+            if (token.length > 2) {
+                const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+                const matches = text.match(regex);
+                if (matches) {
+                    totalFreq += matches.length;
+                }
+            }
+        }
+        return totalFreq;
+    }
+
+    /**
+     * Calculate position-based scoring (earlier = better)
+     * @param {string} text - Text to analyze
+     * @param {Array<string>} tokens - Tokens to find
+     * @param {number} weight - Weight multiplier
+     * @returns {number} Position score
+     */
+    calculatePositionScore(text, tokens, weight) {
+        let positionScore = 0;
+        const textLength = text.length;
+        
+        for (const token of tokens) {
+            if (token.length > 2) {
+                const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                const match = regex.exec(text);
+                if (match) {
+                    // Earlier positions get higher scores (inverse of position percentage)
+                    const position = match.index / textLength;
+                    positionScore += weight * (1 - position);
+                }
+            }
+        }
+        return positionScore;
+    }
+
+    /**
+     * Calculate proximity score for terms appearing close together
+     * @param {string} text - Text to analyze
+     * @param {Array<string>} tokens - Tokens to find
+     * @param {number} weight - Weight multiplier
+     * @returns {number} Proximity score
+     */
+    calculateProximityScore(text, tokens, weight) {
+        if (tokens.length < 2) return 0;
+        
+        let proximityScore = 0;
+        const positions = [];
+        
+        // Find positions of all tokens
+        for (const token of tokens) {
+            if (token.length > 2) {
+                const regex = new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+                let match;
+                while ((match = regex.exec(text)) !== null) {
+                    positions.push({ token, position: match.index });
+                }
+            }
+        }
+        
+        // Calculate proximity bonuses for terms appearing within 50 characters
+        for (let i = 0; i < positions.length - 1; i++) {
+            for (let j = i + 1; j < positions.length; j++) {
+                if (positions[i].token !== positions[j].token) {
+                    const distance = Math.abs(positions[i].position - positions[j].position);
+                    if (distance <= 50) {
+                        proximityScore += weight * (50 - distance) / 50;
+                    }
+                }
+            }
+        }
+        
+        return proximityScore;
+    }
+
+    /**
+     * Calculate domain authority score based on URL
+     * @param {string} urlLower - Lowercase URL
+     * @returns {number} Domain authority score
+     */
+    calculateDomainAuthorityScore(urlLower) {
+        let domainScore = 0;
+        
+        // TLD quality scoring
+        if (urlLower.includes('.edu')) domainScore += 120;
+        else if (urlLower.includes('.gov')) domainScore += 110;
+        else if (urlLower.includes('.org')) domainScore += 60;
+        else if (urlLower.includes('.mil')) domainScore += 100;
+        else if (urlLower.includes('.ac.uk')) domainScore += 120;
+        else if (urlLower.includes('.com')) domainScore += 20;
+        else if (urlLower.includes('.net')) domainScore += 15;
+        
+        // Subdomain penalties (often lower quality)
+        const subdomainCount = (urlLower.match(/\./g) || []).length;
+        if (subdomainCount > 2) {
+            domainScore -= (subdomainCount - 2) * 5;
+        }
+        
+        return domainScore;
+    }
+
+    /**
+     * Calculate URL structure quality score
+     * @param {string} urlLower - Lowercase URL
+     * @param {Array<string>} queryTokens - Query tokens
+     * @returns {number} URL structure score
+     */
+    calculateUrlStructureScore(urlLower, queryTokens) {
+        let structureScore = 0;
+        
+        // Penalize very long URLs (often low quality)
+        if (urlLower.length > 100) {
+            structureScore -= 10;
+        }
+        
+        // Bonus for clean URL structure
+        if (!urlLower.includes('?') && !urlLower.includes('&')) {
+            structureScore += 5;
+        }
+        
+        // Penalize URLs with suspicious patterns
+        const suspiciousPatterns = ['redirect', 'proxy', 'cache', 'amp'];
+        for (const pattern of suspiciousPatterns) {
+            if (urlLower.includes(pattern)) {
+                structureScore -= 15;
+            }
+        }
+        
+        // Bonus for query terms in URL path
+        for (const token of queryTokens) {
+            if (token.length > 2 && urlLower.includes(token)) {
+                structureScore += 8;
+            }
+        }
+        
+        return structureScore;
     }
 
     /**
@@ -927,33 +1220,132 @@ class DuckDuckGoSearcher {
                 const isHttps = parsedUrl.protocol === 'https:';
                 const client = isHttps ? https : http;
 
-                // Randomize user agents and other headers to appear more human
-                const userAgents = [
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/119.0'
+                // Enhanced browser fingerprint pool with matched headers for better legitimacy
+                const browserFingerprints = [
+                    // Chrome on Windows
+                    {
+                        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'Win32'
+                    },
+                    {
+                        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                        acceptLanguage: 'en-US,en;q=0.9,es;q=0.8',
+                        platform: 'Win32'
+                    },
+                    {
+                        userAgent: 'Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'Win32'
+                    },
+                    // Chrome on macOS
+                    {
+                        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'MacIntel'
+                    },
+                    {
+                        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                        acceptLanguage: 'en-US,en;q=0.9,fr;q=0.8',
+                        platform: 'MacIntel'
+                    },
+                    // Firefox on Windows
+                    {
+                        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
+                        acceptLanguage: 'en-US,en;q=0.5',
+                        platform: 'Win32'
+                    },
+                    {
+                        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0',
+                        acceptLanguage: 'en-US,en;q=0.5',
+                        platform: 'Win32'
+                    },
+                    // Firefox on macOS
+                    {
+                        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:120.0) Gecko/20100101 Firefox/120.0',
+                        acceptLanguage: 'en-US,en;q=0.5',
+                        platform: 'MacIntel'
+                    },
+                    // Safari on macOS
+                    {
+                        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'MacIntel'
+                    },
+                    {
+                        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'MacIntel'
+                    },
+                    // Chrome on Linux
+                    {
+                        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'Linux x86_64'
+                    },
+                    {
+                        userAgent: 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0',
+                        acceptLanguage: 'en-US,en;q=0.5',
+                        platform: 'Linux x86_64'
+                    },
+                    // Edge on Windows
+                    {
+                        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'Win32'
+                    },
+                    // Mobile browsers for variety
+                    {
+                        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
+                        acceptLanguage: 'en-US,en;q=0.9',
+                        platform: 'iPhone'
+                    },
+                    {
+                        userAgent: 'Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0',
+                        acceptLanguage: 'en-US,en;q=0.5',
+                        platform: 'Linux armv7l'
+                    }
                 ];
 
-                const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+                const randomFingerprint = browserFingerprints[Math.floor(Math.random() * browserFingerprints.length)];
                 
-                // Enhanced headers to mimic real browser behavior
+                // Randomized Accept-Encoding to vary compression preferences
+                const acceptEncodings = [
+                    'gzip, deflate, br',
+                    'gzip, deflate, br, zstd',
+                    'gzip, deflate',
+                    'br, gzip, deflate'
+                ];
+                
+                // Randomized DNT header (some users have it, some don't)
+                const dntValue = Math.random() > 0.3 ? '1' : undefined;
+                
+                // Enhanced headers with randomized fingerprinting
                 const headers = {
-                    'User-Agent': randomUserAgent,
+                    'User-Agent': randomFingerprint.userAgent,
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'DNT': '1',
+                    'Accept-Language': randomFingerprint.acceptLanguage,
+                    'Accept-Encoding': acceptEncodings[Math.floor(Math.random() * acceptEncodings.length)],
                     'Connection': 'keep-alive',
                     'Upgrade-Insecure-Requests': '1',
                     'Sec-Fetch-Dest': 'document',
                     'Sec-Fetch-Mode': 'navigate',
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
-                    'Cache-Control': 'max-age=0'
+                    'Cache-Control': Math.random() > 0.5 ? 'max-age=0' : 'no-cache'
                 };
+                
+                // Conditionally add DNT header (not all browsers send it)
+                if (dntValue) {
+                    headers['DNT'] = dntValue;
+                }
+                
+                // Add randomized viewport hints for Chrome-based browsers
+                if (randomFingerprint.userAgent.includes('Chrome') && Math.random() > 0.7) {
+                    headers['Sec-CH-UA-Platform'] = `"${randomFingerprint.platform}"`;
+                    headers['Sec-CH-UA'] = '"Not_A Brand";v="8", "Chromium";v="120"';
+                    headers['Sec-CH-UA-Mobile'] = randomFingerprint.platform === 'iPhone' ? '?1' : '?0';
+                }
 
                 // Add referer for search pages to appear as if coming from the search engine's homepage
                 if (requestUrl.includes('duckduckgo.com')) {

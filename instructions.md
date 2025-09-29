@@ -12,6 +12,16 @@ applyTo: '**'
 applyTo: '**'
 ---
 
-1. after any changes to the llamda function, deploy the changes using scripts/deploy.sh
-2. make all changes to the ui in ui/index_template.html and be sure to rebuild and deploy the docs using scripts/deploy_docs.sh
-3. When sending a test to the llamda function, ensure all parameters are included including api key unless the test requires the exclusion of parameters 
+1. After any changes to the Lambda function code (src/), deploy using `scripts/deploy.sh`
+2. **CRITICAL UI WORKFLOW**: 
+   - Make ALL UI changes in files within the `ui/` subdirectory (ui/index_template.html, ui/index_template_modular.html, ui/styles.css)
+   - NEVER edit files in docs/ directory directly - these are built/generated files
+   - After UI changes, ALWAYS run `scripts/build-docs.sh` to build from ui/ to docs/
+   - After building, ALWAYS run `scripts/deploy-docs.sh` to deploy the docs
+   - Alternative: Use `make deploy-docs` which runs both build and deploy
+3. When testing the Lambda function, ensure all parameters are included including API key unless the test requires the exclusion of parameters
+4. **UI Development Process**:
+   - Edit source files in ui/ directory
+   - Run build script to update docs/
+   - Deploy docs to make changes live
+   - Test at https://lambdallmproxy.pages.dev 

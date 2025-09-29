@@ -36,6 +36,7 @@
             <button type="button" id="sample-queries-btn" class="compact-btn sample-btn">📝 Samples</button>
             <button type="submit" id="submit-btn" class="compact-btn submit-btn" disabled>Sign in or add API key</button>
             <button type="button" id="stop-btn" class="compact-btn stop-btn" style="display: none;">Stop</button>
+            <button type="button" id="continue-btn" class="compact-btn continue-btn" style="display: none;">Continue in 60s</button>
         </div>
     </div>
     <div class="top-bar-right">
@@ -85,6 +86,21 @@
     </div>
 </div>
 
+<!-- Persona and Questions Layout -->
+<div class="persona-questions-layout hidden">
+    <!-- Persona Display -->
+    <div id="persona-container" class="persona-card" style="display: none;">
+        <div class="persona-card-header">🎭 Persona</div>
+        <div id="persona-text" class="persona-card-content"></div>
+    </div>
+
+    <!-- Research Questions Display -->
+    <div id="research-questions-container" class="questions-card" style="display: none;">
+        <div class="questions-card-header">🔍 Research Strategy</div>
+        <div id="research-questions-text" class="questions-card-content"></div>
+    </div>
+</div>
+
 <!-- Compact Form Container -->
 <div class="compact-form-container">
     <form id="llm-form">
@@ -96,7 +112,7 @@
         
         <!-- Compact Query Input -->
         <div class="query-container">
-            <textarea id="prompt" name="prompt" rows="1" required placeholder="Enter your question here..." class="auto-resize-textarea">how old is the first child of the king of spain</textarea>
+            <textarea id="prompt" name="prompt" rows="1" required placeholder="Enter your question here..." class="auto-resize-textarea"></textarea>
         </div>
 
         <!-- Sample Queries Dropdown (positioned relative to button in top bar) -->
@@ -108,17 +124,7 @@
 
 <!-- Compact Status Sections -->
 <div class="status-sections">
-    <!-- Persona Display -->
-    <div id="persona-container" class="status-card" style="display: none;">
-        <div class="status-card-header">🎭 Persona</div>
-        <div id="persona-text" class="status-card-content"></div>
-    </div>
-
-    <!-- Research Questions Display -->
-    <div id="research-questions-container" class="status-card" style="display: none;">
-        <div class="status-card-header">🔍 Research Strategy</div>
-        <div id="research-questions-text" class="status-card-content"></div>
-    </div>
+    <!-- Other status cards can go here if needed -->
 </div>
 
 <div id="response-container" class="compact-response-container">
@@ -126,6 +132,7 @@
 </div>
 
 <!-- JavaScript Modules -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/settings.js"></script>
