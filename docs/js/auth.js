@@ -646,10 +646,19 @@ async function ensureValidToken() {
     return true;
 }
 
+// Get Authorization header for API requests
+function getAuthHeader() {
+    if (googleAccessToken && isAuthenticated()) {
+        return `Bearer ${googleAccessToken}`;
+    }
+    return '';
+}
+
 // Expose globals
 window.isGoogleTokenValid = isGoogleTokenValid;
 window.isAuthenticated = isAuthenticated;
 window.ensureValidToken = ensureValidToken;
 window.refreshGoogleToken = refreshGoogleToken;
+window.getAuthHeader = getAuthHeader;
 window.googleUser = googleUser;
 window.googleAccessToken = googleAccessToken;
