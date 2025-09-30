@@ -144,11 +144,12 @@ async function makeStreamingRequest(formData) {
             isContinuation: !!requestBody.continuation
         });
 
-        // Make the request
+        // Make the request - always request streaming response
         const response = await fetch(window.LAMBDA_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
                 'Authorization': getAuthHeader()
             },
             body: JSON.stringify(requestBody),
@@ -209,7 +210,7 @@ function resetModelToFastest() {
 }
 
 /**
- * Handle response - detects if it's JSON or streaming format
+ * Handle response - always use streaming format
  */
 async function handleResponse(response, responseContainer, controller) {
     const contentType = response.headers.get('content-type');
@@ -223,21 +224,9 @@ async function handleResponse(response, responseContainer, controller) {
         ok: response.ok
     });
     
-    // Check if it's a JSON response
-    if (contentType && contentType.includes('application/json')) {
-        console.log('📄 Handling JSON response');
-        try {
-            const data = await response.json();
-            console.log('📦 JSON data received:', data);
-            await handleJsonResponse(data, responseContainer);
-        } catch (error) {
-            console.error('❌ Failed to parse JSON response:', error);
-            responseContainer.innerHTML = `<div style="color: red; padding: 16px;">Error parsing response: ${error.message}</div>`;
-        }
-    } else {
-        console.log('🌊 Handling streaming response, content-type:', contentType);
-        await handleStreamingResponse(response, responseContainer, controller);
-    }
+    // Always handle as streaming response since we set Accept: text/event-stream
+    console.log('🌊 Handling streaming response, content-type:', contentType);
+    await handleStreamingResponse(response, responseContainer, controller);
 }
 
 /**
