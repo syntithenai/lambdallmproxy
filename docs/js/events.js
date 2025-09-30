@@ -162,6 +162,15 @@ async function processStreamingEvent(eventType, eventData, context) {
             console.log('🚀 Processing init event:', eventData.query);
             console.log('🚀 statusElement:', statusElement);
             
+            // Ensure response container is visible
+            const responseContainer = document.getElementById('response-container');
+            if (responseContainer) {
+                responseContainer.style.display = 'block';
+                console.log('✅ Made response container visible');
+            } else {
+                console.error('❌ Response container not found!');
+            }
+            
             if (statusElement) {
                 statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
                 console.log('✅ Updated statusElement text to:', statusElement.textContent);
@@ -335,11 +344,40 @@ async function processStreamingEvent(eventType, eventData, context) {
             `;
             break;
             
+        case 'llm_response':
+            console.log('🤖 Processing llm_response:', eventData);
+            
+            // If this is a final response, handle it specially
+            if (eventData.type === 'final_response') {
+                console.log('📝 Routing to final_response handler');
+                await processStreamingEvent('final_response', eventData, context);
+                return;
+            }
+            
+            // Regular LLM responses can be logged or processed here
+            if (window.realtimeMonitoring) {
+                window.realtimeMonitoring.addLLMEvent('query_end', {
+                    model: eventData.model || 'Unknown',
+                    response: eventData.text || eventData.content || 'No response',
+                    tokens: eventData.tokens || 0
+                });
+            }
+            break;
+
         case 'final_response':
+            console.log('📝 Processing final_response:', eventData);
+            console.log('📝 answerElement:', answerElement);
+            
             statusElement.textContent = '✅ Search completed! Displaying final response...';
             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
             stopAllTimers('done');
-            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
+            
+            if (answerElement) {
+                answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response || eventData.content || 'No response content'}</div>`;
+                console.log('✅ Updated answerElement with response');
+            } else {
+                console.error('❌ answerElement not found!');
+            }
             
             // Update the "Final Response" header to include cost if available
             const responseHeaderElement = responseElement.querySelector('h3');
