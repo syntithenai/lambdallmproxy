@@ -46,7 +46,7 @@ npm run build-docs      # Build docs locally
 
 1. **Always deploy after Lambda code changes**: Use `make dev` (uses `scripts/deploy.sh`)
 2. **🚨 CRITICAL UI WORKFLOW** (per user requirement):
-   - **ALWAYS make UI changes in `ui/` subdirectory files** (ui/index_template.html, ui/index_template_modular.html, ui/styles.css)
+   - **ALWAYS make UI changes in `ui/` subdirectory files** (ui/index_template.html,  ui/styles.css)
    - **NEVER edit docs/index.html or docs/js/ files directly** - these are built/generated files
    - **ALWAYS run build script after UI changes**: Use `make deploy-docs` or `scripts/build-docs.sh`
    - **ALWAYS deploy after building**: Use `scripts/deploy-docs.sh` if not using make

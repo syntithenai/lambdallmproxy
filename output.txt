@@ -2,8 +2,3 @@
 [1;33m📝 Loading configuration from .env file...[0m
 [0;32m✅ Function deployed successfully[0m
 [0;34m📁 Loading environment variables from .env...[0m
-[0;32m✅ Environment variables configured from .env (including ALLOWED_EMAILS)[0m
-[1;33m🔧 Updating function memory/timeout from .env...[0m
-[1;33m🌐 Checking Lambda Function URL CORS configuration...[0m
-[0;32m✅ CORS configuration verified[0m
-[0;32m🎉 Deployment completed successfully![0m
