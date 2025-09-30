@@ -1,18 +1,4 @@
-➕ Staging docs/ changes...
-💬 Committing: docs: update built site (2025-09-26 06:04:42 UTC)
-
-🔥 DEPLOYMENT REMINDER 🔥
-Code has been committed but NOT deployed yet!
-
-To deploy your changes:
-  make dev          # Quick Lambda deploy (recommended)
-  make full-deploy  # Deploy everything (Lambda + docs)
-
-Test after deploy: https://lambdallmproxy.pages.dev
-
-[agent b6b639c] docs: update built site (2025-09-26 06:04:42 UTC)
- 1 file changed, 24 insertions(+), 1 deletion(-)
-⏫ Pushing to origin agent...
-To https://github.com/syntithenai/lambdallmproxy.git
-   c8a8647..b6b639c  agent -> agent
-✅ Docs deployed successfully.
+[0;34m🚀 Deploying Lambda function llmproxy...[0m
+[1;33m📝 Loading configuration from .env file...[0m
+[0;32m✅ Function deployed successfully[0m
+[0;34m📁 Loading environment variables from .env...[0m

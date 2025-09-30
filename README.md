@@ -33,11 +33,14 @@ make help
 **For AI agents making code changes (per instructions.md):**
 
 1. **Make Lambda code changes** in `src/` → **Always run `make dev`** (uses `scripts/deploy.sh`)
-2. **Make UI changes** in `ui/index_template.html` → **Always run `make deploy-docs`** (uses `scripts/deploy-docs.sh`)
+2. **🚨 CRITICAL: Make UI changes** in `ui/` subdirectory files → **Always run `make deploy-docs`**
 3. **Test immediately**: Visit https://lambdallmproxy.pages.dev
 4. **Check output**: All commands pipe to `output.txt` for Copilot to read
 
-See [AI_AGENT_WORKFLOW.md](AI_AGENT_WORKFLOW.md) for detailed AI agent instructions and [instructions.md](instructions.md) for project-specific requirements.
+**📖 Documentation for AI Agents:**
+- [COPILOT_UI_WORKFLOW.md](COPILOT_UI_WORKFLOW.md) - **ESSENTIAL UI development workflow** 
+- [AI_AGENT_WORKFLOW.md](AI_AGENT_WORKFLOW.md) - General AI agent instructions
+- [instructions.md](instructions.md) - Project-specific requirements
 
 ## Architecture
 
@@ -256,16 +259,9 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
   -d '{
     "query": "What are the latest developments in AI?",
     "api_key": "your-openai-api-key",
-    "access_secret": "your-access-secret",
-    "search_mode": "auto"
+    "access_secret": "your-access-secret"
   }'
 ```
-
-### Search Modes
-
-- **`auto`** - Let AI decide whether to search or respond directly (default)
-- **`search`** - Always search for current information
-- **`direct`** - Answer directly without searching
 
 ### Request Parameters
 
@@ -274,7 +270,7 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
 | `query` | Yes | Your question or request |
 | `api_key` | Yes | OpenAI API key |
 | `access_secret` | Yes | Function access secret |
-| `search_mode` | No | Search behavior: "auto", "search", or "direct" |
+
 | `model` | No | Model (default: "openai:gpt-4o-mini") |
 | `limit` | No | Max search results (1-50, default: 5) |
 

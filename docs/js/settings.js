@@ -29,7 +29,15 @@ function updateSubmitButton() {
     const submitBtn = document.getElementById('submit-btn');
     if (!submitBtn) return;
     
-    const signedIn = isGoogleTokenValid(window.googleAccessToken);
+    // Use enhanced authentication check if available
+    let signedIn = false;
+    if (window.isAuthenticated) {
+        signedIn = window.isAuthenticated();
+    } else {
+        // Fallback to basic token validation
+        signedIn = isGoogleTokenValid(window.googleAccessToken);
+    }
+    
     const localKeyOk = hasLocalKeyForModel();
     const canSubmit = signedIn || localKeyOk;
     
@@ -44,7 +52,17 @@ function updateSubmitButton() {
     });
     
     submitBtn.disabled = !canSubmit;
-    submitBtn.textContent = canSubmit ? 'Send Request' : 'Sign in or add an API key';
+    
+    if (canSubmit) {
+        submitBtn.textContent = 'Send Request';
+        submitBtn.className = 'btn btn-primary';
+    } else if (window.googleUser && window.googleAccessToken && !signedIn) {
+        submitBtn.textContent = 'Authentication Expired - Sign In';
+        submitBtn.className = 'btn btn-warning';
+    } else {
+        submitBtn.textContent = 'Sign in or add an API key';
+        submitBtn.className = 'btn btn-secondary';
+    }
 }
 
 // Function to update model availability based on API keys
@@ -60,7 +78,15 @@ function updateModelAvailability() {
     
     const hasOpenaiKey = !!(openaiApiKeyInput && openaiApiKeyInput.value && openaiApiKeyInput.value.trim());
     const hasGroqKey = !!(groqApiKeyInput && groqApiKeyInput.value && groqApiKeyInput.value.trim());
-    const signedIn = isGoogleTokenValid(window.googleAccessToken);
+    
+    // Use enhanced authentication check if available
+    let signedIn = false;
+    if (window.isAuthenticated) {
+        signedIn = window.isAuthenticated();
+    } else {
+        // Fallback to basic token validation
+        signedIn = isGoogleTokenValid(window.googleAccessToken);
+    }
     
     console.log('hasOpenaiKey:', hasOpenaiKey, 'hasGroqKey:', hasGroqKey, 'signedIn:', signedIn);
     
@@ -127,7 +153,7 @@ function updateModelAvailability() {
             }
              
             // Apply default model if available, otherwise use first available option
-            if (defaultModel && modelSelect.querySelector(`option[value="${defaultModel}"]`) && 
+            if (defaultModel && modelSelect.querySelector(`option[value="${defaultModel}"]`) &&
                 !modelSelect.querySelector(`option[value="${defaultModel}"]`).disabled) {
                 modelSelect.value = defaultModel;
                 console.log('Selected default model:', defaultModel);
@@ -188,7 +214,7 @@ function initializeSettings() {
     const modelSelect = document.getElementById('model');
     const promptInput = document.getElementById('prompt');
     
-    if (!openaiApiKeyInput || !groqApiKeyInput || !clearOpenaiButton || !clearGroqButton || 
+    if (!openaiApiKeyInput || !groqApiKeyInput || !clearOpenaiButton || !clearGroqButton ||
         !settingsBtn || !closeSettingsBtn || !settingsDialog) {
         console.error('Settings elements not found');
         return;

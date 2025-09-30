@@ -33,15 +33,44 @@ const sampleQueries = {
 
 function toggleSampleQueries() {
     const dropdown = document.getElementById('sample-queries-dropdown');
-    if (!dropdown) return;
+    const button = document.getElementById('sample-queries-btn');
+    
+    console.log('Toggle samples clicked', { dropdown: !!dropdown, button: !!button });
+    
+    if (!dropdown) {
+        console.error('Sample dropdown not found');
+        return;
+    }
     
     const isVisible = dropdown.style.display === 'block';
     
     if (isVisible) {
         dropdown.style.display = 'none';
+        console.log('Hiding dropdown');
     } else {
         populateSampleQueries();
+        
+        // Position dropdown relative to button using fixed positioning
+        if (button) {
+            const rect = button.getBoundingClientRect();
+            const scrollY = window.scrollY || document.documentElement.scrollTop;
+            
+            dropdown.style.position = 'fixed';
+            dropdown.style.top = (rect.bottom + 8) + 'px';
+            dropdown.style.left = rect.left + 'px';
+            dropdown.style.width = '450px';
+            
+            console.log('Positioning dropdown:', {
+                buttonRect: rect,
+                dropdownTop: rect.bottom + 8,
+                dropdownLeft: rect.left,
+                scrollY: scrollY
+            });
+        }
+        
         dropdown.style.display = 'block';
+        dropdown.style.visibility = 'visible';
+        console.log('Showing dropdown positioned below button');
     }
 }
 
@@ -49,54 +78,113 @@ function populateSampleQueries() {
     const dropdown = document.getElementById('sample-queries-dropdown');
     if (!dropdown) return;
     
+    // Clear existing content
     dropdown.innerHTML = '';
     
+    // Add categories
     Object.entries(sampleQueries).forEach(([category, queries]) => {
         const categoryDiv = document.createElement('div');
-        categoryDiv.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid #eee; font-weight: bold; background: #f8f9fa;';
-        categoryDiv.textContent = category;
-        dropdown.appendChild(categoryDiv);
+        categoryDiv.className = 'sample-category';
+        
+        const categoryHeader = document.createElement('div');
+        categoryHeader.className = 'sample-category-header';
+        categoryHeader.textContent = category;
+        categoryDiv.appendChild(categoryHeader);
+        
+        const queriesList = document.createElement('div');
+        queriesList.className = 'sample-queries-list';
         
         queries.forEach(query => {
             const queryDiv = document.createElement('div');
-            queryDiv.style.cssText = 'padding: 8px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background-color 0.2s;';
+            queryDiv.className = 'sample-query';
             queryDiv.textContent = query;
-            
-            queryDiv.addEventListener('mouseenter', () => {
-                queryDiv.style.backgroundColor = '#e9ecef';
-            });
-            
-            queryDiv.addEventListener('mouseleave', () => {
-                queryDiv.style.backgroundColor = 'transparent';
-            });
-            
             queryDiv.addEventListener('click', () => {
-                const promptInput = document.getElementById('prompt');
-                if (promptInput) {
-                    promptInput.value = query;
-                }
-                dropdown.style.display = 'none';
+                selectSampleQuery(query);
             });
-            
-            dropdown.appendChild(queryDiv);
+            queriesList.appendChild(queryDiv);
         });
+        
+        categoryDiv.appendChild(queriesList);
+        dropdown.appendChild(categoryDiv);
     });
 }
 
+function selectSampleQuery(query) {
+    const promptInput = document.getElementById('prompt');
+    if (promptInput) {
+        promptInput.value = query;
+        
+        // Save to localStorage
+        localStorage.setItem('saved_query', query);
+        
+        // Trigger input event to update any listeners
+        promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        // Hide dropdown
+        const dropdown = document.getElementById('sample-queries-dropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+        }
+        
+        // Focus the prompt input
+        promptInput.focus();
+        
+        console.log('Selected sample query:', query.substring(0, 50) + '...');
+    }
+}
+
 function initializeSampleQueries() {
-    // Hide dropdown when clicking outside
+    console.log('Initializing sample queries...');
+    
+    const sampleBtn = document.getElementById('sample-queries-btn');
+    console.log('Sample button found:', !!sampleBtn);
+    
+    if (sampleBtn) {
+        // Create the dropdown element if it doesn't exist
+        let dropdown = document.getElementById('sample-queries-dropdown');
+        if (!dropdown) {
+            dropdown = document.createElement('div');
+            dropdown.id = 'sample-queries-dropdown';
+            dropdown.className = 'sample-dropdown';
+            dropdown.style.display = 'none';
+            
+            // Append to body for fixed positioning
+            document.body.appendChild(dropdown);
+            console.log('Created sample dropdown element in body');
+        }
+        
+        sampleBtn.addEventListener('click', toggleSampleQueries);
+        console.log('Click listener added to sample button');
+    } else {
+        console.error('Sample queries button not found!');
+    }
+    
+    // Close dropdown when clicking outside
     document.addEventListener('click', function(e) {
         const dropdown = document.getElementById('sample-queries-dropdown');
-        const button = document.getElementById('sample-queries-btn');
+        const btn = document.getElementById('sample-queries-btn');
         
-        if (dropdown && button && !dropdown.contains(e.target) && !button.contains(e.target)) {
+        if (dropdown && btn && 
+            !dropdown.contains(e.target) && 
+            !btn.contains(e.target)) {
             dropdown.style.display = 'none';
         }
     });
-
-    // Add event listener for sample queries button
-    const sampleQueriesBtn = document.getElementById('sample-queries-btn');
-    if (sampleQueriesBtn) {
-        sampleQueriesBtn.addEventListener('click', toggleSampleQueries);
+    
+    // Reposition dropdown on window resize/scroll
+    function repositionDropdown() {
+        const dropdown = document.getElementById('sample-queries-dropdown');
+        const button = document.getElementById('sample-queries-btn');
+        
+        if (dropdown && button && dropdown.style.display === 'block') {
+            const rect = button.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + 8) + 'px';
+            dropdown.style.left = rect.left + 'px';
+        }
     }
+    
+    window.addEventListener('resize', repositionDropdown);
+    window.addEventListener('scroll', repositionDropdown);
+    
+    console.log('Sample queries initialization complete');
 }

@@ -16,32 +16,32 @@ function estimateTokens(text) {
 
 // Intelligent content extraction to minimize tokens while preserving key information
 function extractKeyContent(content, originalQuery) {
-  if (!content || content.length < 100) return content;
+  if (!content || typeof content !== 'string') return '';
   
-  // Convert to lowercase for analysis
-  const queryTerms = originalQuery.toLowerCase().split(/\s+/).filter(term => term.length > 2);
-  const lines = content.split(/[.\n!?]+/).filter(line => line.trim().length > 20);
+  const lines = content.split('\n').filter(Boolean);
+  const queryWords = originalQuery ? originalQuery.toLowerCase().split(/\s+/) : [];
   
-  // Extract content patterns
+  // Categorize lines by importance
   const patterns = {
-    queryRelevant: [],  // High priority: contains query terms
-    numerical: [],      // Facts, statistics, prices
-    dates: [],         // Temporal relevance 
-    headers: [],       // Structural importance
-    contextual: []     // First/last content
+    queryRelevant: [],
+    numerical: [],
+    dates: [],
+    headers: [],
+    contextual: []
   };
   
   lines.forEach((line, idx) => {
-    const lineLower = line.toLowerCase();
     const trimmed = line.trim();
+    if (!trimmed || trimmed.length < 10) return;
     
-    // Query-relevant sentences (highest priority)
-    if (queryTerms.some(term => lineLower.includes(term))) {
+    // Query relevance (contains query terms)
+    const lineWords = trimmed.toLowerCase();
+    if (queryWords.some(word => word.length > 2 && lineWords.includes(word))) {
       patterns.queryRelevant.push(trimmed);
     }
     
-    // Numerical data (facts, statistics, prices, percentages)
-    if (/\d+[%$,.\d]*|\b\d{4}\b|\b\d+\.\d+\b|\d+\s*(percent|million|billion|thousand)/.test(trimmed)) {
+    // Numerical data (numbers, percentages, measurements)
+    if (/\d+[%$€£¥]|\d+[\.\,]\d+|\d+\s*(million|billion|thousand|percent|kg|lbs|miles|km|hours|days|years)/i.test(trimmed)) {
       patterns.numerical.push(trimmed);
     }
     
@@ -84,14 +84,15 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'search_web',
-      description: 'Search the web for results relevant to a query and return an LLM-generated summary. CRITICAL: This function makes a search request and returns results. Only provide input parameters: "query" (required) and optionally "limit" (max 3), "timeout" (max 60), "load_content" (boolean). For comprehensive research, make multiple separate calls with different queries rather than using high limits. Do NOT include output like count, results, summary, etc.',
+      description: 'Search the web for results relevant to a query and optionally generate an LLM summary. Returns all search result fields including title, url, description, score, and content when requested.',
       parameters: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Search query' },
-          limit: { type: 'integer', minimum: 1, maximum: 3, default: 1 }, // Emergency rate limit: max 3 results, default 1
-          timeout: { type: 'integer', minimum: 1, maximum: 60, default: 8 },
-          load_content: { type: 'boolean', default: false, description: 'DISABLED by default - When true, fetch content (causes token overflow). Keep false for rate limits.'}
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 3 },
+          timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15 },
+          load_content: { type: 'boolean', default: false, description: 'When true, fetch full page content for each result'},
+          generate_summary: { type: 'boolean', default: false, description: 'When true, generate an LLM summary of the search results'}
         },
         required: ['query'],
         additionalProperties: false
@@ -102,7 +103,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'scrape_web_content',
-      description: 'Fetch and extract the readable content of a URL. This function fetches content and returns it. Only provide input parameters: "url" (required) and optionally "timeout". Do NOT include output like content, text, etc.',
+      description: 'Fetch and extract the full readable content from any URL. EXCELLENT for getting detailed information from educational resources, tutorials, documentation, course materials, or any specific webpage found in search results. Use this when search results show promising URLs that need deeper content extraction. Perfect for accessing comprehensive guides, detailed explanations, or complete course curricula. CRITICAL: Only provide the "url" parameter. Do NOT include any other properties.',
       parameters: {
         type: 'object',
         properties: {
@@ -118,7 +119,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'execute_javascript',
-      description: 'Execute JavaScript code in a secure sandbox environment. Perfect for mathematical calculations, data processing, algorithm implementation, and computational problems. For math questions, focus on providing direct numerical answers. Supports all standard JavaScript features including Math functions, array operations, loops, and object manipulation. IMPORTANT: Only provide the "code" parameter - do not include result, type, or executed_at properties.',
+      description: 'Execute JavaScript code in a secure sandbox environment. EXCELLENT for creating interactive examples, code demonstrations, mathematical calculations, algorithm implementations, data analysis, and educational visualizations. Use this to demonstrate concepts with working code examples, calculate learning timelines, create sample algorithms, or process data. Perfect for answering "how to" questions with actual runnable code. Supports all JavaScript features including Math, arrays, objects, functions, and loops. IMPORTANT: Only provide the "code" parameter - do not include result, type, or executed_at properties.',
       parameters: {
         type: 'object',
         properties: {
@@ -148,79 +149,144 @@ async function callFunction(name, args = {}, context = {}) {
     case 'search_web': {
       const query = String(args.query || '').trim();
       if (!query) return JSON.stringify({ error: 'query required' });
-      const limit = clampInt(args.limit, 1, 8, 2); // Further reduced default from 3 to 2
-      const timeout = clampInt(args.timeout, 1, 60, 10); // Reduced timeout
-      const loadContent = args.load_content === true; // default false to prevent token overflow
+      const limit = clampInt(args.limit, 1, 50, 3);
+      const timeout = clampInt(args.timeout, 1, 60, 15);
+      const loadContent = args.load_content === true;
+      const generateSummary = args.generate_summary === true;
       const searcher = new DuckDuckGoSearcher();
       const out = await searcher.search(query, limit, loadContent, timeout);
-      // Include content fields if fetched; otherwise, omit heavy fields
-      // Apply aggressive content limiting to prevent rate limits
+      // Include all fields from raw search response, applying content extraction when loaded
       const results = (out?.results || []).map(r => {
-        if (loadContent) {
-          // Apply intelligent content extraction instead of simple truncation
-          if (r.content) {
-            return {
-              ...r,
-              content: extractKeyContent(r.content, query),
-              originalLength: r.content.length,
-              intelligentlyExtracted: true
-            };
-          }
-          return r;
+        // Always include all core fields: title, url, description, score, duckduckgoScore, state
+        const result = {
+          title: r.title,
+          url: r.url,
+          description: r.description,
+          score: r.score,
+          duckduckgoScore: r.duckduckgoScore,
+          state: r.state,
+          contentLength: r.contentLength || 0,
+          fetchTimeMs: r.fetchTimeMs || 0,
+          content: null // Always include content field, default to null
+        };
+        
+        if (loadContent && r.content) {
+          // Apply intelligent content extraction for loaded content
+          result.content = extractKeyContent(r.content, query);
+          result.originalLength = r.content.length;
+          result.intelligentlyExtracted = true;
+          if (r.truncated) result.truncated = r.truncated;
+          if (r.contentError) result.contentError = r.contentError;
+        } else if (loadContent) {
+          // Include content-related fields even if content wasn't loaded
+          result.content = r.content || null;
+          if (r.contentError) result.contentError = r.contentError;
         }
-        const { content, contentLength, fetchTimeMs, truncated, originalLength, contentError, ...lite } = r;
-        // Limit description field to prevent token overflow
-        if (lite.description && lite.description.length > 150) {
-          lite.description = lite.description.slice(0, 150) + '...';
-        }
-        return lite;
+        
+        return result;
       });
-      // Try to generate a comprehensive summary with enhanced citation and fact verification
+      // Generate summary only if requested and context is available
       let summary = null;
       let summary_model = null;
       let summary_error = null;
-      try {
-        // Use the passed model and apiKey from context for consistency
-        if (model && apiKey) {
-          summary_model = model;
-          // Enhance results with source credibility analysis
-          const enhancedResults = analyzeSourceCredibility(results);
-          const prompt = buildSummaryPrompt(query, enhancedResults, loadContent);
-          
-          const resp = await llmResponsesWithTools({
-            model,
-            input: [
-              { role: 'system', content: process.env.SYSTEM_PROMPT_DIGEST_ANALYST || 'You are a thorough research analyst that extracts comprehensive information from search results. Capture all important details, facts, and insights that are relevant to the user\'s question. Be thorough and don\'t miss key information that could be valuable for the final answer.' },
+      
+      if (generateSummary) {
+        try {
+          if (model && apiKey) {
+            summary_model = model;
+            const enhancedResults = analyzeSourceCredibility(results);
+            const prompt = buildSummaryPrompt(query, enhancedResults, loadContent);
+            
+            const { llmResponsesWithTools } = require('./llm_tools_adapter');
+            const summaryInput = [
+              { role: 'system', content: process.env.SYSTEM_PROMPT_DIGEST_ANALYST || 'You are a thorough research analyst. Provide concise, accurate summaries based on search results.' },
               { role: 'user', content: prompt }
-            ],
-            tools: [],
-            options: { apiKey, max_tokens: 60, temperature: 0.2 } // Emergency limit: 60 tokens max
-          });
-          summary = resp?.text || null;
+            ];
+            
+            const summaryRequestBody = {
+              model,
+              input: summaryInput,
+              tools: [],
+              options: {
+                apiKey,
+                temperature: 0.2,
+                max_tokens: 150,
+                timeoutMs: 30000
+              }
+            };
+            
+            // Emit LLM request event if context has writeEvent function
+            if (context?.writeEvent) {
+              context.writeEvent('llm_request', {
+                phase: 'tool_summary',
+                tool: 'search_web',
+                model,
+                request: summaryRequestBody,
+                timestamp: new Date().toISOString()
+              });
+            }
+            
+            const resp = await llmResponsesWithTools(summaryRequestBody);
+            
+            // Emit LLM response event if context has writeEvent function
+            if (context?.writeEvent) {
+              context.writeEvent('llm_response', {
+                phase: 'tool_summary',
+                tool: 'search_web',
+                model,
+                response: resp,
+                timestamp: new Date().toISOString()
+              });
+            }
+            
+            summary = resp?.text || resp?.finalText || null;
+          } else {
+            summary_error = "Summary generation requires model and apiKey in context";
+          }
+        } catch (e) {
+          console.error('🚨 LLM summary generation error:', e);
+          summary_error = String(e?.message || e);
         }
-      } catch (e) {
-        summary_error = String(e?.message || e);
       }
       
-      // Token validation: ensure response doesn't exceed safe limits
-      const response = { query, count: out?.returned || 0, results, load_content: !!loadContent, summary, summary_model, summary_error };
+      // Build complete response with all raw search fields
+      const response = {
+        query,
+        count: out?.returned || 0,
+        totalFound: out?.totalFound || 0,
+        limit: out?.limit || limit,
+        fetchContent: out?.fetchContent || loadContent,
+        timeout: out?.timeout || timeout,
+        processingTimeMs: out?.processingTimeMs || 0,
+        timestamp: out?.timestamp || new Date().toISOString(),
+        results,
+        metadata: out?.metadata || {},
+        // Summary fields (only included if summary generation was attempted)
+        ...(generateSummary && { 
+          generate_summary: generateSummary,
+          summary, 
+          summary_model, 
+          summary_error 
+        })
+      };
+      
       const responseStr = JSON.stringify(response);
       const estimatedTokens = estimateTokens(responseStr);
       
-      // Emergency token limiting - very aggressive
-      if (estimatedTokens > 800) { // Much more aggressive limit
-        const truncatedResults = results.slice(0, 1).map(r => ({
+      // Token limiting with more reasonable thresholds
+      if (estimatedTokens > 4000) {
+        const truncatedResults = results.slice(0, Math.ceil(results.length / 2)).map(r => ({
           ...r,
-          description: (r.description || '').substring(0, 80), // Extreme truncation
-          content: r.content ? r.content.substring(0, 100) : undefined
+          description: (r.description || '').substring(0, 200),
+          content: r.content ? r.content.substring(0, 500) : r.content
         }));
-        console.warn(`🚨 EMERGENCY: Response too large (${estimatedTokens} tokens), truncating to 1 result`);
+        console.warn(`⚠️ Response too large (${estimatedTokens} tokens), truncating results`);
         return JSON.stringify({ 
           ...response, 
           results: truncatedResults, 
-          count: 1,
-          summary: summary ? summary.substring(0, 100) : null, // Truncate summary too
-          emergency_truncated: true,
+          count: truncatedResults.length,
+          summary: summary ? (summary.length > 200 ? summary.substring(0, 200) + '...' : summary) : summary,
+          truncated: true,
           original_count: results.length,
           original_tokens: estimatedTokens
         });
