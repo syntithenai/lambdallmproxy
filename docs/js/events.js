@@ -1,6 +1,8 @@
 // events.js - Process different streaming event types
 
 async function processStreamingEvent(eventType, eventData, context) {
+    console.log('🎯 processStreamingEvent called:', eventType, eventData);
+    
     const {
         statusElement,
         stepsElement,
@@ -23,6 +25,13 @@ async function processStreamingEvent(eventType, eventData, context) {
         updateLiveSummary,
         updateFullResultsTree
     } = context;
+    
+    // Debug UI elements
+    console.log('🎯 UI Elements Check:', {
+        statusElement: !!statusElement,
+        responseElement: !!responseElement,
+        toolsPanel: !!toolsPanel
+    });
 
     switch (eventType) {
         case 'search_digest':
@@ -129,7 +138,16 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
 
         case 'log':
-            statusElement.textContent = eventData.message || 'Processing...';
+            console.log('🔍 Processing log event:', eventData.message);
+            console.log('🔍 statusElement:', statusElement);
+            console.log('🔍 statusElement exists:', !!statusElement);
+            
+            if (statusElement) {
+                statusElement.textContent = eventData.message || 'Processing...';
+                console.log('✅ Updated statusElement text to:', statusElement.textContent);
+            } else {
+                console.error('❌ statusElement not found!');
+            }
             
             // Add to real-time monitoring
             if (window.realtimeMonitoring) {
@@ -141,12 +159,23 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
             
         case 'init':
-            statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
+            console.log('🚀 Processing init event:', eventData.query);
+            console.log('🚀 statusElement:', statusElement);
+            
+            if (statusElement) {
+                statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
+                console.log('✅ Updated statusElement text to:', statusElement.textContent);
+            } else {
+                console.error('❌ statusElement not found in init!');
+            }
+            
             if (eventData.allowEnvFallback) {
                 const note = document.createElement('div');
                 note.style.cssText = 'margin-top:6px;color:#155724;font-size:0.9em;';
                 note.textContent = 'Note: Using server-managed API keys (authorized user).';
-                statusElement.parentElement.appendChild(note);
+                if (statusElement && statusElement.parentElement) {
+                    statusElement.parentElement.appendChild(note);
+                }
             }
             
             // Add to real-time monitoring
