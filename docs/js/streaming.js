@@ -384,32 +384,23 @@ async function handleStreamingResponse(response, responseContainer, controller) 
         const decoder = new TextDecoder();
         let buffer = '';
         
-        console.log('🌊 Starting streaming reader...');
-        
         while (true) {
             const { done, value } = await reader.read();
             
             if (done) {
-                console.log('📡 Stream completed');
                 statusElement.textContent = 'Stream completed';
                 break;
             }
             
             // Decode and process chunk
-            const chunk = decoder.decode(value, { stream: true });
-            console.log('📦 Received chunk:', chunk.length, 'bytes:', chunk.substring(0, 100) + '...');
-            buffer += chunk;
+            buffer += decoder.decode(value, { stream: true });
             
             // Process complete events (separated by double newlines)
             const events = buffer.split('\n\n');
             buffer = events.pop(); // Keep incomplete event in buffer
             
-            console.log('🔍 Found', events.length, 'complete events to process');
-            
             for (const event of events) {
                 if (!event.trim()) continue;
-                
-                console.log('📨 Processing event:', event.substring(0, 200) + '...');
                 
                 try {
                     // Parse Server-Sent Events format
@@ -428,15 +419,8 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                     if (!data) continue;
                     
                     const eventData = JSON.parse(data);
-                    console.log('✨ Parsed event:', eventType, 'with data:', eventData);
-                    
-                    // Only log cost_summary events for debugging
-                    if (eventType === 'cost_summary') {
-                        console.log('💰 Cost Summary:', eventData);
-                    }
                     
                     // Handle different event types
-                    console.log('🔧 Calling processStreamingEvent for:', eventType);
                     await processStreamingEvent(eventType, eventData, {
                         statusElement,
                         stepsElement,
@@ -461,13 +445,12 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                     });
                     
                 } catch (parseError) {
-                    console.error('Error parsing event:', parseError, event);
+                    // Silently skip malformed events
                 }
             }
         }
         
     } catch (streamError) {
-        console.error('Streaming error:', streamError);
         if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stopped'; }
         stopAllTimers('stopped');
         if (streamError.name === 'AbortError') {

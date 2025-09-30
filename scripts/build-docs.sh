@@ -59,14 +59,14 @@ fi
 
 # Determine which template system to use
 TEMPLATE_FILE=""
-if [ -f "ui/index_template_modular.html" ]; then
-    TEMPLATE_FILE="ui/index_template_modular.html"
-    log_step "Using modular template system"
-elif [ -f "ui/index_template.html" ]; then
+if [ -f "ui/index_template.html" ]; then
     TEMPLATE_FILE="ui/index_template.html"
-    log_step "Using monolithic template system"
+    log_step "Using main template system (with modular architecture)"
+elif [ -f "ui/index_template_modular.html" ]; then
+    TEMPLATE_FILE="ui/index_template_modular.html"
+    log_step "Using legacy modular template system"
 else
-    log_error "No template file found! Expected ui/index_template_modular.html or ui/index_template.html"
+    log_error "No template file found! Expected ui/index_template.html or ui/index_template_modular.html"
     exit 1
 fi
 
@@ -75,15 +75,15 @@ log_step "Creating docs directory structure..."
 mkdir -p docs
 mkdir -p docs/js
 
-# If using modular template, copy JavaScript modules
-if [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ]; then
-    log_step "Copying JavaScript modules..."
+# Check for modular JavaScript architecture
+if [ "$TEMPLATE_FILE" = "ui/index_template.html" ] || [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ]; then
+    log_step "Verifying JavaScript modules..."
     
-    # Copy modular JavaScript files if they exist in docs/js/
-    if [ -d "docs/js" ] && [ -f "docs/js/main.js" ]; then
-        log_info "JavaScript modules already exist in docs/js/"
+    # Check if modular JavaScript files exist in docs/js/
+    if [ -d "docs/js" ] && [ -f "docs/js/main.js" ] && [ -f "docs/js/state-manager.js" ]; then
+        log_info "JavaScript modules confirmed in docs/js/"
     else
-        log_warn "JavaScript modules not found in docs/js/ - they should have been created during integration"
+        log_warn "Some JavaScript modules not found in docs/js/ - they should have been created during integration"
         log_warn "Building will continue but the site may not function properly"
     fi
     
@@ -166,7 +166,7 @@ fi
 
 log_info "Documentation built successfully!"
 log_info "📁 Output: docs/index.html"
-if [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ]; then
+if [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ] || [ "$TEMPLATE_FILE" = "ui/index_template.html" ]; then
     log_info "📁 JavaScript modules: docs/js/*.js"
 fi
 log_warn "⚠️  The docs/index.html file contains your Lambda URL, access secret, and Google Client ID"
@@ -176,7 +176,7 @@ log_warn "⚠️  OpenAI API key is kept as placeholder for manual entry"
 if [ -f "docs/index.html" ]; then
     log_info "Build completed successfully!"
     
-    if [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ]; then
+    if [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ] || [ "$TEMPLATE_FILE" = "ui/index_template.html" ]; then
         log_info "✨ Using modular structure - this should resolve JavaScript parsing issues"
     fi
     
@@ -184,12 +184,12 @@ if [ -f "docs/index.html" ]; then
     
     # Provide usage instructions
     echo -e "\n${BLUE}📖 Usage Instructions:${NC}"
-    if [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ]; then
+    if [ "$TEMPLATE_FILE" = "ui/index_template_modular.html" ] || [ "$TEMPLATE_FILE" = "ui/index_template.html" ]; then
         echo -e "   • Modular architecture with separate JavaScript files"
         echo -e "   • CSS compiled from ui/styles.css"
         echo -e "   • Start local server: ${YELLOW}python3 -m http.server 8000${NC} (from docs/ directory)"
     else
-        echo -e "   • Monolithic template with inline JavaScript and CSS"
+        echo -e "   • Legacy template with inline JavaScript and CSS"
         echo -e "   • Start local server: ${YELLOW}python3 -m http.server 8000${NC} (from docs/ directory)"
     fi
     echo -e "   • Access at: ${YELLOW}http://localhost:8000${NC}"

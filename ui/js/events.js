@@ -1,6 +1,7 @@
 // events.js - Process different streaming event types
 
 async function processStreamingEvent(eventType, eventData, context) {
+    
     const {
         statusElement,
         stepsElement,
@@ -129,7 +130,9 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
 
         case 'log':
-            statusElement.textContent = eventData.message || 'Processing...';
+            if (statusElement) {
+                statusElement.textContent = eventData.message || 'Processing...';
+            }
             
             // Add to real-time monitoring
             if (window.realtimeMonitoring) {
@@ -141,12 +144,23 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
             
         case 'init':
-            statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
+            // Ensure response container is visible
+            const responseContainer = document.getElementById('response-container');
+            if (responseContainer) {
+                responseContainer.style.display = 'block';
+            }
+            
+            if (statusElement) {
+                statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
+            }
+            
             if (eventData.allowEnvFallback) {
                 const note = document.createElement('div');
                 note.style.cssText = 'margin-top:6px;color:#155724;font-size:0.9em;';
                 note.textContent = 'Note: Using server-managed API keys (authorized user).';
-                statusElement.parentElement.appendChild(note);
+                if (statusElement && statusElement.parentElement) {
+                    statusElement.parentElement.appendChild(note);
+                }
             }
             
             // Add to real-time monitoring
@@ -306,11 +320,33 @@ async function processStreamingEvent(eventType, eventData, context) {
             `;
             break;
             
+        case 'llm_response':
+            console.log('🤖 Complete raw LLM response:', eventData);
+            
+            // If this is a final response, handle it specially
+            if (eventData.type === 'final_response') {
+                await processStreamingEvent('final_response', eventData, context);
+                return;
+            }
+            
+            // Regular LLM responses can be logged or processed here
+            if (window.realtimeMonitoring) {
+                window.realtimeMonitoring.addLLMEvent('query_end', {
+                    model: eventData.model || 'Unknown',
+                    response: eventData.text || eventData.content || 'No response',
+                    tokens: eventData.tokens || 0
+                });
+            }
+            break;
+
         case 'final_response':
             statusElement.textContent = '✅ Search completed! Displaying final response...';
             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
             stopAllTimers('done');
-            answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response}</div>`;
+            
+            if (answerElement) {
+                answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response || eventData.content || 'No response content'}</div>`;
+            }
             
             // Update the "Final Response" header to include cost if available
             const responseHeaderElement = responseElement.querySelector('h3');

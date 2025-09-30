@@ -1,7 +1,6 @@
 // events.js - Process different streaming event types
 
 async function processStreamingEvent(eventType, eventData, context) {
-    console.log('🎯 processStreamingEvent called:', eventType, eventData);
     
     const {
         statusElement,
@@ -25,13 +24,6 @@ async function processStreamingEvent(eventType, eventData, context) {
         updateLiveSummary,
         updateFullResultsTree
     } = context;
-    
-    // Debug UI elements
-    console.log('🎯 UI Elements Check:', {
-        statusElement: !!statusElement,
-        responseElement: !!responseElement,
-        toolsPanel: !!toolsPanel
-    });
 
     switch (eventType) {
         case 'search_digest':
@@ -138,15 +130,8 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
 
         case 'log':
-            console.log('🔍 Processing log event:', eventData.message);
-            console.log('🔍 statusElement:', statusElement);
-            console.log('🔍 statusElement exists:', !!statusElement);
-            
             if (statusElement) {
                 statusElement.textContent = eventData.message || 'Processing...';
-                console.log('✅ Updated statusElement text to:', statusElement.textContent);
-            } else {
-                console.error('❌ statusElement not found!');
             }
             
             // Add to real-time monitoring
@@ -159,23 +144,14 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
             
         case 'init':
-            console.log('🚀 Processing init event:', eventData.query);
-            console.log('🚀 statusElement:', statusElement);
-            
             // Ensure response container is visible
             const responseContainer = document.getElementById('response-container');
             if (responseContainer) {
                 responseContainer.style.display = 'block';
-                console.log('✅ Made response container visible');
-            } else {
-                console.error('❌ Response container not found!');
             }
             
             if (statusElement) {
                 statusElement.textContent = `🔍 Starting search for: "${eventData.query}"`;
-                console.log('✅ Updated statusElement text to:', statusElement.textContent);
-            } else {
-                console.error('❌ statusElement not found in init!');
             }
             
             if (eventData.allowEnvFallback) {
@@ -345,11 +321,10 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
             
         case 'llm_response':
-            console.log('🤖 Processing llm_response:', eventData);
+            console.log('🤖 Complete raw LLM response:', eventData);
             
             // If this is a final response, handle it specially
             if (eventData.type === 'final_response') {
-                console.log('📝 Routing to final_response handler');
                 await processStreamingEvent('final_response', eventData, context);
                 return;
             }
@@ -365,18 +340,12 @@ async function processStreamingEvent(eventType, eventData, context) {
             break;
 
         case 'final_response':
-            console.log('📝 Processing final_response:', eventData);
-            console.log('📝 answerElement:', answerElement);
-            
             statusElement.textContent = '✅ Search completed! Displaying final response...';
             if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Done'; }
             stopAllTimers('done');
             
             if (answerElement) {
                 answerElement.innerHTML = `<div style="white-space: pre-wrap; line-height: 1.7;">${eventData.response || eventData.content || 'No response content'}</div>`;
-                console.log('✅ Updated answerElement with response');
-            } else {
-                console.error('❌ answerElement not found!');
             }
             
             // Update the "Final Response" header to include cost if available

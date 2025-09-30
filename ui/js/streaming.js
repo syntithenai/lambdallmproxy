@@ -419,10 +419,6 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                     if (!data) continue;
                     
                     const eventData = JSON.parse(data);
-                    // Only log cost_summary events for debugging
-                    if (eventType === 'cost_summary') {
-                        console.log('💰 Cost Summary:', eventData);
-                    }
                     
                     // Handle different event types
                     await processStreamingEvent(eventType, eventData, {
@@ -449,13 +445,12 @@ async function handleStreamingResponse(response, responseContainer, controller) 
                     });
                     
                 } catch (parseError) {
-                    console.error('Error parsing event:', parseError, event);
+                    // Silently skip malformed events
                 }
             }
         }
         
     } catch (streamError) {
-        console.error('Streaming error:', streamError);
         if (formStopBtn) { formStopBtn.disabled = true; formStopBtn.textContent = 'Stopped'; }
         stopAllTimers('stopped');
         if (streamError.name === 'AbortError') {

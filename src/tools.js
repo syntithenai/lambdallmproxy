@@ -119,15 +119,21 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'execute_javascript',
-      description: 'Execute JavaScript code in a secure sandbox environment. EXCELLENT for creating interactive examples, code demonstrations, mathematical calculations, algorithm implementations, data analysis, and educational visualizations. Use this to demonstrate concepts with working code examples, calculate learning timelines, create sample algorithms, or process data. Perfect for answering "how to" questions with actual runnable code. Supports all JavaScript features including Math, arrays, objects, functions, and loops. IMPORTANT: Only provide the "code" parameter - do not include result, type, or executed_at properties.',
+      description: 'Execute JavaScript code in a secure sandbox environment. Use for calculations, demonstrations, and data processing. Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically by the tool execution.',
       parameters: {
         type: 'object',
         properties: {
           code: { 
             type: 'string', 
-            description: 'JavaScript code to execute. Should include a final expression or console.log to show the result. Example: "Math.sqrt(144)" or "const result = 5 * 7; console.log(result);". ONLY provide the code to execute - the tool will automatically return the result.'
+            description: 'JavaScript code to execute. Include console.log() statements to display results. Example: "const area = Math.PI * 5 * 5; console.log(`Area: ${area}`);". DO NOT include any result or execution metadata - only provide the code string.'
           },
-          timeout: { type: 'integer', minimum: 1, maximum: 10, default: 5, description: 'Execution timeout in seconds' }
+          timeout: { 
+            type: 'integer', 
+            minimum: 1, 
+            maximum: 10, 
+            default: 5, 
+            description: 'Maximum execution time in seconds' 
+          }
         },
         required: ['code'],
         additionalProperties: false
@@ -351,17 +357,13 @@ async function callFunction(name, args = {}, context = {}) {
         // Return console output if available, otherwise the result
         const output = context._output !== null ? context._output : result;
         
+        // Return clean result without metadata that might confuse LLM
         return JSON.stringify({ 
-          code, 
-          result: output, 
-          type: typeof result,
-          executed_at: new Date().toISOString()
+          result: output
         });
       } catch (e) {
         return JSON.stringify({ 
-          code, 
-          error: String(e?.message || e),
-          type: 'error'
+          error: String(e?.message || e)
         });
       }
     }

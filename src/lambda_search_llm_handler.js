@@ -234,8 +234,8 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             timestamp: new Date().toISOString()
         });
 
-        // Track cost for planning step
-        costTracker.addStep('Planning', planningPrompt, planningResponse?.text || '', 'Query analysis and research strategy');
+        // Track cost for planning step (cost is already tracked in llmResponsesWithTools)
+        console.log('🔍 Planning step completed - cost tracking handled by LLM response function');
         
         if (planningResponse?.text) {
             try {
@@ -701,8 +701,14 @@ Answer with URLs:`;
         
         const result = finalResponse?.text || 'I was unable to provide a comprehensive answer based on the research conducted.';
         
-        // Get cost summary
-        const costSummary = costTracker.getSummary();
+        // Create cost summary from tracked values
+        const costSummary = {
+            totalCost: totalCost,
+            totalTokens: totalTokens,
+            totalInputTokens: allLLMCalls.reduce((sum, call) => sum + (call.request?.usage?.prompt_tokens || 0), 0),
+            totalOutputTokens: allLLMCalls.reduce((sum, call) => sum + (call.request?.usage?.completion_tokens || 0), 0),
+            details: allLLMCalls
+        };
         console.log(`💰 Total Query Cost: $${costSummary.totalCost.toFixed(4)} (${costSummary.totalTokens} tokens)`);
         
         // Send cost information to the UI in the format expected by the UI
@@ -741,7 +747,29 @@ Answer with URLs:`;
         return { 
             finalText: result,
             researchPlan: researchPlan,
-            searchResults: collectedSearchResults
+            searchResults: collectedSearchResults,
+            // Enhanced tracking data for comprehensive UI display
+            toolCallCycles: allToolCallCycles || [],
+            llmCalls: allLLMCalls || [],
+            costSummary: {
+                totalCost: totalCost || 0,
+                totalTokens: totalTokens || 0,
+                modelName: costSummary.modelName,
+                provider: costSummary.provider,
+                steps: (allLLMCalls || []).map(step => ({
+                    cost: step.cost || 0,
+                    inputTokens: step.inputTokens,
+                    outputTokens: step.outputTokens,
+                    description: step.description || '',
+                    timestamp: step.timestamp
+                }))
+            },
+            metadata: {
+                currentIteration: currentIteration,
+                totalIterations: allToolCallCycles.length,
+                totalToolCalls: allToolCallCycles.reduce((sum, cycle) => sum + (Array.isArray(cycle) ? cycle.length : 0), 0),
+                totalLLMCalls: allLLMCalls.length
+            }
         };
     } catch (e) {
         console.error('Final synthesis failed:', e?.message || e);
@@ -1879,9 +1907,23 @@ async function handleNonStreamingRequest(event, context, startTime) {
             finalResult = {
                 query,
                 searches: [],
-                searchResults: [],
+                searchResults: toolsRun.searchResults || [],
                 response: toolsRun.finalText || 'Unable to process request - please check your query and try again.',
-                metadata: { finalModel: model, mode: 'tools' }
+                metadata: { 
+                    finalModel: model, 
+                    mode: 'tools',
+                    ...toolsRun.metadata
+                },
+                // Enhanced tracking data for comprehensive UI display
+                toolCallCycles: toolsRun.toolCallCycles || [],
+                llmCalls: toolsRun.llmCalls || [],
+                costSummary: toolsRun.costSummary || {
+                    totalCost: 0,
+                    totalTokens: 0,
+                    modelName: model,
+                    steps: []
+                },
+                researchPlan: toolsRun.researchPlan || null
             };
         } catch (e) {
             console.error('Tools flow failed:', e?.message || e);
