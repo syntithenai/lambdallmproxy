@@ -247,17 +247,21 @@ async function handleJsonResponse(data, responseContainer) {
     console.log('📦 Received JSON response:', data);
     
     try {
-    // Clear loading state
-    uiManager.updateResponseContainer();
-    responseContainer.innerHTML = '';
-    console.log('🧹 Cleared response container');
-    console.log('🎯 Response container element:', responseContainer);
-    console.log('📏 Response container dimensions:', {
-        width: responseContainer.offsetWidth,
-        height: responseContainer.offsetHeight,
-        display: getComputedStyle(responseContainer).display,
-        visibility: getComputedStyle(responseContainer).visibility
-    });    // Create main container with proper styling like streaming interface
+        // Clear loading state and ensure container is visible
+        uiManager.updateResponseContainer();
+        responseContainer.innerHTML = '';
+        
+        // Fix: Ensure response container is visible
+        responseContainer.style.display = 'block';
+        console.log('🧹 Cleared response container');
+        console.log('👁️ Made response container visible');
+        console.log('🎯 Response container element:', responseContainer);
+        console.log('📏 Response container dimensions:', {
+            width: responseContainer.offsetWidth,
+            height: responseContainer.offsetHeight,
+            display: getComputedStyle(responseContainer).display,
+            visibility: getComputedStyle(responseContainer).visibility
+        });    // Create main container with proper styling like streaming interface
     const mainContainer = document.createElement('div');
     mainContainer.innerHTML = `
         <div id="streaming-response" style="margin-bottom: 16px;">
