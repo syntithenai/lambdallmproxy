@@ -58,8 +58,6 @@ This is a serverless AWS Lambda function that acts as an LLM proxy. It features 
 
 ### 2.3. Important Implementation Details
 
-- **Rate Limit Handling**: The system parses wait times from API error messages and emits a `quota_exceeded` event containing the full `continuationState`.
-- **Continuation System**: To resume operations, the system collects search results and tool progress. On continuation, it re-emits previous results and uses a research summary to guide the LLM.
 - **Memory Management**: A `TokenAwareMemoryTracker` is used to monitor and control token usage. Content is aggressively truncated to prevent memory overflow.
 - **Security**: All tool parameters are validated against schemas. HTML from web scraping is sanitized. Google OAuth tokens are verified for all authenticated requests.
 
@@ -90,4 +88,3 @@ This is a serverless AWS Lambda function that acts as an LLM proxy. It features 
     - **Memory Safety**: No memory leaks or overflow conditions.
 
 ---
-*This document was compiled from `COPILOT_INSTRUCTIONS.md` and `instructions.md`.*

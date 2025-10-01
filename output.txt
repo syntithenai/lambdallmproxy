@@ -1,16 +1,23 @@
-[0;34m🚀 Deploying Lambda function llmproxy...[0m
-[1;33m📝 Loading configuration from .env file...[0m
-[1;33m📦 Files to be packaged:[0m
--rw-rw-r-- 1 stever stever  2652 Sep 30 21:52 auth.js
--rw-rw-r-- 1 stever stever  3161 Sep 30 21:52 html-parser.js
--rw-rw-r-- 1 stever stever   306 Sep 30 21:52 index.js
--rw-rw-r-- 1 stever stever 88834 Sep 30 21:52 lambda_search_llm_handler.js
--rw-rw-r-- 1 stever stever  6387 Sep 30 21:52 llm_tools_adapter.js
--rw-rw-r-- 1 stever stever  9780 Sep 30 21:52 memory-tracker.js
--rw-rw-r-- 1 stever stever 10787 Sep 30 21:52 pricing.js
--rw-rw-r-- 1 stever stever 12584 Sep 30 21:52 pricing_scraper.js
--rw-rw-r-- 1 stever stever  1384 Sep 30 21:52 providers.js
--rw-rw-r-- 1 stever stever 64023 Sep 30 21:52 search.js
--rw-rw-r-- 1 stever stever 17579 Sep 30 21:52 tools.js
-[0;32m✅ Function deployed successfully[0m
-[0;34m📁 Loading environment variables from .env...[0m
+[0;32m✅ Loading environment variables from .env...[0m
+[0;34m🔧 Using main template system (with modular architecture)[0m
+[0;34m🔧 Creating docs directory structure...[0m
+[0;34m🔧 Verifying JavaScript modules...[0m
+[0;32m✅ JavaScript modules confirmed in docs/js/[0m
+[0;34m🔧 Loading CSS from ui/styles.css...[0m
+[0;32m✅ CSS loaded (1137 lines)[0m
+[0;34m🔧 Processing modular template with CSS compilation...[0m
+[0;32m✅ Modular template processed with CSS compilation[0m
+[0;32m✅ Documentation built successfully![0m
+[0;32m✅ 📁 Output: docs/index.html[0m
+[0;32m✅ 📁 JavaScript modules: docs/js/*.js[0m
+[1;33m⚠️  ⚠️  The docs/index.html file contains your Lambda URL, access secret, and Google Client ID[0m
+[1;33m⚠️  ⚠️  OpenAI API key is kept as placeholder for manual entry[0m
+[0;32m✅ Build completed successfully![0m
+[0;32m✅ ✨ Using modular structure - this should resolve JavaScript parsing issues[0m
+[0;32m✅ You can now serve the docs folder locally or deploy it securely[0m
+
+[0;34m📖 Usage Instructions:[0m
+   • Modular architecture with separate JavaScript files
+   • CSS compiled from ui/styles.css
+   • Start local server: [1;33mpython3 -m http.server 8000[0m (from docs/ directory)
+   • Access at: [1;33mhttp://localhost:8000[0m
