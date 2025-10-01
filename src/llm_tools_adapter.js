@@ -149,7 +149,14 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       if (block.type === 'function_call_output') {
         return { role: 'tool', content: block.output, tool_call_id: block.call_id };
       }
-      if (block.role) return { role: block.role, content: block.content };
+      if (block.role) {
+        const message = { role: block.role, content: block.content };
+        // Preserve tool_calls for assistant messages (required for proper conversation flow)
+        if (block.tool_calls) {
+          message.tool_calls = block.tool_calls;
+        }
+        return message;
+      }
       return null;
     }).filter(Boolean);
 

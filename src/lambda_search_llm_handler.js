@@ -70,7 +70,6 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
     
     {
         // Step 1: Initial planning query to determine research strategy and optimal persona
-        stream?.writeEvent?.('log', { message: 'Analyzing query to determine optimal research strategy...' });
         console.log(`🔧 Executing planning phase to optimize research approach...`);
         
         // Initialize researchPlan at function level to ensure availability throughout function
@@ -160,16 +159,13 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                     researchPlan = parsed;
                     
                     // Send dedicated persona event for UI display
-                    stream?.writeEvent?.('persona', {
+                    stream?.writeEvent?.('planning', {
                         persona: researchPlan.optimal_persona,
                         research_questions_needed: researchPlan.research_questions?.length || 1,
-                        reasoning: researchPlan.reasoning
-                    });
-                    
-                    // Send research questions event for UI display
-                    stream?.writeEvent?.('research_questions', {
+                        reasoning: researchPlan.reasoning,
                         questions: researchPlan.research_questions
                     });
+                    
                 }
             } catch (e) {
                 console.warn('Failed to parse planning response, using defaults:', e.message);
@@ -239,18 +235,33 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             timestamp: new Date().toISOString()
         });
         
-        const { output, text } = await llmResponsesWithTools(toolIterationRequestBody);
-        
-        // Emit LLM response event
-        stream?.writeEvent?.('llm_response', {
-            phase: 'tool_iteration',
-            iteration: iter + 1,
-            model,
-            response: { output, text },
-            timestamp: new Date().toISOString()
-        });
-        console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
-        console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
+        let output, text;
+        try {
+            const response = await llmResponsesWithTools(toolIterationRequestBody);
+            output = response.output;
+            text = response.text;
+            
+            // Emit LLM response event
+            stream?.writeEvent?.('llm_response', {
+                phase: 'tool_iteration',
+                iteration: iter + 1,
+                model,
+                response: { output, text },
+                timestamp: new Date().toISOString()
+            });
+            
+            console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
+            console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
+        } catch (e) {
+            console.error(`LLM call failed in tool iteration ${iter + 1}:`, e?.message || e);
+            stream?.writeEvent?.('error', {
+                error: `LLM call failed: ${e?.message || String(e)}`,
+                phase: 'tool_iteration',
+                iteration: iter + 1
+            });
+            // Break the loop - cannot continue without LLM response
+            break;
+        }
 
         if (!output || output.length === 0) {
             // No more tool calls needed - proceed to final synthesis
@@ -262,33 +273,35 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         // Found ${calls.length} function calls
         console.log(`🔧 Raw output items:`, JSON.stringify(output, null, 2));
         
+        // Prepare tool calls array for conversation history and events
+        const toolCalls = calls.map(call => ({
+            id: call.call_id || call.id,
+            type: 'function',
+            function: {
+                name: call.name,
+                arguments: call.arguments || '{}'
+            }
+        }));
+        
         if (calls.length > 0) {
             console.log(`🔧 EMITTING TOOLS EVENT - Iteration ${iter + 1}, ${calls.length} calls`);
            
             // Add assistant message with tool calls to conversation history
             // This is required for OpenAI API - tool messages must be preceded by assistant message with tool_calls
-            const toolCalls = calls.map(call => ({
-                id: call.call_id || call.id,
-                type: 'function',
-                function: {
-                    name: call.name,
-                    arguments: call.arguments || '{}'
-                }
-            }));
-            
             input.push({
                 role: 'assistant',
                 content: text || null,
                 tool_calls: toolCalls
             });
+            
+            // Emit tool call info for UI
+            stream?.writeEvent?.('tools', { 
+                iteration: iter + 1, 
+                count: calls.length, 
+                names: calls.map(c => c.name),
+                tool_calls: toolCalls
+            });
         }
-        
-        // Emit tool call info for UI
-        stream?.writeEvent?.('tools', { 
-            iteration: iter + 1, 
-            count: calls.length, 
-            names: calls.map(c => c.name) 
-        });
 
         const results = await Promise.allSettled(
             calls.map(async (tc, idx) => {
@@ -421,9 +434,7 @@ Answer with URLs:`;
             
             // Log the dynamic token allocation
             console.log(`🔧 Dynamic token allocation: complexity=${complexityAssessment}, tokens=${maxTokens}`);
-            stream?.writeEvent?.('log', { 
-                message: `Using ${maxTokens} tokens for ${complexityAssessment} complexity analysis` 
-            });
+            
             
             // Enhance system prompt for high complexity queries
             if (complexityAssessment === 'high') {

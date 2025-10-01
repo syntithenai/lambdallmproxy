@@ -2,6 +2,9 @@
 
 async function processStreamingEvent(eventType, eventData, context) {
     
+    // Log all event types to console for debugging
+    console.log(`[SSE Event] ${eventType}:`, eventData);
+    
     const {
         statusElement,
         stepsElement,
