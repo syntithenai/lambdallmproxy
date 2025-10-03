@@ -21,6 +21,9 @@ TOOL USAGE GUIDELINES:
 - Use execute_javascript for mathematical calculations, data analysis, or computational problems  
 - Use scrape_web_content when you need to extract detailed information from specific websites
 - Always use tools when they can provide more accurate or current information than your training data
+- The API handles tool calling automatically - you do NOT need to format tool calls yourself
+- Simply indicate which tools you want to use and the API will execute them properly
+- NEVER use XML-style tags like <function=tool_name> or any custom formatting for tool calls
 
 CRITICAL TOOL PARAMETER RULES:
 - For execute_javascript: ONLY provide the "code" parameter. NEVER include result, type, executed_at or any other properties.

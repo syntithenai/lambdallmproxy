@@ -1,17 +1,17 @@
 [0;34m🚀 Deploying Lambda function llmproxy...[0m
 [1;33m📝 Loading configuration from .env file...[0m
 [1;33m📦 Files to be packaged:[0m
--rw-rw-r-- 1 stever stever  2652 Oct  1 14:46 auth.js
--rw-rw-r-- 1 stever stever  3161 Oct  1 14:46 html-parser.js
--rw-rw-r-- 1 stever stever   306 Oct  1 14:46 index.js
--rw-rw-r-- 1 stever stever 31667 Oct  1 14:46 lambda_search_llm_handler.js
--rw-rw-r-- 1 stever stever  6623 Oct  1 14:46 llm_tools_adapter.js
--rw-rw-r-- 1 stever stever  9780 Oct  1 14:46 memory-tracker.js
--rw-rw-r-- 1 stever stever 10787 Oct  1 14:46 pricing.js
--rw-rw-r-- 1 stever stever 12584 Oct  1 14:46 pricing_scraper.js
--rw-rw-r-- 1 stever stever  1384 Oct  1 14:46 providers.js
--rw-rw-r-- 1 stever stever 64023 Oct  1 14:46 search.js
--rw-rw-r-- 1 stever stever 17579 Oct  1 14:46 tools.js
+-rw-rw-r-- 1 stever stever  2652 Oct  1 19:45 auth.js
+-rw-rw-r-- 1 stever stever  3161 Oct  1 19:45 html-parser.js
+-rw-rw-r-- 1 stever stever   306 Oct  1 19:45 index.js
+-rw-rw-r-- 1 stever stever 36814 Oct  1 19:45 lambda_search_llm_handler.js
+-rw-rw-r-- 1 stever stever  6623 Oct  1 19:45 llm_tools_adapter.js
+-rw-rw-r-- 1 stever stever  9780 Oct  1 19:45 memory-tracker.js
+-rw-rw-r-- 1 stever stever 10787 Oct  1 19:45 pricing.js
+-rw-rw-r-- 1 stever stever 12584 Oct  1 19:45 pricing_scraper.js
+-rw-rw-r-- 1 stever stever  1384 Oct  1 19:45 providers.js
+-rw-rw-r-- 1 stever stever 64023 Oct  1 19:45 search.js
+-rw-rw-r-- 1 stever stever 24396 Oct  1 19:45 tools.js
 [0;32m✅ Function deployed successfully[0m
 [0;34m📁 Loading environment variables from .env...[0m
 [0;32m✅ Environment variables configured from .env (including ALLOWED_EMAILS)[0m

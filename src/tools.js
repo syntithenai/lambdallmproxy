@@ -195,57 +195,217 @@ async function callFunction(name, args = {}, context = {}) {
       let summary = null;
       let summary_model = null;
       let summary_error = null;
+      let individual_summaries = null;
       
       if (generateSummary) {
         try {
           if (model && apiKey) {
             summary_model = model;
-            const enhancedResults = analyzeSourceCredibility(results);
-            const prompt = buildSummaryPrompt(query, enhancedResults, loadContent);
-            
             const { llmResponsesWithTools } = require('./llm_tools_adapter');
-            const summaryInput = [
-              { role: 'system', content: process.env.SYSTEM_PROMPT_DIGEST_ANALYST || 'You are a thorough research analyst. Provide concise, accurate summaries based on search results.' },
-              { role: 'user', content: prompt }
-            ];
             
-            const summaryRequestBody = {
-              model,
-              input: summaryInput,
-              tools: [],
-              options: {
-                apiKey,
-                temperature: 0.2,
-                max_tokens: 150,
-                timeoutMs: 30000
+            if (loadContent) {
+              // STRATEGY 1: Content loaded - summarize each page individually, then synthesize
+              console.log(`📄 Generating individual summaries for ${results.length} loaded pages...`);
+              
+              const pageSummaries = [];
+              
+              // Step 1: Generate one summary per loaded page
+              for (let i = 0; i < results.length; i++) {
+                const result = results[i];
+                
+                if (!result.content) {
+                  // Skip pages without content
+                  pageSummaries.push({
+                    url: result.url,
+                    title: result.title,
+                    summary: `No content loaded. Description: ${result.description || 'N/A'}`,
+                    error: result.contentError || null
+                  });
+                  continue;
+                }
+                
+                try {
+                  const pagePrompt = `Summarize the key information from this webpage that is relevant to the query: "${query}"
+
+Page: ${result.title}
+URL: ${result.url}
+Content:
+${result.content.substring(0, 2000)}
+
+Provide a concise 2-3 sentence summary focusing on information relevant to the query.`;
+
+                  const pageSummaryInput = [
+                    { role: 'system', content: 'You are a research analyst. Extract and summarize key information from web content.' },
+                    { role: 'user', content: pagePrompt }
+                  ];
+                  
+                  const pageSummaryRequestBody = {
+                    model,
+                    input: pageSummaryInput,
+                    tools: [],
+                    options: {
+                      apiKey,
+                      temperature: 0.2,
+                      max_tokens: 200,
+                      timeoutMs: 20000
+                    }
+                  };
+                  
+                  // Emit LLM request event
+                  if (context?.writeEvent) {
+                    context.writeEvent('llm_request', {
+                      phase: 'page_summary',
+                      tool: 'search_web',
+                      page_index: i,
+                      url: result.url,
+                      model,
+                      timestamp: new Date().toISOString()
+                    });
+                  }
+                  
+                  const pageResp = await llmResponsesWithTools(pageSummaryRequestBody);
+                  const pageSummaryText = pageResp?.text || pageResp?.finalText || 'Unable to generate summary';
+                  
+                  // Emit LLM response event
+                  if (context?.writeEvent) {
+                    context.writeEvent('llm_response', {
+                      phase: 'page_summary',
+                      tool: 'search_web',
+                      page_index: i,
+                      url: result.url,
+                      model,
+                      summary: pageSummaryText,
+                      timestamp: new Date().toISOString()
+                    });
+                  }
+                  
+                  pageSummaries.push({
+                    url: result.url,
+                    title: result.title,
+                    summary: pageSummaryText
+                  });
+                  
+                  console.log(`✅ Generated summary for page ${i + 1}/${results.length}: ${result.url}`);
+                  
+                } catch (pageError) {
+                  console.error(`❌ Failed to summarize page ${result.url}:`, pageError.message);
+                  pageSummaries.push({
+                    url: result.url,
+                    title: result.title,
+                    summary: `Error generating summary: ${pageError.message}`,
+                    error: pageError.message
+                  });
+                }
               }
-            };
-            
-            // Emit LLM request event if context has writeEvent function
-            if (context?.writeEvent) {
-              context.writeEvent('llm_request', {
-                phase: 'tool_summary',
-                tool: 'search_web',
+              
+              individual_summaries = pageSummaries;
+              
+              // Step 2: Synthesize all individual summaries into one comprehensive summary
+              console.log(`🔄 Synthesizing ${pageSummaries.length} individual summaries...`);
+              
+              const synthesisPrompt = `Based on the following page summaries, provide a comprehensive answer to the query: "${query}"
+
+Page Summaries:
+${pageSummaries.map((ps, i) => `${i + 1}. ${ps.title} (${ps.url})
+   ${ps.summary}`).join('\n\n')}
+
+Provide a comprehensive 3-5 sentence synthesis that integrates information from all sources. Cite URLs when mentioning specific facts.`;
+
+              const synthesisInput = [
+                { role: 'system', content: 'You are a research analyst. Synthesize information from multiple sources into a comprehensive answer.' },
+                { role: 'user', content: synthesisPrompt }
+              ];
+              
+              const synthesisRequestBody = {
                 model,
-                request: summaryRequestBody,
-                timestamp: new Date().toISOString()
-              });
-            }
-            
-            const resp = await llmResponsesWithTools(summaryRequestBody);
-            
-            // Emit LLM response event if context has writeEvent function
-            if (context?.writeEvent) {
-              context.writeEvent('llm_response', {
-                phase: 'tool_summary',
-                tool: 'search_web',
+                input: synthesisInput,
+                tools: [],
+                options: {
+                  apiKey,
+                  temperature: 0.2,
+                  max_tokens: 300,
+                  timeoutMs: 30000
+                }
+              };
+              
+              // Emit LLM request event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_request', {
+                  phase: 'synthesis_summary',
+                  tool: 'search_web',
+                  model,
+                  page_count: pageSummaries.length,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              const synthesisResp = await llmResponsesWithTools(synthesisRequestBody);
+              
+              // Emit LLM response event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_response', {
+                  phase: 'synthesis_summary',
+                  tool: 'search_web',
+                  model,
+                  response: synthesisResp,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              summary = synthesisResp?.text || synthesisResp?.finalText || null;
+              console.log(`✅ Generated comprehensive synthesis from ${pageSummaries.length} pages`);
+              
+            } else {
+              // STRATEGY 2: Content not loaded - summarize URLs and descriptions only
+              console.log(`🔍 Generating summary from ${results.length} search result descriptions...`);
+              
+              const enhancedResults = analyzeSourceCredibility(results);
+              const prompt = buildSummaryPrompt(query, enhancedResults, loadContent);
+              
+              const summaryInput = [
+                { role: 'system', content: process.env.SYSTEM_PROMPT_DIGEST_ANALYST || 'You are a thorough research analyst. Provide concise, accurate summaries based on search results.' },
+                { role: 'user', content: prompt }
+              ];
+              
+              const summaryRequestBody = {
                 model,
-                response: resp,
-                timestamp: new Date().toISOString()
-              });
+                input: summaryInput,
+                tools: [],
+                options: {
+                  apiKey,
+                  temperature: 0.2,
+                  max_tokens: 150,
+                  timeoutMs: 30000
+                }
+              };
+              
+              // Emit LLM request event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_request', {
+                  phase: 'description_summary',
+                  tool: 'search_web',
+                  model,
+                  request: summaryRequestBody,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              const resp = await llmResponsesWithTools(summaryRequestBody);
+              
+              // Emit LLM response event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_response', {
+                  phase: 'description_summary',
+                  tool: 'search_web',
+                  model,
+                  response: resp,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              summary = resp?.text || resp?.finalText || null;
+              console.log(`✅ Generated summary from search descriptions`);
             }
-            
-            summary = resp?.text || resp?.finalText || null;
           } else {
             summary_error = "Summary generation requires model and apiKey in context";
           }
@@ -272,7 +432,9 @@ async function callFunction(name, args = {}, context = {}) {
           generate_summary: generateSummary,
           summary, 
           summary_model, 
-          summary_error 
+          summary_error,
+          // Include individual page summaries when content was loaded
+          ...(loadContent && individual_summaries && { individual_summaries })
         })
       };
       

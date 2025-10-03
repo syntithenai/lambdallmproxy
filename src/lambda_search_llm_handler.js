@@ -207,6 +207,9 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         { role: 'system', content: dynamicSystemPrompt },
         { role: 'user', content: userQuery }
     ];
+    
+    // Track full tool results for final synthesis (separate from truncated conversation history)
+    const fullToolResults = [];
 
     // Starting tool loop with ${toolFunctions?.length || 0} available tools
 
@@ -254,11 +257,30 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
         } catch (e) {
             console.error(`LLM call failed in tool iteration ${iter + 1}:`, e?.message || e);
-            stream?.writeEvent?.('error', {
-                error: `LLM call failed: ${e?.message || String(e)}`,
-                phase: 'tool_iteration',
-                iteration: iter + 1
-            });
+            
+            // Check if this is a tool_use_failed error (model generated malformed tool calls)
+            const errorMsg = e?.message || String(e);
+            const isToolFormatError = errorMsg.includes('tool_use_failed') || errorMsg.includes('Failed to call a function');
+            
+            if (isToolFormatError) {
+                console.error(`⚠️ Model generated malformed tool calls. This model may not support tool calling properly.`);
+                console.error(`💡 Recommendation: Try using a different model with better tool-calling support (e.g., groq:llama-3.1-70b-versatile or openai:gpt-4)`);
+                
+                stream?.writeEvent?.('error', {
+                    error: `Model does not support tool calling properly. Try a different model like groq:llama-3.1-70b-versatile or openai:gpt-4. Error: ${errorMsg}`,
+                    phase: 'tool_iteration',
+                    iteration: iter + 1,
+                    model_incompatible: true,
+                    suggested_models: ['groq:llama-3.1-70b-versatile', 'groq:llama-3.3-70b-versatile', 'openai:gpt-4', 'openai:gpt-4o']
+                });
+            } else {
+                stream?.writeEvent?.('error', {
+                    error: `LLM call failed: ${errorMsg}`,
+                    phase: 'tool_iteration',
+                    iteration: iter + 1
+                });
+            }
+            
             // Break the loop - cannot continue without LLM response
             break;
         }
@@ -325,11 +347,12 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                 const call_id = tc.call_id || tc.id || `iter-${iter + 1}-call-${idx + 1}`;
                 const result = { iteration: iter + 1, call_id, name: tc.name, args, output: String(output) };
                 
-                // Collect search results
+                // Collect search results and emit dedicated search_results event
                 if (tc.name === 'search_web' && output) {
                     try {
                         const parsed = JSON.parse(output);
                         if (parsed.results && Array.isArray(parsed.results)) {
+                            // Collect for final summary
                             collectedSearchResults.push(...parsed.results.map(r => ({
                                 query: parsed.query,
                                 title: r.title,
@@ -337,18 +360,52 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                                 description: r.description,
                                 summary: parsed.summary || null
                             })));
+                            
+                            // Emit dedicated search_results event with full details
+                            stream?.writeEvent?.('search_results', {
+                                iteration: iter + 1,
+                                query: parsed.query,
+                                count: parsed.count || parsed.results.length,
+                                results: parsed.results,
+                                summary: parsed.summary || null,
+                                individual_summaries: parsed.individual_summaries || null,
+                                timestamp: new Date().toISOString()
+                            });
                         }
                     } catch (e) {
                         console.log(`Failed to parse search results:`, e.message);
                     }
                 }
                 
+                // Parse the output JSON for the tool_result event
+                let parsedOutput = output;
+                try {
+                    parsedOutput = JSON.parse(String(output));
+                } catch (parseError) {
+                    // If parsing fails, keep the original string output
+                    parsedOutput = String(output);
+                }
+                
+                // Emit tool_result event with parsed output for easy UI consumption
                 stream?.writeEvent?.('tool_result', { 
                     iteration: iter + 1, 
                     name: tc.name,
                     call_id: call_id,
-                    result: result
+                    args: args,
+                    output: parsedOutput,
+                    duration: result.duration || null,
+                    timestamp: new Date().toISOString()
                 });
+                
+                // Store full parsed output for final synthesis (not truncated)
+                fullToolResults.push({
+                    iteration: iter + 1,
+                    name: tc.name,
+                    args: args,
+                    parsedOutput: parsedOutput,
+                    timestamp: new Date().toISOString()
+                });
+                
                 return result;
             })
         );
@@ -381,24 +438,56 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
     try {
         console.log('🔄 Starting final synthesis step...');
         
-        // Build minimal context to save tokens
-        const allInformation = input
-            .filter(item => item.type === 'function_call_output')
-            .slice(0, 2) // Emergency: max 2 sources
-            .map((item, index) => {
-                try {
-                    const data = JSON.parse(item.output);
-                    if (data.summary) {
-                        return `${index + 1}: ${data.summary.substring(0, 100)}...`; // Drastically reduced
-                    } else if (data.content) {
-                        return `${index + 1}: ${data.content.substring(0, 100)}...`;
+        // Build context from full tool results, preferring LLM-generated summaries
+        const allInformation = fullToolResults
+            .map((toolResult, index) => {
+                const output = toolResult.parsedOutput;
+                const toolName = toolResult.name;
+                
+                // For search_web: prefer summary > individual_summaries > descriptions > content
+                if (toolName === 'search_web' && typeof output === 'object') {
+                    // If we have an LLM-generated summary, use it
+                    if (output.summary) {
+                        return `Source ${index + 1} (Search: "${output.query || 'unknown'}"): ${output.summary}`;
                     }
-                    return `${index + 1}: ${item.output.substring(0, 80)}...`;
-                } catch {
-                    return `${index + 1}: ${item.output.substring(0, 80)}...`;
+                    // If we have individual page summaries, combine them
+                    if (output.individual_summaries && Array.isArray(output.individual_summaries)) {
+                        const combinedSummaries = output.individual_summaries
+                            .map((s, i) => `[${i + 1}] ${s}`)
+                            .join(' ');
+                        return `Source ${index + 1} (Search: "${output.query || 'unknown'}"): ${combinedSummaries}`;
+                    }
+                    // Fall back to descriptions from search results
+                    if (output.results && Array.isArray(output.results)) {
+                        const descriptions = output.results
+                            .map((r, i) => `[${i + 1}] ${r.title}: ${r.description || ''}`)
+                            .join(' ');
+                        return `Source ${index + 1} (Search: "${output.query || 'unknown'}"): ${descriptions}`;
+                    }
                 }
+                
+                // For scrape_web_content: prefer summary > content
+                if (toolName === 'scrape_web_content' && typeof output === 'object') {
+                    if (output.summary) {
+                        return `Source ${index + 1} (Scraped: ${output.url || 'unknown'}): ${output.summary}`;
+                    }
+                    if (output.content) {
+                        return `Source ${index + 1} (Scraped: ${output.url || 'unknown'}): ${output.content}`;
+                    }
+                }
+                
+                // For execute_javascript: just use the result
+                if (toolName === 'execute_javascript' && typeof output === 'object') {
+                    if (output.result !== undefined) {
+                        return `Source ${index + 1} (Code execution): ${output.result}`;
+                    }
+                }
+                
+                // Fallback: stringify the output
+                const stringOutput = typeof output === 'string' ? output : JSON.stringify(output);
+                return `Source ${index + 1} (${toolName}): ${stringOutput}`;
             })
-            .join('\n');
+            .join('\n\n');
 
         // Get current date and time for environmental context
         const now = new Date();

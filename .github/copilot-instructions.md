@@ -15,6 +15,11 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
     3.  **Build Step**: After making changes in `ui/`, you MUST run `scripts/build-docs.sh` to compile the changes into the `docs/` directory.
     4.  **Deploy Docs**: After a successful build, you MUST run `scripts/deploy-docs.sh` to publish the documentation and UI changes.
     5.  **Combined Command**: The `make deploy-docs` command conveniently runs both the build and deploy steps.
+- **Build After Code Changes**: After ANY code modification to files in `src/`, `ui/`, or configuration files, you MUST execute the appropriate build process:
+    - **Backend Changes** (`src/`): Run `scripts/deploy.sh` to deploy the Lambda function
+    - **Frontend Changes** (`ui/`): Run `scripts/build-docs.sh` to build the UI into `docs/`
+    - **Test Changes** (`tests/`): Run `npm test` to verify tests pass
+    - This ensures that changes are properly compiled, validated, and ready for deployment
 - **Testing**: When testing the Lambda function, ensure all required parameters, including the API key, are provided, unless a test specifically requires their omission.
 
 ### 1.2. Terminal Command Execution
