@@ -63,32 +63,39 @@ cp "$OLDPWD"/src/tools.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/pricing_scraper.js ./
 
 # Copy modular components (new refactored structure)
-mkdir -p config utils services streaming
+mkdir -p config utils services streaming endpoints
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true  
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/streaming/* ./streaming/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/endpoints/* ./endpoints/ 2>/dev/null || true
 
-# Create package.json for the Lambda function
+# Create package.json for the Lambda function with dependencies
 cat > package.json << EOF
 {
   "name": "llmproxy-lambda",
   "version": "1.0.0",
   "description": "AWS Lambda handler for intelligent search + LLM response",
   "main": "index.js",
-  "dependencies": {},
+  "dependencies": {
+    "google-auth-library": "^10.4.0"
+  },
   "engines": {
     "node": ">=18.0.0"
   }
 }
 EOF
 
+# Install production dependencies
+echo -e "${YELLOW}📦 Installing production dependencies...${NC}"
+npm install --production --no-package-lock
+
 # List files before packaging
 echo -e "${YELLOW}📦 Files to be packaged:${NC}"
 ls -la *.js
 
-# Create the deployment package
-zip -q -r "$ZIP_FILE" index.js package.json *.js config/ utils/ services/ streaming/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
+# Create the deployment package (include node_modules)
+zip -q -r "$ZIP_FILE" index.js package.json *.js config/ utils/ services/ streaming/ endpoints/ node_modules/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
 
 # Get current function configuration for backup
 aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" > function-backup.json 2>/dev/null
@@ -122,6 +129,7 @@ if [ -f "$OLDPWD/.env" ]; then
     LAMBDA_MEMORY_ENV=$(grep '^LAMBDA_MEMORY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     LAMBDA_TIMEOUT_ENV=$(grep '^LAMBDA_TIMEOUT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     ALLOWED_EMAILS_ENV=$(grep '^ALLOWED_EMAILS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GOOGLE_CLIENT_ID=$(grep '^GOOGLE_CLIENT_ID=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     REASONING_EFFORT_ENV=$(grep '^REASONING_EFFORT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     MAX_TOOL_ITERATIONS_ENV=$(grep '^MAX_TOOL_ITERATIONS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     GROQ_REASONING_MODELS_ENV=$(grep '^GROQ_REASONING_MODELS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
@@ -157,6 +165,7 @@ if [ -f "$OLDPWD/.env" ]; then
             --arg DECISION_TEMPLATE "$DECISION_TEMPLATE" \
             --arg SEARCH_TEMPLATE "$SEARCH_TEMPLATE" \
             --arg ALLOWED_EMAILS "$ALLOWED_EMAILS_ENV" \
+            --arg GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID" \
             --arg REASONING_EFFORT "$REASONING_EFFORT_ENV" \
             --arg MAX_TOOL_ITERATIONS "$MAX_TOOL_ITERATIONS_ENV" \
             --arg GROQ_REASONING_MODELS "$GROQ_REASONING_MODELS_ENV" \
@@ -173,6 +182,7 @@ if [ -f "$OLDPWD/.env" ]; then
                 + (if $DECISION_TEMPLATE != "" then {DECISION_TEMPLATE:$DECISION_TEMPLATE} else {} end)
                 + (if $SEARCH_TEMPLATE != "" then {SEARCH_TEMPLATE:$SEARCH_TEMPLATE} else {} end)
                 + {ALLOWED_EMAILS:$ALLOWED_EMAILS}
+                + (if $GOOGLE_CLIENT_ID != "" then {GOOGLE_CLIENT_ID:$GOOGLE_CLIENT_ID} else {} end)
                 + (if $REASONING_EFFORT != "" then {REASONING_EFFORT:$REASONING_EFFORT} else {} end)
                 + (if $MAX_TOOL_ITERATIONS != "" then {MAX_TOOL_ITERATIONS:$MAX_TOOL_ITERATIONS} else {} end)
                 + (if $GROQ_REASONING_MODELS != "" then {GROQ_REASONING_MODELS:$GROQ_REASONING_MODELS} else {} end)
@@ -255,8 +265,8 @@ if [ $? -eq 0 ]; then
         NEEDS_CORS_UPDATE=true
     fi
     
-    if [[ "$CURRENT_INVOKE_MODE" != "RESPONSE_STREAM" ]]; then
-        echo -e "${YELLOW}⚠️  InvokeMode is '$CURRENT_INVOKE_MODE', should be 'RESPONSE_STREAM'${NC}"
+    if [[ "$CURRENT_INVOKE_MODE" != "BUFFERED" ]]; then
+        echo -e "${YELLOW}⚠️  InvokeMode is '$CURRENT_INVOKE_MODE', should be 'BUFFERED'${NC}"
         NEEDS_CORS_UPDATE=true
     fi
     
@@ -275,7 +285,7 @@ if [ $? -eq 0 ]; then
             --function-name "$FUNCTION_NAME" \
             --region "$REGION" \
             --cors AllowCredentials=true,AllowHeaders=content-type,authorization,origin,accept,AllowMethods=*,AllowOrigins=*,MaxAge=86400 \
-            --invoke-mode RESPONSE_STREAM > /dev/null
+            --invoke-mode BUFFERED > /dev/null
             
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}✅ CORS configuration updated successfully${NC}"
