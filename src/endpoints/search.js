@@ -1,8 +1,11 @@
 /**
  * Search Endpoint
  * Takes a query, uses DuckDuckGo search, loads page content, extracts content
- * Returns array with link, description, content, and score
+ * Returns SSE stream with search results as they complete
  */
+
+// AWS Lambda Response Streaming
+const awslambda = require('aws-lambda');
 
 const { DuckDuckGoSearcher } = require('../search');
 const { SimpleHTMLParser } = require('../html-parser');
@@ -165,11 +168,27 @@ async function searchMultiple(queries, options = {}) {
 }
 
 /**
- * Handler for the search endpoint
+ * Handler for the search endpoint (with SSE streaming)
  * @param {Object} event - Lambda event
- * @returns {Promise<Object>} Lambda response
+ * @param {Object} responseStream - Lambda response stream
+ * @returns {Promise<void>} Streams response via responseStream
  */
-async function handler(event) {
+async function handler(event, responseStream) {
+    // Set streaming headers
+    const metadata = {
+        statusCode: 200,
+        headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Access-Control-Allow-Methods': 'POST,OPTIONS'
+        }
+    };
+    
+    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+    
     try {
         // Get authorization header
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
@@ -184,17 +203,12 @@ async function handler(event) {
         
         // Require authentication
         if (!verifiedUser) {
-            return {
-                statusCode: 401,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify({
-                    error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
-                    code: 'UNAUTHORIZED'
-                })
-            };
+            responseStream.write(`event: error\ndata: ${JSON.stringify({
+                error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
+                code: 'UNAUTHORIZED'
+            })}\n\n`);
+            responseStream.end();
+            return;
         }
         
         // Parse request body
@@ -209,29 +223,19 @@ async function handler(event) {
         
         // Validate inputs
         if (!query || (Array.isArray(query) && query.length === 0)) {
-            return {
-                statusCode: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify({
-                    error: 'Query or queries parameter is required'
-                })
-            };
+            responseStream.write(`event: error\ndata: ${JSON.stringify({
+                error: 'Query or queries parameter is required'
+            })}\n\n`);
+            responseStream.end();
+            return;
         }
         
         if (maxResults < 1 || maxResults > 20) {
-            return {
-                statusCode: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify({
-                    error: 'maxResults must be between 1 and 20'
-                })
-            };
+            responseStream.write(`event: error\ndata: ${JSON.stringify({
+                error: 'maxResults must be between 1 and 20'
+            })}\n\n`);
+            responseStream.end();
+            return;
         }
         
         const options = {
@@ -240,50 +244,61 @@ async function handler(event) {
             fetchTimeout
         };
         
-        // Perform search(es)
-        let responseBody;
+        // Send status event
+        responseStream.write(`event: status\ndata: ${JSON.stringify({
+            message: isMultipleQueries ? `Searching ${query.length} queries...` : 'Searching...'
+        })}\n\n`);
         
+        // Perform search(es)
         if (isMultipleQueries) {
-            // Multiple queries - execute in parallel
-            const searches = await searchMultiple(query, options);
-            responseBody = {
-                searches: searches,
-                totalSearches: searches.length,
-                totalResults: searches.reduce((sum, s) => sum + s.count, 0)
-            };
+            // Multiple queries - stream results as they complete
+            for (let i = 0; i < query.length; i++) {
+                try {
+                    responseStream.write(`event: search-start\ndata: ${JSON.stringify({
+                        query: query[i],
+                        index: i
+                    })}\n\n`);
+                    
+                    const results = await searchWithContent(query[i], options);
+                    
+                    responseStream.write(`event: search-result\ndata: ${JSON.stringify({
+                        query: query[i],
+                        index: i,
+                        count: results.length,
+                        results: results
+                    })}\n\n`);
+                } catch (searchError) {
+                    responseStream.write(`event: search-error\ndata: ${JSON.stringify({
+                        query: query[i],
+                        index: i,
+                        error: searchError.message
+                    })}\n\n`);
+                }
+            }
         } else {
-            // Single query - backward compatible response
+            // Single query
             const results = await searchWithContent(query, options);
-            responseBody = {
+            responseStream.write(`event: result\ndata: ${JSON.stringify({
                 query: query,
                 count: results.length,
                 results: results
-            };
+            })}\n\n`);
         }
         
-        // Return success response
-        return {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            body: JSON.stringify(responseBody)
-        };
+        // Send complete event
+        responseStream.write(`event: complete\ndata: ${JSON.stringify({
+            success: true
+        })}\n\n`);
+        
+        responseStream.end();
         
     } catch (error) {
         console.error('Search endpoint error:', error);
         
-        return {
-            statusCode: 500,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            body: JSON.stringify({
-                error: error.message || 'Internal server error'
-            })
-        };
+        responseStream.write(`event: error\ndata: ${JSON.stringify({
+            error: error.message || 'Internal server error'
+        })}\n\n`);
+        responseStream.end();
     }
 }
 

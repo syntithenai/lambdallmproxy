@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+/* Custom utility classes */
+.btn-primary {
+  background-color: rgb(37 99 235);
+  color: white;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 200ms;
+}
+
+.btn-primary:hover {
+  background-color: rgb(29 78 216);
+}
+
+.btn-secondary {
+  background-color: rgb(229 231 235);
+  color: rgb(17 24 39);
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 200ms;
+}
+
+.btn-secondary:hover {
+  background-color: rgb(209 213 219);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-secondary {
+    background-color: rgb(55 65 81);
+    color: rgb(243 244 246);
+  }
+  
+  .btn-secondary:hover {
+    background-color: rgb(75 85 99);
+  }
+}
+
+.input-field {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: 1px solid rgb(209 213 219);
+  border-radius: 0.5rem;
+  background-color: white;
+  color: rgb(17 24 39);
+}
+
+.input-field:focus {
+  outline: 2px solid rgb(59 130 246);
+  outline-offset: 0px;
+  border-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .input-field {
+    border-color: rgb(75 85 99);
+    background-color: rgb(31 41 55);
+    color: rgb(243 244 246);
+  }
+}
+
+.card {
+  background-color: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgb(229 231 235);
+}
+
+@media (prefers-color-scheme: dark) {
+  .card {
+    background-color: rgb(31 41 55);
+    border-color: rgb(55 65 81);
+  }
+}

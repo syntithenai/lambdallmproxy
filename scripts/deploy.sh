@@ -265,8 +265,8 @@ if [ $? -eq 0 ]; then
         NEEDS_CORS_UPDATE=true
     fi
     
-    if [[ "$CURRENT_INVOKE_MODE" != "BUFFERED" ]]; then
-        echo -e "${YELLOW}⚠️  InvokeMode is '$CURRENT_INVOKE_MODE', should be 'BUFFERED'${NC}"
+    if [[ "$CURRENT_INVOKE_MODE" != "RESPONSE_STREAM" ]]; then
+        echo -e "${YELLOW}⚠️  InvokeMode is '$CURRENT_INVOKE_MODE', should be 'RESPONSE_STREAM'${NC}"
         NEEDS_CORS_UPDATE=true
     fi
     
@@ -285,7 +285,7 @@ if [ $? -eq 0 ]; then
             --function-name "$FUNCTION_NAME" \
             --region "$REGION" \
             --cors AllowCredentials=true,AllowHeaders=content-type,authorization,origin,accept,AllowMethods=*,AllowOrigins=*,MaxAge=86400 \
-            --invoke-mode BUFFERED > /dev/null
+            --invoke-mode RESPONSE_STREAM > /dev/null
             
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}✅ CORS configuration updated successfully${NC}"

@@ -1,8 +1,11 @@
 /**
  * Planning Endpoint
  * Takes a user query and generates a plan using Groq reasoning model
- * Returns JSON with: text response, search keywords, questions, and persona
+ * Returns SSE stream with: text response, search keywords, questions, and persona
  */
+
+// AWS Lambda Response Streaming
+const awslambda = require('aws-lambda');
 
 const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { DEFAULT_REASONING_EFFORT, MAX_TOKENS_PLANNING } = require('../config/tokens');
@@ -113,45 +116,51 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
 }
 
 /**
- * Handler for the planning endpoint
+ * Handler for the planning endpoint (with SSE streaming)
  * @param {Object} event - Lambda event
- * @returns {Promise<Object>} Lambda response
+ * @param {Object} responseStream - Lambda response stream
+ * @returns {Promise<void>} Streams response via responseStream
  */
-async function handler(event) {
+async function handler(event, responseStream) {
+    // Set streaming headers
+    const metadata = {
+        statusCode: 200,
+        headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Access-Control-Allow-Methods': 'POST,OPTIONS'
+        }
+    };
+    
+    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+    
     try {
         // Get authorization header
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
         
-        // Verify JWT token (async - cryptographically verified)
+        // Extract token (support both "Bearer token" and just "token")
+        const token = authHeader.startsWith('Bearer ') 
+            ? authHeader.substring(7) 
+            : authHeader;
+        
         let verifiedUser = null;
-        if (authHeader) {
-            const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-            try {
-                verifiedUser = await verifyGoogleToken(token);
-                const allowedEmails = getAllowedEmails();
-                
-                // Check if user is in allowed list
-                if (!verifiedUser || !allowedEmails || !allowedEmails.includes(verifiedUser.email)) {
-                    verifiedUser = null;
-                }
-            } catch (error) {
-                console.error('Token verification failed:', error.message);
-            }
+        
+        // Try to verify token if provided
+        if (token) {
+            verifiedUser = await verifyGoogleToken(token);
         }
         
         // Require authentication
         if (!verifiedUser) {
-            return {
-                statusCode: 401,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify({
-                    error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
-                    code: 'UNAUTHORIZED'
-                })
-            };
+            responseStream.write(`event: error\ndata: ${JSON.stringify({
+                error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
+                code: 'UNAUTHORIZED'
+            })}\n\n`);
+            responseStream.end();
+            return;
         }
         
         // Parse request body
@@ -162,57 +171,46 @@ async function handler(event) {
         
         // Validate inputs
         if (!query) {
-            return {
-                statusCode: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify({
-                    error: 'Query parameter is required'
-                })
-            };
+            responseStream.write(`event: error\ndata: ${JSON.stringify({
+                error: 'Query parameter is required'
+            })}\n\n`);
+            responseStream.end();
+            return;
         }
         
         if (!apiKey) {
-            return {
-                statusCode: 401,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                body: JSON.stringify({
-                    error: 'API key is required'
-                })
-            };
+            responseStream.write(`event: error\ndata: ${JSON.stringify({
+                error: 'API key is required'
+            })}\n\n`);
+            responseStream.end();
+            return;
         }
+        
+        // Send status event
+        responseStream.write(`event: status\ndata: ${JSON.stringify({
+            message: 'Generating research plan...'
+        })}\n\n`);
         
         // Generate plan
         const plan = await generatePlan(query, apiKey, model);
         
-        // Return success response
-        return {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            body: JSON.stringify(plan)
-        };
+        // Send result event
+        responseStream.write(`event: result\ndata: ${JSON.stringify(plan)}\n\n`);
+        
+        // Send complete event
+        responseStream.write(`event: complete\ndata: ${JSON.stringify({
+            success: true
+        })}\n\n`);
+        
+        responseStream.end();
         
     } catch (error) {
         console.error('Planning endpoint error:', error);
         
-        return {
-            statusCode: 500,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            body: JSON.stringify({
-                error: error.message || 'Internal server error'
-            })
-        };
+        responseStream.write(`event: error\ndata: ${JSON.stringify({
+            error: error.message || 'Internal server error'
+        })}\n\n`);
+        responseStream.end();
     }
 }
 

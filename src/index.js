@@ -7,7 +7,12 @@
  * - POST /search - Perform DuckDuckGo search with content extraction
  * - POST /proxy - Forward requests to OpenAI-compatible endpoints
  * - GET /* - Serve static files from docs directory
+ * 
+ * Uses AWS Lambda Response Streaming for Server-Sent Events (SSE)
  */
+
+// AWS Lambda Response Streaming (available as global in runtime)
+const awslambda = require('aws-lambda');
 
 const planningEndpoint = require('./endpoints/planning');
 const searchEndpoint = require('./endpoints/search');
@@ -33,12 +38,13 @@ function handleCORS(event) {
 }
 
 /**
- * Main Lambda handler with routing
+ * Main Lambda handler with routing and streaming support
  * @param {Object} event - Lambda event
+ * @param {Object} responseStream - Lambda response stream (for SSE)
  * @param {Object} context - Lambda context
- * @returns {Promise<Object>} Lambda response
+ * @returns {Promise<void>} Streams response via responseStream
  */
-exports.handler = async (event, context) => {
+exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
     try {
         console.log('Incoming request:', {
             path: event.path || event.rawPath,
@@ -52,33 +58,42 @@ exports.handler = async (event, context) => {
         
         // Handle CORS preflight
         if (method === 'OPTIONS') {
-            return handleCORS(event);
+            const corsResponse = handleCORS(event);
+            responseStream.write(JSON.stringify(corsResponse));
+            responseStream.end();
+            return;
         }
         
-        // Route to appropriate endpoint
+        // Route to appropriate endpoint with responseStream
         if (method === 'POST' && path === '/planning') {
             console.log('Routing to planning endpoint');
-            return await planningEndpoint.handler(event);
+            await planningEndpoint.handler(event, responseStream);
+            return;
         }
         
         if (method === 'POST' && path === '/search') {
             console.log('Routing to search endpoint');
-            return await searchEndpoint.handler(event);
+            await searchEndpoint.handler(event, responseStream);
+            return;
         }
         
         if (method === 'POST' && path === '/proxy') {
             console.log('Routing to proxy endpoint');
-            return await proxyEndpoint.handler(event);
+            await proxyEndpoint.handler(event, responseStream);
+            return;
         }
         
-        // Default: serve static files
+        // Default: serve static files (non-streaming)
         if (method === 'GET') {
             console.log('Routing to static file server');
-            return await staticEndpoint.handler(event);
+            const staticResponse = await staticEndpoint.handler(event);
+            responseStream.write(JSON.stringify(staticResponse));
+            responseStream.end();
+            return;
         }
         
         // Method not allowed
-        return {
+        const errorResponse = {
             statusCode: 405,
             headers: {
                 'Content-Type': 'application/json',
@@ -89,11 +104,13 @@ exports.handler = async (event, context) => {
                 allowedMethods: ['GET', 'POST', 'OPTIONS']
             })
         };
+        responseStream.write(JSON.stringify(errorResponse));
+        responseStream.end();
         
     } catch (error) {
         console.error('Router error:', error);
         
-        return {
+        const errorResponse = {
             statusCode: 500,
             headers: {
                 'Content-Type': 'application/json',
@@ -103,8 +120,10 @@ exports.handler = async (event, context) => {
                 error: error.message || 'Internal server error'
             })
         };
+        responseStream.write(JSON.stringify(errorResponse));
+        responseStream.end();
     }
-};
+});
 
 // Export individual endpoint handlers for testing
 module.exports = {
