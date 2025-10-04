@@ -167,7 +167,17 @@ The project is organized for maintainability and scalability:
 }
 ```
 
-## Authentication System
+## 🔒 Authentication System
+
+⚠️ **IMPORTANT**: As of October 2025, **ALL API endpoints require authentication** (except the public web UI).
+
+### Authentication Requirements
+
+**All API endpoints** (`/planning`, `/search`, `/proxy`) require:
+
+1. **Valid JWT Token**: Google OAuth token in `Authorization` header
+2. **Email Whitelist**: Email must be in `ALLOWED_EMAILS` environment variable
+3. **Token Verification**: Backend validates token using `GOOGLE_CLIENT_ID`
 
 ### Google OAuth Integration
 
@@ -182,14 +192,13 @@ The system includes comprehensive Google OAuth authentication:
 
 **Backend Validation**:
 - JWT token verification with Google's certificates
-- Email allowlist enforcement (`syntithenai@gmail.com` by default)
+- Email allowlist enforcement (configurable via `ALLOWED_EMAILS`)
 - Token expiration checking
 - User profile extraction (email, name, picture)
 
-**Configuration**:
-- Google Client ID stored in environment variables
-- Build process replaces template placeholders
-- Cross-platform build support (bash and Node.js scripts)
+**Public Access**:
+- Static file server (web UI) remains publicly accessible
+- No authentication required for `GET /`, `/index.html`, `/css/*`, `/js/*`, etc.
 
 ### Setup Authentication
 
@@ -197,6 +206,7 @@ The system includes comprehensive Google OAuth authentication:
 ```bash
 # Add to .env file
 GOOGLE_CLIENT_ID=your-google-client-id-here
+ALLOWED_EMAILS=user1@example.com,user2@example.com,user3@example.com
 ```
 
 2. **Build UI with Authentication**:
@@ -204,11 +214,35 @@ GOOGLE_CLIENT_ID=your-google-client-id-here
 make build-docs  # Replaces {{GOOGLE_CLIENT_ID}} placeholder
 ```
 
-3. **Test Authentication**:
-- Open `docs/index.html` in browser
+3. **Deploy Lambda with Environment Variables**:
+```bash
+make deploy  # Automatically includes GOOGLE_CLIENT_ID and ALLOWED_EMAILS
+```
+
+4. **Test Authentication**:
+- Open `https://your-lambda-url.amazonaws.com/` in browser
 - Click "Sign in with Google" 
 - Authenticate with allowed email address
 - Submit requests through authenticated interface
+
+### API Authentication
+
+All API requests must include the `Authorization` header:
+
+```bash
+curl -X POST https://your-lambda-url.amazonaws.com/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{"query": "your search query"}'
+```
+
+**401 Unauthorized Response**:
+```json
+{
+  "error": "Authentication required. Please provide a valid JWT token in the Authorization header.",
+  "code": "UNAUTHORIZED"
+}
+```
 
 ## API Usage
 
@@ -301,9 +335,14 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
 
 All environment variables in the `.env` file are actively used in the application. The system has been optimized with no unused configuration variables:
 
+### 🔒 Authentication Variables (REQUIRED)
+- **`GOOGLE_CLIENT_ID`** - **REQUIRED** - Google OAuth client ID for JWT token verification
+- **`ALLOWED_EMAILS`** - **REQUIRED** - Comma-separated list of authorized email addresses
+  - Example: `user1@example.com,user2@example.com,admin@company.com`
+  - All API endpoints check if the JWT token's email is in this list
+
 ### Lambda Handler Variables
-- **`ALLOWED_EMAILS`** - Email allowlist for authentication validation
-- **`ACCESS_SECRET`** - Secret for function access protection  
+- **`ACCESS_SECRET`** - Secret for function access protection (legacy, may be deprecated)
 - **`LAMBDA_MEMORY`** - Memory tracking and optimization configuration
 - **`SYSTEM_PROMPT_DIGEST_ANALYST`** - LLM system prompt for search result analysis
 - **`SYSTEM_PROMPT_CONTINUATION_STRATEGIST`** - LLM system prompt for search continuation decisions
@@ -312,8 +351,8 @@ All environment variables in the `.env` file are actively used in the applicatio
 - **`FINAL_TEMPLATE`** - Template for generating final comprehensive answers
 
 ### Provider Configuration Variables
-- **`OPENAI_API_KEY`** - OpenAI API authentication token
-- **`GROQ_API_KEY`** - Groq API authentication token
+- **`OPENAI_API_KEY`** - OpenAI API authentication token (used for authenticated proxy requests)
+- **`GROQ_API_KEY`** - Groq API authentication token (used for authenticated proxy and planning requests)
 - **`OPENAI_MODEL`** - OpenAI model selection (e.g., "gpt-4o")
 - **`OPENAI_API_BASE`** - OpenAI API base URL (default: "https://api.openai.com/v1")
 - **`GROQ_MODEL`** - Groq model selection (e.g., "llama-3.1-8b-instant")
@@ -321,7 +360,6 @@ All environment variables in the `.env` file are actively used in the applicatio
 ### Deployment & UI Variables  
 - **`LAMBDA_URL`** - AWS Lambda function URL for frontend integration
 - **`LAMBDA_TIMEOUT`** - Lambda function timeout setting (seconds)
-- **`GOOGLE_CLIENT_ID`** - Google OAuth client ID for authentication
 - **`NODE_ENV`** - Environment mode (development/production)
 
 ### Variable Usage Analysis
