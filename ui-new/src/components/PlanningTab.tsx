@@ -21,14 +21,48 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
     if (!query.trim() || !accessToken || isLoading) return;
 
     setIsLoading(true);
+    setResult(null);
+    
     try {
-      const data = await generatePlan(query, accessToken);
-      console.log('Planning response:', data);
-      setResult(data);
+      await generatePlan(
+        query,
+        accessToken,
+        // Handle SSE events
+        (event, data) => {
+          console.log('Planning SSE event:', event, data);
+          
+          switch (event) {
+            case 'status':
+              // Could show status message in UI
+              console.log('Status:', data.message);
+              break;
+              
+            case 'result':
+              // Display the plan result
+              setResult(data);
+              break;
+              
+            case 'error':
+              // Display error
+              setResult({ error: data.error || 'Unknown error' });
+              break;
+          }
+        },
+        // On complete
+        () => {
+          console.log('Planning stream complete');
+          setIsLoading(false);
+        },
+        // On error
+        (error) => {
+          console.error('Planning stream error:', error);
+          setResult({ error: error.message });
+          setIsLoading(false);
+        }
+      );
     } catch (error) {
       console.error('Planning error:', error);
       setResult({ error: error instanceof Error ? error.message : 'Unknown error' });
-    } finally {
       setIsLoading(false);
     }
   };

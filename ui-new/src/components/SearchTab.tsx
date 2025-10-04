@@ -33,16 +33,79 @@ export const SearchTab: React.FC = () => {
     if (validQueries.length === 0) return;
 
     setIsLoading(true);
+    setResults([]);
+    
+    const collectedResults: SearchResult[] = [];
+    
     try {
-      const searchResults = await performSearch(validQueries, accessToken, {
-        maxResults: 5,
-        includeContent: true
-      });
-      console.log('Search results:', searchResults);
-      setResults(searchResults);
+      await performSearch(
+        validQueries,
+        accessToken,
+        {
+          maxResults: 5,
+          includeContent: true
+        },
+        // Handle SSE events
+        (event, data) => {
+          console.log('Search SSE event:', event, data);
+          
+          switch (event) {
+            case 'status':
+              // Could show status message in UI
+              console.log('Status:', data.message);
+              break;
+              
+            case 'search-start':
+              // A search query is starting
+              console.log('Search starting:', data.query);
+              break;
+              
+            case 'search-result':
+              // Results for a specific query
+              collectedResults.push({
+                query: data.query,
+                results: data.results
+              });
+              setResults([...collectedResults]);
+              break;
+              
+            case 'result':
+              // Single query result
+              setResults([{
+                query: data.query,
+                results: data.results
+              }]);
+              break;
+              
+            case 'search-error':
+              // Error for a specific query
+              console.error('Search error for', data.query, ':', data.error);
+              collectedResults.push({
+                query: data.query,
+                results: []
+              });
+              setResults([...collectedResults]);
+              break;
+              
+            case 'error':
+              // General error
+              console.error('Search error:', data.error);
+              break;
+          }
+        },
+        // On complete
+        () => {
+          console.log('Search stream complete');
+          setIsLoading(false);
+        },
+        // On error
+        (error) => {
+          console.error('Search stream error:', error);
+          setIsLoading(false);
+        }
+      );
     } catch (error) {
       console.error('Search error:', error);
-    } finally {
       setIsLoading(false);
     }
   };

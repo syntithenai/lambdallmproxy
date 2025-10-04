@@ -57,51 +57,45 @@ export const sendChatMessage = async (
   return response;
 };
 
-// Planning endpoint
+// Planning endpoint (SSE streaming)
 export const generatePlan = async (
   query: string,
-  token: string
-): Promise<any> => {
-  const response = await fetch(`${API_BASE}/planning`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({ query })
-  });
+  token: string,
+  onEvent: (event: string, data: any) => void,
+  onComplete?: () => void,
+  onError?: (error: Error) => void
+): Promise<void> => {
+  const { createSSERequest, handleSSEResponse } = await import('./streaming');
   
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Planning request failed');
-  }
+  const response = await createSSERequest(
+    `${API_BASE}/planning`,
+    { query },
+    token
+  );
   
-  return response.json();
+  await handleSSEResponse(response, onEvent, onComplete, onError);
 };
 
-// Search endpoint
+// Search endpoint (SSE streaming)
 export const performSearch = async (
   queries: string[],
   token: string,
-  options: { maxResults?: number; includeContent?: boolean } = {}
-): Promise<SearchResult[]> => {
-  const response = await fetch(`${API_BASE}/search`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({
+  options: { maxResults?: number; includeContent?: boolean } = {},
+  onEvent: (event: string, data: any) => void,
+  onComplete?: () => void,
+  onError?: (error: Error) => void
+): Promise<void> => {
+  const { createSSERequest, handleSSEResponse } = await import('./streaming');
+  
+  const response = await createSSERequest(
+    `${API_BASE}/search`,
+    {
       queries,
       maxResults: options.maxResults || 5,
       includeContent: options.includeContent !== false
-    })
-  });
+    },
+    token
+  );
   
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Search request failed');
-  }
-  
-  return response.json();
+  await handleSSEResponse(response, onEvent, onComplete, onError);
 };
