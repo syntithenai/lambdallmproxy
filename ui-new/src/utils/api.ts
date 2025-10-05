@@ -1,9 +1,19 @@
 // API client for Lambda endpoints
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  tool_call_id?: string;
+  name?: string;
 }
 
 export interface ProxyRequest {
@@ -38,7 +48,8 @@ export interface SearchResult {
 // Proxy endpoint (OpenAI-compatible chat)
 export const sendChatMessage = async (
   request: ProxyRequest,
-  token: string
+  token: string,
+  signal?: AbortSignal
 ): Promise<Response> => {
   const response = await fetch(`${API_BASE}/proxy`, {
     method: 'POST',
@@ -46,7 +57,8 @@ export const sendChatMessage = async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify(request)
+    body: JSON.stringify(request),
+    signal
   });
   
   if (!response.ok) {
@@ -95,6 +107,27 @@ export const performSearch = async (
       includeContent: options.includeContent !== false
     },
     token
+  );
+  
+  await handleSSEResponse(response, onEvent, onComplete, onError);
+};
+
+// Chat endpoint with SSE streaming and tool execution
+export const sendChatMessageStreaming = async (
+  request: ProxyRequest & { tools?: any[] },
+  token: string,
+  onEvent: (event: string, data: any) => void,
+  onComplete?: () => void,
+  onError?: (error: Error) => void,
+  signal?: AbortSignal
+): Promise<void> => {
+  const { createSSERequest, handleSSEResponse } = await import('./streaming');
+  
+  const response = await createSSERequest(
+    `${API_BASE}/chat`,
+    request,
+    token,
+    signal
   );
   
   await handleSSEResponse(response, onEvent, onComplete, onError);

@@ -1123,21 +1123,38 @@ class DuckDuckGoSearcher {
                 };
 
                 const req = client.request(options, (res) => {
-                    // Handle redirects
-                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                        console.log(`Redirecting to: ${res.headers.location}`);
-                        // Handle relative URLs in redirects
-                        let redirectUrl;
-                        try {
-                            redirectUrl = new URL(res.headers.location, requestUrl).toString();
-                        } catch (err) {
-                            console.log(`Invalid redirect URL: ${res.headers.location}`);
-                            clearTimeout(timeout);
-                            reject(new Error(`Invalid redirect URL: ${res.headers.location}`));
+                    // Handle redirects (301, 302, 303, 307, 308)
+                    if ((res.statusCode >= 300 && res.statusCode < 400) || res.statusCode === 308) {
+                        const location = res.headers.location || res.headers.Location;
+                        if (location) {
+                            console.log(`Redirecting from ${requestUrl} to: ${location} (${res.statusCode})`);
+                            // Handle relative URLs in redirects
+                            let redirectUrl;
+                            try {
+                                // Support both absolute and relative redirect URLs
+                                if (location.startsWith('http://') || location.startsWith('https://')) {
+                                    redirectUrl = location;
+                                } else if (location.startsWith('//')) {
+                                    redirectUrl = parsedUrl.protocol + location;
+                                } else if (location.startsWith('/')) {
+                                    redirectUrl = `${parsedUrl.protocol}//${parsedUrl.host}${location}`;
+                                } else {
+                                    // Relative to current path
+                                    const basePath = parsedUrl.pathname.substring(0, parsedUrl.pathname.lastIndexOf('/') + 1);
+                                    redirectUrl = `${parsedUrl.protocol}//${parsedUrl.host}${basePath}${location}`;
+                                }
+                            } catch (err) {
+                                console.log(`Invalid redirect URL: ${location}`);
+                                clearTimeout(timeout);
+                                reject(new Error(`Invalid redirect URL: ${location}`));
+                                return;
+                            }
+                            
+                            // Drain the response body before following redirect
+                            res.resume();
+                            makeRequest(redirectUrl, redirectCount + 1);
                             return;
                         }
-                        makeRequest(redirectUrl, redirectCount + 1);
-                        return;
                     }
 
                     if (res.statusCode < 200 || res.statusCode >= 300) {

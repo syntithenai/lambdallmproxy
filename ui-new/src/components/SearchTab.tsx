@@ -1,14 +1,86 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSearchResults } from '../contexts/SearchResultsContext';
+import { useToast } from './ToastManager';
 import { performSearch } from '../utils/api';
 import type { SearchResult } from '../utils/api';
+import {
+  getCachedSearch,
+  saveCachedSearch,
+  getCachedQueryStrings,
+  saveCurrentSearches,
+  loadCurrentSearches
+} from '../utils/searchCache';
+
+import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export const SearchTab: React.FC = () => {
-  const { accessToken, isAuthenticated } = useAuth();
+  const { getToken, isAuthenticated } = useAuth();
+  const { searchResults: contextResults } = useSearchResults();
+  const { showError, showWarning } = useToast();
+  // Note: Search endpoint uses server-side model configuration
   const [queries, setQueries] = useState<string[]>(['']);
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useLocalStorage<SearchResult[]>('search_results', []);
   const [isLoading, setIsLoading] = useState(false);
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
+  const [showAutocomplete, setShowAutocomplete] = useState<number | null>(null);
+  const [cachedQueries, setCachedQueries] = useState<string[]>([]);
+  const [searchFilter, setSearchFilter] = useState<string>('');
+
+  // Helper function to highlight keywords in text
+  const highlightKeywords = (text: string | undefined): string => {
+    if (!text || !searchFilter.trim()) return text || '';
+    
+    const keywords = searchFilter.trim().toLowerCase().split(/\s+/);
+    let highlightedText = text;
+    
+    keywords.forEach(keyword => {
+      if (keyword.length > 0) {
+        const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        highlightedText = highlightedText.replace(
+          regex,
+          '<mark class="bg-yellow-200 dark:bg-yellow-600 px-1">$1</mark>'
+        );
+      }
+    });
+    
+    return highlightedText;
+  };
+
+  // Load current searches on mount
+  useEffect(() => {
+    const savedQueries = loadCurrentSearches();
+    if (savedQueries.length > 0) {
+      setQueries(savedQueries);
+    }
+    setCachedQueries(getCachedQueryStrings());
+  }, []);
+
+  // Save current searches whenever they change
+  useEffect(() => {
+    const validQueries = queries.filter(q => q.trim());
+    if (validQueries.length > 0) {
+      saveCurrentSearches(queries);
+    }
+  }, [queries]);
+
+  // Merge search results from chat context
+  useEffect(() => {
+    if (contextResults.length > 0) {
+      setResults(prev => {
+        // Create a map of existing results by query (lowercase)
+        const existingMap = new Map(prev.map(r => [r.query.toLowerCase(), r]));
+        
+        // Add/update results from context
+        contextResults.forEach(result => {
+          existingMap.set(result.query.toLowerCase(), result);
+        });
+        
+        // Convert back to array
+        return Array.from(existingMap.values());
+      });
+    }
+  }, [contextResults, setResults]);
 
   const addQueryField = () => {
     setQueries([...queries, '']);
@@ -27,20 +99,57 @@ export const SearchTab: React.FC = () => {
   };
 
   const handleSearch = async () => {
-    if (!accessToken || isLoading) return;
+    if (isLoading) return;
 
     const validQueries = queries.filter(q => q.trim());
     if (validQueries.length === 0) return;
 
     setIsLoading(true);
-    setResults([]);
+    setExpandedResults(new Set()); // Reset all expansions
     
     const collectedResults: SearchResult[] = [];
+    const uncachedQueries: string[] = [];
+    
+    // First, check cache for each query
+    validQueries.forEach(query => {
+      const cached = getCachedSearch(query);
+      if (cached) {
+        console.log('Using cached results for:', query);
+        collectedResults.push({
+          query: cached.query,
+          results: cached.results
+        });
+      } else {
+        uncachedQueries.push(query);
+      }
+    });
+    
+    // Show cached results immediately
+    if (collectedResults.length > 0) {
+      setResults([...collectedResults]);
+    } else {
+      setResults([]);
+    }
+    
+    // If all queries are cached, we're done
+    if (uncachedQueries.length === 0) {
+      setIsLoading(false);
+      return;
+    }
     
     try {
+      // Get valid token (will auto-refresh if needed)
+      const token = await getToken();
+      if (!token) {
+        console.error('No valid token available');
+        setIsLoading(false);
+        return;
+      }
+
+      // Perform search for uncached queries
       await performSearch(
-        validQueries,
-        accessToken,
+        uncachedQueries,
+        token,
         {
           maxResults: 5,
           includeContent: true
@@ -61,25 +170,42 @@ export const SearchTab: React.FC = () => {
               break;
               
             case 'search-result':
-              // Results for a specific query
-              collectedResults.push({
+              // Results for a specific query - cache them
+              const newResult = {
                 query: data.query,
                 results: data.results
-              });
+              };
+              collectedResults.push(newResult);
+              
+              // Save to cache
+              saveCachedSearch(data.query, data.results);
+              
+              // Update cached queries list
+              setCachedQueries(getCachedQueryStrings());
+              
               setResults([...collectedResults]);
               break;
               
             case 'result':
-              // Single query result
-              setResults([{
+              // Single query result - cache it
+              const singleResult = {
                 query: data.query,
                 results: data.results
-              }]);
+              };
+              
+              // Save to cache
+              saveCachedSearch(data.query, data.results);
+              
+              // Update cached queries list
+              setCachedQueries(getCachedQueryStrings());
+              
+              setResults([singleResult]);
               break;
               
             case 'search-error':
               // Error for a specific query
               console.error('Search error for', data.query, ':', data.error);
+              showWarning(`Search failed for "${data.query}": ${data.error}`);
               collectedResults.push({
                 query: data.query,
                 results: []
@@ -90,6 +216,7 @@ export const SearchTab: React.FC = () => {
             case 'error':
               // General error
               console.error('Search error:', data.error);
+              showError(`Search error: ${data.error}`);
               break;
           }
         },
@@ -101,6 +228,7 @@ export const SearchTab: React.FC = () => {
         // On error
         (error) => {
           console.error('Search stream error:', error);
+          showError(`Search failed: ${error.message}`);
           setIsLoading(false);
         }
       );
@@ -140,25 +268,52 @@ export const SearchTab: React.FC = () => {
         ) : (
           <>
             <div className="space-y-3 mb-4">
-              {queries.map((query, index) => (
-                <div key={index} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => updateQuery(index, e.target.value)}
-                    placeholder={`Search query ${index + 1}...`}
-                    className="input-field flex-1"
-                  />
-                  {queries.length > 1 && (
-                    <button
-                      onClick={() => removeQueryField(index)}
-                      className="btn-secondary text-red-500"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
+              {queries.map((query, index) => {
+                const filteredSuggestions = cachedQueries.filter(cq => 
+                  cq.toLowerCase().includes(query.toLowerCase()) && cq.toLowerCase() !== query.toLowerCase()
+                );
+                const showSuggestions = showAutocomplete === index && query.trim().length > 0 && filteredSuggestions.length > 0;
+                
+                return (
+                  <div key={index} className="relative flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={query}
+                        onChange={(e) => updateQuery(index, e.target.value)}
+                        onFocus={() => setShowAutocomplete(index)}
+                        onBlur={() => setTimeout(() => setShowAutocomplete(null), 200)}
+                        placeholder={`Search query ${index + 1}...`}
+                        className="input-field w-full"
+                      />
+                      {showSuggestions && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {filteredSuggestions.slice(0, 10).map((suggestion, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                updateQuery(index, suggestion);
+                                setShowAutocomplete(null);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700 last:border-b-0"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {queries.length > 1 && (
+                      <button
+                        onClick={() => removeQueryField(index)}
+                        className="btn-secondary text-red-500"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             
             <button
@@ -173,8 +328,34 @@ export const SearchTab: React.FC = () => {
       </div>
 
       {/* Results */}
+      {results.length > 0 && (
+        <div className="card p-3">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              placeholder="Filter results..."
+              className="input-field w-full"
+            />
+          </div>
+        </div>
+      )}
+      
       <div className="flex-1 overflow-y-auto space-y-4">
-        {results.length > 0 && results.map((searchResult, searchIdx) => (
+        {results.length > 0 && results
+          .filter(searchResult => {
+            if (!searchFilter.trim()) return true;
+            const filter = searchFilter.toLowerCase();
+            return searchResult.query.toLowerCase().includes(filter) ||
+                   searchResult.results.some(r => 
+                     r.title?.toLowerCase().includes(filter) ||
+                     r.description?.toLowerCase().includes(filter) ||
+                     r.url?.toLowerCase().includes(filter) ||
+                     r.content?.toLowerCase().includes(filter)
+                   );
+          })
+          .map((searchResult, searchIdx) => (
           <div key={searchIdx} className="card p-4">
             <h4 className="font-bold text-lg mb-3 text-primary-600 dark:text-primary-400">
               Query: {searchResult.query}
@@ -193,20 +374,21 @@ export const SearchTab: React.FC = () => {
                     >
                       <div className="flex justify-between items-start gap-2">
                         <div className="flex-1">
-                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
-                            {result.title}
-                          </h5>
+                          <h5 
+                            className="font-semibold text-gray-900 dark:text-gray-100 mb-1"
+                            dangerouslySetInnerHTML={{ __html: highlightKeywords(result.title) }}
+                          />
                           <a
                             href={result.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm text-primary-600 dark:text-primary-400 hover:underline block mb-2"
-                          >
-                            {result.url}
-                          </a>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {result.description}
-                          </p>
+                            dangerouslySetInnerHTML={{ __html: highlightKeywords(result.url) }}
+                          />
+                          <p 
+                            className="text-sm text-gray-600 dark:text-gray-400"
+                            dangerouslySetInnerHTML={{ __html: highlightKeywords(result.description) }}
+                          />
                         </div>
                         <button
                           onClick={() => toggleExpanded(resultId)}

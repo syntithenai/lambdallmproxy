@@ -90,3 +90,116 @@ export const decodeJWT = (token: string): any => {
     return null;
   }
 };
+
+// Check if token is expired or will expire soon (within 5 minutes)
+export const isTokenExpiringSoon = (token: string): boolean => {
+  try {
+    const decoded = decodeJWT(token);
+    if (!decoded || !decoded.exp) {
+      return true;
+    }
+    
+    const expirationTime = decoded.exp * 1000; // Convert to milliseconds
+    const currentTime = Date.now();
+    const fiveMinutes = 5 * 60 * 1000;
+    
+    return expirationTime - currentTime < fiveMinutes;
+  } catch (e) {
+    console.error('Failed to check token expiration:', e);
+    return true;
+  }
+};
+
+// Request a new token from Google
+export const refreshGoogleToken = async (): Promise<string | null> => {
+  try {
+    // Google Sign-In for web doesn't use traditional refresh tokens
+    // Instead, we prompt the user to re-authenticate
+    // The Google One Tap will attempt silent sign-in if possible
+    
+    return new Promise((resolve) => {
+      if (typeof google === 'undefined' || !google.accounts) {
+        console.error('Google API not loaded');
+        resolve(null);
+        return;
+      }
+
+      let hasResolved = false;
+      const timeout = setTimeout(() => {
+        if (!hasResolved) {
+          hasResolved = true;
+          console.log('Token refresh timed out');
+          resolve(null);
+        }
+      }, 5000);
+
+      // Try to get credentials silently
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response: any) => {
+          if (!hasResolved && response.credential) {
+            hasResolved = true;
+            clearTimeout(timeout);
+            console.log('Token refreshed successfully');
+            resolve(response.credential);
+          }
+        }
+      });
+
+      // Prompt for credentials (will auto-select if user is already signed in)
+      try {
+        google.accounts.id.prompt();
+      } catch (e) {
+        if (!hasResolved) {
+          hasResolved = true;
+          clearTimeout(timeout);
+          console.log('Auto token refresh not available, user needs to re-authenticate');
+          resolve(null);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Token refresh failed:', error);
+    return null;
+  }
+};
+
+// Get valid token (refresh if needed)
+export const getValidToken = async (currentToken: string | null): Promise<string | null> => {
+  if (!currentToken) {
+    console.warn('No token available');
+    return null;
+  }
+
+  // Check if token is still valid
+  if (!isTokenExpiringSoon(currentToken)) {
+    console.log('Token is still valid');
+    return currentToken;
+  }
+
+  console.warn('Token expiring soon or expired, attempting refresh...');
+  
+  // Try to refresh the token
+  const newToken = await refreshGoogleToken();
+  
+  if (newToken) {
+    // Update stored token
+    const decoded = decodeJWT(newToken);
+    if (decoded) {
+      const user: GoogleUser = {
+        email: decoded.email,
+        name: decoded.name,
+        picture: decoded.picture,
+        sub: decoded.sub
+      };
+      saveAuthState(user, newToken);
+      console.log('Token refreshed and saved');
+    }
+    return newToken;
+  }
+  
+  // If refresh failed, clear auth state and return null
+  console.error('Token refresh failed, clearing auth state');
+  clearAuthState();
+  return null;
+};

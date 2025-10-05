@@ -11,16 +11,18 @@
  * Uses AWS Lambda Response Streaming for Server-Sent Events (SSE)
  */
 
-// AWS Lambda Response Streaming (available as global in runtime)
-const awslambda = require('aws-lambda');
+// Note: awslambda is a global object provided by Lambda runtime when using Response Streaming
+// No import needed - it's automatically available
 
 const planningEndpoint = require('./endpoints/planning');
 const searchEndpoint = require('./endpoints/search');
 const proxyEndpoint = require('./endpoints/proxy');
+const chatEndpoint = require('./endpoints/chat');
 const staticEndpoint = require('./endpoints/static');
 
 /**
  * Handle CORS preflight requests
+ * Note: CORS headers are handled by Lambda Function URL configuration
  * @param {Object} event - Lambda event
  * @returns {Object} Lambda response
  */
@@ -28,9 +30,6 @@ function handleCORS(event) {
     return {
         statusCode: 200,
         headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'content-type, authorization, origin, accept',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({ message: 'CORS preflight response' })
@@ -59,7 +58,12 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         // Handle CORS preflight
         if (method === 'OPTIONS') {
             const corsResponse = handleCORS(event);
-            responseStream.write(JSON.stringify(corsResponse));
+            const metadata = {
+                statusCode: corsResponse.statusCode,
+                headers: corsResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(corsResponse.body);
             responseStream.end();
             return;
         }
@@ -77,9 +81,18 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        if (method === 'POST' && path === '/chat') {
+            console.log('Routing to chat endpoint');
+            await chatEndpoint.handler(event, responseStream);
+            return;
+        }
+        
         if (method === 'POST' && path === '/proxy') {
-            console.log('Routing to proxy endpoint');
-            await proxyEndpoint.handler(event, responseStream);
+            console.log('Routing to proxy endpoint (buffered)');
+            // Note: Proxy endpoint returns standard response, not streaming
+            const proxyResponse = await proxyEndpoint.handler(event);
+            responseStream.write(JSON.stringify(proxyResponse));
+            responseStream.end();
             return;
         }
         
@@ -93,11 +106,11 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         }
         
         // Method not allowed
+        // Note: CORS headers handled by Lambda Function URL configuration
         const errorResponse = {
             statusCode: 405,
             headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 error: 'Method not allowed',
@@ -110,11 +123,11 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
     } catch (error) {
         console.error('Router error:', error);
         
+        // Note: CORS headers handled by Lambda Function URL configuration
         const errorResponse = {
             statusCode: 500,
             headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 error: error.message || 'Internal server error'
@@ -130,6 +143,7 @@ module.exports = {
     handler: exports.handler,
     planningEndpoint,
     searchEndpoint,
+    chatEndpoint,
     proxyEndpoint,
     staticEndpoint
 };

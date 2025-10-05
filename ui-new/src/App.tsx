@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
+import { SearchResultsProvider } from './contexts/SearchResultsContext';
+import { ToastProvider } from './components/ToastManager';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
@@ -11,16 +13,25 @@ type TabType = 'chat' | 'planning' | 'search';
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [showSettings, setShowSettings] = useState(false);
-  const [chatTransferQuery, setChatTransferQuery] = useState<string>('');
+  const [chatTransferData, setChatTransferData] = useState<{prompt: string, persona: string} | null>(null);
 
-  const handleTransferToChat = (query: string) => {
-    setChatTransferQuery(query);
-    setActiveTab('chat');
+  const handleTransferToChat = (transferDataJson: string) => {
+    try {
+      const data = JSON.parse(transferDataJson);
+      setChatTransferData(data);
+      setActiveTab('chat');
+    } catch (e) {
+      // Fallback for old format
+      setChatTransferData({ prompt: transferDataJson, persona: '' });
+      setActiveTab('chat');
+    }
   };
 
   return (
     <AuthProvider>
-      <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
+      <SearchResultsProvider>
+        <ToastProvider>
+          <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
         {/* Header */}
         <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
           <div className="flex justify-between items-center max-w-screen-2xl mx-auto">
@@ -72,11 +83,10 @@ function App() {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full max-w-screen-2xl mx-auto">
-            {activeTab === 'chat' && <ChatTab />}
+            {activeTab === 'chat' && <ChatTab transferData={chatTransferData} />}
             {activeTab === 'planning' && (
               <PlanningTab
                 onTransferToChat={handleTransferToChat}
-                defaultQuery={chatTransferQuery}
               />
             )}
             {activeTab === 'search' && <SearchTab />}
@@ -85,7 +95,9 @@ function App() {
 
         {/* Settings Modal */}
         <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      </div>
+          </div>
+        </ToastProvider>
+      </SearchResultsProvider>
     </AuthProvider>
   );
 }

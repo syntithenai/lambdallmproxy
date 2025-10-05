@@ -4,77 +4,34 @@
  * Returns SSE stream with search results as they complete
  */
 
-// AWS Lambda Response Streaming
-const awslambda = require('aws-lambda');
+// Note: awslambda is a global object provided by Lambda runtime when using Response Streaming
+// No import needed - it's automatically available
 
 const { DuckDuckGoSearcher } = require('../search');
 const { SimpleHTMLParser } = require('../html-parser');
 const { verifyGoogleToken, getAllowedEmails } = require('../auth');
-const https = require('https');
-const http = require('http');
 
 /**
- * Fetch and extract content from a URL
+ * Fetch and extract content from a URL using DuckDuckGoSearcher's fetchUrl
+ * (includes redirect handling and bot avoidance)
+ * @param {DuckDuckGoSearcher} searcher - DuckDuckGoSearcher instance
  * @param {string} url - URL to fetch
  * @param {number} timeoutMs - Request timeout in milliseconds
  * @returns {Promise<string>} Extracted content
  */
-async function fetchContent(url, timeoutMs = 10000) {
-    return new Promise((resolve, reject) => {
-        try {
-            const urlObj = new URL(url);
-            const protocol = urlObj.protocol === 'https:' ? https : http;
-            
-            const options = {
-                hostname: urlObj.hostname,
-                port: urlObj.port,
-                path: urlObj.pathname + urlObj.search,
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; SearchBot/1.0)',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-                },
-                timeout: timeoutMs
-            };
-            
-            const req = protocol.request(options, (res) => {
-                let data = '';
-                
-                res.on('data', (chunk) => {
-                    data += chunk;
-                    // Limit data size to prevent memory issues
-                    if (data.length > 1024 * 1024) { // 1MB limit
-                        req.destroy();
-                        reject(new Error('Response too large'));
-                    }
-                });
-                
-                res.on('end', () => {
-                    try {
-                        const parser = new SimpleHTMLParser();
-                        const content = parser.extractText(data);
-                        resolve(content);
-                    } catch (parseError) {
-                        reject(new Error(`Failed to parse content: ${parseError.message}`));
-                    }
-                });
-            });
-            
-            req.on('error', (error) => {
-                reject(new Error(`Request failed: ${error.message}`));
-            });
-            
-            req.on('timeout', () => {
-                req.destroy();
-                reject(new Error('Request timeout'));
-            });
-            
-            req.end();
-            
-        } catch (error) {
-            reject(new Error(`Invalid URL or request error: ${error.message}`));
-        }
-    });
+async function fetchContent(searcher, url, timeoutMs = 10000) {
+    try {
+        // Use DuckDuckGoSearcher's fetchUrl which handles redirects
+        const rawHtml = await searcher.fetchUrl(url, timeoutMs);
+        
+        // Parse and extract text content
+        const parser = new SimpleHTMLParser(rawHtml);
+        const content = parser.convertToText(rawHtml);
+        
+        return content;
+    } catch (error) {
+        throw new Error(`Failed to fetch ${url}: ${error.message}`);
+    }
 }
 
 /**
@@ -108,7 +65,8 @@ async function searchWithContent(query, options = {}) {
             
             if (includeContent) {
                 try {
-                    content = await fetchContent(result.url, fetchTimeout);
+                    // Pass searcher instance to fetchContent for redirect handling
+                    content = await fetchContent(searcher, result.url, fetchTimeout);
                 } catch (error) {
                     console.error(`Failed to fetch content for ${result.url}:`, error.message);
                     contentError = error.message;
@@ -175,15 +133,13 @@ async function searchMultiple(queries, options = {}) {
  */
 async function handler(event, responseStream) {
     // Set streaming headers
+    // Note: CORS headers are handled by Lambda Function URL configuration
     const metadata = {
         statusCode: 200,
         headers: {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-            'Access-Control-Allow-Methods': 'POST,OPTIONS'
+            'Connection': 'keep-alive'
         }
     };
     

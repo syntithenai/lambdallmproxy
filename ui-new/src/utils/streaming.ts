@@ -111,12 +111,14 @@ export async function handleSSEResponse(
  * @param url - Endpoint URL
  * @param body - Request body
  * @param token - Authorization token
+ * @param signal - AbortSignal for cancellation (optional)
  * @returns Fetch response promise
  */
 export async function createSSERequest(
   url: string,
   body: any,
-  token: string
+  token: string,
+  signal?: AbortSignal
 ): Promise<Response> {
   const response = await fetch(url, {
     method: 'POST',
@@ -125,7 +127,8 @@ export async function createSSERequest(
       'Authorization': `Bearer ${token}`,
       'Accept': 'text/event-stream'
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   });
 
   if (!response.ok) {

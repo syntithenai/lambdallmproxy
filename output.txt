@@ -1,31 +1,18 @@
-[0;34m🚀 Deploying Lambda function llmproxy...[0m
-[1;33m📝 Loading configuration from .env file...[0m
-[1;33m📦 Installing production dependencies...[0m
-npm WARN config production Use `--omit=dev` instead.
-npm WARN deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
-
-added 24 packages, and audited 25 packages in 5s
-
-5 packages are looking for funding
-  run `npm fund` for details
-
-found 0 vulnerabilities
-[1;33m📦 Files to be packaged:[0m
--rw-rw-r-- 1 stever stever  3648 Oct  4 19:38 auth.js
--rw-rw-r-- 1 stever stever  3161 Oct  4 19:38 html-parser.js
--rw-rw-r-- 1 stever stever  4615 Oct  4 19:38 index.js
--rw-rw-r-- 1 stever stever 36814 Oct  4 19:38 lambda_search_llm_handler.js
--rw-rw-r-- 1 stever stever  6623 Oct  4 19:38 llm_tools_adapter.js
--rw-rw-r-- 1 stever stever  9780 Oct  4 19:38 memory-tracker.js
--rw-rw-r-- 1 stever stever 10787 Oct  4 19:38 pricing.js
--rw-rw-r-- 1 stever stever 12584 Oct  4 19:38 pricing_scraper.js
--rw-rw-r-- 1 stever stever  1384 Oct  4 19:38 providers.js
--rw-rw-r-- 1 stever stever 64023 Oct  4 19:38 search.js
--rw-rw-r-- 1 stever stever 24396 Oct  4 19:38 tools.js
-[0;32m✅ Function deployed successfully[0m
-[0;34m📁 Loading environment variables from .env...[0m
-[0;32m✅ Environment variables configured from .env (including ALLOWED_EMAILS)[0m
-[1;33m🔧 Updating function memory/timeout from .env...[0m
-[1;33m🌐 Checking Lambda Function URL CORS configuration...[0m
-[0;32m✅ CORS configuration verified[0m
-[0;32m🎉 Deployment completed successfully![0m
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/lib/python3.12/http/server.py", line 1314, in <module>
+    test(
+  File "/usr/lib/python3.12/http/server.py", line 1261, in test
+    with ServerClass(addr, HandlerClass) as httpd:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 457, in __init__
+    self.server_bind()
+  File "/usr/lib/python3.12/http/server.py", line 1308, in server_bind
+    return super().server_bind()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 136, in server_bind
+    socketserver.TCPServer.server_bind(self)
+  File "/usr/lib/python3.12/socketserver.py", line 473, in server_bind
+    self.socket.bind(self.server_address)
+OSError: [Errno 98] Address already in use

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 interface SettingsModalProps {
@@ -6,23 +6,89 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+type Provider = 'groq' | 'openai';
+
 interface Settings {
+  provider: Provider;
   llmApiKey: string;
   apiEndpoint: string;
+  smallModel: string;
+  largeModel: string;
+  reasoningModel: string;
 }
+
+const PROVIDER_ENDPOINTS: Record<Provider, string> = {
+  groq: 'https://api.groq.com/openai/v1',
+  openai: 'https://api.openai.com/v1'
+};
+
+const MODEL_SUGGESTIONS: Record<Provider, { small: string[]; large: string[]; reasoning: string[] }> = {
+  groq: {
+    small: ['llama-3.1-8b-instant', 'llama-3.2-11b-text-preview', 'gemma2-9b-it'],
+    large: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768'],
+    reasoning: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'deepseek-r1-distill-llama-70b']
+  },
+  openai: {
+    small: ['gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4o-mini-2024-07-18'],
+    large: ['gpt-4o', 'gpt-4-turbo', 'gpt-4'],
+    reasoning: ['o1-preview', 'o1-mini', 'gpt-4o']
+  }
+};
+
+const DEFAULT_MODELS: Record<Provider, { small: string; large: string; reasoning: string }> = {
+  groq: {
+    small: 'llama-3.1-8b-instant',
+    large: 'llama-3.3-70b-versatile',
+    reasoning: 'llama-3.3-70b-versatile'
+  },
+  openai: {
+    small: 'gpt-4o-mini',
+    large: 'gpt-4o',
+    reasoning: 'o1-preview'
+  }
+};
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [settings, setSettings] = useLocalStorage<Settings>('app_settings', {
+    provider: 'groq',
     llmApiKey: '',
-    apiEndpoint: ''
+    apiEndpoint: PROVIDER_ENDPOINTS.groq,
+    smallModel: DEFAULT_MODELS.groq.small,
+    largeModel: DEFAULT_MODELS.groq.large,
+    reasoningModel: DEFAULT_MODELS.groq.reasoning
   });
 
+  const [tempSettings, setTempSettings] = useState<Settings>(settings);
+
+  useEffect(() => {
+    setTempSettings(settings);
+  }, [settings, isOpen]);
+
+  const handleProviderChange = (provider: Provider) => {
+    setTempSettings({
+      ...tempSettings,
+      provider,
+      apiEndpoint: PROVIDER_ENDPOINTS[provider],
+      smallModel: DEFAULT_MODELS[provider].small,
+      largeModel: DEFAULT_MODELS[provider].large,
+      reasoningModel: DEFAULT_MODELS[provider].reasoning
+    });
+  };
+
   const handleSave = () => {
-    console.log('Settings saved:', settings);
+    setSettings(tempSettings);
+    console.log('Settings saved:', tempSettings);
+    onClose();
+  };
+
+  const handleCancel = () => {
+    setTempSettings(settings);
     onClose();
   };
 
   if (!isOpen) return null;
+
+  const suggestions = MODEL_SUGGESTIONS[tempSettings.provider];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -30,7 +96,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h2>
           <button
-            onClick={onClose}
+            onClick={handleCancel}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -40,43 +106,116 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         </div>
 
         <div className="space-y-6">
+          {/* API Provider */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              API Provider
+            </label>
+            <select
+              value={tempSettings.provider}
+              onChange={(e) => handleProviderChange(e.target.value as Provider)}
+              className="input-field"
+            >
+              <option value="groq">Groq</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
+
           {/* LLM API Key */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              LLM API Key
+              API Key
             </label>
             <input
               type="password"
-              value={settings.llmApiKey}
-              onChange={(e) => setSettings({ ...settings, llmApiKey: e.target.value })}
+              value={tempSettings.llmApiKey}
+              onChange={(e) => setTempSettings({ ...tempSettings, llmApiKey: e.target.value })}
               className="input-field"
-              placeholder="Enter your API key (e.g., Groq, OpenAI)"
+              placeholder={`Enter your ${tempSettings.provider === 'groq' ? 'Groq' : 'OpenAI'} API key`}
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               This key is stored locally in your browser
             </p>
           </div>
 
-          {/* API Endpoint */}
+          {/* Small Model */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              API Endpoint
+              Small Model (Fast, low-cost tasks)
             </label>
             <input
               type="text"
-              value={settings.apiEndpoint}
-              onChange={(e) => setSettings({ ...settings, apiEndpoint: e.target.value })}
+              value={tempSettings.smallModel}
+              onChange={(e) => setTempSettings({ ...tempSettings, smallModel: e.target.value })}
+              list="small-model-suggestions"
               className="input-field"
-              placeholder="https://api.example.com (optional)"
+              placeholder="Enter model name"
             />
+            <datalist id="small-model-suggestions">
+              {suggestions.small.map(model => (
+                <option key={model} value={model} />
+              ))}
+            </datalist>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Leave empty to use default endpoint
+              Suggested: {suggestions.small.join(', ')}
             </p>
           </div>
+
+          {/* Large Model */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Large Model (Complex, high-quality tasks)
+            </label>
+            <input
+              type="text"
+              value={tempSettings.largeModel}
+              onChange={(e) => setTempSettings({ ...tempSettings, largeModel: e.target.value })}
+              list="large-model-suggestions"
+              className="input-field"
+              placeholder="Enter model name"
+            />
+            <datalist id="large-model-suggestions">
+              {suggestions.large.map(model => (
+                <option key={model} value={model} />
+              ))}
+            </datalist>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Suggested: {suggestions.large.join(', ')}
+            </p>
+          </div>
+
+          {/* Reasoning Model */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Reasoning Model (Planning, analysis)
+            </label>
+            <input
+              type="text"
+              value={tempSettings.reasoningModel}
+              onChange={(e) => setTempSettings({ ...tempSettings, reasoningModel: e.target.value })}
+              list="reasoning-model-suggestions"
+              className="input-field"
+              placeholder="Enter model name"
+            />
+            <datalist id="reasoning-model-suggestions">
+              {suggestions.reasoning.map(model => (
+                <option key={model} value={model} />
+              ))}
+            </datalist>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Suggested: {suggestions.reasoning.join(', ')}
+            </p>
+          </div>
+
+          {/* API Endpoint (Hidden/Auto-filled) */}
+          <input type="hidden" value={tempSettings.apiEndpoint} />
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Endpoint: {tempSettings.apiEndpoint}
+          </p>
         </div>
 
         <div className="flex justify-end gap-3 mt-8">
-          <button onClick={onClose} className="btn-secondary">
+          <button onClick={handleCancel} className="btn-secondary">
             Cancel
           </button>
           <button onClick={handleSave} className="btn-primary">

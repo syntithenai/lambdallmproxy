@@ -4,8 +4,8 @@
  * Returns SSE stream with: text response, search keywords, questions, and persona
  */
 
-// AWS Lambda Response Streaming
-const awslambda = require('aws-lambda');
+// Note: awslambda is a global object provided by Lambda runtime when using Response Streaming
+// No import needed - it's automatically available
 
 const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { DEFAULT_REASONING_EFFORT, MAX_TOKENS_PLANNING } = require('../config/tokens');
@@ -123,15 +123,13 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
  */
 async function handler(event, responseStream) {
     // Set streaming headers
+    // Note: CORS headers are handled by Lambda Function URL configuration
     const metadata = {
         statusCode: 200,
         headers: {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-            'Access-Control-Allow-Methods': 'POST,OPTIONS'
+            'Connection': 'keep-alive'
         }
     };
     
