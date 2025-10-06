@@ -5,6 +5,7 @@
 
 const { DuckDuckGoSearcher } = require('./search');
 const { SimpleHTMLParser } = require('./html-parser');
+const { extractContent } = require('./html-content-extractor');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
 const vm = require('vm');
 
@@ -84,12 +85,18 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'search_web',
-      description: 'Search the web for results relevant to a query and optionally generate an LLM summary. Returns all search result fields including title, url, description, score, and content when requested.',
+      description: 'Search the web for results relevant to one or multiple queries in a single call. Can accept either a single query string or an array of queries. Returns all search result fields including title, url, description, score, and content when requested. When multiple queries are provided, results are grouped by query.',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Search query' },
-          limit: { type: 'integer', minimum: 1, maximum: 50, default: 3 },
+          query: { 
+            oneOf: [
+              { type: 'string', description: 'Single search query' },
+              { type: 'array', items: { type: 'string' }, description: 'Array of search queries to execute in one call' }
+            ],
+            description: 'Search query (string) or multiple queries (array of strings)'
+          },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 10, description: 'Results per query (increased default for more comprehensive research)' },
           timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15 },
           load_content: { type: 'boolean', default: false, description: 'When true, fetch full page content for each result'},
           generate_summary: { type: 'boolean', default: false, description: 'When true, generate an LLM summary of the search results'}
@@ -153,44 +160,68 @@ async function callFunction(name, args = {}, context = {}) {
   
   switch (name) {
     case 'search_web': {
-      const query = String(args.query || '').trim();
-      if (!query) return JSON.stringify({ error: 'query required' });
+      // Handle both single query (string) and multiple queries (array)
+      const queryInput = args.query;
+      const queries = Array.isArray(queryInput) 
+        ? queryInput.map(q => String(q || '').trim()).filter(Boolean)
+        : [String(queryInput || '').trim()].filter(Boolean);
+      
+      if (queries.length === 0) return JSON.stringify({ error: 'query required' });
+      
       const limit = clampInt(args.limit, 1, 50, 3);
       const timeout = clampInt(args.timeout, 1, 60, 15);
       const loadContent = args.load_content === true;
       const generateSummary = args.generate_summary === true;
       const searcher = new DuckDuckGoSearcher();
-      const out = await searcher.search(query, limit, loadContent, timeout);
-      // Include all fields from raw search response, applying content extraction when loaded
-      const results = (out?.results || []).map(r => {
-        // Always include all core fields: title, url, description, score, duckduckgoScore, state
-        const result = {
-          title: r.title,
-          url: r.url,
-          description: r.description,
-          score: r.score,
-          duckduckgoScore: r.duckduckgoScore,
-          state: r.state,
-          contentLength: r.contentLength || 0,
-          fetchTimeMs: r.fetchTimeMs || 0,
-          content: null // Always include content field, default to null
-        };
+      
+      // Execute searches for all queries
+      const allResults = [];
+      for (const query of queries) {
+        const out = await searcher.search(query, limit, loadContent, timeout);
+        // Include all fields from raw search response, applying content extraction when loaded
+        const results = (out?.results || []).map(r => {
+          // Always include all core fields: title, url, description, score, duckduckgoScore, state
+          const result = {
+            query: query, // Include which query this result is for
+            title: r.title,
+            url: r.url,
+            description: r.description,
+            score: r.score,
+            duckduckgoScore: r.duckduckgoScore,
+            state: r.state,
+            contentLength: r.contentLength || 0,
+            fetchTimeMs: r.fetchTimeMs || 0,
+            content: null // Always include content field, default to null
+          };
+          
+          if (loadContent && r.content) {
+            // Apply intelligent content extraction for loaded content
+            result.content = extractKeyContent(r.content, query);
+            result.originalLength = r.content.length;
+            result.intelligentlyExtracted = true;
+            if (r.truncated) result.truncated = r.truncated;
+            if (r.contentError) result.contentError = r.contentError;
+          } else if (loadContent) {
+            // Include content-related fields even if content wasn't loaded
+            result.content = r.content || null;
+            if (r.contentError) result.contentError = r.contentError;
+          }
+          
+          return result;
+        });
         
-        if (loadContent && r.content) {
-          // Apply intelligent content extraction for loaded content
-          result.content = extractKeyContent(r.content, query);
-          result.originalLength = r.content.length;
-          result.intelligentlyExtracted = true;
-          if (r.truncated) result.truncated = r.truncated;
-          if (r.contentError) result.contentError = r.contentError;
-        } else if (loadContent) {
-          // Include content-related fields even if content wasn't loaded
-          result.content = r.content || null;
-          if (r.contentError) result.contentError = r.contentError;
+        allResults.push(...results);
+      }
+      
+      // Group results by query for better organization
+      const resultsByQuery = {};
+      for (const result of allResults) {
+        const q = result.query;
+        if (!resultsByQuery[q]) {
+          resultsByQuery[q] = [];
         }
-        
-        return result;
-      });
+        resultsByQuery[q].push(result);
+      }
       // Generate summary only if requested and context is available
       let summary = null;
       let summary_model = null;
@@ -417,16 +448,15 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
       
       // Build complete response with all raw search fields
       const response = {
-        query,
-        count: out?.returned || 0,
-        totalFound: out?.totalFound || 0,
-        limit: out?.limit || limit,
-        fetchContent: out?.fetchContent || loadContent,
-        timeout: out?.timeout || timeout,
-        processingTimeMs: out?.processingTimeMs || 0,
-        timestamp: out?.timestamp || new Date().toISOString(),
-        results,
-        metadata: out?.metadata || {},
+        queries: queries, // Include all queries that were executed
+        multiQuery: queries.length > 1,
+        totalResults: allResults.length,
+        resultsByQuery: resultsByQuery,
+        limit: limit,
+        fetchContent: loadContent,
+        timeout: timeout,
+        timestamp: new Date().toISOString(),
+        results: allResults, // All results combined
         // Summary fields (only included if summary generation was attempted)
         ...(generateSummary && { 
           generate_summary: generateSummary,
@@ -470,9 +500,30 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
       const searcher = new DuckDuckGoSearcher();
       try {
         const raw = await searcher.fetchUrl(url, timeout * 1000);
-        const parser = new SimpleHTMLParser(raw);
-        const text = parser.convertToText(raw);
-        return JSON.stringify({ url, content: text });
+        
+        // Use new HTML content extractor to convert to Markdown (preferred) or plain text
+        const extracted = extractContent(raw);
+        
+        console.log(`🌐 Scraped ${url}: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.format} format, ${extracted.compressionRatio}x compression)`);
+        
+        const response = {
+          url,
+          content: extracted.content,
+          format: extracted.format,
+          originalLength: extracted.originalLength,
+          extractedLength: extracted.extractedLength,
+          compressionRatio: extracted.compressionRatio
+        };
+        
+        if (extracted.warning) {
+          response.warning = extracted.warning;
+        }
+        
+        if (extracted.error) {
+          response.extractionError = extracted.error;
+        }
+        
+        return JSON.stringify(response);
       } catch (e) {
         return JSON.stringify({ url, error: String(e?.message || e) });
       }

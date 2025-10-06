@@ -118,8 +118,8 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             options: {
                 apiKey,
                 reasoningEffort: DEFAULT_REASONING_EFFORT, // Use configurable reasoning effort
-                temperature: 0.2, // Slightly higher temperature for more creative planning
-                max_tokens: MAX_TOKENS_PLANNING, // Now allows up to 300 tokens for planning
+                temperature: 0.7, // Higher temperature for more creative and expansive planning
+                max_tokens: MAX_TOKENS_PLANNING, // Allows up to 600 tokens for comprehensive planning
                 timeoutMs: 25000 // Increased timeout for more complex planning
             }
         };
@@ -223,7 +223,7 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             options: {
                 apiKey,
                 reasoningEffort: DEFAULT_REASONING_EFFORT,
-                temperature: 0.2,
+                temperature: 0.8,
                 max_tokens: MAX_TOKENS_TOOL_SYNTHESIS,
                 timeoutMs: 30000
             }
@@ -543,8 +543,8 @@ Answer with URLs:`;
             options: {
                 apiKey,
                 reasoningEffort: DEFAULT_REASONING_EFFORT,
-                temperature: 0.2,
-                max_tokens: maxTokens, // Adjust based on query type
+                temperature: 0.8, // Higher temperature for more comprehensive, detailed responses
+                max_tokens: maxTokens, // Dynamically adjusted based on query complexity (2048-8192 tokens)
                 timeoutMs: 30000
             }
         };

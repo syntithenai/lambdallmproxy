@@ -7,6 +7,7 @@ const http = require('http');
 const { URL } = require('url');
 const { TokenAwareMemoryTracker } = require('./memory-tracker');
 const { SimpleHTMLParser } = require('./html-parser');
+const { extractContent } = require('./html-content-extractor');
 
 /**
  * Integrated DuckDuckGo scraper for search functionality
@@ -168,9 +169,15 @@ class DuckDuckGoSearcher {
                 }
             }
             
-            // Filter results by quality score (only keep results with decent relevance)
+            // Filter results by quality score and exclude DuckDuckGo URLs
             const qualityThreshold = 20; // Minimum score threshold
-            const qualityResults = results.filter(result => result.score >= qualityThreshold);
+            const qualityResults = results.filter(result => {
+                // Exclude DuckDuckGo URLs - they're not useful to scrape
+                if (result.url && result.url.includes('duckduckgo.com')) {
+                    return false;
+                }
+                return result.score >= qualityThreshold;
+            });
             
             // Limit processing to top results for efficiency (increased for 32K tokens)
             const maxProcessingLimit = Math.min(8, limit);
@@ -1032,14 +1039,32 @@ class DuckDuckGoSearcher {
             
             const rawContent = await this.fetchUrl(result.url, timeout * 1000);
             
-            // First try to extract meaningful content from HTML
-            let optimizedContent = this.memoryTracker.extractMeaningfulContent(rawContent);
+            // Use new HTML content extractor to convert to Markdown (preferred) or plain text
+            const extracted = extractContent(rawContent);
             
-            // If meaningful extraction didn't work well, fall back to text conversion
+            console.log(`[${index + 1}/${total}] Extracted ${extracted.format} content: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.compressionRatio}x compression)`);
+            
+            let optimizedContent = extracted.content;
+            
+            // Store extraction metadata
+            result.contentFormat = extracted.format;
+            result.originalContentLength = extracted.originalLength;
+            result.compressionRatio = extracted.compressionRatio;
+            
+            if (extracted.warning) {
+                console.log(`[${index + 1}/${total}] Warning: ${extracted.warning}`);
+            }
+            
+            // If extraction yielded very little content, fall back to old method
             if (optimizedContent.length < 200) {
-                const parser = new SimpleHTMLParser(rawContent);
-                const textContent = parser.convertToText(rawContent);
-                optimizedContent = this.memoryTracker.cleanContent(textContent);
+                console.log(`[${index + 1}/${total}] Extracted content too short, trying fallback extraction...`);
+                optimizedContent = this.memoryTracker.extractMeaningfulContent(rawContent);
+                
+                if (optimizedContent.length < 200) {
+                    const parser = new SimpleHTMLParser(rawContent);
+                    const textContent = parser.convertToText(rawContent);
+                    optimizedContent = this.memoryTracker.cleanContent(textContent);
+                }
             }
             
             // Apply content summarization for very long content (increased threshold for 32K)
@@ -1069,7 +1094,7 @@ class DuckDuckGoSearcher {
                 result.content = finalContent;
                 result.contentLength = finalContent.length;
                 this.memoryTracker.addContentSize(contentSize);
-                console.log(`[${index + 1}/${total}] Content loaded: ${Math.round(contentSize / 1024)}KB. ${this.memoryTracker.getMemorySummary()}`);
+                console.log(`[${index + 1}/${total}] Content loaded: ${Math.round(contentSize / 1024)}KB (${result.contentFormat} format). ${this.memoryTracker.getMemorySummary()}`);
             }
             
             result.fetchTimeMs = Date.now() - startTime;

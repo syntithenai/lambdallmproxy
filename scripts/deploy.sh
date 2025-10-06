@@ -55,6 +55,7 @@ cp "$OLDPWD"/src/auth.js ./
 cp "$OLDPWD"/src/providers.js ./  
 cp "$OLDPWD"/src/memory-tracker.js ./
 cp "$OLDPWD"/src/html-parser.js ./
+cp "$OLDPWD"/src/html-content-extractor.js ./
 cp "$OLDPWD"/src/pricing.js ./
 cp "$OLDPWD"/src/lambda_search_llm_handler.js ./
 cp "$OLDPWD"/src/search.js ./ 2>/dev/null || true  # Optional, may not exist yet

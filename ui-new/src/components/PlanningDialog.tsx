@@ -89,11 +89,12 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
             case 'result':
               setResult(data);
               // Update system prompt from persona if available
+              const promptToSave = data.persona || undefined;
               if (data.persona) {
                 setSystemPrompt(data.persona);
               }
-              saveCachedPlan(query, data);
-              console.log('Plan auto-saved to cache');
+              saveCachedPlan(query, data, promptToSave);
+              console.log('Plan auto-saved to cache with system prompt');
               break;
               
             case 'error':
@@ -134,17 +135,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
       
       chatPrompt += `**Search Keywords:**\n`;
       chatPrompt += flatKeywords.map((kw: string) => `- ${kw}`).join('\n');
-      chatPrompt += `\n\n**Search Tool Usage Examples:**\n`;
-      chatPrompt += `Use the search_web tool with JSON format like:\n`;
-      chatPrompt += `\`\`\`json\n`;
-      chatPrompt += `{\n`;
-      chatPrompt += `  "query": "${flatKeywords[0] || 'your search query'}",\n`;
-      chatPrompt += `  "limit": 3,\n`;
-      chatPrompt += `  "load_content": true,\n`;
-      chatPrompt += `  "generate_summary": false\n`;
-      chatPrompt += `}\n`;
-      chatPrompt += `\`\`\`\n\n`;
-      chatPrompt += `Please search for each keyword separately to gather comprehensive information.\n\n`;
+      chatPrompt += `\n\nPlease search for these keywords to gather comprehensive information.\n\n`;
     }
     
     if (result.questions && result.questions.length > 0) {
@@ -171,6 +162,10 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const handleLoadPlan = (plan: CachedPlan) => {
     setQuery(plan.query);
     setResult(plan.plan);
+    // Restore system prompt if it was saved with the plan
+    if (plan.systemPrompt) {
+      setSystemPrompt(plan.systemPrompt);
+    }
     setShowLoadDialog(false);
   };
 

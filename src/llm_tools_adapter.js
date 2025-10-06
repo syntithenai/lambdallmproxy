@@ -104,8 +104,12 @@ function normalizeFromChat(data) {
 }
 
 async function llmResponsesWithTools({ model, input, tools, options }) {
-  const temperature = options?.temperature ?? 0.2;
-  const max_tokens = options?.max_tokens ?? 1024;
+  // Default parameters optimized for comprehensive, detailed, verbose responses
+  const temperature = options?.temperature ?? 0.8;
+  const max_tokens = options?.max_tokens ?? 4096;
+  const top_p = options?.top_p ?? 0.95;
+  const frequency_penalty = options?.frequency_penalty ?? 0.3;
+  const presence_penalty = options?.presence_penalty ?? 0.4;
 
   // Auto-detect and add provider prefix if missing
   let normalizedModel = model;
@@ -139,7 +143,10 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       tools,
       tool_choice: 'auto',
       temperature,
-      max_tokens
+      max_tokens,
+      top_p,
+      frequency_penalty,
+      presence_penalty
     };
     const headers = {
       'Content-Type': 'application/json',
@@ -175,6 +182,9 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       tool_choice: 'auto',
       temperature,
       max_tokens,
+      top_p,
+      frequency_penalty,
+      presence_penalty,
       ...mapReasoningForGroq(normalizedModel, options)
     };
     const headers = {

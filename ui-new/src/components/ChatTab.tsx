@@ -2,11 +2,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchResults } from '../contexts/SearchResultsContext';
 import { useToast } from './ToastManager';
-import { useLocalStorage, removeFromLocalStorage, getAllKeys } from '../hooks/useLocalStorage';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
 import { PlanningDialog } from './PlanningDialog';
+import { MarkdownRenderer } from './MarkdownRenderer';
+import { 
+  saveChatToHistory, 
+  loadChatFromHistory, 
+  deleteChatFromHistory, 
+  getAllChatHistory,
+  type ChatHistoryEntry 
+} from '../utils/chatHistory';
 
 interface ChatTabProps {
   transferData?: { prompt: string; persona: string } | null;
@@ -63,6 +71,10 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
   const [systemPromptExpanded, setSystemPromptExpanded] = useState(false);
   const [currentStreamingBlockIndex, setCurrentStreamingBlockIndex] = useState<number | null>(null);
   const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
+  
+  // Chat history tracking
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -128,6 +140,23 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
       }
     }
   }, [transferData]);
+
+  // Auto-save chat history whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      const id = saveChatToHistory(messages, currentChatId || undefined);
+      if (!currentChatId) {
+        setCurrentChatId(id);
+      }
+    }
+  }, [messages]);
+
+  // Load chat history list when dialog opens
+  useEffect(() => {
+    if (showLoadDialog) {
+      setChatHistory(getAllChatHistory());
+    }
+  }, [showLoadDialog]);
 
   const handleStop = () => {
     if (abortControllerRef.current) {
@@ -239,6 +268,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
     setIsLoading(true);
     setToolStatus([]);
     setStreamingContent('');
+    // Clear expanded tool messages so new tool calls start collapsed
+    setExpandedToolMessages(new Set());
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
@@ -615,17 +646,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     }
   };
 
-  const handleLoadChat = (key: string) => {
-    const saved = localStorage.getItem(key);
-    if (saved) {
-      setMessages(JSON.parse(saved));
+  const handleLoadChat = (entry: ChatHistoryEntry) => {
+    const loadedMessages = loadChatFromHistory(entry.id);
+    if (loadedMessages) {
+      setMessages(loadedMessages);
+      setCurrentChatId(entry.id);
       setShowLoadDialog(false);
+      showSuccess('Chat loaded successfully');
+    } else {
+      showError('Failed to load chat');
     }
   };
 
-  const handleDeleteChat = (key: string) => {
-    removeFromLocalStorage(key);
-    setShowLoadDialog(false);
+  const handleDeleteChat = (chatId: string) => {
+    deleteChatFromHistory(chatId);
+    setChatHistory(getAllChatHistory());
+    showSuccess('Chat deleted');
   };
 
   const handleNewChat = () => {
@@ -633,6 +669,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     setInput('');
     setSystemPrompt('');
     clearSearchResults();
+    // Clear expanded tool messages when starting new chat
+    setExpandedToolMessages(new Set());
+    // Reset chat ID to start a new session
+    setCurrentChatId(null);
   };
 
   const handleAddMCPServer = () => {
@@ -659,8 +699,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
   const handleDeleteMCPServer = (id: string) => {
     setMcpServers(mcpServers.filter(server => server.id !== id));
   };
-
-  const savedChats = getAllKeys('saved_chat_');
 
   return (
     <div className="flex flex-col h-full">
@@ -689,11 +727,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {/* Chat Header with Actions */}
       <div className="flex flex-wrap items-center gap-2 p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex flex-wrap gap-2 flex-1">
-          <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm">
-            📂 Load Chat
-          </button>
-          <button onClick={handleNewChat} className="btn-secondary text-sm">
+          <button onClick={handleNewChat} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded font-medium text-sm transition-colors">
             ➕ New Chat
+          </button>
+          <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm">
+            🕒 History
           </button>
           <div className="relative" ref={examplesDropdownRef}>
             <button 
@@ -952,9 +990,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                         <details className="mt-2">
                                           <summary className="cursor-pointer text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-100 text-xs font-semibold">
                                             📄 Loaded Page Content ({result.content.length} chars)
+                                            {result.contentFormat && (
+                                              <span className="ml-2 text-purple-600 dark:text-purple-400">
+                                                [{result.contentFormat}]
+                                              </span>
+                                            )}
                                           </summary>
                                           <div className="mt-2 p-2 bg-white dark:bg-gray-900 rounded border border-purple-200 dark:border-purple-800 max-h-64 overflow-y-auto">
-                                            <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300">{result.content}</pre>
+                                            {result.contentFormat === 'markdown' ? (
+                                              <div className="text-xs">
+                                                <MarkdownRenderer content={result.content} />
+                                              </div>
+                                            ) : (
+                                              <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300">{result.content}</pre>
+                                            )}
                                           </div>
                                         </details>
                                       )}
@@ -991,9 +1040,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                     <div>
                                       <span className="font-semibold text-purple-800 dark:text-purple-200">
                                         📄 Page Content ({scrapeResult.content.length.toLocaleString()} characters)
+                                        {scrapeResult.format && (
+                                          <span className="ml-2 text-xs text-purple-600 dark:text-purple-400">
+                                            [{scrapeResult.format}]
+                                          </span>
+                                        )}
                                       </span>
                                       <div className="mt-2 p-3 bg-white dark:bg-gray-900 rounded border border-purple-200 dark:border-purple-800 max-h-80 overflow-y-auto">
-                                        <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300 leading-relaxed">{scrapeResult.content}</pre>
+                                        {scrapeResult.format === 'markdown' ? (
+                                          <div className="text-xs">
+                                            <MarkdownRenderer content={scrapeResult.content} />
+                                          </div>
+                                        ) : (
+                                          <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300 leading-relaxed">{scrapeResult.content}</pre>
+                                        )}
                                       </div>
                                     </div>
                                   )}
@@ -1014,12 +1074,18 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 {/* User or Assistant Message */}
                 {msg.role !== 'tool' && (
                   <>
-                    <div className="whitespace-pre-wrap">
-                      {msg.content}
-                      {msg.isStreaming && (
-                        <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
-                      )}
-                    </div>
+                    {msg.role === 'assistant' ? (
+                      <div>
+                        <MarkdownRenderer content={msg.content} />
+                        {msg.isStreaming && (
+                          <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="whitespace-pre-wrap">
+                        {msg.content}
+                      </div>
+                    )}
                     
                     {/* Copy/Share buttons for assistant messages */}
                     {msg.role === 'assistant' && msg.content && (
@@ -1196,34 +1262,49 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {/* Load Chat Dialog */}
       {showLoadDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="card max-w-md w-full p-6">
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Load Chat History</h3>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {savedChats.map((key) => (
-                <div key={key} className="flex gap-2">
-                  <button
-                    onClick={() => handleLoadChat(key)}
-                    className="btn-secondary flex-1 text-left"
-                  >
-                    {key.replace('saved_chat_', '').replace(/_/g, ' ')}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteChat(key)}
-                    className="btn-secondary text-red-500"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              ))}
-              {savedChats.length === 0 && (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                  No saved chats found
+          <div className="card max-w-2xl w-full p-6">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Chat History</h3>
+            <div className="space-y-3 max-h-[70vh] overflow-y-auto">
+              {chatHistory.map((entry) => {
+                const date = new Date(entry.timestamp).toLocaleString();
+                return (
+                  <div key={entry.id} className="border border-gray-300 dark:border-gray-600 rounded-lg p-3">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-900 dark:text-gray-100 font-medium mb-1 truncate">
+                          {entry.firstUserPrompt}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {date}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => handleLoadChat(entry)}
+                          className="btn-primary text-xs px-3 py-1"
+                        >
+                          Load
+                        </button>
+                        <button
+                          onClick={() => handleDeleteChat(entry.id)}
+                          className="btn-secondary text-red-500 text-xs px-3 py-1"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {chatHistory.length === 0 && (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                  No chat history found. Start a conversation to save it automatically.
                 </p>
               )}
             </div>
             <button
               onClick={() => setShowLoadDialog(false)}
-              className="btn-secondary w-full mt-4"
+              className="btn-primary w-full mt-4"
             >
               Close
             </button>

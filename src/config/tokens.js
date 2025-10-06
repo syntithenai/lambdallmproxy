@@ -3,16 +3,16 @@
  * Centralized token limits and complexity-based allocation
  */
 
-// --- Token limit configuration ---
-const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 300);
-const MAX_TOKENS_TOOL_SYNTHESIS = Number(process.env.MAX_TOKENS_TOOL_SYNTHESIS ?? 512);
+// --- Token limit configuration (optimized for comprehensive, detailed responses) ---
+const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 600);
+const MAX_TOKENS_TOOL_SYNTHESIS = Number(process.env.MAX_TOKENS_TOOL_SYNTHESIS ?? 1024);
 
-// Dynamic token allocation based on complexity assessment
-const MAX_TOKENS_LOW_COMPLEXITY = Number(process.env.MAX_TOKENS_LOW_COMPLEXITY ?? 512);
-const MAX_TOKENS_MEDIUM_COMPLEXITY = Number(process.env.MAX_TOKENS_MEDIUM_COMPLEXITY ?? 768);
-const MAX_TOKENS_HIGH_COMPLEXITY = Number(process.env.MAX_TOKENS_HIGH_COMPLEXITY ?? 1024);
+// Dynamic token allocation based on complexity assessment - SIGNIFICANTLY INCREASED for verbose, detailed responses
+const MAX_TOKENS_LOW_COMPLEXITY = Number(process.env.MAX_TOKENS_LOW_COMPLEXITY ?? 2048);
+const MAX_TOKENS_MEDIUM_COMPLEXITY = Number(process.env.MAX_TOKENS_MEDIUM_COMPLEXITY ?? 4096);
+const MAX_TOKENS_HIGH_COMPLEXITY = Number(process.env.MAX_TOKENS_HIGH_COMPLEXITY ?? 8192);
 
-const MAX_TOKENS_MATH_RESPONSE = Number(process.env.MAX_TOKENS_MATH_RESPONSE ?? 512);
+const MAX_TOKENS_MATH_RESPONSE = Number(process.env.MAX_TOKENS_MATH_RESPONSE ?? 1024);
 
 // Legacy fallback (maintain compatibility)
 const MAX_TOKENS_FINAL_RESPONSE = Number(process.env.MAX_TOKENS_FINAL_RESPONSE ?? MAX_TOKENS_MEDIUM_COMPLEXITY);

@@ -257,7 +257,14 @@ async function handler(event, responseStream) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        const { messages, model, tools, temperature, max_tokens, top_p, frequency_penalty, presence_penalty } = body;
+        const { messages, model, tools } = body;
+        
+        // Apply defaults for parameters that optimize for comprehensive, verbose responses
+        const temperature = body.temperature !== undefined ? body.temperature : 0.8;
+        const max_tokens = body.max_tokens !== undefined ? body.max_tokens : 4096;
+        const top_p = body.top_p !== undefined ? body.top_p : 0.95;
+        const frequency_penalty = body.frequency_penalty !== undefined ? body.frequency_penalty : 0.3;
+        const presence_penalty = body.presence_penalty !== undefined ? body.presence_penalty : 0.4;
         
         // Verify authentication
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
@@ -330,7 +337,7 @@ async function handler(event, responseStream) {
         
         let currentMessages = [...messages];
         let iterationCount = 0;
-        const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 5;
+        const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 20;
         
         // Tool calling loop
         while (iterationCount < maxIterations) {

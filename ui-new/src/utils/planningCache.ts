@@ -7,6 +7,7 @@ export interface CachedPlan {
   id: string;
   query: string;
   plan: any;
+  systemPrompt?: string;
   timestamp: number;
 }
 
@@ -36,9 +37,9 @@ export function getAllCachedPlans(): CachedPlan[] {
 }
 
 /**
- * Save a completed plan to cache
+ * Save a new plan to the cache
  */
-export function saveCachedPlan(query: string, plan: any): void {
+export function saveCachedPlan(query: string, plan: any, systemPrompt?: string): void {
   try {
     const plans = getAllCachedPlans();
     
@@ -46,6 +47,7 @@ export function saveCachedPlan(query: string, plan: any): void {
       id: generatePlanId(),
       query: query.trim(),
       plan,
+      systemPrompt,
       timestamp: Date.now()
     };
     
