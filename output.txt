@@ -1,22 +1,19 @@
-➕ Staging docs/ changes...
-💬 Committing: docs: update built site (2025-10-06 06:38:26 UTC) - Create new chat when transferring plan from dialog
+On branch cleaner-proxy
+Your branch is ahead of 'origin/cleaner-proxy' by 1 commit.
+  (use "git push" to publish your local commits)
 
-🔥 DEPLOYMENT REMINDER 🔥
-Code has been committed but NOT deployed yet!
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   output.txt
 
-To deploy your changes:
-  make dev          # Quick Lambda deploy (recommended)
-  make full-deploy  # Deploy everything (Lambda + docs)
-
-Test after deploy: https://lambdallmproxy.pages.dev
-
-[cleaner-proxy 5d78e8b] docs: update built site (2025-10-06 06:38:26 UTC) - Create new chat when transferring plan from dialog
- 5 files changed, 150 insertions(+), 150 deletions(-)
- create mode 100644 docs/assets/index-B1Vw7Uqa.css
- delete mode 100644 docs/assets/index-CVyG3AX2.js
- create mode 100644 docs/assets/index-DWyYnCN4.js
- delete mode 100644 docs/assets/index-Dqk7vyX5.css
-⏫ Pushing to origin cleaner-proxy...
-To https://github.com/syntithenai/lambdallmproxy.git
-   6dc3211..5d78e8b  cleaner-proxy -> cleaner-proxy
-✅ Docs deployed successfully.
+no changes added to commit (use "git add" and/or "git commit -a")
+  agent
+* cleaner-proxy
+  feature-integration-d3c7233
+  main
+  remotes/origin/agent
+  remotes/origin/agent-final
+  remotes/origin/cleaner-proxy
+  remotes/origin/feature-integration-d3c7233
+  remotes/origin/main
