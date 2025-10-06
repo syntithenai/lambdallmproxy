@@ -33,6 +33,7 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>(() => loadAuthState());
+  const [hasAttemptedAutoLogin, setHasAttemptedAutoLogin] = useState(false);
 
   const login = useCallback((credential: string) => {
     try {
@@ -124,7 +125,54 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return authState.accessToken;
   }, [authState.accessToken, refreshToken]);
 
-  // Auto-refresh token on mount and periodically
+  // Attempt auto-login on mount for returning users
+  useEffect(() => {
+    const attemptAutoLogin = async () => {
+      if (hasAttemptedAutoLogin) {
+        return; // Only try once
+      }
+
+      setHasAttemptedAutoLogin(true);
+
+      // If user is already authenticated, nothing to do
+      if (authState.isAuthenticated) {
+        return;
+      }
+
+      // Check if we have saved auth state
+      const savedState = loadAuthState();
+      if (!savedState.accessToken || !savedState.user) {
+        console.log('No saved auth state found');
+        return;
+      }
+
+      console.log('Attempting auto-login for:', savedState.user.email);
+
+      // Check if token is expired or expiring soon
+      if (isTokenExpiringSoon(savedState.accessToken)) {
+        console.log('Saved token expiring, attempting silent refresh...');
+        const newToken = await getValidToken(savedState.accessToken);
+        
+        if (newToken) {
+          // Successfully refreshed, login with new token
+          login(newToken);
+          console.log('Auto-login successful via token refresh');
+        } else {
+          // Failed to refresh, clear invalid state
+          console.log('Auto-login failed: could not refresh token');
+          clearAuthState();
+        }
+      } else {
+        // Token is still valid, restore auth state
+        setAuthState(savedState);
+        console.log('Auto-login successful with existing token');
+      }
+    };
+
+    attemptAutoLogin();
+  }, [hasAttemptedAutoLogin, authState.isAuthenticated, login]);
+
+  // Auto-refresh token periodically when authenticated
   useEffect(() => {
     if (!authState.isAuthenticated || !authState.accessToken) {
       return;

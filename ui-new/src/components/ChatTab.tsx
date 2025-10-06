@@ -21,7 +21,7 @@ interface ChatTabProps {
 }
 
 export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
-  const { accessToken, isAuthenticated } = useAuth();
+  const { accessToken } = useAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { showError, showWarning, showSuccess } = useToast();
   const [messages, setMessages] = useLocalStorage<ChatMessage[]>('chat_messages', []);
@@ -1202,16 +1202,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
 
       {/* Input Area */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-        {!isAuthenticated ? (
-          <div className="text-center text-red-500">
-            Please sign in to start chatting
-          </div>
-        ) : (
-          <>
-            {/* Message Input */}
-            <div className="flex gap-2">
-              <textarea
-              value={input}
+        {/* App-level auth gate ensures user is authenticated, no need for inline check */}
+        <>
+          {/* Message Input */}
+          <div className="flex gap-2">
+            <textarea
+            value={input}
               onChange={(e) => {
                 setInput(e.target.value);
                 setHistoryIndex(-1); // Reset history navigation when typing
@@ -1255,8 +1251,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               {isLoading ? '⏹ Stop' : (!input.trim() ? '✏️ Type a message' : '📤 Send')}
             </button>
           </div>
-          </>
-        )}
+        </>
       </div>
 
       {/* Load Chat Dialog */}
@@ -1405,6 +1400,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         isOpen={showPlanningDialog}
         onClose={() => setShowPlanningDialog(false)}
         onTransferToChat={(transferDataJson: string) => {
+          // Start a new chat when transferring a plan
+          handleNewChat();
+          
           try {
             const data = JSON.parse(transferDataJson);
             setInput(data.prompt);
@@ -1414,6 +1412,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           } catch (e) {
             setInput(transferDataJson);
           }
+          
+          // Close the planning dialog after transfer
+          setShowPlanningDialog(false);
         }}
       />
     </div>

@@ -113,10 +113,7 @@ export const isTokenExpiringSoon = (token: string): boolean => {
 // Request a new token from Google
 export const refreshGoogleToken = async (): Promise<string | null> => {
   try {
-    // Google Sign-In for web doesn't use traditional refresh tokens
-    // Instead, we prompt the user to re-authenticate
-    // The Google One Tap will attempt silent sign-in if possible
-    
+    // Use silent sign-in without popup
     return new Promise((resolve) => {
       if (typeof google === 'undefined' || !google.accounts) {
         console.error('Google API not loaded');
@@ -128,32 +125,50 @@ export const refreshGoogleToken = async (): Promise<string | null> => {
       const timeout = setTimeout(() => {
         if (!hasResolved) {
           hasResolved = true;
-          console.log('Token refresh timed out');
+          console.log('Silent token refresh timed out');
           resolve(null);
         }
       }, 5000);
 
-      // Try to get credentials silently
-      google.accounts.id.initialize({
+      // Initialize with auto_select for silent refresh
+      (google.accounts.id.initialize as any)({
         client_id: GOOGLE_CLIENT_ID,
         callback: (response: any) => {
           if (!hasResolved && response.credential) {
             hasResolved = true;
             clearTimeout(timeout);
-            console.log('Token refreshed successfully');
+            console.log('Token silently refreshed');
             resolve(response.credential);
           }
-        }
+        },
+        // CRITICAL: Enable automatic sign-in for returning users
+        auto_select: true,
+        // Don't show UI if auto-select fails
+        cancel_on_tap_outside: true
       });
 
-      // Prompt for credentials (will auto-select if user is already signed in)
+      // Attempt silent sign-in (won't show popup if auto_select works)
       try {
-        google.accounts.id.prompt();
+        (google.accounts.id.prompt as any)((notification: any) => {
+          if (!hasResolved) {
+            if (notification.isNotDisplayed && notification.isNotDisplayed()) {
+              hasResolved = true;
+              clearTimeout(timeout);
+              console.log('Silent refresh not available:', notification.getNotDisplayedReason());
+              resolve(null);
+            } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
+              hasResolved = true;
+              clearTimeout(timeout);
+              console.log('Silent refresh skipped:', notification.getSkippedReason());
+              resolve(null);
+            }
+          }
+        });
       } catch (e) {
         if (!hasResolved) {
           hasResolved = true;
           clearTimeout(timeout);
-          console.log('Auto token refresh not available, user needs to re-authenticate');
+          console.log('Silent sign-in failed:', e);
           resolve(null);
         }
       }

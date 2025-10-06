@@ -1,32 +1,22 @@
-[0;34m🚀 Deploying Lambda function llmproxy...[0m
-[1;33m📝 Loading configuration from .env file...[0m
-[1;33m📦 Installing production dependencies...[0m
-npm WARN config production Use `--omit=dev` instead.
-npm WARN deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+➕ Staging docs/ changes...
+💬 Committing: docs: update built site (2025-10-06 06:38:26 UTC) - Create new chat when transferring plan from dialog
 
-added 24 packages, and audited 25 packages in 3s
+🔥 DEPLOYMENT REMINDER 🔥
+Code has been committed but NOT deployed yet!
 
-5 packages are looking for funding
-  run `npm fund` for details
+To deploy your changes:
+  make dev          # Quick Lambda deploy (recommended)
+  make full-deploy  # Deploy everything (Lambda + docs)
 
-found 0 vulnerabilities
-[1;33m📦 Files to be packaged:[0m
--rw-rw-r-- 1 stever stever  3648 Oct  6 16:48 auth.js
--rw-rw-r-- 1 stever stever 10309 Oct  6 16:48 html-content-extractor.js
--rw-rw-r-- 1 stever stever  3161 Oct  6 16:48 html-parser.js
--rw-rw-r-- 1 stever stever  5259 Oct  6 16:48 index.js
--rw-rw-r-- 1 stever stever 38701 Oct  6 16:48 lambda_search_llm_handler.js
--rw-rw-r-- 1 stever stever  7406 Oct  6 16:48 llm_tools_adapter.js
--rw-rw-r-- 1 stever stever  9780 Oct  6 16:48 memory-tracker.js
--rw-rw-r-- 1 stever stever 10787 Oct  6 16:48 pricing.js
--rw-rw-r-- 1 stever stever 12584 Oct  6 16:48 pricing_scraper.js
--rw-rw-r-- 1 stever stever  2280 Oct  6 16:48 providers.js
--rw-rw-r-- 1 stever stever 66570 Oct  6 16:48 search.js
--rw-rw-r-- 1 stever stever 26774 Oct  6 16:48 tools.js
-[0;32m✅ Function deployed successfully[0m
-[0;34m📁 Loading environment variables from .env...[0m
-[0;32m✅ Environment variables configured from .env (including ALLOWED_EMAILS)[0m
-[1;33m🔧 Updating function memory/timeout from .env...[0m
-[1;33m🌐 Checking Lambda Function URL CORS configuration...[0m
-[0;32m✅ CORS configuration verified[0m
-[0;32m🎉 Deployment completed successfully![0m
+Test after deploy: https://lambdallmproxy.pages.dev
+
+[cleaner-proxy 5d78e8b] docs: update built site (2025-10-06 06:38:26 UTC) - Create new chat when transferring plan from dialog
+ 5 files changed, 150 insertions(+), 150 deletions(-)
+ create mode 100644 docs/assets/index-B1Vw7Uqa.css
+ delete mode 100644 docs/assets/index-CVyG3AX2.js
+ create mode 100644 docs/assets/index-DWyYnCN4.js
+ delete mode 100644 docs/assets/index-Dqk7vyX5.css
+⏫ Pushing to origin cleaner-proxy...
+To https://github.com/syntithenai/lambdallmproxy.git
+   6dc3211..5d78e8b  cleaner-proxy -> cleaner-proxy
+✅ Docs deployed successfully.
