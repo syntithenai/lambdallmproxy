@@ -24,9 +24,32 @@ const PROVIDER_ENDPOINTS: Record<Provider, string> = {
 
 const MODEL_SUGGESTIONS: Record<Provider, { small: string[]; large: string[]; reasoning: string[] }> = {
   groq: {
-    small: ['llama-3.1-8b-instant', 'llama-3.2-11b-text-preview', 'gemma2-9b-it'],
-    large: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768'],
-    reasoning: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'deepseek-r1-distill-llama-70b']
+    small: [
+      'llama-3.1-8b-instant',
+      'meta-llama/llama-4-scout-17b-16e-instruct',
+      'gemma2-9b-it'
+    ],
+    large: [
+      // Best rate limits + context (recommended order)
+      'meta-llama/llama-4-scout-17b-16e-instruct',  // 30K TPM (fastest!), 131K context, parallel tools
+      'qwen/qwen3-32b',                              // 6K TPM, 131K context, parallel tools
+      'moonshotai/kimi-k2-instruct-0905',           // 262K context (largest!), parallel tools
+      'openai/gpt-oss-120b',                        // 131K context, 65K output
+      'openai/gpt-oss-20b',                         // 131K context, 65K output
+      'meta-llama/llama-4-maverick-17b-128e-instruct', // 131K context, parallel tools
+      'llama-3.1-8b-instant',                       // Fast, 131K context, parallel tools
+      'llama-3.3-70b-versatile',                    // 131K context, has format issues
+      'mixtral-8x7b-32768'
+    ],
+    reasoning: [
+      // Best for reasoning/planning
+      'openai/gpt-oss-120b',
+      'qwen/qwen3-32b',
+      'meta-llama/llama-4-scout-17b-16e-instruct',
+      'openai/gpt-oss-20b',
+      'llama-3.3-70b-versatile',
+      'deepseek-r1-distill-llama-70b'
+    ]
   },
   openai: {
     small: ['gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4o-mini-2024-07-18'],
@@ -38,8 +61,8 @@ const MODEL_SUGGESTIONS: Record<Provider, { small: string[]; large: string[]; re
 const DEFAULT_MODELS: Record<Provider, { small: string; large: string; reasoning: string }> = {
   groq: {
     small: 'llama-3.1-8b-instant',
-    large: 'llama-3.3-70b-versatile',
-    reasoning: 'llama-3.3-70b-versatile'
+    large: 'meta-llama/llama-4-scout-17b-16e-instruct',  // Best rate limits (30K TPM) + good context
+    reasoning: 'openai/gpt-oss-120b'  // Updated to use OpenAI's GPT-OSS 120B for best reasoning
   },
   openai: {
     small: 'gpt-4o-mini',
@@ -143,21 +166,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Small Model (Fast, low-cost tasks)
             </label>
-            <input
-              type="text"
+            <select
               value={tempSettings.smallModel}
               onChange={(e) => setTempSettings({ ...tempSettings, smallModel: e.target.value })}
-              list="small-model-suggestions"
               className="input-field"
-              placeholder="Enter model name"
-            />
-            <datalist id="small-model-suggestions">
+            >
               {suggestions.small.map(model => (
-                <option key={model} value={model} />
+                <option key={model} value={model}>
+                  {model}
+                </option>
               ))}
-            </datalist>
+            </select>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Suggested: {suggestions.small.join(', ')}
+              Fast, low-cost models for simple tasks
             </p>
           </div>
 
@@ -166,21 +187,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Large Model (Complex, high-quality tasks)
             </label>
-            <input
-              type="text"
+            <select
               value={tempSettings.largeModel}
               onChange={(e) => setTempSettings({ ...tempSettings, largeModel: e.target.value })}
-              list="large-model-suggestions"
               className="input-field"
-              placeholder="Enter model name"
-            />
-            <datalist id="large-model-suggestions">
+            >
               {suggestions.large.map(model => (
-                <option key={model} value={model} />
+                <option key={model} value={model}>
+                  {model}
+                </option>
               ))}
-            </datalist>
+            </select>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Suggested: {suggestions.large.join(', ')}
+              High-quality models for complex reasoning and detailed responses
             </p>
           </div>
 
@@ -189,21 +208,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Reasoning Model (Planning, analysis)
             </label>
-            <input
-              type="text"
+            <select
               value={tempSettings.reasoningModel}
               onChange={(e) => setTempSettings({ ...tempSettings, reasoningModel: e.target.value })}
-              list="reasoning-model-suggestions"
               className="input-field"
-              placeholder="Enter model name"
-            />
-            <datalist id="reasoning-model-suggestions">
+            >
               {suggestions.reasoning.map(model => (
-                <option key={model} value={model} />
+                <option key={model} value={model}>
+                  {model}
+                </option>
               ))}
-            </datalist>
+            </select>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Suggested: {suggestions.reasoning.join(', ')}
+              Best models for planning, multi-step reasoning, and complex analysis
             </p>
           </div>
 

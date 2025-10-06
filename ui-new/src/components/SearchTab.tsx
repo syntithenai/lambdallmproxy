@@ -16,7 +16,7 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export const SearchTab: React.FC = () => {
   const { getToken, isAuthenticated } = useAuth();
-  const { searchResults: contextResults } = useSearchResults();
+  const { searchResults: contextResults, wasCleared } = useSearchResults();
   const { showError, showWarning } = useToast();
   // Note: Search endpoint uses server-side model configuration
   const [queries, setQueries] = useState<string[]>(['']);
@@ -64,23 +64,33 @@ export const SearchTab: React.FC = () => {
     }
   }, [queries]);
 
-  // Merge search results from chat context
+  // Sync search results with chat context
   useEffect(() => {
-    if (contextResults.length > 0) {
+    if (wasCleared) {
+      // Context was intentionally cleared (new chat) - clear visible results
+      console.log('SearchTab: Clearing results (wasCleared=true)');
+      setResults([]);
+    } else if (contextResults.length > 0) {
+      // Merge context results with existing results
+      console.log('SearchTab: Updating from context, got', contextResults.length, 'results');
       setResults(prev => {
         // Create a map of existing results by query (lowercase)
         const existingMap = new Map(prev.map(r => [r.query.toLowerCase(), r]));
         
         // Add/update results from context
         contextResults.forEach(result => {
+          console.log('SearchTab: Adding/updating result for query:', result.query);
           existingMap.set(result.query.toLowerCase(), result);
         });
         
         // Convert back to array
-        return Array.from(existingMap.values());
+        const updated = Array.from(existingMap.values());
+        console.log('SearchTab: Updated results, now have', updated.length, 'total');
+        return updated;
       });
     }
-  }, [contextResults, setResults]);
+    // If wasCleared is false and contextResults is empty, it's initial state - do nothing
+  }, [contextResults, wasCleared, setResults]);
 
   const addQueryField = () => {
     setQueries([...queries, '']);
@@ -294,6 +304,15 @@ export const SearchTab: React.FC = () => {
                               onClick={() => {
                                 updateQuery(index, suggestion);
                                 setShowAutocomplete(null);
+                                // Load the cached search result
+                                const cached = getCachedSearch(suggestion);
+                                if (cached) {
+                                  console.log('Loading cached search:', suggestion);
+                                  setResults([{
+                                    query: cached.query,
+                                    results: cached.results
+                                  }]);
+                                }
                               }}
                               className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700 last:border-b-0"
                             >
@@ -346,14 +365,13 @@ export const SearchTab: React.FC = () => {
         {results.length > 0 && results
           .filter(searchResult => {
             if (!searchFilter.trim()) return true;
-            const filter = searchFilter.toLowerCase();
-            return searchResult.query.toLowerCase().includes(filter) ||
-                   searchResult.results.some(r => 
-                     r.title?.toLowerCase().includes(filter) ||
-                     r.description?.toLowerCase().includes(filter) ||
-                     r.url?.toLowerCase().includes(filter) ||
-                     r.content?.toLowerCase().includes(filter)
-                   );
+            
+            // Split filter into individual terms
+            const filterTerms = searchFilter.toLowerCase().trim().split(/\s+/);
+            
+            // Check if ALL filter terms are present in the query string
+            const queryLower = searchResult.query.toLowerCase();
+            return filterTerms.every(term => queryLower.includes(term));
           })
           .map((searchResult, searchIdx) => (
           <div key={searchIdx} className="card p-4">

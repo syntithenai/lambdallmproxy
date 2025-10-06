@@ -43,6 +43,16 @@ const GROQ_RATE_LIMITS = {
     speed: "fast",
     vision_capable: false
   },
+  "llama-3.1-70b-versatile": {
+    rpm: 30,
+    rpd: 1000,
+    tpm: 12000,
+    tpd: 100000,
+    context_window: 128000,
+    reasoning_capability: "advanced",
+    speed: "moderate",
+    vision_capable: false
+  },
   "llama-3.3-70b-versatile": {
     rpm: 30,
     rpd: 1000,

@@ -32,7 +32,7 @@ function mapReasoningForOpenAI(model, options) {
 function mapReasoningForGroq(model, options) {
   if (!groqSupportsReasoning(model)) return {};
   const effort = options?.reasoningEffort || process.env.REASONING_EFFORT || 'low';
-  return { include_reasoning: true, reasoning_effort: effort, reasoning_format: 'default' };
+  return { include_reasoning: true, reasoning_effort: effort, reasoning_format: 'raw' };
 }
 
 function httpsRequestJson({ hostname, path, method = 'POST', headers = {}, bodyObj, timeoutMs = 30000 }) {
@@ -107,7 +107,15 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
   const temperature = options?.temperature ?? 0.2;
   const max_tokens = options?.max_tokens ?? 1024;
 
-  if (isOpenAIModel(model)) {
+  // Auto-detect and add provider prefix if missing
+  let normalizedModel = model;
+  if (!isOpenAIModel(model) && !isGroqModel(model)) {
+    // If no prefix, assume groq (most common for tool calls)
+    console.log(`⚠️ Model "${model}" missing provider prefix, assuming groq:${model}`);
+    normalizedModel = `groq:${model}`;
+  }
+
+  if (isOpenAIModel(normalizedModel)) {
     const hostname = process.env.OPENAI_API_BASE?.replace('https://', '') || 'api.openai.com';
     const path = '/v1/chat/completions';
     const messages = (input || []).map(block => {
@@ -126,7 +134,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     }).filter(Boolean);
     
     const payload = {
-      model: model.replace(/^openai:/, ''),
+      model: normalizedModel.replace(/^openai:/, ''),
       messages,
       tools,
       tool_choice: 'auto',
@@ -141,7 +149,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     return normalizeFromChat(data);
   }
 
-  if (isGroqModel(model)) {
+  if (isGroqModel(normalizedModel)) {
     // Groq OpenAI-compatible chat.completions
     const hostname = 'api.groq.com';
     const path = '/openai/v1/chat/completions';
@@ -161,13 +169,13 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     }).filter(Boolean);
 
     const payload = {
-      model: model.replace(/^groq:/, ''),
+      model: normalizedModel.replace(/^groq:/, ''),
       messages,
       tools,
       tool_choice: 'auto',
       temperature,
       max_tokens,
-      ...mapReasoningForGroq(model, options)
+      ...mapReasoningForGroq(normalizedModel, options)
     };
     const headers = {
       'Content-Type': 'application/json',
@@ -177,7 +185,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     return normalizeFromChat(data);
   }
 
-  throw new Error(`Unsupported model for tool calls: ${model}`);
+  throw new Error(`Unsupported model for tool calls: ${model} (normalized: ${normalizedModel})`);
 }
 
 module.exports = {

@@ -44,12 +44,18 @@ You may provide detailed reasoning if the query is complex or multi-faceted.
 Respond with JSON in this exact format:
 {
   "text": "A comprehensive explanation of the research approach and strategy",
-  "searchKeywords": [["keyword set 1", "keyword set 2"], ["alternative keyword set 1", "alternative keyword set 2"]],
+  "searchKeywords": [["keyword 1", "keyword 2"], ["keyword 3", "keyword 4"]],
   "questions": ["Question 1 phrased as a clear research query?", "Question 2?", "Question 3?"],
   "persona": "I am a [specific expert role/title] with expertise in [domain]. I specialize in [specific areas and computational tools when relevant]. I provide direct, concise answers that start with the key result.",
   "reasoning": "Detailed explanation of why this approach and persona are optimal",
   "complexityAssessment": "low|medium|high"
 }
+
+IMPORTANT: Each item in searchKeywords arrays must be a SEPARATE, INDIVIDUAL keyword or short phrase. Do NOT use commas within keyword strings. Split comma-separated keywords into separate array items.
+
+Examples:
+- CORRECT: [["Rolf Harris biography", "Rolf Harris career"], ["Rolf Harris wiki", "Rolf Harris news"]]
+- WRONG: [["Rolf Harris biography,Rolf Harris career"], ["Rolf Harris wiki,Rolf Harris news"]]
 
 Generate 1-5 specific, targeted research questions based on query complexity. For complex queries, provide more detailed reasoning and additional research questions. Be specific about the expert role and tailor it precisely to the query domain.`;
 

@@ -14,7 +14,17 @@ const PROVIDERS = {
         hostname: 'api.groq.com',
         path: '/openai/v1/chat/completions',
         envKey: 'GROQ_API_KEY',
-        models: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768']
+        models: [
+            'llama-3.1-8b-instant',
+            'llama-3.3-70b-versatile',
+            'mixtral-8x7b-32768',
+            'openai/gpt-oss-20b',
+            'openai/gpt-oss-120b',
+            'qwen/qwen3-32b',
+            'meta-llama/llama-4-scout-17b-16e-instruct',
+            'meta-llama/llama-4-maverick-17b-128e-instruct',
+            'moonshotai/kimi-k2-instruct-0905'
+        ]
     }
 };
 
@@ -28,9 +38,23 @@ function parseProviderModel(modelString) {
         return { provider: 'groq', model: 'llama-3.1-8b-instant' };
     }
     
-    const [provider, ...modelParts] = modelString.split(':');
-    const model = modelParts.join(':') || 'llama-3.1-8b-instant';
-    return { provider: provider || 'groq', model };
+    // Check for explicit provider prefix (e.g., "groq:llama-3.1-8b-instant")
+    if (modelString.includes(':')) {
+        const [provider, ...modelParts] = modelString.split(':');
+        const model = modelParts.join(':') || 'llama-3.1-8b-instant';
+        return { provider: provider || 'groq', model };
+    }
+    
+    // Models with openai/, qwen/, meta-llama/, moonshotai/ prefixes are Groq models
+    if (modelString.startsWith('openai/') || 
+        modelString.startsWith('qwen/') || 
+        modelString.startsWith('meta-llama/') ||
+        modelString.startsWith('moonshotai/')) {
+        return { provider: 'groq', model: modelString };
+    }
+    
+    // Default to Groq provider for all other models
+    return { provider: 'groq', model: modelString };
 }
 
 /**

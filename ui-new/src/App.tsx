@@ -5,27 +5,9 @@ import { ToastProvider } from './components/ToastManager';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
-import { PlanningTab } from './components/PlanningTab';
-import { SearchTab } from './components/SearchTab';
-
-type TabType = 'chat' | 'planning' | 'search';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [showSettings, setShowSettings] = useState(false);
-  const [chatTransferData, setChatTransferData] = useState<{prompt: string, persona: string} | null>(null);
-
-  const handleTransferToChat = (transferDataJson: string) => {
-    try {
-      const data = JSON.parse(transferDataJson);
-      setChatTransferData(data);
-      setActiveTab('chat');
-    } catch (e) {
-      // Fallback for old format
-      setChatTransferData({ prompt: transferDataJson, persona: '' });
-      setActiveTab('chat');
-    }
-  };
 
   return (
     <AuthProvider>
@@ -54,42 +36,10 @@ function App() {
           </div>
         </header>
 
-        {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <div className="max-w-screen-2xl mx-auto px-4">
-            <nav className="flex space-x-1" role="tablist">
-              {(['chat', 'planning', 'search'] as TabType[]).map((tab) => (
-                <button
-                  key={tab}
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-3 font-medium transition-colors capitalize ${
-                    activeTab === tab
-                      ? 'border-b-2 border-primary-600 text-primary-600 dark:text-primary-400'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-                  }`}
-                >
-                  {tab === 'chat' && '💬 '}
-                  {tab === 'planning' && '📋 '}
-                  {tab === 'search' && '🔍 '}
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
-
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full max-w-screen-2xl mx-auto">
-            {activeTab === 'chat' && <ChatTab transferData={chatTransferData} />}
-            {activeTab === 'planning' && (
-              <PlanningTab
-                onTransferToChat={handleTransferToChat}
-              />
-            )}
-            {activeTab === 'search' && <SearchTab />}
+            <ChatTab />
           </div>
         </main>
 

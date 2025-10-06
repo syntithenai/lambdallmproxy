@@ -14,6 +14,7 @@ export interface ChatMessage {
   }>;
   tool_call_id?: string;
   name?: string;
+  isStreaming?: boolean;  // Flag to indicate message is currently being streamed
 }
 
 export interface ProxyRequest {
@@ -73,15 +74,39 @@ export const sendChatMessage = async (
 export const generatePlan = async (
   query: string,
   token: string,
+  model: string | undefined,
   onEvent: (event: string, data: any) => void,
   onComplete?: () => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  options?: {
+    temperature?: number;
+    maxTokens?: number;
+    reasoningDepth?: number;
+  }
 ): Promise<void> => {
   const { createSSERequest, handleSSEResponse } = await import('./streaming');
   
+  const requestBody: any = { query };
+  
+  // Only add model if provided (server will use default if not provided)
+  if (model) {
+    requestBody.model = model;
+  }
+  
+  // Add planning options if provided
+  if (options?.temperature !== undefined) {
+    requestBody.temperature = options.temperature;
+  }
+  if (options?.maxTokens !== undefined) {
+    requestBody.max_tokens = options.maxTokens;
+  }
+  if (options?.reasoningDepth !== undefined) {
+    requestBody.reasoning_depth = options.reasoningDepth;
+  }
+  
   const response = await createSSERequest(
     `${API_BASE}/planning`,
-    { query },
+    requestBody,
     token
   );
   

@@ -103,12 +103,12 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'scrape_web_content',
-      description: 'Fetch and extract the full readable content from any URL. EXCELLENT for getting detailed information from educational resources, tutorials, documentation, course materials, or any specific webpage found in search results. Use this when search results show promising URLs that need deeper content extraction. Perfect for accessing comprehensive guides, detailed explanations, or complete course curricula. CRITICAL: Only provide the "url" parameter. Do NOT include any other properties.',
+      description: 'Fetch and extract the full readable content from any URL (websites, GitHub repos, documentation, etc). Use this when the user asks to "scrape", "get content from", "read", "fetch", or "summarize" a specific URL/website. EXCELLENT for getting detailed information from educational resources, tutorials, documentation, course materials, or any specific webpage. Perfect for accessing comprehensive guides, detailed explanations, complete course curricula, or GitHub repository information. CRITICAL: When user provides a URL and asks about it, you MUST call this function - do NOT just describe what you would do.',
       parameters: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'Fully qualified URL to fetch' },
-          timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15 }
+          url: { type: 'string', description: 'Fully qualified URL to fetch (e.g., https://github.com/user/repo, https://docs.example.com/guide)' },
+          timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15, description: 'Optional timeout in seconds (default 15)' }
         },
         required: ['url'],
         additionalProperties: false

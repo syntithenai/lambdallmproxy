@@ -9,6 +9,7 @@ const http = require('http');
 const { verifyGoogleToken, getAllowedEmails } = require('../auth');
 const { callFunction } = require('../tools');
 const { createSSEStreamAdapter } = require('../streaming/sse-writer');
+const { parseProviderModel } = require('../providers');
 
 /**
  * Verify authentication token
@@ -232,6 +233,8 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
  * @returns {Promise<void>}
  */
 async function handler(event, responseStream) {
+    let sseWriter = null;
+    
     try {
         // Initialize SSE stream with proper headers
         // Note: CORS headers are handled by Lambda Function URL configuration
@@ -250,7 +253,7 @@ async function handler(event, responseStream) {
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         }
         
-        const sseWriter = createSSEStreamAdapter(responseStream);
+        sseWriter = createSSEStreamAdapter(responseStream);
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
@@ -289,7 +292,8 @@ async function handler(event, responseStream) {
         }
         
         // Determine target URL and API key based on provider
-        const provider = body.provider || (model.includes('gpt') ? 'openai' : 'groq');
+        const { provider: detectedProvider } = parseProviderModel(model);
+        const provider = body.provider || detectedProvider;
         const apiKey = provider === 'groq' 
             ? process.env.GROQ_API_KEY 
             : process.env.OPENAI_API_KEY;
@@ -333,9 +337,15 @@ async function handler(event, responseStream) {
             iterationCount++;
             
             // Build request
+            // Clean messages by removing UI-specific properties before sending to LLM
+            const cleanMessages = currentMessages.map(msg => {
+                const { isStreaming, ...cleanMsg } = msg;
+                return cleanMsg;
+            });
+            
             const requestBody = {
                 model,
-                messages: currentMessages,
+                messages: cleanMessages,
                 temperature,
                 max_tokens,
                 top_p,
@@ -405,6 +415,15 @@ async function handler(event, responseStream) {
                 
                 if (validToolCalls.length > 0) {
                     assistantMessage.tool_calls = validToolCalls;
+                    
+                    // Send message_complete with tool_calls included
+                    // This allows the frontend to display both content and tool calls
+                    sseWriter.writeEvent('message_complete', {
+                        role: 'assistant',
+                        content: assistantMessage.content,
+                        tool_calls: validToolCalls
+                    });
+                    
                     currentMessages.push(assistantMessage);
                     
                     // Execute tools
@@ -421,7 +440,12 @@ async function handler(event, responseStream) {
             // No tool calls or max iterations reached - send final response
             currentMessages.push(assistantMessage);
             
-            sseWriter.writeEvent('message_complete', assistantMessage);
+            // Send message_complete with content only (no tool_calls)
+            sseWriter.writeEvent('message_complete', {
+                role: 'assistant',
+                content: assistantMessage.content
+                // Note: NOT including tool_calls - they're already sent via tool_call_* events
+            });
             
             sseWriter.writeEvent('complete', {
                 status: 'success',
@@ -444,10 +468,23 @@ async function handler(event, responseStream) {
     } catch (error) {
         console.error('Chat endpoint error:', error);
         
-        sseWriter.writeEvent('error', {
-            error: error.message || 'Internal server error',
-            code: 'ERROR'
-        });
+        // Only use sseWriter if it was initialized
+        if (sseWriter) {
+            sseWriter.writeEvent('error', {
+                error: error.message || 'Internal server error',
+                code: 'ERROR'
+            });
+        } else {
+            // If sseWriter wasn't created, write error directly to stream
+            try {
+                responseStream.write(`event: error\ndata: ${JSON.stringify({
+                    error: error.message || 'Internal server error',
+                    code: 'ERROR'
+                })}\n\n`);
+            } catch (streamError) {
+                console.error('Failed to write error to stream:', streamError);
+            }
+        }
         responseStream.end();
     }
 }

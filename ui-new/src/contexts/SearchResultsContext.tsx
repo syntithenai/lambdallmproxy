@@ -12,14 +12,17 @@ interface SearchResultsContextType {
   addSearchResult: (result: SearchResult) => void;
   setSearchResults: (results: SearchResult[]) => void;
   clearSearchResults: () => void;
+  wasCleared: boolean;
 }
 
 const SearchResultsContext = createContext<SearchResultsContextType | undefined>(undefined);
 
 export const SearchResultsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [searchResults, setSearchResultsState] = useState<SearchResult[]>([]);
+  const [wasCleared, setWasCleared] = useState(false);
 
   const addSearchResult = (result: SearchResult) => {
+    setWasCleared(false); // Reset flag when adding results
     setSearchResultsState(prev => {
       // Check if we already have this query
       const existingIndex = prev.findIndex(r => r.query.toLowerCase() === result.query.toLowerCase());
@@ -41,6 +44,7 @@ export const SearchResultsProvider: React.FC<{ children: ReactNode }> = ({ child
   };
 
   const clearSearchResults = () => {
+    setWasCleared(true); // Set flag to indicate intentional clear
     setSearchResultsState([]);
   };
 
@@ -50,7 +54,8 @@ export const SearchResultsProvider: React.FC<{ children: ReactNode }> = ({ child
         searchResults,
         addSearchResult,
         setSearchResults,
-        clearSearchResults
+        clearSearchResults,
+        wasCleared
       }}
     >
       {children}

@@ -25,6 +25,11 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
   const [isLoading, setIsLoading] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [savedPlans, setSavedPlans] = useState<CachedPlan[]>([]);
+  
+  // Configuration state for temperature, maxTokens, and system prompt
+  const [temperature, setTemperature] = useLocalStorage('planning_temperature', 0.7);
+  const [maxTokens, setMaxTokens] = useLocalStorage('planning_max_tokens', 512);
+  const [systemPrompt, setSystemPrompt] = useLocalStorage('chat_system_prompt', '');
 
   // Debug: Check token on mount
   useEffect(() => {
@@ -63,8 +68,9 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
       await generatePlan(
         query,
         token,
+        undefined, // Planning endpoint uses server-side model configuration
         // Handle SSE events
-        (event, data) => {
+        (event: string, data: any) => {
           console.log('Planning SSE event:', event, data);
           
           switch (event) {
@@ -94,7 +100,7 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
           setIsLoading(false);
         },
         // On error
-        (error) => {
+        (error: Error) => {
           console.error('Planning stream error:', error);
           setResult({ error: error.message });
           showError(`Planning failed: ${error.message}`);
@@ -173,6 +179,69 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
         <button onClick={() => { setQuery(''); setResult(null); }} className="btn-secondary text-sm">
           🗑️ Clear
         </button>
+      </div>
+
+      {/* Configuration Panel */}
+      <div className="card p-4 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Temperature: {temperature.toFixed(1)}
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={temperature}
+            onChange={(e) => setTemperature(parseFloat(e.target.value))}
+            className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <span title="Deterministic and precise">0.0 Factual</span>
+            <span title="Slight variation">0.3 Mostly Factual</span>
+            <span title="Balanced creativity">0.5 Balanced</span>
+            <span title="More creative and varied" className="font-semibold">0.7 Creative</span>
+            <span title="Highly experimental">1.0 Experimental</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Response Length: {maxTokens} tokens
+          </label>
+          <input
+            type="range"
+            min="128"
+            max="4096"
+            step="128"
+            value={maxTokens}
+            onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+            className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <span>128 Brief</span>
+            <span className="font-semibold">512 Normal</span>
+            <span>1024 Detailed</span>
+            <span>2048 Comprehensive</span>
+            <span>4096 Extensive</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            System Prompt (synced with Chat)
+          </label>
+          <textarea
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            placeholder="Enter a custom system prompt to guide the AI's behavior..."
+            className="input-field resize-none"
+            rows={4}
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            This system prompt will be used in both Planning and Chat tabs. It helps define the AI's role and behavior.
+          </p>
+        </div>
       </div>
 
       {/* Query Input */}
