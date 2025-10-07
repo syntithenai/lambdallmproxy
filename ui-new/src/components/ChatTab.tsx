@@ -92,8 +92,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [transcriptionProgress, setTranscriptionProgress] = useState<Map<string, Array<{
     tool_call_id: string;
     tool_name: string;
-    event_type: string;
+    progress_type: string;
     data?: Record<string, unknown>;
+    timestamp?: string;
   }>>>(new Map());
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
