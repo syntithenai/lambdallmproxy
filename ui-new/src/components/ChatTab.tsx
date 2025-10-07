@@ -997,6 +997,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           const isExpanded = expandedToolMessages.has(idx);
           console.log(`Rendering message ${idx}:`, msg.role, msg.content?.substring(0, 50));
           
+          // Debug: Log tool_calls for assistant messages
+          if (msg.role === 'assistant' && msg.tool_calls) {
+            console.log(`  Message ${idx} has ${msg.tool_calls.length} tool_calls:`, 
+              msg.tool_calls.map((tc: any) => ({ id: tc.id, name: tc.function?.name }))
+            );
+          }
+          
           // Show transcription progress for assistant messages with transcribe_url tool calls
           // But only if the transcription is still IN PROGRESS (not complete)
           const hasTranscriptionInProgress = msg.role === 'assistant' && msg.tool_calls?.some((tc: any) => {
@@ -1295,10 +1302,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     {msg.role === 'assistant' ? (
                       <div>
                         {/* Show transcription progress for tool calls in progress (NOT complete) */}
-                        {msg.tool_calls && msg.tool_calls.map((tc: any) => {
+                        {msg.tool_calls && msg.tool_calls.map((tc: any, tcIdx: number) => {
                           if (tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)) {
+                            console.log(`    Rendering TranscriptionProgress for tool_call ${tcIdx}: ${tc.id}`);
                             const events = transcriptionProgress.get(tc.id);
-                            if (!events || events.length === 0) return null;
+                            if (!events || events.length === 0) {
+                              console.log(`      No events for ${tc.id}, skipping`);
+                              return null;
+                            }
                             
                             // Check if transcription is complete
                             const lastEvent = events[events.length - 1];
@@ -1307,9 +1318,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                              lastType === 'transcription_stopped' ||
                                              lastType === 'error';
                             
-                            // Only show progress if NOT complete
-                            if (isComplete) return null;
+                            console.log(`      Last event type: ${lastType}, isComplete: ${isComplete}`);
                             
+                            // Only show progress if NOT complete
+                            if (isComplete) {
+                              console.log(`      Transcription complete, skipping progress render`);
+                              return null;
+                            }
+                            
+                            console.log(`      ✅ Rendering progress component for ${tc.id}`);
                             const args = JSON.parse(tc.function.arguments || '{}');
                             return (
                               <div key={tc.id} className="mb-3">
