@@ -599,6 +599,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     if (!newMessages[i].tool_calls) {
                       newMessages[i] = { ...newMessages[i], tool_calls: [] };
                     }
+                    
+                    // Check if this tool_call already exists (prevent duplicates)
+                    const existingToolCall = newMessages[i].tool_calls?.find((tc: any) => tc.id === data.id);
+                    if (existingToolCall) {
+                      console.log('⚠️ Tool call already exists, skipping:', data.id);
+                      break;
+                    }
+                    
                     // Add this tool call
                     const newToolCall = {
                       id: data.id as string,
