@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchResults } from '../contexts/SearchResultsContext';
+import { usePlaylist } from '../contexts/PlaylistContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
@@ -8,21 +9,42 @@ import type { ChatMessage } from '../utils/api';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
 import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
   deleteChatFromHistory, 
   getAllChatHistory,
+  clearAllChatHistory,
   type ChatHistoryEntry 
 } from '../utils/chatHistory';
 
-interface ChatTabProps {
-  transferData?: { prompt: string; persona: string } | null;
+interface EnabledTools {
+  web_search: boolean;
+  execute_js: boolean;
+  scrape_url: boolean;
+  youtube: boolean;
+  transcribe: boolean;
 }
 
-export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
+interface ChatTabProps {
+  transferData?: { prompt: string; persona: string } | null;
+  enabledTools: EnabledTools;
+  setEnabledTools: (tools: EnabledTools) => void;
+  showMCPDialog: boolean;
+  setShowMCPDialog: (show: boolean) => void;
+}
+
+export const ChatTab: React.FC<ChatTabProps> = ({ 
+  transferData,
+  enabledTools,
+  // setEnabledTools, // Not used in ChatTab - only in SettingsModal
+  showMCPDialog,
+  setShowMCPDialog
+}) => {
   const { accessToken } = useAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
+  const { addTracks } = usePlaylist();
   const { showError, showWarning, showSuccess } = useToast();
   const [messages, setMessages] = useLocalStorage<ChatMessage[]>('chat_messages', []);
   const [input, setInput] = useLocalStorage<string>('chat_input', '');
@@ -30,24 +52,14 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
   const [settings] = useLocalStorage('app_settings', {
     provider: 'groq',
     llmApiKey: '',
+    tavilyApiKey: '',
     apiEndpoint: 'https://api.groq.com/openai/v1',
     largeModel: 'meta-llama/llama-4-scout-17b-16e-instruct'
   });
   const [isLoading, setIsLoading] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
-  const [showMCPDialog, setShowMCPDialog] = useState(false);
+  const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
   const [showPlanningDialog, setShowPlanningDialog] = useState(false);
-  
-  // Tool configuration
-  const [enabledTools, setEnabledTools] = useLocalStorage<{
-    web_search: boolean;
-    execute_js: boolean;
-    scrape_url: boolean;
-  }>('chat_enabled_tools', {
-    web_search: true,
-    execute_js: true,
-    scrape_url: true
-  });
   
   const [mcpServers, setMcpServers] = useLocalStorage<Array<{
     id: string;
@@ -76,10 +88,19 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
   
+  // Transcription progress tracking
+  const [transcriptionProgress, setTranscriptionProgress] = useState<Map<string, Array<{
+    tool_call_id: string;
+    tool_name: string;
+    event_type: string;
+    data?: Record<string, unknown>;
+  }>>>(new Map());
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const retryTriggerRef = useRef<boolean>(false);
   const examplesDropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   
   // Prompt history for up/down arrow navigation
   const [promptHistory, setPromptHistory] = useLocalStorage<string[]>('chat_prompt_history', []);
@@ -144,12 +165,14 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
   // Auto-save chat history whenever messages change
   useEffect(() => {
     if (messages.length > 0) {
+      // If we don't have a chat ID yet, this is a new session
+      // Generate ID and save. Otherwise, update existing chat.
       const id = saveChatToHistory(messages, currentChatId || undefined);
       if (!currentChatId) {
         setCurrentChatId(id);
       }
     }
-  }, [messages]);
+  }, [messages, currentChatId]);
 
   // Load chat history list when dialog opens
   useEffect(() => {
@@ -157,6 +180,60 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
       setChatHistory(getAllChatHistory());
     }
   }, [showLoadDialog]);
+
+  // Extract YouTube URLs from messages and add to playlist
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'assistant') return;
+
+    console.log('🎬 Checking for YouTube results in last message:', lastMessage);
+
+    // Look for YouTube search results in tool_calls
+    const youtubeResults: any[] = [];
+    if (lastMessage.tool_calls) {
+      console.log('🔧 Found tool_calls:', lastMessage.tool_calls);
+      lastMessage.tool_calls.forEach((toolCall: any) => {
+        console.log('🛠️ Processing tool call:', toolCall.function?.name, toolCall);
+        if (toolCall.function?.name === 'search_youtube' && toolCall.result) {
+          try {
+            const result = typeof toolCall.result === 'string' 
+              ? JSON.parse(toolCall.result) 
+              : toolCall.result;
+            console.log('📦 Parsed YouTube result:', result);
+            if (result.videos && Array.isArray(result.videos)) {
+              console.log(`✅ Found ${result.videos.length} YouTube videos`);
+              youtubeResults.push(...result.videos);
+            } else {
+              console.warn('⚠️ No videos array in result:', result);
+            }
+          } catch (e) {
+            console.error('❌ Failed to parse YouTube results:', e, 'Raw result:', toolCall.result);
+          }
+        }
+      });
+    } else {
+      console.log('⚠️ No tool_calls in last message');
+    }
+
+    // Add YouTube videos to playlist
+    if (youtubeResults.length > 0) {
+      console.log(`🎵 Adding ${youtubeResults.length} videos to playlist`);
+      const tracks = youtubeResults.map((video: any) => ({
+        videoId: video.videoId,
+        url: video.url,
+        title: video.title || 'Untitled Video',
+        description: video.description || '',
+        duration: video.duration || '',
+        channel: video.channel || '',
+        thumbnail: video.thumbnail || ''
+      }));
+      
+      addTracks(tracks);
+      showSuccess(`Added ${tracks.length} video${tracks.length !== 1 ? 's' : ''} to playlist`);
+    } else {
+      console.log('ℹ️ No YouTube videos found to add to playlist');
+    }
+  }, [messages, addTracks, showSuccess]);
 
   const handleStop = () => {
     if (abortControllerRef.current) {
@@ -175,7 +252,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
         type: 'function',
         function: {
           name: 'search_web',
-          description: 'Search the web using DuckDuckGo to find current information, news, articles, and real-time data. USE THIS whenever users ask for current/latest information, news, or anything requiring up-to-date web content. Returns search results with titles, URLs, and snippets.',
+          description: 'Search the web using DuckDuckGo to find current information, news, articles, and real-time data. USE THIS whenever users ask for current/latest information, news, or anything requiring up-to-date web content. Returns search results with titles, URLs, and snippets. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL).**',
           parameters: {
             type: 'object',
             properties: {
@@ -235,6 +312,68 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
       });
     }
     
+    if (enabledTools.youtube) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'search_youtube',
+          description: '🎬 SEARCH/FIND YouTube videos (NOT for transcription). Use when user wants to FIND or SEARCH for videos. **DO NOT USE if user wants to transcribe, get transcript, or extract text from a specific YouTube URL** - use transcribe_url instead. Use search_youtube for: "find YouTube videos about X", "search YouTube for X", "show me videos about X". Returns video titles, descriptions, links, and caption availability. Results are automatically added to a playlist. **CRITICAL: You MUST include ALL video URLs in your response as a formatted markdown list with [Title](URL) format.**',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { 
+                type: 'string', 
+                description: 'Search query for YouTube videos (e.g., "javascript tutorial", "bach cello suites", "machine learning course")'
+              },
+              limit: { 
+                type: 'integer', 
+                minimum: 1, 
+                maximum: 50, 
+                default: 10, 
+                description: 'Maximum number of video results to return (default 10, max 50)'
+              },
+              order: {
+                type: 'string',
+                enum: ['relevance', 'date', 'viewCount', 'rating'],
+                default: 'relevance',
+                description: 'Sort order for results: relevance (default), date (newest first), viewCount (most viewed), rating (highest rated)'
+              }
+            },
+            required: ['query']
+          }
+        }
+      });
+    }
+    
+    if (enabledTools.transcribe) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'transcribe_url',
+          description: '🎙️ **PRIMARY TOOL FOR GETTING VIDEO/AUDIO TEXT CONTENT**: Transcribe audio or video content from URLs using OpenAI Whisper. **MANDATORY USE** when user says: "transcribe", "transcript", "get text from", "what does the video say", "extract dialogue", "convert to text", OR provides a specific YouTube/video URL and asks about its content. **YOUTUBE SUPPORT**: Can transcribe directly from YouTube URLs (youtube.com, youtu.be, youtube.com/shorts). Also supports direct media URLs (.mp3, .mp4, .wav, .m4a, etc.). Automatically handles large files by chunking. Shows real-time progress with stop capability. Returns full transcription text.',
+          parameters: {
+            type: 'object',
+            properties: {
+              url: {
+                type: 'string',
+                description: 'URL to transcribe. Can be YouTube URL (youtube.com, youtu.be) or direct media URL (.mp3, .mp4, .wav, .m4a, etc.)'
+              },
+              language: {
+                type: 'string',
+                pattern: '^[a-z]{2}$',
+                description: 'Optional: 2-letter ISO language code (e.g., "en", "es", "fr"). Improves accuracy if known.'
+              },
+              prompt: {
+                type: 'string',
+                description: 'Optional: Context or expected words to improve accuracy (e.g., "Technical discussion about AI and machine learning")'
+              }
+            },
+            required: ['url']
+          }
+        }
+      });
+    }
+    
     // Add enabled MCP servers (placeholder - would need MCP integration)
     mcpServers.filter(server => server.enabled).forEach(server => {
       // MCP servers would be added here when backend supports them
@@ -242,6 +381,31 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
     });
     
     return tools;
+  };
+
+  // Stop transcription function
+  const handleStopTranscription = async (toolCallId: string) => {
+    try {
+      const response = await fetch(`${settings.apiEndpoint.replace('/openai/v1', '')}/stop-transcription`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ tool_call_id: toolCallId })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to stop transcription');
+      }
+
+      showSuccess('Transcription stopped');
+      console.log('Transcription stopped:', toolCallId);
+    } catch (error) {
+      console.error('Failed to stop transcription:', error);
+      showError('Failed to stop transcription: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   };
 
   const handleSend = async (messageText?: string) => {
@@ -298,6 +462,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({ transferData }) => {
         finalSystemPrompt += `\n\nYou have access to these tools: ${toolNames}.
 
 CRITICAL TOOL USAGE RULES:
+- When users ask to TRANSCRIBE or get TRANSCRIPT from video/audio, you MUST call transcribe_url (NOT search_youtube)
+- When users say "transcribe this video [URL]", "get transcript", "what does the video say", you MUST call transcribe_url
+- When users want to FIND or SEARCH for videos, use search_youtube (e.g., "find videos about X")
 - When users ask to "scrape", "get content from", "read", "fetch", or "summarize" a website/URL, you MUST call the scrape_web_content tool
 - When users provide a URL and ask for information about it, you MUST call scrape_web_content with that URL
 - When users ask for current information, news, or web content, you MUST use search_web
@@ -308,6 +475,9 @@ CRITICAL TOOL USAGE RULES:
 - After receiving tool results, incorporate them naturally into your response
 
 Examples when you MUST use tools:
+- "transcribe this video https://youtube.com/watch?v=abc" → Call transcribe_url with url parameter
+- "get transcript from this video [URL]" → Call transcribe_url with url parameter
+- "find videos about AI" → Call search_youtube with query parameter
 - "scrape and summarize https://example.com" → Call scrape_web_content with url parameter
 - "get content from https://github.com/user/repo" → Call scrape_web_content with url parameter  
 - "Find current news about X" → Call search_web with query parameter
@@ -328,6 +498,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         messages: messagesWithSystem,
         temperature: 0.7
       };
+      
+      // Add Tavily API key if available
+      if (settings.tavilyApiKey && settings.tavilyApiKey.trim()) {
+        requestPayload.tavilyApiKey = settings.tavilyApiKey;
+        console.log('Including Tavily API key in request');
+      }
       
       // Add tools if any are enabled
       if (tools.length > 0) {
@@ -483,6 +659,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               }
               
               // Streaming state already reset in tool_call_start
+              break;
+              
+            case 'tool_progress':
+              // Transcription progress events (download, chunking, transcription)
+              console.log('📊 Tool progress event:', data);
+              if (data.tool_call_id) {
+                setTranscriptionProgress(prev => {
+                  const newMap = new Map(prev);
+                  const events = newMap.get(data.tool_call_id) || [];
+                  newMap.set(data.tool_call_id, [...events, data]);
+                  return newMap;
+                });
+              }
               break;
               
             case 'message_complete':
@@ -664,6 +853,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     showSuccess('Chat deleted');
   };
 
+  const handleClearAllHistory = () => {
+    clearAllChatHistory();
+    setChatHistory([]);
+    setShowClearHistoryConfirm(false);
+    setShowLoadDialog(false);
+    showSuccess('All chat history cleared');
+  };
+
   const handleNewChat = () => {
     setMessages([]);
     setInput('');
@@ -673,6 +870,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     setExpandedToolMessages(new Set());
     // Reset chat ID to start a new session
     setCurrentChatId(null);
+    // Focus the input field
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
   };
 
   const handleAddMCPServer = () => {
@@ -764,6 +965,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   <button onClick={() => handleExampleClick('Analyze the pros and cons of renewable energy sources')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Renewable energy analysis</button>
                   
                   <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
+                    Transcription & Media
+                  </div>
+                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/hello-test.wav')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Speech: "Hello, this is a test..."</button>
+                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/ml-test.wav')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Speech: "Testing audio transcription..."</button>
+                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/voice-test.wav')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Speech: "Voice recognition technology..."</button>
+                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/long-form-ai-speech.mp3')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Long-form (~4min): AI & ML Discussion</button>
+                  <button onClick={() => handleExampleClick('Note: These are TTS-generated speech samples hosted on S3. You can use your own S3, Dropbox, or Google Drive public links. YouTube blocked by bot detection.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-500 italic" disabled>ℹ️ About these samples</button>
+                  
+                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
                     Web Scraping & Content Extraction
                   </div>
                   <button onClick={() => handleExampleClick('Scrape and summarize the main content from https://news.ycombinator.com')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Scrape Hacker News</button>
@@ -772,46 +982,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               </div>
             )}
           </div>
-        </div>
-        
-        {/* Tool Configuration - Right Side */}
-        <div className="flex items-center gap-3 ml-auto">
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={enabledTools.web_search}
-                onChange={(e) => setEnabledTools({ ...enabledTools, web_search: e.target.checked })}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-700 dark:text-gray-300">🔍 Search</span>
-            </label>
-            <label className="flex items-center gap-1 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={enabledTools.execute_js}
-                onChange={(e) => setEnabledTools({ ...enabledTools, execute_js: e.target.checked })}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-700 dark:text-gray-300">⚡ JS</span>
-            </label>
-            <label className="flex items-center gap-1 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={enabledTools.scrape_url}
-                onChange={(e) => setEnabledTools({ ...enabledTools, scrape_url: e.target.checked })}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-700 dark:text-gray-300">🌐 Scrape</span>
-            </label>
-          </div>
-          <button
-            onClick={() => setShowMCPDialog(true)}
-            className="btn-secondary text-sm px-3 py-1"
-            title="Configure MCP Servers"
-          >
-            ➕ MCP
-          </button>
         </div>
       </div>
 
@@ -896,6 +1066,25 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   
                   return (
                     <div>
+                      {/* Transcription Progress for transcribe_url tool */}
+                      {msg.name === 'transcribe_url' && msg.tool_call_id && transcriptionProgress.has(msg.tool_call_id) && (
+                        <div className="mb-3">
+                          <TranscriptionProgress
+                            toolCallId={msg.tool_call_id}
+                            url={(() => {
+                              try {
+                                const parsed = JSON.parse(toolCall?.function?.arguments || '{}');
+                                return parsed.url || '';
+                              } catch {
+                                return '';
+                              }
+                            })()}
+                            events={transcriptionProgress.get(msg.tool_call_id) as ProgressEvent[] || []}
+                            onStop={handleStopTranscription}
+                          />
+                        </div>
+                      )}
+                      
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">
                           🔧 {msg.name || 'Tool Result'}
@@ -921,33 +1110,60 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           {/* Show function call details if available */}
                           {toolCall && (
                             <div className="mb-3 bg-purple-50 dark:bg-purple-950/50 p-3 rounded border border-purple-200 dark:border-purple-800">
-                              <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">Function Call:</div>
-                              <div className="font-mono text-xs mb-2">
-                                <span className="text-purple-900 dark:text-purple-100">{toolCall.function.name}</span>
-                              </div>
-                              
-                              {/* Show code if available in arguments */}
-                              {toolCall.function.arguments && (() => {
-                                try {
-                                  const parsed = JSON.parse(toolCall.function.arguments);
-                                  if (parsed.code) {
-                                    return (
-                                      <div>
-                                        <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">Code:</div>
-                                        <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
-                                          <pre className="whitespace-pre-wrap leading-relaxed">{parsed.code}</pre>
-                                        </div>
-                                      </div>
-                                    );
-                                  }
-                                } catch (e) {
-                                  console.error('Error parsing tool arguments:', e);
-                                }
-                                return null;
-                              })()}
+                              {/* For search_web, show the query instead of function name */}
+                              {toolCall.function.name === 'search_web' ? (
+                                <>
+                                  {toolCall.function.arguments && (() => {
+                                    try {
+                                      const parsed = JSON.parse(toolCall.function.arguments);
+                                      if (parsed.query) {
+                                        return (
+                                          <div>
+                                            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">🔍 Search Query:</div>
+                                            <div className="text-purple-900 dark:text-purple-100 italic">
+                                              "{parsed.query}"
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                    } catch (e) {
+                                      console.error('Error parsing search arguments:', e);
+                                    }
+                                    return null;
+                                  })()}
+                                </>
+                              ) : (
+                                <>
+                                  <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">Function Call:</div>
+                                  <div className="font-mono text-xs mb-2">
+                                    <span className="text-purple-900 dark:text-purple-100">{toolCall.function.name}</span>
+                                  </div>
+                                  
+                                  {/* Show code if available in arguments */}
+                                  {toolCall.function.arguments && (() => {
+                                    try {
+                                      const parsed = JSON.parse(toolCall.function.arguments);
+                                      if (parsed.code) {
+                                        return (
+                                          <div>
+                                            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">Code:</div>
+                                            <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
+                                              <pre className="whitespace-pre-wrap leading-relaxed">{parsed.code}</pre>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                    } catch (e) {
+                                      console.error('Error parsing tool arguments:', e);
+                                    }
+                                    return null;
+                                  })()}
+                                </>
+                              )}
                             </div>
                           )}
-                          {msg.tool_call_id && (
+                          {/* Hide Call ID for search_web tool */}
+                          {msg.tool_call_id && msg.name !== 'search_web' && (
                             <div>
                               <span className="font-semibold text-purple-700 dark:text-purple-300">Call ID:</span>
                               <div className="font-mono text-xs bg-purple-50 dark:bg-purple-950 p-1 rounded mt-1 break-all">
@@ -1207,6 +1423,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           {/* Message Input */}
           <div className="flex gap-2">
             <textarea
+            ref={inputRef}
             value={input}
               onChange={(e) => {
                 setInput(e.target.value);
@@ -1297,12 +1514,48 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 </p>
               )}
             </div>
-            <button
-              onClick={() => setShowLoadDialog(false)}
-              className="btn-primary w-full mt-4"
-            >
-              Close
-            </button>
+            <div className="flex gap-2 mt-4">
+              {chatHistory.length > 0 && (
+                <button
+                  onClick={() => setShowClearHistoryConfirm(true)}
+                  className="btn-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  🗑️ Clear All History
+                </button>
+              )}
+              <button
+                onClick={() => setShowLoadDialog(false)}
+                className="btn-primary flex-1"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear History Confirmation Dialog */}
+      {showClearHistoryConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="card max-w-md w-full p-6">
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Clear All History?</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              Are you sure you want to delete all {chatHistory.length} chat{chatHistory.length !== 1 ? 's' : ''} from history? This action cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowClearHistoryConfirm(false)}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearAllHistory}
+                className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+              >
+                Clear All
+              </button>
+            </div>
           </div>
         </div>
       )}
