@@ -10,6 +10,7 @@ const { verifyGoogleToken, getAllowedEmails } = require('../auth');
 const { callFunction } = require('../tools');
 const { createSSEStreamAdapter } = require('../streaming/sse-writer');
 const { parseProviderModel } = require('../providers');
+const { createProgressEmitter } = require('../utils/progress-emitter');
 
 /**
  * Verify authentication token
@@ -183,6 +184,11 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
                 }
             };
             
+            // Set up progress emitter for transcription tool
+            if (name === 'transcribe_url' && sseWriter.writeEvent) {
+                toolContext.onProgress = createProgressEmitter(sseWriter.writeEvent, id, 'transcribe_url');
+            }
+            
             // Execute tool
             const result = await callFunction(name, parsedArgs, toolContext);
             
@@ -258,6 +264,7 @@ async function handler(event, responseStream) {
         // Parse request body
         const body = JSON.parse(event.body || '{}');
         const { messages, model, tools } = body;
+        const tavilyApiKey = body.tavilyApiKey || '';
         
         // Apply defaults for parameters that optimize for comprehensive, verbose responses
         const temperature = body.temperature !== undefined ? body.temperature : 0.8;
@@ -277,6 +284,12 @@ async function handler(event, responseStream) {
             });
             responseStream.end();
             return;
+        }
+        
+        // Extract Google OAuth token from Authorization header for API calls
+        let googleToken = null;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            googleToken = authHeader.substring(7);
         }
         
         // Validate required fields
@@ -324,6 +337,8 @@ async function handler(event, responseStream) {
             user: verifiedUser.email,
             model,
             apiKey,
+            googleToken,
+            tavilyApiKey,
             timestamp: new Date().toISOString()
         };
         

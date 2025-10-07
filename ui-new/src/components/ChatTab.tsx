@@ -996,8 +996,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           const isExpanded = expandedToolMessages.has(idx);
           console.log(`Rendering message ${idx}:`, msg.role, msg.content?.substring(0, 50));
           
-          // Skip assistant messages with no content (they only have tool_calls which are shown in tool results)
-          if (msg.role === 'assistant' && !msg.content && msg.tool_calls) {
+          // Show transcription progress for assistant messages with transcribe_url tool calls
+          const hasTranscriptionInProgress = msg.role === 'assistant' && msg.tool_calls?.some((tc: any) => 
+            tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)
+          );
+          
+          // Skip assistant messages with no content UNLESS they have transcription in progress
+          if (msg.role === 'assistant' && !msg.content && msg.tool_calls && !hasTranscriptionInProgress) {
             return null;
           }
           
@@ -1292,6 +1297,24 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   <>
                     {msg.role === 'assistant' ? (
                       <div>
+                        {/* Show transcription progress for tool calls in progress */}
+                        {msg.tool_calls && msg.tool_calls.map((tc: any) => {
+                          if (tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)) {
+                            const args = JSON.parse(tc.function.arguments || '{}');
+                            return (
+                              <div key={tc.id} className="mb-3">
+                                <TranscriptionProgress
+                                  toolCallId={tc.id}
+                                  url={args.url || ''}
+                                  events={transcriptionProgress.get(tc.id) as ProgressEvent[] || []}
+                                  onStop={handleStopTranscription}
+                                />
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                        
                         <MarkdownRenderer content={msg.content} />
                         {msg.isStreaming && (
                           <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
