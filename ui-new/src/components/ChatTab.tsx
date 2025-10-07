@@ -998,9 +998,21 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           console.log(`Rendering message ${idx}:`, msg.role, msg.content?.substring(0, 50));
           
           // Show transcription progress for assistant messages with transcribe_url tool calls
-          const hasTranscriptionInProgress = msg.role === 'assistant' && msg.tool_calls?.some((tc: any) => 
-            tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)
-          );
+          // But only if the transcription is still IN PROGRESS (not complete)
+          const hasTranscriptionInProgress = msg.role === 'assistant' && msg.tool_calls?.some((tc: any) => {
+            if (tc.function.name !== 'transcribe_url') return false;
+            const events = transcriptionProgress.get(tc.id);
+            if (!events || events.length === 0) return false;
+            
+            // Check if the last event indicates completion
+            const lastEvent = events[events.length - 1];
+            const lastType = lastEvent.progress_type || lastEvent.data?.type || '';
+            const isComplete = lastType === 'transcribe_complete' || 
+                             lastType === 'transcription_stopped' ||
+                             lastType === 'error';
+            
+            return !isComplete; // Only show progress if NOT complete
+          });
           
           // Skip assistant messages with no content UNLESS they have transcription in progress
           if (msg.role === 'assistant' && !msg.content && msg.tool_calls && !hasTranscriptionInProgress) {
