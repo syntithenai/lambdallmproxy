@@ -1084,24 +1084,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   
                   return (
                     <div>
-                      {/* Transcription Progress for transcribe_url tool */}
-                      {msg.name === 'transcribe_url' && msg.tool_call_id && transcriptionProgress.has(msg.tool_call_id) && (
-                        <div className="mb-3">
-                          <TranscriptionProgress
-                            toolCallId={msg.tool_call_id}
-                            url={(() => {
-                              try {
-                                const parsed = JSON.parse(toolCall?.function?.arguments || '{}');
-                                return parsed.url || '';
-                              } catch {
-                                return '';
-                              }
-                            })()}
-                            events={transcriptionProgress.get(msg.tool_call_id) as ProgressEvent[] || []}
-                            onStop={handleStopTranscription}
-                          />
-                        </div>
-                      )}
+                      {/* Note: TranscriptionProgress is shown in the assistant message during execution,
+                          not here in the tool result. This prevents duplicate progress indicators. */}
                       
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">
