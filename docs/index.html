@@ -7,8 +7,22 @@
     <title>LLM Proxy - Chat, Plan & Search</title>
     <!-- Google OAuth -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script type="module" crossorigin src="/assets/index--ukXpDwA.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CUlB32CA.css">
+    <!-- Single Page Apps for GitHub Pages -->
+    <!-- This script checks for the redirect from 404.html and converts the query string back to a path -->
+    <script>
+      (function(l) {
+        if (l.search[1] === '/' ) {
+          var decoded = l.search.slice(1).split('&').map(function(s) { 
+            return s.replace(/~and~/g, '&')
+          }).join('?');
+          window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
+      }(window.location))
+    </script>
+    <script type="module" crossorigin src="/assets/index-RGkV79Gs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-B3emZmaC.css">
   </head>
   <body>
     <div id="root"></div>
