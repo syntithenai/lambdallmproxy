@@ -1294,16 +1294,29 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   <>
                     {msg.role === 'assistant' ? (
                       <div>
-                        {/* Show transcription progress for tool calls in progress */}
+                        {/* Show transcription progress for tool calls in progress (NOT complete) */}
                         {msg.tool_calls && msg.tool_calls.map((tc: any) => {
                           if (tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)) {
+                            const events = transcriptionProgress.get(tc.id);
+                            if (!events || events.length === 0) return null;
+                            
+                            // Check if transcription is complete
+                            const lastEvent = events[events.length - 1];
+                            const lastType = lastEvent.progress_type || lastEvent.data?.type || '';
+                            const isComplete = lastType === 'transcribe_complete' || 
+                                             lastType === 'transcription_stopped' ||
+                                             lastType === 'error';
+                            
+                            // Only show progress if NOT complete
+                            if (isComplete) return null;
+                            
                             const args = JSON.parse(tc.function.arguments || '{}');
                             return (
                               <div key={tc.id} className="mb-3">
                                 <TranscriptionProgress
                                   toolCallId={tc.id}
                                   url={args.url || ''}
-                                  events={transcriptionProgress.get(tc.id) as ProgressEvent[] || []}
+                                  events={events as ProgressEvent[] || []}
                                   onStop={handleStopTranscription}
                                 />
                               </div>
