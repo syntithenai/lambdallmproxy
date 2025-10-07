@@ -11,11 +11,15 @@ help:
 	@echo "🚀 Lambda LLM Proxy Deployment Commands"
 	@echo ""
 	@echo "🔥 RECOMMENDED FOR AI AGENTS:"
+	@echo "  make fast         - ⚡ Ultra-fast deploy (code only, ~10 sec)"
 	@echo "  make dev          - Quick Lambda deploy (use after code changes)"
 	@echo "  make full-deploy  - Deploy everything (Lambda + docs)"
 	@echo ""
+	@echo "🎯 First-Time Setup:"
+	@echo "  make setup-layer  - Create Lambda Layer (run once, then use 'fast')"
+	@echo ""
 	@echo "Individual Commands:"
-	@echo "  make deploy       - Deploy Lambda function only"
+	@echo "  make deploy       - Deploy Lambda function only (full with deps)"
 	@echo "  make deploy-docs  - Deploy documentation only" 
 	@echo "  make build-docs   - Build documentation locally"
 	@echo "  make test         - Test Lambda function"
@@ -32,7 +36,7 @@ help:
 	@echo "  make env          - Setup environment file"
 	@echo "  make serve        - Serve docs locally"
 	@echo "  make clean        - Clean temporary files"
-	@echo "  make help        - Show this help message"
+	@echo "  make help         - Show this help message"
 
 # Deploy Lambda function
 deploy:
@@ -84,6 +88,19 @@ setup: env
 	@echo "🚀 Running complete setup..."
 	@echo "✅ Environment file ready"
 	@echo "⚠️  Please edit .env with your actual values, then run 'make build-docs'"
+
+# Setup Lambda Layer (dependencies) - Run once, then use fast deploy
+setup-layer:
+	@echo "📦 Creating Lambda Layer with dependencies..."
+	@chmod +x scripts/deploy-layer.sh
+	./scripts/deploy-layer.sh
+	@echo "✅ Layer created! Now use 'make fast' for rapid deployments"
+
+# Fast deploy (code only, uses layer for dependencies) - 10x faster!
+fast:
+	@echo "⚡ Fast deploying code changes..."
+	@chmod +x scripts/deploy-fast.sh
+	./scripts/deploy-fast.sh
 
 # Test the deployed function (requires .env)
 test:

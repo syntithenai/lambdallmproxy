@@ -82,6 +82,18 @@
                     <button type="button" id="clear_groq_api_key" style="position: absolute; right: 8px; top: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px 8px; font-size: 0.8em; color: #6c757d; cursor: pointer; display: none;" title="Clear saved API key">Clear</button>
                 </div>
             </div>
+            <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="tavily_api_key">Tavily API Key (Optional):</label>
+                    <button type="button" id="tavily_help_button" style="background: #007bff; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;" title="Get Tavily API Key">?</button>
+                </div>
+                <div style="position: relative;">
+                    <input type="text" id="tavily_api_key" name="tavily_api_key" placeholder="tvly-...">
+                    <small id="tavily_api_key_status" style="color: #666; font-size: 0.85em; margin-top: 4px; display: block;"></small>
+                    <small style="color: #6c757d; font-size: 0.8em; margin-top: 4px; display: block;">Enables enhanced web search and scraping. Falls back to DuckDuckGo if not provided.</small>
+                    <button type="button" id="clear_tavily_api_key" style="position: absolute; right: 8px; top: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px 8px; font-size: 0.8em; color: #6c757d; cursor: pointer; display: none;" title="Clear saved API key">Clear</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>

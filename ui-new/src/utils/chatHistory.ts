@@ -67,6 +67,27 @@ export function saveChatToHistory(messages: any[], chatId?: string): string {
         });
       }
     } else {
+      // Check for duplicate recent chats (within last 5 seconds with same first prompt)
+      const now = Date.now();
+      const recentDuplicate = history.find(h => 
+        h.firstUserPrompt === firstUserPrompt && 
+        (now - h.timestamp) < 5000
+      );
+      
+      if (recentDuplicate) {
+        // Update the existing recent chat instead of creating duplicate
+        const index = history.findIndex(h => h.id === recentDuplicate.id);
+        if (index !== -1) {
+          history[index] = {
+            id: recentDuplicate.id,
+            timestamp: now,
+            firstUserPrompt,
+            messages
+          };
+          return recentDuplicate.id;
+        }
+      }
+      
       // Create new chat entry
       const newId = generateChatId();
       history.unshift({

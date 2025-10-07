@@ -180,8 +180,10 @@ function setInitialDefaultModel() {
 function initializeSettings() {
     const openaiApiKeyInput = document.getElementById('openai_api_key');
     const groqApiKeyInput = document.getElementById('groq_api_key');
+    const tavilyApiKeyInput = document.getElementById('tavily_api_key');
     const clearOpenaiButton = document.getElementById('clear_openai_api_key');
     const clearGroqButton = document.getElementById('clear_groq_api_key');
+    const clearTavilyButton = document.getElementById('clear_tavily_api_key');
     const settingsBtn = document.getElementById('settings-btn');
     const closeSettingsBtn = document.getElementById('close-settings');
     const settingsDialog = document.getElementById('settings-dialog');
@@ -207,6 +209,18 @@ function initializeSettings() {
         groqApiKeyInput.value = savedGroqApiKey;
         updateApiKeyStatus('groq_api_key_status', 'Loaded from local storage', '#28a745');
         clearGroqButton.style.display = 'block';
+    }
+    
+    // Load saved Tavily API key
+    if (tavilyApiKeyInput) {
+        const savedTavilyApiKey = localStorage.getItem('tavily_api_key');
+        if (savedTavilyApiKey) {
+            tavilyApiKeyInput.value = savedTavilyApiKey;
+            updateApiKeyStatus('tavily_api_key_status', 'Loaded from local storage', '#28a745');
+            if (clearTavilyButton) {
+                clearTavilyButton.style.display = 'block';
+            }
+        }
     }
 
     // Load saved query on page load
@@ -294,6 +308,40 @@ function initializeSettings() {
         }, 3000);
     });
     
+    // Save Tavily API key when it changes
+    if (tavilyApiKeyInput) {
+        tavilyApiKeyInput.addEventListener('input', function() {
+            const apiKey = this.value.trim();
+            if (apiKey && apiKey.trim()) {
+                localStorage.setItem('tavily_api_key', apiKey);
+                updateApiKeyStatus('tavily_api_key_status', 'Saved to local storage', '#28a745');
+                if (clearTavilyButton) {
+                    clearTavilyButton.style.display = 'block';
+                }
+            } else if (!apiKey) {
+                updateApiKeyStatus('tavily_api_key_status', '');
+                if (clearTavilyButton) {
+                    clearTavilyButton.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    // Handle clear Tavily button
+    if (clearTavilyButton) {
+        clearTavilyButton.addEventListener('click', function() {
+            localStorage.removeItem('tavily_api_key');
+            if (tavilyApiKeyInput) {
+                tavilyApiKeyInput.value = '';
+            }
+            updateApiKeyStatus('tavily_api_key_status', 'Cleared from local storage', '#dc3545');
+            clearTavilyButton.style.display = 'none';
+            setTimeout(() => {
+                updateApiKeyStatus('tavily_api_key_status', '');
+            }, 3000);
+        });
+    }
+    
     // Handle OpenAI help button
     const openaiHelpBtn = document.getElementById('openai_help_button');
     if (openaiHelpBtn) {
@@ -307,6 +355,14 @@ function initializeSettings() {
     if (groqHelpBtn) {
         groqHelpBtn.addEventListener('click', function() {
             window.open('https://console.groq.com/keys', '_blank');
+        });
+    }
+    
+    // Handle Tavily help button
+    const tavilyHelpBtn = document.getElementById('tavily_help_button');
+    if (tavilyHelpBtn) {
+        tavilyHelpBtn.addEventListener('click', function() {
+            window.open('https://tavily.com/#api', '_blank');
         });
     }
     

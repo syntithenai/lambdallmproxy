@@ -3,9 +3,15 @@
  */
 
 const https = require('https');
+const { PROVIDERS } = require('./providers');
 
 function isOpenAIModel(model) { return typeof model === 'string' && model.startsWith('openai:'); }
 function isGroqModel(model) { return typeof model === 'string' && model.startsWith('groq:'); }
+
+// Check if model name (without prefix) is a known OpenAI model
+function isKnownOpenAIModel(modelName) {
+  return PROVIDERS.openai.models.includes(modelName);
+}
 
 function openAISupportsReasoning(model) {
   const m = String(model || '').replace(/^openai:/, '');
@@ -114,9 +120,15 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
   // Auto-detect and add provider prefix if missing
   let normalizedModel = model;
   if (!isOpenAIModel(model) && !isGroqModel(model)) {
-    // If no prefix, assume groq (most common for tool calls)
-    console.log(`⚠️ Model "${model}" missing provider prefix, assuming groq:${model}`);
-    normalizedModel = `groq:${model}`;
+    // Check if it's a known OpenAI model name (like gpt-4o, gpt-4, etc.)
+    if (isKnownOpenAIModel(model)) {
+      console.log(`⚠️ Model "${model}" is an OpenAI model, adding openai: prefix`);
+      normalizedModel = `openai:${model}`;
+    } else {
+      // If no prefix and not a known OpenAI model, assume groq
+      console.log(`⚠️ Model "${model}" missing provider prefix, assuming groq:${model}`);
+      normalizedModel = `groq:${model}`;
+    }
   }
 
   if (isOpenAIModel(normalizedModel)) {

@@ -19,6 +19,7 @@ const searchEndpoint = require('./endpoints/search');
 const proxyEndpoint = require('./endpoints/proxy');
 const chatEndpoint = require('./endpoints/chat');
 const staticEndpoint = require('./endpoints/static');
+const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 
 /**
  * Handle CORS preflight requests
@@ -92,6 +93,15 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             // Note: Proxy endpoint returns standard response, not streaming
             const proxyResponse = await proxyEndpoint.handler(event);
             responseStream.write(JSON.stringify(proxyResponse));
+            responseStream.end();
+            return;
+        }
+        
+        if (method === 'POST' && path === '/stop-transcription') {
+            console.log('Routing to stop-transcription endpoint');
+            // Note: Stop endpoint returns standard response, not streaming
+            const stopResponse = await stopTranscriptionEndpoint.handler(event);
+            responseStream.write(JSON.stringify(stopResponse));
             responseStream.end();
             return;
         }

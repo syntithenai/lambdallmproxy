@@ -18,6 +18,7 @@ const { DuckDuckGoSearcher } = require('./search');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
 const { toolFunctions, callFunction } = require('./tools');
 const { loadAllPricing, calculateLLMCost } = require('./pricing');
+const { createProgressEmitter } = require('./utils/progress-emitter');
 
 // Import refactored modules
 const { 
@@ -328,9 +329,30 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         const results = await Promise.allSettled(
             calls.map(async (tc, idx) => {
                 const args = safeParseJson(tc.arguments || '{}');
+                const call_id = tc.call_id || tc.id || `iter-${iter + 1}-call-${idx + 1}`;
                 let output;
                 try {
-                    output = await callFunction(tc.name, args, { model, apiKey, writeEvent: stream?.writeEvent });
+                    // Parse provider from model string for tool context
+                    const { provider } = parseProviderModel(model);
+                    
+                    // Create context for tool execution
+                    const context = { 
+                        model, 
+                        provider, // Add provider to context for tools like transcribe_url
+                        apiKey, 
+                        openaiApiKey: apiKey, // Ensure openaiApiKey is available for Whisper
+                        googleToken,
+                        tavilyApiKey, // Add Tavily API key for search/scrape tools
+                        writeEvent: stream?.writeEvent,
+                        toolCallId: call_id
+                    };
+
+                    // For transcribe_url tool, create progress emitter
+                    if (tc.name === 'transcribe_url' && stream?.writeEvent) {
+                        context.onProgress = createProgressEmitter(stream.writeEvent, call_id, 'transcribe_url');
+                    }
+
+                    output = await callFunction(tc.name, args, context);
                 } catch (e) {
                     const errorMsg = String(e?.message || e);
                     console.error(`Tool ${tc.name} failed:`, errorMsg);
@@ -344,7 +366,6 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                     
                     output = JSON.stringify({ error: errorMsg });
                 }
-                const call_id = tc.call_id || tc.id || `iter-${iter + 1}-call-${idx + 1}`;
                 const result = { iteration: iter + 1, call_id, name: tc.name, args, output: String(output) };
                 
                 // Collect search results and emit dedicated search_results event
@@ -689,7 +710,20 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         const model = body.model || 'groq:llama-3.1-8b-instant';
         const accessSecret = body.accessSecret || '';
         const apiKey = body.apiKey || '';
-        const googleToken = body.google_token || body.googleToken || null;
+        const tavilyApiKey = body.tavilyApiKey || '';
+        
+        // Extract Google token from body OR Authorization header
+        let googleToken = body.google_token || body.googleToken || null;
+        if (!googleToken && event.headers) {
+            const authHeader = event.headers.authorization || event.headers.Authorization;
+            console.log('🔑 Auth header present:', !!authHeader);
+            console.log('🔑 Auth header starts with Bearer:', authHeader ? authHeader.startsWith('Bearer ') : false);
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                googleToken = authHeader.substring(7);
+                console.log('🔑 Extracted googleToken length:', googleToken ? googleToken.length : 0);
+            }
+        }
+        console.log('🔑 Final googleToken exists:', !!googleToken);
 
         // Authentication check
         if (process.env.ACCESS_SECRET) {

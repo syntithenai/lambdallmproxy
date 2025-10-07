@@ -1,16 +1,35 @@
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SearchResultsProvider } from './contexts/SearchResultsContext';
+import { PlaylistProvider } from './contexts/PlaylistContext';
 import { ToastProvider } from './components/ToastManager';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
+import { PlaylistButton } from './components/PlaylistButton';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 // Create a wrapper component that can access auth context
 function AppContent() {
   const { isAuthenticated } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
+  const [showMCPDialog, setShowMCPDialog] = useState(false);
+  
+  // Tool configuration - shared between ChatTab and SettingsModal
+  const [enabledTools, setEnabledTools] = useLocalStorage<{
+    web_search: boolean;
+    execute_js: boolean;
+    scrape_url: boolean;
+    youtube: boolean;
+    transcribe: boolean;
+  }>('chat_enabled_tools', {
+    web_search: true,
+    execute_js: true,
+    scrape_url: true,
+    youtube: true,
+    transcribe: true
+  });
 
   // Show login screen if not authenticated
   if (!isAuthenticated) {
@@ -27,6 +46,7 @@ function AppContent() {
             LLM Proxy
           </h1>
           <div className="flex items-center gap-3">
+            <PlaylistButton />
             <button
               onClick={() => setShowSettings(true)}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -45,12 +65,23 @@ function AppContent() {
       {/* Main Content - Only visible when authenticated */}
       <main className="flex-1 overflow-hidden">
         <div className="h-full max-w-screen-2xl mx-auto">
-          <ChatTab />
+          <ChatTab 
+            enabledTools={enabledTools}
+            setEnabledTools={setEnabledTools}
+            showMCPDialog={showMCPDialog}
+            setShowMCPDialog={setShowMCPDialog}
+          />
         </div>
       </main>
 
       {/* Settings Modal */}
-      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <SettingsModal 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)}
+        enabledTools={enabledTools}
+        setEnabledTools={setEnabledTools}
+        onOpenMCPDialog={() => setShowMCPDialog(true)}
+      />
     </div>
   );
 }
@@ -58,11 +89,13 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <SearchResultsProvider>
-        <ToastProvider>
-          <AppContent />
-        </ToastProvider>
-      </SearchResultsProvider>
+      <PlaylistProvider>
+        <SearchResultsProvider>
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
+        </SearchResultsProvider>
+      </PlaylistProvider>
     </AuthProvider>
   );
 }

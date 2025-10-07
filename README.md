@@ -28,11 +28,79 @@ make help
 
 **The Makefile is your single interface for all operations - it ensures consistent, reliable deployments and builds.**
 
+## ⚡ Optimized Deployment Workflow (Lambda Layers)
+
+**NEW: Ultra-fast deployment for rapid development iteration!**
+
+### First-Time Setup (One-Time)
+
+```bash
+# Create Lambda Layer with all dependencies (27MB)
+make setup-layer
+```
+
+This command:
+- Creates S3 bucket for deployments
+- Installs and packages all dependencies (ytdl-core, ffmpeg, form-data, etc.)
+- Publishes Lambda Layer
+- Saves configuration to `.deployment-config`
+
+### Fast Code-Only Deployment (10 seconds!)
+
+```bash
+# Deploy code changes only (89KB package vs 27MB)
+make fast
+```
+
+**Speed Comparison:**
+- **Full Deploy**: 2-3 minutes (includes 27MB dependencies)
+- **Fast Deploy**: ~10 seconds (code only, uses existing layer)
+- **Speedup**: 10x faster! 🚀
+
+### When to Use Each Command
+
+| Scenario | Command | Time | Use Case |
+|----------|---------|------|----------|
+| **First time setup** | `make setup-layer` | 2 min | Create Lambda Layer (once) |
+| **Code changes** | `make fast` | 10 sec | Day-to-day development |
+| **Dependency updates** | `make setup-layer` then `make fast` | 2 min | When package.json changes |
+| **Full deployment** | `make deploy` | 3 min | Legacy/backup option |
+
+### Benefits
+
+- ✅ **10x faster deployments** - 10 seconds vs 2-3 minutes
+- ✅ **99.7% size reduction** - 89KB code vs 27MB full package
+- ✅ **No timeout issues** - S3 upload is reliable
+- ✅ **Reliable deployments** - Consistent layer versioning
+- ✅ **Cost efficient** - Deploy dependencies once, reuse many times
+
+### Troubleshooting
+
+**Issue**: `make fast` fails with "Layer ARN not found"
+```bash
+# Solution: Run setup-layer first
+make setup-layer
+```
+
+**Issue**: Need to update dependencies (package.json changed)
+```bash
+# Re-create layer with new dependencies
+make setup-layer
+# Then deploy code
+make fast
+```
+
+**Issue**: Want to verify layer is attached
+```bash
+aws lambda get-function --function-name llmproxy --region us-east-1 --query 'Configuration.Layers'
+```
+
 ## 🤖 AI Agent Workflow
 
 **For AI agents making code changes (per instructions.md):**
 
-1. **Make Lambda code changes** in `src/` → **Always run `make dev`** (uses `scripts/deploy.sh`)
+1. **Make Lambda code changes** in `src/` → **Recommended: `make fast`** (10 sec) or `make dev` (3 min)
+   - **First time?** Run `make setup-layer` once, then use `make fast` for all future changes
 2. **🚨 CRITICAL: Make UI changes** in `ui/` subdirectory files → **Always run `make deploy-docs`**
 3. **Test immediately**: Visit https://lambdallmproxy.pages.dev
 4. **Check output**: All commands pipe to `output.txt` for Copilot to read
@@ -209,12 +277,21 @@ GOOGLE_CLIENT_ID=your-google-client-id-here
 ALLOWED_EMAILS=user1@example.com,user2@example.com,user3@example.com
 ```
 
-2. **Build UI with Authentication**:
+2. **Setup YouTube Data API** (Required for YouTube search tool):
+
+   See [GOOGLE_CLOUD_SETUP.md](GOOGLE_CLOUD_SETUP.md) for detailed instructions on:
+   - Creating a Google Cloud project
+   - Enabling YouTube Data API v3
+   - Creating and configuring an API key
+   - Setting up referrer restrictions
+   - Managing API quotas
+
+3. **Build UI with Authentication**:
 ```bash
 make build-docs  # Replaces {{GOOGLE_CLIENT_ID}} placeholder
 ```
 
-3. **Deploy Lambda with Environment Variables**:
+4. **Deploy Lambda with Environment Variables**:
 ```bash
 make deploy  # Automatically includes GOOGLE_CLIENT_ID and ALLOWED_EMAILS
 ```
@@ -379,9 +456,12 @@ All environment variables in the `.env` file are actively used in the applicatio
 
 ### Deployment Options
 
-1. **Bash Script**: `./deploy.sh` - Comprehensive with colorized output
-2. **Node.js Script**: `./deploy.mjs` - Cross-platform compatibility  
-3. **Makefile**: `make deploy` - Simple one-command deployment
+1. **⚡ Fast Deploy** (Recommended): `make fast` - Ultra-fast code-only deployment (~10 seconds)
+   - Requires: `make setup-layer` (one-time setup)
+   - Uses: Lambda Layers + S3 upload
+   - Best for: Day-to-day development
+2. **Bash Script**: `./scripts/deploy.sh` - Full deployment with dependencies (2-3 minutes)
+3. **Makefile**: `make dev` - Simple one-command deployment (uses deploy.sh)
 
 ### What Deployment Does
 

@@ -61,15 +61,17 @@ cp "$OLDPWD"/src/lambda_search_llm_handler.js ./
 cp "$OLDPWD"/src/search.js ./ 2>/dev/null || true  # Optional, may not exist yet
 cp "$OLDPWD"/src/llm_tools_adapter.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/tools.js ./ 2>/dev/null || true
+cp "$OLDPWD"/src/tavily-search.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/pricing_scraper.js ./
 
 # Copy modular components (new refactored structure)
-mkdir -p config utils services streaming endpoints
+mkdir -p config utils services streaming endpoints tools
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true  
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/streaming/* ./streaming/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/endpoints/* ./endpoints/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/tools/* ./tools/ 2>/dev/null || true
 
 # Create package.json for the Lambda function with dependencies
 cat > package.json << EOF
@@ -79,6 +81,10 @@ cat > package.json << EOF
   "description": "AWS Lambda handler for intelligent search + LLM response",
   "main": "index.js",
   "dependencies": {
+    "@distube/ytdl-core": "^4.14.4",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "form-data": "^4.0.0",
     "google-auth-library": "^10.4.0"
   },
   "engines": {
@@ -96,7 +102,7 @@ echo -e "${YELLOW}📦 Files to be packaged:${NC}"
 ls -la *.js
 
 # Create the deployment package (include node_modules)
-zip -q -r "$ZIP_FILE" index.js package.json *.js config/ utils/ services/ streaming/ endpoints/ node_modules/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
+zip -q -r "$ZIP_FILE" index.js package.json *.js config/ utils/ services/ streaming/ endpoints/ tools/ node_modules/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
 
 # Get current function configuration for backup
 aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" > function-backup.json 2>/dev/null

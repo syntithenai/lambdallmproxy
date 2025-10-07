@@ -47,6 +47,9 @@ async function resumeFromInterrupt() {
     const hasLocalKey = apiKey && apiKey.trim();
     const isSignedIn = (window.isGoogleTokenValid ? window.isGoogleTokenValid(window.googleAccessToken) : false);
     
+    // Get Tavily API key if available
+    const tavilyApiKey = document.getElementById('tavily_api_key')?.value || '';
+    
     const retryFormData = {
         ...(hasLocalKey ? { apiKey: apiKey } : {}),
         model: selectedModel,
@@ -54,6 +57,7 @@ async function resumeFromInterrupt() {
         accessSecret: document.getElementById('access_secret').value,
         searchMode: 'web_search',
         ...(isSignedIn ? { google_token: window.googleAccessToken } : {}),
+        ...(tavilyApiKey ? { tavilyApiKey: tavilyApiKey } : {}),
         // Retry parameters from interrupt state
         queryId: window.currentQueryId,
         previousSteps: window.previousSteps,
@@ -197,6 +201,9 @@ async function handleFormSubmission(e) {
     window.previousSteps = [];
     window.interruptState = null;
 
+    // Get Tavily API key if available
+    const tavilyApiKey = document.getElementById('tavily_api_key')?.value || '';
+    
     // Collect form data
     const formData = {
         // Only include apiKey if user provided one; otherwise server may use env keys for authorized accounts
@@ -206,6 +213,7 @@ async function handleFormSubmission(e) {
         accessSecret: document.getElementById('access_secret').value,
         searchMode: 'web_search',
         ...(isSignedIn ? { google_token: window.googleAccessToken } : {}),
+        ...(tavilyApiKey ? { tavilyApiKey: tavilyApiKey } : {}),
         // Add query ID for new request
         queryId: window.currentQueryId,
         tokensPerMinute: 6000  // Default rate limit

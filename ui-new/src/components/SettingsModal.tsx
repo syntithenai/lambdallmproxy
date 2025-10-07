@@ -1,9 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
+interface EnabledTools {
+  web_search: boolean;
+  execute_js: boolean;
+  scrape_url: boolean;
+  youtube: boolean;
+  transcribe: boolean;
+}
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  enabledTools: EnabledTools;
+  setEnabledTools: (tools: EnabledTools) => void;
+  onOpenMCPDialog: () => void;
 }
 
 type Provider = 'groq' | 'openai';
@@ -11,6 +22,7 @@ type Provider = 'groq' | 'openai';
 interface Settings {
   provider: Provider;
   llmApiKey: string;
+  tavilyApiKey: string;
   apiEndpoint: string;
   smallModel: string;
   largeModel: string;
@@ -71,10 +83,17 @@ const DEFAULT_MODELS: Record<Provider, { small: string; large: string; reasoning
   }
 };
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  enabledTools, 
+  setEnabledTools,
+  onOpenMCPDialog 
+}) => {
   const [settings, setSettings] = useLocalStorage<Settings>('app_settings', {
     provider: 'groq',
     llmApiKey: '',
+    tavilyApiKey: '',
     apiEndpoint: PROVIDER_ENDPOINTS.groq,
     smallModel: DEFAULT_MODELS.groq.small,
     largeModel: DEFAULT_MODELS.groq.large,
@@ -82,6 +101,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   });
 
   const [tempSettings, setTempSettings] = useState<Settings>(settings);
+  const [activeTab, setActiveTab] = useState<'provider' | 'tools'>('provider');
 
   useEffect(() => {
     setTempSettings(settings);
@@ -128,6 +148,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           </button>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
+          <button
+            onClick={() => setActiveTab('provider')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'provider'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            🔌 Provider
+          </button>
+          <button
+            onClick={() => setActiveTab('tools')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'tools'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            🛠️ Tools
+          </button>
+        </div>
+
+        {/* Provider Tab */}
+        {activeTab === 'provider' && (
         <div className="space-y-6">
           {/* API Provider */}
           <div>
@@ -230,6 +276,144 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             Endpoint: {tempSettings.apiEndpoint}
           </p>
         </div>
+        )}
+
+        {/* Tools Tab */}
+        {activeTab === 'tools' && (
+        <div className="space-y-6">
+          {/* Tavily API Key */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Tavily API Key (Optional)
+            </label>
+            <input
+              type="password"
+              value={tempSettings.tavilyApiKey}
+              onChange={(e) => setTempSettings({ ...tempSettings, tavilyApiKey: e.target.value })}
+              className="input-field"
+              placeholder="tvly-..."
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Enables enhanced web search and scraping via Tavily API. Falls back to DuckDuckGo if not provided.
+            </p>
+          </div>
+
+          {/* Tool Configuration */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              Enabled Tools
+            </h3>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.web_search}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, web_search: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    🔍 Web Search
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Search the web for current information, news, and articles
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.execute_js}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, execute_js: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    ⚡ JavaScript Execution
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Execute JavaScript code for calculations and data processing
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.scrape_url}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, scrape_url: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    🌐 Web Scraping
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Extract content from specific URLs and websites
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.youtube}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, youtube: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    🎬 YouTube Search
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Search YouTube for videos with transcript support
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.transcribe}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, transcribe: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    🎙️ Transcribe Audio/Video
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Transcribe audio/video from URLs (YouTube, MP3, MP4, etc.) using Whisper
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* MCP Servers */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                MCP Servers
+              </h3>
+              <button
+                onClick={() => {
+                  onOpenMCPDialog();
+                  onClose();
+                }}
+                className="btn-secondary text-sm px-4 py-2"
+                title="Configure Model Context Protocol Servers"
+              >
+                ➕ Configure MCP
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Add and manage Model Context Protocol servers for extended functionality
+            </p>
+          </div>
+        </div>
+        )}
 
         <div className="flex justify-end gap-3 mt-8">
           <button onClick={handleCancel} className="btn-secondary">

@@ -1,19 +1,20 @@
-On branch cleaner-proxy
-Your branch is ahead of 'origin/cleaner-proxy' by 1 commit.
-  (use "git push" to publish your local commits)
 
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	modified:   output.txt
+> ui-new@0.0.0 build
+> tsc -b && vite build
 
-no changes added to commit (use "git add" and/or "git commit -a")
-  agent
-* cleaner-proxy
-  feature-integration-d3c7233
-  main
-  remotes/origin/agent
-  remotes/origin/agent-final
-  remotes/origin/cleaner-proxy
-  remotes/origin/feature-integration-d3c7233
-  remotes/origin/main
+You are using Node.js 20.12.2. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.
+vite v7.1.9 building for production...
+transforming...
+✓ 510 modules transformed.
+rendering chunks...
+computing gzip size...
+../docs/index.html                      0.58 kB │ gzip:   0.37 kB
+../docs/assets/index-CUlB32CA.css      42.41 kB │ gzip:   8.64 kB
+../docs/assets/streaming-DpY1-JdV.js    1.16 kB │ gzip:   0.65 kB
+../docs/assets/index--ukXpDwA.js      627.20 kB │ gzip: 188.85 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1.92s

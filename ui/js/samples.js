@@ -7,6 +7,11 @@ const sampleQueries = {
         'What is the current stock price of Tesla and recent news about the company?',
         'Search for recent scientific discoveries in quantum computing'
     ],
+    'Transcription & Media': [
+        'Transcribe this video https://www.youtube.com/watch?v=t8pPdKYpow8',
+        'Extract the transcript from this YouTube video: https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'What is discussed in this video? https://www.youtube.com/watch?v=jNQXAC9IVRw'
+    ],
     'Mathematical & Computational': [
         'Calculate the compound interest on $10,000 invested at 7% annual rate for 15 years',
         'What is the square root of 12,345 and show me the calculation steps?',

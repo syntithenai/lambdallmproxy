@@ -7,6 +7,8 @@ const { DuckDuckGoSearcher } = require('./search');
 const { SimpleHTMLParser } = require('./html-parser');
 const { extractContent } = require('./html-content-extractor');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
+const { transcribeUrl } = require('./tools/transcribe');
+const { tavilySearch, tavilyExtract } = require('./tavily-search');
 const vm = require('vm');
 
 // Simple token estimation (rough approximation: 4 chars ≈ 1 token)
@@ -84,8 +86,39 @@ const toolFunctions = [
   {
     type: 'function',
     function: {
+      name: 'search_youtube',
+      description: '🎬 SEARCH/FIND YouTube videos (NOT for transcription). Use when user wants to FIND or SEARCH for videos. **DO NOT USE if user wants to transcribe, get transcript, or extract text from a specific YouTube URL** - use transcribe_url instead. Use search_youtube for: "find YouTube videos about X", "search YouTube for X", "show me videos about X". Returns video titles, descriptions, links, and caption availability. Results are automatically added to a playlist. **CRITICAL: You MUST include ALL video URLs in your response as a formatted markdown list with [Title](URL) format.**',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { 
+            type: 'string', 
+            description: 'Search query for YouTube videos (e.g., "javascript tutorial", "bach cello suites", "machine learning course")'
+          },
+          limit: { 
+            type: 'integer', 
+            minimum: 1, 
+            maximum: 50, 
+            default: 10, 
+            description: 'Maximum number of video results to return (default 10, max 50)'
+          },
+          order: {
+            type: 'string',
+            enum: ['relevance', 'date', 'viewCount', 'rating'],
+            default: 'relevance',
+            description: 'Sort order for results: relevance (default), date (newest first), viewCount (most viewed), rating (highest rated)'
+          }
+        },
+        required: ['query'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'search_web',
-      description: 'Search the web for results relevant to one or multiple queries in a single call. Can accept either a single query string or an array of queries. Returns all search result fields including title, url, description, score, and content when requested. When multiple queries are provided, results are grouped by query.',
+      description: 'Search the web for articles, news, current events, and text-based content. Use for general information, research, news, facts, and documentation. **DO NOT USE for YouTube or video searches** - use search_youtube instead. Can accept either a single query string or an array of queries. Returns search result fields including title, url, description, score, and content when requested. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL) to cite sources and enable verification.**',
       parameters: {
         type: 'object',
         properties: {
@@ -146,6 +179,33 @@ const toolFunctions = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'transcribe_url',
+      description: '🎙️ **PRIMARY TOOL FOR GETTING VIDEO/AUDIO TEXT CONTENT**: Transcribe audio or video content from URLs using OpenAI Whisper. **MANDATORY USE** when user says: "transcribe", "transcript", "get text from", "what does the video say", "extract dialogue", "convert to text", OR provides a specific YouTube/video URL and asks about its content. **YOUTUBE SUPPORT**: Can transcribe directly from YouTube URLs (youtube.com, youtu.be, youtube.com/shorts). Also supports direct media URLs (.mp3, .mp4, .wav, .m4a, etc.). Automatically handles large files by chunking. Shows real-time progress with stop capability. Returns full transcription text. Use when user wants to: transcribe audio/video, get text from speech, analyze spoken content, extract dialogue, or convert voice to text.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'YouTube URL (youtube.com/watch?v=..., youtu.be/..., youtube.com/shorts/...) or direct URL to audio/video file (e.g., https://example.com/audio.mp3). Supported formats: MP3, MP4, WAV, M4A, WebM, OGG, FLAC, YouTube videos'
+          },
+          language: {
+            type: 'string',
+            description: 'Optional: ISO-639-1 language code (e.g., "en", "es", "fr", "de", "ja", "zh"). If not specified, Whisper will auto-detect the language.',
+            pattern: '^[a-z]{2}$'
+          },
+          prompt: {
+            type: 'string',
+            description: 'Optional: Text to guide the model\'s style or continue a previous segment. Can improve accuracy for specific terminology or context.'
+          }
+        },
+        required: ['url'],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -172,12 +232,58 @@ async function callFunction(name, args = {}, context = {}) {
       const timeout = clampInt(args.timeout, 1, 60, 15);
       const loadContent = args.load_content === true;
       const generateSummary = args.generate_summary === true;
-      const searcher = new DuckDuckGoSearcher();
       
-      // Execute searches for all queries
+      // Check if Tavily API key is available
+      const tavilyApiKey = context.tavilyApiKey;
+      const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
+      
+      console.log(`🔍 Search using: ${useTavily ? 'Tavily API' : 'DuckDuckGo'}`);
+      
       const allResults = [];
-      for (const query of queries) {
-        const out = await searcher.search(query, limit, loadContent, timeout);
+      let searchService = 'duckduckgo'; // Track which service was actually used
+      
+      if (useTavily) {
+        // Use Tavily API for search
+        try {
+          const tavilyResults = await tavilySearch(queries, {
+            apiKey: tavilyApiKey,
+            maxResults: limit,
+            includeAnswer: false,
+            includeRawContent: loadContent, // This ensures content is loaded when requested
+            searchDepth: 'basic'
+          });
+          
+          allResults.push(...tavilyResults);
+          searchService = 'tavily';
+          console.log(`✅ Tavily search completed: ${tavilyResults.length} results`);
+        } catch (error) {
+          console.error('Tavily search failed, falling back to DuckDuckGo:', error.message);
+          // Fall back to DuckDuckGo on error
+          const searcher = new DuckDuckGoSearcher();
+          for (const query of queries) {
+            const out = await searcher.search(query, limit, loadContent, timeout);
+            const results = (out?.results || []).map(r => ({
+              query: query,
+              title: r.title,
+              url: r.url,
+              description: r.description,
+              score: r.score,
+              duckduckgoScore: r.duckduckgoScore,
+              state: r.state,
+              contentLength: r.contentLength || 0,
+              fetchTimeMs: r.fetchTimeMs || 0,
+              content: loadContent && r.content ? extractKeyContent(r.content, query) : null
+            }));
+            allResults.push(...results);
+          }
+        }
+      } else {
+        // Use DuckDuckGo search
+        const searcher = new DuckDuckGoSearcher();
+        
+        // Execute searches for all queries
+        for (const query of queries) {
+          const out = await searcher.search(query, limit, loadContent, timeout);
         // Include all fields from raw search response, applying content extraction when loaded
         const results = (out?.results || []).map(r => {
           // Always include all core fields: title, url, description, score, duckduckgoScore, state
@@ -210,7 +316,8 @@ async function callFunction(name, args = {}, context = {}) {
           return result;
         });
         
-        allResults.push(...results);
+          allResults.push(...results);
+        }
       }
       
       // Group results by query for better organization
@@ -448,6 +555,7 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
       
       // Build complete response with all raw search fields
       const response = {
+        searchService: searchService, // Indicate which service was used: 'tavily' or 'duckduckgo'
         queries: queries, // Include all queries that were executed
         multiQuery: queries.length > 1,
         totalResults: allResults.length,
@@ -496,31 +604,83 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
       const url = String(args.url || '').trim();
       if (!url) return JSON.stringify({ error: 'url required' });
       const timeout = clampInt(args.timeout, 1, 60, 15);
-      // Reuse fetchUrl and parsing from search module
-      const searcher = new DuckDuckGoSearcher();
+      
+      // Check if Tavily API key is available
+      const tavilyApiKey = context.tavilyApiKey;
+      const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
+      
+      console.log(`📄 Scraping ${url} using: ${useTavily ? 'Tavily API' : 'DuckDuckGo'}`);
+      
       try {
-        const raw = await searcher.fetchUrl(url, timeout * 1000);
+        let content, format, originalLength, extractedLength, compressionRatio, warning, extractionError;
+        let scrapeService = 'duckduckgo'; // Track which service was actually used
         
-        // Use new HTML content extractor to convert to Markdown (preferred) or plain text
-        const extracted = extractContent(raw);
-        
-        console.log(`🌐 Scraped ${url}: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.format} format, ${extracted.compressionRatio}x compression)`);
-        
-        const response = {
-          url,
-          content: extracted.content,
-          format: extracted.format,
-          originalLength: extracted.originalLength,
-          extractedLength: extracted.extractedLength,
-          compressionRatio: extracted.compressionRatio
-        };
-        
-        if (extracted.warning) {
-          response.warning = extracted.warning;
+        if (useTavily) {
+          // Use Tavily Extract API
+          try {
+            const tavilyResult = await tavilyExtract(url, tavilyApiKey);
+            
+            if (tavilyResult.error) {
+              throw new Error(tavilyResult.error);
+            }
+            
+            content = tavilyResult.raw_content;
+            format = 'text';
+            originalLength = content.length;
+            extractedLength = content.length;
+            compressionRatio = 1.0;
+            scrapeService = 'tavily';
+            
+            console.log(`✅ Tavily extract completed: ${extractedLength} chars`);
+          } catch (tavilyError) {
+            console.error('Tavily extract failed, falling back to DuckDuckGo:', tavilyError.message);
+            // Fall back to DuckDuckGo on error
+            const searcher = new DuckDuckGoSearcher();
+            const raw = await searcher.fetchUrl(url, timeout * 1000);
+            const extracted = extractContent(raw);
+            
+            content = extracted.content;
+            format = extracted.format;
+            originalLength = extracted.originalLength;
+            extractedLength = extracted.extractedLength;
+            compressionRatio = extracted.compressionRatio;
+            warning = extracted.warning;
+            extractionError = extracted.error;
+            scrapeService = 'duckduckgo'; // Fallback was used
+          }
+        } else {
+          // Use DuckDuckGo fetcher
+          const searcher = new DuckDuckGoSearcher();
+          const raw = await searcher.fetchUrl(url, timeout * 1000);
+          const extracted = extractContent(raw);
+          
+          content = extracted.content;
+          format = extracted.format;
+          originalLength = extracted.originalLength;
+          extractedLength = extracted.extractedLength;
+          compressionRatio = extracted.compressionRatio;
+          warning = extracted.warning;
+          extractionError = extracted.error;
         }
         
-        if (extracted.error) {
-          response.extractionError = extracted.error;
+        console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`);
+        
+        const response = {
+          scrapeService: scrapeService, // Indicate which service was used: 'tavily' or 'duckduckgo'
+          url,
+          content,
+          format,
+          originalLength,
+          extractedLength,
+          compressionRatio
+        };
+        
+        if (warning) {
+          response.warning = warning;
+        }
+        
+        if (extractionError) {
+          response.extractionError = extractionError;
         }
         
         return JSON.stringify(response);
@@ -580,6 +740,202 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
         });
       }
     }
+
+    case 'transcribe_url': {
+      const url = String(args.url || '').trim();
+      if (!url) return JSON.stringify({ error: 'url required' });
+
+      try {
+        // Extract onProgress callback and toolCallId from context if available
+        const onProgress = context.onProgress || null;
+        const toolCallId = context.toolCallId || null;
+
+        // Determine provider from context (set in Lambda handler based on request)
+        // Priority: explicit provider > detect from API key
+        const provider = context.provider || (context.apiKey?.startsWith('gsk_') ? 'groq' : 'openai');
+        
+        // Use the API key that matches the provider
+        // If Groq provider, use main API key; otherwise try OpenAI key first
+        const apiKey = provider === 'groq' 
+          ? context.apiKey 
+          : (context.openaiApiKey || context.apiKey);
+
+        // Use provider-specific model name
+        const model = provider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1';
+
+        const result = await transcribeUrl({
+          url,
+          apiKey,
+          provider,
+          language: args.language,
+          prompt: args.prompt,
+          model,
+          onProgress,
+          toolCallId
+        });
+
+        return JSON.stringify(result);
+      } catch (error) {
+        console.error('Transcribe tool error:', error);
+        return JSON.stringify({ 
+          error: `Transcription failed: ${error.message}`,
+          url 
+        });
+      }
+    }
+    
+    case 'search_youtube': {
+      const query = String(args.query || '').trim();
+      if (!query) return JSON.stringify({ error: 'query required' });
+      
+      const limit = clampInt(args.limit, 1, 50, 10);
+      const order = args.order || 'relevance';
+      
+      try {
+        const https = require('https');
+        const querystring = require('querystring');
+        
+        // Map order parameter to YouTube API order values
+        const orderMap = {
+          'relevance': 'relevance',
+          'date': 'date',
+          'viewCount': 'viewCount',
+          'rating': 'rating'
+        };
+        const apiOrder = orderMap[order] || 'relevance';
+        
+        // Use YouTube Data API v3 with API key
+        const apiKey = 'AIzaSyDFLprO5B-qKsoHprb8BooVmVTT0B5Mnus';
+        const apiUrl = `https://www.googleapis.com/youtube/v3/search?${querystring.stringify({
+          part: 'snippet',
+          q: query,
+          type: 'video',
+          maxResults: limit,
+          order: apiOrder,
+          key: apiKey
+        })}`;
+        
+        const apiResponse = await new Promise((resolve, reject) => {
+          https.get(apiUrl, {
+            headers: {
+              'Accept': 'application/json',
+              'Referer': 'https://lambdallmproxy.pages.dev/'
+            }
+          }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+              if (res.statusCode === 200) {
+                resolve(data);
+              } else {
+                reject(new Error(`YouTube API returned status ${res.statusCode}: ${data}`));
+              }
+            });
+          }).on('error', reject);
+        });
+        
+        const apiData = JSON.parse(apiResponse);
+        const videoIds = (apiData.items || []).map(item => item.id.videoId);
+        
+        // Fetch captions information and transcripts for all videos
+        const captionsInfoPromises = videoIds.map(async (videoId) => {
+          try {
+            // First, check for caption availability using the API
+            const captionsUrl = `https://www.googleapis.com/youtube/v3/captions?${querystring.stringify({
+              part: 'snippet',
+              videoId: videoId,
+              key: apiKey
+            })}`;
+            
+            const captionsData = await new Promise((resolve, reject) => {
+              https.get(captionsUrl, {
+                headers: {
+                  'Accept': 'application/json',
+                  'Referer': 'https://lambdallmproxy.pages.dev/'
+                }
+              }, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                  if (res.statusCode === 200) {
+                    resolve(JSON.parse(data));
+                  } else {
+                    resolve(null);
+                  }
+                });
+              }).on('error', () => resolve(null));
+            });
+            
+            if (captionsData && captionsData.items && captionsData.items.length > 0) {
+              // Find English caption track
+              const enCaption = captionsData.items.find(c => 
+                c.snippet.language === 'en' || c.snippet.language.startsWith('en')
+              ) || captionsData.items[0];
+              
+              // Note: YouTube's timedtext API for fetching transcripts is restricted
+              // and requires OAuth authentication which is not feasible in serverless context.
+              // We can only detect caption availability, not fetch content.
+              
+              return { 
+                videoId, 
+                hasCaptions: true, 
+                captionId: enCaption.id, 
+                language: enCaption.snippet.language,
+                trackKind: enCaption.snippet.trackKind // 'standard' or 'asr'
+              };
+            }
+            return { videoId, hasCaptions: false, transcript: null };
+          } catch (err) {
+            return { videoId, hasCaptions: false, transcript: null };
+          }
+        });
+        
+        const captionsInfo = await Promise.all(captionsInfoPromises);
+        const captionsMap = {};
+        captionsInfo.forEach(info => {
+          captionsMap[info.videoId] = info;
+        });
+        
+        const videos = (apiData.items || []).map(item => {
+          const videoId = item.id.videoId;
+          const captionInfo = captionsMap[videoId] || {};
+          
+          const videoData = {
+            videoId,
+            url: `https://www.youtube.com/watch?v=${videoId}`,
+            title: item.snippet.title,
+            description: item.snippet.description,
+            channel: item.snippet.channelTitle,
+            thumbnail: item.snippet.thumbnails?.default?.url || item.snippet.thumbnails?.medium?.url || '',
+            hasCaptions: captionInfo.hasCaptions || false
+          };
+          
+          // Include caption details if available
+          if (captionInfo.hasCaptions) {
+            videoData.captionLanguage = captionInfo.language;
+            videoData.captionType = captionInfo.trackKind === 'asr' ? 'auto-generated' : 'manual';
+            videoData.captionsNote = `${videoData.captionType === 'auto-generated' ? 'Auto-generated' : 'Manual'} captions available in ${captionInfo.language}. View on YouTube to access full captions.`;
+          }
+          
+          return videoData;
+        });
+        
+        return JSON.stringify({
+          query,
+          count: videos.length,
+          order,
+          videos
+        });
+        
+      } catch (error) {
+        console.error('YouTube search error:', error);
+        return JSON.stringify({ 
+          error: `YouTube search failed: ${error.message}`,
+          query 
+        });
+      }
+    }
+    
     default:
       return JSON.stringify({ error: `unknown function ${name}` });
   }

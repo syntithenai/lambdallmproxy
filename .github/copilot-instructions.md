@@ -8,7 +8,16 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
 
 ### 1.1. Deployment and Build Process
 
-- **Lambda Deployment**: After any modification to the backend source code in `src/`, you MUST deploy the Lambda function using the `scripts/deploy.sh` script.
+- **⚡ Optimized Lambda Deployment** (RECOMMENDED): After any modification to the backend source code in `src/`, use the ultra-fast deployment workflow:
+    1.  **First Time Setup**: Run `make setup-layer` once to create Lambda Layer with dependencies (2 minutes, one-time)
+    2.  **All Code Changes**: Run `make fast` to deploy code only (10 seconds vs 2-3 minutes!)
+    3.  **Dependency Changes**: If `package.json` changed, re-run `make setup-layer`, then `make fast`
+    4.  **Legacy Option**: You can also use `scripts/deploy.sh` for full deployment (slower, 2-3 minutes)
+- **Why Fast Deployment?**:
+    - ✅ **10x faster**: 10 seconds vs 2-3 minutes
+    - ✅ **99.7% smaller**: 89KB vs 27MB package
+    - ✅ **No timeouts**: Uses S3 upload (reliable)
+    - ✅ **Better iteration**: Rapid testing during development
 - **UI/Documentation Workflow**:
     1.  **Source of Truth**: All UI and documentation changes MUST be made in the `ui/` directory (e.g., `ui/index_template.html`, `ui/styles.css`).
     2.  **NEVER Edit `docs/` Directly**: The `docs/` directory is a build artifact and should not be edited manually. Its contents are generated from the `ui/` directory.
@@ -16,7 +25,7 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
     4.  **Deploy Docs**: After a successful build, you MUST run `scripts/deploy-docs.sh` to publish the documentation and UI changes.
     5.  **Combined Command**: The `make deploy-docs` command conveniently runs both the build and deploy steps.
 - **Build After Code Changes**: After ANY code modification to files in `src/`, `ui/`, or configuration files, you MUST execute the appropriate build process:
-    - **Backend Changes** (`src/`): Run `scripts/deploy.sh` to deploy the Lambda function
+    - **Backend Changes** (`src/`): Run `make fast` (recommended) or `scripts/deploy.sh` (legacy)
     - **Frontend Changes** (`ui/`): Run `scripts/build-docs.sh` to build the UI into `docs/`
     - **Test Changes** (`tests/`): Run `npm test` to verify tests pass
     - This ensures that changes are properly compiled, validated, and ready for deployment
