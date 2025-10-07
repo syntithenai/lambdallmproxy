@@ -176,8 +176,15 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
         <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm">
           � Load Saved Plan
         </button>
-        <button onClick={() => { setQuery(''); setResult(null); }} className="btn-secondary text-sm">
-          🗑️ Clear
+        <button 
+          onClick={() => { 
+            setQuery(''); 
+            setResult(null); 
+          }} 
+          className="btn-primary text-sm"
+          title="Start a new research plan"
+        >
+          ➕ New Plan
         </button>
       </div>
 
