@@ -4,9 +4,29 @@
  */
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp?: number;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  tool_call_id?: string;
+  name?: string;
+  isStreaming?: boolean;
+  llmApiCalls?: Array<{
+    phase: string;
+    model: string;
+    request: any;
+    response?: any;
+    httpHeaders?: any;    // HTTP response headers from LLM API
+    httpStatus?: number;  // HTTP status code from LLM API
+    timestamp: string;
+  }>;
 }
 
 export interface CachedChat {

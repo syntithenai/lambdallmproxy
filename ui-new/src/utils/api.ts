@@ -15,6 +15,15 @@ export interface ChatMessage {
   tool_call_id?: string;
   name?: string;
   isStreaming?: boolean;  // Flag to indicate message is currently being streamed
+  llmApiCalls?: Array<{   // LLM API transparency data for this message
+    phase: string;
+    model: string;
+    request: any;
+    response?: any;
+    httpHeaders?: any;    // HTTP response headers from LLM API
+    httpStatus?: number;  // HTTP status code from LLM API
+    timestamp: string;
+  }>;
 }
 
 export interface ProxyRequest {

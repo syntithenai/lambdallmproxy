@@ -56,11 +56,12 @@ function httpsRequestJson({ hostname, path, method = 'POST', headers = {}, bodyO
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         const status = res.statusCode || 0;
+        const responseHeaders = res.headers;
         
         // Log full response details
         console.log('🤖 LLM RESPONSE:', {
           status,
-          headers: res.headers,
+          headers: responseHeaders,
           body: data
         });
         
@@ -69,7 +70,8 @@ function httpsRequestJson({ hostname, path, method = 'POST', headers = {}, bodyO
         }
         try {
           const json = JSON.parse(data);
-          resolve(json);
+          // Include HTTP headers in the response
+          resolve({ data: json, headers: responseHeaders, status });
         } catch (e) {
           reject(new Error(`Invalid JSON response: ${e.message}`));
         }
@@ -99,7 +101,12 @@ function normalizeFromResponsesAPI(data) {
 }
 
 // Normalize OpenAI-compatible chat.completions tool_calls
-function normalizeFromChat(data) {
+function normalizeFromChat(responseWithHeaders) {
+  // Handle both old format (just data) and new format (data + headers)
+  const data = responseWithHeaders?.data || responseWithHeaders;
+  const httpHeaders = responseWithHeaders?.headers || {};
+  const httpStatus = responseWithHeaders?.status;
+  
   const choice = data?.choices?.[0];
   const toolCalls = choice?.message?.tool_calls || [];
   const out = [];
@@ -109,7 +116,9 @@ function normalizeFromChat(data) {
   return { 
     output: out, 
     text: choice?.message?.content || '',
-    rawResponse: data  // Include the full raw response with all metadata
+    rawResponse: data,  // Include the full raw JSON response with all metadata
+    httpHeaders,        // Include HTTP response headers
+    httpStatus          // Include HTTP status code
   };
 }
 

@@ -118,7 +118,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'search_web',
-      description: 'Search the web for articles, news, current events, and text-based content. Use for general information, research, news, facts, and documentation. **DO NOT USE for YouTube or video searches** - use search_youtube instead. Can accept either a single query string or an array of queries. Returns search result fields including title, url, description, score, and content when requested. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL) to cite sources and enable verification.**',
+      description: 'Search the web for articles, news, current events, and text-based content. Use for general information, research, news, facts, and documentation. **DO NOT USE for YouTube or video searches** - use search_youtube instead. Can accept either a single query string or an array of queries. Automatically fetches and extracts full page content from all search results, including images and links. Returns comprehensive search result fields including title, url, description, score, content, images, and links. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL) to cite sources and enable verification.**',
       parameters: {
         type: 'object',
         properties: {
@@ -130,8 +130,7 @@ const toolFunctions = [
             description: 'Search query (string) or multiple queries (array of strings)'
           },
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 10, description: 'Results per query (increased default for more comprehensive research)' },
-          timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15 },
-          load_content: { type: 'boolean', default: false, description: 'When true, fetch full page content for each result'},
+          timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15, description: 'Timeout in seconds for fetching each page' },
           generate_summary: { type: 'boolean', default: false, description: 'When true, generate an LLM summary of the search results'}
         },
         required: ['query'],
@@ -218,8 +217,14 @@ async function callFunction(name, args = {}, context = {}) {
   // Extract model and apiKey from context for consistent LLM usage
   const { model, apiKey } = context;
   
+  // DEBUG: Log context.writeEvent availability
+  console.log(`🔧 TOOLS: callFunction('${name}') - context.writeEvent exists:`, typeof context.writeEvent === 'function');
+  
   switch (name) {
     case 'search_web': {
+      // DEBUG: Confirm writeEvent is available for search_web
+      console.log('🔧 TOOLS: search_web starting - writeEvent:', typeof context.writeEvent);
+      
       // Handle both single query (string) and multiple queries (array)
       const queryInput = args.query;
       const queries = Array.isArray(queryInput) 
@@ -230,14 +235,25 @@ async function callFunction(name, args = {}, context = {}) {
       
       const limit = clampInt(args.limit, 1, 50, 3);
       const timeout = clampInt(args.timeout, 1, 60, 15);
-      const loadContent = args.load_content === true;
+      const loadContent = true; // Always load content from search results
       const generateSummary = args.generate_summary === true;
       
       // Check if Tavily API key is available
       const tavilyApiKey = context.tavilyApiKey;
       const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
       
-      console.log(`🔍 Search using: ${useTavily ? 'Tavily API' : 'DuckDuckGo'}`);
+      console.log(`🔍 Search using: ${useTavily ? 'Tavily API' : 'DuckDuckGo'} (always loading page content)`);
+      
+      // Emit search start event
+      if (context?.writeEvent) {
+        context.writeEvent('search_progress', {
+          tool: 'search_web',
+          phase: 'searching',
+          queries: queries,
+          service: useTavily ? 'tavily' : 'duckduckgo',
+          timestamp: new Date().toISOString()
+        });
+      }
       
       const allResults = [];
       let searchService = 'duckduckgo'; // Track which service was actually used
@@ -249,19 +265,19 @@ async function callFunction(name, args = {}, context = {}) {
             apiKey: tavilyApiKey,
             maxResults: limit,
             includeAnswer: false,
-            includeRawContent: loadContent, // This ensures content is loaded when requested
+            includeRawContent: true, // Always load content
             searchDepth: 'basic'
           });
           
           allResults.push(...tavilyResults);
           searchService = 'tavily';
-          console.log(`✅ Tavily search completed: ${tavilyResults.length} results`);
+          console.log(`✅ Tavily search completed: ${tavilyResults.length} results with content`);
         } catch (error) {
           console.error('Tavily search failed, falling back to DuckDuckGo:', error.message);
           // Fall back to DuckDuckGo on error
           const searcher = new DuckDuckGoSearcher();
           for (const query of queries) {
-            const out = await searcher.search(query, limit, loadContent, timeout);
+            const out = await searcher.search(query, limit, true, timeout);
             const results = (out?.results || []).map(r => ({
               query: query,
               title: r.title,
@@ -272,49 +288,95 @@ async function callFunction(name, args = {}, context = {}) {
               state: r.state,
               contentLength: r.contentLength || 0,
               fetchTimeMs: r.fetchTimeMs || 0,
-              content: loadContent && r.content ? extractKeyContent(r.content, query) : null
+              content: r.content ? extractKeyContent(r.content, query) : null
             }));
             allResults.push(...results);
           }
         }
       } else {
-        // Use DuckDuckGo search
+        // Use DuckDuckGo search - always load content
         const searcher = new DuckDuckGoSearcher();
         
         // Execute searches for all queries
         for (const query of queries) {
-          const out = await searcher.search(query, limit, loadContent, timeout);
-        // Include all fields from raw search response, applying content extraction when loaded
-        const results = (out?.results || []).map(r => {
-          // Always include all core fields: title, url, description, score, duckduckgoScore, state
-          const result = {
-            query: query, // Include which query this result is for
-            title: r.title,
-            url: r.url,
-            description: r.description,
-            score: r.score,
-            duckduckgoScore: r.duckduckgoScore,
-            state: r.state,
-            contentLength: r.contentLength || 0,
-            fetchTimeMs: r.fetchTimeMs || 0,
-            content: null // Always include content field, default to null
-          };
-          
-          if (loadContent && r.content) {
-            // Apply intelligent content extraction for loaded content
-            result.content = extractKeyContent(r.content, query);
-            result.originalLength = r.content.length;
-            result.intelligentlyExtracted = true;
-            if (r.truncated) result.truncated = r.truncated;
-            if (r.contentError) result.contentError = r.contentError;
-          } else if (loadContent) {
-            // Include content-related fields even if content wasn't loaded
-            result.content = r.content || null;
-            if (r.contentError) result.contentError = r.contentError;
+          // Emit search results found event
+          if (context?.writeEvent) {
+            context.writeEvent('search_progress', {
+              tool: 'search_web',
+              phase: 'results_found',
+              query: query,
+              timestamp: new Date().toISOString()
+            });
           }
           
-          return result;
-        });
+          // Create progress callback to emit per-result progress
+          const progressCallback = (data) => {
+            if (context?.writeEvent) {
+              context.writeEvent('search_progress', {
+                tool: 'search_web',
+                query: query,
+                ...data,
+                timestamp: new Date().toISOString()
+              });
+            }
+          };
+          
+          const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          
+          // Emit content loading event
+          if (context?.writeEvent && out?.results?.length > 0) {
+            context.writeEvent('search_progress', {
+              tool: 'search_web',
+              phase: 'loading_content',
+              query: query,
+              result_count: out.results.length,
+              timestamp: new Date().toISOString()
+            });
+          }
+          
+          // Include all fields from raw search response, extracting images and links
+          const results = (out?.results || []).map(r => {
+            const result = {
+              query: query, // Include which query this result is for
+              title: r.title,
+              url: r.url,
+              description: r.description,
+              score: r.score,
+              duckduckgoScore: r.duckduckgoScore,
+              state: r.state,
+              contentLength: r.contentLength || 0,
+              fetchTimeMs: r.fetchTimeMs || 0,
+              content: null
+            };
+            
+            // Process loaded content
+            if (r.content) {
+              result.content = extractKeyContent(r.content, query);
+              result.originalLength = r.content.length;
+              result.intelligentlyExtracted = true;
+              if (r.truncated) result.truncated = r.truncated;
+              
+              // Extract images and links from raw HTML if available
+              if (r.rawHtml) {
+                try {
+                  const parser = new SimpleHTMLParser(r.rawHtml);
+                  const images = parser.extractImages();
+                  const links = parser.extractLinks();
+                  
+                  if (images.length > 0) result.images = images;
+                  if (links.length > 0) result.links = links;
+                  
+                  console.log(`🖼️ Extracted ${images.length} images and ${links.length} links from ${r.url}`);
+                } catch (parseError) {
+                  console.error(`Failed to parse HTML for ${r.url}:`, parseError.message);
+                }
+              }
+            }
+            
+            if (r.contentError) result.contentError = r.contentError;
+            
+            return result;
+          });
         
           allResults.push(...results);
         }
@@ -343,13 +405,119 @@ async function callFunction(name, args = {}, context = {}) {
             
             if (loadContent) {
               // STRATEGY 1: Content loaded - summarize each page individually, then synthesize
-              console.log(`📄 Generating individual summaries for ${results.length} loaded pages...`);
+              // OPTIMIZATION: Limit pages to summarize to reduce token usage
+              // CRITICAL: For low-TPM models, use extractive strategy to avoid multiple LLM calls
+              
+              // Detect model capabilities from model name
+              const modelName = model.replace(/^(openai:|groq:)/, '');
+              const isLowTPMModel = modelName.includes('llama-4-scout') || 
+                                    modelName.includes('llama-4-maverick');
+              
+              // For low-TPM models: Skip individual page summaries, use extracted content directly
+              // This reduces LLM calls from (N pages + 1 synthesis) to just 1 synthesis
+              if (isLowTPMModel) {
+                console.log(`📄 LOW-TPM MODE: Using extractive strategy (no per-page LLM summaries) for ${allResults.length} pages...`);
+                console.log(`⚠️ CRITICAL: 30k TPM limit requires ultra-aggressive content reduction`);
+                
+                // Use extracted content directly instead of LLM summaries
+                // CRITICAL: Reduce to just 2 results with 100 chars each to minimize token usage
+                // TPM accounting: ~400 chars total = ~100 tokens for content + query + response = ~500 tokens/call
+                const extractedInfo = allResults
+                  .slice(0, 2) // Only top 2 for low-TPM (was 3, now 2)
+                  .filter(r => r.content)
+                  .map((r, i) => ({
+                    url: r.url,
+                    title: r.title,
+                    summary: `${r.title}: ${r.content.substring(0, 100)}` // Reduced from 200 to 100 chars
+                  }));
+                
+                individual_summaries = extractedInfo;
+                
+                // Create an ultra-compact synthesis from extracted content (one LLM call instead of N+1)
+                const directSynthesisPrompt = `Q: "${query}"
+
+${extractedInfo.map((info, i) => `${i + 1}. ${info.summary}`).join('\n')}
+
+Brief answer with URLs:`;
+
+                const directSynthesisInput = [
+                  { role: 'system', content: 'Answer concisely.' },
+                  { role: 'user', content: directSynthesisPrompt }
+                ];
+
+                const directSynthesisRequestBody = {
+                  model,
+                  input: directSynthesisInput,
+                  tools: [],
+                  options: {
+                    apiKey,
+                    temperature: 0.2,
+                    max_tokens: 80,  // Reduced from 100 to 80 for ultra-compact response
+                    timeoutMs: 30000
+                  }
+                };
+
+                // Emit LLM request event
+                if (context?.writeEvent) {
+                  context.writeEvent('llm_request', {
+                    phase: 'direct_synthesis',
+                    tool: 'search_web',
+                    model,
+                    request: directSynthesisRequestBody,
+                    timestamp: new Date().toISOString()
+                  });
+                }
+
+                const directSynthesisResp = await llmResponsesWithTools(directSynthesisRequestBody);
+                
+                // Emit LLM response event
+                if (context?.writeEvent) {
+                  context.writeEvent('llm_response', {
+                    phase: 'direct_synthesis',
+                    tool: 'search_web',
+                    model,
+                    response: directSynthesisResp,
+                    timestamp: new Date().toISOString()
+                  });
+                }
+                
+                summary = directSynthesisResp?.text || directSynthesisResp?.finalText || 'Unable to generate synthesis';
+                
+                console.log(`✅ LOW-TPM direct synthesis complete (1 LLM call vs ${extractedInfo.length + 1} calls)`);
+                console.log(`✅ Estimated token usage: ~500 tokens/call × 3 calls = ~1500 tokens (well under 30k TPM)`);
+                
+              } else {
+                // STANDARD STRATEGY: Individual page summaries + synthesis
+                // LOAD BALANCING: Rotate through multiple models to distribute TPM load
+                
+                // Define model pool for summarization (fast, cost-effective models)
+                const provider = model.includes('openai:') ? 'openai' : 'groq';
+                const modelPool = provider === 'openai' 
+                  ? ['openai:gpt-4o-mini', 'openai:gpt-3.5-turbo'] 
+                  : [
+                      'groq:llama-3.3-70b-versatile',      // 64k TPM
+                      'groq:llama-3.1-8b-instant',         // 120k TPM
+                      'groq:mixtral-8x7b-32768',           // 60k TPM
+                      'groq:llama-3.2-11b-vision-preview', // 60k TPM
+                      'groq:gemma2-9b-it'                  // 60k TPM
+                    ];
+                
+                console.log(`🔄 Model pool for load balancing: ${modelPool.join(', ')}`);
+                
+                const MAX_PAGES_TO_SUMMARIZE = 5;
+                const resultsToSummarize = allResults.slice(0, MAX_PAGES_TO_SUMMARIZE);
+                
+                console.log(`📄 Generating individual summaries for ${resultsToSummarize.length} of ${allResults.length} loaded pages (standard mode with load balancing)...`);
               
               const pageSummaries = [];
               
-              // Step 1: Generate one summary per loaded page
-              for (let i = 0; i < results.length; i++) {
-                const result = results[i];
+              // Step 1: Generate one summary per loaded page (limited to top results)
+              for (let i = 0; i < resultsToSummarize.length; i++) {
+                const result = resultsToSummarize[i];
+                
+                // Rotate through model pool to distribute TPM load
+                const summaryModel = modelPool[i % modelPool.length];
+                console.log(`📝 Page ${i + 1} summary using: ${summaryModel}`);
                 
                 if (!result.content) {
                   // Skip pages without content
@@ -363,28 +531,30 @@ async function callFunction(name, args = {}, context = {}) {
                 }
                 
                 try {
-                  const pagePrompt = `Summarize the key information from this webpage that is relevant to the query: "${query}"
+                  // OPTIMIZATION: Adjust content length based on model capabilities
+                  // Reduce content size to minimize token usage for all models
+                  const maxContentChars = isLowTPMModel ? 300 : 500; // Reduced from 500/800
+                  
+                  const pagePrompt = `Summarize: "${query}"
 
-Page: ${result.title}
-URL: ${result.url}
-Content:
-${result.content.substring(0, 2000)}
+${result.title}
+${result.content.substring(0, maxContentChars)}
 
-Provide a concise 2-3 sentence summary focusing on information relevant to the query.`;
+1-2 sentences:`;
 
                   const pageSummaryInput = [
-                    { role: 'system', content: 'You are a research analyst. Extract and summarize key information from web content.' },
+                    { role: 'system', content: 'You are a research analyst. Extract key information concisely.' },
                     { role: 'user', content: pagePrompt }
                   ];
                   
                   const pageSummaryRequestBody = {
-                    model,
+                    model: summaryModel, // Use rotated model instead of main model
                     input: pageSummaryInput,
                     tools: [],
                     options: {
                       apiKey,
                       temperature: 0.2,
-                      max_tokens: 200,
+                      max_tokens: 150, // Standard size since we're using capable models
                       timeoutMs: 20000
                     }
                   };
@@ -396,13 +566,15 @@ Provide a concise 2-3 sentence summary focusing on information relevant to the q
                       tool: 'search_web',
                       page_index: i,
                       url: result.url,
-                      model,
+                      model: summaryModel,
                       timestamp: new Date().toISOString()
                     });
                   }
                   
                   const pageResp = await llmResponsesWithTools(pageSummaryRequestBody);
                   const pageSummaryText = pageResp?.text || pageResp?.finalText || 'Unable to generate summary';
+                  
+                  // No delay needed - different models have separate TPM limits
                   
                   // Emit LLM response event
                   if (context?.writeEvent) {
@@ -411,7 +583,7 @@ Provide a concise 2-3 sentence summary focusing on information relevant to the q
                       tool: 'search_web',
                       page_index: i,
                       url: result.url,
-                      model,
+                      model: summaryModel,
                       summary: pageSummaryText,
                       timestamp: new Date().toISOString()
                     });
@@ -423,7 +595,7 @@ Provide a concise 2-3 sentence summary focusing on information relevant to the q
                     summary: pageSummaryText
                   });
                   
-                  console.log(`✅ Generated summary for page ${i + 1}/${results.length}: ${result.url}`);
+                  console.log(`✅ Generated summary for page ${i + 1}/${allResults.length}: ${result.url}`);
                   
                 } catch (pageError) {
                   console.error(`❌ Failed to summarize page ${result.url}:`, pageError.message);
@@ -441,27 +613,34 @@ Provide a concise 2-3 sentence summary focusing on information relevant to the q
               // Step 2: Synthesize all individual summaries into one comprehensive summary
               console.log(`🔄 Synthesizing ${pageSummaries.length} individual summaries...`);
               
-              const synthesisPrompt = `Based on the following page summaries, provide a comprehensive answer to the query: "${query}"
+              // OPTIMIZATION: Ultra-compact synthesis prompt to minimize tokens
+              const synthesisPrompt = `Q: "${query}"
 
-Page Summaries:
-${pageSummaries.map((ps, i) => `${i + 1}. ${ps.title} (${ps.url})
-   ${ps.summary}`).join('\n\n')}
+${pageSummaries.map((ps, i) => `${i + 1}. ${ps.summary}`).join('\n')}
 
-Provide a comprehensive 3-5 sentence synthesis that integrates information from all sources. Cite URLs when mentioning specific facts.`;
+Brief answer with URLs:`;
 
               const synthesisInput = [
-                { role: 'system', content: 'You are a research analyst. Synthesize information from multiple sources into a comprehensive answer.' },
+                { role: 'system', content: 'Answer concisely.' },
                 { role: 'user', content: synthesisPrompt }
               ];
               
+              // Use a different model for synthesis to further distribute TPM load
+              // Pick a high-capacity model that wasn't used much in summaries
+              const synthesisModel = provider === 'openai' 
+                ? 'openai:gpt-4o-mini'
+                : 'groq:llama-3.3-70b-versatile'; // High-capacity model for synthesis
+              
+              console.log(`🔄 Synthesis using: ${synthesisModel}`);
+              
               const synthesisRequestBody = {
-                model,
+                model: synthesisModel, // Use different model for synthesis
                 input: synthesisInput,
                 tools: [],
                 options: {
                   apiKey,
                   temperature: 0.2,
-                  max_tokens: 300,
+                  max_tokens: 150, // Reduced from 250 to minimize token usage
                   timeoutMs: 30000
                 }
               };
@@ -471,7 +650,7 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
                 context.writeEvent('llm_request', {
                   phase: 'synthesis_summary',
                   tool: 'search_web',
-                  model,
+                  model: synthesisModel,
                   page_count: pageSummaries.length,
                   timestamp: new Date().toISOString()
                 });
@@ -484,7 +663,7 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
                 context.writeEvent('llm_response', {
                   phase: 'synthesis_summary',
                   tool: 'search_web',
-                  model,
+                  model: synthesisModel,
                   response: synthesisResp,
                   timestamp: new Date().toISOString()
                 });
@@ -493,11 +672,13 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
               summary = synthesisResp?.text || synthesisResp?.finalText || null;
               console.log(`✅ Generated comprehensive synthesis from ${pageSummaries.length} pages`);
               
+              } // End of standard strategy (else block from isLowTPMModel check)
+              
             } else {
               // STRATEGY 2: Content not loaded - summarize URLs and descriptions only
-              console.log(`🔍 Generating summary from ${results.length} search result descriptions...`);
+              console.log(`🔍 Generating summary from ${allResults.length} search result descriptions...`);
               
-              const enhancedResults = analyzeSourceCredibility(results);
+              const enhancedResults = analyzeSourceCredibility(allResults);
               const prompt = buildSummaryPrompt(query, enhancedResults, loadContent);
               
               const summaryInput = [
@@ -553,6 +734,13 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
         }
       }
       
+      // Extract all unique links from search results
+      const allLinks = allResults.map(r => ({
+        url: r.url,
+        title: r.title,
+        description: r.description || ''
+      })).filter(link => link.url && link.title);
+      
       // Build complete response with all raw search fields
       const response = {
         searchService: searchService, // Indicate which service was used: 'tavily' or 'duckduckgo'
@@ -561,18 +749,19 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
         totalResults: allResults.length,
         resultsByQuery: resultsByQuery,
         limit: limit,
-        fetchContent: loadContent,
+        contentFetched: true, // Always true now - content is always fetched
         timeout: timeout,
         timestamp: new Date().toISOString(),
-        results: allResults, // All results combined
+        results: allResults, // All results combined with full content, images, and links
+        links: allLinks, // All links from search results for easy access
         // Summary fields (only included if summary generation was attempted)
         ...(generateSummary && { 
           generate_summary: generateSummary,
           summary, 
           summary_model, 
           summary_error,
-          // Include individual page summaries when content was loaded
-          ...(loadContent && individual_summaries && { individual_summaries })
+          // Include individual page summaries (content is always loaded now)
+          ...(individual_summaries && { individual_summaries })
         })
       };
       
@@ -581,7 +770,7 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
       
       // Token limiting with more reasonable thresholds
       if (estimatedTokens > 4000) {
-        const truncatedResults = results.slice(0, Math.ceil(results.length / 2)).map(r => ({
+        const truncatedResults = allResults.slice(0, Math.ceil(allResults.length / 2)).map(r => ({
           ...r,
           description: (r.description || '').substring(0, 200),
           content: r.content ? r.content.substring(0, 500) : r.content
@@ -593,7 +782,7 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
           count: truncatedResults.length,
           summary: summary ? (summary.length > 200 ? summary.substring(0, 200) + '...' : summary) : summary,
           truncated: true,
-          original_count: results.length,
+          original_count: allResults.length,
           original_tokens: estimatedTokens
         });
       }
@@ -665,6 +854,23 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
         
         console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`);
         
+        // Extract images and links from raw HTML before processing
+        let images = [];
+        let links = [];
+        
+        if (scrapeService === 'duckduckgo') {
+          // For DuckDuckGo, we have access to raw HTML
+          const searcher = new DuckDuckGoSearcher();
+          const rawHtml = await searcher.fetchUrl(url, timeout * 1000);
+          const parser = new SimpleHTMLParser(rawHtml);
+          
+          images = parser.extractImages();
+          links = parser.extractLinks();
+          
+          console.log(`🖼️ Extracted ${images.length} images and ${links.length} links from ${url}`);
+        }
+        // Note: Tavily doesn't provide raw HTML, so we can't extract images/links when using Tavily
+        
         const response = {
           scrapeService: scrapeService, // Indicate which service was used: 'tavily' or 'duckduckgo'
           url,
@@ -672,7 +878,9 @@ Provide a comprehensive 3-5 sentence synthesis that integrates information from 
           format,
           originalLength,
           extractedLength,
-          compressionRatio
+          compressionRatio,
+          images: images.length > 0 ? images : undefined, // Include images if found
+          links: links.length > 0 ? links : undefined      // Include links if found
         };
         
         if (warning) {

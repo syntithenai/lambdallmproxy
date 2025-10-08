@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useSettings } from '../contexts/SettingsContext';
+import type { Provider, Settings } from '../contexts/SettingsContext';
 
 interface EnabledTools {
   web_search: boolean;
@@ -15,18 +16,6 @@ interface SettingsModalProps {
   enabledTools: EnabledTools;
   setEnabledTools: (tools: EnabledTools) => void;
   onOpenMCPDialog: () => void;
-}
-
-type Provider = 'groq' | 'openai';
-
-interface Settings {
-  provider: Provider;
-  llmApiKey: string;
-  tavilyApiKey: string;
-  apiEndpoint: string;
-  smallModel: string;
-  largeModel: string;
-  reasoningModel: string;
 }
 
 const PROVIDER_ENDPOINTS: Record<Provider, string> = {
@@ -50,6 +39,7 @@ const MODEL_SUGGESTIONS: Record<Provider, { small: string[]; large: string[]; re
       'openai/gpt-oss-20b',                         // 131K context, 65K output
       'meta-llama/llama-4-maverick-17b-128e-instruct', // 131K context, parallel tools
       'llama-3.1-8b-instant',                       // Fast, 131K context, parallel tools
+      'gemma2-9b-it',                               // Fast, 8K context, parallel tools
       'llama-3.3-70b-versatile',                    // 131K context, has format issues
       'mixtral-8x7b-32768'
     ],
@@ -90,15 +80,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setEnabledTools,
   onOpenMCPDialog 
 }) => {
-  const [settings, setSettings] = useLocalStorage<Settings>('app_settings', {
-    provider: 'groq',
-    llmApiKey: '',
-    tavilyApiKey: '',
-    apiEndpoint: PROVIDER_ENDPOINTS.groq,
-    smallModel: DEFAULT_MODELS.groq.small,
-    largeModel: DEFAULT_MODELS.groq.large,
-    reasoningModel: DEFAULT_MODELS.groq.reasoning
-  });
+  const { settings, setSettings } = useSettings();
 
   const [tempSettings, setTempSettings] = useState<Settings>(settings);
   const [activeTab, setActiveTab] = useState<'provider' | 'tools'>('provider');

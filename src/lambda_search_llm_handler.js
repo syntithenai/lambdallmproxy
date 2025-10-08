@@ -163,13 +163,24 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         try {
             planningResponse = await llmResponsesWithTools(planningRequestBody);
             
-            // Emit LLM response event
+            // Debug logging for HTTP headers
+            console.log('📋 DEBUG - Full planningResponse object keys:', Object.keys(planningResponse));
+            console.log('📋 DEBUG - httpHeaders value:', planningResponse.httpHeaders);
+            console.log('📋 DEBUG - httpHeaders type:', typeof planningResponse.httpHeaders);
+            console.log('📋 DEBUG - httpHeaders JSON:', JSON.stringify(planningResponse.httpHeaders, null, 2));
+            console.log('📊 DEBUG - HTTP Status:', planningResponse.httpStatus);
+            
+            // Emit LLM response event with HTTP headers
+            const eventData = {
+                phase: 'planning',
+                response: planningResponse.rawResponse || planningResponse,
+                httpHeaders: planningResponse.httpHeaders || {},
+                httpStatus: planningResponse.httpStatus
+            };
+            console.log('🔧 DEBUG - Event data to send:', JSON.stringify(eventData, null, 2));
             console.log('🔧 About to emit llm_response event - stream exists:', !!stream, 'writeEvent exists:', !!stream?.writeEvent);
             if (stream?.writeEvent) {
-                stream.writeEvent('llm_response', {
-                    phase: 'planning',
-                    response: planningResponse
-                });
+                stream.writeEvent('llm_response', eventData);
                 console.log('✅ llm_response event emitted for planning phase');
             } else {
                 console.error('❌ Cannot emit llm_response - stream or writeEvent is undefined');
@@ -277,14 +288,24 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             output = response.output;
             text = response.text;
             
-            // Emit LLM response event with full response metadata
-            stream?.writeEvent?.('llm_response', {
+            // Debug logging for HTTP headers
+            console.log('📋 DEBUG tool_iteration - Full response object keys:', Object.keys(response));
+            console.log('📋 DEBUG tool_iteration - httpHeaders:', response.httpHeaders);
+            console.log('📋 DEBUG tool_iteration - httpHeaders JSON:', JSON.stringify(response.httpHeaders, null, 2));
+            console.log('📊 DEBUG tool_iteration - httpStatus:', response.httpStatus);
+            
+            // Emit LLM response event with full response metadata and HTTP headers
+            const eventData = {
                 phase: 'tool_iteration',
                 iteration: iter + 1,
                 model,
                 response: response.rawResponse || { output, text },
+                httpHeaders: response.httpHeaders || {},
+                httpStatus: response.httpStatus,
                 timestamp: new Date().toISOString()
-            });
+            };
+            console.log('🔧 DEBUG tool_iteration - Event data:', JSON.stringify(eventData, null, 2));
+            stream?.writeEvent?.('llm_response', eventData);
             
             console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
             console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
@@ -700,10 +721,12 @@ Task: Synthesize the above findings to answer the user's question. Each finding 
         try {
             finalResponse = await llmResponsesWithTools(finalRequestBody);
             
-            // Emit LLM response event with full response metadata
+            // Emit LLM response event with full response metadata and HTTP headers
             stream?.writeEvent?.('llm_response', {
                 phase: 'final_synthesis',
-                response: finalResponse.rawResponse || finalResponse
+                response: finalResponse.rawResponse || finalResponse,
+                httpHeaders: finalResponse.httpHeaders || {},
+                httpStatus: finalResponse.httpStatus
             });
         } catch (e) {
             console.error('Final synthesis LLM call failed:', e?.message || e);

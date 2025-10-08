@@ -3,6 +3,7 @@
  * Renders markdown content with syntax highlighting and proper styling
  */
 
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -13,7 +14,87 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
+interface ImageGalleryProps {
+  images: Array<{ src: string; alt: string }>;
+}
+
+function ImageGallery({ images }: ImageGalleryProps) {
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+
+  return (
+    <>
+      <div className="image-gallery grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
+        {images.map((img, idx) => (
+          <div
+            key={idx}
+            className="gallery-item cursor-pointer overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 transition-all hover:shadow-lg"
+            onClick={() => setExpandedImage(img.src)}
+          >
+            <img
+              src={img.src}
+              alt={img.alt}
+              className="w-full h-48 object-cover hover:scale-105 transition-transform"
+              loading="lazy"
+            />
+            {img.alt && (
+              <div className="p-2 text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 truncate">
+                {img.alt}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Expanded Image Modal */}
+      {expandedImage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+          onClick={() => setExpandedImage(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white text-4xl font-bold hover:text-gray-300"
+            onClick={() => setExpandedImage(null)}
+            aria-label="Close"
+          >
+            ×
+          </button>
+          <img
+            src={expandedImage}
+            alt="Expanded view"
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+  // Detect and extract image gallery
+  const galleryRegex = /<!-- GALLERY_START -->([\s\S]*?)<!-- GALLERY_END -->/g;
+  const galleryMatch = galleryRegex.exec(content);
+  
+  let mainContent = content;
+  let galleryImages: Array<{ src: string; alt: string }> = [];
+  
+  if (galleryMatch) {
+    // Extract images from gallery section
+    const galleryContent = galleryMatch[1];
+    const imgRegex = /!\[(.*?)\]\((.*?)\)/g;
+    let imgMatch;
+    
+    while ((imgMatch = imgRegex.exec(galleryContent)) !== null) {
+      galleryImages.push({
+        alt: imgMatch[1],
+        src: imgMatch[2]
+      });
+    }
+    
+    // Remove gallery section from main content
+    mainContent = content.replace(galleryRegex, '').trim();
+  }
+  
   return (
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
@@ -161,10 +242,23 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
               {children}
             </em>
           ),
+          
+          // Images - render with proper styling
+          img: ({ src, alt }) => (
+            <img
+              src={src}
+              alt={alt || ''}
+              className="max-w-full h-auto rounded-lg my-4 border border-gray-200 dark:border-gray-700"
+              loading="lazy"
+            />
+          ),
         }}
       >
-        {content}
+        {mainContent}
       </ReactMarkdown>
+      
+      {/* Render image gallery if present */}
+      {galleryImages.length > 0 && <ImageGallery images={galleryImages} />}
     </div>
   );
 }

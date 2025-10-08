@@ -91,6 +91,25 @@ export const decodeJWT = (token: string): any => {
   }
 };
 
+// Get time until token expires (in milliseconds)
+export const getTokenTimeRemaining = (token: string): number => {
+  try {
+    const decoded = decodeJWT(token);
+    if (!decoded || !decoded.exp) {
+      return 0;
+    }
+    
+    const expirationTime = decoded.exp * 1000; // Convert to milliseconds
+    const currentTime = Date.now();
+    const remaining = expirationTime - currentTime;
+    
+    return Math.max(0, remaining);
+  } catch (e) {
+    console.error('Failed to get token time remaining:', e);
+    return 0;
+  }
+};
+
 // Check if token is expired or will expire soon (within 5 minutes)
 export const isTokenExpiringSoon = (token: string): boolean => {
   try {
@@ -103,7 +122,15 @@ export const isTokenExpiringSoon = (token: string): boolean => {
     const currentTime = Date.now();
     const fiveMinutes = 5 * 60 * 1000;
     
-    return expirationTime - currentTime < fiveMinutes;
+    const remaining = expirationTime - currentTime;
+    
+    // Log warning if expiring within 10 minutes
+    if (remaining > 0 && remaining < 10 * 60 * 1000 && remaining >= fiveMinutes) {
+      const minutesRemaining = Math.floor(remaining / 60000);
+      console.warn(`⚠️ Token expires in ${minutesRemaining} minutes`);
+    }
+    
+    return remaining < fiveMinutes;
   } catch (e) {
     console.error('Failed to check token expiration:', e);
     return true;

@@ -115,6 +115,13 @@ async function makeStreamingRequest(targetUrl, apiKey, requestBody) {
             };
             
             const req = protocol.request(options, (res) => {
+                // Capture HTTP response headers for spending tracking
+                const httpHeaders = res.headers;
+                const httpStatus = res.statusCode;
+                
+                console.log('📋 HTTP Response Headers captured:', JSON.stringify(httpHeaders, null, 2));
+                console.log('📊 HTTP Status:', httpStatus);
+                
                 if (res.statusCode !== 200) {
                     let errorData = '';
                     res.on('data', (chunk) => errorData += chunk);
@@ -128,6 +135,10 @@ async function makeStreamingRequest(targetUrl, apiKey, requestBody) {
                     });
                     return;
                 }
+                
+                // Attach headers to response object for later use
+                res.httpHeaders = httpHeaders;
+                res.httpStatus = httpStatus;
                 
                 resolve(res);
             });
@@ -380,8 +391,25 @@ async function handler(event, responseStream) {
                 requestBody.tools = tools;
             }
             
+            // Emit LLM request event
+            sseWriter.writeEvent('llm_request', {
+                phase: 'chat_iteration',
+                iteration: iterationCount,
+                provider,
+                model,
+                request: requestBody,
+                timestamp: new Date().toISOString()
+            });
+            
             // Make streaming request
             const response = await makeStreamingRequest(targetUrl, apiKey, requestBody);
+            
+            // Capture HTTP headers from response
+            const httpHeaders = response.httpHeaders || {};
+            const httpStatus = response.httpStatus;
+            
+            console.log('📋 DEBUG chat endpoint - httpHeaders:', JSON.stringify(httpHeaders, null, 2));
+            console.log('📊 DEBUG chat endpoint - httpStatus:', httpStatus);
             
             // Parse streaming response
             let assistantMessage = { role: 'assistant', content: '' };
@@ -429,6 +457,25 @@ async function handler(event, responseStream) {
                     }
                 }
             });
+            
+            // Emit LLM response event with HTTP headers
+            const eventData = {
+                phase: 'chat_iteration',
+                iteration: iterationCount,
+                provider,
+                model,
+                response: {
+                    content: assistantMessage.content,
+                    tool_calls: currentToolCalls.length > 0 ? currentToolCalls : undefined
+                },
+                httpHeaders: httpHeaders || {},
+                httpStatus: httpStatus
+            };
+            
+            console.log('🔧 DEBUG chat endpoint - Event data to send:', JSON.stringify(eventData, null, 2));
+            
+            eventData.timestamp = new Date().toISOString();
+            sseWriter.writeEvent('llm_response', eventData);
             
             // If tool calls detected, execute them
             if (hasToolCalls && currentToolCalls.length > 0) {

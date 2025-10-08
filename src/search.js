@@ -122,7 +122,7 @@ class DuckDuckGoSearcher {
      * @param {number} timeout - Timeout in seconds (default 10)
      * @returns {Promise<Object>} Search results
      */
-    async search(query, limit = 10, fetchContent = false, timeout = 10) {
+    async search(query, limit = 10, fetchContent = false, timeout = 10, progressCallback = null) {
         // Apply enhanced request spacing before any search attempt
         await this.ensureRequestSpacing();
         
@@ -190,7 +190,7 @@ class DuckDuckGoSearcher {
             const contentTime = Date.now();
             // Fetch content depending on flag; prefer parallel to speed up
             if (sortedResults.length > 0 && fetchContent) {
-                await this.fetchContentForResultsParallel(sortedResults, timeout);
+                await this.fetchContentForResultsParallel(sortedResults, timeout, progressCallback);
             }
             
             // Return the processed results
@@ -1005,7 +1005,7 @@ class DuckDuckGoSearcher {
      * @param {Array} results - Array of search results
      * @param {number} timeout - Timeout in seconds
      */
-    async fetchContentForResultsParallel(results, timeout) {
+    async fetchContentForResultsParallel(results, timeout, progressCallback = null) {
         if (!results || results.length === 0) return;
 
         console.log(`Starting parallel content fetch for ${results.length} results. ${this.memoryTracker.getMemorySummary()}`);
@@ -1016,7 +1016,7 @@ class DuckDuckGoSearcher {
                 result.contentError = `Skipped due to memory limit (${memoryCheck.reason})`;
                 return;
             }
-            await this.fetchContentForSingleResult(result, idx, results.length, timeout);
+            await this.fetchContentForSingleResult(result, idx, results.length, timeout, progressCallback);
         })());
 
         await Promise.allSettled(tasks);
@@ -1030,14 +1030,29 @@ class DuckDuckGoSearcher {
      * @param {number} index - Index for logging
      * @param {number} total - Total count for logging
      * @param {number} timeout - Timeout in seconds
+     * @param {Function} progressCallback - Optional callback to report progress
      */
-    async fetchContentForSingleResult(result, index, total, timeout) {
+    async fetchContentForSingleResult(result, index, total, timeout, progressCallback = null) {
         const startTime = Date.now();
         
         try {
             console.log(`[${index + 1}/${total}] Fetching content from: ${result.url}`);
             
+            // Emit progress event when starting to fetch this result
+            if (progressCallback) {
+                progressCallback({
+                    phase: 'fetching_result',
+                    result_index: index + 1,
+                    result_total: total,
+                    url: result.url,
+                    title: result.title || result.url
+                });
+            }
+            
             const rawContent = await this.fetchUrl(result.url, timeout * 1000);
+            
+            // Store raw HTML for image and link extraction
+            result.rawHtml = rawContent;
             
             // Use new HTML content extractor to convert to Markdown (preferred) or plain text
             const extracted = extractContent(rawContent);
@@ -1099,10 +1114,35 @@ class DuckDuckGoSearcher {
             
             result.fetchTimeMs = Date.now() - startTime;
             
+            // Emit progress event when result fetch is complete
+            if (progressCallback) {
+                progressCallback({
+                    phase: 'result_loaded',
+                    result_index: index + 1,
+                    result_total: total,
+                    url: result.url,
+                    title: result.title || result.url,
+                    content_size: result.contentLength || 0,
+                    fetch_time_ms: result.fetchTimeMs
+                });
+            }
+            
         } catch (error) {
             result.contentError = error.message;
             result.fetchTimeMs = Date.now() - startTime;
             console.log(`[${index + 1}/${total}] Error fetching content: ${error.message}`);
+            
+            // Emit progress event for failed fetch
+            if (progressCallback) {
+                progressCallback({
+                    phase: 'result_failed',
+                    result_index: index + 1,
+                    result_total: total,
+                    url: result.url,
+                    title: result.title || result.url,
+                    error: error.message
+                });
+            }
         }
     }
 

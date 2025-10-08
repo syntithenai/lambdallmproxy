@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchResults } from '../contexts/SearchResultsContext';
 import { usePlaylist } from '../contexts/PlaylistContext';
+import { useSwag } from '../contexts/SwagContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
@@ -10,6 +12,8 @@ import { extractAndSaveSearchResult } from '../utils/searchCache';
 import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
+import { SearchProgress } from './SearchProgress';
+import { LlmApiTransparency } from './LlmApiTransparency';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
@@ -45,17 +49,16 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { accessToken } = useAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracks } = usePlaylist();
-  const { showError, showWarning, showSuccess } = useToast();
-  const [messages, setMessages] = useLocalStorage<ChatMessage[]>('chat_messages', []);
+  const { addSnippet } = useSwag();
+  const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
+  const { settings } = useSettings();
+  
+  // Use regular state for messages - async storage causes race conditions
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
+  
   const [input, setInput] = useLocalStorage<string>('chat_input', '');
   const [systemPrompt, setSystemPrompt] = useLocalStorage<string>('chat_system_prompt', '');
-  const [settings] = useLocalStorage('app_settings', {
-    provider: 'groq',
-    llmApiKey: '',
-    tavilyApiKey: '',
-    apiEndpoint: 'https://api.groq.com/openai/v1',
-    largeModel: 'meta-llama/llama-4-scout-17b-16e-instruct'
-  });
   const [isLoading, setIsLoading] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
@@ -97,6 +100,29 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     timestamp?: string;
   }>>>(new Map());
   
+  // Search progress tracking
+  const [searchProgress, setSearchProgress] = useState<Map<string, {
+    phase: string;
+    query?: string;
+    queries?: string[];
+    service?: string;
+    result_count?: number;
+    result_index?: number;
+    result_total?: number;
+    url?: string;
+    title?: string;
+    content_size?: number;
+    fetch_time_ms?: number;
+    error?: string;
+    timestamp?: string;
+  }>>(new Map());
+  
+  // Search result content viewer dialog
+  const [viewingSearchResult, setViewingSearchResult] = useState<{
+    result: any;
+    index: number;
+  } | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const retryTriggerRef = useRef<boolean>(false);
@@ -109,6 +135,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleCaptureContent = (content: string, sourceType: 'user' | 'assistant' | 'tool', title?: string) => {
+    addSnippet(content, sourceType, title);
+    showSuccess('Content captured to Swag!');
   };
 
   useEffect(() => {
@@ -139,11 +170,36 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Helper function to handle example selection
   const handleExampleClick = (exampleText: string) => {
+    // Abort any ongoing requests first
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    // Reset all chat state for a fresh start
     setMessages([]);
+    setSystemPrompt(''); // Clear system prompt
     setInput(exampleText);
     setShowExamplesDropdown(false);
-    // Pass text directly to handleSend to avoid state update timing issues
-    handleSend(exampleText);
+    
+    // Clear all tracking states
+    setToolStatus([]);
+    setStreamingContent('');
+    setCurrentStreamingBlockIndex(null);
+    setTranscriptionProgress(new Map());
+    setSearchProgress(new Map());
+    setViewingSearchResult(null);
+    setCurrentChatId(null); // Start a new chat session
+    localStorage.removeItem('last_active_chat_id');
+    
+    // Clear all toast notifications
+    clearAllToasts();
+    
+    // Use setTimeout to ensure React finishes processing state updates
+    // before sending the new message (avoids race conditions)
+    setTimeout(() => {
+      handleSend(exampleText);
+    }, 0);
   };
 
   // Auto-resize textarea helper
@@ -163,17 +219,39 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   }, [transferData]);
 
+  // Load last active chat on mount
+  useEffect(() => {
+    if (!messagesLoaded) {
+      try {
+        const lastChatId = localStorage.getItem('last_active_chat_id');
+        if (lastChatId) {
+          const loadedMessages = loadChatFromHistory(lastChatId);
+          if (loadedMessages && loadedMessages.length > 0) {
+            console.log('📂 Restored chat session:', lastChatId, 'with', loadedMessages.length, 'messages');
+            setMessages(loadedMessages);
+            setCurrentChatId(lastChatId);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading last chat:', error);
+      }
+      setMessagesLoaded(true);
+    }
+  }, [messagesLoaded]);
+
   // Auto-save chat history whenever messages change
   useEffect(() => {
-    if (messages.length > 0) {
+    if (messages.length > 0 && messagesLoaded) {
       // If we don't have a chat ID yet, this is a new session
       // Generate ID and save. Otherwise, update existing chat.
       const id = saveChatToHistory(messages, currentChatId || undefined);
       if (!currentChatId) {
         setCurrentChatId(id);
       }
+      // Save as last active chat
+      localStorage.setItem('last_active_chat_id', id);
     }
-  }, [messages, currentChatId]);
+  }, [messages, currentChatId, messagesLoaded]);
 
   // Load chat history list when dialog opens
   useEffect(() => {
@@ -253,14 +331,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         type: 'function',
         function: {
           name: 'search_web',
-          description: 'Search the web using DuckDuckGo to find current information, news, articles, and real-time data. USE THIS whenever users ask for current/latest information, news, or anything requiring up-to-date web content. Returns search results with titles, URLs, and snippets. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL).**',
+          description: 'Search the web using DuckDuckGo to find current information, news, articles, and real-time data. USE THIS whenever users ask for current/latest information, news, or anything requiring up-to-date web content. Automatically fetches full page content including images and links from all search results. Returns comprehensive search results with titles, URLs, snippets, full content, images, and links. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL).**',
           parameters: {
             type: 'object',
             properties: {
               query: { type: 'string', description: 'Search query - be specific and include relevant keywords' },
               limit: { type: 'integer', minimum: 1, maximum: 50, default: 5, description: 'Number of results to return (default: 5)' },
-              timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15 },
-              load_content: { type: 'boolean', default: true, description: 'Fetch full page content for each result (recommended for better answers)'},
+              timeout: { type: 'integer', minimum: 1, maximum: 60, default: 15, description: 'Timeout in seconds for fetching each page' },
               generate_summary: { type: 'boolean', default: true, description: 'Generate an LLM summary of the search results (highly recommended)'}
             },
             required: ['query']
@@ -411,13 +488,21 @@ export const ChatTab: React.FC<ChatTabProps> = ({
 
   const handleSend = async (messageText?: string) => {
     const textToSend = messageText !== undefined ? messageText : input;
-    if (!textToSend.trim() || !accessToken || isLoading) return;
+    if (!textToSend.trim() || isLoading) return;
+    
+    // Check authentication before sending
+    if (!accessToken) {
+      showError('Please sign in to send messages');
+      return;
+    }
 
     const userMessage: ChatMessage = { role: 'user', content: textToSend };
     console.log('🔵 Adding user message:', userMessage.content.substring(0, 50));
     setMessages(prev => {
       console.log('🔵 Current messages count before adding user:', prev.length);
-      return [...prev, userMessage];
+      const newMessages = [...prev, userMessage];
+      console.log('🔵 Messages after adding user:', newMessages.length, 'User message at index:', newMessages.length - 1);
+      return newMessages;
     });
     
     // Save to history (avoid duplicates and limit to last 50)
@@ -488,9 +573,15 @@ Examples when you MUST use tools:
 Remember: Use the function calling mechanism, not text output. The API will handle execution automatically.`;
       }
       
+      // Strip out UI-only fields (llmApiCalls, isStreaming) before sending to API
+      const cleanMessages = messages.map(msg => {
+        const { llmApiCalls, isStreaming, ...cleanMsg } = msg;
+        return cleanMsg;
+      });
+      
       const messagesWithSystem = [
         { role: 'system' as const, content: finalSystemPrompt },
-        ...messages,
+        ...cleanMessages,
         userMessage
       ];
       
@@ -536,8 +627,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   
                   console.log('🟦 Delta received, currentStreamingBlockIndex:', currentStreamingBlockIndex, 'lastMessage:', lastMessage?.role, 'isStreaming:', lastMessage?.isStreaming);
                   
-                  // If last message is a streaming assistant message, append to it
-                  if (lastMessage && lastMessage.role === 'assistant' && lastMessage.isStreaming) {
+                  // Check if there's a tool message after the last assistant message
+                  const hasToolMessageAfterAssistant = lastMessage?.role === 'tool';
+                  
+                  // If last message is a streaming assistant message AND no tool execution happened, append to it
+                  if (lastMessage && lastMessage.role === 'assistant' && lastMessage.isStreaming && !hasToolMessageAfterAssistant) {
                     const newMessages = [...prev];
                     newMessages[lastMessageIndex] = {
                       ...lastMessage,
@@ -545,14 +639,25 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     };
                     console.log('🟦 Appending to existing streaming block at index:', lastMessageIndex);
                     return newMessages;
+                  } else if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content && !hasToolMessageAfterAssistant) {
+                    // If last message is an empty assistant (placeholder from llm_request), update it with content
+                    // This handles both cases: with or without llmApiCalls already attached
+                    const newMessages = [...prev];
+                    newMessages[lastMessageIndex] = {
+                      ...lastMessage,
+                      content: data.content,
+                      isStreaming: true
+                    };
+                    console.log('🟦 Updating placeholder assistant message with content at index:', lastMessageIndex);
+                    return newMessages;
                   } else {
-                    // Create a new streaming block
+                    // Create a new streaming block (tool execution happened OR first message)
                     const newBlock: ChatMessage = {
                       role: 'assistant',
                       content: data.content,
                       isStreaming: true
                     };
-                    console.log('🟦 Creating NEW streaming block at index:', prev.length, 'prev messages count:', prev.length);
+                    console.log('🟦 Creating NEW streaming block at index:', prev.length, 'prev messages count:', prev.length, 'reason:', hasToolMessageAfterAssistant ? 'tool execution' : 'first message');
                     return [...prev, newBlock];
                   }
                 });
@@ -665,6 +770,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   addSearchResult(searchResult);
                   console.log('Search result added to SearchTab:', searchResult);
                 }
+                // Clear search progress now that the tool result is available
+                setSearchProgress(new Map());
               }
               
               // Streaming state already reset in tool_call_start
@@ -680,6 +787,55 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   newMap.set(data.tool_call_id, [...events, data]);
                   return newMap;
                 });
+              }
+              break;
+              
+            case 'search_progress':
+              // Web search progress events (searching, results_found, fetching_result, result_loaded)
+              console.log('🔍 Search progress event:', data);
+              if (data.tool === 'search_web') {
+                // If starting a new search, clear old progress
+                if (data.phase === 'searching') {
+                  setSearchProgress(new Map());
+                }
+                
+                // Create a unique key for each event based on phase and index
+                let progressKey: string;
+                if (data.phase === 'fetching_result' || data.phase === 'result_loaded' || data.phase === 'result_failed') {
+                  // For per-result events, use result index
+                  progressKey = `search_web_result_${data.result_index || 0}`;
+                } else {
+                  // For general events, use phase
+                  progressKey = `search_web_${data.phase}`;
+                }
+                
+                setSearchProgress(prev => {
+                  const newMap = new Map(prev);
+                  newMap.set(progressKey, data);
+                  return newMap;
+                });
+                
+                // Auto-expand the tool section when search starts
+                if (data.phase === 'searching' || data.phase === 'results_found') {
+                  // Find the most recent assistant message with search_web tool
+                  setMessages(prev => {
+                    for (let i = prev.length - 1; i >= 0; i--) {
+                      const msg = prev[i];
+                      if (msg.role === 'assistant' && msg.tool_calls) {
+                        const searchToolIndex = msg.tool_calls.findIndex(tc => tc.function.name === 'search_web');
+                        if (searchToolIndex !== -1) {
+                          setExpandedToolMessages(prevExpanded => {
+                            const newExpanded = new Set(prevExpanded);
+                            newExpanded.add(i);
+                            return newExpanded;
+                          });
+                          break;
+                        }
+                      }
+                    }
+                    return prev;
+                  });
+                }
               }
               break;
               
@@ -781,18 +937,107 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               
             case 'error':
               // Error occurred
-              showError(data.error);
+              const errorMsg = data.error;
+              showError(errorMsg);
+              
+              // Check if authentication error - auto-logout
+              if (errorMsg.includes('Authentication') || errorMsg.includes('UNAUTHORIZED') || data.code === 'UNAUTHORIZED') {
+                console.warn('⚠️ Authentication error detected, logging out...');
+                showWarning('Your session has expired. Please sign in again.');
+                // The AuthContext will handle logout via useAuth
+              }
+              
               const errorMessage: ChatMessage = {
                 role: 'assistant',
-                content: `❌ Error: ${data.error}`
+                content: `❌ Error: ${errorMsg}`
               };
               setMessages(prev => [...prev, errorMessage]);
               break;
               
             case 'llm_request':
+              // Store LLM API calls on the current assistant message (exclude content summaries)
+              console.log('🔵 LLM API Request:', data);
+              if (data.phase !== 'page_summary' && data.phase !== 'synthesis_summary') {
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  
+                  // Check if last message is a tool message - if so, don't attach to previous assistant
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  const hasToolMessageAfterLastAssistant = lastMessage?.role === 'tool';
+                  
+                  // Find the last assistant message (but only if no tools after it)
+                  let foundAssistant = false;
+                  if (!hasToolMessageAfterLastAssistant) {
+                    for (let i = newMessages.length - 1; i >= 0; i--) {
+                      if (newMessages[i].role === 'assistant') {
+                        console.log('🔵 Attaching llmApiCalls to existing assistant message at index:', i);
+                        newMessages[i] = {
+                          ...newMessages[i],
+                          llmApiCalls: [
+                            ...(newMessages[i].llmApiCalls || []),
+                            {
+                              phase: data.phase,
+                              model: data.model,
+                              request: data.request,
+                              timestamp: data.timestamp
+                            }
+                          ]
+                        };
+                        foundAssistant = true;
+                        break;
+                      }
+                    }
+                  }
+                  
+                  // If no assistant message found OR tools executed, create placeholder for new response
+                  if (!foundAssistant) {
+                    console.log('🔵 Creating new placeholder for llm_request, reason:', 
+                      hasToolMessageAfterLastAssistant ? 'tools executed' : 'no assistant message');
+                    newMessages.push({
+                      role: 'assistant',
+                      content: '',
+                      isStreaming: true,
+                      llmApiCalls: [{
+                        phase: data.phase,
+                        model: data.model,
+                        request: data.request,
+                        timestamp: data.timestamp
+                      }]
+                    });
+                  }
+                  
+                  return newMessages;
+                });
+              }
+              break;
+              
             case 'llm_response':
-              // Sub-LLM requests (for summaries, etc.)
-              console.log('LLM sub-request:', eventType, data);
+              // Update LLM API call with response on current assistant message (exclude content summaries)
+              console.log('🟢 LLM API Response:', data);
+              if (data.phase !== 'page_summary' && data.phase !== 'synthesis_summary') {
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  // Find the last assistant message
+                  for (let i = newMessages.length - 1; i >= 0; i--) {
+                    if (newMessages[i].role === 'assistant' && newMessages[i].llmApiCalls) {
+                      const apiCalls = newMessages[i].llmApiCalls!;
+                      const lastCall = apiCalls[apiCalls.length - 1];
+                      if (lastCall && lastCall.phase === data.phase && !lastCall.response) {
+                        // Store response with HTTP headers and status
+                        lastCall.response = data.response;
+                        lastCall.httpHeaders = data.httpHeaders;
+                        lastCall.httpStatus = data.httpStatus;
+                        newMessages[i] = {
+                          ...newMessages[i],
+                          llmApiCalls: [...apiCalls] // Trigger re-render
+                        };
+                      }
+                      break;
+                    }
+                  }
+                  return newMessages;
+                });
+              }
               break;
           }
         },
@@ -849,6 +1094,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     if (loadedMessages) {
       setMessages(loadedMessages);
       setCurrentChatId(entry.id);
+      localStorage.setItem('last_active_chat_id', entry.id);
       setShowLoadDialog(false);
       showSuccess('Chat loaded successfully');
     } else {
@@ -879,6 +1125,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     setExpandedToolMessages(new Set());
     // Reset chat ID to start a new session
     setCurrentChatId(null);
+    localStorage.removeItem('last_active_chat_id');
     // Focus the input field
     setTimeout(() => {
       inputRef.current?.focus();
@@ -1029,8 +1276,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             return !isComplete; // Only show progress if NOT complete
           });
           
-          // Skip assistant messages with no content UNLESS they have transcription in progress
-          if (msg.role === 'assistant' && !msg.content && msg.tool_calls && !hasTranscriptionInProgress) {
+          // Skip assistant messages with no content UNLESS they have:
+          // - transcription in progress
+          // - llmApiCalls (want to show ALL LLM transparency)
+          // - tool_calls (planning/tool selection phases)
+          if (msg.role === 'assistant' && !msg.content && !hasTranscriptionInProgress && !msg.llmApiCalls && !msg.tool_calls) {
             return null;
           }
           
@@ -1218,27 +1468,18 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           {result.snippet}
                                         </p>
                                       )}
-                                      {/* Show loaded page content if available */}
+                                      {/* Show button to view loaded page content if available */}
                                       {result.content && (
-                                        <details className="mt-2">
-                                          <summary className="cursor-pointer text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-100 text-xs font-semibold">
-                                            📄 Loaded Page Content ({result.content.length} chars)
-                                            {result.contentFormat && (
-                                              <span className="ml-2 text-purple-600 dark:text-purple-400">
-                                                [{result.contentFormat}]
-                                              </span>
-                                            )}
-                                          </summary>
-                                          <div className="mt-2 p-2 bg-white dark:bg-gray-900 rounded border border-purple-200 dark:border-purple-800 max-h-64 overflow-y-auto">
-                                            {result.contentFormat === 'markdown' ? (
-                                              <div className="text-xs">
-                                                <MarkdownRenderer content={result.content} />
-                                              </div>
-                                            ) : (
-                                              <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300">{result.content}</pre>
-                                            )}
-                                          </div>
-                                        </details>
+                                        <div className="mt-2">
+                                          <button
+                                            onClick={() => setViewingSearchResult({ result, index: ridx })}
+                                            className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors font-semibold"
+                                          >
+                                            📄 View Full Content ({(result.content.length / 1024).toFixed(1)} KB)
+                                            {result.images?.length > 0 && ` • ${result.images.length} images`}
+                                            {result.links?.length > 0 && ` • ${result.links.length} links`}
+                                          </button>
+                                        </div>
                                       )}
                                     </div>
                                   ))}
@@ -1296,6 +1537,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   {msg.content}
                                 </pre>
                               )}
+                              
+                              {/* Capture button for tool results */}
+                              {msg.content && (
+                                <div className="flex gap-2 mt-2 pt-2 border-t border-purple-200 dark:border-purple-700">
+                                  <button
+                                    onClick={() => handleCaptureContent(msg.content, 'tool', msg.name)}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
+                                    title="Capture to Swag"
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                                    </svg>
+                                    Grab
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1309,6 +1566,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   <>
                     {msg.role === 'assistant' ? (
                       <div>
+                        {/* Show search progress for search_web tool calls */}
+                        {msg.tool_calls && msg.tool_calls.some((tc: any) => tc.function.name === 'search_web') && (
+                          <div className="mb-3 space-y-2">
+                            {Array.from(searchProgress.values()).map((progress, idx) => (
+                              <SearchProgress key={idx} data={progress} />
+                            ))}
+                          </div>
+                        )}
+                        
                         {/* Show transcription progress for tool calls in progress (NOT complete) */}
                         {msg.tool_calls && msg.tool_calls.map((tc: any, tcIdx: number) => {
                           if (tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)) {
@@ -1350,9 +1616,18 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           return null;
                         })}
                         
-                        <MarkdownRenderer content={msg.content} />
+                        {/* Message content - render even if empty to show grey box */}
+                        <MarkdownRenderer content={msg.content || ''} />
                         {msg.isStreaming && (
                           <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
+                        )}
+                        
+                        {/* Show LLM API transparency for this message */}
+                        {/* Show if: not streaming OR (streaming but no content - likely planning phase) */}
+                        {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (!msg.isStreaming || !msg.content) && (
+                          <div className="mt-3">
+                            <LlmApiTransparency apiCalls={msg.llmApiCalls} />
+                          </div>
                         )}
                       </div>
                     ) : (
@@ -1361,7 +1636,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       </div>
                     )}
                     
-                    {/* Copy/Share buttons for assistant messages */}
+                    {/* Copy/Share/Capture buttons for assistant messages */}
                     {msg.role === 'assistant' && msg.content && (
                       <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                         <button
@@ -1394,10 +1669,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </svg>
                           Gmail
                         </button>
+                        <button
+                          onClick={() => handleCaptureContent(msg.content, 'assistant')}
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
+                          title="Capture to Swag"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                          </svg>
+                          Grab
+                        </button>
                       </div>
                     )}
                     
-                    {/* Reset and Retry buttons - only for user messages */}
+                    {/* Reset/Retry/Capture buttons - only for user messages */}
                     {msg.role === 'user' && (
                       <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                         <button
@@ -1440,6 +1725,16 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9" />
                           </svg>
                           Retry
+                        </button>
+                        <button
+                          onClick={() => handleCaptureContent(msg.content, 'user')}
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
+                          title="Capture to Swag"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                          </svg>
+                          Grab
                         </button>
                       </div>
                     )}
@@ -1728,6 +2023,142 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           setShowPlanningDialog(false);
         }}
       />
+
+      {/* Search Result Content Viewer Dialog */}
+      {viewingSearchResult && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full h-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-start">
+              <div className="flex-1 pr-4">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  {viewingSearchResult.result.title}
+                </h2>
+                <a
+                  href={viewingSearchResult.result.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline text-sm break-all"
+                >
+                  {viewingSearchResult.result.url}
+                </a>
+                <div className="mt-2 flex gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span>📄 {(viewingSearchResult.result.content?.length / 1024).toFixed(1)} KB</span>
+                  {viewingSearchResult.result.contentFormat && (
+                    <span>📝 {viewingSearchResult.result.contentFormat}</span>
+                  )}
+                  {viewingSearchResult.result.images?.length > 0 && (
+                    <span>🖼️ {viewingSearchResult.result.images.length} images</span>
+                  )}
+                  {viewingSearchResult.result.links?.length > 0 && (
+                    <span>🔗 {viewingSearchResult.result.links.length} links</span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingSearchResult(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-3xl leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-6">
+                {/* Main Content */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Page Content</h3>
+                  <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                    {viewingSearchResult.result.contentFormat === 'markdown' ? (
+                      <MarkdownRenderer content={viewingSearchResult.result.content} />
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
+                        {viewingSearchResult.result.content}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+
+                {/* Images Section */}
+                {viewingSearchResult.result.images && viewingSearchResult.result.images.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                      Images ({viewingSearchResult.result.images.length})
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {viewingSearchResult.result.images.map((img: any, idx: number) => (
+                        <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
+                          <img
+                            src={img.src}
+                            alt={img.alt || `Image ${idx + 1}`}
+                            className="w-full h-32 object-cover"
+                            loading="lazy"
+                          />
+                          {img.alt && (
+                            <div className="p-2 text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800">
+                              {img.alt}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Links Section */}
+                {viewingSearchResult.result.links && viewingSearchResult.result.links.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                      Links ({viewingSearchResult.result.links.length})
+                    </h3>
+                    <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <ul className="space-y-2">
+                        {viewingSearchResult.result.links.slice(0, 50).map((link: any, idx: number) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-gray-500 dark:text-gray-400 text-xs mt-1">•</span>
+                            <div className="flex-1 min-w-0">
+                              <a
+                                href={link.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 dark:text-blue-400 hover:underline text-sm break-all"
+                              >
+                                {link.text || link.href}
+                              </a>
+                              {link.context && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                                  {link.context}
+                                </p>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                        {viewingSearchResult.result.links.length > 50 && (
+                          <li className="text-xs text-gray-500 dark:text-gray-400 italic">
+                            ... and {viewingSearchResult.result.links.length - 50} more links
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+              <button
+                onClick={() => setViewingSearchResult(null)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

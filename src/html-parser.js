@@ -39,6 +39,52 @@ class SimpleHTMLParser {
     }
 
     /**
+     * Extract all images from HTML
+     * @returns {Array} Array of {src, alt, title, context} objects
+     */
+    extractImages() {
+        const images = [];
+        const imgRegex = /<img[^>]*>/gi;
+        let match;
+
+        while ((match = imgRegex.exec(this.html)) !== null) {
+            const imgTag = match[0];
+            
+            // Extract src attribute
+            const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
+            if (!srcMatch) continue;
+            const src = srcMatch[1];
+            
+            // Skip if src is empty, data URI, or tracking pixel
+            if (!src || src.startsWith('data:') || src.includes('pixel') || src.includes('track')) continue;
+            if (src.match(/1x1|tracking|beacon|analytics/i)) continue;
+            
+            // Extract alt attribute
+            const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+            const alt = altMatch ? altMatch[1] : '';
+            
+            // Extract title attribute
+            const titleMatch = imgTag.match(/title=["']([^"']*)["']/i);
+            const title = titleMatch ? titleMatch[1] : '';
+            
+            // Get context around the image
+            const imgStart = match.index;
+            const contextStart = Math.max(0, imgStart - 200);
+            const contextEnd = Math.min(this.html.length, imgStart + match[0].length + 200);
+            const context = this.stripHtml(this.html.substring(contextStart, contextEnd)).trim();
+            
+            images.push({
+                src: src,
+                alt: alt || '',
+                title: title || '',
+                context: context
+            });
+        }
+
+        return images;
+    }
+
+    /**
      * Convert HTML to plain text
      * @param {string} html - HTML content
      * @returns {string} Plain text content

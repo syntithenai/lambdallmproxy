@@ -1,0 +1,371 @@
+import React, { useState } from 'react';
+import { JsonTree } from './JsonTree';
+
+interface LlmApiCall {
+  phase: string;
+  model: string;
+  request: any;
+  response?: any;
+  httpHeaders?: any;
+  httpStatus?: number;
+  timestamp: string;
+}
+
+interface LlmApiTransparencyProps {
+  apiCalls: LlmApiCall[];
+}
+
+export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [fullScreenCall, setFullScreenCall] = useState<number | null>(null);
+  const [expandedHeaders, setExpandedHeaders] = useState<Set<number>>(new Set());
+
+  if (apiCalls.length === 0) {
+    return null;
+  }
+
+  const toggleHeaders = (index: number) => {
+    setExpandedHeaders(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
+  // Parse JSON strings in response object recursively
+  const parseJsonStrings = (obj: any): any => {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+
+    if (typeof obj === 'string') {
+      // Try to parse as JSON
+      try {
+        const trimmed = obj.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+            (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+          const parsed = JSON.parse(trimmed);
+          // Recursively parse the parsed object
+          return parseJsonStrings(parsed);
+        }
+      } catch (e) {
+        // Not valid JSON, return as-is
+      }
+      return obj;
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(item => parseJsonStrings(item));
+    }
+
+    if (typeof obj === 'object') {
+      const result: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        result[key] = parseJsonStrings(value);
+      }
+      return result;
+    }
+
+    return obj;
+  };
+
+  const formatPhase = (phase: string): string => {
+    switch (phase) {
+      case 'planning':
+        return '🧠 Planning';
+      case 'tool_iteration':
+        return '🔧 Tool Execution';
+      case 'final_synthesis':
+      case 'final_response':
+        return '✨ Final Answer';
+      default:
+        return phase;
+    }
+  };
+
+  const getProviderFromModel = (model: string): string => {
+    if (model.startsWith('gpt-') || model.startsWith('o1-')) {
+      return 'OpenAI';
+    }
+    if (model.includes('claude')) {
+      return 'Anthropic';
+    }
+    if (model.includes('llama') || model.includes('mixtral') || model.includes('gemma')) {
+      return 'Groq';
+    }
+    return 'Unknown';
+  };
+
+  const getModelDisplay = (model: string): string => {
+    // Remove provider prefix for cleaner display
+    return model.replace(/^(openai:|groq:|anthropic:)/, '');
+  };
+
+  return (
+    <div className="mt-4 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 
+                   flex items-center justify-between text-left transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{isExpanded ? '▼' : '▶'}</span>
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            🔍 LLM Calls
+          </span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            ({apiCalls.length} call{apiCalls.length !== 1 ? 's' : ''})
+          </span>
+        </div>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          Click to {isExpanded ? 'collapse' : 'expand'}
+        </span>
+      </button>
+
+      {isExpanded && (
+        <div className="p-4 space-y-3 bg-white dark:bg-gray-900">
+
+          {apiCalls.map((call, index) => {
+            const headersExpanded = expandedHeaders.has(index);
+            const tokensIn = call.response?.usage?.prompt_tokens || 0;
+            const tokensOut = call.response?.usage?.completion_tokens || 0;
+            const totalTokens = call.response?.usage?.total_tokens || 0;
+            
+            // Extract timing information
+            const queueTime = call.response?.usage?.queue_time;
+            const promptTime = call.response?.usage?.prompt_time;
+            const completionTime = call.response?.usage?.completion_time;
+            const totalTime = call.response?.usage?.total_time;
+            
+            // Use HTTP headers from the separate field (sent by backend)
+            const responseHeaders = call.httpHeaders || null;
+            
+            // Debug logging
+            console.log('🔍 LLM API Call Debug:', {
+              index,
+              phase: call.phase,
+              model: call.model,
+              hasResponse: !!call.response,
+              hasHttpHeaders: !!call.httpHeaders,
+              httpHeaders: call.httpHeaders,
+              httpStatus: call.httpStatus,
+              responseHeaders
+            });
+            
+            return (
+              <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                {/* Non-collapsible header */}
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        {formatPhase(call.phase)}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                      <span className="text-xs text-gray-600 dark:text-gray-400">
+                        {getProviderFromModel(call.model)}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                      <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-gray-700 dark:text-gray-300">
+                        {getModelDisplay(call.model)}
+                      </code>
+                    </div>
+                  </div>
+                  
+                  {/* Response metadata with timing and token info */}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+                    {call.response ? (
+                      <>
+                        {tokensIn > 0 && <span>📥 {tokensIn.toLocaleString()} in</span>}
+                        {tokensOut > 0 && <span>📤 {tokensOut.toLocaleString()} out</span>}
+                        {totalTokens > 0 && <span>📊 {totalTokens.toLocaleString()} total</span>}
+                        {totalTime && <span>⏱️ {totalTime.toFixed(3)}s</span>}
+                        {queueTime && <span>⏳ queue: {queueTime.toFixed(3)}s</span>}
+                        {promptTime && <span>🔄 prompt: {promptTime.toFixed(3)}s</span>}
+                        {completionTime && <span>✍️ completion: {completionTime.toFixed(3)}s</span>}
+                      </>
+                    ) : (
+                      <span className="text-yellow-600 dark:text-yellow-400">⏳ Request sent, awaiting response...</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Always visible content */}
+                <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+                  <div className="space-y-4">
+
+                    {/* Full Request Body */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          📤 Request Body
+                        </h4>
+                        <button
+                          onClick={() => setFullScreenCall(index)}
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          🔍 View Full Screen
+                        </button>
+                      </div>
+                      <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto">
+                        <div className="text-xs font-mono">
+                          <JsonTree 
+                            data={parseJsonStrings(call.request)} 
+                            expanded={true}
+                            expandPaths={['messages']}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Response Headers (above response) - Always show if there's a response */}
+                    {call.response && (
+                      <div>
+                        <button
+                          onClick={() => toggleHeaders(index)}
+                          className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 mb-2"
+                        >
+                          <span>{headersExpanded ? '▼' : '▶'}</span>
+                          <span>📋 Response Headers</span>
+                          {!responseHeaders && (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">(not available)</span>
+                          )}
+                        </button>
+                        {headersExpanded && (
+                          <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded border border-blue-200 dark:border-blue-800 mb-4 max-h-96 overflow-y-auto">
+                            <div className="text-xs font-mono">
+                              {responseHeaders ? (
+                                <JsonTree data={responseHeaders} expanded={true} />
+                              ) : (
+                                <div className="text-yellow-600 dark:text-yellow-400">
+                                  <p className="mb-2">⚠️ HTTP headers not available</p>
+                                  <p className="text-xs">Debug info:</p>
+                                  <pre className="mt-1 text-xs">{JSON.stringify({
+                                    hasHttpHeaders: !!call.httpHeaders,
+                                    hasHttpStatus: !!call.httpStatus,
+                                    httpHeadersType: typeof call.httpHeaders,
+                                    httpHeadersValue: call.httpHeaders
+                                  }, null, 2)}</pre>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Response Details */}
+                    {call.response && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            📥 Response
+                          </h4>
+                        </div>
+                        <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded border border-green-200 dark:border-green-800 max-h-96 overflow-y-auto">
+                          <div className="text-xs font-mono">
+                            <JsonTree 
+                              data={parseJsonStrings(call.response)} 
+                              expandAll={true}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Timestamp */}
+                    <div className="text-xs text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-gray-700">
+                      ⏰ {new Date(call.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Full Screen Dialog */}
+      {fullScreenCall !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+            {/* Dialog Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  {formatPhase(apiCalls[fullScreenCall].phase)} - Full Request Details
+                </h3>
+                <div className="flex gap-4 mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  <span>Provider: {getProviderFromModel(apiCalls[fullScreenCall].model)}</span>
+                  <span>Model: {getModelDisplay(apiCalls[fullScreenCall].model)}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setFullScreenCall(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Dialog Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Request */}
+              <div>
+                <h4 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  📤 Request Body
+                </h4>
+                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded border border-gray-200 dark:border-gray-700">
+                  <div className="text-sm font-mono">
+                    <JsonTree 
+                      data={parseJsonStrings(apiCalls[fullScreenCall].request)} 
+                      expanded={true}
+                      expandPaths={['messages']}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Response */}
+              {apiCalls[fullScreenCall].response && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    📥 Response
+                  </h4>
+                  <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded border border-green-200 dark:border-green-800">
+                    <div className="text-sm font-mono">
+                      <JsonTree 
+                        data={parseJsonStrings(apiCalls[fullScreenCall].response)} 
+                        expandAll={true}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Timestamp */}
+              <div className="text-sm text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-gray-700">
+                ⏰ {new Date(apiCalls[fullScreenCall].timestamp).toLocaleString()}
+              </div>
+            </div>
+
+            {/* Dialog Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+              <button
+                onClick={() => setFullScreenCall(null)}
+                className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

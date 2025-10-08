@@ -1,0 +1,1 @@
+{"statusCode":405,"headers":{"Content-Type":"application/json"},"body":"{\"error\":\"Method not allowed\",\"allowedMethods\":[\"GET\",\"POST\",\"OPTIONS\"]}"}

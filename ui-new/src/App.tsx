@@ -1,18 +1,24 @@
 import { useState } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SearchResultsProvider } from './contexts/SearchResultsContext';
 import { PlaylistProvider } from './contexts/PlaylistContext';
+import { SwagProvider } from './contexts/SwagContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { ToastProvider } from './components/ToastManager';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { PlaylistButton } from './components/PlaylistButton';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
+import { SwagPage } from './components/SwagPage';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
 // Create a wrapper component that can access auth context
 function AppContent() {
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [showSettings, setShowSettings] = useState(false);
   const [showMCPDialog, setShowMCPDialog] = useState(false);
   
@@ -47,6 +53,29 @@ function AppContent() {
           </h1>
           <div className="flex items-center gap-3">
             <PlaylistButton />
+            {location.pathname === '/swag' ? (
+              <button
+                onClick={() => navigate('/')}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium"
+                title="Back to Chat"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                <span className="text-sm">Back to Chat</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/swag')}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm font-medium"
+                title="Content Swag - Save and manage snippets"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+                <span className="text-sm">Swag</span>
+              </button>
+            )}
             <button
               onClick={() => setShowSettings(true)}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -65,12 +94,20 @@ function AppContent() {
       {/* Main Content - Only visible when authenticated */}
       <main className="flex-1 overflow-hidden">
         <div className="h-full max-w-screen-2xl mx-auto">
-          <ChatTab 
-            enabledTools={enabledTools}
-            setEnabledTools={setEnabledTools}
-            showMCPDialog={showMCPDialog}
-            setShowMCPDialog={setShowMCPDialog}
-          />
+          <Routes>
+            <Route 
+              path="/" 
+              element={
+                <ChatTab 
+                  enabledTools={enabledTools}
+                  setEnabledTools={setEnabledTools}
+                  showMCPDialog={showMCPDialog}
+                  setShowMCPDialog={setShowMCPDialog}
+                />
+              } 
+            />
+            <Route path="/swag" element={<SwagPage />} />
+          </Routes>
         </div>
       </main>
 
@@ -88,15 +125,21 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <PlaylistProvider>
-        <SearchResultsProvider>
-          <ToastProvider>
-            <AppContent />
-          </ToastProvider>
-        </SearchResultsProvider>
-      </PlaylistProvider>
-    </AuthProvider>
+    <BrowserRouter>
+      <ToastProvider>
+        <AuthProvider>
+          <SettingsProvider>
+            <PlaylistProvider>
+              <SearchResultsProvider>
+                <SwagProvider>
+                  <AppContent />
+                </SwagProvider>
+              </SearchResultsProvider>
+            </PlaylistProvider>
+          </SettingsProvider>
+        </AuthProvider>
+      </ToastProvider>
+    </BrowserRouter>
   );
 }
 
