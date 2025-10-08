@@ -1,20 +1,19 @@
+➕ Staging docs/ changes...
+💬 Committing: docs: update built site (2025-10-08 09:01:43 UTC) - fix: Add provider field to LLM transparency info
 
-> ui-new@0.0.0 build
-> tsc -b && vite build
+🔥 DEPLOYMENT REMINDER 🔥
+Code has been committed but NOT deployed yet!
 
-You are using Node.js 20.12.2. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.
-vite v7.1.9 building for production...
-transforming...
-✓ 531 modules transformed.
-rendering chunks...
-computing gzip size...
-../docs/index.html                      1.12 kB │ gzip:   0.64 kB
-../docs/assets/index-t105KxCb.css      48.11 kB │ gzip:   9.55 kB
-../docs/assets/streaming-DpY1-JdV.js    1.16 kB │ gzip:   0.65 kB
-../docs/assets/index-B0mwDEZ9.js      712.69 kB │ gzip: 212.34 kB
+To deploy your changes:
+  make dev          # Quick Lambda deploy (recommended)
+  make full-deploy  # Deploy everything (Lambda + docs)
 
-(!) Some chunks are larger than 500 kB after minification. Consider:
-- Using dynamic import() to code-split the application
-- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
-- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-✓ built in 3.10s
+Test after deploy: https://lambdallmproxy.pages.dev
+
+[agent 32a9889] docs: update built site (2025-10-08 09:01:43 UTC) - fix: Add provider field to LLM transparency info
+ 6 files changed, 37 insertions(+), 47 deletions(-)
+ rename docs/assets/{index-CXLCg28K.js => index-B0mwDEZ9.js} (93%)
+⏫ Pushing to origin agent...
+To https://github.com/syntithenai/lambdallmproxy.git
+   34c2050..32a9889  agent -> agent
+✅ Docs deployed successfully.
