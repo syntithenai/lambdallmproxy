@@ -17,6 +17,89 @@ function estimateTokens(text) {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * Compress search results into minimal markdown format for LLM consumption
+ * Format: Search query as H1, Links as H2, plain text content, media gallery at bottom
+ * @param {string} query - The search query
+ * @param {Array} results - Array of search result objects
+ * @returns {string} Compressed markdown string
+ */
+function compressSearchResultsForLLM(query, results) {
+  if (!results || results.length === 0) return '';
+  
+  const sections = [];
+  
+  // H1: Search query
+  sections.push(`# ${query}\n`);
+  
+  // Process each result
+  for (const result of results) {
+    if (!result) continue;
+    
+    // H2: Link/URL as heading
+    if (result.url) {
+      const title = result.title || result.url;
+      sections.push(`## [${title}](${result.url})`);
+    }
+    
+    // Plain text content (strip all formatting)
+    if (result.content) {
+      const plainText = result.content
+        .replace(/[#*_~`\[\]]/g, '') // Remove markdown symbols
+        .replace(/\n+/g, ' ') // Collapse newlines to spaces
+        .trim();
+      sections.push(plainText + '\n');
+    }
+  }
+  
+  // Collect all media from all results for gallery at bottom
+  const allImages = [];
+  const allYoutube = [];
+  const allMedia = [];
+  
+  for (const result of results) {
+    if (result.images) allImages.push(...result.images);
+    if (result.youtube) allYoutube.push(...result.youtube);
+    if (result.media) allMedia.push(...result.media);
+  }
+  
+  // Add media gallery section at bottom
+  if (allImages.length > 0 || allYoutube.length > 0 || allMedia.length > 0) {
+    sections.push('\n---\n');
+    
+    // Images in gallery format (triggers UI special rendering)
+    if (allImages.length > 0) {
+      sections.push('**Images:**\n```gallery');
+      for (const img of allImages) {
+        const caption = img.caption || img.alt || img.title || 'Image';
+        sections.push(`![${caption}](${img.src})`);
+      }
+      sections.push('```\n');
+    }
+    
+    // YouTube videos
+    if (allYoutube.length > 0) {
+      sections.push('**YouTube:**\n```youtube');
+      for (const yt of allYoutube) {
+        sections.push(`[${yt.text || 'Video'}](${yt.href})`);
+      }
+      sections.push('```\n');
+    }
+    
+    // Other media
+    if (allMedia.length > 0) {
+      sections.push('**Media:**\n```media');
+      for (const m of allMedia) {
+        const label = m.caption || m.text || 'Media';
+        sections.push(`[${label}](${m.href})`);
+      }
+      sections.push('```\n');
+    }
+  }
+  
+  return sections.join('\n');
+}
+
 // Intelligent content extraction to minimize tokens while preserving key information
 function extractKeyContent(content, originalQuery) {
   if (!content || typeof content !== 'string') return '';
@@ -356,17 +439,42 @@ async function callFunction(name, args = {}, context = {}) {
               result.intelligentlyExtracted = true;
               if (r.truncated) result.truncated = r.truncated;
               
-              // Extract images and links from raw HTML if available
+              // HARD LIMIT: Ensure content never exceeds 5000 chars per result
+              // This prevents massive tool responses that exceed model context
+              const MAX_SEARCH_RESULT_CHARS = 5000;
+              if (result.content && result.content.length > MAX_SEARCH_RESULT_CHARS) {
+                console.log(`✂️ Truncating search result content: ${result.content.length} → ${MAX_SEARCH_RESULT_CHARS} chars`);
+                result.content = result.content.substring(0, MAX_SEARCH_RESULT_CHARS) + '\n\n[Content truncated to fit model limits]';
+                result.truncated = true;
+              }
+              
+              // Extract images and links from raw HTML if available with relevance scoring
               if (r.rawHtml) {
                 try {
-                  const parser = new SimpleHTMLParser(r.rawHtml);
-                  const images = parser.extractImages();
-                  const links = parser.extractLinks();
+                  const parser = new SimpleHTMLParser(r.rawHtml, query);
                   
+                  // Extract top 3 most relevant images with captions
+                  const images = parser.extractImages(3);
+                  
+                  // Extract all links with relevance scores
+                  const allLinks = parser.extractLinks();
+                  
+                  // Categorize links by media type
+                  const categorized = parser.categorizeLinks(allLinks);
+                  
+                  // Add to result with separate keys for each media type
                   if (images.length > 0) result.images = images;
-                  if (links.length > 0) result.links = links;
+                  if (categorized.youtube.length > 0) result.youtube = categorized.youtube;
+                  if (categorized.video.length > 0 || categorized.audio.length > 0 || categorized.media.length > 0) {
+                    result.media = [
+                      ...categorized.video,
+                      ...categorized.audio,
+                      ...categorized.media
+                    ];
+                  }
+                  if (categorized.regular.length > 0) result.links = categorized.regular;
                   
-                  console.log(`🖼️ Extracted ${images.length} images and ${links.length} links from ${r.url}`);
+                  console.log(`🖼️ Extracted ${images.length} images, ${categorized.youtube.length} YouTube, ${result.media?.length || 0} media, ${categorized.regular.length} links from ${r.url}`);
                 } catch (parseError) {
                   console.error(`Failed to parse HTML for ${r.url}:`, parseError.message);
                 }
@@ -766,16 +874,28 @@ Brief answer with URLs:`;
       };
       
       const responseStr = JSON.stringify(response);
+      const responseCharCount = responseStr.length;
       const estimatedTokens = estimateTokens(responseStr);
       
-      // Token limiting with more reasonable thresholds
-      if (estimatedTokens > 4000) {
-        const truncatedResults = allResults.slice(0, Math.ceil(allResults.length / 2)).map(r => ({
+      // CRITICAL: Hard character limit to prevent context overflow
+      // Each search result should be ~5K chars max, but JSON structure adds overhead
+      const MAX_TOTAL_RESPONSE_CHARS = 50000; // ~12.5K tokens with JSON overhead
+      
+      if (responseCharCount > MAX_TOTAL_RESPONSE_CHARS || estimatedTokens > 4000) {
+        console.warn(`⚠️ Response too large (${responseCharCount} chars, ${estimatedTokens} tokens), aggressively truncating`);
+        
+        // More aggressive truncation: fewer results, shorter content
+        const maxResults = Math.min(3, allResults.length); // Max 3 results
+        const truncatedResults = allResults.slice(0, maxResults).map(r => ({
           ...r,
-          description: (r.description || '').substring(0, 200),
-          content: r.content ? r.content.substring(0, 500) : r.content
+          description: (r.description || '').substring(0, 150),
+          content: r.content ? r.content.substring(0, 300) : r.content, // Reduced from 500 to 300
+          images: r.images ? r.images.slice(0, 1) : undefined, // Max 1 image
+          links: r.links ? r.links.slice(0, 5) : undefined, // Max 5 links
+          youtube: r.youtube ? r.youtube.slice(0, 2) : undefined, // Max 2 YouTube
+          media: undefined // Drop media to save space
         }));
-        console.warn(`⚠️ Response too large (${estimatedTokens} tokens), truncating results`);
+        
         return JSON.stringify({ 
           ...response, 
           results: truncatedResults, 
@@ -783,6 +903,7 @@ Brief answer with URLs:`;
           summary: summary ? (summary.length > 200 ? summary.substring(0, 200) + '...' : summary) : summary,
           truncated: true,
           original_count: allResults.length,
+          original_chars: responseCharCount,
           original_tokens: estimatedTokens
         });
       }
@@ -854,33 +975,80 @@ Brief answer with URLs:`;
         
         console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`);
         
-        // Extract images and links from raw HTML before processing
+        // Extract images and links from raw HTML before processing with relevance
         let images = [];
+        let youtube = [];
+        let media = [];
         let links = [];
         
         if (scrapeService === 'duckduckgo') {
           // For DuckDuckGo, we have access to raw HTML
           const searcher = new DuckDuckGoSearcher();
           const rawHtml = await searcher.fetchUrl(url, timeout * 1000);
-          const parser = new SimpleHTMLParser(rawHtml);
           
-          images = parser.extractImages();
-          links = parser.extractLinks();
+          // Use URL as query context for relevance (extract domain/path keywords)
+          const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
+          const parser = new SimpleHTMLParser(rawHtml, urlQuery);
           
-          console.log(`🖼️ Extracted ${images.length} images and ${links.length} links from ${url}`);
+          // Extract top 3 most relevant images
+          images = parser.extractImages(3);
+          
+          // Extract and categorize links
+          const allLinks = parser.extractLinks();
+          const categorized = parser.categorizeLinks(allLinks);
+          
+          youtube = categorized.youtube;
+          media = [
+            ...categorized.video,
+            ...categorized.audio,
+            ...categorized.media
+          ];
+          links = categorized.regular;
+          
+          console.log(`🖼️ Extracted ${images.length} images, ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
         }
         // Note: Tavily doesn't provide raw HTML, so we can't extract images/links when using Tavily
+        
+        // Token-aware truncation to prevent context overflow
+        // Limit scraped content to ~20k tokens (~80k chars) to leave room for conversation history
+        const MAX_SCRAPE_CHARS = 80000;
+        const MAX_SCRAPE_TOKENS = 20000;
+        let truncatedContent = content;
+        let wasTruncated = false;
+        
+        if (content.length > MAX_SCRAPE_CHARS) {
+          wasTruncated = true;
+          const estimatedTokens = Math.ceil(content.length / 4);
+          
+          // Truncate at sentence boundaries when possible
+          truncatedContent = content.substring(0, MAX_SCRAPE_CHARS);
+          const lastPeriod = truncatedContent.lastIndexOf('.');
+          const lastNewline = truncatedContent.lastIndexOf('\n');
+          const breakPoint = Math.max(lastPeriod, lastNewline);
+          
+          if (breakPoint > MAX_SCRAPE_CHARS * 0.8) {
+            // Use sentence/paragraph boundary if within 80% of limit
+            truncatedContent = truncatedContent.substring(0, breakPoint + 1);
+          }
+          
+          truncatedContent += `\n\n[Content truncated: ${content.length} → ${truncatedContent.length} chars (~${estimatedTokens} → ~${Math.ceil(truncatedContent.length / 4)} tokens) to fit model limits. Original had ${originalLength} chars before markdown conversion.]`;
+          
+          console.log(`✂️ Truncated scrape content: ${content.length} → ${truncatedContent.length} chars (~${estimatedTokens} → ~${Math.ceil(truncatedContent.length / 4)} tokens)`);
+        }
         
         const response = {
           scrapeService: scrapeService, // Indicate which service was used: 'tavily' or 'duckduckgo'
           url,
-          content,
+          content: truncatedContent,
           format,
           originalLength,
           extractedLength,
           compressionRatio,
-          images: images.length > 0 ? images : undefined, // Include images if found
-          links: links.length > 0 ? links : undefined      // Include links if found
+          wasTruncated: wasTruncated || undefined, // Only include if truncated
+          images: images.length > 0 ? images : undefined, // Include top 3 relevant images
+          youtube: youtube.length > 0 ? youtube : undefined, // Include YouTube links
+          media: media.length > 0 ? media : undefined, // Include other media links
+          links: links.length > 0 ? links : undefined      // Include regular links
         };
         
         if (warning) {
@@ -1235,5 +1403,6 @@ Requirements: Cite URLs, prioritize facts from multiple sources, 2-3 sentences m
 
 module.exports = {
   toolFunctions,
-  callFunction
+  callFunction,
+  compressSearchResultsForLLM
 };

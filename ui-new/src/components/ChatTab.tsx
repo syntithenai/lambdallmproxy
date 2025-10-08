@@ -222,20 +222,22 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // Load last active chat on mount
   useEffect(() => {
     if (!messagesLoaded) {
-      try {
-        const lastChatId = localStorage.getItem('last_active_chat_id');
-        if (lastChatId) {
-          const loadedMessages = loadChatFromHistory(lastChatId);
-          if (loadedMessages && loadedMessages.length > 0) {
-            console.log('📂 Restored chat session:', lastChatId, 'with', loadedMessages.length, 'messages');
-            setMessages(loadedMessages);
-            setCurrentChatId(lastChatId);
+      (async () => {
+        try {
+          const lastChatId = localStorage.getItem('last_active_chat_id');
+          if (lastChatId) {
+            const loadedMessages = await loadChatFromHistory(lastChatId);
+            if (loadedMessages && loadedMessages.length > 0) {
+              console.log('📂 Restored chat session:', lastChatId, 'with', loadedMessages.length, 'messages');
+              setMessages(loadedMessages);
+              setCurrentChatId(lastChatId);
+            }
           }
+        } catch (error) {
+          console.error('Error loading last chat:', error);
         }
-      } catch (error) {
-        console.error('Error loading last chat:', error);
-      }
-      setMessagesLoaded(true);
+        setMessagesLoaded(true);
+      })();
     }
   }, [messagesLoaded]);
 
@@ -244,19 +246,24 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     if (messages.length > 0 && messagesLoaded) {
       // If we don't have a chat ID yet, this is a new session
       // Generate ID and save. Otherwise, update existing chat.
-      const id = saveChatToHistory(messages, currentChatId || undefined);
-      if (!currentChatId) {
-        setCurrentChatId(id);
-      }
-      // Save as last active chat
-      localStorage.setItem('last_active_chat_id', id);
+      (async () => {
+        const id = await saveChatToHistory(messages, currentChatId || undefined);
+        if (!currentChatId) {
+          setCurrentChatId(id);
+        }
+        // Save as last active chat
+        localStorage.setItem('last_active_chat_id', id);
+      })();
     }
   }, [messages, currentChatId, messagesLoaded]);
 
   // Load chat history list when dialog opens
   useEffect(() => {
     if (showLoadDialog) {
-      setChatHistory(getAllChatHistory());
+      (async () => {
+        const history = await getAllChatHistory();
+        setChatHistory(history);
+      })();
     }
   }, [showLoadDialog]);
 
@@ -579,9 +586,36 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         return cleanMsg;
       });
       
+      // Filter out tool messages from previous query cycles (keep only current cycle)
+      // Find the last user message index (not including the new userMessage being sent)
+      let lastUserIndex = -1;
+      for (let i = cleanMessages.length - 1; i >= 0; i--) {
+        if (cleanMessages[i].role === 'user') {
+          lastUserIndex = i;
+          break;
+        }
+      }
+      
+      // Filter: keep user/assistant messages before last user (filter old tools), keep everything at/after last user
+      const filteredMessages = lastUserIndex === -1 
+        ? cleanMessages // No previous user messages, keep all
+        : cleanMessages.filter((msg, i) => {
+            if (i < lastUserIndex) {
+              // BEFORE last user: keep user/assistant, filter old tool messages
+              return msg.role !== 'tool';
+            }
+            // AT or AFTER last user: keep everything (current cycle)
+            return true;
+          });
+      
+      const toolMessagesFiltered = cleanMessages.length - filteredMessages.length;
+      if (toolMessagesFiltered > 0) {
+        console.log(`🧹 UI filtered ${toolMessagesFiltered} tool messages from previous cycles`);
+      }
+      
       const messagesWithSystem = [
         { role: 'system' as const, content: finalSystemPrompt },
-        ...cleanMessages,
+        ...filteredMessages,
         userMessage
       ];
       
@@ -1091,8 +1125,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     }
   };
 
-  const handleLoadChat = (entry: ChatHistoryEntry) => {
-    const loadedMessages = loadChatFromHistory(entry.id);
+  const handleLoadChat = async (entry: ChatHistoryEntry) => {
+    const loadedMessages = await loadChatFromHistory(entry.id);
     if (loadedMessages) {
       setMessages(loadedMessages);
       setCurrentChatId(entry.id);
@@ -1104,14 +1138,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     }
   };
 
-  const handleDeleteChat = (chatId: string) => {
-    deleteChatFromHistory(chatId);
-    setChatHistory(getAllChatHistory());
+  const handleDeleteChat = async (chatId: string) => {
+    await deleteChatFromHistory(chatId);
+    const history = await getAllChatHistory();
+    setChatHistory(history);
     showSuccess('Chat deleted');
   };
 
-  const handleClearAllHistory = () => {
-    clearAllChatHistory();
+  const handleClearAllHistory = async () => {
+    await clearAllChatHistory();
     setChatHistory([]);
     setShowClearHistoryConfirm(false);
     setShowLoadDialog(false);
@@ -1301,6 +1336,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     ? 'bg-blue-500 text-white'
                     : msg.role === 'tool'
                     ? 'bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700'
+                    : msg.content && msg.content.startsWith('❌ Error:')
+                    ? 'bg-pink-100 dark:bg-pink-900/30 border-2 border-pink-400 dark:border-pink-600 text-gray-900 dark:text-gray-100'
                     : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                 }`}
               >

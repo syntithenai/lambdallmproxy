@@ -2,13 +2,108 @@
  * Simple HTML parser for extracting links and text
  */
 class SimpleHTMLParser {
-    constructor(html) {
+    constructor(html, query = '') {
         this.html = html;
+        this.query = query.toLowerCase();
+        this.queryWords = query ? query.toLowerCase().split(/\s+/).filter(w => w.length > 2) : [];
     }
 
     /**
-     * Extract all links from HTML
-     * @returns {Array} Array of {href, text, context} objects
+     * Calculate relevance score for text based on query
+     * @param {string} text - Text to score
+     * @returns {number} Relevance score (0-1)
+     */
+    calculateRelevance(text) {
+        if (!text || !this.queryWords.length) return 0;
+        
+        const lowerText = text.toLowerCase();
+        let score = 0;
+        
+        // Count query word matches
+        for (const word of this.queryWords) {
+            const matches = (lowerText.match(new RegExp(word, 'g')) || []).length;
+            score += matches * 0.3;
+        }
+        
+        // Bonus for title/heading context
+        if (text.length < 100 && text.match(/^[A-Z]/)) {
+            score += 0.2;
+        }
+        
+        // Normalize to 0-1
+        return Math.min(score, 1);
+    }
+
+    /**
+     * Extract media URL type
+     * @param {string} url - URL to check
+     * @returns {string|null} Media type: 'youtube', 'video', 'audio', or null
+     */
+    getMediaType(url) {
+        if (!url) return null;
+        
+        const lower = url.toLowerCase();
+        
+        // YouTube detection
+        if (lower.includes('youtube.com') || lower.includes('youtu.be')) {
+            return 'youtube';
+        }
+        
+        // Video file extensions
+        if (lower.match(/\.(mp4|webm|ogg|mov|avi|mkv|flv|wmv|m4v)(\?|$)/i)) {
+            return 'video';
+        }
+        
+        // Audio file extensions
+        if (lower.match(/\.(mp3|wav|ogg|m4a|aac|flac|wma|opus)(\?|$)/i)) {
+            return 'audio';
+        }
+        
+        // Streaming services
+        if (lower.match(/vimeo\.com|dailymotion\.com|twitch\.tv|soundcloud\.com|spotify\.com/)) {
+            return 'media';
+        }
+        
+        return null;
+    }
+
+    /**
+     * Extract caption/alt text for image from surrounding context
+     * @param {string} imgTag - Full img tag
+     * @param {number} position - Position in HTML
+     * @returns {string} Best caption found
+     */
+    extractImageCaption(imgTag, position) {
+        // Try alt text first
+        const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+        if (altMatch && altMatch[1].trim()) return altMatch[1].trim();
+        
+        // Try title attribute
+        const titleMatch = imgTag.match(/title=["']([^"']*)["']/i);
+        if (titleMatch && titleMatch[1].trim()) return titleMatch[1].trim();
+        
+        // Look for figcaption nearby
+        const contextStart = Math.max(0, position - 500);
+        const contextEnd = Math.min(this.html.length, position + 500);
+        const context = this.html.substring(contextStart, contextEnd);
+        
+        const captionMatch = context.match(/<figcaption[^>]*>(.*?)<\/figcaption>/is);
+        if (captionMatch) {
+            return this.stripHtml(captionMatch[1]).trim();
+        }
+        
+        // Look for nearby paragraph or span with caption-like class
+        const nearbyText = context.match(/<(?:p|span|div)[^>]*class="[^"]*caption[^"]*"[^>]*>(.*?)<\/(?:p|span|div)>/is);
+        if (nearbyText) {
+            return this.stripHtml(nearbyText[1]).trim();
+        }
+        
+        return '';
+    }
+
+    /**
+     * Extract all links from HTML with caption and relevance
+     * @returns {Array} Array of {href, text, caption, context, relevance} objects, sorted by relevance
      */
     extractLinks() {
         const links = [];
@@ -27,28 +122,47 @@ class SimpleHTMLParser {
                 const contextEnd = Math.min(this.html.length, linkStart + match[0].length + 200);
                 const context = this.stripHtml(this.html.substring(contextStart, contextEnd)).trim();
                 
+                // Check for caption in title attribute or aria-label
+                const linkTag = match[0];
+                const titleMatch = linkTag.match(/title=["']([^"']*)["']/i);
+                const ariaMatch = linkTag.match(/aria-label=["']([^"']*)["']/i);
+                const caption = (titleMatch && titleMatch[1]) || (ariaMatch && ariaMatch[1]) || '';
+                
+                // Calculate relevance
+                const combinedText = `${text} ${caption} ${context}`;
+                const relevance = this.calculateRelevance(combinedText);
+                
+                // Detect media type
+                const mediaType = this.getMediaType(href);
+                
                 links.push({
-                    href: href,
-                    text: text,
-                    context: context
+                    href,
+                    text,
+                    caption,
+                    context,
+                    relevance,
+                    mediaType
                 });
             }
         }
 
-        return links;
+        // Sort by relevance (descending)
+        return links.sort((a, b) => b.relevance - a.relevance);
     }
 
     /**
-     * Extract all images from HTML
-     * @returns {Array} Array of {src, alt, title, context} objects
+     * Extract all images from HTML with captions and relevance scoring
+     * @param {number} limit - Maximum number of images to return (default: 3)
+     * @returns {Array} Array of {src, alt, title, caption, context, relevance} objects, limited to most relevant
      */
-    extractImages() {
+    extractImages(limit = 3) {
         const images = [];
         const imgRegex = /<img[^>]*>/gi;
         let match;
 
         while ((match = imgRegex.exec(this.html)) !== null) {
             const imgTag = match[0];
+            const imgStart = match.index;
             
             // Extract src attribute
             const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
@@ -57,7 +171,7 @@ class SimpleHTMLParser {
             
             // Skip if src is empty, data URI, or tracking pixel
             if (!src || src.startsWith('data:') || src.includes('pixel') || src.includes('track')) continue;
-            if (src.match(/1x1|tracking|beacon|analytics/i)) continue;
+            if (src.match(/1x1|tracking|beacon|analytics|icon|logo|avatar|badge/i)) continue;
             
             // Extract alt attribute
             const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
@@ -67,21 +181,80 @@ class SimpleHTMLParser {
             const titleMatch = imgTag.match(/title=["']([^"']*)["']/i);
             const title = titleMatch ? titleMatch[1] : '';
             
+            // Extract comprehensive caption from surrounding context
+            const caption = this.extractImageCaption(imgTag, imgStart);
+            
             // Get context around the image
-            const imgStart = match.index;
             const contextStart = Math.max(0, imgStart - 200);
             const contextEnd = Math.min(this.html.length, imgStart + match[0].length + 200);
             const context = this.stripHtml(this.html.substring(contextStart, contextEnd)).trim();
             
+            // Calculate relevance score
+            const combinedText = `${alt} ${title} ${caption} ${context}`;
+            const relevance = this.calculateRelevance(combinedText);
+            
+            // Extract dimensions if available for quality scoring
+            const widthMatch = imgTag.match(/width=["']?(\d+)/i);
+            const heightMatch = imgTag.match(/height=["']?(\d+)/i);
+            const width = widthMatch ? parseInt(widthMatch[1]) : 0;
+            const height = heightMatch ? parseInt(heightMatch[1]) : 0;
+            
+            // Quality bonus for larger images (likely content images vs icons)
+            let qualityScore = relevance;
+            if (width > 300 || height > 300) {
+                qualityScore += 0.2;
+            }
+            if (width < 100 && height < 100) {
+                qualityScore -= 0.3; // Penalty for small images (likely icons)
+            }
+            
             images.push({
-                src: src,
+                src,
                 alt: alt || '',
                 title: title || '',
-                context: context
+                caption,
+                context,
+                relevance: Math.max(0, qualityScore),
+                width,
+                height
             });
         }
 
-        return images;
+        // Sort by relevance (descending) and return top N
+        return images
+            .sort((a, b) => b.relevance - a.relevance)
+            .slice(0, limit);
+    }
+    
+    /**
+     * Categorize extracted links by media type
+     * @param {Array} links - Array of link objects from extractLinks()
+     * @returns {Object} Object with youtube, audio, video, media, and regular arrays
+     */
+    categorizeLinks(links) {
+        const categorized = {
+            youtube: [],
+            video: [],
+            audio: [],
+            media: [],
+            regular: []
+        };
+        
+        for (const link of links) {
+            if (link.mediaType === 'youtube') {
+                categorized.youtube.push(link);
+            } else if (link.mediaType === 'video') {
+                categorized.video.push(link);
+            } else if (link.mediaType === 'audio') {
+                categorized.audio.push(link);
+            } else if (link.mediaType === 'media') {
+                categorized.media.push(link);
+            } else {
+                categorized.regular.push(link);
+            }
+        }
+        
+        return categorized;
     }
 
     /**

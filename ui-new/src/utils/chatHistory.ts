@@ -1,15 +1,40 @@
 /**
  * Chat history management utilities
- * Stores multiple chat sessions in localStorage
+ * Uses IndexedDB for large storage capacity (vs localStorage's 5-10MB limit)
  */
 
-const CHAT_HISTORY_KEY = 'chat_history';
+const DB_NAME = 'llmproxy_chat_history';
+const DB_VERSION = 1;
+const STORE_NAME = 'chats';
 
 export interface ChatHistoryEntry {
   id: string;
   timestamp: number;
   firstUserPrompt: string;
   messages: any[]; // Full message array including tool calls and results
+}
+
+/**
+ * Initialize IndexedDB
+ */
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      
+      // Create object store if it doesn't exist
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+        console.log('Created IndexedDB store for chat history');
+      }
+    };
+  });
 }
 
 /**
@@ -20,26 +45,45 @@ function generateChatId(): string {
 }
 
 /**
- * Get all chat history entries
+ * Get all chat history entries from IndexedDB
  */
-export function getAllChatHistory(): ChatHistoryEntry[] {
+export async function getAllChatHistory(): Promise<ChatHistoryEntry[]> {
   try {
-    const stored = localStorage.getItem(CHAT_HISTORY_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored);
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const index = store.index('timestamp');
+      
+      // Get all entries sorted by timestamp (descending)
+      const request = index.openCursor(null, 'prev');
+      const results: ChatHistoryEntry[] = [];
+      
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        if (cursor) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+      
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
-    console.error('Error loading chat history:', error);
+    console.error('Error loading chat history from IndexedDB:', error);
     return [];
   }
 }
 
 /**
- * Save current chat session to history
+ * Save current chat session to IndexedDB
  * Automatically creates a new entry or updates if an ID is provided
  */
-export function saveChatToHistory(messages: any[], chatId?: string): string {
+export async function saveChatToHistory(messages: any[], chatId?: string): Promise<string> {
   try {
-    const history = getAllChatHistory();
+    const db = await openDB();
     
     // Find first user message for the preview
     const firstUserMessage = messages.find(m => m.role === 'user');
@@ -47,63 +91,44 @@ export function saveChatToHistory(messages: any[], chatId?: string): string {
       ? (firstUserMessage.content || 'Empty message').substring(0, 100)
       : 'New chat';
     
-    if (chatId) {
-      // Update existing chat
-      const index = history.findIndex(h => h.id === chatId);
-      if (index !== -1) {
-        history[index] = {
-          id: chatId,
-          timestamp: Date.now(),
-          firstUserPrompt,
-          messages
-        };
-      } else {
-        // ID not found, create new entry
-        history.unshift({
-          id: chatId,
-          timestamp: Date.now(),
-          firstUserPrompt,
-          messages
-        });
-      }
-    } else {
-      // Check for duplicate recent chats (within last 5 seconds with same first prompt)
+    if (!chatId) {
+      // Check for recent duplicate (within last 5 seconds with same first prompt)
+      const recent = await getAllChatHistory();
       const now = Date.now();
-      const recentDuplicate = history.find(h => 
+      const recentDuplicate = recent.find(h => 
         h.firstUserPrompt === firstUserPrompt && 
         (now - h.timestamp) < 5000
       );
       
       if (recentDuplicate) {
-        // Update the existing recent chat instead of creating duplicate
-        const index = history.findIndex(h => h.id === recentDuplicate.id);
-        if (index !== -1) {
-          history[index] = {
-            id: recentDuplicate.id,
-            timestamp: now,
-            firstUserPrompt,
-            messages
-          };
-          return recentDuplicate.id;
-        }
+        chatId = recentDuplicate.id;
+      } else {
+        chatId = generateChatId();
       }
-      
-      // Create new chat entry
-      const newId = generateChatId();
-      history.unshift({
-        id: newId,
-        timestamp: Date.now(),
-        firstUserPrompt,
-        messages
-      });
-      chatId = newId;
     }
     
-    // Limit to 100 most recent chats
-    const limitedHistory = history.slice(0, 100);
+    const entry: ChatHistoryEntry = {
+      id: chatId,
+      timestamp: Date.now(),
+      firstUserPrompt,
+      messages
+    };
     
-    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(limitedHistory));
-    return chatId;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(entry);
+      
+      request.onsuccess = () => {
+        console.log(`Chat ${entry.id} saved to IndexedDB`);
+        resolve(entry.id);
+      };
+      
+      request.onerror = () => {
+        console.error('Error saving chat to IndexedDB:', request.error);
+        reject(request.error);
+      };
+    });
   } catch (error) {
     console.error('Error saving chat to history:', error);
     return chatId || generateChatId();
@@ -111,34 +136,71 @@ export function saveChatToHistory(messages: any[], chatId?: string): string {
 }
 
 /**
- * Load a specific chat from history
+ * Load a specific chat from IndexedDB
  */
-export function loadChatFromHistory(chatId: string): any[] | null {
-  const history = getAllChatHistory();
-  const entry = history.find(h => h.id === chatId);
-  return entry ? entry.messages : null;
-}
-
-/**
- * Delete a chat from history
- */
-export function deleteChatFromHistory(chatId: string): void {
+export async function loadChatFromHistory(chatId: string): Promise<any[] | null> {
   try {
-    const history = getAllChatHistory();
-    const filtered = history.filter(h => h.id !== chatId);
-    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(filtered));
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(chatId);
+      
+      request.onsuccess = () => {
+        const entry: ChatHistoryEntry | undefined = request.result;
+        resolve(entry ? entry.messages : null);
+      };
+      
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
-    console.error('Error deleting chat from history:', error);
+    console.error('Error loading chat from IndexedDB:', error);
+    return null;
   }
 }
 
 /**
- * Clear all chat history
+ * Delete a chat from IndexedDB
  */
-export function clearAllChatHistory(): void {
+export async function deleteChatFromHistory(chatId: string): Promise<void> {
   try {
-    localStorage.removeItem(CHAT_HISTORY_KEY);
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(chatId);
+      
+      request.onsuccess = () => {
+        console.log(`Chat ${chatId} deleted from IndexedDB`);
+        resolve();
+      };
+      
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
-    console.error('Error clearing chat history:', error);
+    console.error('Error deleting chat from IndexedDB:', error);
+  }
+}
+
+/**
+ * Clear all chat history from IndexedDB
+ */
+export async function clearAllChatHistory(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.clear();
+      
+      request.onsuccess = () => {
+        console.log('All chat history cleared from IndexedDB');
+        resolve();
+      };
+      
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error clearing chat history from IndexedDB:', error);
   }
 }

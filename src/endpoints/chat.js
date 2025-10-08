@@ -7,10 +7,100 @@
 const https = require('https');
 const http = require('http');
 const { verifyGoogleToken, getAllowedEmails } = require('../auth');
-const { callFunction } = require('../tools');
+const { callFunction, compressSearchResultsForLLM } = require('../tools');
 const { createSSEStreamAdapter } = require('../streaming/sse-writer');
 const { parseProviderModel } = require('../providers');
 const { createProgressEmitter } = require('../utils/progress-emitter');
+
+/**
+ * Format tool result for LLM consumption
+ * Compresses search results into minimal markdown format
+ * @param {string} toolName - Name of the tool
+ * @param {Object} parsedArgs - Parsed tool arguments
+ * @param {string} result - Tool result (JSON string)
+ * @returns {string} Formatted result
+ */
+function formatToolResultForLLM(toolName, parsedArgs, result) {
+    // Only compress search_web results
+    if (toolName !== 'search_web') {
+        return result;
+    }
+    
+    try {
+        const resultObj = JSON.parse(result);
+        
+        // Check if this is a search result with the expected structure
+        if (resultObj && resultObj.results && Array.isArray(resultObj.results)) {
+            const query = parsedArgs.query || 'Search Results';
+            const compressed = compressSearchResultsForLLM(query, resultObj.results);
+            console.log(`📦 Compressed search results: ${result.length} chars → ${compressed.length} chars (${Math.round((1 - compressed.length / result.length) * 100)}% reduction)`);
+            return compressed;
+        }
+    } catch (e) {
+        console.error('Failed to compress search results:', e.message);
+    }
+    
+    return result;
+}
+
+/**
+ * Filter messages to only include tool outputs from the current query cycle
+ * Removes ALL tool messages from previous query cycles (before the most recent user message)
+ * This prevents context bloat in multi-turn conversations while preserving assistant summaries
+ * @param {Array} messages - Array of message objects
+ * @param {boolean} isInitialRequest - True if this is the first iteration (messages from client)
+ * @returns {Array} Filtered messages
+ */
+function filterToolMessagesForCurrentCycle(messages, isInitialRequest = false) {
+    if (!messages || messages.length === 0) return messages;
+    
+    // On initial request from client, we need to filter old tool messages
+    // In subsequent iterations within the same request cycle, keep all messages (they're from current cycle)
+    if (!isInitialRequest) {
+        // Within the same request cycle - keep all messages
+        return messages;
+    }
+    
+    // Find the index of the most recent user message
+    let lastUserIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+            lastUserIndex = i;
+            break;
+        }
+    }
+    
+    // If no user message found, return all messages (shouldn't happen in normal flow)
+    if (lastUserIndex === -1) return messages;
+    
+    // Filter: Remove ALL tool messages from before the last user message
+    // Keep: user messages, assistant messages (summaries), but NOT tool results from previous cycles
+    const filtered = [];
+    let toolMessagesFiltered = 0;
+    
+    for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        
+        if (i < lastUserIndex) {
+            // BEFORE last user message: keep user and assistant, filter tool messages
+            if (msg.role !== 'tool') {
+                filtered.push(msg);
+            } else {
+                toolMessagesFiltered++;
+            }
+        } else {
+            // AT or AFTER last user message: keep everything (current cycle)
+            filtered.push(msg);
+        }
+    }
+    
+    if (toolMessagesFiltered > 0) {
+        console.log(`🧹 Filtered ${toolMessagesFiltered} tool messages from previous cycles (token optimization)`);
+        console.log(`   Kept ${filtered.length} messages (user + assistant summaries + current cycle)`);
+    }
+    
+    return filtered;
+}
 
 /**
  * Verify authentication token
@@ -203,18 +293,21 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
             // Execute tool
             const result = await callFunction(name, parsedArgs, toolContext);
             
+            // Format result for LLM (compress search results)
+            const formattedResult = formatToolResultForLLM(name, parsedArgs, result);
+            
             sseWriter.writeEvent('tool_call_result', {
                 id,
                 name,
-                content: result
+                content: result // Send full result to UI
             });
             
-            // Build tool result message
+            // Build tool result message with formatted (compressed) content for LLM
             results.push({
                 tool_call_id: id,
                 role: 'tool',
                 name: name,
-                content: result
+                content: formattedResult // Use compressed format for LLM
             });
             
         } catch (error) {
@@ -251,6 +344,7 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
  */
 async function handler(event, responseStream) {
     let sseWriter = null;
+    let lastRequestBody = null; // Track last request for error reporting (moved to function scope)
     
     try {
         // Initialize SSE stream with proper headers
@@ -370,11 +464,39 @@ async function handler(event, responseStream) {
             iterationCount++;
             
             // Build request
+            // Filter out tool messages from previous query cycles (token optimization)
+            // Only apply filtering on first iteration (initial messages from client)
+            // Subsequent iterations contain tool calls/results from current cycle
+            const isInitialRequest = (iterationCount === 1);
+            
+            // Debug: Log message roles before filtering
+            if (iterationCount === 1) {
+                const beforeRoles = currentMessages.map((m, i) => `${i}:${m.role}`).join(', ');
+                console.log(`🔍 Messages BEFORE filtering (iteration ${iterationCount}): ${beforeRoles}`);
+            }
+            
+            const filteredMessages = filterToolMessagesForCurrentCycle(currentMessages, isInitialRequest);
+            
+            // Debug: Log message roles after filtering
+            const afterRoles = filteredMessages.map((m, i) => `${i}:${m.role}`).join(', ');
+            console.log(`🔍 Messages AFTER filtering (iteration ${iterationCount}): ${afterRoles}`);
+            
             // Clean messages by removing UI-specific properties before sending to LLM
-            const cleanMessages = currentMessages.map(msg => {
+            const cleanMessages = filteredMessages.map(msg => {
                 const { isStreaming, ...cleanMsg } = msg;
                 return cleanMsg;
             });
+            
+            // Debug: Count tool messages being sent to LLM
+            const toolCount = cleanMessages.filter(m => m.role === 'tool').length;
+            if (toolCount > 0) {
+                console.log(`⚠️ WARNING: Sending ${toolCount} tool messages to LLM (iteration ${iterationCount})`);
+                cleanMessages.forEach((m, i) => {
+                    if (m.role === 'tool') {
+                        console.log(`   Tool message ${i}: name=${m.name}, tool_call_id=${m.tool_call_id}, content_length=${m.content?.length || 0}`);
+                    }
+                });
+            }
             
             const requestBody = {
                 model,
@@ -390,6 +512,14 @@ async function handler(event, responseStream) {
             if (tools && tools.length > 0) {
                 requestBody.tools = tools;
             }
+            
+            // Store request body for error reporting
+            lastRequestBody = {
+                provider,
+                model,
+                request: requestBody,
+                iteration: iterationCount
+            };
             
             // Emit LLM request event
             sseWriter.writeEvent('llm_request', {
@@ -415,10 +545,18 @@ async function handler(event, responseStream) {
             let assistantMessage = { role: 'assistant', content: '' };
             let currentToolCalls = [];
             let hasToolCalls = false;
+            let finishReason = null;
             
             await parseOpenAIStream(response, (chunk) => {
                 const delta = chunk.choices?.[0]?.delta;
-                if (!delta) return;
+                const choice = chunk.choices?.[0];
+                
+                if (!delta && !choice) return;
+                
+                // Capture finish_reason
+                if (choice?.finish_reason) {
+                    finishReason = choice.finish_reason;
+                }
                 
                 // Handle text content
                 if (delta.content) {
@@ -477,8 +615,25 @@ async function handler(event, responseStream) {
             eventData.timestamp = new Date().toISOString();
             sseWriter.writeEvent('llm_response', eventData);
             
-            // If tool calls detected, execute them
-            if (hasToolCalls && currentToolCalls.length > 0) {
+            // Check if we should execute tool calls or treat this as final response
+            // We should STOP executing tools if:
+            // 1. finish_reason is 'stop' (LLM explicitly done)
+            // 2. No tool calls present
+            // 3. LLM provided a substantive answer (>200 chars) even with tool_calls
+            //    (this catches cases where LLM gives answer but suggests optional follow-up)
+            // 4. We've already done 8+ iterations (safety limit for tool-heavy workflows)
+            const hasSubstantiveAnswer = assistantMessage.content.trim().length > 200; // Full answer threshold
+            const tooManyIterations = iterationCount >= 8; // Safety limit (increased from 5)
+            const shouldExecuteTools = hasToolCalls && 
+                                      currentToolCalls.length > 0 && 
+                                      finishReason !== 'stop' &&  // LLM wants to continue
+                                      !hasSubstantiveAnswer &&     // No complete answer yet
+                                      !tooManyIterations;          // Safety limit
+            
+            console.log(`🔍 Tool execution decision: iteration=${iterationCount}, hasToolCalls=${hasToolCalls}, finishReason=${finishReason}, contentLength=${assistantMessage.content.length}, hasSubstantiveAnswer=${hasSubstantiveAnswer}, tooManyIterations=${tooManyIterations}, shouldExecuteTools=${shouldExecuteTools}`);
+            
+            // If tool calls detected and should execute
+            if (shouldExecuteTools) {
                 // Filter out empty tool calls
                 const validToolCalls = currentToolCalls.filter(tc => tc.id && tc.function.name);
                 
@@ -506,8 +661,58 @@ async function handler(event, responseStream) {
                 }
             }
             
-            // No tool calls or max iterations reached - send final response
+            // If LLM provided substantive content, treat as final answer even if tool_calls present
+            if (hasSubstantiveAnswer && hasToolCalls) {
+                console.log(`✅ Treating response as final due to substantive answer (${assistantMessage.content.length} chars) - ignoring suggested tool_calls`);
+                // Remove tool_calls from message since we're not executing them
+                delete assistantMessage.tool_calls;
+            } else if (tooManyIterations && hasToolCalls) {
+                console.log(`⚠️ Safety limit reached after ${iterationCount} iterations - stopping tool execution`);
+                console.log(`   Tool calls present: ${currentToolCalls.map(tc => tc.function?.name).join(', ')}`);
+                console.log(`   Content length: ${assistantMessage.content.length} chars`);
+                
+                // If LLM provided ANY content, use it. Otherwise we need to fail gracefully
+                if (assistantMessage.content.trim().length === 0) {
+                    // Check if we have any tool results in the conversation to reference
+                    const hasToolResults = currentMessages.some(m => m.role === 'tool');
+                    if (hasToolResults) {
+                        assistantMessage.content = 'I apologize, but I wasn\'t able to synthesize a complete response. However, you can see the search results and tool outputs above.';
+                    } else {
+                        assistantMessage.content = 'I apologize, but I encountered difficulty processing your request. Please try rephrasing your question.';
+                    }
+                    console.log(`⚠️ No content from LLM after ${iterationCount} iterations - using fallback message`);
+                }
+                delete assistantMessage.tool_calls; // Don't execute more tools
+            } else if (finishReason === 'stop') {
+                console.log(`✅ Treating response as final due to finish_reason=stop`);
+            } else if (!hasToolCalls) {
+                console.log(`✅ Treating response as final - no tool calls`);
+            } else {
+                console.log(`✅ Treating response as final (iteration ${iterationCount}/${maxIterations})`);
+            }
+            
+            // SAFETY CHECK: If we somehow got here with completely empty content and no prior tool results
+            if (assistantMessage.content.trim().length === 0 && !hasToolCalls) {
+                console.log(`⚠️ WARNING: Empty response detected with no tool calls`);
+                console.log(`   Iteration: ${iterationCount}, finishReason: ${finishReason}`);
+                console.log(`   Total messages: ${currentMessages.length}`);
+                
+                // Check if there are any tool results in the conversation
+                const toolMessages = currentMessages.filter(m => m.role === 'tool');
+                if (toolMessages.length > 0) {
+                    assistantMessage.content = 'Based on the search results above, I found the information you requested.';
+                    console.log(`   Using fallback message (${toolMessages.length} tool results present)`);
+                } else {
+                    assistantMessage.content = 'I apologize, but I was unable to generate a response. Please try rephrasing your question or starting a new conversation.';
+                    console.log(`   Using error fallback (no tool results)`);
+                }
+            }
+            
+            // No tool calls or final response - send completion
             currentMessages.push(assistantMessage);
+            
+            console.log(`📤 Sending final response: ${assistantMessage.content.length} chars`);
+            console.log(`📤 Preview: ${assistantMessage.content.substring(0, 100)}...`);
             
             // Send message_complete with content only (no tool_calls)
             sseWriter.writeEvent('message_complete', {
@@ -515,6 +720,8 @@ async function handler(event, responseStream) {
                 content: assistantMessage.content
                 // Note: NOT including tool_calls - they're already sent via tool_call_* events
             });
+            
+            console.log(`✅ Completing request after ${iterationCount} iterations`);
             
             sseWriter.writeEvent('complete', {
                 status: 'success',
@@ -537,19 +744,32 @@ async function handler(event, responseStream) {
     } catch (error) {
         console.error('Chat endpoint error:', error);
         
+        // Build error event with request info if available
+        const errorEvent = {
+            error: error.message || 'Internal server error',
+            code: 'ERROR',
+            timestamp: new Date().toISOString()
+        };
+        
+        // Include the last request that triggered the error
+        if (lastRequestBody) {
+            errorEvent.llmRequest = lastRequestBody;
+            console.log('🚨 Error occurred during request:', JSON.stringify({
+                provider: lastRequestBody.provider,
+                model: lastRequestBody.model,
+                iteration: lastRequestBody.iteration,
+                messageCount: lastRequestBody.request.messages.length,
+                hasTools: !!lastRequestBody.request.tools
+            }, null, 2));
+        }
+        
         // Only use sseWriter if it was initialized
         if (sseWriter) {
-            sseWriter.writeEvent('error', {
-                error: error.message || 'Internal server error',
-                code: 'ERROR'
-            });
+            sseWriter.writeEvent('error', errorEvent);
         } else {
             // If sseWriter wasn't created, write error directly to stream
             try {
-                responseStream.write(`event: error\ndata: ${JSON.stringify({
-                    error: error.message || 'Internal server error',
-                    code: 'ERROR'
-                })}\n\n`);
+                responseStream.write(`event: error\ndata: ${JSON.stringify(errorEvent)}\n\n`);
             } catch (streamError) {
                 console.error('Failed to write error to stream:', streamError);
             }
