@@ -46,6 +46,7 @@ function formatToolResultForLLM(toolName, parsedArgs, result) {
 /**
  * Filter messages to only include tool outputs from the current query cycle
  * Removes ALL tool messages from previous query cycles (before the most recent user message)
+ * Also removes tool_calls from assistant messages and empty assistant messages before last user
  * This prevents context bloat in multi-turn conversations while preserving assistant summaries
  * @param {Array} messages - Array of message objects
  * @param {boolean} isInitialRequest - True if this is the first iteration (messages from client)
@@ -61,41 +62,53 @@ function filterToolMessagesForCurrentCycle(messages, isInitialRequest = false) {
         return messages;
     }
     
-    // Find the index of the most recent user message
-    let lastUserIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === 'user') {
-            lastUserIndex = i;
-            break;
-        }
-    }
+    // INITIAL REQUEST: Filter aggressively to ensure clean conversation history
+    // Even though UI should send clean messages, add defense-in-depth filtering
+    // Remove ALL tool messages and tool_calls from the history (they're from previous queries)
     
-    // If no user message found, return all messages (shouldn't happen in normal flow)
-    if (lastUserIndex === -1) return messages;
-    
-    // Filter: Remove ALL tool messages from before the last user message
-    // Keep: user messages, assistant messages (summaries), but NOT tool results from previous cycles
     const filtered = [];
     let toolMessagesFiltered = 0;
+    let toolCallsStripped = 0;
+    let emptyAssistantsFiltered = 0;
     
     for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
         
-        if (i < lastUserIndex) {
-            // BEFORE last user message: keep user and assistant, filter tool messages
-            if (msg.role !== 'tool') {
+        // Remove ALL tool messages (defense against buggy clients)
+        if (msg.role === 'tool') {
+            toolMessagesFiltered++;
+            continue;
+        }
+        
+        // For assistant messages: strip tool_calls and filter if empty
+        if (msg.role === 'assistant') {
+            const hasContent = msg.content && msg.content.trim().length > 0;
+            const hasToolCalls = msg.tool_calls && msg.tool_calls.length > 0;
+            
+            if (hasContent) {
+                // Keep assistant with content, but strip tool_calls
+                const cleanMsg = { ...msg };
+                if (hasToolCalls) {
+                    delete cleanMsg.tool_calls;
+                    toolCallsStripped++;
+                }
+                filtered.push(cleanMsg);
+            } else if (!hasToolCalls) {
+                // Keep empty assistant if it has no tool_calls
                 filtered.push(msg);
             } else {
-                toolMessagesFiltered++;
+                // Remove assistant with only tool_calls (no text response)
+                emptyAssistantsFiltered++;
             }
-        } else {
-            // AT or AFTER last user message: keep everything (current cycle)
-            filtered.push(msg);
+            continue;
         }
+        
+        // Keep user and system messages as-is
+        filtered.push(msg);
     }
     
-    if (toolMessagesFiltered > 0) {
-        console.log(`🧹 Filtered ${toolMessagesFiltered} tool messages from previous cycles (token optimization)`);
+    if (toolMessagesFiltered > 0 || toolCallsStripped > 0 || emptyAssistantsFiltered > 0) {
+        console.log(`🧹 Filtered from previous cycles: ${toolMessagesFiltered} tool messages, ${toolCallsStripped} tool_calls stripped, ${emptyAssistantsFiltered} empty assistants removed`);
         console.log(`   Kept ${filtered.length} messages (user + assistant summaries + current cycle)`);
     }
     

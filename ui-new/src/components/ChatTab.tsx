@@ -586,31 +586,48 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         return cleanMsg;
       });
       
-      // Filter out tool messages from previous query cycles (keep only current cycle)
-      // Find the last user message index (not including the new userMessage being sent)
-      let lastUserIndex = -1;
-      for (let i = cleanMessages.length - 1; i >= 0; i--) {
-        if (cleanMessages[i].role === 'user') {
-          lastUserIndex = i;
-          break;
+      // CRITICAL: We're about to send a NEW user message, so ALL existing messages are from previous cycles
+      // Filter aggressively: keep only user messages and assistant TEXT responses (no tools, no tool_calls)
+      // This ensures clean conversation history without any tool execution artifacts
+      
+      let toolMessagesFiltered = 0;
+      let toolCallsStripped = 0;
+      let emptyAssistantsFiltered = 0;
+      
+      const filteredMessages = cleanMessages.map(msg => {
+        // Remove ALL tool messages (they're from previous cycles)
+        if (msg.role === 'tool') {
+          toolMessagesFiltered++;
+          return null;
         }
-      }
-      
-      // Filter: keep user/assistant messages before last user (filter old tools), keep everything at/after last user
-      const filteredMessages = lastUserIndex === -1 
-        ? cleanMessages // No previous user messages, keep all
-        : cleanMessages.filter((msg, i) => {
-            if (i < lastUserIndex) {
-              // BEFORE last user: keep user/assistant, filter old tool messages
-              return msg.role !== 'tool';
+        
+        // For assistant messages: strip tool_calls and filter if empty
+        if (msg.role === 'assistant') {
+          const hasContent = msg.content && msg.content.trim().length > 0;
+          const hasToolCalls = msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+          
+          if (hasContent) {
+            // Keep assistant with content, but strip tool_calls
+            if (hasToolCalls) {
+              toolCallsStripped++;
+              const { tool_calls, ...cleanMsg } = msg;
+              return cleanMsg;
             }
-            // AT or AFTER last user: keep everything (current cycle)
-            return true;
-          });
+            return msg;
+          } else {
+            // Remove empty assistant messages (they're placeholders from previous cycles)
+            emptyAssistantsFiltered++;
+            return null;
+          }
+        }
+        
+        // Keep user and system messages as-is
+        return msg;
+      }).filter(msg => msg !== null);
       
-      const toolMessagesFiltered = cleanMessages.length - filteredMessages.length;
-      if (toolMessagesFiltered > 0) {
-        console.log(`🧹 UI filtered ${toolMessagesFiltered} tool messages from previous cycles`);
+      if (toolMessagesFiltered > 0 || toolCallsStripped > 0 || emptyAssistantsFiltered > 0) {
+        console.log(`🧹 UI filtered: ${toolMessagesFiltered} tool messages, ${toolCallsStripped} tool_calls stripped, ${emptyAssistantsFiltered} empty assistants removed`);
+        console.log(`   Sending ${filteredMessages.length} clean messages + new user message to Lambda`);
       }
       
       const messagesWithSystem = [
@@ -999,35 +1016,46 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   const lastMessage = newMessages[newMessages.length - 1];
                   const hasToolMessageAfterLastAssistant = lastMessage?.role === 'tool';
                   
-                  // Find the last assistant message (but only if no tools after it)
+                  // Find the last assistant message (but only if no tools after it AND it's still active)
                   let foundAssistant = false;
                   if (!hasToolMessageAfterLastAssistant) {
                     for (let i = newMessages.length - 1; i >= 0; i--) {
                       if (newMessages[i].role === 'assistant') {
-                        console.log('🔵 Attaching llmApiCalls to existing assistant message at index:', i);
-                        newMessages[i] = {
-                          ...newMessages[i],
-                          llmApiCalls: [
-                            ...(newMessages[i].llmApiCalls || []),
-                            {
-                              phase: data.phase,
-                              provider: data.provider,
-                              model: data.model,
-                              request: data.request,
-                              timestamp: data.timestamp
-                            }
-                          ]
-                        };
-                        foundAssistant = true;
+                        // CRITICAL: Only attach to assistant if it's empty or currently streaming
+                        // If it has content and isn't streaming, it's from a previous query
+                        const isActiveAssistant = 
+                          newMessages[i].isStreaming || 
+                          !newMessages[i].content || 
+                          newMessages[i].content.trim().length === 0;
+                        
+                        if (isActiveAssistant) {
+                          console.log('🔵 Attaching llmApiCalls to active assistant at index:', i);
+                          newMessages[i] = {
+                            ...newMessages[i],
+                            llmApiCalls: [
+                              ...(newMessages[i].llmApiCalls || []),
+                              {
+                                phase: data.phase,
+                                provider: data.provider,
+                                model: data.model,
+                                request: data.request,
+                                timestamp: data.timestamp
+                              }
+                            ]
+                          };
+                          foundAssistant = true;
+                        } else {
+                          console.log('🔵 Skipping completed assistant at index:', i, '(from previous query)');
+                        }
                         break;
                       }
                     }
                   }
                   
-                  // If no assistant message found OR tools executed, create placeholder for new response
+                  // If no active assistant found OR tools executed, create placeholder for new response
                   if (!foundAssistant) {
                     console.log('🔵 Creating new placeholder for llm_request, reason:', 
-                      hasToolMessageAfterLastAssistant ? 'tools executed' : 'no assistant message');
+                      hasToolMessageAfterLastAssistant ? 'tools executed' : 'no active assistant');
                     newMessages.push({
                       role: 'assistant',
                       content: '',
