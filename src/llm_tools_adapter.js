@@ -106,7 +106,11 @@ function normalizeFromChat(data) {
   for (const tc of toolCalls) {
     out.push({ id: tc.id || null, call_id: tc.id || null, type: 'function_call', name: tc.function?.name, arguments: tc.function?.arguments || '{}' });
   }
-  return { output: out, text: choice?.message?.content || '' };
+  return { 
+    output: out, 
+    text: choice?.message?.content || '',
+    rawResponse: data  // Include the full raw response with all metadata
+  };
 }
 
 async function llmResponsesWithTools({ model, input, tools, options }) {

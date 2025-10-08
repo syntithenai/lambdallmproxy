@@ -55,6 +55,15 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
     console.log(`🔧 ENTERED runToolLoop - model: ${model}, apiKey: ${!!apiKey}, userQuery length: ${userQuery?.length || 0}`);
     console.log(`🔧 runToolLoop userQuery:`, userQuery);
     console.log(`🔧 runToolLoop systemPrompt:`, systemPrompt);
+    console.log(`🔧 STREAM CHECK - stream exists:`, !!stream, ', stream.writeEvent exists:', !!stream?.writeEvent);
+    
+    // TEST: Emit a test event immediately to verify stream works
+    if (stream?.writeEvent) {
+        stream.writeEvent('debug', { message: 'runToolLoop started', timestamp: new Date().toISOString() });
+        console.log('✅ TEST: Successfully emitted debug event');
+    } else {
+        console.error('❌ TEST: stream or stream.writeEvent is undefined!');
+    }
     
     // Initialize tracking variables
     let allToolCallCycles = [];
@@ -125,23 +134,46 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             }
         };
         
+        // TEST: Emit a search_progress event first to verify stream works
+        console.log('🔧 TEST: Emitting test search_progress event');
+        if (stream?.writeEvent) {
+            stream.writeEvent('search_progress', {
+                phase: 'test',
+                message: 'Testing if events work before planning',
+                timestamp: new Date().toISOString()
+            });
+            console.log('✅ TEST: search_progress event emitted successfully');
+        }
+        
         // Emit LLM request event
-        stream?.writeEvent?.('llm_request', {
-            phase: 'planning',
-            model,
-            request: planningRequestBody,
-            timestamp: new Date().toISOString()
-        });
+        console.log('🔧 About to emit llm_request event - stream exists:', !!stream, 'writeEvent exists:', !!stream?.writeEvent);
+        if (stream?.writeEvent) {
+            stream.writeEvent('llm_request', {
+                phase: 'planning',
+                model,
+                request: planningRequestBody,
+                timestamp: new Date().toISOString()
+            });
+            console.log('✅ llm_request event emitted for planning phase');
+        } else {
+            console.error('❌ Cannot emit llm_request - stream or writeEvent is undefined');
+        }
         
         let planningResponse;
         try {
             planningResponse = await llmResponsesWithTools(planningRequestBody);
             
             // Emit LLM response event
-            stream?.writeEvent?.('llm_response', {
-                phase: 'planning',
-                response: planningResponse
-            });
+            console.log('🔧 About to emit llm_response event - stream exists:', !!stream, 'writeEvent exists:', !!stream?.writeEvent);
+            if (stream?.writeEvent) {
+                stream.writeEvent('llm_response', {
+                    phase: 'planning',
+                    response: planningResponse
+                });
+                console.log('✅ llm_response event emitted for planning phase');
+            } else {
+                console.error('❌ Cannot emit llm_response - stream or writeEvent is undefined');
+            }
 
             console.log('🔍 Planning step completed');
         } catch (e) {
@@ -245,12 +277,12 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             output = response.output;
             text = response.text;
             
-            // Emit LLM response event
+            // Emit LLM response event with full response metadata
             stream?.writeEvent?.('llm_response', {
                 phase: 'tool_iteration',
                 iteration: iter + 1,
                 model,
-                response: { output, text },
+                response: response.rawResponse || { output, text },
                 timestamp: new Date().toISOString()
             });
             
@@ -460,30 +492,43 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         console.log('🔄 Starting final synthesis step...');
         
         // Build context from full tool results, preferring LLM-generated summaries
-        const allInformation = fullToolResults
+        let allInformation = fullToolResults
             .map((toolResult, index) => {
                 const output = toolResult.parsedOutput;
                 const toolName = toolResult.name;
                 
                 // For search_web: prefer summary > individual_summaries > descriptions > content
                 if (toolName === 'search_web' && typeof output === 'object') {
-                    // If we have an LLM-generated summary, use it
+                    const searchQuery = output.query || 'unknown';
+                    
+                    // If we have an LLM-generated synthesis summary, use it (most concise)
                     if (output.summary) {
-                        return `Source ${index + 1} (Search: "${output.query || 'unknown'}"): ${output.summary}`;
+                        return `Search: "${searchQuery}"\nFindings: ${output.summary}`;
                     }
-                    // If we have individual page summaries, combine them
+                    
+                    // If we have individual page summaries, format them with full context
                     if (output.individual_summaries && Array.isArray(output.individual_summaries)) {
-                        const combinedSummaries = output.individual_summaries
-                            .map((s, i) => `[${i + 1}] ${s}`)
-                            .join(' ');
-                        return `Source ${index + 1} (Search: "${output.query || 'unknown'}"): ${combinedSummaries}`;
+                        const formattedSummaries = output.individual_summaries
+                            .map((pageSum, i) => {
+                                // Handle both object format {url, title, summary} and string format
+                                if (typeof pageSum === 'object' && pageSum.summary) {
+                                    return `  [${i + 1}] ${pageSum.title || pageSum.url}: ${pageSum.summary}`;
+                                } else if (typeof pageSum === 'string') {
+                                    return `  [${i + 1}] ${pageSum}`;
+                                }
+                                return null;
+                            })
+                            .filter(Boolean)
+                            .join('\n');
+                        return `Search: "${searchQuery}"\nRelevant findings:\n${formattedSummaries}`;
                     }
+                    
                     // Fall back to descriptions from search results
                     if (output.results && Array.isArray(output.results)) {
                         const descriptions = output.results
-                            .map((r, i) => `[${i + 1}] ${r.title}: ${r.description || ''}`)
-                            .join(' ');
-                        return `Source ${index + 1} (Search: "${output.query || 'unknown'}"): ${descriptions}`;
+                            .map((r, i) => `  [${i + 1}] ${r.title}: ${r.description || 'No description'}`)
+                            .join('\n');
+                        return `Search: "${searchQuery}"\nResults:\n${descriptions}`;
                     }
                 }
                 
@@ -509,6 +554,75 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
                 return `Source ${index + 1} (${toolName}): ${stringOutput}`;
             })
             .join('\n\n');
+        
+        // CRITICAL: Model-aware token budget management
+        // Different models have different context windows and TPM limits
+        const modelName = model.replace(/^(openai:|groq:)/, '');
+        
+        // Detect low-TPM models that need ultra-aggressive optimization
+        const isLowTPMModel = modelName.includes('llama-4-scout') || 
+                              modelName.includes('llama-4-maverick');
+        
+        // Define per-model token budgets (conservative estimates accounting for TPM limits)
+        // CRITICAL: TPM = cumulative tokens across ALL calls in 60 seconds, not per-request
+        // Low-TPM models need ULTRA-AGGRESSIVE limits: 30k TPM total ÷ 3 calls = ~10k per call MAX
+        // But we also need buffer for: initial query + conversation history + response generation
+        // Therefore: Limit information context to just 1500 tokens (~6k chars) for low-TPM models
+        const MODEL_TOKEN_BUDGETS = {
+            // Groq models with TPM limits
+            'meta-llama/llama-4-scout-17b-16e-instruct': 1500,  // 30k TPM ÷ 3 calls = 10k per call, use 1.5k for info
+            'meta-llama/llama-4-maverick-17b-128e-instruct': 1500, // Must leave room for query + history + response
+            'llama-3.1-8b-instant': 20000, // 120k TPM, can use more
+            'llama-3.3-70b-versatile': 20000, // 64k TPM, higher capacity
+            'mixtral-8x7b-32768': 20000, // 60k TPM
+            // OpenAI models (higher limits)
+            'gpt-4o': 40000,
+            'gpt-4o-mini': 40000,
+            'gpt-4': 40000,
+            'gpt-3.5-turbo': 30000,
+            // Default for unknown models
+            'default': 15000
+        };
+        
+        // Get token budget for this model
+        const maxInfoTokens = MODEL_TOKEN_BUDGETS[modelName] || MODEL_TOKEN_BUDGETS['default'];
+        const MAX_INFO_CHARS = maxInfoTokens * 4; // ~4 chars per token
+        
+        if (isLowTPMModel) {
+            console.warn(`⚠️ LOW-TPM MODEL DETECTED: ${modelName}`);
+            console.warn(`⚠️ Using ultra-aggressive optimization: ${maxInfoTokens} tokens (~${MAX_INFO_CHARS} chars)`);
+            console.warn(`⚠️ TPM accounting: 30k limit ÷ 3 calls = 10k/call, leaving room for query + history`);
+        }
+        
+        console.log(`📊 Token budget for ${modelName}: ${maxInfoTokens} tokens (~${MAX_INFO_CHARS} chars)`);
+        
+        // Calculate current size
+        const currentTokens = Math.ceil(allInformation.length / 4);
+        console.log(`📊 Current information size: ${allInformation.length} chars (~${currentTokens} tokens)`);
+        
+        if (allInformation.length > MAX_INFO_CHARS) {
+            console.warn(`⚠️ Information context too large for model ${modelName}`);
+            console.warn(`   Current: ${allInformation.length} chars (~${currentTokens} tokens)`);
+            console.warn(`   Limit: ${MAX_INFO_CHARS} chars (~${maxInfoTokens} tokens)`);
+            console.warn(`   Truncating to fit model's token budget...`);
+            
+            // Smart truncation: Try to keep complete sources rather than cutting mid-sentence
+            const sources = allInformation.split('\n\n');
+            let truncated = '';
+            let charCount = 0;
+            
+            for (const source of sources) {
+                if (charCount + source.length + 2 <= MAX_INFO_CHARS - 200) { // Leave 200 chars for truncation notice
+                    truncated += source + '\n\n';
+                    charCount += source.length + 2;
+                } else {
+                    break;
+                }
+            }
+            
+            allInformation = truncated + `\n[...Additional sources truncated to fit model token limit of ${maxInfoTokens} tokens. Analysis based on ${sources.length} total sources, ${truncated.split('\n\n').length - 1} included above.]`;
+            console.log(`✅ Truncated to ${allInformation.length} chars (~${Math.ceil(allInformation.length / 4)} tokens)`);
+        }
 
         // Get current date and time for environmental context
         const now = new Date();
@@ -516,12 +630,16 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
         
         // Use the comprehensive final template from environment variables
-        const finalTemplate = process.env.FINAL_TEMPLATE || `Q: {{ORIGINAL_QUERY}}
-Data: {{ALL_INFORMATION}}
-Answer with URLs:`;
+        // Enhanced template that emphasizes query-context relationship
+        const finalTemplate = process.env.FINAL_TEMPLATE || `User Question: {{ORIGINAL_QUERY}}
+
+Research Findings:
+{{ALL_INFORMATION}}
+
+Task: Synthesize the above findings to answer the user's question. Each finding was gathered specifically to address aspects of this question. Cite URLs when referencing specific information.`;
 
         // Add environmental context to the final prompt
-        const environmentalContext = `\n\nCurrent Environmental Context:\n- Date: ${dayOfWeek}, ${currentDateTime}\n- Analysis conducted in real-time with current information\n`;
+        const environmentalContext = `\n\nContext: ${dayOfWeek}, ${currentDateTime} - Analysis based on current real-time information.`;
         
         const finalPrompt = finalTemplate
             .replace('{{ORIGINAL_QUERY}}', userQuery)
@@ -582,10 +700,10 @@ Answer with URLs:`;
         try {
             finalResponse = await llmResponsesWithTools(finalRequestBody);
             
-            // Emit LLM response event
+            // Emit LLM response event with full response metadata
             stream?.writeEvent?.('llm_response', {
                 phase: 'final_synthesis',
-                response: finalResponse
+                response: finalResponse.rawResponse || finalResponse
             });
         } catch (e) {
             console.error('Final synthesis LLM call failed:', e?.message || e);
@@ -651,6 +769,15 @@ Answer with URLs:`;
  */
 exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
     const startTime = Date.now();
+    
+    // DEBUG: Log the event structure
+    console.log('🔧 EVENT STRUCTURE:', JSON.stringify({
+        httpMethod: event.httpMethod,
+        requestContext: event.requestContext,
+        method: event.requestContext?.http?.method,
+        rawPath: event.rawPath,
+        headers: event.headers
+    }));
     
     try {
         // Set up headers for Server-Sent Events
@@ -765,13 +892,28 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             user: user ? { email: user.email, name: user.name } : null
         });
 
+        // TEST: Emit a test llm_request event IMMEDIATELY to verify it works
+        console.log('🔧 TEST: About to emit test llm_request event at handler level');
+        writeEvent('llm_request', {
+            phase: 'test_handler',
+            model: model,
+            request: { test: 'This is a test llm_request event from the handler' },
+            timestamp: new Date().toISOString()
+        });
+        console.log('✅ TEST: llm_request event emitted at handler level');
+
         // Execute tool loop with streaming
+        const streamObject = { writeEvent };
+        console.log('🔧 HANDLER: About to call runToolLoop');
+        console.log('🔧 HANDLER: writeEvent function exists:', typeof writeEvent === 'function');
+        console.log('🔧 HANDLER: streamObject:', !!streamObject, 'streamObject.writeEvent:', typeof streamObject.writeEvent);
+        
         const toolsRun = await runToolLoop({
             model,
             apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
             userQuery: query,
             systemPrompt: COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT,
-            stream: { writeEvent }
+            stream: streamObject
         });
         
         // Send completion event
