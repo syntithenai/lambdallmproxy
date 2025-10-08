@@ -977,6 +977,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             ...(newMessages[i].llmApiCalls || []),
                             {
                               phase: data.phase,
+                              provider: data.provider,
                               model: data.model,
                               request: data.request,
                               timestamp: data.timestamp
@@ -999,6 +1000,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       isStreaming: true,
                       llmApiCalls: [{
                         phase: data.phase,
+                        provider: data.provider,
                         model: data.model,
                         request: data.request,
                         timestamp: data.timestamp

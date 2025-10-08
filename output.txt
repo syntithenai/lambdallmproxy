@@ -1,40 +1,20 @@
-Makefile:188: warning: overriding recipe for target 'build-docs'
-Makefile:72: warning: ignoring old recipe for target 'build-docs'
-⚡ Fast deploying code changes...
-./scripts/deploy-fast.sh
-[0;34m⚡ Fast deploying Lambda function llmproxy...[0m
-[0;32m✅ Using Layer ARN: arn:aws:lambda:us-east-1:979126075445:layer:llmproxy-dependencies:2[0m
-[1;33m📦 Code files to deploy:[0m
-./search.js
-./utils/stop-signal.js
-./utils/progress-emitter.js
-./utils/error-handling.js
-./utils/token-estimation.js
-./pricing_scraper.js
-./services/tracking-service.js
-./html-parser.js
-./config/memory.js
-./config/tokens.js
-./config/prompts.js
-./tavily-search.js
-./streaming/sse-writer.js
-./streaming/response-formatter.js
-./tools/youtube-downloader.js
-./tools/transcribe.js
-./tools/audio-chunker.js
-./pricing.js
-./index.js
-./providers.js
-[1;33m🗜️  Creating lightweight package...[0m
-[0;32mPackage size: 101K (much smaller without dependencies!)[0m
-[1;33m☁️  Uploading to S3...[0m
-Completed 101.0 KiB/101.0 KiB (41.7 KiB/s) with 1 file(s) remainingupload: ./function.zip to s3://llmproxy-deployments-5833/functions/llmproxy-20251008-194753.zip
-[1;33m🚀 Updating Lambda function...[0m
-[0;32m✅ Function code deployed successfully[0m
-[1;33m🔗 Ensuring layer is attached...[0m
-[0;32m✅ Layer attached[0m
-[1;33m⏳ Waiting for function to be ready...[0m
-[0;34mStatus: Active	Successful[0m
-[0;32m🎉 Fast deployment complete![0m
-[0;34m⚡ Deployment time: ~5-10 seconds vs 2-3 minutes with full deploy[0m
-[1;33m💡 Test at: https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/[0m
+
+> ui-new@0.0.0 build
+> tsc -b && vite build
+
+You are using Node.js 20.12.2. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.
+vite v7.1.9 building for production...
+transforming...
+✓ 531 modules transformed.
+rendering chunks...
+computing gzip size...
+../docs/index.html                      1.12 kB │ gzip:   0.64 kB
+../docs/assets/index-t105KxCb.css      48.11 kB │ gzip:   9.55 kB
+../docs/assets/streaming-DpY1-JdV.js    1.16 kB │ gzip:   0.65 kB
+../docs/assets/index-B0mwDEZ9.js      712.69 kB │ gzip: 212.34 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 3.10s

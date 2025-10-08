@@ -17,6 +17,7 @@ export interface ChatMessage {
   isStreaming?: boolean;  // Flag to indicate message is currently being streamed
   llmApiCalls?: Array<{   // LLM API transparency data for this message
     phase: string;
+    provider?: string;    // LLM provider (e.g., 'groq', 'openai')
     model: string;
     request: any;
     response?: any;

@@ -3,6 +3,7 @@ import { JsonTree } from './JsonTree';
 
 interface LlmApiCall {
   phase: string;
+  provider?: string;
   model: string;
   request: any;
   response?: any;
@@ -87,7 +88,13 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
     }
   };
 
-  const getProviderFromModel = (model: string): string => {
+  const getProviderFromModel = (model: string, provider?: string): string => {
+    // Use explicit provider if available
+    if (provider) {
+      return provider.charAt(0).toUpperCase() + provider.slice(1); // Capitalize first letter
+    }
+    
+    // Fall back to model name detection
     if (model.startsWith('gpt-') || model.startsWith('o1-')) {
       return 'OpenAI';
     }
@@ -167,7 +174,7 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
                       </span>
                       <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
                       <span className="text-xs text-gray-600 dark:text-gray-400">
-                        {getProviderFromModel(call.model)}
+                        {getProviderFromModel(call.model, call.provider)}
                       </span>
                       <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
                       <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-gray-700 dark:text-gray-300">
@@ -300,7 +307,7 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
                   {formatPhase(apiCalls[fullScreenCall].phase)} - Full Request Details
                 </h3>
                 <div className="flex gap-4 mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  <span>Provider: {getProviderFromModel(apiCalls[fullScreenCall].model)}</span>
+                  <span>Provider: {getProviderFromModel(apiCalls[fullScreenCall].model, apiCalls[fullScreenCall].provider)}</span>
                   <span>Model: {getModelDisplay(apiCalls[fullScreenCall].model)}</span>
                 </div>
               </div>
