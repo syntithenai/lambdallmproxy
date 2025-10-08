@@ -13,7 +13,7 @@ import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
 import { SearchProgress } from './SearchProgress';
-import { LlmApiTransparency } from './LlmApiTransparency';
+import { LlmInfoDialog } from './LlmInfoDialog';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
@@ -122,6 +122,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     result: any;
     index: number;
   } | null>(null);
+  
+  // LLM Info dialog tracking
+  const [showLlmInfo, setShowLlmInfo] = useState<number | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -1006,102 +1009,99 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               break;
               
             case 'llm_request':
-              // Store LLM API calls on the current assistant message (exclude content summaries)
+              // Store ALL LLM API calls on the current assistant message (including search tool summaries)
               console.log('🔵 LLM API Request:', data);
-              if (data.phase !== 'page_summary' && data.phase !== 'synthesis_summary') {
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  
-                  // Check if last message is a tool message - if so, don't attach to previous assistant
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  const hasToolMessageAfterLastAssistant = lastMessage?.role === 'tool';
-                  
-                  // Find the last assistant message (but only if no tools after it AND it's still active)
-                  let foundAssistant = false;
-                  if (!hasToolMessageAfterLastAssistant) {
-                    for (let i = newMessages.length - 1; i >= 0; i--) {
-                      if (newMessages[i].role === 'assistant') {
-                        // CRITICAL: Only attach to assistant if it's empty or currently streaming
-                        // If it has content and isn't streaming, it's from a previous query
-                        const isActiveAssistant = 
-                          newMessages[i].isStreaming || 
-                          !newMessages[i].content || 
-                          newMessages[i].content.trim().length === 0;
-                        
-                        if (isActiveAssistant) {
-                          console.log('🔵 Attaching llmApiCalls to active assistant at index:', i);
-                          newMessages[i] = {
-                            ...newMessages[i],
-                            llmApiCalls: [
-                              ...(newMessages[i].llmApiCalls || []),
-                              {
-                                phase: data.phase,
-                                provider: data.provider,
-                                model: data.model,
-                                request: data.request,
-                                timestamp: data.timestamp
-                              }
-                            ]
-                          };
-                          foundAssistant = true;
-                        } else {
-                          console.log('🔵 Skipping completed assistant at index:', i, '(from previous query)');
-                        }
-                        break;
-                      }
-                    }
-                  }
-                  
-                  // If no active assistant found OR tools executed, create placeholder for new response
-                  if (!foundAssistant) {
-                    console.log('🔵 Creating new placeholder for llm_request, reason:', 
-                      hasToolMessageAfterLastAssistant ? 'tools executed' : 'no active assistant');
-                    newMessages.push({
-                      role: 'assistant',
-                      content: '',
-                      isStreaming: true,
-                      llmApiCalls: [{
-                        phase: data.phase,
-                        provider: data.provider,
-                        model: data.model,
-                        request: data.request,
-                        timestamp: data.timestamp
-                      }]
-                    });
-                  }
-                  
-                  return newMessages;
-                });
-              }
-              break;
-              
-            case 'llm_response':
-              // Update LLM API call with response on current assistant message (exclude content summaries)
-              console.log('🟢 LLM API Response:', data);
-              if (data.phase !== 'page_summary' && data.phase !== 'synthesis_summary') {
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  // Find the last assistant message
+              setMessages(prev => {
+                const newMessages = [...prev];
+                
+                // Check if last message is a tool message - if so, don't attach to previous assistant
+                const lastMessage = newMessages[newMessages.length - 1];
+                const hasToolMessageAfterLastAssistant = lastMessage?.role === 'tool';
+                
+                // Find the last assistant message (but only if no tools after it AND it's still active)
+                let foundAssistant = false;
+                if (!hasToolMessageAfterLastAssistant) {
                   for (let i = newMessages.length - 1; i >= 0; i--) {
-                    if (newMessages[i].role === 'assistant' && newMessages[i].llmApiCalls) {
-                      const apiCalls = newMessages[i].llmApiCalls!;
-                      const lastCall = apiCalls[apiCalls.length - 1];
-                      if (lastCall && lastCall.phase === data.phase && !lastCall.response) {
-                        // Store response with HTTP headers and status
-                        lastCall.response = data.response;
-                        lastCall.httpHeaders = data.httpHeaders;
-                        lastCall.httpStatus = data.httpStatus;
+                    if (newMessages[i].role === 'assistant') {
+                      // CRITICAL: Only attach to assistant if it's empty or currently streaming
+                      // If it has content and isn't streaming, it's from a previous query
+                      const isActiveAssistant = 
+                        newMessages[i].isStreaming || 
+                        !newMessages[i].content || 
+                        newMessages[i].content.trim().length === 0;
+                      
+                      if (isActiveAssistant) {
+                        console.log('🔵 Attaching llmApiCalls to active assistant at index:', i, 'phase:', data.phase);
                         newMessages[i] = {
                           ...newMessages[i],
-                          llmApiCalls: [...apiCalls] // Trigger re-render
+                          llmApiCalls: [
+                            ...(newMessages[i].llmApiCalls || []),
+                            {
+                              phase: data.phase,
+                              provider: data.provider,
+                              model: data.model,
+                              request: data.request,
+                              timestamp: data.timestamp
+                            }
+                          ]
                         };
+                        foundAssistant = true;
+                      } else {
+                        console.log('🔵 Skipping completed assistant at index:', i, '(from previous query)');
                       }
                       break;
                     }
                   }
-                  return newMessages;
-                });
-              }
+                }
+                
+                // If no active assistant found OR tools executed, create placeholder for new response
+                if (!foundAssistant) {
+                  console.log('🔵 Creating new placeholder for llm_request, reason:', 
+                    hasToolMessageAfterLastAssistant ? 'tools executed' : 'no active assistant');
+                  newMessages.push({
+                    role: 'assistant',
+                    content: '',
+                    isStreaming: true,
+                    llmApiCalls: [{
+                      phase: data.phase,
+                      provider: data.provider,
+                      model: data.model,
+                      request: data.request,
+                      timestamp: data.timestamp
+                    }]
+                  });
+                }
+                
+                return newMessages;
+              });
+              break;
+              
+            case 'llm_response':
+              // Update ALL LLM API calls with responses (including search tool summaries)
+              console.log('🟢 LLM API Response:', data);
+              setMessages(prev => {
+                const newMessages = [...prev];
+                // Find the last assistant message
+                for (let i = newMessages.length - 1; i >= 0; i--) {
+                  if (newMessages[i].role === 'assistant' && newMessages[i].llmApiCalls) {
+                    const apiCalls = newMessages[i].llmApiCalls!;
+                    const lastCall = apiCalls[apiCalls.length - 1];
+                    if (lastCall && lastCall.phase === data.phase && !lastCall.response) {
+                      // Store response with HTTP headers and status
+                      lastCall.response = data.response;
+                      lastCall.httpHeaders = data.httpHeaders;
+                      lastCall.httpStatus = data.httpStatus;
+                      console.log('🟢 Updated llmApiCall response for phase:', data.phase, 'at index:', i);
+                      newMessages[i] = {
+                        ...newMessages[i],
+                        llmApiCalls: [...apiCalls] // Trigger re-render
+                      };
+                    }
+                    break;
+                  }
+                }
+                return newMessages;
+              });
               break;
           }
         },
@@ -1688,14 +1688,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         {msg.isStreaming && (
                           <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
                         )}
-                        
-                        {/* Show LLM API transparency for this message */}
-                        {/* Show if: not streaming OR (streaming but no content - likely planning phase) */}
-                        {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (!msg.isStreaming || !msg.content) && (
-                          <div className="mt-3">
-                            <LlmApiTransparency apiCalls={msg.llmApiCalls} />
-                          </div>
-                        )}
                       </div>
                     ) : (
                       <div className="whitespace-pre-wrap">
@@ -1703,7 +1695,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       </div>
                     )}
                     
-                    {/* Copy/Share/Capture buttons for assistant messages */}
+                    {/* Copy/Share/Capture/Info buttons for assistant messages */}
                     {msg.role === 'assistant' && msg.content && (
                       <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                         <button
@@ -1746,6 +1738,33 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </svg>
                           Grab
                         </button>
+                        {/* Info button with token counts */}
+                        {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
+                          <button
+                            onClick={() => setShowLlmInfo(idx)}
+                            className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-100 flex items-center gap-1"
+                            title="View LLM transparency info"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Info
+                            {(() => {
+                              const tokensIn = msg.llmApiCalls.reduce((sum: number, call: any) => 
+                                sum + (call.response?.usage?.prompt_tokens || 0), 0);
+                              const tokensOut = msg.llmApiCalls.reduce((sum: number, call: any) => 
+                                sum + (call.response?.usage?.completion_tokens || 0), 0);
+                              if (tokensIn > 0 || tokensOut > 0) {
+                                return (
+                                  <span className="ml-1 text-[10px] opacity-75">
+                                    ({tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </button>
+                        )}
                       </div>
                     )}
                     
@@ -2225,6 +2244,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             </div>
           </div>
         </div>
+      )}
+      
+      {/* LLM Info Dialog */}
+      {showLlmInfo !== null && messages[showLlmInfo]?.llmApiCalls && (
+        <LlmInfoDialog 
+          apiCalls={messages[showLlmInfo].llmApiCalls}
+          onClose={() => setShowLlmInfo(null)}
+        />
       )}
     </div>
   );

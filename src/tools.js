@@ -1086,12 +1086,18 @@ Brief answer with URLs:`;
           isFinite,
           console: {
             log: (...args) => { 
-              context._output = args.map(arg => 
+              const line = args.map(arg => 
                 typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-              ).join(' '); 
+              ).join(' ');
+              // Accumulate all console.log outputs instead of overwriting
+              if (context._outputs.length > 0) {
+                context._outputs.push(line);
+              } else {
+                context._outputs = [line];
+              }
             }
           },
-          _output: null
+          _outputs: []
         };
         
         // Create VM context
@@ -1103,8 +1109,10 @@ Brief answer with URLs:`;
           displayErrors: true 
         });
         
-        // Return console output if available, otherwise the result
-        const output = context._output !== null ? context._output : result;
+        // Return console output if available (all lines joined), otherwise the result
+        const output = context._outputs.length > 0 
+          ? context._outputs.join('\n') 
+          : result;
         
         // Return clean result without metadata that might confuse LLM
         return JSON.stringify({ 

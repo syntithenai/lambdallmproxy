@@ -1012,15 +1012,102 @@ const filteredMessages = cleanMessages.map(msg => {
 
 ---
 
+## LLM Transparency & Token Tracking
+
+**Date**: October 8, 2025 22:58 UTC  
+**Feature**: Info button with comprehensive token usage display
+
+### User-Facing Token Visibility
+
+To help users understand token usage and costs, we've implemented a comprehensive LLM transparency feature:
+
+**Info Button** (on every assistant message):
+- Appears to the right of Copy/Gmail/Grab buttons
+- Shows token counts inline: `Info (1234↓/567↑)` 
+  - ↓ = tokens in (prompt tokens)
+  - ↑ = tokens out (completion tokens)
+- Only appears if LLM calls were made for this response
+
+**Full-Screen Dialog**:
+- Click Info button to open scrollable dialog
+- Shows ALL LLM API calls including:
+  - **Main agent calls**: planning, tool_iteration, final_response
+  - **Search tool calls**: page_summary, synthesis_summary
+- For each call displays:
+  - Phase, provider, model
+  - Token counts: 📥 in • 📤 out • 📊 total
+  - Timing: queue, prompt, completion times
+  - Full request/response bodies (expandable JSON)
+  - HTTP headers (if available)
+- **Total tokens summary** at top and bottom of dialog
+
+**Why This Matters**:
+- **Cost Awareness**: Users can see exactly what they're being charged for
+- **Performance Insight**: Timing info helps identify slow calls
+- **Debugging**: Full request/response helps troubleshoot issues
+- **Trust**: Complete transparency builds user confidence
+
+**Token Aggregation**:
+
+For responses with multiple LLM calls (e.g., search queries that generate page summaries), the Info button shows:
+- Sum of ALL prompt tokens across all calls
+- Sum of ALL completion tokens across all calls
+- Comprehensive view of the entire query's token usage
+
+**Example**:
+```
+Search query with 5 page summaries + 1 synthesis + 1 final response:
+Info (8,234↓/1,567↑)  ← Total across all 7 LLM calls
+
+Dialog shows:
+📄 Page Summary #1: 234↓/150↑
+📄 Page Summary #2: 234↓/150↑
+📄 Page Summary #3: 234↓/150↑
+📄 Page Summary #4: 234↓/150↑
+📄 Page Summary #5: 234↓/150↑
+🔄 Search Synthesis: 1,200↓/250↑
+✨ Final Answer: 5,664↓/717↑
+────────────────────────────
+Total: 📥 8,234 in • 📤 1,567 out • 📊 9,801 total
+```
+
+**Implementation Details**:
+
+**Files Modified**:
+- `ui-new/src/components/ChatTab.tsx`: Updated to track ALL llmApiCalls (including page_summary/synthesis_summary)
+- `ui-new/src/components/LlmInfoDialog.tsx`: New full-screen dialog component
+- `ui-new/src/components/LlmApiTransparency.tsx`: Deprecated in favor of Info button
+
+**Event Handling**:
+- `llm_request`: Now tracks ALL phases (removed page_summary/synthesis_summary filter)
+- `llm_response`: Updates ALL tracked calls with usage data
+
+**Why Track Search Tool Calls**:
+
+Previously, page_summary and synthesis_summary LLM calls were hidden. This led to:
+- ❌ Users couldn't see total token usage
+- ❌ Cost estimates were incomplete
+- ❌ No visibility into search query efficiency
+
+Now, ALL LLM calls are visible:
+- ✅ Complete token usage transparency
+- ✅ Users can see how many summaries were generated
+- ✅ Can identify inefficient queries (too many pages)
+- ✅ Accurate cost estimates
+
+---
+
 **Last Updated**: October 9, 2025  
 **Deployed**: 
 - Backend: October 9, 2025 09:09:05 UTC (llmproxy-20251009-090905.zip)
 - **Backend Hardened**: October 9, 2025 22:28:27 UTC (llmproxy-20251009-092827.zip) - Simplified filter, defense-in-depth
 - Frontend: October 9, 2025 10:10:28 UTC (commit 6ba21db)
 - **Frontend Critical Fix**: October 9, 2025 22:23:51 UTC (commit c0e2bdc) - Fixed UI filter logic error
+- **Frontend LLM Info**: October 8, 2025 22:58:32 UTC (commit f1ef1a2) - Info button with token counts
 **Author**: GitHub Copilot
 
 **See Also**: 
 - [SEARCH_RESULT_TRUNCATION_FIX.md](./SEARCH_RESULT_TRUNCATION_FIX.md) - Layers 10 & 11 analysis
 - [ENHANCED_MESSAGE_FILTERING.md](./ENHANCED_MESSAGE_FILTERING.md) - Layer 12 initial implementation
 - [UI_FILTER_BUG_FIX.md](./UI_FILTER_BUG_FIX.md) - **CRITICAL: Layer 12 UI bug fix (Oct 9, 22:23 UTC)**
+- [LLM_INFO_ATTACHMENT_FIX.md](./LLM_INFO_ATTACHMENT_FIX.md) - Fixed LLM info attaching to previous responses

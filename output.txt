@@ -1,19 +1,40 @@
-➕ Staging docs/ changes...
-💬 Committing: docs: update built site (2025-10-08 22:51:53 UTC) - fix: LLM info only attaches to active assistant (current query)
-
-🔥 DEPLOYMENT REMINDER 🔥
-Code has been committed but NOT deployed yet!
-
-To deploy your changes:
-  make dev          # Quick Lambda deploy (recommended)
-  make full-deploy  # Deploy everything (Lambda + docs)
-
-Test after deploy: https://lambdallmproxy.pages.dev
-
-[agent 0f72606] docs: update built site (2025-10-08 22:51:53 UTC) - fix: LLM info only attaches to active assistant (current query)
- 2 files changed, 15 insertions(+), 15 deletions(-)
- rename docs/assets/{index-DG_I9R5a.js => index-C5lJpF0p.js} (91%)
-⏫ Pushing to origin agent...
-To https://github.com/syntithenai/lambdallmproxy.git
-   c0e2bdc..0f72606  agent -> agent
-✅ Docs deployed successfully.
+Makefile:188: warning: overriding recipe for target 'build-docs'
+Makefile:72: warning: ignoring old recipe for target 'build-docs'
+⚡ Fast deploying code changes...
+./scripts/deploy-fast.sh
+[0;34m⚡ Fast deploying Lambda function llmproxy...[0m
+[0;32m✅ Using Layer ARN: arn:aws:lambda:us-east-1:979126075445:layer:llmproxy-dependencies:2[0m
+[1;33m📦 Code files to deploy:[0m
+./search.js
+./utils/stop-signal.js
+./utils/progress-emitter.js
+./utils/error-handling.js
+./utils/token-estimation.js
+./pricing_scraper.js
+./services/tracking-service.js
+./html-parser.js
+./config/memory.js
+./config/tokens.js
+./config/prompts.js
+./tavily-search.js
+./streaming/sse-writer.js
+./streaming/response-formatter.js
+./tools/youtube-downloader.js
+./tools/transcribe.js
+./tools/audio-chunker.js
+./pricing.js
+./index.js
+./providers.js
+[1;33m🗜️  Creating lightweight package...[0m
+[0;32mPackage size: 108K (much smaller without dependencies!)[0m
+[1;33m☁️  Uploading to S3...[0m
+Completed 107.7 KiB/107.7 KiB (42.1 KiB/s) with 1 file(s) remainingupload: ./function.zip to s3://llmproxy-deployments-5833/functions/llmproxy-20251009-100708.zip
+[1;33m🚀 Updating Lambda function...[0m
+[0;32m✅ Function code deployed successfully[0m
+[1;33m🔗 Ensuring layer is attached...[0m
+[0;32m✅ Layer attached[0m
+[1;33m⏳ Waiting for function to be ready...[0m
+[0;34mStatus: Active	Successful[0m
+[0;32m🎉 Fast deployment complete![0m
+[0;34m⚡ Deployment time: ~5-10 seconds vs 2-3 minutes with full deploy[0m
+[1;33m💡 Test at: https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/[0m
