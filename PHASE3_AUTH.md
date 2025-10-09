@@ -1,7 +1,7 @@
 # Phase 3: Authentication & Authorization Enhancement
 
 ## Objective
-Enforce Google OAuth for all API requests, implement email whitelist checking, merge user and environment credentials, and create a credential pooling system for intelligent load balancing.
+Enforce Google OAuth for all API requests, implement email whitelist checking, merge user and environment credentials, and **block unauthorized users from UI until they provide their own provider settings**.
 
 ## Current State Analysis
 
@@ -24,66 +24,63 @@ Enforce Google OAuth for all API requests, implement email whitelist checking, m
 ### Issues with Current System
 1. **No Whitelisting**: Any Google user can access the service
 2. **No Credential Pooling**: User credentials separate from env credentials
-3. **Inconsistent Enforcement**: Some endpoints may not require auth
-4. **No Rate Limiting by User**: Can't track usage per user
+3. **No UI Blocking**: Unauthorized users can see chat interface without provider settings
+4. **Inconsistent Enforcement**: Some endpoints may not require auth
 
 ## New Authentication Architecture
 
 ### Two-Tier Authorization Model
 
-#### Tier 1: Public Users (Google Authenticated)
-- **Access**: Basic features only
-- **Credentials**: Must provide their own API keys for all providers
-- **Search**: DuckDuckGo only (free)
-- **Tools**: Web scraping, code execution (serverless)
-- **Rate Limits**: Based on their own provider keys
+#### Tier 1: Unauthorized Users (Google Authenticated, Not Whitelisted)
+- **Initial State**: **BLOCKED FROM UI** - Cannot see or use chat interface
+- **Access Gate**: Must configure at least one provider in settings before UI unlocks
+- **UI Behavior**: Show provider setup screen (similar to login screen) that blocks all other UI
+- **Credentials**: Must provide their own API keys for ALL providers
+- **Search**: DuckDuckGo only (free, no API key required)
+- **Tools**: Web scraping, code execution (serverless, no API key required)
+- **Rate Limits**: Based ONLY on their own provider keys
+- **No Environment Credentials**: Cannot access any environment variable credentials
 
-#### Tier 2: Authorized Users (Whitelisted)
-- **Access**: All features including shared credentials
-- **Credentials**: Can use environment variable credentials + their own
+#### Tier 2: Authorized Users (Whitelisted via VALID_USERS)
+- **Initial State**: Full access to UI immediately after Google sign-in
+- **Credentials**: Can use environment variable credentials + their own (merged pool)
 - **Search**: DuckDuckGo + Tavily (if env key configured)
 - **Tools**: All tools including transcription
 - **Rate Limits**: Pooled across user + environment credentials
+- **Optional User Credentials**: Can add their own providers for additional capacity
 
 ### Environment Variables Structure
 
-#### Current
 ```bash
-GROQ_API_KEY=gsk_...
-OPENAI_API_KEY=sk-...
-TAVILY_API_KEY=tvly-...
-```
+# User whitelist (comma-separated emails) - REQUIRED
+VALID_USERS=alice@example.com,bob@example.com,admin@company.com
 
-#### New (Backward Compatible)
-```bash
-# User whitelist (comma-separated emails)
-AUTHORIZED_USERS=alice@example.com,bob@example.com,admin@company.com
+# Provider data for authorized users (indexed 0, 1, 2, ...)
+# Each provider needs: TYPE, KEY, (optional: ENDPOINT, MODEL_NAME for openai-compatible)
 
-# Existing provider keys (for backward compatibility)
-GROQ_API_KEY=gsk_...
-OPENAI_API_KEY=sk-...
+# Example: Groq Free Tier
+LLAMDA_LLM_PROXY_PROVIDER_TYPE_0=groq-free
+LLAMDA_LLM_PROXY_PROVIDER_KEY_0=gsk_...
 
-# Additional provider keys (indexed)
-OPENAI_COMPATIBLE_LLM_KEY_0=sk-together-xyz-123
-OPENAI_COMPATIBLE_LLM_URL_0=https://api.together.xyz/v1
-OPENAI_COMPATIBLE_LLM_NAME_0=Together AI
+# Example: OpenAI
+LLAMDA_LLM_PROXY_PROVIDER_TYPE_1=openai
+LLAMDA_LLM_PROXY_PROVIDER_KEY_1=sk-...
 
-OPENAI_COMPATIBLE_LLM_KEY_1=sk-anyscale-456
-OPENAI_COMPATIBLE_LLM_URL_1=https://api.endpoints.anyscale.com/v1
-OPENAI_COMPATIBLE_LLM_NAME_1=Anyscale
+# Example: Gemini Free
+LLAMDA_LLM_PROXY_PROVIDER_TYPE_2=gemini-free
+LLAMDA_LLM_PROXY_PROVIDER_KEY_2=AIza...
 
-# Gemini keys
-GEMINI_API_KEY_FREE=AIza...
-GEMINI_API_KEY_PAID=AIza...
+# Example: Together AI
+LLAMDA_LLM_PROXY_PROVIDER_TYPE_3=together
+LLAMDA_LLM_PROXY_PROVIDER_KEY_3=...
 
-# Cohere keys
-COHERE_API_KEY_FREE=co...
-COHERE_API_KEY_PAID=co...
+# Example: OpenAI Compatible (requires ENDPOINT and MODEL_NAME)
+LLAMDA_LLM_PROXY_PROVIDER_TYPE_4=openai-compatible
+LLAMDA_LLM_PROXY_PROVIDER_KEY_4=custom_key_...
+LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_4=https://api.custom.com/v1
+LLAMDA_LLM_PROXY_PROVIDER_MODEL_4=llama-3.1-70b-instruct
 
-# Mistral keys
-MISTRAL_API_KEY=sk-...
-
-# Search keys
+# Search keys (optional, for authorized users only)
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -184,148 +181,96 @@ module.exports = {
  * Merges user-provided credentials with environment credentials for authorized users
  */
 
+const crypto = require('crypto');
+
 /**
  * Load environment provider credentials
  * @returns {Array<ProviderConfig>} - Array of provider configs from env vars
  */
 function loadEnvironmentProviders() {
     const providers = [];
-
-    // Legacy Groq key
-    if (process.env.GROQ_API_KEY) {
-        providers.push({
-            id: 'env-groq',
-            source: 'environment',
-            type: 'groq',
-            apiKey: process.env.GROQ_API_KEY,
-            freeTier: true,
-            priority: 100 // Lower priority than user keys
-        });
-    }
-
-    // Legacy OpenAI key
-    if (process.env.OPENAI_API_KEY) {
-        providers.push({
-            id: 'env-openai',
-            source: 'environment',
-            type: 'openai',
-            apiKey: process.env.OPENAI_API_KEY,
-            freeTier: false,
-            priority: 100
-        });
-    }
-
-    // Gemini keys
-    if (process.env.GEMINI_API_KEY_FREE) {
-        providers.push({
-            id: 'env-gemini-free',
-            source: 'environment',
-            type: 'gemini-free',
-            apiKey: process.env.GEMINI_API_KEY_FREE,
-            freeTier: true,
-            priority: 50 // Higher priority for free tier
-        });
-    }
-
-    if (process.env.GEMINI_API_KEY_PAID) {
-        providers.push({
-            id: 'env-gemini-paid',
-            source: 'environment',
-            type: 'gemini',
-            apiKey: process.env.GEMINI_API_KEY_PAID,
-            freeTier: false,
-            priority: 100
-        });
-    }
-
-    // Cohere keys
-    if (process.env.COHERE_API_KEY_FREE) {
-        providers.push({
-            id: 'env-cohere-free',
-            source: 'environment',
-            type: 'cohere-free',
-            apiKey: process.env.COHERE_API_KEY_FREE,
-            freeTier: true,
-            priority: 50
-        });
-    }
-
-    if (process.env.COHERE_API_KEY_PAID) {
-        providers.push({
-            id: 'env-cohere-paid',
-            source: 'environment',
-            type: 'cohere',
-            apiKey: process.env.COHERE_API_KEY_PAID,
-            freeTier: false,
-            priority: 100
-        });
-    }
-
-    // Mistral key
-    if (process.env.MISTRAL_API_KEY) {
-        providers.push({
-            id: 'env-mistral',
-            source: 'environment',
-            type: 'mistral',
-            apiKey: process.env.MISTRAL_API_KEY,
-            freeTier: false,
-            priority: 100
-        });
-    }
-
-    // OpenAI-compatible providers (indexed)
     let index = 0;
-    while (process.env[`OPENAI_COMPATIBLE_LLM_KEY_${index}`]) {
-        const key = process.env[`OPENAI_COMPATIBLE_LLM_KEY_${index}`];
-        const url = process.env[`OPENAI_COMPATIBLE_LLM_URL_${index}`];
-        const name = process.env[`OPENAI_COMPATIBLE_LLM_NAME_${index}`] || `Custom Provider ${index}`;
 
-        if (key && url) {
-            providers.push({
-                id: `env-custom-${index}`,
-                source: 'environment',
-                type: 'openai-compatible',
-                name,
-                apiKey: key,
-                endpoint: url,
-                freeTier: false,
-                priority: 100
-            });
+    // Endpoint mapping for provider types
+    const PROVIDER_ENDPOINTS = {
+        'groq': 'https://api.groq.com/openai/v1',
+        'groq-free': 'https://api.groq.com/openai/v1',
+        'openai': 'https://api.openai.com/v1',
+        'gemini': 'https://generativelanguage.googleapis.com/v1beta',
+        'gemini-free': 'https://generativelanguage.googleapis.com/v1beta',
+        'together': 'https://api.together.xyz/v1'
+    };
+
+    // Read providers from environment (indexed 0, 1, 2, ...)
+    while (true) {
+        const typeKey = `LLAMDA_LLM_PROXY_PROVIDER_TYPE_${index}`;
+        const keyKey = `LLAMDA_LLM_PROXY_PROVIDER_KEY_${index}`;
+        
+        const type = process.env[typeKey];
+        const apiKey = process.env[keyKey];
+
+        // Stop when no more providers found
+        if (!type || !apiKey) {
+            break;
         }
 
+        const provider = {
+            id: crypto.randomUUID(),
+            type,
+            apiKey
+        };
+
+        // For openai-compatible, read endpoint and modelName
+        if (type === 'openai-compatible') {
+            const endpointKey = `LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_${index}`;
+            const modelKey = `LLAMDA_LLM_PROXY_PROVIDER_MODEL_${index}`;
+            
+            provider.apiEndpoint = process.env[endpointKey];
+            provider.modelName = process.env[modelKey];
+
+            if (!provider.apiEndpoint || !provider.modelName) {
+                console.warn(`Provider ${index}: openai-compatible requires ENDPOINT and MODEL`);
+                index++;
+                continue;
+            }
+        } else {
+            // Auto-fill endpoint for known types
+            provider.apiEndpoint = PROVIDER_ENDPOINTS[type];
+            if (!provider.apiEndpoint) {
+                console.warn(`Provider ${index}: Unknown provider type ${type}`);
+                index++;
+                continue;
+            }
+        }
+
+        providers.push(provider);
         index++;
     }
 
+    console.log(`Loaded ${providers.length} environment providers`);
     return providers;
 }
 
 /**
  * Merge user providers with environment providers for authorized users
  * @param {Array<ProviderConfig>} userProviders - Providers from request
- * @param {boolean} isAuthorized - Whether user is authorized
+ * @param {boolean} isAuthorized - Whether user is authorized (whitelisted)
  * @returns {Array<ProviderConfig>} - Merged provider pool
  */
 function buildProviderPool(userProviders, isAuthorized) {
-    // Always include user providers
-    const pool = [...userProviders];
+    // Always include user providers (if any)
+    const pool = userProviders ? [...userProviders] : [];
 
-    // Add environment providers only for authorized users
+    // Add environment providers ONLY for authorized users
     if (isAuthorized) {
         const envProviders = loadEnvironmentProviders();
         pool.push(...envProviders);
+        console.log(`Merged pool: ${userProviders.length} user + ${envProviders.length} env = ${pool.length} total`);
+    } else {
+        console.log(`Unauthorized user: using only ${pool.length} user-provided providers`);
     }
 
-    // Sort by priority (lower number = higher priority)
-    // Free tier providers are already given lower priority values
-    pool.sort((a, b) => {
-        // Free tier first
-        if (a.freeTier && !b.freeTier) return -1;
-        if (!a.freeTier && b.freeTier) return 1;
-        
-        // Then by priority
-        return (a.priority || 100) - (b.priority || 100);
-    });
-
+    // Backend will prioritize free tier providers automatically based on type
     return pool;
 }
 
@@ -347,7 +292,7 @@ const { buildProviderPool } = require('./credential-pool');
 // In handler, before routing to endpoints:
 async function handler(event, responseStream) {
     try {
-        // Authenticate all requests
+        // Authenticate all requests (Google OAuth required)
         const authResult = await authenticateRequest(event);
         
         if (!authResult.authenticated) {
@@ -355,7 +300,8 @@ async function handler(event, responseStream) {
             const metadata = {
                 statusCode: 401,
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
                 }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
@@ -374,6 +320,25 @@ async function handler(event, responseStream) {
             userProviders = body.providers || [];
         } catch (e) {
             console.warn('Failed to parse providers from request body');
+        }
+
+        // CRITICAL: Unauthorized users MUST provide at least one provider
+        if (!authResult.authorized && (!userProviders || userProviders.length === 0)) {
+            const metadata = {
+                statusCode: 403,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({
+                error: 'Unauthorized users must configure at least one provider. Please add your API keys in settings.',
+                requiresProviderSetup: true,
+                authorized: false
+            }));
+            responseStream.end();
+            return;
         }
 
         // Build provider pool (merges with env credentials if authorized)
@@ -502,43 +467,302 @@ if (error.requiresAuth) {
 - Credentials not exposed in error messages
 - Email injection attempts in whitelist
 
-## Migration Strategy
+## Frontend UI Blocking Implementation
 
-### Phase 1: Soft Enforcement
-1. Check auth but don't block requests
-2. Log authentication status
-3. Identify usage patterns
+### Overview
+Unauthorized users who have not configured providers must be completely blocked from using the chat interface. This is similar to the login screen - a full overlay that prevents access to all UI functionality until the gate condition is met.
 
-### Phase 2: Warnings
-1. Return warning header for unauthenticated requests
-2. UI shows banner: "Authentication will be required soon"
-3. Grace period: 2 weeks
+### Gate Condition
+```typescript
+const canAccessChatUI = isAuthorized || (providers && providers.length > 0);
+```
 
-### Phase 3: Hard Enforcement
-1. Block unauthenticated requests
-2. Clear error messages
-3. UI forces authentication
+### Component: ProviderSetupGate
+
+**File**: `docs/js/provider-setup-gate.js` (new)
+
+```javascript
+class ProviderSetupGate {
+    constructor() {
+        this.isAuthorized = false;
+        this.providers = [];
+        this.onSetupComplete = null;
+    }
+
+    /**
+     * Check if user can access chat UI
+     * @param {boolean} isAuthorized - User is in VALID_USERS whitelist
+     * @param {Array} providers - User's configured providers from localStorage
+     * @returns {boolean} - Can access chat UI
+     */
+    canAccessUI(isAuthorized, providers) {
+        this.isAuthorized = isAuthorized;
+        this.providers = providers || [];
+        return this.isAuthorized || this.providers.length > 0;
+    }
+
+    /**
+     * Show provider setup screen that blocks all UI
+     * Must be called before initializing chat components
+     */
+    showSetupScreen() {
+        // Hide main chat UI
+        const mainContent = document.getElementById('main-content');
+        const sidebar = document.getElementById('sidebar');
+        if (mainContent) mainContent.style.display = 'none';
+        if (sidebar) sidebar.style.display = 'none';
+
+        // Create full-screen overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'provider-setup-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #1a1a1a;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        `;
+
+        // Create setup card
+        const card = document.createElement('div');
+        card.style.cssText = `
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        `;
+
+        card.innerHTML = `
+            <h2 style="margin: 0 0 16px 0; color: #fff; font-size: 24px;">
+                Provider Configuration Required
+            </h2>
+            <p style="color: #aaa; margin: 0 0 24px 0; line-height: 1.6;">
+                You are not authorized to use shared API keys. To continue, please configure 
+                at least one LLM provider with your own API key.
+            </p>
+            <div id="provider-setup-form-container"></div>
+            <p style="color: #888; margin: 24px 0 0 0; font-size: 14px;">
+                Need an API key? Visit 
+                <a href="https://console.groq.com" target="_blank" style="color: #4a9eff;">Groq</a>, 
+                <a href="https://platform.openai.com" target="_blank" style="color: #4a9eff;">OpenAI</a>, or 
+                <a href="https://ai.google.dev" target="_blank" style="color: #4a9eff;">Google AI Studio</a>
+            </p>
+        `;
+
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+
+        // Initialize provider form in the container
+        // This reuses the existing settings provider form component
+        this.initializeProviderForm();
+    }
+
+    /**
+     * Initialize the provider form inside the setup screen
+     */
+    initializeProviderForm() {
+        const container = document.getElementById('provider-setup-form-container');
+        if (!container) return;
+
+        // Create a minimal provider form (reuse settings form logic)
+        // This should include:
+        // - Provider type dropdown
+        // - API endpoint (auto-filled, read-only except for openai-compatible)
+        // - API key input
+        // - Model name (only for openai-compatible)
+        // - Save button
+
+        // When provider is saved, call checkAndUnlock()
+        window.addEventListener('provider-added', () => {
+            this.checkAndUnlock();
+        });
+    }
+
+    /**
+     * Check if gate condition is met and unlock UI if so
+     */
+    checkAndUnlock() {
+        // Reload providers from localStorage
+        const settings = JSON.parse(localStorage.getItem('llmProxySettings') || '{}');
+        const providers = settings.providers || [];
+
+        if (providers.length > 0) {
+            // Remove overlay
+            const overlay = document.getElementById('provider-setup-overlay');
+            if (overlay) overlay.remove();
+
+            // Show main UI
+            const mainContent = document.getElementById('main-content');
+            const sidebar = document.getElementById('sidebar');
+            if (mainContent) mainContent.style.display = '';
+            if (sidebar) sidebar.style.display = '';
+
+            // Trigger callback if provided
+            if (this.onSetupComplete) {
+                this.onSetupComplete();
+            }
+
+            // Initialize main app
+            if (window.initializeApp) {
+                window.initializeApp();
+            }
+        }
+    }
+}
+
+// Export singleton instance
+window.providerSetupGate = new ProviderSetupGate();
+```
+
+### Integration in Main App
+
+**File**: `docs/js/main.js` (modifications)
+
+```javascript
+// At the very start of main.js, before any other initialization:
+
+async function checkAuthAndInitialize() {
+    try {
+        // Get current auth token
+        const token = window.googleAuth?.currentToken;
+        if (!token) {
+            console.error('No auth token available');
+            showLoginScreen();
+            return;
+        }
+
+        // Check authorization status by making a test request
+        // (The backend will return authorized: true/false in the response)
+        const settings = JSON.parse(localStorage.getItem('llmProxySettings') || '{}');
+        const providers = settings.providers || [];
+
+        // Make test request to check auth status
+        const testResponse = await fetch(CONFIG.API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                messages: [{ role: 'user', content: 'test' }],
+                providers: providers,
+                stream: false
+            })
+        });
+
+        if (testResponse.status === 401) {
+            // Not authenticated - show login
+            showLoginScreen();
+            return;
+        }
+
+        if (testResponse.status === 403) {
+            // Authenticated but unauthorized, no providers configured
+            const errorData = await testResponse.json();
+            if (errorData.requiresProviderSetup) {
+                window.providerSetupGate.showSetupScreen();
+                return;
+            }
+        }
+
+        // If we got here, user can access UI
+        // Continue with normal initialization
+        initializeApp();
+
+    } catch (error) {
+        console.error('Auth check failed:', error);
+        showLoginScreen();
+    }
+}
+
+// Call on page load
+document.addEventListener('DOMContentLoaded', checkAuthAndInitialize);
+```
+
+### Request Error Handling
+
+**File**: `docs/js/streaming.js` (modifications)
+
+```javascript
+// In handleStreamingResponse or similar:
+
+async function handleStreamingResponse(response) {
+    if (response.status === 403) {
+        const errorData = await response.json();
+        if (errorData.requiresProviderSetup) {
+            // User became unauthorized (maybe their whitelist entry was removed)
+            // Show setup screen
+            window.providerSetupGate.showSetupScreen();
+            return;
+        }
+    }
+    
+    // ... existing streaming logic
+}
+```
+
+### Behavior Summary
+
+| User Type | Providers Configured | UI State | Action Required |
+|-----------|---------------------|----------|-----------------|
+| Authorized (whitelisted) | Any (0+) | ✅ Full Access | None - can use env credentials |
+| Unauthorized | None (0) | 🚫 BLOCKED | Must configure ≥1 provider |
+| Unauthorized | 1+ | ✅ Full Access | None - using own credentials |
+
+### Key Features
+
+1. **Gate Check on Load**: `checkAuthAndInitialize()` runs before any UI initialization
+2. **Full UI Blocking**: Setup screen is a modal overlay that prevents all interaction
+3. **Cannot Dismiss**: No close button - must configure a provider to proceed
+4. **Real-time Unlock**: As soon as first provider is saved, gate checks and unlocks
+5. **Persistent Check**: Every request can return `requiresProviderSetup: true` to re-trigger gate
+6. **Graceful for Authorized**: Authorized users never see the setup screen
 
 ## Implementation Checklist
 
-- [ ] Update `src/auth.js` with authorization logic
-- [ ] Create `src/credential-pool.js`
-- [ ] Update `src/index.js` request handler
-- [ ] Add error response for auth failures
-- [ ] Update frontend error handling
-- [ ] Add auth status to UI
-- [ ] Create migration guide for users
-- [ ] Add unit tests for auth logic
-- [ ] Add integration tests for auth flow
-- [ ] Update API documentation
-- [ ] Add monitoring for auth failures
+### Backend
+- [ ] Update `src/auth.js` with authorization logic (whitelist check)
+- [ ] Create `src/credential-pool.js` with loadEnvironmentProviders() and buildProviderPool()
+- [ ] Update `src/index.js` request handler with provider check
+- [ ] Add 403 error response for unauthorized users without providers
+- [ ] Add `requiresProviderSetup: true` to 403 responses
+- [ ] Ensure `authorized: true/false` included in all responses
+- [ ] Add unit tests for auth logic (whitelist, token verification)
+- [ ] Add unit tests for credential pooling (env var loading, merging)
+- [ ] Add integration tests for auth flow (authorized vs unauthorized)
+- [ ] Add integration tests for provider gating (403 responses)
 
-## Next Phase Dependencies
+### Frontend
+- [ ] Create `docs/js/provider-setup-gate.js` component
+- [ ] Update `docs/js/main.js` with `checkAuthAndInitialize()`
+- [ ] Update `docs/js/streaming.js` to handle `requiresProviderSetup` errors
+- [ ] Add `provider-added` event to settings form
+- [ ] Test gate with authorized user (should bypass)
+- [ ] Test gate with unauthorized user, no providers (should block)
+- [ ] Test gate unlock after provider configuration
+- [ ] Add CSS for setup overlay and card
+- [ ] Test persistent gate checks on runtime errors
 
-Phase 4 (Provider Integration) requires:
-- Provider pool structure from credential-pool.js
-- Understanding of which credentials are available
+### Environment Setup
+- [ ] Add `VALID_USERS` environment variable to Lambda
+- [ ] Add indexed provider env vars (TYPE_0, KEY_0, etc.)
+- [ ] Document env var format in deployment guide
+- [ ] Test env var loading with 0 providers
+- [ ] Test env var loading with multiple providers
+- [ ] Test env var loading with openai-compatible type
 
-Phase 5 (Model Selection) requires:
-- Provider pool to select from
-- Auth status to determine available providers
+### Documentation
+- [ ] Update API documentation with auth requirements
+- [ ] Document provider setup gate behavior
+- [ ] Create user guide for configuring providers
+- [ ] Document whitelist management for admins
+- [ ] Add monitoring guide for auth failures
+

@@ -88,7 +88,58 @@ async function verifyGoogleToken(token) {
     }
 }
 
+/**
+ * Authenticate and authorize a request
+ * Returns authentication status, authorization status, and user info
+ * @param {string} authHeader - Authorization header (Bearer token)
+ * @returns {Promise<Object>} - {authenticated: boolean, authorized: boolean, email: string|null, user: Object|null}
+ */
+async function authenticateRequest(authHeader) {
+    // No auth header means anonymous request
+    if (!authHeader) {
+        return {
+            authenticated: false,
+            authorized: false,
+            email: null,
+            user: null
+        };
+    }
+    
+    // Extract token from Bearer scheme
+    const token = authHeader.startsWith('Bearer ') 
+        ? authHeader.substring(7) 
+        : authHeader;
+    
+    // Verify token with Google OAuth
+    const user = await verifyGoogleToken(token);
+    
+    if (!user) {
+        // Invalid token or expired
+        return {
+            authenticated: false,
+            authorized: false,
+            email: null,
+            user: null
+        };
+    }
+    
+    // Token is valid and verified
+    // Check if user is in whitelist (already done in verifyGoogleToken)
+    const allowedEmails = getAllowedEmails();
+    const isAuthorized = allowedEmails.includes(user.email);
+    
+    console.log(`🔐 Request authenticated: ${user.email}, authorized: ${isAuthorized}`);
+    
+    return {
+        authenticated: true,
+        authorized: isAuthorized,
+        email: user.email,
+        user: user
+    };
+}
+
 module.exports = {
     getAllowedEmails,
-    verifyGoogleToken
+    verifyGoogleToken,
+    authenticateRequest
 };

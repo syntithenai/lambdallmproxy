@@ -52,7 +52,8 @@ cp "$OLDPWD/$SOURCE_FILE" index.js
 # Copy all module files from src/ directory
 mkdir -p src
 cp "$OLDPWD"/src/auth.js ./
-cp "$OLDPWD"/src/providers.js ./  
+cp "$OLDPWD"/src/providers.js ./
+cp "$OLDPWD"/src/credential-pool.js ./
 cp "$OLDPWD"/src/memory-tracker.js ./
 cp "$OLDPWD"/src/html-parser.js ./
 cp "$OLDPWD"/src/html-content-extractor.js ./
@@ -65,13 +66,16 @@ cp "$OLDPWD"/src/tavily-search.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/pricing_scraper.js ./
 
 # Copy modular components (new refactored structure)
-mkdir -p config utils services streaming endpoints tools
+mkdir -p config utils services streaming endpoints tools model-selection routing retry
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true  
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/streaming/* ./streaming/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/endpoints/* ./endpoints/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/tools/* ./tools/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/model-selection/* ./model-selection/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/routing/* ./routing/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/retry/* ./retry/ 2>/dev/null || true
 
 # Create package.json for the Lambda function with dependencies
 cat > package.json << EOF

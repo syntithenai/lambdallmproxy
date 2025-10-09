@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
-import type { Provider, Settings } from '../contexts/SettingsContext';
+import type { Settings } from '../types/provider';
+import { ProviderList } from './ProviderList';
 
 interface EnabledTools {
   web_search: boolean;
@@ -18,64 +19,6 @@ interface SettingsModalProps {
   onOpenMCPDialog: () => void;
 }
 
-// Lambda proxy endpoint - handles LLM requests, transcription, search tools, etc.
-const LAMBDA_PROXY_URL = 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
-
-const PROVIDER_ENDPOINTS: Record<Provider, string> = {
-  groq: `${LAMBDA_PROXY_URL}/openai/v1`,
-  openai: `${LAMBDA_PROXY_URL}/openai/v1`
-};
-
-const MODEL_SUGGESTIONS: Record<Provider, { small: string[]; large: string[]; reasoning: string[] }> = {
-  groq: {
-    small: [
-      'llama-3.1-8b-instant',
-      'meta-llama/llama-4-scout-17b-16e-instruct',
-      'gemma2-9b-it'
-    ],
-    large: [
-      // Best rate limits + context (recommended order)
-      'meta-llama/llama-4-scout-17b-16e-instruct',  // 30K TPM (fastest!), 131K context, parallel tools
-      'qwen/qwen3-32b',                              // 6K TPM, 131K context, parallel tools
-      'moonshotai/kimi-k2-instruct-0905',           // 262K context (largest!), parallel tools
-      'openai/gpt-oss-120b',                        // 131K context, 65K output
-      'openai/gpt-oss-20b',                         // 131K context, 65K output
-      'meta-llama/llama-4-maverick-17b-128e-instruct', // 131K context, parallel tools
-      'llama-3.1-8b-instant',                       // Fast, 131K context, parallel tools
-      'gemma2-9b-it',                               // Fast, 8K context, parallel tools
-      'llama-3.3-70b-versatile',                    // 131K context, has format issues
-      'mixtral-8x7b-32768'
-    ],
-    reasoning: [
-      // Best for reasoning/planning
-      'openai/gpt-oss-120b',
-      'qwen/qwen3-32b',
-      'meta-llama/llama-4-scout-17b-16e-instruct',
-      'openai/gpt-oss-20b',
-      'llama-3.3-70b-versatile',
-      'deepseek-r1-distill-llama-70b'
-    ]
-  },
-  openai: {
-    small: ['gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4o-mini-2024-07-18'],
-    large: ['gpt-4o', 'gpt-4-turbo', 'gpt-4'],
-    reasoning: ['o1-preview', 'o1-mini', 'gpt-4o']
-  }
-};
-
-const DEFAULT_MODELS: Record<Provider, { small: string; large: string; reasoning: string }> = {
-  groq: {
-    small: 'llama-3.1-8b-instant',
-    large: 'meta-llama/llama-4-scout-17b-16e-instruct',  // Best rate limits (30K TPM) + good context
-    reasoning: 'openai/gpt-oss-120b'  // Updated to use OpenAI's GPT-OSS 120B for best reasoning
-  },
-  openai: {
-    small: 'gpt-4o-mini',
-    large: 'gpt-4o',
-    reasoning: 'o1-preview'
-  }
-};
-
 export const SettingsModal: React.FC<SettingsModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -92,17 +35,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTempSettings(settings);
   }, [settings, isOpen]);
 
-  const handleProviderChange = (provider: Provider) => {
-    setTempSettings({
-      ...tempSettings,
-      provider,
-      apiEndpoint: PROVIDER_ENDPOINTS[provider],
-      smallModel: DEFAULT_MODELS[provider].small,
-      largeModel: DEFAULT_MODELS[provider].large,
-      reasoningModel: DEFAULT_MODELS[provider].reasoning
-    });
-  };
-
   const handleSave = () => {
     setSettings(tempSettings);
     console.log('Settings saved:', tempSettings);
@@ -115,8 +47,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   if (!isOpen) return null;
-
-  const suggestions = MODEL_SUGGESTIONS[tempSettings.provider];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -160,106 +90,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Provider Tab */}
         {activeTab === 'provider' && (
         <div className="space-y-6">
-          {/* API Provider */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              API Provider
-            </label>
-            <select
-              value={tempSettings.provider}
-              onChange={(e) => handleProviderChange(e.target.value as Provider)}
-              className="input-field"
-            >
-              <option value="groq">Groq</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </div>
-
-          {/* LLM API Key */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              API Key
-            </label>
-            <input
-              type="password"
-              value={tempSettings.llmApiKey}
-              onChange={(e) => setTempSettings({ ...tempSettings, llmApiKey: e.target.value })}
-              className="input-field"
-              placeholder={`Enter your ${tempSettings.provider === 'groq' ? 'Groq' : 'OpenAI'} API key`}
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              This key is stored locally in your browser
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              ⚡ Provider Credentials
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Configure your LLM provider API keys. The backend automatically selects the best model for each request.
             </p>
           </div>
-
-          {/* Small Model */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Small Model (Fast, low-cost tasks)
-            </label>
-            <select
-              value={tempSettings.smallModel}
-              onChange={(e) => setTempSettings({ ...tempSettings, smallModel: e.target.value })}
-              className="input-field"
-            >
-              {suggestions.small.map(model => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Fast, low-cost models for simple tasks
-            </p>
-          </div>
-
-          {/* Large Model */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Large Model (Complex, high-quality tasks)
-            </label>
-            <select
-              value={tempSettings.largeModel}
-              onChange={(e) => setTempSettings({ ...tempSettings, largeModel: e.target.value })}
-              className="input-field"
-            >
-              {suggestions.large.map(model => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              High-quality models for complex reasoning and detailed responses
-            </p>
-          </div>
-
-          {/* Reasoning Model */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Reasoning Model (Planning, analysis)
-            </label>
-            <select
-              value={tempSettings.reasoningModel}
-              onChange={(e) => setTempSettings({ ...tempSettings, reasoningModel: e.target.value })}
-              className="input-field"
-            >
-              {suggestions.reasoning.map(model => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Best models for planning, multi-step reasoning, and complex analysis
-            </p>
-          </div>
-
-          {/* API Endpoint (Hidden/Auto-filled) */}
-          <input type="hidden" value={tempSettings.apiEndpoint} />
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Endpoint: {tempSettings.apiEndpoint}
-          </p>
+          
+          {/* Provider List Component */}
+          <ProviderList />
         </div>
         )}
 

@@ -573,7 +573,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // Stop transcription function
   const handleStopTranscription = async (toolCallId: string) => {
     try {
-      const response = await fetch(`${settings.apiEndpoint.replace('/openai/v1', '')}/stop-transcription`, {
+      const LAMBDA_URL = 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+      const response = await fetch(`${LAMBDA_URL}/stop-transcription`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -892,32 +893,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         return cleanMsg;
       });
       
-      // Detect if vision model is needed (check for images in message thread)
-      const hasImages = cleanedMessages.some(msg => 
-        Array.isArray(msg.content) && msg.content.some((part: any) => part.type === 'image_url')
-      );
-      
-      // Use vision model if images are present
-      let modelToUse = settings.largeModel || 'meta-llama/llama-4-scout-17b-16e-instruct';
-      if (hasImages) {
-        // Map to vision-capable models
-        // meta-llama/llama-4-scout-17b-16e-instruct supports vision
-        if (modelToUse === 'meta-llama/llama-4-scout-17b-16e-instruct' || 
-            modelToUse === 'meta-llama/llama-4-maverick-17b-128e-instruct') {
-          // Already vision-capable, keep as is
-        } else if (modelToUse.includes('gpt-4o') || modelToUse.includes('gpt-4-vision') || modelToUse.includes('openai')) {
-          // OpenAI models support vision, keep as is
-        } else {
-          // Switch to vision-capable Llama model (free via Groq)
-          modelToUse = 'meta-llama/llama-4-scout-17b-16e-instruct';
-        }
-        console.log('🖼️ Images detected, using vision model:', modelToUse);
-      }
-      
+      // Phase 2: No model selection - backend decides based on PROVIDER_CATALOG.json
+      // Backend will automatically detect images and select vision-capable models
+      // Send providers array instead of model field
       const requestPayload: any = {
-        model: modelToUse,
+        providers: settings.providers,  // NEW: Send all configured providers
         messages: cleanedMessages,
-        temperature: 0.7
+        temperature: 0.7,
+        stream: true  // Always use streaming
       };
       
       // Add Tavily API key if available
@@ -1349,15 +1332,16 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         messageText.trim().length === 0;
                       
                       if (isActiveAssistant) {
-                        console.log('🔵 Attaching llmApiCalls to active assistant at index:', i, 'phase:', data.phase);
+                        console.log('🔵 Attaching llmApiCalls to active assistant at index:', i, 'phase:', data.phase,
+                          'provider:', data.provider, 'model:', data.model);
                         newMessages[i] = {
                           ...newMessages[i],
                           llmApiCalls: [
                             ...(newMessages[i].llmApiCalls || []),
                             {
                               phase: data.phase,
-                              provider: data.provider,
-                              model: data.model,
+                              provider: data.provider || 'Unknown',
+                              model: data.model || 'Unknown',
                               request: data.request,
                               timestamp: data.timestamp
                             }
@@ -1375,15 +1359,16 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 // If no active assistant found OR tools executed, create placeholder for new response
                 if (!foundAssistant) {
                   console.log('🔵 Creating new placeholder for llm_request, reason:', 
-                    hasToolMessageAfterLastAssistant ? 'tools executed' : 'no active assistant');
+                    hasToolMessageAfterLastAssistant ? 'tools executed' : 'no active assistant',
+                    'provider:', data.provider, 'model:', data.model);
                   newMessages.push({
                     role: 'assistant',
                     content: '',
                     isStreaming: true,
                     llmApiCalls: [{
                       phase: data.phase,
-                      provider: data.provider,
-                      model: data.model,
+                      provider: data.provider || 'Unknown',
+                      model: data.model || 'Unknown',
                       request: data.request,
                       timestamp: data.timestamp
                     }]
@@ -1399,17 +1384,27 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               console.log('🟢 LLM API Response:', data);
               setMessages(prev => {
                 const newMessages = [...prev];
+                let foundMatchingCall = false;
+                let assistantMessageIndex = -1;
+                
                 // Find the last assistant message
                 for (let i = newMessages.length - 1; i >= 0; i--) {
                   if (newMessages[i].role === 'assistant' && newMessages[i].llmApiCalls) {
+                    assistantMessageIndex = i;
                     const apiCalls = newMessages[i].llmApiCalls!;
                     const lastCall = apiCalls[apiCalls.length - 1];
+                    
                     if (lastCall && lastCall.phase === data.phase && !lastCall.response) {
                       // Store response with HTTP headers and status
+                      // Also update provider and model in case they weren't set initially
                       lastCall.response = data.response;
                       lastCall.httpHeaders = data.httpHeaders;
                       lastCall.httpStatus = data.httpStatus;
-                      console.log('🟢 Updated llmApiCall response for phase:', data.phase, 'at index:', i);
+                      if (data.provider) lastCall.provider = data.provider;
+                      if (data.model) lastCall.model = data.model;
+                      console.log('🟢 Updated existing llmApiCall response for phase:', data.phase, 'at index:', i,
+                        'provider:', lastCall.provider, 'model:', lastCall.model);
+                      foundMatchingCall = true;
                       newMessages[i] = {
                         ...newMessages[i],
                         llmApiCalls: [...apiCalls] // Trigger re-render
@@ -1418,6 +1413,29 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     break;
                   }
                 }
+                
+                // If no matching call found, create a new one (happens for iteration 2+)
+                if (!foundMatchingCall && assistantMessageIndex >= 0) {
+                  console.log('🟢 Creating new llmApiCall for llm_response without prior request, iteration:', data.iteration);
+                  const apiCalls = newMessages[assistantMessageIndex].llmApiCalls!;
+                  const newCall = {
+                    phase: data.phase,
+                    provider: data.provider || 'Unknown',
+                    model: data.model || 'Unknown',
+                    request: data.llmApiCall?.request || {},
+                    response: data.response,
+                    httpHeaders: data.httpHeaders,
+                    httpStatus: data.httpStatus,
+                    timestamp: data.timestamp
+                  };
+                  apiCalls.push(newCall);
+                  console.log('🟢 Created new llmApiCall with provider:', newCall.provider, 'model:', newCall.model);
+                  newMessages[assistantMessageIndex] = {
+                    ...newMessages[assistantMessageIndex],
+                    llmApiCalls: [...apiCalls] // Trigger re-render
+                  };
+                }
+                
                 return newMessages;
               });
               break;
@@ -2939,7 +2957,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         onClose={() => setShowVoiceInput(false)}
         onTranscriptionComplete={handleVoiceTranscription}
         accessToken={accessToken}
-        apiEndpoint={settings.apiEndpoint}
+        apiEndpoint={'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws'}
       />
     </div>
   );

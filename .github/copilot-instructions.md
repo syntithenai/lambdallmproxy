@@ -44,10 +44,15 @@ make setup-layer             # Create dependencies layer (run once)
 make build-ui                # Build React UI to docs/
 make deploy-ui               # Build and push to GitHub Pages
 
+# Debugging
+make logs                    # View recent CloudWatch logs (last 5 minutes)
+make logs-tail               # Tail CloudWatch logs in real-time
+
 # Combined
 make all                     # Deploy both Lambda and UI
 ```
 - **Testing**: When testing the Lambda function, ensure all required parameters, including the API key, are provided, unless a test specifically requires their omission.
+- **Debugging**: Always check CloudWatch logs using `make logs` after deployment to verify function behavior and catch errors.
 
 ### 1.2. Terminal Command Execution
 

@@ -664,86 +664,142 @@ async function buildProviderCatalog() {
     const togetherModels = getTogetherAIData();
     const openaiCompatible = getOpenAICompatibleEndpoints();
 
+    // Helper function to create free tier models with zero pricing
+    function createFreeModels(models) {
+        const freeModels = {};
+        for (const [modelId, modelData] of Object.entries(models)) {
+            freeModels[modelId] = {
+                ...modelData,
+                pricing: {
+                    input: 0,
+                    output: 0,
+                    unit: 'per_million_tokens',
+                    free: true
+                }
+            };
+        }
+        return freeModels;
+    }
+
+    // Get only one model from Groq for free tier
+    const groqFreeModel = {
+        'llama-3.1-8b-instant': groqModels['llama-3.1-8b-instant']
+    };
+
     const catalog = {
         version: '1.0.0',
         lastUpdated: new Date().toISOString().split('T')[0],
-        providers: {
-            groq: {
-                name: 'Groq',
-                type: 'groq',
-                apiBase: 'https://api.groq.com/openai/v1',
-                supportsStreaming: true,
-                supportsTools: true,
-                freeTier: {
-                    available: true,
-                    limits: {
-                        requestsPerMinute: 7000,
-                        requestsPerDay: 14400,
-                        tokensPerMinute: 30000,
-                        tokensPerDay: null
-                    }
+        chat: {
+            description: 'Chat/completion LLM providers',
+            providers: {
+                'groq-free': {
+                    name: 'Groq Free Tier',
+                    type: 'groq-free',
+                    apiBase: 'https://api.groq.com/openai/v1',
+                    supportsStreaming: true,
+                    supportsTools: true,
+                    freeTier: {
+                        available: true,
+                        limits: {
+                            requestsPerMinute: 7000,
+                            requestsPerDay: 14400,
+                            tokensPerMinute: 30000,
+                            tokensPerDay: null
+                        }
+                    },
+                    rateLimitHeaders: {
+                        format: 'standard',
+                        prefix: 'x-ratelimit-'
+                    },
+                    models: createFreeModels(groqFreeModel)
                 },
-                rateLimitHeaders: {
-                    format: 'standard',
-                    prefix: 'x-ratelimit-'
+                groq: {
+                    name: 'Groq Paid',
+                    type: 'groq',
+                    apiBase: 'https://api.groq.com/openai/v1',
+                    supportsStreaming: true,
+                    supportsTools: true,
+                    freeTier: {
+                        available: false
+                    },
+                    rateLimitHeaders: {
+                        format: 'standard',
+                        prefix: 'x-ratelimit-'
+                    },
+                    models: groqModels
                 },
-                models: groqModels
-            },
-            openai: {
-                name: 'OpenAI',
-                type: 'openai',
-                apiBase: 'https://api.openai.com/v1',
-                supportsStreaming: true,
-                supportsTools: true,
-                supportsVision: true,
-                freeTier: {
-                    available: false
+                openai: {
+                    name: 'OpenAI',
+                    type: 'openai',
+                    apiBase: 'https://api.openai.com/v1',
+                    supportsStreaming: true,
+                    supportsTools: true,
+                    supportsVision: true,
+                    freeTier: {
+                        available: false
+                    },
+                    rateLimitHeaders: {
+                        format: 'standard',
+                        prefix: 'x-ratelimit-'
+                    },
+                    models: openaiModels
                 },
-                rateLimitHeaders: {
-                    format: 'standard',
-                    prefix: 'x-ratelimit-'
+                'gemini-free': {
+                    name: 'Google Gemini Free Tier',
+                    type: 'gemini-free',
+                    apiBase: 'https://generativelanguage.googleapis.com/v1beta',
+                    supportsStreaming: true,
+                    supportsTools: true,
+                    supportsVision: true,
+                    freeTier: {
+                        available: true,
+                        limits: {
+                            requestsPerMinute: 15,
+                            requestsPerDay: 1500,
+                            tokensPerMinute: 32000,
+                            tokensPerDay: 50000000
+                        }
+                    },
+                    rateLimitHeaders: {
+                        format: 'custom',
+                        note: 'May not expose all limits in headers'
+                    },
+                    models: createFreeModels(geminiModels)
                 },
-                models: openaiModels
-            },
-            gemini: {
-                name: 'Google Gemini',
-                type: 'gemini',
-                apiBase: 'https://generativelanguage.googleapis.com/v1beta',
-                supportsStreaming: true,
-                supportsTools: true,
-                supportsVision: true,
-                freeTier: {
-                    available: true,
-                    limits: {
-                        requestsPerMinute: 15,
-                        requestsPerDay: 1500,
-                        tokensPerMinute: 32000,
-                        tokensPerDay: 50000000
-                    }
+                gemini: {
+                    name: 'Google Gemini Paid',
+                    type: 'gemini',
+                    apiBase: 'https://generativelanguage.googleapis.com/v1beta',
+                    supportsStreaming: true,
+                    supportsTools: true,
+                    supportsVision: true,
+                    freeTier: {
+                        available: false
+                    },
+                    rateLimitHeaders: {
+                        format: 'custom',
+                        note: 'May not expose all limits in headers'
+                    },
+                    models: geminiModels
                 },
-                rateLimitHeaders: {
-                    format: 'custom',
-                    note: 'May not expose all limits in headers'
-                },
-                models: geminiModels
-            },
-            together: {
-                name: 'Together AI',
-                type: 'together',
-                apiBase: 'https://api.together.xyz/v1',
-                supportsStreaming: true,
-                supportsTools: true,
-                freeTier: {
-                    available: true,
-                    limits: {
-                        note: '$25 free trial credits available'
-                    }
-                },
-                rateLimitHeaders: {
-                    format: 'standard',
-                    prefix: 'x-ratelimit-'
-                },
-                models: togetherModels
+                together: {
+                    name: 'Together AI',
+                    type: 'together',
+                    apiBase: 'https://api.together.xyz/v1',
+                    supportsStreaming: true,
+                    supportsTools: true,
+                    freeTier: {
+                        available: true,
+                        limits: {
+                            note: '$25 free trial credits available'
+                        }
+                    },
+                    rateLimitHeaders: {
+                        format: 'standard',
+                        prefix: 'x-ratelimit-'
+                    },
+                    models: togetherModels
+                }
             }
         },
         whisper: {
@@ -902,20 +958,22 @@ async function main() {
         console.log('\n================================================');
         console.log(`✅ Provider catalog written to: ${outputPath}`);
         console.log(`\n📊 Summary:`);
-        console.log(`   - Providers: ${Object.keys(catalog.providers).length}`);
+        console.log(`   - Chat Providers: ${Object.keys(catalog.chat.providers).length}`);
         
         let totalModels = 0;
         let freeProviders = 0;
         
-        Object.values(catalog.providers).forEach(provider => {
+        Object.values(catalog.chat.providers).forEach(provider => {
             const modelCount = Object.keys(provider.models).length;
             totalModels += modelCount;
             if (provider.freeTier.available) freeProviders++;
             console.log(`   - ${provider.name}: ${modelCount} models`);
         });
         
-        console.log(`   - Total models: ${totalModels}`);
+        console.log(`   - Total chat models: ${totalModels}`);
         console.log(`   - Free tier providers: ${freeProviders}`);
+        console.log(`   - Whisper providers: ${Object.keys(catalog.whisper.providers).length}`);
+        console.log(`   - Image generation providers: ${Object.keys(catalog.imageGeneration.providers).length}`);
         console.log(`   - OpenAI-compatible endpoints: ${catalog.openaiCompatibleEndpoints.length}`);
         console.log('\n✨ Done!\n');
 

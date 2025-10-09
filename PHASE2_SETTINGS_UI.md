@@ -1,79 +1,72 @@
 # Phase 2: Settings UI Redesign
 
 ## Objective
-Transform the settings interface from single-provider selection to dynamic multi-provider management with support for arbitrary OpenAI-compatible providers.
+Transform the settings interface to support multiple provider configurations with a simplified, credential-focused approach. Remove model selection entirely and let the backend intelligently choose models based on PROVIDER_CATALOG.json.
+
+## Key Design Principles
+
+1. **Credentials Only**: Settings UI only manages API keys and endpoints
+2. **No Model Selection**: Backend uses PROVIDER_CATALOG.json to select optimal models
+3. **Multiple Providers**: Support unlimited provider instances
+4. **Free Tier Priority**: Automatically prefer free tier providers when available
+5. **Simple Provider Types**: Clear provider type dropdown with prefilled endpoints
 
 ## Current State Analysis
 
-### Existing Settings Schema
+### Existing Settings Schema (TO BE REMOVED)
 ```typescript
 interface Settings {
   provider: Provider; // 'groq' | 'openai'
   llmApiKey: string;
   tavilyApiKey: string;
   apiEndpoint: string;
-  smallModel?: string;
-  largeModel?: string;
-  reasoningModel?: string;
+  smallModel?: string;   // REMOVE - backend decides
+  largeModel?: string;   // REMOVE - backend decides
+  reasoningModel?: string; // REMOVE - backend decides
 }
 ```
 
-### Current UI Structure
-- **File**: `ui-new/src/components/SettingsModal.tsx`
-- **Lines**: 1-412
-- **Features**:
-  - Single provider dropdown (Groq/OpenAI)
-  - Single API key field
-  - Hardcoded model suggestions per provider
-  - Auto-fills endpoint based on provider choice
-  - Model selection (small/large/reasoning)
+### Current UI Issues
+1. **Model Selection Exposed**: User shouldn't choose models - backend knows best
+2. **Single Provider Limitation**: Can only configure one provider at a time
+3. **Provider Keys Hardcoded**: Only Groq and OpenAI supported
+4. **No Provider Pooling**: Can't leverage multiple free tiers simultaneously
 
-### Issues with Current Design
-1. **Single Provider Limitation**: Can only configure one provider at a time
-2. **No Free Tier Indicators**: Doesn't show which providers are free
-3. **Static Model Lists**: Model suggestions are hardcoded, not dynamic
-4. **No Provider Pooling**: Can't use multiple providers simultaneously
-5. **Environment Variable Disconnect**: User credentials separate from Lambda env vars
-
-## New Settings Schema
+## New Settings Schema (SIMPLIFIED)
 
 ```typescript
 interface ProviderConfig {
-  id: string; // Unique ID for this provider instance
-  name: string; // User-friendly name (e.g., "My Groq Account")
-  type: ProviderType; // 'groq' | 'openai' | 'gemini' | 'openai-compatible'
-  apiKey: string;
-  endpoint?: string; // Required for openai-compatible type
-  freeTier: boolean; // User indicates this is a free tier account
-  tokenLimits?: {
-    requestsPerMinute?: number;
-    requestsPerDay?: number;
-    tokensPerMinute?: number;
-    tokensPerDay?: number;
-  };
-  enabled: boolean; // Can disable without deleting
-  priority: number; // For ordering preference (lower = higher priority)
+  id: string; // Unique ID for this provider instance (UUID)
+  type: ProviderType; // Provider type - determines endpoint and behavior
+  apiEndpoint: string; // Auto-filled and NOT EDITABLE except for openai-compatible
+  apiKey: string; // User's API key for this provider
+  modelName?: string; // ONLY for openai-compatible - preserved through to upstream
+  rateLimitTPM?: string; // ONLY for openai-compatible - where there is no collected provider values, limit rate to explicit value or if empty, don't rate limit and rely on errors.
 }
 
 type ProviderType = 
-  | 'groq' 
-  | 'groq-free' 
-  | 'openai' 
-  | 'gemini' 
-  | 'gemini-free';
+  | 'groq-free'           // Groq free tier - endpoint: https://api.groq.com/openai/v1
+  | 'groq'                // Groq paid tier - endpoint: https://api.groq.com/openai/v1
+  | 'openai'              // OpenAI - endpoint: https://api.openai.com/v1
+  | 'gemini-free'         // Gemini free tier - endpoint: https://generativelanguage.googleapis.com/v1beta
+  | 'gemini'              // Gemini paid tier - endpoint: https://generativelanguage.googleapis.com/v1beta
+  | 'together'            // Together AI - endpoint: https://api.together.xyz/v1
+  | 'openai-compatible';  // Custom endpoint - user specifies endpoint AND modelName
 
 interface Settings {
-  providers: ProviderConfig[]; // Array of configured providers
-  tavilyApiKey: string; // Unchanged
-  modelSuggestions: {
-    planning: 'reasoning' | 'large';
-    chat: 'large' | 'small';
-    summarization: 'small';
-  };
-  autoRetry: boolean; // Enable/disable automatic retry on rate limit
-  maxRetries: number; // Max retry attempts (default: 3)
+  version: '2.0.0';
+  providers: ProviderConfig[]; // Array of configured providers (unlimited)
+  tavilyApiKey: string; // Unchanged - for search functionality
 }
 ```
+
+### Key Simplifications
+1. **No freeTier boolean**: Provider type encodes this (groq-free vs groq)
+2. **No tokenLimits**: Backend gets this from PROVIDER_CATALOG.json
+3. **No enabled flag**: Just delete disabled providers
+4. **No priority field**: Backend auto-prioritizes (free tiers first)
+5. **No modelSuggestions**: Backend decides based on request context
+6. **No autoRetry/maxRetries**: Backend handles this automatically
 
 ## UI Components Redesign
 
@@ -84,26 +77,44 @@ interface Settings {
 ┌─────────────────────────────────────────────┐
 │ Configured Providers                 [+ Add]│
 ├─────────────────────────────────────────────┤
-│ 🟢 My Groq Free Account                     │
-│    Type: Groq Free Tier                     │
-│    Limits: 7,000 req/min, 14,400 req/day    │
-│    [Edit] [Disable] [Delete]                │
+│ 🆓 Groq Free Tier                           │
+│    Endpoint: api.groq.com/openai/v1         │
+│    API Key: gsk_•••••••••••••••             │
+│    [Edit] [Delete]                          │
 ├─────────────────────────────────────────────┤
-│ 🟢 Google Gemini Free                       │
-│    Type: Gemini Free Tier                   │
-│    Limits: 15 req/min, 1,500 req/day        │
-│    [Edit] [Disable] [Delete]                │
+│ 🆓 Google Gemini Free                       │
+│    Endpoint: generativelanguage.googleapis...│
+│    API Key: AIza•••••••••••••••             │
+│    [Edit] [Delete]                          │
 ├─────────────────────────────────────────────┤
-│ 🔴 My OpenAI Account (Disabled)             │
-│    Type: OpenAI Paid                        │
-│    [Edit] [Enable] [Delete]                 │
+│ � OpenAI                                   │
+│    Endpoint: api.openai.com/v1              │
+│    API Key: sk-•••••••••••••••              │
+│    [Edit] [Delete]                          │
+├─────────────────────────────────────────────┤
+│ 🔌 Together AI                              │
+│    Endpoint: api.together.xyz/v1            │
+│    API Key: •••••••••••••••                 │
+│    [Edit] [Delete]                          │
+├─────────────────────────────────────────────┤
+│ ⚙️ Custom (llama-3.1-70b)                   │
+│    Endpoint: api.custom.com/v1              │
+│    Model: llama-3.1-70b-instruct            │
+│    API Key: •••••••••••••••                 │
+│    [Edit] [Delete]                          │
 └─────────────────────────────────────────────┘
+
+ℹ️ Note: The backend prioritizes free tier providers first.
+   Paid providers are used when rate limits are exceeded.
 ```
 
 Features:
-- Toggle enabled/disabled state
-- Visual indicators for free tier
-- Quick edit without full form
+- 🆓 icon for free tier providers
+- 💰 icon for paid providers  
+- 🔌 icon for Together AI
+- ⚙️ icon for custom/OpenAI-compatible providers
+- Masked API keys for security
+- Simple Edit/Delete actions only
 
 ### 2. Provider Form Component
 **New File**: `ui-new/src/components/ProviderForm.tsx`
@@ -112,118 +123,149 @@ Features:
 ┌─────────────────────────────────────────────┐
 │ Add Provider                                 │
 ├─────────────────────────────────────────────┤
-│ Provider Name: [My Groq Account        ]    │
-│                                              │
-│ Provider Type: [Groq Free Tier ▼]           │
+│ Provider Type: [Select provider type... ▼]  │
 │   Options:                                   │
 │   • Groq (Free Tier) 🆓                     │
 │   • Groq (Paid)                              │
-│   • OpenAI                                   │
+│   • OpenAI 💰                                │
 │   • Google Gemini (Free Tier) 🆓            │
-│   • Google Gemini (Paid)                     │
-│   • OpenAI Compatible (Custom)               │
+│   • Google Gemini (Paid) 💰                 │
+│   • Together AI 🔌                          │
+│   • OpenAI Compatible (Custom) ⚙️           │
 │                                              │
-│ API Key: [sk-...                       ]    │
+│ API Endpoint:                                │
+│ [https://api.groq.com/openai/v1        ]    │
+│ ⓘ Auto-filled, not editable                 │
 │                                              │
-│ ☑ This is a free tier account               │
+│ API Key: [                             ]    │
+│ ⓘ Your API key for this provider            │
 │                                              │
-│ Token Limits (optional):                    │
-│ ├─ Requests/minute: [7000             ]    │
-│ ├─ Requests/day:    [14400            ]    │
-│ ├─ Tokens/minute:   [30000            ]    │
-│ └─ Tokens/day:      [leave empty      ]    │
+│ [Cancel] [Save Provider]                    │
+└─────────────────────────────────────────────┘
+```
+
+**When "OpenAI Compatible" is selected:**
+```
+┌─────────────────────────────────────────────┐
+│ Add Provider                                 │
+├─────────────────────────────────────────────┤
+│ Provider Type: [OpenAI Compatible ▼]        │
 │                                              │
-│ Priority: [1] (lower = higher priority)     │
+│ API Endpoint: ✏️                            │
+│ [https://                              ]    │
+│ ⓘ EDITABLE - Enter custom endpoint          │
+│                                              │
+│ Model Name: ✏️                              │
+│ [llama-3.1-70b-instruct                ]    │
+│ ⓘ REQUIRED - Exact model name for API       │
+│                                              │
+│ API Key: [                             ]    │
 │                                              │
 │ [Cancel] [Save Provider]                    │
 └─────────────────────────────────────────────┘
 ```
 
 Features:
-- Auto-fill limits based on provider type selection
-- Validation of API key format per provider
-- Help text explaining each field
-- Test connection button
+- API endpoint auto-filled for known providers (NOT editable)
+- API endpoint EDITABLE only for "OpenAI Compatible"
+- Model name field ONLY appears for "OpenAI Compatible"
+- No priority, limits, or free tier checkboxes
+- Minimal, credential-focused interface
 
-### 3. OpenAI-Compatible Provider Sub-Form
-When "OpenAI Compatible (Custom)" is selected:
-
-```
-┌─────────────────────────────────────────────┐
-│ Custom Endpoint Configuration                │
-├─────────────────────────────────────────────┤
-│ API Endpoint:                                │
-│ [https://api.together.xyz/v1           ]    │
-│                                              │
-│ Suggested Endpoints:                         │
-│ • Together AI: https://api.together.xyz/v1   │
-│ • Anyscale: https://api.endpoints.anyscale...│
-│ • Perplexity: https://api.perplexity.ai      │
-│ • DeepInfra: https://api.deepinfra.com/v1... │
-│ • Fireworks: https://api.fireworks.ai/inf... │
-│ • Custom: [Enter your own]                   │
-│                                              │
-│ Supports Streaming: ☑                       │
-│ Supports Tools/Functions: ☑                 │
-└─────────────────────────────────────────────┘
-```
-
-### 4. Model Suggestion Settings
-Replace explicit model selection with request type preferences:
+### 3. Settings Page Layout
 
 ```
 ┌─────────────────────────────────────────────┐
-│ Model Selection Preferences                  │
+│ Settings                               [×]   │
 ├─────────────────────────────────────────────┤
-│ For Planning/Reasoning:                      │
-│ ( ) Prefer Reasoning models                  │
-│ (•) Prefer Large models                      │
 │                                              │
-│ For General Chat:                            │
-│ (•) Prefer Large models                      │
-│ ( ) Prefer Small models                      │
+│ ⚡ Provider Credentials                     │
+│ ─────────────────────────────────────────── │
 │                                              │
-│ For Summarization:                           │
-│ (•) Prefer Small models                      │
-│ ( ) Prefer Large models                      │
+│ [Provider List Component - see above]       │
 │                                              │
-│ ☑ Prefer free tier providers when available │
-│ ☑ Auto-retry with different provider on fail│
-│ Max Retries: [3]                             │
+│ ─────────────────────────────────────────── │
+│                                              │
+│ ℹ️ How Provider Selection Works:            │
+│                                              │
+│ • Free tier providers (🆓) are used first   │
+│ • Paid providers (💰) are used when free    │
+│   tier rate limits are exceeded             │
+│ • The backend automatically selects the     │
+│   best model for each request               │
+│ • No need to configure rate limits or       │
+│   priorities - it's all automatic!          │
+│                                              │
+│ ─────────────────────────────────────────── │
+│                                              │
+│ 🔍 Search API                                │
+│ ─────────────────────────────────────────── │
+│                                              │
+│ Tavily API Key:                              │
+│ [tvly-•••••••••••••••                  ]    │
+│                                              │
+│ ─────────────────────────────────────────── │
+│                                              │
+│                           [Save] [Cancel]    │
 └─────────────────────────────────────────────┘
 ```
+
+### Removed Sections
+- ❌ Model selection dropdowns (small/large/reasoning)
+- ❌ Provider selection radio buttons
+- ❌ Token limit configuration
+- ❌ Priority settings
+- ❌ Model preference toggles
+- ❌ Auto-retry settings
+
+All of these are now handled automatically by the backend using PROVIDER_CATALOG.json!
 
 ## Implementation Files
 
 ### Files to Create
-1. `ui-new/src/components/ProviderList.tsx` - Provider management list
-2. `ui-new/src/components/ProviderForm.tsx` - Add/edit provider form
-3. `ui-new/src/components/ProviderCard.tsx` - Individual provider display
-4. `ui-new/src/types/provider.ts` - TypeScript type definitions
-5. `ui-new/src/hooks/useProviders.ts` - Provider CRUD operations
-6. `ui-new/src/utils/providerValidation.ts` - API key validation
+1. `ui-new/src/components/ProviderList.tsx` - Provider management list (simplified)
+2. `ui-new/src/components/ProviderForm.tsx` - Add/edit provider form (credentials only)
+3. `ui-new/src/types/provider.ts` - TypeScript type definitions (simplified schema)
+4. `ui-new/src/hooks/useProviders.ts` - Provider CRUD operations
+5. `ui-new/src/utils/providerValidation.ts` - API key format validation
 
 ### Files to Modify
 1. `ui-new/src/components/SettingsModal.tsx`
-   - Replace single provider UI with ProviderList
+   - **REMOVE**: Model selection dropdowns (small/large/reasoning)
+   - **REMOVE**: Provider selection (single provider)
+   - **REMOVE**: Manual endpoint entry
+   - **ADD**: ProviderList component
+   - **ADD**: Info text about free tier priority
    - Update to new settings schema
-   - Add migration logic for existing settings
 
 2. `ui-new/src/contexts/SettingsContext.tsx`
-   - Update Settings interface
-   - Add provider management methods
-   - Implement settings versioning and migration
+   - **REMOVE**: `smallModel`, `largeModel`, `reasoningModel` fields
+   - **REMOVE**: `provider` field (single provider)
+   - **REMOVE**: `apiEndpoint` field (now per-provider)
+   - **ADD**: `providers` array field
+   - Update Settings interface to v2.0.0
+   - Implement settings migration from v1 to v2
 
 3. `ui-new/src/components/ChatTab.tsx`
-   - Update to send providers array instead of single provider
-   - Remove model selection from UI (let Lambda choose)
-   - Send modelSuggestion instead of explicit model name
+   - **REMOVE**: Model selection from UI
+   - **UPDATE**: Send `providers` array instead of single provider/key
+   - Backend will choose optimal model automatically
 
 ## Settings Migration Strategy
 
 ### Version 1.0.0 → 2.0.0 Migration
 
 ```typescript
+// Endpoint mapping based on provider type
+const PROVIDER_ENDPOINTS = {
+  'groq': 'https://api.groq.com/openai/v1',
+  'groq-free': 'https://api.groq.com/openai/v1',
+  'openai': 'https://api.openai.com/v1',
+  'gemini': 'https://generativelanguage.googleapis.com/v1beta',
+  'gemini-free': 'https://generativelanguage.googleapis.com/v1beta',
+  'together': 'https://api.together.xyz/v1',
+};
+
 function migrateSettings(oldSettings: any): Settings {
   // If already v2, return as-is
   if (oldSettings.version === '2.0.0') {
@@ -234,36 +276,31 @@ function migrateSettings(oldSettings: any): Settings {
   const migratedProviders: ProviderConfig[] = [];
 
   if (oldSettings.provider && oldSettings.llmApiKey) {
+    // Determine provider type - assume Groq was free tier
+    const providerType = oldSettings.provider === 'groq' ? 'groq-free' : oldSettings.provider;
+    
     migratedProviders.push({
       id: crypto.randomUUID(),
-      name: `My ${oldSettings.provider.charAt(0).toUpperCase() + oldSettings.provider.slice(1)} Account`,
-      type: oldSettings.provider,
-      apiKey: oldSettings.llmApiKey,
-      freeTier: oldSettings.provider === 'groq', // Assume Groq was free tier
-      enabled: true,
-      priority: 1,
-      tokenLimits: oldSettings.provider === 'groq' ? {
-        requestsPerMinute: 7000,
-        requestsPerDay: 14400,
-        tokensPerMinute: 30000
-      } : undefined
+      type: providerType,
+      apiEndpoint: PROVIDER_ENDPOINTS[providerType],
+      apiKey: oldSettings.llmApiKey
     });
   }
 
   return {
     version: '2.0.0',
     providers: migratedProviders,
-    tavilyApiKey: oldSettings.tavilyApiKey || '',
-    modelSuggestions: {
-      planning: 'reasoning',
-      chat: 'large',
-      summarization: 'small'
-    },
-    autoRetry: true,
-    maxRetries: 3
+    tavilyApiKey: oldSettings.tavilyApiKey || ''
   };
 }
 ```
+
+### Migration Notes
+- Old `provider` field maps to new `type` field
+- Old `apiEndpoint` is discarded (now auto-filled)
+- Old model selections (`smallModel`, `largeModel`, `reasoningModel`) are discarded
+- Groq is migrated as `groq-free` by default
+- OpenAI remains as `openai`
 
 ## Request Format Changes
 
@@ -271,6 +308,8 @@ function migrateSettings(oldSettings: any): Settings {
 ```json
 {
   "model": "llama-3.1-8b-instant",
+  "provider": "groq",
+  "apiKey": "gsk_...",
   "messages": [...],
   "stream": true
 }
@@ -279,21 +318,25 @@ function migrateSettings(oldSettings: any): Settings {
 ### New Request Format
 ```json
 {
-  "requestType": "chat", // or "planning", "summarization"
   "providers": [
     {
       "id": "uuid-1",
-      "type": "groq",
-      "apiKey": "gsk_...",
-      "freeTier": true,
-      "tokenLimits": {...}
+      "type": "groq-free",
+      "apiEndpoint": "https://api.groq.com/openai/v1",
+      "apiKey": "gsk_..."
     },
     {
       "id": "uuid-2",
       "type": "gemini-free",
-      "apiKey": "AIza...",
-      "freeTier": true,
-      "tokenLimits": {...}
+      "apiEndpoint": "https://generativelanguage.googleapis.com/v1beta",
+      "apiKey": "AIza..."
+    },
+    {
+      "id": "uuid-3",
+      "type": "openai-compatible",
+      "apiEndpoint": "https://api.custom.com/v1",
+      "apiKey": "custom_key_...",
+      "modelName": "llama-3.1-70b-instruct"
     }
   ],
   "messages": [...],
@@ -301,71 +344,216 @@ function migrateSettings(oldSettings: any): Settings {
 }
 ```
 
-## Side Effects Analysis
+### Key Changes
+- **No `model` field**: Backend selects model from PROVIDER_CATALOG.json
+- **No `requestType` field**: Backend infers from context (message length, tools, etc.)
+- **`providers` array**: Send all configured providers to backend
+- **`modelName` for openai-compatible only**: Backend preserves this through to upstream API
+- Backend uses PROVIDER_CATALOG.json to:
+  - Choose optimal model (small/large/reasoning)
+  - Prioritize free tier providers
+  - Track rate limits per provider
+  - Failover to paid providers when needed
 
-### Potential Breaking Changes
-1. **localStorage Schema Change**: Existing users will need migration
-2. **Request Format**: Lambda must handle both old and new formats during transition
-3. **Model Selection**: Users can't choose specific models anymore (pros/cons)
+## Backend Requirements
 
-### UI/UX Impact
-1. **More Complex Setup**: Users must configure multiple providers (good for power users, intimidating for beginners)
-2. **No Visual Model Selection**: May confuse users who liked choosing specific models
-3. **Free Tier Encouragement**: Good for cost savings, may reduce quality perception
+### Lambda Handler Changes Required
 
-### Backend Impact
-1. **Request Validation**: Must validate provider configs from frontend
-2. **Security**: Multiple API keys sent in each request (encryption important)
-3. **Error Messages**: Need to specify which provider failed
+1. **Accept providers array**: Parse `providers` array from request body
+2. **Provider selection logic**:
+   - Filter enabled providers
+   - Prioritize by type: free tier (`groq-free`, `gemini-free`) before paid
+   - Use PROVIDER_CATALOG.json to look up available models per provider
+   - Choose model based on request context (simple chat vs tool use vs reasoning)
+3. **Rate limit tracking**: Track usage per provider ID
+4. **Failover logic**: If rate limited on one provider, try next in priority order
+5. **OpenAI-compatible handling**: For `type: 'openai-compatible'`, preserve `modelName` field through to upstream API request
+
+### Model Selection Algorithm (Backend)
+```
+For each request:
+1. Analyze request context:
+   - Does it use tools? → Requires model with supportsTools: true
+   - Does it have images? → Requires model with supportsVision: true
+   - Is conversation long? → Prefer large context window
+   - Is it complex reasoning? → Prefer reasoning category models
+
+2. Get available providers (prioritize free tier)
+3. For each provider:
+   - Check PROVIDER_CATALOG.json for compatible models
+   - Check rate limits (from catalog + runtime tracking)
+   - Select best available model matching requirements
+
+4. Make request to selected provider/model
+5. If rate limited → try next provider
+6. If all providers exhausted → return 429 error
+```
+
+### OpenAI-Compatible Provider Handling
+
+**CRITICAL**: For `openai-compatible` providers, the backend MUST:
+1. Use the `modelName` field from the provider config
+2. Pass it directly to the upstream API in the `model` field
+3. NOT attempt to look up the model in PROVIDER_CATALOG.json
+4. Still apply rate limiting and failover logic
+
+Example request to upstream API:
+```json
+POST https://api.custom.com/v1/chat/completions
+{
+  "model": "llama-3.1-70b-instruct",  // FROM modelName field
+  "messages": [...],
+  "stream": true
+}
+```
 
 ## Validation Requirements
 
 ### Frontend Validation
-- API key format per provider type:
+- **API Key Format** (per provider type):
   - Groq: `gsk_[a-zA-Z0-9]{32,}`
-  - OpenAI: `sk-[a-zA-Z0-9]{48}`
+  - OpenAI: `sk-[a-zA-Z0-9_-]{20,}`
   - Gemini: `AIza[a-zA-Z0-9_-]{35}`
+  - Together: `[a-zA-Z0-9_-]{32,}`
+  - OpenAI-compatible: Any non-empty string
  
-- Endpoint validation for custom providers:
+- **Endpoint Validation** (for openai-compatible only):
   - Must be valid HTTPS URL
-  - Must respond to `/v1/models` endpoint
-  - Should support streaming
+  - Must start with `https://`
+  - No validation of actual endpoint (user responsibility)
+
+- **Model Name Validation** (for openai-compatible only):
+  - Required field
+  - Must be non-empty string
+  - No format validation (depends on provider)
 
 ### Backend Validation
-- Verify provider configs aren't malicious
-- Rate limit per-provider, not per-user
-- Sanitize provider names (XSS prevention)
+- **Security**:
+  - Sanitize all provider fields (XSS prevention)
+  - Validate API keys are strings
+  - Validate endpoints are valid URLs
+  - Reject if modelName missing for openai-compatible type
+  
+- **Rate Limiting**:
+  - Track per provider ID (not per user)
+  - Use limits from PROVIDER_CATALOG.json
+  - Maintain rate limit state in memory/Redis
 
 ## Testing Requirements
 
 ### Unit Tests
-- Settings migration from v1 to v2
-- Provider CRUD operations
-- Validation functions
+1. **Settings Migration**
+   - Migrate v1.0.0 → v2.0.0 (single provider → multi-provider)
+   - Handle missing fields gracefully
+   - Preserve Tavily API key
+
+2. **Provider CRUD**
+   - Add new provider
+   - Edit existing provider
+   - Delete provider
+   - Validate duplicate prevention
+
+3. **Validation Functions**
+   - API key format validation per provider type
+   - Endpoint validation for openai-compatible
+   - Model name required for openai-compatible
 
 ### Integration Tests
-- Add/edit/delete providers in UI
-- Settings persistence across page reloads
-- Migration with real legacy data
+1. **UI Flow**
+   - Add multiple providers through UI
+   - Edit provider credentials
+   - Delete provider
+   - Settings persistence in localStorage
+
+2. **Backend Integration**
+   - Send providers array to Lambda
+   - Backend selects correct model
+   - OpenAI-compatible modelName preserved
+   - Failover to next provider on rate limit
 
 ### E2E Tests
-- Complete provider setup flow
-- Request with multiple providers
-- Failover scenario (one provider fails)
+1. **Complete Flow**
+   - Configure Groq free tier → successful request
+   - Configure Gemini free tier → successful request
+   - Configure OpenAI → successful request
+   - Configure custom provider with modelName → successful request
+
+2. **Failover Scenario**
+   - Exceed Groq free tier limit → automatically uses next provider
+   - All free tiers exhausted → uses paid provider
+   - All providers exhausted → returns 429 error
+
+3. **OpenAI-Compatible Flow**
+   - Add custom provider with endpoint + modelName
+   - Verify modelName passed to upstream API
+   - Verify request succeeds with custom endpoint
 
 ## Implementation Checklist
 
-- [ ] Create TypeScript type definitions
+### Frontend (UI)
+- [ ] Create TypeScript type definitions (simplified schema)
 - [ ] Implement ProviderList component
-- [ ] Implement ProviderForm component
-- [ ] Implement ProviderCard component
+- [ ] Implement ProviderForm component (credentials only)
 - [ ] Add provider validation utilities
-- [ ] Update SettingsContext with new schema
-- [ ] Implement settings migration logic
-- [ ] Update SettingsModal to use new components
-- [ ] Update ChatTab to send new request format
+- [ ] Update SettingsContext with new schema (v2.0.0)
+- [ ] Implement settings migration (v1 → v2)
+- [ ] Update SettingsModal:
+  - [ ] Remove model selection dropdowns
+  - [ ] Remove provider selection
+  - [ ] Add ProviderList component
+  - [ ] Add info text about free tier priority
+- [ ] Update ChatTab:
+  - [ ] Remove model selection UI
+  - [ ] Send providers array instead of single provider
 - [ ] Add unit tests for migration
 - [ ] Add E2E tests for provider management
-- [ ] Update documentation
+
+### Backend (Lambda)
+- [ ] Accept providers array in request
+- [ ] Implement provider priority logic (free tier first)
+- [ ] Implement model selection algorithm using PROVIDER_CATALOG.json
+- [ ] Implement rate limit tracking per provider ID
+- [ ] Implement failover logic (try next provider on rate limit)
+- [ ] Handle openai-compatible providers:
+  - [ ] Preserve modelName field
+  - [ ] Pass directly to upstream API
+  - [ ] Don't look up in PROVIDER_CATALOG.json
+- [ ] Add provider validation (security)
+- [ ] Add unit tests for model selection
+- [ ] Add integration tests for failover
+
+### Documentation
+- [ ] Update README with new provider setup instructions
+- [ ] Document model selection algorithm
+- [ ] Document rate limit behavior
+- [ ] Document openai-compatible provider usage
+- [ ] Add troubleshooting guide
+
+## Summary of Key Changes
+
+### What's REMOVED
+- ❌ Model selection in UI (small/large/reasoning dropdowns)
+- ❌ Single provider selection
+- ❌ Manual endpoint entry (except openai-compatible)
+- ❌ Provider priority configuration
+- ❌ Rate limit configuration
+- ❌ Free tier checkbox
+
+### What's ADDED
+- ✅ Multiple provider support (unlimited)
+- ✅ Provider type dropdown (groq-free, groq, openai, gemini-free, gemini, together, openai-compatible)
+- ✅ Auto-filled endpoints (not editable except openai-compatible)
+- ✅ OpenAI-compatible provider type with modelName field
+- ✅ Backend model selection using PROVIDER_CATALOG.json
+- ✅ Automatic free tier prioritization
+- ✅ Automatic failover on rate limits
+- ✅ Info text explaining provider priority behavior
+
+### Critical Backend Behavior
+1. **Free tier providers used first** (groq-free, gemini-free)
+2. **Paid providers used when rate limited** (groq, openai, gemini, together)
+3. **Model selected by backend** based on request requirements + PROVIDER_CATALOG.json
+4. **OpenAI-compatible modelName preserved** through to upstream API
+5. **Rate limits tracked per provider** using PROVIDER_CATALOG.json data
 
 

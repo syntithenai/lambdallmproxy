@@ -1,18 +1,8 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-
-export type Provider = 'groq' | 'openai';
-
-export interface Settings {
-  provider: Provider;
-  llmApiKey: string;
-  tavilyApiKey: string;
-  apiEndpoint: string;
-  smallModel?: string;
-  largeModel?: string;
-  reasoningModel?: string;
-}
+import type { Settings, SettingsV1, ProviderConfig } from '../types/provider';
+import { PROVIDER_ENDPOINTS } from '../types/provider';
 
 interface SettingsContextValue {
   settings: Settings;
@@ -21,19 +11,58 @@ interface SettingsContextValue {
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
 
-// Lambda proxy endpoint - handles LLM requests, transcription, search tools, etc.
-const LAMBDA_PROXY_URL = 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+/**
+ * Migrate settings from v1.0.0 to v2.0.0
+ * Converts single provider to multi-provider array
+ */
+function migrateSettings(oldSettings: any): Settings {
+  // If already v2, return as-is
+  if (oldSettings.version === '2.0.0') {
+    return oldSettings;
+  }
+
+  // Migrate from v1 single provider to v2 multi-provider
+  const migratedProviders: ProviderConfig[] = [];
+
+  if (oldSettings.provider && oldSettings.llmApiKey) {
+    // Determine provider type - assume Groq was free tier by default
+    const providerType = oldSettings.provider === 'groq' ? 'groq-free' : 'openai';
+    
+    migratedProviders.push({
+      id: crypto.randomUUID(),
+      type: providerType,
+      apiEndpoint: PROVIDER_ENDPOINTS[providerType],
+      apiKey: oldSettings.llmApiKey
+    });
+  }
+
+  return {
+    version: '2.0.0',
+    providers: migratedProviders,
+    tavilyApiKey: oldSettings.tavilyApiKey || ''
+  };
+}
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useLocalStorage<Settings>('app_settings', {
-    provider: 'groq',
-    llmApiKey: '',
-    tavilyApiKey: '',
-    apiEndpoint: `${LAMBDA_PROXY_URL}/openai/v1`,
-    smallModel: 'llama-3.1-8b-instant',
-    largeModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    reasoningModel: 'openai/gpt-oss-120b'
+  const [rawSettings, setRawSettings] = useLocalStorage<Settings | SettingsV1>('app_settings', {
+    version: '2.0.0',
+    providers: [],
+    tavilyApiKey: ''
   });
+
+  // Migrate settings on mount if needed
+  const settings = migrateSettings(rawSettings);
+
+  // Save migrated settings if migration occurred
+  useEffect(() => {
+    if (rawSettings !== settings) {
+      setRawSettings(settings);
+    }
+  }, [rawSettings, settings, setRawSettings]);
+
+  const setSettings = (newSettings: Settings) => {
+    setRawSettings(newSettings);
+  };
 
   return (
     <SettingsContext.Provider value={{ settings, setSettings }}>

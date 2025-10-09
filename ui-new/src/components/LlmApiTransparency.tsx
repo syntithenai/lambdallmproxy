@@ -88,10 +88,15 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
     }
   };
 
-  const getProviderFromModel = (model: string, provider?: string): string => {
+  const getProviderFromModel = (model: string | undefined, provider?: string): string => {
     // Use explicit provider if available
     if (provider) {
       return provider.charAt(0).toUpperCase() + provider.slice(1); // Capitalize first letter
+    }
+    
+    // Handle missing model
+    if (!model) {
+      return 'Unknown';
     }
     
     // Fall back to model name detection
@@ -107,7 +112,11 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
     return 'Unknown';
   };
 
-  const getModelDisplay = (model: string): string => {
+  const getModelDisplay = (model: string | undefined): string => {
+    // Handle missing model
+    if (!model) {
+      return 'Unknown';
+    }
     // Remove provider prefix for cleaner display
     return model.replace(/^(openai:|groq:|anthropic:)/, '');
   };

@@ -16,9 +16,9 @@ const { verifyGoogleToken, getAllowedEmails } = require('../auth');
 function validateOpenAIRequest(body) {
     const errors = [];
     
-    // Required fields
-    if (!body.model || typeof body.model !== 'string') {
-        errors.push('model field is required and must be a string');
+    // Model is optional - if not provided, intelligent selection will be used
+    if (body.model && typeof body.model !== 'string') {
+        errors.push('model field must be a string if provided');
     }
     
     if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {

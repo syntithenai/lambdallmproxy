@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SearchResultsProvider } from './contexts/SearchResultsContext';
 import { PlaylistProvider } from './contexts/PlaylistContext';
 import { SwagProvider } from './contexts/SwagContext';
-import { SettingsProvider } from './contexts/SettingsContext';
+import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { ToastProvider } from './components/ToastManager';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
@@ -12,15 +12,19 @@ import { PlaylistButton } from './components/PlaylistButton';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
 import { SwagPage } from './components/SwagPage';
+import ProviderSetupGate from './components/ProviderSetupGate';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
 // Create a wrapper component that can access auth context
 function AppContent() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, getToken } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
   const [showSettings, setShowSettings] = useState(false);
   const [showMCPDialog, setShowMCPDialog] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   
   // Tool configuration - shared between ChatTab and SettingsModal
   const [enabledTools, setEnabledTools] = useLocalStorage<{
@@ -37,9 +41,78 @@ function AppContent() {
     transcribe: true
   });
 
+  // Check authorization status on mount
+  useEffect(() => {
+    const checkAuthAndProviders = async () => {
+      if (!isAuthenticated) {
+        setHasCheckedAuth(true);
+        return;
+      }
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          setHasCheckedAuth(true);
+          return;
+        }
+
+        // Make a test request to check if user needs provider setup
+        const lambdaUrl = import.meta.env.VITE_LAMBDA_URL || 'https://your-lambda-url.lambda-url.us-east-1.on.aws';
+        const response = await fetch(`${lambdaUrl}/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'test' }],
+            providers: settings.providers || []
+          })
+        });
+
+        if (response.status === 403) {
+          const data = await response.json();
+          if (data.requiresProviderSetup) {
+            console.log('🔒 User needs to configure providers');
+            setIsBlocked(true);
+          }
+        }
+      } catch (error) {
+        // Silently handle network errors - they're not critical for app functionality
+        // The auth check is just for provider setup verification
+        console.log('Unable to verify provider setup status (this is not critical)');
+      } finally {
+        setHasCheckedAuth(true);
+      }
+    };
+
+    if (isAuthenticated && !hasCheckedAuth) {
+      checkAuthAndProviders();
+    }
+  }, [isAuthenticated, getToken, settings.providers, hasCheckedAuth]);
+
   // Show login screen if not authenticated
   if (!isAuthenticated) {
     return <LoginScreen />;
+  }
+
+  // Show loading while checking auth
+  if (!hasCheckedAuth) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-900">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show provider setup gate if blocked
+  if (isBlocked) {
+    return (
+      <ProviderSetupGate 
+        isBlocked={isBlocked} 
+        onUnblock={() => setIsBlocked(false)} 
+      />
+    );
   }
 
   // Show full app UI only when authenticated

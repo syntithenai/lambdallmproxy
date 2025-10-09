@@ -6,12 +6,13 @@
 
 const https = require('https');
 const http = require('http');
-const { verifyGoogleToken, getAllowedEmails } = require('../auth');
+const { verifyGoogleToken, getAllowedEmails, authenticateRequest } = require('../auth');
 const { callFunction, compressSearchResultsForLLM } = require('../tools');
 const { createSSEStreamAdapter } = require('../streaming/sse-writer');
 const { parseProviderModel } = require('../providers');
 const { createProgressEmitter } = require('../utils/progress-emitter');
 const { getOrEstimateUsage, providerReturnsUsage } = require('../utils/token-estimation');
+const { buildProviderPool, hasAvailableProviders } = require('../credential-pool');
 
 /**
  * Format tool result for LLM consumption
@@ -399,7 +400,7 @@ async function handler(event, responseStream) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        const { messages, model, tools } = body;
+        let { messages, model, tools, providers: userProviders } = body;
         const tavilyApiKey = body.tavilyApiKey || '';
         
         // Apply defaults for parameters that optimize for comprehensive, verbose responses
@@ -409,24 +410,51 @@ async function handler(event, responseStream) {
         const frequency_penalty = body.frequency_penalty !== undefined ? body.frequency_penalty : 0.3;
         const presence_penalty = body.presence_penalty !== undefined ? body.presence_penalty : 0.4;
         
-        // Verify authentication
+        // Authenticate and authorize request
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
-        const verifiedUser = await verifyAuthToken(authHeader);
+        const authResult = await authenticateRequest(authHeader);
         
-        if (!verifiedUser) {
+        // Check authentication
+        if (!authResult.authenticated) {
             sseWriter.writeEvent('error', {
                 error: 'Authentication required',
-                code: 'UNAUTHORIZED'
+                code: 'UNAUTHORIZED',
+                statusCode: 401
             });
             responseStream.end();
             return;
         }
+        
+        // Check if user has available providers (user-provided OR environment if authorized)
+        const hasProviders = hasAvailableProviders(userProviders, authResult.authorized);
+        
+        if (!hasProviders) {
+            // User is authenticated but has no providers available
+            // For unauthorized users, they MUST configure their own providers
+            // For authorized users, this shouldn't happen (they get env providers)
+            sseWriter.writeEvent('error', {
+                error: 'No LLM providers configured. Please add at least one provider in settings.',
+                code: 'FORBIDDEN',
+                statusCode: 403,
+                requiresProviderSetup: true,
+                authorized: authResult.authorized
+            });
+            responseStream.end();
+            return;
+        }
+        
+        // Build provider pool (user + environment if authorized)
+        const providerPool = buildProviderPool(userProviders, authResult.authorized);
+        console.log(`🎯 Provider pool for ${authResult.email}: ${providerPool.length} provider(s) available`);
         
         // Extract Google OAuth token from Authorization header for API calls
         let googleToken = null;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             googleToken = authHeader.substring(7);
         }
+        
+        // Set verified user from auth result
+        const verifiedUser = authResult.user;
         
         // Validate required fields
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -438,13 +466,33 @@ async function handler(event, responseStream) {
             return;
         }
         
-        if (!model || typeof model !== 'string') {
+        // Model is now optional - if not provided, intelligent selection will choose the best model
+        if (model && typeof model !== 'string') {
             sseWriter.writeEvent('error', {
-                error: 'model field is required and must be a string',
+                error: 'model field must be a string if provided',
                 code: 'INVALID_REQUEST'
             });
             responseStream.end();
             return;
+        }
+        
+        // If no model specified, use intelligent selection based on request complexity
+        if (!model) {
+            // Quick heuristic: check message complexity
+            const totalLength = messages.reduce((sum, msg) => 
+                sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0
+            );
+            const hasTools = tools && tools.length > 0;
+            const isComplex = totalLength > 1000 || messages.length > 5 || hasTools;
+            
+            // Select appropriate model based on complexity
+            if (isComplex) {
+                model = 'llama-3.3-70b-versatile'; // Large model for complex requests
+            } else {
+                model = 'llama-3.1-8b-instant'; // Fast model for simple requests
+            }
+            
+            console.log(`Auto-selected model: ${model} (complex=${isComplex}, length=${totalLength}, messages=${messages.length}, tools=${hasTools})`);
         }
         
         // Determine target URL and API key based on provider

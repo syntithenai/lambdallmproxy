@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help deploy-lambda deploy-lambda-fast build-ui deploy-ui all update-catalog clean serve
+.PHONY: help deploy-lambda deploy-lambda-fast build-ui deploy-ui all update-catalog clean serve logs logs-tail
 
 # Default target - Show help
 help:
@@ -22,6 +22,8 @@ help:
 	@echo "  make all                 - Deploy everything (Lambda + UI)"
 	@echo ""
 	@echo "Utilities:"
+	@echo "  make logs                - View recent Lambda CloudWatch logs"
+	@echo "  make logs-tail           - Tail Lambda CloudWatch logs (live)"
 	@echo "  make update-catalog      - Update PROVIDER_CATALOG.json with latest data"
 	@echo "  make clean               - Clean temporary files"
 	@echo "  make serve               - Serve UI locally on port 8081"
@@ -83,3 +85,13 @@ serve:
 		exit 1; \
 	fi
 	@cd docs && python3 -m http.server 8081
+
+# View recent Lambda CloudWatch logs
+logs:
+	@echo "📋 Fetching recent Lambda logs..."
+	@aws logs tail /aws/lambda/llmproxy --since 5m --format short
+
+# Tail Lambda CloudWatch logs (live)
+logs-tail:
+	@echo "📋 Tailing Lambda logs (Ctrl+C to stop)..."
+	@aws logs tail /aws/lambda/llmproxy --follow --format short
