@@ -3,7 +3,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigb
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
+  content: string | Array<{type: string; text?: string; image_url?: {url: string; detail?: string}}>;  // Support multimodal content
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -15,6 +15,13 @@ export interface ChatMessage {
   tool_call_id?: string;
   name?: string;
   isStreaming?: boolean;  // Flag to indicate message is currently being streamed
+  _attachments?: Array<{  // UI-only: attached files for display
+    name: string;
+    type: string;
+    size: number;
+    base64: string;
+    preview?: string;
+  }>;
   llmApiCalls?: Array<{   // LLM API transparency data for this message
     phase: string;
     provider?: string;    // LLM provider (e.g., 'groq', 'openai')

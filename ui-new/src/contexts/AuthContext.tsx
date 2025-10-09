@@ -5,11 +5,9 @@ import {
   saveAuthState, 
   clearAuthState, 
   decodeJWT, 
-  isTokenExpiringSoon,
-  getTokenTimeRemaining
+  isTokenExpiringSoon
 } from '../utils/auth';
 import type { AuthState, GoogleUser } from '../utils/auth';
-import { useToast } from '../components/ToastManager';
 
 interface AuthContextType extends AuthState {
   login: (credential: string) => void;
@@ -35,8 +33,6 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>(() => loadAuthState());
   const [hasAttemptedAutoLogin, setHasAttemptedAutoLogin] = useState(false);
-  const [hasShownExpiryWarning, setHasShownExpiryWarning] = useState(false);
-  const { showWarning } = useToast();
 
   const login = useCallback((credential: string) => {
     try {
@@ -133,14 +129,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Check for token expiration periodically and logout if expired
   useEffect(() => {
     if (!authState.isAuthenticated || !authState.accessToken) {
-      setHasShownExpiryWarning(false);
       return;
     }
 
     // Immediate check on mount
     if (isTokenExpiringSoon(authState.accessToken)) {
       console.warn('⚠️ Token expired on mount, logging out...');
-      showWarning('Your session has expired. Please sign in again.');
+      // Removed toast warning - just log out silently
       logout();
       return;
     }
@@ -149,26 +144,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const interval = setInterval(() => {
       if (!authState.accessToken) return;
       
-      const timeRemaining = getTokenTimeRemaining(authState.accessToken);
-      const minutesRemaining = Math.floor(timeRemaining / 60000);
-      
-      // Show warning at 10 minutes
-      if (!hasShownExpiryWarning && timeRemaining > 0 && minutesRemaining <= 10 && minutesRemaining > 5) {
-        console.warn(`⚠️ Token expires in ${minutesRemaining} minutes`);
-        showWarning(`Your session expires in ${minutesRemaining} minutes. Please save your work.`);
-        setHasShownExpiryWarning(true);
-      }
-      
-      // Logout when expired (within 5 minutes)
+      // Logout when expired (within 5 minutes) - removed warnings
       if (isTokenExpiringSoon(authState.accessToken)) {
         console.warn('⚠️ Token expired, logging out...');
-        showWarning('Your session has expired. Please sign in again.');
+        // Removed toast warning - just log out silently
         logout();
       }
     }, 30 * 1000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [authState.isAuthenticated, authState.accessToken, hasShownExpiryWarning, logout, showWarning]);
+  }, [authState.isAuthenticated, authState.accessToken, logout]);
 
   return (
     <AuthContext.Provider value={{ ...authState, login, logout, refreshToken, getToken }}>

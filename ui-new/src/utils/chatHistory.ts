@@ -7,6 +7,18 @@ const DB_NAME = 'llmproxy_chat_history';
 const DB_VERSION = 1;
 const STORE_NAME = 'chats';
 
+// Helper to extract text from multimodal content
+function getMessageText(content: any): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(part => part.type === 'text' && part.text)
+      .map(part => part.text)
+      .join('\n');
+  }
+  return '';
+}
+
 export interface ChatHistoryEntry {
   id: string;
   timestamp: number;
@@ -87,8 +99,9 @@ export async function saveChatToHistory(messages: any[], chatId?: string): Promi
     
     // Find first user message for the preview
     const firstUserMessage = messages.find(m => m.role === 'user');
-    const firstUserPrompt = firstUserMessage 
-      ? (firstUserMessage.content || 'Empty message').substring(0, 100)
+    const messageText = firstUserMessage ? getMessageText(firstUserMessage.content) : '';
+    const firstUserPrompt = messageText 
+      ? messageText.substring(0, 100)
       : 'New chat';
     
     if (!chatId) {

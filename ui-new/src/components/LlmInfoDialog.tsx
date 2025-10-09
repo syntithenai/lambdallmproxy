@@ -1,5 +1,6 @@
 import React from 'react';
 import { JsonTree } from './JsonTree';
+import { useDialogClose } from '../hooks/useDialogClose';
 
 interface LlmApiCall {
   phase: string;
@@ -18,6 +19,8 @@ interface LlmInfoDialogProps {
 }
 
 export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose }) => {
+  const dialogRef = useDialogClose(true, onClose);
+
   // Parse JSON strings in response object recursively
   const parseJsonStrings = (obj: any): any => {
     if (obj === null || obj === undefined) {
@@ -106,7 +109,7 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
     sum + (call.response?.usage?.total_tokens || 0), 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+    <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col">
         {/* Dialog Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">

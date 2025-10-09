@@ -20,6 +20,7 @@ const proxyEndpoint = require('./endpoints/proxy');
 const chatEndpoint = require('./endpoints/chat');
 const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
+const transcribeEndpoint = require('./endpoints/transcribe');
 
 /**
  * Handle CORS preflight requests
@@ -101,7 +102,33 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             console.log('Routing to stop-transcription endpoint');
             // Note: Stop endpoint returns standard response, not streaming
             const stopResponse = await stopTranscriptionEndpoint.handler(event);
-            responseStream.write(JSON.stringify(stopResponse));
+            const metadata = {
+                statusCode: stopResponse.statusCode,
+                headers: stopResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(stopResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        if (method === 'POST' && path === '/transcribe') {
+            console.log('Routing to transcribe endpoint');
+            console.log('Request body type:', typeof event.body);
+            console.log('Request body length:', event.body ? event.body.length : 0);
+            console.log('Is base64:', event.isBase64Encoded);
+            
+            // Note: Transcribe endpoint returns standard response, not streaming  
+            const transcribeResponse = await transcribeEndpoint.handler(event);
+            console.log('Transcribe response status:', transcribeResponse.statusCode);
+            console.log('Transcribe response headers:', transcribeResponse.headers);
+            
+            const metadata = {
+                statusCode: transcribeResponse.statusCode,
+                headers: transcribeResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(transcribeResponse.body);
             responseStream.end();
             return;
         }
@@ -155,5 +182,6 @@ module.exports = {
     searchEndpoint,
     chatEndpoint,
     proxyEndpoint,
-    staticEndpoint
+    staticEndpoint,
+    transcribeEndpoint
 };

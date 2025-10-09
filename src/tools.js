@@ -380,9 +380,29 @@ async function callFunction(name, args = {}, context = {}) {
             searchDepth: 'basic'
           });
           
-          allResults.push(...tavilyResults);
+          // Apply same compression to Tavily results as DuckDuckGo
+          const compressedResults = tavilyResults.map(r => {
+            if (r.content) {
+              const originalLength = r.content.length;
+              // Apply intelligent extraction
+              r.content = extractKeyContent(r.content, r.query);
+              r.originalLength = originalLength;
+              r.intelligentlyExtracted = true;
+              
+              // HARD LIMIT: 5000 chars per result (same as DuckDuckGo)
+              const MAX_SEARCH_RESULT_CHARS = 5000;
+              if (r.content && r.content.length > MAX_SEARCH_RESULT_CHARS) {
+                console.log(`✂️ Truncating Tavily result: ${r.content.length} → ${MAX_SEARCH_RESULT_CHARS} chars`);
+                r.content = r.content.substring(0, MAX_SEARCH_RESULT_CHARS) + '\n\n[Content truncated to fit model limits]';
+                r.truncated = true;
+              }
+            }
+            return r;
+          });
+          
+          allResults.push(...compressedResults);
           searchService = 'tavily';
-          console.log(`✅ Tavily search completed: ${tavilyResults.length} results with content`);
+          console.log(`✅ Tavily search completed: ${tavilyResults.length} results with compressed content`);
         } catch (error) {
           console.error('Tavily search failed, falling back to DuckDuckGo:', error.message);
           // Fall back to DuckDuckGo on error

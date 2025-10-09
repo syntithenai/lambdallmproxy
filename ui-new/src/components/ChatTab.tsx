@@ -15,6 +15,7 @@ import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgre
 import { SearchProgress } from './SearchProgress';
 import { LlmInfoDialog } from './LlmInfoDialog';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
+import { VoiceInputDialog } from './VoiceInputDialog';
 import ExtractedContent from './ExtractedContent';
 import { 
   saveChatToHistory, 
@@ -131,11 +132,25 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // Error Info dialog tracking
   const [showErrorInfo, setShowErrorInfo] = useState<number | null>(null);
   
+  // Voice input dialog
+  const [showVoiceInput, setShowVoiceInput] = useState(false);
+  
+  // File attachment state
+  const [attachedFiles, setAttachedFiles] = useState<Array<{
+    name: string;
+    type: string;
+    size: number;
+    base64: string;
+    preview?: string;
+  }>>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const retryTriggerRef = useRef<boolean>(false);
   const examplesDropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Prompt history for up/down arrow navigation
   const [promptHistory, setPromptHistory] = useLocalStorage<string[]>('chat_prompt_history', []);
@@ -148,6 +163,15 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const handleCaptureContent = (content: string, sourceType: 'user' | 'assistant' | 'tool', title?: string) => {
     addSnippet(content, sourceType, title);
     showSuccess('Content captured to Swag!');
+  };
+
+  // Handle voice transcription completion
+  const handleVoiceTranscription = (text: string) => {
+    setInput(text);
+    // Auto-submit
+    setTimeout(() => {
+      handleSend();
+    }, 100);
   };
 
   useEffect(() => {
@@ -210,6 +234,50 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }, 0);
   };
 
+  // Helper to extract text from multimodal content
+  const getMessageText = (content: ChatMessage['content']): string => {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter(part => part.type === 'text' && part.text)
+        .map(part => part.text)
+        .join('\n');
+    }
+    return '';
+  };
+
+  // Drag and drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only hide overlay if leaving the main container
+    if (e.currentTarget === e.target) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const files = e.dataTransfer.files;
+    handleFileSelect(files);
+  };
+
   // Auto-resize textarea helper
   const calculateRows = (text: string, minRows = 1, maxRows = 10): number => {
     if (!text || text.trim() === '') return minRows;
@@ -234,15 +302,35 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         try {
           const lastChatId = localStorage.getItem('last_active_chat_id');
           if (lastChatId) {
+            console.log('🔄 Attempting to restore last chat:', lastChatId);
             const loadedMessages = await loadChatFromHistory(lastChatId);
             if (loadedMessages && loadedMessages.length > 0) {
-              console.log('📂 Restored chat session:', lastChatId, 'with', loadedMessages.length, 'messages');
-              setMessages(loadedMessages);
+              // Filter out any corrupted messages and sanitize _attachments
+              const cleanMessages = loadedMessages.map(msg => {
+                // Remove _attachments.base64 data to save memory (keep preview only)
+                if (msg._attachments && Array.isArray(msg._attachments)) {
+                  msg._attachments = msg._attachments.map((att: any) => ({
+                    name: att.name || 'file',
+                    type: att.type || 'application/octet-stream',
+                    size: att.size || 0,
+                    preview: att.preview // Keep preview for display
+                    // Don't restore base64 data - it's huge and not needed for display
+                  }));
+                }
+                return msg;
+              }).filter(msg => msg && msg.role); // Filter out any null/invalid messages
+              
+              console.log('✅ Restored chat session:', lastChatId, 'with', cleanMessages.length, 'messages');
+              setMessages(cleanMessages);
               setCurrentChatId(lastChatId);
+            } else {
+              console.log('ℹ️ No previous chat to restore');
             }
           }
         } catch (error) {
-          console.error('Error loading last chat:', error);
+          console.error('❌ Error loading last chat:', error);
+          // Clear the corrupted chat reference
+          localStorage.removeItem('last_active_chat_id');
         }
         setMessagesLoaded(true);
       })();
@@ -255,12 +343,18 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       // If we don't have a chat ID yet, this is a new session
       // Generate ID and save. Otherwise, update existing chat.
       (async () => {
-        const id = await saveChatToHistory(messages, currentChatId || undefined);
-        if (!currentChatId) {
-          setCurrentChatId(id);
+        try {
+          const id = await saveChatToHistory(messages, currentChatId || undefined);
+          if (!currentChatId) {
+            setCurrentChatId(id);
+          }
+          // Save as last active chat
+          localStorage.setItem('last_active_chat_id', id);
+          console.log('💾 Chat auto-saved:', id);
+        } catch (error) {
+          console.error('❌ Failed to auto-save chat:', error);
+          // Don't throw - just log the error so the UI continues to work
         }
-        // Save as last active chat
-        localStorage.setItem('last_active_chat_id', id);
       })();
     }
   }, [messages, currentChatId, messagesLoaded]);
@@ -501,9 +595,117 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   };
 
+  // File upload helper functions
+  const resizeImage = (file: File, maxSize: number = 2048): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Calculate new dimensions
+          if (width > height && width > maxSize) {
+            height = (height / width) * maxSize;
+            width = maxSize;
+          } else if (height > maxSize) {
+            width = (width / height) * maxSize;
+            height = maxSize;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // Convert to base64 with quality compression
+          const base64 = canvas.toDataURL(file.type || 'image/jpeg', 0.85);
+          resolve(base64.split(',')[1]); // Remove data:image/...;base64, prefix
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+    const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB
+    const SUPPORTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      // Validate file type
+      if (!SUPPORTED_TYPES.includes(file.type)) {
+        showWarning(`File type not supported: ${file.name}. Supported types: JPEG, PNG, GIF, WebP, PDF`);
+        continue;
+      }
+
+      // Validate file size
+      const maxSize = file.type === 'application/pdf' ? MAX_PDF_SIZE : MAX_IMAGE_SIZE;
+      if (file.size > maxSize) {
+        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB). Max size: ${maxSize / 1024 / 1024}MB`);
+        continue;
+      }
+
+      try {
+        let base64Data: string;
+        let preview: string | undefined;
+
+        if (file.type.startsWith('image/')) {
+          // Resize and compress image
+          base64Data = await resizeImage(file);
+          preview = `data:${file.type};base64,${base64Data}`;
+          
+          // Check token estimate (rough: 1 image ≈ 765 tokens for low detail, 2000+ for high detail)
+          const estimatedTokens = base64Data.length / 1000; // Very rough estimate
+          if (estimatedTokens > 20000) {
+            showWarning(`Image ${file.name} may use many tokens (~${Math.round(estimatedTokens / 1000)}k). Consider using a smaller image.`);
+          }
+        } else {
+          // PDF - read as base64
+          const reader = new FileReader();
+          base64Data = await new Promise<string>((resolve, reject) => {
+            reader.onload = (e) => {
+              const result = e.target?.result as string;
+              resolve(result.split(',')[1]);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        }
+
+        setAttachedFiles(prev => [...prev, {
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          base64: base64Data,
+          preview
+        }]);
+
+        showSuccess(`Added ${file.name}`);
+      } catch (error) {
+        console.error('Error processing file:', error);
+        showError(`Failed to process ${file.name}`);
+      }
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async (messageText?: string) => {
     const textToSend = messageText !== undefined ? messageText : input;
-    if (!textToSend.trim() || isLoading) return;
+    if (!textToSend.trim() && attachedFiles.length === 0) return;
+    if (isLoading) return;
     
     // Check authentication before sending
     if (!accessToken) {
@@ -511,8 +713,44 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       return;
     }
 
-    const userMessage: ChatMessage = { role: 'user', content: textToSend };
-    console.log('🔵 Adding user message:', userMessage.content.substring(0, 50));
+    // Create user message with multimodal content if there are attachments
+    let userMessage: ChatMessage;
+    if (attachedFiles.length > 0) {
+      // OpenAI vision format with content array
+      const contentParts: any[] = [
+        { type: 'text', text: textToSend || 'Please analyze these files.' }
+      ];
+      
+      // Add image/file attachments
+      for (const file of attachedFiles) {
+        if (file.type && file.type.startsWith('image/')) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${file.type};base64,${file.base64}`,
+              detail: 'auto' // Let the API choose optimal detail level
+            }
+          });
+        } else if (file.type === 'application/pdf') {
+          // For PDFs, we'll need server-side processing
+          // For now, add as text note (backend will need to handle this)
+          contentParts.push({
+            type: 'text',
+            text: `[PDF attachment: ${file.name}]`
+          });
+        }
+      }
+      
+      userMessage = {
+        role: 'user',
+        content: contentParts,
+        _attachments: attachedFiles // Store for UI display
+      };
+    } else {
+      userMessage = { role: 'user', content: textToSend };
+    }
+    
+    console.log('🔵 Adding user message:', typeof userMessage.content === 'string' ? userMessage.content.substring(0, 50) : `${attachedFiles.length} attachments`);
     setMessages(prev => {
       console.log('🔵 Current messages count before adding user:', prev.length);
       const newMessages = [...prev, userMessage];
@@ -522,14 +760,17 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     
     // Save to history (avoid duplicates and limit to last 50)
     const trimmedInput = textToSend.trim();
-    setPromptHistory(prev => {
-      const filtered = prev.filter(h => h !== trimmedInput);
-      const newHistory = [trimmedInput, ...filtered].slice(0, 50);
-      return newHistory;
-    });
+    if (trimmedInput) {
+      setPromptHistory(prev => {
+        const filtered = prev.filter(h => h !== trimmedInput);
+        const newHistory = [trimmedInput, ...filtered].slice(0, 50);
+        return newHistory;
+      });
+    }
     
     setInput('');
     setHistoryIndex(-1);
+    setAttachedFiles([]); // Clear attachments after sending
     setIsLoading(true);
     setToolStatus([]);
     setStreamingContent('');
@@ -611,7 +852,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         
         // For assistant messages: strip tool_calls and filter if empty
         if (msg.role === 'assistant') {
-          const hasContent = msg.content && msg.content.trim().length > 0;
+          const msgText = getMessageText(msg.content);
+          const hasContent = msg.content && msgText.trim().length > 0;
           const hasToolCalls = msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
           
           if (hasContent) {
@@ -644,9 +886,37 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         userMessage
       ];
       
+      // Clean UI-only fields before sending to API
+      const cleanedMessages = messagesWithSystem.map(msg => {
+        const { _attachments, llmApiCalls, isStreaming, ...cleanMsg } = msg as any;
+        return cleanMsg;
+      });
+      
+      // Detect if vision model is needed (check for images in message thread)
+      const hasImages = cleanedMessages.some(msg => 
+        Array.isArray(msg.content) && msg.content.some((part: any) => part.type === 'image_url')
+      );
+      
+      // Use vision model if images are present
+      let modelToUse = settings.largeModel || 'meta-llama/llama-4-scout-17b-16e-instruct';
+      if (hasImages) {
+        // Map to vision-capable models
+        // meta-llama/llama-4-scout-17b-16e-instruct supports vision
+        if (modelToUse === 'meta-llama/llama-4-scout-17b-16e-instruct' || 
+            modelToUse === 'meta-llama/llama-4-maverick-17b-128e-instruct') {
+          // Already vision-capable, keep as is
+        } else if (modelToUse.includes('gpt-4o') || modelToUse.includes('gpt-4-vision') || modelToUse.includes('openai')) {
+          // OpenAI models support vision, keep as is
+        } else {
+          // Switch to vision-capable Llama model (free via Groq)
+          modelToUse = 'meta-llama/llama-4-scout-17b-16e-instruct';
+        }
+        console.log('🖼️ Images detected, using vision model:', modelToUse);
+      }
+      
       const requestPayload: any = {
-        model: settings.largeModel || 'meta-llama/llama-4-scout-17b-16e-instruct',
-        messages: messagesWithSystem,
+        model: modelToUse,
+        messages: cleanedMessages,
         temperature: 0.7
       };
       
@@ -961,7 +1231,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   const lastMessage = prev[prev.length - 1];
                   const lastMessageIndex = prev.length - 1;
                   const finalContent = (data.content || '').trim();
-                  const lastContent = (lastMessage?.content || '').trim();
+                  const lastContent = lastMessage?.content ? getMessageText(lastMessage.content).trim() : '';
                   
                   // Check if there's a tool message between the last assistant message and now
                   // If there is, we should ALWAYS create a new block (this is a new iteration)
@@ -1072,10 +1342,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     if (newMessages[i].role === 'assistant') {
                       // CRITICAL: Only attach to assistant if it's empty or currently streaming
                       // If it has content and isn't streaming, it's from a previous query
+                      const messageText = getMessageText(newMessages[i].content);
                       const isActiveAssistant = 
                         newMessages[i].isStreaming || 
                         !newMessages[i].content || 
-                        newMessages[i].content.trim().length === 0;
+                        messageText.trim().length === 0;
                       
                       if (isActiveAssistant) {
                         console.log('🔵 Attaching llmApiCalls to active assistant at index:', i, 'phase:', data.phase);
@@ -1276,7 +1547,35 @@ Remember: Use the function calling mechanism, not text output. The API will hand
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div 
+      className="flex flex-col h-full relative"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag and Drop Overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 z-50 bg-blue-500/20 dark:bg-blue-400/20 backdrop-blur-sm flex items-center justify-center border-4 border-dashed border-blue-500 dark:border-blue-400">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-2xl">
+            <div className="text-center">
+              <svg className="w-16 h-16 mx-auto mb-4 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                Drop files here
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Images (JPEG, PNG, GIF, WebP) and PDFs supported
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
+                Max: 5MB for images, 10MB for PDFs
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* System Prompt Display and Planning */}
       <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <div className="flex items-center gap-2 max-w-screen-2xl mx-auto">
@@ -1368,7 +1667,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         )}
         {messages.map((msg, idx) => {
           const isExpanded = expandedToolMessages.has(idx);
-          console.log(`Rendering message ${idx}:`, msg.role, msg.content?.substring(0, 50));
+          const msgText = msg.content ? getMessageText(msg.content) : '';
+          console.log(`Rendering message ${idx}:`, msg.role, msgText.substring(0, 50));
           
           // Debug: Log tool_calls for assistant messages
           if (msg.role === 'assistant' && msg.tool_calls) {
@@ -1419,7 +1719,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     ? 'bg-blue-500 text-white'
                     : msg.role === 'tool'
                     ? 'bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700'
-                    : msg.content && msg.content.startsWith('❌ Error:')
+                    : msg.content && getMessageText(msg.content).startsWith('❌ Error:')
                     ? 'bg-pink-100 dark:bg-pink-900/30 border-2 border-pink-400 dark:border-pink-600 text-gray-900 dark:text-gray-100'
                     : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
                 }`}
@@ -1445,7 +1745,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   
                   // Try to parse search results for better display
                   let searchResults: any = null;
-                  if (msg.name === 'search_web') {
+                  if (msg.name === 'search_web' && typeof msg.content === 'string') {
                     try {
                       const parsed = JSON.parse(msg.content);
                       if (parsed.results && Array.isArray(parsed.results)) {
@@ -1458,7 +1758,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   
                   // Try to parse scrape_web_content results for better display
                   let scrapeResult: any = null;
-                  if (msg.name === 'scrape_web_content') {
+                  if (msg.name === 'scrape_web_content' && typeof msg.content === 'string') {
                     try {
                       const parsed = JSON.parse(msg.content);
                       if (parsed.url || parsed.content || parsed.error) {
@@ -1475,8 +1775,24 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           not here in the tool result. This prevents duplicate progress indicators. */}
                       
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">
-                          🔧 {msg.name || 'Tool Result'}
+                        <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                          <span>🔧 {msg.name || 'Tool Result'}</span>
+                          {/* Show query for search_web and search_youtube */}
+                          {toolCall && (msg.name === 'search_web' || msg.name === 'search_youtube') && (() => {
+                            try {
+                              const parsed = JSON.parse(toolCall.function.arguments);
+                              if (parsed.query) {
+                                return (
+                                  <span className="font-normal text-purple-600 dark:text-purple-400 italic">
+                                    - "{parsed.query}"
+                                  </span>
+                                );
+                              }
+                            } catch (e) {
+                              // Ignore parse errors
+                            }
+                            return null;
+                          })()}
                         </div>
                         <button
                           onClick={() => {
@@ -1499,7 +1815,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           {/* Show function call details if available */}
                           {toolCall && (
                             <div className="mb-3 bg-purple-50 dark:bg-purple-950/50 p-3 rounded border border-purple-200 dark:border-purple-800">
-                              {/* For search_web, show the query instead of function name */}
+                              {/* For search_web, show the query and search provider */}
                               {toolCall.function.name === 'search_web' ? (
                                 <>
                                   {toolCall.function.arguments && (() => {
@@ -1517,6 +1833,37 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       }
                                     } catch (e) {
                                       console.error('Error parsing search arguments:', e);
+                                    }
+                                    return null;
+                                  })()}
+                                  {/* Display search provider */}
+                                  {(() => {
+                                    try {
+                                      // Safety check: ensure msg.content exists and is not empty
+                                      if (!msg.content) {
+                                        return null;
+                                      }
+                                      
+                                      const resultData = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
+                                      const searchService = resultData?.searchService;
+                                      
+                                      if (searchService && typeof searchService === 'string') {
+                                        const isTavily = searchService === 'tavily';
+                                        return (
+                                          <div className="mt-2 pt-2 border-t border-purple-200 dark:border-purple-700">
+                                            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">Search Provider:</div>
+                                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${
+                                              isTavily 
+                                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
+                                                : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
+                                            }`}>
+                                              {isTavily ? '🔵 Tavily API' : '🦆 DuckDuckGo'}
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                    } catch (e) {
+                                      console.error('Error parsing search provider:', e);
                                     }
                                     return null;
                                   })()}
@@ -1656,7 +2003,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 </div>
                               ) : (
                                 <pre className="whitespace-pre-wrap text-xs text-gray-800 dark:text-gray-200">
-                                  {msg.content}
+                                  {getMessageText(msg.content)}
                                 </pre>
                               )}
                               
@@ -1664,7 +2011,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                               {msg.content && (
                                 <div className="flex gap-2 mt-2 pt-2 border-t border-purple-200 dark:border-purple-700">
                                   <button
-                                    onClick={() => handleCaptureContent(msg.content, 'tool', msg.name)}
+                                    onClick={() => handleCaptureContent(getMessageText(msg.content), 'tool', msg.name)}
                                     className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
                                     title="Capture to Swag"
                                   >
@@ -1809,7 +2156,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         })}
                         
                         {/* Message content - only render if there's actual content */}
-                        {msg.content && <MarkdownRenderer content={msg.content} />}
+                        {msg.content && <MarkdownRenderer content={getMessageText(msg.content)} />}
                         {msg.isStreaming && (
                           <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
                         )}
@@ -1819,7 +2166,37 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       </div>
                     ) : (
                       <div className="whitespace-pre-wrap">
-                        {msg.content}
+                        {getMessageText(msg.content)}
+                        
+                        {/* Display attached files for user messages */}
+                        {msg._attachments && msg._attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {msg._attachments.filter((f: any) => f && f.name).map((file: any, fileIdx: number) => (
+                              <div key={fileIdx} className="bg-white/20 dark:bg-gray-700/30 rounded-lg overflow-hidden border border-white/30 dark:border-gray-600">
+                                {file.preview ? (
+                                  <img 
+                                    src={file.preview} 
+                                    alt={file.name} 
+                                    className="w-32 h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                    title={`${file.name} (${(file.size / 1024).toFixed(1)} KB)`}
+                                    onClick={() => window.open(file.preview, '_blank')}
+                                  />
+                                ) : (
+                                  <div className="w-32 h-32 flex flex-col items-center justify-center p-2 bg-red-50 dark:bg-red-900/20">
+                                    <svg className="w-8 h-8 text-red-600 dark:text-red-400 mb-2" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/>
+                                      <text x="8" y="16" fontSize="8" fill="currentColor" fontWeight="bold">PDF</text>
+                                    </svg>
+                                    <span className="text-xs text-center text-gray-700 dark:text-gray-300 font-medium truncate max-w-full px-1">
+                                      {file.name}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        
                         {/* Extracted content for non-markdown messages too */}
                         {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
                       </div>
@@ -1830,7 +2207,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                         <button
                           onClick={() => {
-                            navigator.clipboard.writeText(msg.content).then(() => {
+                            const textContent = getMessageText(msg.content);
+                            navigator.clipboard.writeText(textContent).then(() => {
                               showSuccess('Copied to clipboard!');
                             }).catch(() => {
                               showError('Failed to copy');
@@ -1846,8 +2224,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         </button>
                         <button
                           onClick={() => {
+                            const textContent = getMessageText(msg.content);
                             const subject = 'Shared from LLM Proxy';
-                            const body = encodeURIComponent(msg.content);
+                            const body = encodeURIComponent(textContent);
                             window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${body}`, '_blank');
                           }}
                           className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 flex items-center gap-1"
@@ -1859,7 +2238,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           Gmail
                         </button>
                         <button
-                          onClick={() => handleCaptureContent(msg.content, 'assistant')}
+                          onClick={() => handleCaptureContent(getMessageText(msg.content), 'assistant')}
                           className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
                           title="Capture to Swag"
                         >
@@ -1898,7 +2277,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </button>
                         )}
                         {/* Error Info button for error messages */}
-                        {msg.errorData && msg.content.startsWith('❌ Error:') && (
+                        {msg.errorData && getMessageText(msg.content).startsWith('❌ Error:') && (
                           <button
                             onClick={() => setShowErrorInfo(idx)}
                             className="text-xs text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-100 flex items-center gap-1"
@@ -1919,7 +2298,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         <button
                           onClick={() => {
                             // Restore message content to input
-                            setInput(msg.content);
+                            setInput(getMessageText(msg.content));
                             // Clear all messages from this point onward
                             setMessages(messages.slice(0, idx));
                             // Clear tool status and streaming
@@ -1946,7 +2325,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             setToolStatus([]);
                             setStreamingContent('');
                             // Restore message content to input (triggers useEffect)
-                            setInput(msg.content);
+                            setInput(getMessageText(msg.content));
                           }}
                           disabled={isLoading}
                           className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1958,7 +2337,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           Retry
                         </button>
                         <button
-                          onClick={() => handleCaptureContent(msg.content, 'user')}
+                          onClick={() => handleCaptureContent(getMessageText(msg.content), 'user')}
                           className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
                           title="Capture to Swag"
                         >
@@ -2070,8 +2449,89 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
         {/* App-level auth gate ensures user is authenticated, no need for inline check */}
         <>
+          {/* File Attachments Display */}
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              {attachedFiles.map((file, idx) => (
+                <div 
+                  key={idx} 
+                  className="relative group bg-white dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 p-2 flex items-center gap-2"
+                >
+                  {/* Preview or Icon */}
+                  {file.preview ? (
+                    <img 
+                      src={file.preview} 
+                      alt={file.name} 
+                      className="w-12 h-12 object-cover rounded"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 flex items-center justify-center bg-red-100 dark:bg-red-900/30 rounded">
+                      <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  )}
+                  
+                  {/* File Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate max-w-[150px]">
+                      {file.name}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {(file.size / 1024).toFixed(1)} KB
+                    </div>
+                  </div>
+                  
+                  {/* Remove Button */}
+                  <button
+                    onClick={() => removeAttachment(idx)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                    title="Remove file"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
           {/* Message Input */}
           <div className="flex gap-2">
+            {/* Hidden File Input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf"
+              multiple
+              onChange={(e) => handleFileSelect(e.target.files)}
+              className="hidden"
+            />
+            
+            {/* File Upload Button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+              className="btn-secondary px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Attach images or PDFs"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button>
+
+            {/* Voice Input Button */}
+            <button
+              onClick={() => setShowVoiceInput(true)}
+              disabled={isLoading || !accessToken}
+              className="btn-secondary px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+              </svg>
+            </button>
+            
             <textarea
             ref={inputRef}
             value={input}
@@ -2472,6 +2932,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           onClose={() => setShowErrorInfo(null)}
         />
       )}
+
+      {/* Voice Input Dialog */}
+      <VoiceInputDialog
+        isOpen={showVoiceInput}
+        onClose={() => setShowVoiceInput(false)}
+        onTranscriptionComplete={handleVoiceTranscription}
+        accessToken={accessToken}
+        apiEndpoint={settings.apiEndpoint}
+      />
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useDialogClose } from '../hooks/useDialogClose';
 import { generatePlan } from '../utils/api';
 import { 
   getAllCachedPlans, 
@@ -17,6 +18,7 @@ interface PlanningDialogProps {
 }
 
 export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose, onTransferToChat }) => {
+  const dialogRef = useDialogClose(isOpen, onClose);
   const { getToken, isAuthenticated } = useAuth();
   const { showError } = useToast();
   const [query, setQuery] = useLocalStorage<string>('planning_query', '');
@@ -179,7 +181,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   return (
     <>
       {/* Main Planning Dialog */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">

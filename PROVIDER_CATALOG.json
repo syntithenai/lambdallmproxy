@@ -1,0 +1,532 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-10-09",
+  "providers": {
+    "groq": {
+      "name": "Groq",
+      "type": "groq",
+      "apiBase": "https://api.groq.com/openai/v1",
+      "supportsStreaming": true,
+      "supportsTools": true,
+      "freeTier": {
+        "available": true,
+        "limits": {
+          "requestsPerMinute": 7000,
+          "requestsPerDay": 14400,
+          "tokensPerMinute": 30000,
+          "tokensPerDay": null
+        }
+      },
+      "rateLimitHeaders": {
+        "format": "standard",
+        "prefix": "x-ratelimit-"
+      },
+      "models": {
+        "llama-3.1-8b-instant": {
+          "id": "llama-3.1-8b-instant",
+          "category": "small",
+          "contextWindow": 131072,
+          "maxOutput": 8192,
+          "pricing": {
+            "input": 0.05,
+            "output": 0.08,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "meta-llama/llama-4-scout-17b-16e-instruct": {
+          "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+          "category": "large",
+          "contextWindow": 131072,
+          "maxOutput": 32768,
+          "pricing": {
+            "input": 0.1,
+            "output": 0.15,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "llama-3.3-70b-versatile": {
+          "id": "llama-3.3-70b-versatile",
+          "category": "large",
+          "contextWindow": 131072,
+          "maxOutput": 32768,
+          "pricing": {
+            "input": 0.59,
+            "output": 0.79,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "mixtral-8x7b-32768": {
+          "id": "mixtral-8x7b-32768",
+          "category": "large",
+          "contextWindow": 32768,
+          "maxOutput": 32768,
+          "pricing": {
+            "input": 0.24,
+            "output": 0.24,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "openai/gpt-oss-120b": {
+          "id": "openai/gpt-oss-120b",
+          "category": "reasoning",
+          "contextWindow": 131072,
+          "maxOutput": 65536,
+          "pricing": {
+            "input": 0.5,
+            "output": 0.5,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        }
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "type": "openai",
+      "apiBase": "https://api.openai.com/v1",
+      "supportsStreaming": true,
+      "supportsTools": true,
+      "supportsVision": true,
+      "freeTier": {
+        "available": false
+      },
+      "rateLimitHeaders": {
+        "format": "standard",
+        "prefix": "x-ratelimit-"
+      },
+      "models": {
+        "gpt-4o-mini": {
+          "id": "gpt-4o-mini",
+          "category": "small",
+          "contextWindow": 128000,
+          "maxOutput": 16384,
+          "pricing": {
+            "input": 0.15,
+            "output": 0.6,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools",
+            "vision"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "gpt-4o": {
+          "id": "gpt-4o",
+          "category": "large",
+          "contextWindow": 128000,
+          "maxOutput": 16384,
+          "pricing": {
+            "input": 2.5,
+            "output": 10,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools",
+            "vision"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "o1-preview": {
+          "id": "o1-preview",
+          "category": "reasoning",
+          "contextWindow": 128000,
+          "maxOutput": 32768,
+          "pricing": {
+            "input": 15,
+            "output": 60,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "reasoning"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "o1-mini": {
+          "id": "o1-mini",
+          "category": "reasoning",
+          "contextWindow": 128000,
+          "maxOutput": 65536,
+          "pricing": {
+            "input": 3,
+            "output": 12,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "reasoning"
+          ],
+          "deprecated": false,
+          "available": true
+        }
+      }
+    },
+    "gemini": {
+      "name": "Google Gemini",
+      "type": "gemini",
+      "apiBase": "https://generativelanguage.googleapis.com/v1beta",
+      "supportsStreaming": true,
+      "supportsTools": true,
+      "supportsVision": true,
+      "freeTier": {
+        "available": true,
+        "limits": {
+          "requestsPerMinute": 15,
+          "requestsPerDay": 1500,
+          "tokensPerMinute": 32000,
+          "tokensPerDay": 50000000
+        }
+      },
+      "rateLimitHeaders": {
+        "format": "custom",
+        "note": "May not expose all limits in headers"
+      },
+      "models": {
+        "gemini-1.5-flash": {
+          "id": "gemini-1.5-flash",
+          "category": "small",
+          "contextWindow": 1000000,
+          "maxOutput": 8192,
+          "pricing": {
+            "input": 0,
+            "output": 0,
+            "unit": "per_million_tokens",
+            "free": true,
+            "paidInput": 0.075,
+            "paidOutput": 0.3
+          },
+          "capabilities": [
+            "chat",
+            "tools",
+            "vision"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "gemini-1.5-pro": {
+          "id": "gemini-1.5-pro",
+          "category": "large",
+          "contextWindow": 2000000,
+          "maxOutput": 8192,
+          "pricing": {
+            "input": 0,
+            "output": 0,
+            "unit": "per_million_tokens",
+            "free": true,
+            "paidInput": 1.25,
+            "paidOutput": 5
+          },
+          "capabilities": [
+            "chat",
+            "tools",
+            "vision"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "gemini-2.0-flash-exp": {
+          "id": "gemini-2.0-flash-exp",
+          "category": "large",
+          "contextWindow": 1000000,
+          "maxOutput": 8192,
+          "pricing": {
+            "input": 0,
+            "output": 0,
+            "unit": "per_million_tokens",
+            "free": true
+          },
+          "capabilities": [
+            "chat",
+            "tools",
+            "vision",
+            "multimodal"
+          ],
+          "deprecated": false,
+          "available": true
+        }
+      }
+    },
+    "cohere": {
+      "name": "Cohere",
+      "type": "cohere",
+      "apiBase": "https://api.cohere.ai/v1",
+      "supportsStreaming": true,
+      "supportsTools": true,
+      "freeTier": {
+        "available": true,
+        "limits": {
+          "note": "Trial credits available, check dashboard for limits"
+        }
+      },
+      "rateLimitHeaders": {
+        "format": "custom"
+      },
+      "models": {
+        "command-r": {
+          "id": "command-r",
+          "category": "large",
+          "contextWindow": 128000,
+          "maxOutput": 4096,
+          "pricing": {
+            "input": 0.15,
+            "output": 0.6,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "command-r-plus": {
+          "id": "command-r-plus",
+          "category": "large",
+          "contextWindow": 128000,
+          "maxOutput": 4096,
+          "pricing": {
+            "input": 2.5,
+            "output": 10,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools",
+            "reasoning"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "command-light": {
+          "id": "command-light",
+          "category": "small",
+          "contextWindow": 4096,
+          "maxOutput": 4096,
+          "pricing": {
+            "input": 0.3,
+            "output": 0.6,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat"
+          ],
+          "deprecated": false,
+          "available": true
+        }
+      }
+    },
+    "mistral": {
+      "name": "Mistral AI",
+      "type": "mistral",
+      "apiBase": "https://api.mistral.ai/v1",
+      "supportsStreaming": true,
+      "supportsTools": true,
+      "freeTier": {
+        "available": false
+      },
+      "rateLimitHeaders": {
+        "format": "standard",
+        "prefix": "x-ratelimit-"
+      },
+      "models": {
+        "mistral-large-latest": {
+          "id": "mistral-large-latest",
+          "category": "large",
+          "contextWindow": 128000,
+          "maxOutput": 8192,
+          "pricing": {
+            "input": 2,
+            "output": 6,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "mistral-small-latest": {
+          "id": "mistral-small-latest",
+          "category": "small",
+          "contextWindow": 32000,
+          "maxOutput": 8192,
+          "pricing": {
+            "input": 0.2,
+            "output": 0.6,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        },
+        "mistral-medium-latest": {
+          "id": "mistral-medium-latest",
+          "category": "large",
+          "contextWindow": 32000,
+          "maxOutput": 8192,
+          "pricing": {
+            "input": 0.7,
+            "output": 2.1,
+            "unit": "per_million_tokens"
+          },
+          "capabilities": [
+            "chat",
+            "tools"
+          ],
+          "deprecated": false,
+          "available": true
+        }
+      }
+    }
+  },
+  "openaiCompatibleEndpoints": [
+    {
+      "name": "Together AI",
+      "endpoint": "https://api.together.xyz/v1",
+      "description": "Access to 100+ open-source models",
+      "supported": [
+        "chat",
+        "tools",
+        "streaming"
+      ]
+    },
+    {
+      "name": "Anyscale Endpoints",
+      "endpoint": "https://api.endpoints.anyscale.com/v1",
+      "description": "Ray-powered serverless LLM inference",
+      "supported": [
+        "chat",
+        "tools",
+        "streaming"
+      ]
+    },
+    {
+      "name": "Perplexity AI",
+      "endpoint": "https://api.perplexity.ai",
+      "description": "Search-augmented language models",
+      "supported": [
+        "chat",
+        "streaming"
+      ]
+    },
+    {
+      "name": "DeepInfra",
+      "endpoint": "https://api.deepinfra.com/v1/openai",
+      "description": "Fast inference for popular models",
+      "supported": [
+        "chat",
+        "tools",
+        "streaming"
+      ]
+    },
+    {
+      "name": "Fireworks AI",
+      "endpoint": "https://api.fireworks.ai/inference/v1",
+      "description": "Production-ready LLM platform",
+      "supported": [
+        "chat",
+        "tools",
+        "streaming"
+      ]
+    },
+    {
+      "name": "Ollama (Local)",
+      "endpoint": "http://localhost:11434/v1",
+      "description": "Run models locally on your machine",
+      "supported": [
+        "chat",
+        "streaming"
+      ]
+    },
+    {
+      "name": "LocalAI (Local)",
+      "endpoint": "http://localhost:8080/v1",
+      "description": "Local OpenAI-compatible API",
+      "supported": [
+        "chat",
+        "tools",
+        "streaming"
+      ]
+    }
+  ],
+  "whisperSupport": {
+    "openai": {
+      "available": true,
+      "model": "whisper-1",
+      "endpoint": "/v1/audio/transcriptions"
+    },
+    "groq": {
+      "available": true,
+      "model": "whisper-large-v3",
+      "endpoint": "/openai/v1/audio/transcriptions"
+    }
+  },
+  "modelCategories": {
+    "small": {
+      "description": "Fast, cost-effective models for simple tasks",
+      "useCases": [
+        "summarization",
+        "quick responses",
+        "simple queries"
+      ],
+      "maxCost": 0.5
+    },
+    "large": {
+      "description": "General-purpose models for most tasks",
+      "useCases": [
+        "chat",
+        "complex queries",
+        "tool usage"
+      ],
+      "maxCost": 5
+    },
+    "reasoning": {
+      "description": "Optimized for multi-step reasoning and analysis",
+      "useCases": [
+        "planning",
+        "analysis",
+        "complex problem solving"
+      ],
+      "maxCost": 20
+    }
+  }
+}

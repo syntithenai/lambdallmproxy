@@ -18,9 +18,12 @@ interface SettingsModalProps {
   onOpenMCPDialog: () => void;
 }
 
+// Lambda proxy endpoint - handles LLM requests, transcription, search tools, etc.
+const LAMBDA_PROXY_URL = 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+
 const PROVIDER_ENDPOINTS: Record<Provider, string> = {
-  groq: 'https://api.groq.com/openai/v1',
-  openai: 'https://api.openai.com/v1'
+  groq: `${LAMBDA_PROXY_URL}/openai/v1`,
+  openai: `${LAMBDA_PROXY_URL}/openai/v1`
 };
 
 const MODEL_SUGGESTIONS: Record<Provider, { small: string[]; large: string[]; reasoning: string[] }> = {
