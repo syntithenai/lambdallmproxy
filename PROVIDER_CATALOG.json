@@ -32,10 +32,13 @@
             "output": 0.08,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 30000,
+            "requestsPerMinute": 7000
+          },
           "deprecated": false,
           "available": true
         },
@@ -49,10 +52,13 @@
             "output": 0.15,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 30000,
+            "requestsPerMinute": 7000
+          },
           "deprecated": false,
           "available": true
         },
@@ -66,10 +72,13 @@
             "output": 0.79,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 6000,
+            "requestsPerMinute": 30
+          },
           "deprecated": false,
           "available": true
         },
@@ -83,10 +92,13 @@
             "output": 0.24,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 5000,
+            "requestsPerMinute": 30
+          },
           "deprecated": false,
           "available": true
         },
@@ -100,10 +112,13 @@
             "output": 0.5,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 7000,
+            "requestsPerMinute": 30
+          },
           "deprecated": false,
           "available": true
         }
@@ -134,11 +149,13 @@
             "output": 0.6,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools",
-            "vision"
-          ],
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 2000000,
+            "requestsPerMinute": 10000
+          },
           "deprecated": false,
           "available": true
         },
@@ -152,11 +169,13 @@
             "output": 10,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools",
-            "vision"
-          ],
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 800000,
+            "requestsPerMinute": 10000
+          },
           "deprecated": false,
           "available": true
         },
@@ -170,10 +189,13 @@
             "output": 60,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "reasoning"
-          ],
+          "supportsTools": false,
+          "supportsVision": false,
+          "supportsStreaming": false,
+          "rateLimits": {
+            "tokensPerMinute": 40000,
+            "requestsPerMinute": 500
+          },
           "deprecated": false,
           "available": true
         },
@@ -186,6 +208,13 @@
             "input": 3,
             "output": 12,
             "unit": "per_million_tokens"
+          },
+          "supportsTools": false,
+          "supportsVision": false,
+          "supportsStreaming": false,
+          "rateLimits": {
+            "tokensPerMinute": 200000,
+            "requestsPerMinute": 500
           },
           "capabilities": [
             "chat",
@@ -230,11 +259,13 @@
             "paidInput": 0.075,
             "paidOutput": 0.3
           },
-          "capabilities": [
-            "chat",
-            "tools",
-            "vision"
-          ],
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 4000000,
+            "requestsPerMinute": 1500
+          },
           "deprecated": false,
           "available": true
         },
@@ -251,11 +282,13 @@
             "paidInput": 1.25,
             "paidOutput": 5
           },
-          "capabilities": [
-            "chat",
-            "tools",
-            "vision"
-          ],
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 4000000,
+            "requestsPerMinute": 360
+          },
           "deprecated": false,
           "available": true
         },
@@ -270,159 +303,264 @@
             "unit": "per_million_tokens",
             "free": true
           },
-          "capabilities": [
-            "chat",
-            "tools",
-            "vision",
-            "multimodal"
-          ],
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 4000000,
+            "requestsPerMinute": 10
+          },
           "deprecated": false,
           "available": true
         }
       }
     },
-    "cohere": {
-      "name": "Cohere",
-      "type": "cohere",
-      "apiBase": "https://api.cohere.ai/v1",
+    "together": {
+      "name": "Together AI",
+      "type": "together",
+      "apiBase": "https://api.together.xyz/v1",
       "supportsStreaming": true,
       "supportsTools": true,
       "freeTier": {
         "available": true,
         "limits": {
-          "note": "Trial credits available, check dashboard for limits"
+          "note": "$25 free trial credits available"
         }
-      },
-      "rateLimitHeaders": {
-        "format": "custom"
-      },
-      "models": {
-        "command-r": {
-          "id": "command-r",
-          "category": "large",
-          "contextWindow": 128000,
-          "maxOutput": 4096,
-          "pricing": {
-            "input": 0.15,
-            "output": 0.6,
-            "unit": "per_million_tokens"
-          },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
-          "deprecated": false,
-          "available": true
-        },
-        "command-r-plus": {
-          "id": "command-r-plus",
-          "category": "large",
-          "contextWindow": 128000,
-          "maxOutput": 4096,
-          "pricing": {
-            "input": 2.5,
-            "output": 10,
-            "unit": "per_million_tokens"
-          },
-          "capabilities": [
-            "chat",
-            "tools",
-            "reasoning"
-          ],
-          "deprecated": false,
-          "available": true
-        },
-        "command-light": {
-          "id": "command-light",
-          "category": "small",
-          "contextWindow": 4096,
-          "maxOutput": 4096,
-          "pricing": {
-            "input": 0.3,
-            "output": 0.6,
-            "unit": "per_million_tokens"
-          },
-          "capabilities": [
-            "chat"
-          ],
-          "deprecated": false,
-          "available": true
-        }
-      }
-    },
-    "mistral": {
-      "name": "Mistral AI",
-      "type": "mistral",
-      "apiBase": "https://api.mistral.ai/v1",
-      "supportsStreaming": true,
-      "supportsTools": true,
-      "freeTier": {
-        "available": false
       },
       "rateLimitHeaders": {
         "format": "standard",
         "prefix": "x-ratelimit-"
       },
       "models": {
-        "mistral-large-latest": {
-          "id": "mistral-large-latest",
+        "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo": {
+          "id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
           "category": "large",
-          "contextWindow": 128000,
-          "maxOutput": 8192,
+          "contextWindow": 131072,
+          "maxOutput": 4096,
           "pricing": {
-            "input": 2,
-            "output": 6,
+            "input": 0.88,
+            "output": 0.88,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 100000,
+            "requestsPerMinute": 600
+          },
           "deprecated": false,
           "available": true
         },
-        "mistral-small-latest": {
-          "id": "mistral-small-latest",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo": {
+          "id": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
           "category": "small",
-          "contextWindow": 32000,
+          "contextWindow": 131072,
+          "maxOutput": 4096,
+          "pricing": {
+            "input": 0.18,
+            "output": 0.18,
+            "unit": "per_million_tokens"
+          },
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 100000,
+            "requestsPerMinute": 600
+          },
+          "deprecated": false,
+          "available": true
+        },
+        "mistralai/Mixtral-8x7B-Instruct-v0.1": {
+          "id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+          "category": "large",
+          "contextWindow": 32768,
           "maxOutput": 8192,
           "pricing": {
-            "input": 0.2,
+            "input": 0.6,
             "output": 0.6,
             "unit": "per_million_tokens"
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
-          "deprecated": false,
-          "available": true
-        },
-        "mistral-medium-latest": {
-          "id": "mistral-medium-latest",
-          "category": "large",
-          "contextWindow": 32000,
-          "maxOutput": 8192,
-          "pricing": {
-            "input": 0.7,
-            "output": 2.1,
-            "unit": "per_million_tokens"
+          "supportsTools": true,
+          "supportsVision": false,
+          "supportsStreaming": true,
+          "rateLimits": {
+            "tokensPerMinute": 100000,
+            "requestsPerMinute": 600
           },
-          "capabilities": [
-            "chat",
-            "tools"
-          ],
           "deprecated": false,
           "available": true
         }
       }
     }
   },
+  "whisper": {
+    "description": "Speech-to-text transcription models",
+    "providers": {
+      "openai": {
+        "name": "OpenAI Whisper",
+        "available": true,
+        "apiBase": "https://api.openai.com/v1",
+        "endpoint": "/audio/transcriptions",
+        "models": {
+          "whisper-1": {
+            "id": "whisper-1",
+            "pricing": {
+              "perMinute": 0.006,
+              "unit": "per_minute"
+            },
+            "maxFileSize": "25MB",
+            "supportedFormats": [
+              "mp3",
+              "mp4",
+              "mpeg",
+              "mpga",
+              "m4a",
+              "wav",
+              "webm"
+            ],
+            "supportsTimestamps": true,
+            "supportsTranslation": true
+          }
+        }
+      },
+      "groq": {
+        "name": "Groq Whisper",
+        "available": true,
+        "apiBase": "https://api.groq.com/openai/v1",
+        "endpoint": "/audio/transcriptions",
+        "models": {
+          "whisper-large-v3": {
+            "id": "whisper-large-v3",
+            "pricing": {
+              "perMinute": 0,
+              "unit": "per_minute",
+              "free": true
+            },
+            "maxFileSize": "25MB",
+            "supportedFormats": [
+              "mp3",
+              "mp4",
+              "mpeg",
+              "mpga",
+              "m4a",
+              "wav",
+              "webm"
+            ],
+            "supportsTimestamps": true,
+            "supportsTranslation": false,
+            "rateLimits": {
+              "requestsPerMinute": 20,
+              "requestsPerDay": 1000
+            }
+          }
+        }
+      }
+    }
+  },
+  "imageGeneration": {
+    "description": "Text-to-image generation models",
+    "providers": {
+      "openai": {
+        "name": "OpenAI DALL-E",
+        "available": true,
+        "apiBase": "https://api.openai.com/v1",
+        "endpoint": "/images/generations",
+        "models": {
+          "dall-e-3": {
+            "id": "dall-e-3",
+            "pricing": {
+              "standard": {
+                "1024x1024": 0.04,
+                "1024x1792": 0.08,
+                "1792x1024": 0.08
+              },
+              "hd": {
+                "1024x1024": 0.08,
+                "1024x1792": 0.12,
+                "1792x1024": 0.12
+              },
+              "unit": "per_image"
+            },
+            "supportedSizes": [
+              "1024x1024",
+              "1024x1792",
+              "1792x1024"
+            ],
+            "quality": [
+              "standard",
+              "hd"
+            ],
+            "style": [
+              "vivid",
+              "natural"
+            ]
+          },
+          "dall-e-2": {
+            "id": "dall-e-2",
+            "pricing": {
+              "1024x1024": 0.02,
+              "512x512": 0.018,
+              "256x256": 0.016,
+              "unit": "per_image"
+            },
+            "supportedSizes": [
+              "1024x1024",
+              "512x512",
+              "256x256"
+            ]
+          }
+        }
+      },
+      "together": {
+        "name": "Together AI Image Models",
+        "available": true,
+        "apiBase": "https://api.together.xyz/v1",
+        "endpoint": "/images/generations",
+        "models": {
+          "stabilityai/stable-diffusion-xl-base-1.0": {
+            "id": "stabilityai/stable-diffusion-xl-base-1.0",
+            "pricing": {
+              "perImage": 0.002,
+              "unit": "per_image"
+            },
+            "supportedSizes": [
+              "1024x1024",
+              "512x512",
+              "768x768"
+            ],
+            "steps": {
+              "min": 1,
+              "max": 100,
+              "default": 20
+            }
+          },
+          "runwayml/stable-diffusion-v1-5": {
+            "id": "runwayml/stable-diffusion-v1-5",
+            "pricing": {
+              "perImage": 0.001,
+              "unit": "per_image"
+            },
+            "supportedSizes": [
+              "512x512",
+              "768x768"
+            ],
+            "steps": {
+              "min": 1,
+              "max": 100,
+              "default": 20
+            }
+          }
+        }
+      }
+    }
+  },
   "openaiCompatibleEndpoints": [
     {
-      "name": "Together AI",
-      "endpoint": "https://api.together.xyz/v1",
-      "description": "Access to 100+ open-source models",
+      "name": "Anyscale Endpoints",
+      "endpoint": "https://api.endpoints.anyscale.com/v1",
+      "description": "Ray-powered serverless LLM inference",
       "supported": [
         "chat",
         "tools",
@@ -488,18 +626,6 @@
       ]
     }
   ],
-  "whisperSupport": {
-    "openai": {
-      "available": true,
-      "model": "whisper-1",
-      "endpoint": "/v1/audio/transcriptions"
-    },
-    "groq": {
-      "available": true,
-      "model": "whisper-large-v3",
-      "endpoint": "/openai/v1/audio/transcriptions"
-    }
-  },
   "modelCategories": {
     "small": {
       "description": "Fast, cost-effective models for simple tasks",

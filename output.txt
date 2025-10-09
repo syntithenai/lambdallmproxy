@@ -1,4 +1,18 @@
--rw-rw-r-- 1 stever stever  12K Oct  9 21:09 PHASE1_RESEARCH_COMPLETE.md
--rw-rw-r-- 1 stever stever  14K Oct  9 21:08 PROVIDER_CATALOG.json
--rwxrwxr-x 1 stever stever  24K Oct  9 21:04 scripts/collect-provider-data.js
--rwxrwxr-x 1 stever stever 5.6K Oct  9 21:10 scripts/validate-catalog.js
+🚀 Lambda LLM Proxy - Deployment Commands
+
+Lambda Function:
+  make deploy-lambda       - Deploy Lambda function (full with dependencies)
+  make deploy-lambda-fast  - Deploy Lambda function (code only, 10 sec)
+  make setup-layer         - Create Lambda layer (run once before fast deploy)
+
+UI/Documentation:
+  make build-ui            - Build React UI to docs/
+  make deploy-ui           - Build and push UI to GitHub Pages
+
+Combined:
+  make all                 - Deploy everything (Lambda + UI)
+
+Utilities:
+  make update-catalog      - Update PROVIDER_CATALOG.json with latest data
+  make clean               - Clean temporary files
+  make serve               - Serve UI locally on port 8081

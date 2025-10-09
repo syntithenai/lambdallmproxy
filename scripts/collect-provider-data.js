@@ -100,48 +100,126 @@ function enrichGroqModels(models) {
     const enrichedModels = {};
 
     // Pricing data from https://groq.com/pricing/ (as of Oct 2025)
-    const pricingMap = {
-        'llama-3.1-8b-instant': { input: 0.05, output: 0.08, category: 'small' },
-        'llama-3.3-70b-versatile': { input: 0.59, output: 0.79, category: 'large' },
-        'llama-3.3-70b-specdec': { input: 0.59, output: 0.99, category: 'large' },
-        'mixtral-8x7b-32768': { input: 0.24, output: 0.24, category: 'large' },
-        'gemma2-9b-it': { input: 0.20, output: 0.20, category: 'small' },
-        'gemma-7b-it': { input: 0.07, output: 0.07, category: 'small' },
-        'llama-3.1-70b-versatile': { input: 0.59, output: 0.79, category: 'large' },
-        'llama-3.2-1b-preview': { input: 0.04, output: 0.04, category: 'small' },
-        'llama-3.2-3b-preview': { input: 0.06, output: 0.06, category: 'small' },
-        'llama-3.2-11b-vision-preview': { input: 0.18, output: 0.18, category: 'large' },
-        'llama-3.2-90b-vision-preview': { input: 0.90, output: 1.20, category: 'large' },
-        'llama-guard-3-8b': { input: 0.20, output: 0.20, category: 'small' },
-        'llava-v1.5-7b-4096-preview': { input: 0.20, output: 0.20, category: 'small' },
+    // Enhanced with model-specific capabilities
+    const modelData = {
+        'llama-3.1-8b-instant': { 
+            input: 0.05, output: 0.08, category: 'small',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 30000, requestsPerMinute: 7000 }
+        },
+        'llama-3.3-70b-versatile': { 
+            input: 0.59, output: 0.79, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 6000, requestsPerMinute: 30 }
+        },
+        'llama-3.3-70b-specdec': { 
+            input: 0.59, output: 0.99, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 6000, requestsPerMinute: 30 }
+        },
+        'mixtral-8x7b-32768': { 
+            input: 0.24, output: 0.24, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 5000, requestsPerMinute: 30 }
+        },
+        'gemma2-9b-it': { 
+            input: 0.20, output: 0.20, category: 'small',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
+        },
+        'gemma-7b-it': { 
+            input: 0.07, output: 0.07, category: 'small',
+            supportsTools: false, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
+        },
+        'llama-3.1-70b-versatile': { 
+            input: 0.59, output: 0.79, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 6000, requestsPerMinute: 30 }
+        },
+        'llama-3.2-1b-preview': { 
+            input: 0.04, output: 0.04, category: 'small',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
+        },
+        'llama-3.2-3b-preview': { 
+            input: 0.06, output: 0.06, category: 'small',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
+        },
+        'llama-3.2-11b-vision-preview': { 
+            input: 0.18, output: 0.18, category: 'large',
+            supportsTools: true, supportsVision: true, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 7000, requestsPerMinute: 30 }
+        },
+        'llama-3.2-90b-vision-preview': { 
+            input: 0.90, output: 1.20, category: 'large',
+            supportsTools: true, supportsVision: true, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 7000, requestsPerMinute: 30 }
+        },
+        'llama-guard-3-8b': { 
+            input: 0.20, output: 0.20, category: 'small',
+            supportsTools: false, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
+        },
+        'llava-v1.5-7b-4096-preview': { 
+            input: 0.20, output: 0.20, category: 'small',
+            supportsTools: false, supportsVision: true, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
+        },
+        'openai/gpt-oss-20b': { 
+            input: 0.10, output: 0.10, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 7000, requestsPerMinute: 30 }
+        },
+        'openai/gpt-oss-120b': { 
+            input: 0.50, output: 0.50, category: 'reasoning',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 7000, requestsPerMinute: 30 }
+        },
+        'qwen/qwen3-32b': { 
+            input: 0.30, output: 0.30, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 6000, requestsPerMinute: 30 }
+        },
+        'meta-llama/llama-4-scout-17b-16e-instruct': { 
+            input: 0.10, output: 0.15, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 30000, requestsPerMinute: 7000 }
+        },
+        'meta-llama/llama-4-maverick-17b-128e-instruct': { 
+            input: 0.10, output: 0.15, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 7000, requestsPerMinute: 30 }
+        },
+        'moonshotai/kimi-k2-instruct-0905': { 
+            input: 0.40, output: 0.40, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 5000, requestsPerMinute: 30 }
+        },
     };
-
-    // Additional models from Groq with prefixes
-    const prefixedModels = {
-        'openai/gpt-oss-20b': { input: 0.10, output: 0.10, category: 'large' },
-        'openai/gpt-oss-120b': { input: 0.50, output: 0.50, category: 'reasoning' },
-        'qwen/qwen3-32b': { input: 0.30, output: 0.30, category: 'large' },
-        'meta-llama/llama-4-scout-17b-16e-instruct': { input: 0.10, output: 0.15, category: 'large' },
-        'meta-llama/llama-4-maverick-17b-128e-instruct': { input: 0.10, output: 0.15, category: 'large' },
-        'moonshotai/kimi-k2-instruct-0905': { input: 0.40, output: 0.40, category: 'large' },
-    };
-
-    const allPricing = { ...pricingMap, ...prefixedModels };
 
     models.forEach(model => {
-        const pricing = allPricing[model.id] || { input: 0.10, output: 0.10, category: 'large' };
+        const data = modelData[model.id] || { 
+            input: 0.10, output: 0.10, category: 'large',
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 6000, requestsPerMinute: 30 }
+        };
         
         enrichedModels[model.id] = {
             id: model.id,
-            category: pricing.category,
+            category: data.category,
             contextWindow: model.context_window || 131072,
             maxOutput: 8192,
             pricing: {
-                input: pricing.input,
-                output: pricing.output,
+                input: data.input,
+                output: data.output,
                 unit: 'per_million_tokens'
             },
-            capabilities: ['chat', 'tools'],
+            supportsTools: data.supportsTools,
+            supportsVision: data.supportsVision,
+            supportsStreaming: data.supportsStreaming,
+            rateLimits: data.rateLimits,
             deprecated: false,
             available: model.active !== false
         };
@@ -161,7 +239,10 @@ function getStaticGroqData() {
             contextWindow: 131072,
             maxOutput: 8192,
             pricing: { input: 0.05, output: 0.08, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 30000, requestsPerMinute: 7000 },
             deprecated: false,
             available: true
         },
@@ -171,7 +252,10 @@ function getStaticGroqData() {
             contextWindow: 131072,
             maxOutput: 32768,
             pricing: { input: 0.10, output: 0.15, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 30000, requestsPerMinute: 7000 },
             deprecated: false,
             available: true
         },
@@ -181,7 +265,10 @@ function getStaticGroqData() {
             contextWindow: 131072,
             maxOutput: 32768,
             pricing: { input: 0.59, output: 0.79, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 6000, requestsPerMinute: 30 },
             deprecated: false,
             available: true
         },
@@ -191,7 +278,10 @@ function getStaticGroqData() {
             contextWindow: 32768,
             maxOutput: 32768,
             pricing: { input: 0.24, output: 0.24, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 5000, requestsPerMinute: 30 },
             deprecated: false,
             available: true
         },
@@ -201,7 +291,10 @@ function getStaticGroqData() {
             contextWindow: 131072,
             maxOutput: 65536,
             pricing: { input: 0.50, output: 0.50, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 7000, requestsPerMinute: 30 },
             deprecated: false,
             available: true
         }
@@ -243,15 +336,45 @@ async function fetchOpenAIModels() {
 function enrichOpenAIModels(models) {
     const enrichedModels = {};
 
-    // Pricing from https://openai.com/api/pricing/ (as of Oct 2025)
-    const pricingMap = {
-        'gpt-4o': { input: 2.50, output: 10.00, category: 'large', context: 128000 },
-        'gpt-4o-mini': { input: 0.15, output: 0.60, category: 'small', context: 128000 },
-        'gpt-4-turbo': { input: 10.00, output: 30.00, category: 'large', context: 128000 },
-        'gpt-4': { input: 30.00, output: 60.00, category: 'large', context: 8192 },
-        'gpt-3.5-turbo': { input: 0.50, output: 1.50, category: 'small', context: 16385 },
-        'o1-preview': { input: 15.00, output: 60.00, category: 'reasoning', context: 128000 },
-        'o1-mini': { input: 3.00, output: 12.00, category: 'reasoning', context: 128000 },
+    // Model data including pricing, category, and capabilities
+    // Note: o1-preview and o1-mini do NOT support tools, vision, or streaming (reasoning only)
+    // Rate limits from https://platform.openai.com/docs/guides/rate-limits
+    const modelData = {
+        'gpt-4o': { 
+            input: 2.50, output: 10.00, category: 'large', context: 128000,
+            supportsTools: true, supportsVision: true, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 800000, requestsPerMinute: 10000 }
+        },
+        'gpt-4o-mini': { 
+            input: 0.15, output: 0.60, category: 'small', context: 128000,
+            supportsTools: true, supportsVision: true, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 2000000, requestsPerMinute: 10000 }
+        },
+        'gpt-4-turbo': { 
+            input: 10.00, output: 30.00, category: 'large', context: 128000,
+            supportsTools: true, supportsVision: true, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 600000, requestsPerMinute: 10000 }
+        },
+        'gpt-4': { 
+            input: 30.00, output: 60.00, category: 'large', context: 8192,
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 300000, requestsPerMinute: 10000 }
+        },
+        'gpt-3.5-turbo': { 
+            input: 0.50, output: 1.50, category: 'small', context: 16385,
+            supportsTools: true, supportsVision: false, supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 2000000, requestsPerMinute: 10000 }
+        },
+        'o1-preview': { 
+            input: 15.00, output: 60.00, category: 'reasoning', context: 128000,
+            supportsTools: false, supportsVision: false, supportsStreaming: false,
+            rateLimits: { tokensPerMinute: 40000, requestsPerMinute: 500 }
+        },
+        'o1-mini': { 
+            input: 3.00, output: 12.00, category: 'reasoning', context: 128000,
+            supportsTools: false, supportsVision: false, supportsStreaming: false,
+            rateLimits: { tokensPerMinute: 200000, requestsPerMinute: 500 }
+        },
     };
 
     const relevantModels = models.filter(m => 
@@ -259,19 +382,22 @@ function enrichOpenAIModels(models) {
     );
 
     relevantModels.forEach(model => {
-        const pricing = pricingMap[model.id];
-        if (pricing) {
+        const data = modelData[model.id];
+        if (data) {
             enrichedModels[model.id] = {
                 id: model.id,
-                category: pricing.category,
-                contextWindow: pricing.context,
+                category: data.category,
+                contextWindow: data.context,
                 maxOutput: 16384,
                 pricing: {
-                    input: pricing.input,
-                    output: pricing.output,
+                    input: data.input,
+                    output: data.output,
                     unit: 'per_million_tokens'
                 },
-                capabilities: ['chat', 'tools', 'vision'],
+                supportsTools: data.supportsTools,
+                supportsVision: data.supportsVision,
+                supportsStreaming: data.supportsStreaming,
+                rateLimits: data.rateLimits,
                 deprecated: false,
                 available: true
             };
@@ -292,7 +418,10 @@ function getStaticOpenAIData() {
             contextWindow: 128000,
             maxOutput: 16384,
             pricing: { input: 0.15, output: 0.60, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'tools', 'vision'],
+            supportsTools: true,
+            supportsVision: true,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 2000000, requestsPerMinute: 10000 },
             deprecated: false,
             available: true
         },
@@ -302,7 +431,10 @@ function getStaticOpenAIData() {
             contextWindow: 128000,
             maxOutput: 16384,
             pricing: { input: 2.50, output: 10.00, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'tools', 'vision'],
+            supportsTools: true,
+            supportsVision: true,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 800000, requestsPerMinute: 10000 },
             deprecated: false,
             available: true
         },
@@ -312,7 +444,10 @@ function getStaticOpenAIData() {
             contextWindow: 128000,
             maxOutput: 32768,
             pricing: { input: 15.00, output: 60.00, unit: 'per_million_tokens' },
-            capabilities: ['chat', 'reasoning'],
+            supportsTools: false,
+            supportsVision: false,
+            supportsStreaming: false,
+            rateLimits: { tokensPerMinute: 40000, requestsPerMinute: 500 },
             deprecated: false,
             available: true
         },
@@ -322,6 +457,10 @@ function getStaticOpenAIData() {
             contextWindow: 128000,
             maxOutput: 65536,
             pricing: { input: 3.00, output: 12.00, unit: 'per_million_tokens' },
+            supportsTools: false,
+            supportsVision: false,
+            supportsStreaming: false,
+            rateLimits: { tokensPerMinute: 200000, requestsPerMinute: 500 },
             capabilities: ['chat', 'reasoning'],
             deprecated: false,
             available: true
@@ -336,6 +475,8 @@ function getGeminiData() {
     console.log('📡 Loading Gemini data (static)...');
     
     // Data from https://ai.google.dev/pricing and https://ai.google.dev/gemini-api/docs/models
+    // Rate limits from https://ai.google.dev/gemini-api/docs/quota
+    // All Gemini models support tools, vision, and streaming
     return {
         'gemini-1.5-flash': {
             id: 'gemini-1.5-flash',
@@ -350,7 +491,10 @@ function getGeminiData() {
                 paidInput: 0.075,
                 paidOutput: 0.30
             },
-            capabilities: ['chat', 'tools', 'vision'],
+            supportsTools: true,
+            supportsVision: true,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 4000000, requestsPerMinute: 1500 },
             deprecated: false,
             available: true
         },
@@ -367,7 +511,10 @@ function getGeminiData() {
                 paidInput: 1.25,
                 paidOutput: 5.00
             },
-            capabilities: ['chat', 'tools', 'vision'],
+            supportsTools: true,
+            supportsVision: true,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 4000000, requestsPerMinute: 360 },
             deprecated: false,
             available: true
         },
@@ -382,7 +529,10 @@ function getGeminiData() {
                 unit: 'per_million_tokens',
                 free: true
             },
-            capabilities: ['chat', 'tools', 'vision', 'multimodal'],
+            supportsTools: true,
+            supportsVision: true,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 4000000, requestsPerMinute: 10 },
             deprecated: false,
             available: true
         }
@@ -390,105 +540,62 @@ function getGeminiData() {
 }
 
 /**
- * Get static Cohere data
+ * Get static Together AI data
  */
-function getCohereData() {
-    console.log('📡 Loading Cohere data (static)...');
+function getTogetherAIData() {
+    console.log('📡 Loading Together AI data (static)...');
     
-    // Data from https://cohere.com/pricing
+    // Data from https://docs.together.ai/docs/inference-models
+    // Together AI provides access to many models, listing key ones
     return {
-        'command-r': {
-            id: 'command-r',
+        'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo': {
+            id: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
             category: 'large',
-            contextWindow: 128000,
+            contextWindow: 131072,
             maxOutput: 4096,
             pricing: {
-                input: 0.15,
-                output: 0.60,
+                input: 0.88,
+                output: 0.88,
                 unit: 'per_million_tokens'
             },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 100000, requestsPerMinute: 600 },
             deprecated: false,
             available: true
         },
-        'command-r-plus': {
-            id: 'command-r-plus',
-            category: 'large',
-            contextWindow: 128000,
-            maxOutput: 4096,
-            pricing: {
-                input: 2.50,
-                output: 10.00,
-                unit: 'per_million_tokens'
-            },
-            capabilities: ['chat', 'tools', 'reasoning'],
-            deprecated: false,
-            available: true
-        },
-        'command-light': {
-            id: 'command-light',
+        'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': {
+            id: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
             category: 'small',
-            contextWindow: 4096,
+            contextWindow: 131072,
             maxOutput: 4096,
             pricing: {
-                input: 0.30,
-                output: 0.60,
+                input: 0.18,
+                output: 0.18,
                 unit: 'per_million_tokens'
             },
-            capabilities: ['chat'],
-            deprecated: false,
-            available: true
-        }
-    };
-}
-
-/**
- * Get static Mistral data
- */
-function getMistralData() {
-    console.log('📡 Loading Mistral data (static)...');
-    
-    // Data from https://mistral.ai/technology/#pricing
-    return {
-        'mistral-large-latest': {
-            id: 'mistral-large-latest',
-            category: 'large',
-            contextWindow: 128000,
-            maxOutput: 8192,
-            pricing: {
-                input: 2.00,
-                output: 6.00,
-                unit: 'per_million_tokens'
-            },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 100000, requestsPerMinute: 600 },
             deprecated: false,
             available: true
         },
-        'mistral-small-latest': {
-            id: 'mistral-small-latest',
-            category: 'small',
-            contextWindow: 32000,
+        'mistralai/Mixtral-8x7B-Instruct-v0.1': {
+            id: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+            category: 'large',
+            contextWindow: 32768,
             maxOutput: 8192,
             pricing: {
-                input: 0.20,
+                input: 0.60,
                 output: 0.60,
                 unit: 'per_million_tokens'
             },
-            capabilities: ['chat', 'tools'],
-            deprecated: false,
-            available: true
-        },
-        'mistral-medium-latest': {
-            id: 'mistral-medium-latest',
-            category: 'large',
-            contextWindow: 32000,
-            maxOutput: 8192,
-            pricing: {
-                input: 0.70,
-                output: 2.10,
-                unit: 'per_million_tokens'
-            },
-            capabilities: ['chat', 'tools'],
+            supportsTools: true,
+            supportsVision: false,
+            supportsStreaming: true,
+            rateLimits: { tokensPerMinute: 100000, requestsPerMinute: 600 },
             deprecated: false,
             available: true
         }
@@ -501,9 +608,9 @@ function getMistralData() {
 function getOpenAICompatibleEndpoints() {
     return [
         {
-            name: 'Together AI',
-            endpoint: 'https://api.together.xyz/v1',
-            description: 'Access to 100+ open-source models',
+            name: 'Anyscale Endpoints',
+            endpoint: 'https://api.endpoints.anyscale.com/v1',
+            description: 'Ray-powered serverless LLM inference',
             supported: ['chat', 'tools', 'streaming']
         },
         {
@@ -554,8 +661,7 @@ async function buildProviderCatalog() {
     const groqModels = await fetchGroqModels();
     const openaiModels = await fetchOpenAIModels();
     const geminiModels = getGeminiData();
-    const cohereModels = getCohereData();
-    const mistralModels = getMistralData();
+    const togetherModels = getTogetherAIData();
     const openaiCompatible = getOpenAICompatibleEndpoints();
 
     const catalog = {
@@ -621,52 +727,142 @@ async function buildProviderCatalog() {
                 },
                 models: geminiModels
             },
-            cohere: {
-                name: 'Cohere',
-                type: 'cohere',
-                apiBase: 'https://api.cohere.ai/v1',
+            together: {
+                name: 'Together AI',
+                type: 'together',
+                apiBase: 'https://api.together.xyz/v1',
                 supportsStreaming: true,
                 supportsTools: true,
                 freeTier: {
                     available: true,
                     limits: {
-                        note: 'Trial credits available, check dashboard for limits'
+                        note: '$25 free trial credits available'
                     }
-                },
-                rateLimitHeaders: {
-                    format: 'custom'
-                },
-                models: cohereModels
-            },
-            mistral: {
-                name: 'Mistral AI',
-                type: 'mistral',
-                apiBase: 'https://api.mistral.ai/v1',
-                supportsStreaming: true,
-                supportsTools: true,
-                freeTier: {
-                    available: false
                 },
                 rateLimitHeaders: {
                     format: 'standard',
                     prefix: 'x-ratelimit-'
                 },
-                models: mistralModels
+                models: togetherModels
+            }
+        },
+        whisper: {
+            description: 'Speech-to-text transcription models',
+            providers: {
+                openai: {
+                    name: 'OpenAI Whisper',
+                    available: true,
+                    apiBase: 'https://api.openai.com/v1',
+                    endpoint: '/audio/transcriptions',
+                    models: {
+                        'whisper-1': {
+                            id: 'whisper-1',
+                            pricing: {
+                                perMinute: 0.006,
+                                unit: 'per_minute'
+                            },
+                            maxFileSize: '25MB',
+                            supportedFormats: ['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm'],
+                            supportsTimestamps: true,
+                            supportsTranslation: true
+                        }
+                    }
+                },
+                groq: {
+                    name: 'Groq Whisper',
+                    available: true,
+                    apiBase: 'https://api.groq.com/openai/v1',
+                    endpoint: '/audio/transcriptions',
+                    models: {
+                        'whisper-large-v3': {
+                            id: 'whisper-large-v3',
+                            pricing: {
+                                perMinute: 0.0,
+                                unit: 'per_minute',
+                                free: true
+                            },
+                            maxFileSize: '25MB',
+                            supportedFormats: ['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm'],
+                            supportsTimestamps: true,
+                            supportsTranslation: false,
+                            rateLimits: {
+                                requestsPerMinute: 20,
+                                requestsPerDay: 1000
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        imageGeneration: {
+            description: 'Text-to-image generation models',
+            providers: {
+                openai: {
+                    name: 'OpenAI DALL-E',
+                    available: true,
+                    apiBase: 'https://api.openai.com/v1',
+                    endpoint: '/images/generations',
+                    models: {
+                        'dall-e-3': {
+                            id: 'dall-e-3',
+                            pricing: {
+                                standard: {
+                                    '1024x1024': 0.040,
+                                    '1024x1792': 0.080,
+                                    '1792x1024': 0.080
+                                },
+                                hd: {
+                                    '1024x1024': 0.080,
+                                    '1024x1792': 0.120,
+                                    '1792x1024': 0.120
+                                },
+                                unit: 'per_image'
+                            },
+                            supportedSizes: ['1024x1024', '1024x1792', '1792x1024'],
+                            quality: ['standard', 'hd'],
+                            style: ['vivid', 'natural']
+                        },
+                        'dall-e-2': {
+                            id: 'dall-e-2',
+                            pricing: {
+                                '1024x1024': 0.020,
+                                '512x512': 0.018,
+                                '256x256': 0.016,
+                                unit: 'per_image'
+                            },
+                            supportedSizes: ['1024x1024', '512x512', '256x256']
+                        }
+                    }
+                },
+                together: {
+                    name: 'Together AI Image Models',
+                    available: true,
+                    apiBase: 'https://api.together.xyz/v1',
+                    endpoint: '/images/generations',
+                    models: {
+                        'stabilityai/stable-diffusion-xl-base-1.0': {
+                            id: 'stabilityai/stable-diffusion-xl-base-1.0',
+                            pricing: {
+                                perImage: 0.002,
+                                unit: 'per_image'
+                            },
+                            supportedSizes: ['1024x1024', '512x512', '768x768'],
+                            steps: { min: 1, max: 100, default: 20 }
+                        },
+                        'runwayml/stable-diffusion-v1-5': {
+                            id: 'runwayml/stable-diffusion-v1-5',
+                            pricing: {
+                                perImage: 0.001,
+                                unit: 'per_image'
+                            },
+                            supportedSizes: ['512x512', '768x768'],
+                            steps: { min: 1, max: 100, default: 20 }
+                        }
+                    }
+                }
             }
         },
         openaiCompatibleEndpoints: openaiCompatible,
-        whisperSupport: {
-            openai: {
-                available: true,
-                model: 'whisper-1',
-                endpoint: '/v1/audio/transcriptions'
-            },
-            groq: {
-                available: true,
-                model: 'whisper-large-v3',
-                endpoint: '/openai/v1/audio/transcriptions'
-            }
-        },
         modelCategories: {
             small: {
                 description: 'Fast, cost-effective models for simple tasks',

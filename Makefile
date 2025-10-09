@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help deploy-lambda deploy-lambda-fast build-ui deploy-ui all clean
+.PHONY: help deploy-lambda deploy-lambda-fast build-ui deploy-ui all update-catalog clean serve
 
 # Default target - Show help
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "  make all                 - Deploy everything (Lambda + UI)"
 	@echo ""
 	@echo "Utilities:"
+	@echo "  make update-catalog      - Update PROVIDER_CATALOG.json with latest data"
 	@echo "  make clean               - Clean temporary files"
 	@echo "  make serve               - Serve UI locally on port 8081"
 
@@ -60,6 +61,13 @@ deploy-ui:
 # Deploy everything (Lambda + UI)
 all: deploy-lambda deploy-ui
 	@echo "✅ Full deployment complete!"
+
+# Update provider catalog with latest data
+update-catalog:
+	@echo "📊 Updating PROVIDER_CATALOG.json..."
+	@chmod +x scripts/collect-provider-data.js
+	@node scripts/collect-provider-data.js
+	@echo "✅ Provider catalog updated!"
 
 # Clean temporary files
 clean:
