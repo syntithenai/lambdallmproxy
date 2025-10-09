@@ -49,7 +49,7 @@ function AppContent() {
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div className="flex justify-between items-center max-w-screen-2xl mx-auto">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            LLM Proxy
+            Research Agent
           </h1>
           <div className="flex items-center gap-3">
             <PlaylistButton />

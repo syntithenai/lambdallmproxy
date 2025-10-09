@@ -11,6 +11,7 @@ const { callFunction, compressSearchResultsForLLM } = require('../tools');
 const { createSSEStreamAdapter } = require('../streaming/sse-writer');
 const { parseProviderModel } = require('../providers');
 const { createProgressEmitter } = require('../utils/progress-emitter');
+const { getOrEstimateUsage, providerReturnsUsage } = require('../utils/token-estimation');
 
 /**
  * Format tool result for LLM consumption
@@ -309,6 +310,21 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
             // Format result for LLM (compress search results)
             const formattedResult = formatToolResultForLLM(name, parsedArgs, result);
             
+            // Debug: Log formatted result for search_web to see what LLM receives
+            if (name === 'search_web') {
+                console.log(`🔍 DEBUG search_web formatted result for LLM:`);
+                console.log(`🔍 Total length: ${formattedResult.length} chars`);
+                console.log(`🔍 First 1000 chars:`, formattedResult.substring(0, 1000));
+                console.log(`🔍 Last 1000 chars:`, formattedResult.substring(Math.max(0, formattedResult.length - 1000)));
+                
+                // Check if URL section is present
+                if (formattedResult.includes('🚨 CRITICAL: YOU MUST COPY THESE URLS')) {
+                    console.log(`✅ URL section IS present in formatted result`);
+                } else {
+                    console.log(`❌ URL section IS MISSING from formatted result!`);
+                }
+            }
+            
             sseWriter.writeEvent('tool_call_result', {
                 id,
                 name,
@@ -316,11 +332,13 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
             });
             
             // Build tool result message with formatted (compressed) content for LLM
+            // CRITICAL: Store BOTH the formatted content (for LLM) and raw result (for extraction)
             results.push({
                 tool_call_id: id,
                 role: 'tool',
                 name: name,
-                content: formattedResult // Use compressed format for LLM
+                content: formattedResult, // Use compressed format for LLM
+                rawResult: result // Keep raw JSON for image/video/media extraction
             });
             
         } catch (error) {
@@ -470,7 +488,10 @@ async function handler(event, responseStream) {
         
         let currentMessages = [...messages];
         let iterationCount = 0;
-        const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 20;
+        const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 15;
+        
+        // Track all LLM API calls across iterations
+        const allLlmApiCalls = [];
         
         // Tool calling loop
         while (iterationCount < maxIterations) {
@@ -495,8 +516,9 @@ async function handler(event, responseStream) {
             console.log(`🔍 Messages AFTER filtering (iteration ${iterationCount}): ${afterRoles}`);
             
             // Clean messages by removing UI-specific properties before sending to LLM
+            // CRITICAL: Remove extractedContent and rawResult - they're only for extraction, never for LLM
             const cleanMessages = filteredMessages.map(msg => {
-                const { isStreaming, ...cleanMsg } = msg;
+                const { isStreaming, errorData, llmApiCalls, extractedContent, rawResult, ...cleanMsg } = msg;
                 return cleanMsg;
             });
             
@@ -507,6 +529,19 @@ async function handler(event, responseStream) {
                 cleanMessages.forEach((m, i) => {
                     if (m.role === 'tool') {
                         console.log(`   Tool message ${i}: name=${m.name}, tool_call_id=${m.tool_call_id}, content_length=${m.content?.length || 0}`);
+                        
+                        // For search_web tool, check if URL section is in the content being sent to LLM
+                        if (m.name === 'search_web' && m.content) {
+                            if (m.content.includes('🚨 CRITICAL: YOU MUST COPY THESE URLS')) {
+                                console.log(`   ✅ Tool message ${i} CONTAINS URL section`);
+                                // Log the last 800 chars to see the URL section
+                                const contentStr = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+                                console.log(`   📋 Last 800 chars of tool message:`, contentStr.substring(Math.max(0, contentStr.length - 800)));
+                            } else {
+                                console.log(`   ❌ Tool message ${i} MISSING URL section!`);
+                                console.log(`   📋 Content preview:`, m.content.substring(0, 500));
+                            }
+                        }
                     }
                 });
             }
@@ -559,16 +594,30 @@ async function handler(event, responseStream) {
             let currentToolCalls = [];
             let hasToolCalls = false;
             let finishReason = null;
+            let usage = null; // Track token usage
             
             await parseOpenAIStream(response, (chunk) => {
                 const delta = chunk.choices?.[0]?.delta;
                 const choice = chunk.choices?.[0];
                 
-                if (!delta && !choice) return;
+                if (!delta && !choice) {
+                    // Check for usage data in non-choice chunks
+                    if (chunk.usage) {
+                        usage = chunk.usage;
+                        console.log(`📊 Token usage received: ${JSON.stringify(usage)}`);
+                    }
+                    return;
+                }
                 
                 // Capture finish_reason
                 if (choice?.finish_reason) {
                     finishReason = choice.finish_reason;
+                }
+                
+                // Capture usage from choice (some providers send it here)
+                if (chunk.usage) {
+                    usage = chunk.usage;
+                    console.log(`📊 Token usage received: ${JSON.stringify(usage)}`);
                 }
                 
                 // Handle text content
@@ -609,7 +658,45 @@ async function handler(event, responseStream) {
                 }
             });
             
-            // Emit LLM response event with HTTP headers
+            // Get or estimate token usage
+            // Some providers (Groq, OpenAI) return usage data, others don't
+            const finalUsage = getOrEstimateUsage(usage, cleanMessages, assistantMessage.content);
+            
+            // Log whether we're using actual or estimated usage
+            if (finalUsage.estimated) {
+                console.log(`⚠️ Provider ${provider} did not return usage data - using estimates: ${JSON.stringify(finalUsage)}`);
+            } else {
+                console.log(`✅ Using actual usage data from ${provider}: ${JSON.stringify(finalUsage)}`);
+            }
+            
+            // Create LLM API call tracking object
+            const llmApiCall = {
+                request: {
+                    model: model,
+                    provider: provider,
+                    messages: cleanMessages.length,
+                    temperature: temperature,
+                    max_tokens: max_tokens
+                },
+                response: {
+                    content: assistantMessage.content,
+                    tool_calls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+                    finish_reason: finishReason,
+                    usage: finalUsage // Use actual or estimated usage
+                },
+                timestamp: new Date().toISOString()
+            };
+            
+            // Add llmApiCall to assistant message for tracking
+            if (!assistantMessage.llmApiCalls) {
+                assistantMessage.llmApiCalls = [];
+            }
+            assistantMessage.llmApiCalls.push(llmApiCall);
+            
+            // Accumulate across iterations
+            allLlmApiCalls.push(...assistantMessage.llmApiCalls);
+            
+            // Emit LLM response event with HTTP headers and usage
             const eventData = {
                 phase: 'chat_iteration',
                 iteration: iterationCount,
@@ -617,10 +704,12 @@ async function handler(event, responseStream) {
                 model,
                 response: {
                     content: assistantMessage.content,
-                    tool_calls: currentToolCalls.length > 0 ? currentToolCalls : undefined
+                    tool_calls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+                    usage: usage
                 },
                 httpHeaders: httpHeaders || {},
-                httpStatus: httpStatus
+                httpStatus: httpStatus,
+                llmApiCall: llmApiCall // Include tracking data in event
             };
             
             console.log('🔧 DEBUG chat endpoint - Event data to send:', JSON.stringify(eventData, null, 2));
@@ -653,12 +742,18 @@ async function handler(event, responseStream) {
                 if (validToolCalls.length > 0) {
                     assistantMessage.tool_calls = validToolCalls;
                     
+                    console.log(`📊 Sending tool-path message_complete with ${allLlmApiCalls.length} llmApiCalls`);
+                    if (allLlmApiCalls.length > 0) {
+                        console.log(`📊 First call tokens: ${JSON.stringify(allLlmApiCalls[0].response?.usage)}`);
+                    }
+                    
                     // Send message_complete with tool_calls included
                     // This allows the frontend to display both content and tool calls
                     sseWriter.writeEvent('message_complete', {
                         role: 'assistant',
                         content: assistantMessage.content,
-                        tool_calls: validToolCalls
+                        tool_calls: validToolCalls,
+                        llmApiCalls: allLlmApiCalls // Include all accumulated token usage data
                     });
                     
                     currentMessages.push(assistantMessage);
@@ -672,6 +767,217 @@ async function handler(event, responseStream) {
                     // Continue loop to get final response
                     continue;
                 }
+            }
+            
+            // POST-PROCESSING: Extract comprehensive content from all tool calls
+            // These will be sent as separate fields in the response, not appended to content
+            // This keeps them out of LLM context while allowing UI to display them
+            const toolMessages = currentMessages.filter(m => m.role === 'tool');
+            
+            let extractedContent = null;
+            
+            if (toolMessages.length > 0 && assistantMessage.content && assistantMessage.content.length > 0) {
+                const allUrls = [];
+                const allImages = [];
+                const allVideos = [];
+                const allMedia = [];
+                
+                // Process each tool result to extract content
+                for (const toolMsg of toolMessages) {
+                    // Use rawResult if available (contains unformatted JSON), otherwise fall back to content
+                    const contentToProcess = toolMsg.rawResult || toolMsg.content;
+                    if (!contentToProcess) continue;
+                    
+                    try {
+                        // Try to parse as JSON first (for structured tool results)
+                        const parsed = JSON.parse(contentToProcess);
+                        
+                        // Extract from search_web results
+                        if (toolMsg.name === 'search_web' && parsed.results) {
+                            console.log(`🔍 Processing search_web with ${parsed.results.length} results`);
+                            for (const result of parsed.results) {
+                                if (result.url) {
+                                    allUrls.push({
+                                        title: result.title || result.url,
+                                        url: result.url,
+                                        snippet: result.content?.substring(0, 150),
+                                        isSearchResult: true // Mark as main search result
+                                    });
+                                }
+                                
+                                // Debug: Log what we're looking for
+                                console.log(`  📄 Result: ${result.title || result.url}`);
+                                console.log(`     page_content exists: ${!!result.page_content}`);
+                                if (result.page_content) {
+                                    console.log(`     - images: ${result.page_content.images?.length || 0}`);
+                                    console.log(`     - videos: ${result.page_content.videos?.length || 0}`);
+                                    console.log(`     - media: ${result.page_content.media?.length || 0}`);
+                                    console.log(`     - links: ${result.page_content.links?.length || 0}`);
+                                }
+                                
+                                // Extract ALL links from page_content (scraped from page)
+                                if (result.page_content?.links) {
+                                    for (const link of result.page_content.links) {
+                                        allUrls.push({
+                                            title: link.text || link.title || link.href,
+                                            url: link.href || link.url,
+                                            snippet: link.caption || null,
+                                            source: result.url,
+                                            isSearchResult: false // Mark as scraped link
+                                        });
+                                    }
+                                }
+                                
+                                // Extract images from page_content
+                                if (result.page_content?.images) {
+                                    for (const img of result.page_content.images) {
+                                        allImages.push({
+                                            src: img.src,
+                                            alt: img.alt || img.title || 'Image',
+                                            source: result.url
+                                        });
+                                    }
+                                }
+                                
+                                // Extract videos from page_content
+                                if (result.page_content?.videos) {
+                                    for (const video of result.page_content.videos) {
+                                        allVideos.push({
+                                            src: video.src,
+                                            title: video.title || 'Video',
+                                            source: result.url
+                                        });
+                                    }
+                                }
+                                
+                                // Extract media from page_content
+                                if (result.page_content?.media) {
+                                    for (const media of result.page_content.media) {
+                                        allMedia.push({
+                                            src: media.src,
+                                            type: media.type || 'unknown',
+                                            source: result.url
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Extract from scrape_url results
+                        if (toolMsg.name === 'scrape_url') {
+                            if (parsed.url) {
+                                allUrls.push({
+                                    title: parsed.title || parsed.url,
+                                    url: parsed.url,
+                                    snippet: parsed.content?.substring(0, 150)
+                                });
+                            }
+                            
+                            if (parsed.images) {
+                                for (const img of parsed.images) {
+                                    allImages.push({
+                                        src: img.src,
+                                        alt: img.alt || img.title || 'Image',
+                                        source: parsed.url
+                                    });
+                                }
+                            }
+                            
+                            if (parsed.videos) {
+                                for (const video of parsed.videos) {
+                                    allVideos.push({
+                                        src: video.src,
+                                        title: video.title || 'Video',
+                                        source: parsed.url
+                                    });
+                                }
+                            }
+                            
+                            if (parsed.media) {
+                                for (const media of parsed.media) {
+                                    allMedia.push({
+                                        src: media.src,
+                                        type: media.type || 'unknown',
+                                        source: parsed.url
+                                    });
+                                }
+                            }
+                        }
+                        
+                    } catch (e) {
+                        // Not JSON, check if it's compressed markdown format with URL section
+                        if (toolMsg.name === 'search_web' && toolMsg.content.includes('🚨 CRITICAL: YOU MUST COPY THESE URLS')) {
+                            // Extract URLs from compressed format
+                            const urlSectionMatch = toolMsg.content.match(/🚨 CRITICAL:[\s\S]*?((?:\d+\.\s*\[.+?\]\(.+?\)\s*)+)/);
+                            if (urlSectionMatch) {
+                                const urlLines = urlSectionMatch[1].split('\n').filter(l => l.trim());
+                                for (const line of urlLines) {
+                                    const linkMatch = line.match(/\[(.+?)\]\((.+?)\)/);
+                                    if (linkMatch) {
+                                        allUrls.push({
+                                            title: linkMatch[1],
+                                            url: linkMatch[2],
+                                            snippet: null
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Deduplicate by URL/src
+                const uniqueUrls = Array.from(new Map(allUrls.map(u => [u.url, u])).values());
+                const uniqueImages = Array.from(new Map(allImages.map(i => [i.src, i])).values());
+                const uniqueVideos = Array.from(new Map(allVideos.map(v => [v.src, v])).values());
+                const uniqueMedia = Array.from(new Map(allMedia.map(m => [m.src, m])).values());
+                
+                // Separate search result links from scraped page links
+                const searchResultLinks = uniqueUrls.filter(u => u.isSearchResult);
+                const scrapedLinks = uniqueUrls.filter(u => !u.isSearchResult);
+                
+                // Prioritize links: search results first, then most relevant scraped links
+                const prioritizedLinks = [
+                    ...searchResultLinks,
+                    ...scrapedLinks.slice(0, 10) // Top 10 scraped links
+                ];
+                
+                // All links for expandable section (search results + all scraped)
+                const allLinks = uniqueUrls;
+                
+                // Separate YouTube videos from regular videos
+                const youtubeVideos = uniqueVideos.filter(v => 
+                    v.src && (v.src.includes('youtube.com') || v.src.includes('youtu.be'))
+                );
+                const otherVideos = uniqueVideos.filter(v => 
+                    v.src && !(v.src.includes('youtube.com') || v.src.includes('youtu.be'))
+                );
+                
+                // Prioritize top 3 images
+                const prioritizedImages = uniqueImages.slice(0, 3);
+                
+                // Build structured extracted content for UI (not part of LLM context)
+                // The UI will display this in expandable sections below the response
+                extractedContent = {
+                    // Prioritized content (shown inline, not expandable)
+                    prioritizedLinks: prioritizedLinks.length > 0 ? prioritizedLinks : null,
+                    prioritizedImages: prioritizedImages.length > 0 ? prioritizedImages : null,
+                    
+                    // Media sections (shown expanded by default)
+                    youtubeVideos: youtubeVideos.length > 0 ? youtubeVideos : null,
+                    otherVideos: otherVideos.length > 0 ? otherVideos : null,
+                    media: uniqueMedia.length > 0 ? uniqueMedia : null,
+                    
+                    // Expandable sections (collapsed by default)
+                    allLinks: allLinks.length > 0 ? allLinks : null,
+                    allImages: uniqueImages.length > 0 ? uniqueImages : null,
+                    
+                    // Legacy field for backwards compatibility
+                    sources: searchResultLinks.length > 0 ? searchResultLinks : null,
+                    images: uniqueImages.length > 0 ? uniqueImages : null
+                };
+                
+                console.log(`✅ Extracted content: ${allLinks.length} total links (${prioritizedLinks.length} prioritized), ${uniqueImages.length} images (${prioritizedImages.length} prioritized), ${youtubeVideos.length} YouTube videos, ${otherVideos.length} other videos, ${uniqueMedia.length} media items`);
             }
             
             // If LLM provided substantive content, treat as final answer even if tool_calls present
@@ -727,19 +1033,33 @@ async function handler(event, responseStream) {
             console.log(`📤 Sending final response: ${assistantMessage.content.length} chars`);
             console.log(`📤 Preview: ${assistantMessage.content.substring(0, 100)}...`);
             
-            // Send message_complete with content only (no tool_calls)
-            sseWriter.writeEvent('message_complete', {
+            // Send message_complete with content and extracted content
+            const messageCompleteData = {
                 role: 'assistant',
-                content: assistantMessage.content
+                content: assistantMessage.content,
+                llmApiCalls: allLlmApiCalls // Include all accumulated token usage data
                 // Note: NOT including tool_calls - they're already sent via tool_call_* events
-            });
+            };
+            
+            // Add extracted content if available (sources, images, videos, media)
+            if (extractedContent) {
+                messageCompleteData.extractedContent = extractedContent;
+            }
+            
+            console.log(`📊 Sending final message_complete with ${allLlmApiCalls.length} llmApiCalls`);
+            if (allLlmApiCalls.length > 0) {
+                console.log(`📊 First call tokens: ${JSON.stringify(allLlmApiCalls[0].response?.usage)}`);
+            }
+            
+            sseWriter.writeEvent('message_complete', messageCompleteData);
             
             console.log(`✅ Completing request after ${iterationCount} iterations`);
             
             sseWriter.writeEvent('complete', {
                 status: 'success',
                 messages: currentMessages,
-                iterations: iterationCount
+                iterations: iterationCount,
+                extractedContent: extractedContent || undefined
             });
             
             responseStream.end();

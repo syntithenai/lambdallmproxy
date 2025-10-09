@@ -44,9 +44,23 @@ class SimpleHTMLParser {
         
         const lower = url.toLowerCase();
         
-        // YouTube detection
+        // YouTube video detection - must have a valid video ID
+        // Valid patterns: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID, youtube.com/shorts/ID
+        // Invalid: youtube.com/playlist, youtube.com/channel, youtube.com/user, youtube.com/c/, youtube.com/@
         if (lower.includes('youtube.com') || lower.includes('youtu.be')) {
-            return 'youtube';
+            const videoIdPatterns = [
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+                /youtube\.com\/shorts\/([^&\n?#]+)/
+            ];
+            
+            for (const pattern of videoIdPatterns) {
+                const match = url.match(pattern);
+                if (match && match[1]) {
+                    return 'youtube';
+                }
+            }
+            // If it's a YouTube URL but doesn't match video patterns, it's not a video
+            return null;
         }
         
         // Video file extensions

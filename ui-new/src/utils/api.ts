@@ -25,6 +25,34 @@ export interface ChatMessage {
     httpStatus?: number;  // HTTP status code from LLM API
     timestamp: string;
   }>;
+  errorData?: any;        // Full error object for error transparency
+  extractedContent?: {    // Extracted content from tool calls (search results, images, videos, media)
+    sources?: Array<{
+      title: string;
+      url: string;
+      snippet?: string;
+    }>;
+    images?: Array<{
+      src: string;
+      alt: string;
+      source: string;
+    }>;
+    youtubeVideos?: Array<{
+      src: string;
+      title: string;
+      source: string;
+    }>;
+    otherVideos?: Array<{
+      src: string;
+      title: string;
+      source: string;
+    }>;
+    media?: Array<{
+      src: string;
+      type: string;
+      source: string;
+    }>;
+  };
 }
 
 export interface ProxyRequest {

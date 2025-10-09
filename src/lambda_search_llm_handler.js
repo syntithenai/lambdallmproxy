@@ -29,7 +29,7 @@ const {
     getTokensForComplexity 
 } = require('./config/tokens');
 const { LAMBDA_MEMORY_LIMIT_MB, MEMORY_SAFETY_BUFFER_MB, MAX_CONTENT_SIZE_MB, BYTES_PER_MB } = require('./config/memory');
-const { MAX_TOOL_ITERATIONS, DEFAULT_REASONING_EFFORT, COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT } = require('./config/prompts');
+const { MAX_TOOL_ITERATIONS, DEFAULT_REASONING_EFFORT, getComprehensiveResearchSystemPrompt } = require('./config/prompts');
 const { isQuotaLimitError, parseWaitTimeFromMessage } = require('./utils/error-handling');
 const { safeParseJson } = require('./utils/token-estimation');
 const { trackToolCall, trackLLMCall } = require('./services/tracking-service');
@@ -83,6 +83,9 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
         console.log(`🔧 Executing planning phase to optimize research approach...`);
         
         // Initialize researchPlan at function level to ensure availability throughout function
+        // Get fresh system prompt with current date/time
+        const COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT = getComprehensiveResearchSystemPrompt();
+        
         researchPlan = { 
             research_questions: ["Initial research question"], 
             optimal_persona: systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT, 
@@ -935,7 +938,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             model,
             apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
             userQuery: query,
-            systemPrompt: COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT,
+            systemPrompt: getComprehensiveResearchSystemPrompt(), // Get fresh prompt with current date/time
             stream: streamObject
         });
         

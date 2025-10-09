@@ -14,6 +14,8 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
 import { SearchProgress } from './SearchProgress';
 import { LlmInfoDialog } from './LlmInfoDialog';
+import { ErrorInfoDialog } from './ErrorInfoDialog';
+import ExtractedContent from './ExtractedContent';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
@@ -125,6 +127,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // LLM Info dialog tracking
   const [showLlmInfo, setShowLlmInfo] = useState<number | null>(null);
+  
+  // Error Info dialog tracking
+  const [showErrorInfo, setShowErrorInfo] = useState<number | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -806,14 +811,46 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               ));
               
               // Add tool message to messages array
-              const toolMessage: ChatMessage = {
-                role: 'tool',
-                content: data.content,
-                tool_call_id: data.id,
-                name: data.name
-              };
+              // Collect llmApiCalls from:
+              // 1. The assistant message that triggered this tool (for main chat LLM call)
+              // 2. Any tool-internal LLM calls (e.g., search_web summarization)
               setMessages(prev => {
                 console.log('🟪 Adding tool result, prev messages:', prev.length, 'tool:', data.name);
+                
+                let llmApiCalls: any[] = [];
+                
+                // Find the assistant message with llmApiCalls for this tool
+                for (let i = prev.length - 1; i >= 0; i--) {
+                  if (prev[i].role === 'assistant' && prev[i].llmApiCalls && prev[i].tool_calls) {
+                    // Check if this assistant has the tool call that matches
+                    const hasMatchingToolCall = prev[i].tool_calls?.some((tc: any) => tc.id === data.id);
+                    if (hasMatchingToolCall) {
+                      // Extract ONLY tool-internal LLM calls (summarization, etc.)
+                      // These have phase like 'page_summary', 'synthesis_summary', 'description_summary'
+                      const toolInternalCalls = prev[i].llmApiCalls?.filter((call: any) => 
+                        call.phase && call.tool === 'search_web' && 
+                        (call.phase === 'page_summary' || call.phase === 'synthesis_summary' || call.phase === 'description_summary')
+                      ) || [];
+                      
+                      if (toolInternalCalls.length > 0) {
+                        llmApiCalls = toolInternalCalls;
+                        console.log('🟪 Collected', toolInternalCalls.length, 'tool-internal llmApiCalls from assistant at index', i);
+                      } else {
+                        console.log('🟪 No tool-internal LLM calls found for', data.name);
+                      }
+                      break;
+                    }
+                  }
+                }
+                
+                const toolMessage: ChatMessage = {
+                  role: 'tool',
+                  content: data.content,
+                  tool_call_id: data.id,
+                  name: data.name,
+                  ...(llmApiCalls.length > 0 && { llmApiCalls })
+                };
+                
                 return [...prev, toolMessage];
               });
               
@@ -908,6 +945,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       ...newMessages[currentStreamingBlockIndex],
                       content: data.content || newMessages[currentStreamingBlockIndex].content || '',
                       tool_calls: data.tool_calls || newMessages[currentStreamingBlockIndex].tool_calls,
+                      extractedContent: data.extractedContent || newMessages[currentStreamingBlockIndex].extractedContent,
+                      llmApiCalls: data.llmApiCalls || newMessages[currentStreamingBlockIndex].llmApiCalls,
                       isStreaming: false
                     };
                   }
@@ -943,7 +982,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     const assistantMessage: ChatMessage = {
                       role: 'assistant',
                       content: data.content || '',
-                      ...(data.tool_calls && { tool_calls: data.tool_calls })
+                      ...(data.tool_calls && { tool_calls: data.tool_calls }),
+                      ...(data.extractedContent && { extractedContent: data.extractedContent }),
+                      ...(data.llmApiCalls && { llmApiCalls: data.llmApiCalls })
                     };
                     return [...prev, assistantMessage];
                   }
@@ -958,6 +999,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       ...lastMessage,
                       content: data.content || '',
                       tool_calls: data.tool_calls || lastMessage.tool_calls,
+                      extractedContent: data.extractedContent || lastMessage.extractedContent,
+                      llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
                       isStreaming: false
                     };
                     return newMessages;
@@ -975,7 +1018,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   const assistantMessage: ChatMessage = {
                     role: 'assistant',
                     content: data.content || '',
-                    ...(data.tool_calls && { tool_calls: data.tool_calls })
+                    ...(data.tool_calls && { tool_calls: data.tool_calls }),
+                    ...(data.extractedContent && { extractedContent: data.extractedContent }),
+                    ...(data.llmApiCalls && { llmApiCalls: data.llmApiCalls })
                   };
                   return [...prev, assistantMessage];
                 });
@@ -1001,9 +1046,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 // The AuthContext will handle logout via useAuth
               }
               
+              // Capture full error data for transparency
               const errorMessage: ChatMessage = {
                 role: 'assistant',
-                content: `❌ Error: ${errorMsg}`
+                content: `❌ Error: ${errorMsg}`,
+                errorData: data  // Store full error object including code, stack, etc.
               };
               setMessages(prev => [...prev, errorMessage]);
               break;
@@ -1141,7 +1188,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         const errorMessage: ChatMessage = {
           role: 'assistant',
-          content: `Error: ${errorMsg}`
+          content: `❌ Error: ${errorMsg}`,
+          errorData: error instanceof Error ? {
+            ...error,  // Capture any additional properties
+            message: error.message,
+            name: error.name,
+            stack: error.stack
+          } : { message: String(error) }
         };
         setMessages(prev => [...prev, errorMessage]);
         showError(`Chat error: ${errorMsg}`);
@@ -1343,9 +1396,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           
           // Skip assistant messages with no content UNLESS they have:
           // - transcription in progress
-          // - llmApiCalls (want to show ALL LLM transparency)
-          // - tool_calls (planning/tool selection phases)
-          if (msg.role === 'assistant' && !msg.content && !hasTranscriptionInProgress && !msg.llmApiCalls && !msg.tool_calls) {
+          // - tool_calls (planning/tool selection phases that will show progress)
+          // - isStreaming (currently being generated)
+          // Note: We DON'T show empty assistants just because they have llmApiCalls
+          // The llmApiCalls should be shown on the tool result instead
+          if (msg.role === 'assistant' && !msg.content && !hasTranscriptionInProgress && !msg.tool_calls && !msg.isStreaming) {
             return null;
           }
           
@@ -1605,7 +1660,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 </pre>
                               )}
                               
-                              {/* Capture button for tool results */}
+                              {/* Capture and Info buttons for tool results */}
                               {msg.content && (
                                 <div className="flex gap-2 mt-2 pt-2 border-t border-purple-200 dark:border-purple-700">
                                   <button
@@ -1618,6 +1673,76 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                     </svg>
                                     Grab
                                   </button>
+                                  
+                                  {/* Info button - always show for search_web to indicate summarization status */}
+                                  {msg.name === 'search_web' && (
+                                    <button
+                                      onClick={() => msg.llmApiCalls && msg.llmApiCalls.length > 0 ? setShowLlmInfo(idx) : null}
+                                      className={`text-xs flex items-center gap-1 ${
+                                        msg.llmApiCalls && msg.llmApiCalls.length > 0
+                                          ? 'text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-100 cursor-pointer'
+                                          : 'text-gray-500 dark:text-gray-500 cursor-default'
+                                      }`}
+                                      title={msg.llmApiCalls && msg.llmApiCalls.length > 0 ? "View LLM summarization info" : "No LLM summarization used"}
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      {msg.llmApiCalls && msg.llmApiCalls.length > 0 ? (
+                                        <>
+                                          Info
+                                          {(() => {
+                                            const tokensIn = msg.llmApiCalls.reduce((sum: number, call: any) => 
+                                              sum + (call.response?.usage?.prompt_tokens || 0), 0);
+                                            const tokensOut = msg.llmApiCalls.reduce((sum: number, call: any) => 
+                                              sum + (call.response?.usage?.completion_tokens || 0), 0);
+                                            const hasEstimated = msg.llmApiCalls.some((call: any) => 
+                                              call.response?.usage?.estimated === true);
+                                            if (tokensIn > 0 || tokensOut > 0) {
+                                              return (
+                                                <span className="ml-1 text-[10px] opacity-75">
+                                                  ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
+                                                </span>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
+                                        </>
+                                      ) : (
+                                        <span className="text-[10px]">No summarization</span>
+                                      )}
+                                    </button>
+                                  )}
+                                  
+                                  {/* Info button for other tools - only show if llmApiCalls present */}
+                                  {msg.name !== 'search_web' && msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
+                                    <button
+                                      onClick={() => setShowLlmInfo(idx)}
+                                      className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-100 flex items-center gap-1"
+                                      title="View LLM transparency info"
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      Info
+                                      {(() => {
+                                        const tokensIn = msg.llmApiCalls.reduce((sum: number, call: any) => 
+                                          sum + (call.response?.usage?.prompt_tokens || 0), 0);
+                                        const tokensOut = msg.llmApiCalls.reduce((sum: number, call: any) => 
+                                          sum + (call.response?.usage?.completion_tokens || 0), 0);
+                                        const hasEstimated = msg.llmApiCalls.some((call: any) => 
+                                          call.response?.usage?.estimated === true);
+                                        if (tokensIn > 0 || tokensOut > 0) {
+                                          return (
+                                            <span className="ml-1 text-[10px] opacity-75">
+                                              ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
+                                            </span>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1683,20 +1808,25 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           return null;
                         })}
                         
-                        {/* Message content - render even if empty to show grey box */}
-                        <MarkdownRenderer content={msg.content || ''} />
+                        {/* Message content - only render if there's actual content */}
+                        {msg.content && <MarkdownRenderer content={msg.content} />}
                         {msg.isStreaming && (
                           <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
                         )}
+                        
+                        {/* Extracted content from tool calls (sources, images, videos, media) */}
+                        {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
                       </div>
                     ) : (
                       <div className="whitespace-pre-wrap">
                         {msg.content}
+                        {/* Extracted content for non-markdown messages too */}
+                        {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
                       </div>
                     )}
                     
                     {/* Copy/Share/Capture/Info buttons for assistant messages */}
-                    {msg.role === 'assistant' && msg.content && (
+                    {msg.role === 'assistant' && (msg.content || msg.llmApiCalls) && (
                       <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                         <button
                           onClick={() => {
@@ -1754,15 +1884,30 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 sum + (call.response?.usage?.prompt_tokens || 0), 0);
                               const tokensOut = msg.llmApiCalls.reduce((sum: number, call: any) => 
                                 sum + (call.response?.usage?.completion_tokens || 0), 0);
+                              const hasEstimated = msg.llmApiCalls.some((call: any) => 
+                                call.response?.usage?.estimated === true);
                               if (tokensIn > 0 || tokensOut > 0) {
                                 return (
                                   <span className="ml-1 text-[10px] opacity-75">
-                                    ({tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
+                                    ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
                                   </span>
                                 );
                               }
                               return null;
                             })()}
+                          </button>
+                        )}
+                        {/* Error Info button for error messages */}
+                        {msg.errorData && msg.content.startsWith('❌ Error:') && (
+                          <button
+                            onClick={() => setShowErrorInfo(idx)}
+                            className="text-xs text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-100 flex items-center gap-1"
+                            title="View full error details"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Error Info
                           </button>
                         )}
                       </div>
@@ -1830,6 +1975,72 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             </div>
           );
         })}
+        
+        {/* Total Token Tally - show after final response of a user request */}
+        {(() => {
+          // Find the last user message and the last assistant message
+          let lastUserIndex = -1;
+          let lastAssistantIndex = -1;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (lastUserIndex === -1 && messages[i].role === 'user') lastUserIndex = i;
+            if (lastAssistantIndex === -1 && messages[i].role === 'assistant') lastAssistantIndex = i;
+            if (lastUserIndex !== -1 && lastAssistantIndex !== -1) break;
+          }
+          
+          // Only show if we have both and assistant is after user (completed turn)
+          // And not currently loading (so we show it for completed conversations)
+          if (lastUserIndex >= 0 && lastAssistantIndex > lastUserIndex && !isLoading) {
+            // Calculate total tokens from all messages in this conversation turn
+            // Count from the last user message to the end
+            let totalPromptTokens = 0;
+            let totalCompletionTokens = 0;
+            let totalTokens = 0;
+            let hasAnyEstimated = false;
+            
+            for (let i = lastUserIndex; i < messages.length; i++) {
+              const msg = messages[i];
+              
+              // Count tokens from assistant message llmApiCalls
+              if (msg.llmApiCalls && msg.llmApiCalls.length > 0) {
+                msg.llmApiCalls.forEach((call: any) => {
+                  totalPromptTokens += call.response?.usage?.prompt_tokens || 0;
+                  totalCompletionTokens += call.response?.usage?.completion_tokens || 0;
+                  totalTokens += call.response?.usage?.total_tokens || 0;
+                  if (call.response?.usage?.estimated) {
+                    hasAnyEstimated = true;
+                  }
+                });
+              }
+            }
+            
+            // Only show if we have token counts
+            if (totalTokens > 0) {
+              return (
+                <div className="flex justify-center my-4">
+                  <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-700 rounded-lg px-4 py-2 shadow-sm">
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="font-semibold text-purple-700 dark:text-purple-300">
+                        📊 Total Token Usage{hasAnyEstimated && <span title="Includes estimated token counts" className="ml-1">~</span>}:
+                      </span>
+                      <span className="text-gray-700 dark:text-gray-300">
+                        <span className="font-mono">{totalPromptTokens.toLocaleString()}</span>
+                        <span className="text-gray-500 dark:text-gray-400 mx-1">↓ in</span>
+                      </span>
+                      <span className="text-gray-700 dark:text-gray-300">
+                        <span className="font-mono">{totalCompletionTokens.toLocaleString()}</span>
+                        <span className="text-gray-500 dark:text-gray-400 mx-1">↑ out</span>
+                      </span>
+                      <span className="text-purple-700 dark:text-purple-300 font-semibold">
+                        = <span className="font-mono">{totalTokens.toLocaleString()}</span> total
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+          }
+          return null;
+        })()}
         
         {/* Streaming indicator for current block */}
         {isLoading && currentStreamingBlockIndex !== null && (
@@ -2251,6 +2462,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         <LlmInfoDialog 
           apiCalls={messages[showLlmInfo].llmApiCalls}
           onClose={() => setShowLlmInfo(null)}
+        />
+      )}
+      
+      {/* Error Info Dialog */}
+      {showErrorInfo !== null && messages[showErrorInfo]?.errorData && (
+        <ErrorInfoDialog 
+          errorData={messages[showErrorInfo].errorData}
+          onClose={() => setShowErrorInfo(null)}
         />
       )}
     </div>

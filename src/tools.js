@@ -52,6 +52,17 @@ function compressSearchResultsForLLM(query, results) {
     }
   }
   
+  // Collect all URLs for explicit listing at the end
+  const allUrls = [];
+  for (const result of results) {
+    if (result.url) {
+      allUrls.push({
+        title: result.title || result.url,
+        url: result.url
+      });
+    }
+  }
+  
   // Collect all media from all results for gallery at bottom
   const allImages = [];
   const allYoutube = [];
@@ -61,6 +72,23 @@ function compressSearchResultsForLLM(query, results) {
     if (result.images) allImages.push(...result.images);
     if (result.youtube) allYoutube.push(...result.youtube);
     if (result.media) allMedia.push(...result.media);
+  }
+  
+  // Add CRITICAL URLS section at the top (before media) - THIS IS MANDATORY FOR LLM TO SEE
+  if (allUrls.length > 0) {
+    sections.push('\n═══════════════════════════════════════════════════════════════════════════════');
+    sections.push('🚨 CRITICAL: YOU MUST COPY THESE URLS INTO YOUR RESPONSE 🚨');
+    sections.push('═══════════════════════════════════════════════════════════════════════════════');
+    sections.push('The following URLs MUST be included in your response as clickable markdown links:');
+    sections.push('');
+    for (let i = 0; i < allUrls.length; i++) {
+      const { title, url } = allUrls[i];
+      sections.push(`${i + 1}. [${title}](${url})`);
+    }
+    sections.push('');
+    sections.push('❌ FORBIDDEN: Mentioning these source names without their URLs');
+    sections.push('✅ REQUIRED: Copy the markdown links above into your response');
+    sections.push('═══════════════════════════════════════════════════════════════════════════════\n');
   }
   
   // Add media gallery section at bottom
@@ -429,7 +457,9 @@ async function callFunction(name, args = {}, context = {}) {
               state: r.state,
               contentLength: r.contentLength || 0,
               fetchTimeMs: r.fetchTimeMs || 0,
-              content: null
+              content: null,
+              // CRITICAL: Preserve page_content from search.js extraction
+              page_content: r.page_content
             };
             
             // Process loaded content
@@ -684,7 +714,7 @@ ${result.content.substring(0, maxContentChars)}
                   
                   // No delay needed - different models have separate TPM limits
                   
-                  // Emit LLM response event
+                  // Emit LLM response event with usage data
                   if (context?.writeEvent) {
                     context.writeEvent('llm_response', {
                       phase: 'page_summary',
@@ -693,6 +723,10 @@ ${result.content.substring(0, maxContentChars)}
                       url: result.url,
                       model: summaryModel,
                       summary: pageSummaryText,
+                      response: {
+                        content: pageSummaryText,
+                        usage: pageResp?.rawResponse?.usage || {}
+                      },
                       timestamp: new Date().toISOString()
                     });
                   }
@@ -766,13 +800,16 @@ Brief answer with URLs:`;
               
               const synthesisResp = await llmResponsesWithTools(synthesisRequestBody);
               
-              // Emit LLM response event
+              // Emit LLM response event with usage data
               if (context?.writeEvent) {
                 context.writeEvent('llm_response', {
                   phase: 'synthesis_summary',
                   tool: 'search_web',
                   model: synthesisModel,
-                  response: synthesisResp,
+                  response: {
+                    content: synthesisResp?.text || synthesisResp?.finalText || '',
+                    usage: synthesisResp?.rawResponse?.usage || {}
+                  },
                   timestamp: new Date().toISOString()
                 });
               }
@@ -819,13 +856,16 @@ Brief answer with URLs:`;
               
               const resp = await llmResponsesWithTools(summaryRequestBody);
               
-              // Emit LLM response event
+              // Emit LLM response event with usage data
               if (context?.writeEvent) {
                 context.writeEvent('llm_response', {
                   phase: 'description_summary',
                   tool: 'search_web',
                   model,
-                  response: resp,
+                  response: {
+                    content: resp?.text || resp?.finalText || '',
+                    usage: resp?.rawResponse?.usage || {}
+                  },
                   timestamp: new Date().toISOString()
                 });
               }
@@ -848,6 +888,12 @@ Brief answer with URLs:`;
         title: r.title,
         description: r.description || ''
       })).filter(link => link.url && link.title);
+      
+      // DEBUG: Check if page_content exists in allResults
+      console.log(`🔍 DEBUG tools.js: allResults (${allResults.length}) page_content status:`);
+      allResults.forEach((r, i) => {
+        console.log(`  Result ${i}: page_content=${!!r.page_content}, keys=${Object.keys(r).join(',')}`);
+      });
       
       // Build complete response with all raw search fields
       const response = {
@@ -884,16 +930,24 @@ Brief answer with URLs:`;
       if (responseCharCount > MAX_TOTAL_RESPONSE_CHARS || estimatedTokens > 4000) {
         console.warn(`⚠️ Response too large (${responseCharCount} chars, ${estimatedTokens} tokens), aggressively truncating`);
         
+        // DEBUG: Check if page_content exists in results before truncation
+        console.log(`🔍 DEBUG: Results before truncation (${allResults.length} results):`);
+        allResults.forEach((r, i) => {
+          console.log(`  Result ${i}: page_content=${!!r.page_content}, images=${r.page_content?.images?.length || 0}, videos=${r.page_content?.videos?.length || 0}`);
+        });
+        
         // More aggressive truncation: fewer results, shorter content
-        const maxResults = Math.min(3, allResults.length); // Max 3 results
-        const truncatedResults = allResults.slice(0, maxResults).map(r => ({
+        // IMPORTANT: Keep ALL results for links section (just remove only 3 for content)
+        const truncatedResults = allResults.map(r => ({
           ...r,
           description: (r.description || '').substring(0, 150),
           content: r.content ? r.content.substring(0, 300) : r.content, // Reduced from 500 to 300
           images: r.images ? r.images.slice(0, 1) : undefined, // Max 1 image
           links: r.links ? r.links.slice(0, 5) : undefined, // Max 5 links
           youtube: r.youtube ? r.youtube.slice(0, 2) : undefined, // Max 2 YouTube
-          media: undefined // Drop media to save space
+          media: undefined, // Drop media to save space
+          // CRITICAL: Keep page_content for UI extraction (images, videos, media)
+          page_content: r.page_content
         }));
         
         return JSON.stringify({ 

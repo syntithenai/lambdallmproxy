@@ -1054,6 +1054,68 @@ class DuckDuckGoSearcher {
             // Store raw HTML for image and link extraction
             result.rawHtml = rawContent;
             
+            // Extract images, videos, and media from HTML
+            try {
+                const htmlParser = new SimpleHTMLParser(rawContent);
+                const images = htmlParser.extractImages(10); // Get up to 10 images
+                const links = htmlParser.extractLinks();
+                const categorized = htmlParser.categorizeLinks(links);
+                
+                // Transform images to expected format (extractImages returns {src, alt, title, caption, ...})
+                const formattedImages = (images || []).map(img => ({
+                    src: img.src,
+                    alt: img.alt || img.title || img.caption || 'Image',
+                    title: img.title || img.alt
+                }));
+                
+                // Transform video links to expected format (links have {href, text, caption, ...})
+                const formattedYouTube = (categorized.youtube || []).map(link => ({
+                    src: link.href,
+                    title: link.text || link.caption || 'YouTube Video'
+                }));
+                
+                const formattedVideos = (categorized.video || []).map(link => ({
+                    src: link.href,
+                    title: link.text || link.caption || 'Video'
+                }));
+                
+                // Transform media links to expected format
+                const formattedMedia = [
+                    ...(categorized.audio || []).map(link => ({
+                        src: link.href,
+                        type: 'audio',
+                        title: link.text || link.caption || 'Audio'
+                    })),
+                    ...(categorized.media || []).map(link => ({
+                        src: link.href,
+                        type: 'media',
+                        title: link.text || link.caption || 'Media'
+                    }))
+                ];
+                
+                // Transform regular links for UI
+                const formattedLinks = (categorized.regular || []).map(link => ({
+                    href: link.href,
+                    text: link.text || link.caption || link.href,
+                    title: link.caption || link.text,
+                    relevance: link.relevance || 0
+                }));
+                
+                // Store in page_content for UI extraction
+                result.page_content = {
+                    images: formattedImages,
+                    videos: [...formattedYouTube, ...formattedVideos],
+                    media: formattedMedia,
+                    links: formattedLinks // Add all regular links
+                };
+                
+                console.log(`[${index + 1}/${total}] Extracted ${formattedImages.length} images, ${formattedYouTube.length} YouTube + ${formattedVideos.length} videos, ${formattedMedia.length} media, ${formattedLinks.length} links`);
+                console.log(`[${index + 1}/${total}] DEBUG: result.page_content set:`, JSON.stringify(result.page_content).substring(0, 200));
+            } catch (parseError) {
+                console.log(`[${index + 1}/${total}] Failed to extract media: ${parseError.message}`);
+                result.page_content = { images: [], videos: [], media: [] };
+            }
+            
             // Use new HTML content extractor to convert to Markdown (preferred) or plain text
             const extracted = extractContent(rawContent);
             

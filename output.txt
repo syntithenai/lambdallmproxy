@@ -1,6 +1,4 @@
-Makefile:188: warning: overriding recipe for target 'build-docs'
-Makefile:72: warning: ignoring old recipe for target 'build-docs'
-⚡ Fast deploying code changes...
+⚡ Deploying Lambda function (fast)...
 ./scripts/deploy-fast.sh
 [0;34m⚡ Fast deploying Lambda function llmproxy...[0m
 [0;32m✅ Using Layer ARN: arn:aws:lambda:us-east-1:979126075445:layer:llmproxy-dependencies:2[0m
@@ -26,9 +24,9 @@ Makefile:72: warning: ignoring old recipe for target 'build-docs'
 ./index.js
 ./providers.js
 [1;33m🗜️  Creating lightweight package...[0m
-[0;32mPackage size: 108K (much smaller without dependencies!)[0m
+[0;32mPackage size: 115K (much smaller without dependencies!)[0m
 [1;33m☁️  Uploading to S3...[0m
-Completed 107.7 KiB/107.7 KiB (42.1 KiB/s) with 1 file(s) remainingupload: ./function.zip to s3://llmproxy-deployments-5833/functions/llmproxy-20251009-100708.zip
+Completed 114.9 KiB/114.9 KiB (51.6 KiB/s) with 1 file(s) remainingupload: ./function.zip to s3://llmproxy-deployments-5833/functions/llmproxy-20251009-155706.zip
 [1;33m🚀 Updating Lambda function...[0m
 [0;32m✅ Function code deployed successfully[0m
 [1;33m🔗 Ensuring layer is attached...[0m
