@@ -34,11 +34,10 @@ interface YouTubeAuthContextValue {
 const YouTubeAuthContext = createContext<YouTubeAuthContextValue | undefined>(undefined);
 
 // OAuth configuration
-// TODO: Replace clientId with actual OAuth 2.0 Client ID from Google Cloud Console
-// This is your existing GOOGLE_CLIENT_ID - the same one used for JWT authentication
+// Uses VITE_GOOGLE_CLIENT_ID from ui-new/.env
 const OAUTH_CONFIG = {
-  clientId: '529948497535-vfjqt5g8ji8kl03tvfcvs18bqgb9m35h.apps.googleusercontent.com',
-  redirectUri: 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/oauth/callback',
+  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+  redirectUri: `${import.meta.env.VITE_API_BASE}/oauth/callback`,
   scope: 'https://www.googleapis.com/auth/youtube.readonly',
   authUrl: 'https://accounts.google.com/o/oauth2/v2/auth'
 };
