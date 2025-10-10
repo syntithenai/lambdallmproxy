@@ -132,14 +132,25 @@ export function ProviderList() {
             return (
               <div
                 key={provider.id}
-                className="p-4 bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
+                className={`p-4 rounded-lg border transition-colors ${
+                  provider.enabled !== false
+                    ? 'bg-gray-800 border-gray-700 hover:border-gray-600'
+                    : 'bg-gray-900 border-gray-800 hover:border-gray-700 opacity-60'
+                }`}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    {/* Provider Name */}
+                    {/* Provider Name with Status Badge */}
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-xl">{info.icon}</span>
-                      <span className="font-medium text-white">{info.name}</span>
+                      <span className={`font-medium ${provider.enabled !== false ? 'text-white' : 'text-gray-500'}`}>
+                        {info.name}
+                      </span>
+                      {provider.enabled === false && (
+                        <span className="px-2 py-0.5 text-xs bg-gray-700 text-gray-400 rounded">
+                          Disabled
+                        </span>
+                      )}
                     </div>
 
                     {/* Provider Details */}
@@ -168,7 +179,26 @@ export function ProviderList() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-2 ml-4">
+                  <div className="flex gap-2 ml-4 items-center">
+                    {/* Enable/Disable Toggle */}
+                    <button
+                      onClick={() => {
+                        const isEnabled = provider.enabled !== false; // Default to true if undefined
+                        updateProvider(provider.id, { ...provider, enabled: !isEnabled });
+                        setSuccess(isEnabled ? 'Provider disabled' : 'Provider enabled');
+                        setTimeout(() => setSuccess(null), 2000);
+                      }}
+                      disabled={isAdding || !!editingId}
+                      className={`px-3 py-1 rounded transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+                        provider.enabled !== false 
+                          ? 'bg-green-600 hover:bg-green-700 text-white' 
+                          : 'bg-gray-600 hover:bg-gray-500 text-gray-300'
+                      }`}
+                      title={provider.enabled !== false ? 'Click to disable' : 'Click to enable'}
+                    >
+                      {provider.enabled !== false ? '✓ Enabled' : '✗ Disabled'}
+                    </button>
+                    
                     <button
                       onClick={() => handleEdit(provider.id)}
                       disabled={isAdding || !!editingId}

@@ -116,10 +116,92 @@ class SimpleHTMLParser {
     }
 
     /**
+     * Check if link should be filtered out (navigation, ads, footer, etc.)
+     * @param {string} href - The link URL
+     * @param {string} text - The link text
+     * @param {string} linkTag - The full <a> tag HTML
+     * @param {number} position - Position in HTML (for detecting header/footer)
+     * @returns {boolean} True if link should be filtered out
+     */
+    shouldFilterLink(href, text, linkTag, position) {
+        // Filter by URL patterns
+        const navPatterns = [
+            '/page/', '/edit/', '/user/', '/admin/', '/login/', '/signup/', '/register/',
+            'javascript:', '#', 'mailto:', '/search?', '/tag/', '/category/',
+            '/privacy', '/terms', '/about', '/contact', '/sitemap', '/rss',
+            '/cookie', '/disclaimer', '/advertise', '/careers', '/jobs',
+            '?share=', '?utm_', '/share/', '/print/', '/pdf/'
+        ];
+        
+        // Ad and tracking domains
+        const adDomains = [
+            'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+            'ads.yahoo.com', 'advertising.com', 'adnxs.com', 'criteo.com',
+            'outbrain.com', 'taboola.com', 'revcontent.com', 'mgid.com',
+            'zergnet.com', 'disqus.com', 'spot.im', 'facebook.com/sharer',
+            'twitter.com/intent', 'linkedin.com/share', 'pinterest.com/pin'
+        ];
+        
+        // Common navigation text patterns (case-insensitive)
+        const navTextPatterns = [
+            /^home$/i, /^about$/i, /^contact$/i, /^privacy$/i, /^terms$/i,
+            /^login$/i, /^sign in$/i, /^sign up$/i, /^register$/i, /^subscribe$/i,
+            /^menu$/i, /^nav/i, /^skip to/i, /^back to top$/i, /^top$/i,
+            /^next$/i, /^previous$/i, /^prev$/i, /^more$/i, /^view all$/i,
+            /^share$/i, /^print$/i, /^email$/i, /^follow us$/i, /^social$/i,
+            /^copyright/i, /^all rights reserved/i, /^\d{4}$/i, // Years
+            /^←$/i, /^→$/i, /^«$/i, /^»$/i // Navigation arrows
+        ];
+        
+        // Check URL patterns
+        const hrefLower = href.toLowerCase();
+        if (navPatterns.some(pattern => hrefLower.includes(pattern))) {
+            return true;
+        }
+        
+        // Check ad domains
+        if (adDomains.some(domain => hrefLower.includes(domain))) {
+            return true;
+        }
+        
+        // Check link text patterns
+        const textLower = text.toLowerCase().trim();
+        if (textLower.length === 0 || textLower.length > 150) {
+            return true; // Empty or extremely long text
+        }
+        if (navTextPatterns.some(pattern => pattern.test(textLower))) {
+            return true;
+        }
+        
+        // Check for parent element context (header, footer, nav, aside)
+        const contextStart = Math.max(0, position - 500);
+        const contextHtml = this.html.substring(contextStart, position);
+        const parentMatch = contextHtml.match(/<(header|footer|nav|aside)[^>]*>(?:(?!<\/\1>).)*$/is);
+        if (parentMatch) {
+            return true; // Link is inside header/footer/nav/aside
+        }
+        
+        // Check for ad-related classes/ids in the link tag
+        const adClassPatterns = /class=["'][^"']*(?:ad|advertisement|sponsored|promo|banner|sidebar|widget|footer|header|nav)[^"']*["']/i;
+        const adIdPatterns = /id=["'][^"']*(?:ad|advertisement|sponsored|promo|banner|sidebar|widget|footer|header|nav)[^"']*["']/i;
+        if (adClassPatterns.test(linkTag) || adIdPatterns.test(linkTag)) {
+            return true;
+        }
+        
+        // Filter very short links (likely navigation)
+        if (text.length < 3 && !/\d/.test(text)) {
+            return true; // Single/double char non-numeric text
+        }
+        
+        return false;
+    }
+
+    /**
      * Extract all links from HTML with caption and relevance
+     * @param {number} maxLinks - Maximum number of links to return (default: 50)
      * @returns {Array} Array of {href, text, caption, context, relevance} objects, sorted by relevance
      */
-    extractLinks() {
+    extractLinks(maxLinks = 50) {
         const links = [];
         const linkRegex = /<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gi;
         let match;
@@ -128,40 +210,66 @@ class SimpleHTMLParser {
             const href = match[1];
             const innerHTML = match[2];
             const text = this.stripHtml(innerHTML).trim();
+            const linkTag = match[0];
+            const linkStart = match.index;
             
-            if (href && text) {
-                // Get context around the link
-                const linkStart = match.index;
-                const contextStart = Math.max(0, linkStart - 200);
-                const contextEnd = Math.min(this.html.length, linkStart + match[0].length + 200);
-                const context = this.stripHtml(this.html.substring(contextStart, contextEnd)).trim();
-                
-                // Check for caption in title attribute or aria-label
-                const linkTag = match[0];
-                const titleMatch = linkTag.match(/title=["']([^"']*)["']/i);
-                const ariaMatch = linkTag.match(/aria-label=["']([^"']*)["']/i);
-                const caption = (titleMatch && titleMatch[1]) || (ariaMatch && ariaMatch[1]) || '';
-                
-                // Calculate relevance
-                const combinedText = `${text} ${caption} ${context}`;
-                const relevance = this.calculateRelevance(combinedText);
-                
-                // Detect media type
-                const mediaType = this.getMediaType(href);
-                
-                links.push({
-                    href,
-                    text,
-                    caption,
-                    context,
-                    relevance,
-                    mediaType
-                });
+            // Filter out unwanted links
+            if (!href || !text || this.shouldFilterLink(href, text, linkTag, linkStart)) {
+                continue;
             }
+            
+            // Must be an absolute or relative URL (not anchor-only or javascript)
+            if (!href.startsWith('http') && !href.startsWith('/') && !href.startsWith('./')) {
+                continue;
+            }
+            
+            // Get context around the link (smaller range for performance)
+            const contextStart = Math.max(0, linkStart - 150);
+            const contextEnd = Math.min(this.html.length, linkStart + match[0].length + 150);
+            const context = this.stripHtml(this.html.substring(contextStart, contextEnd)).trim();
+            
+            // Check for caption in title attribute or aria-label
+            const titleMatch = linkTag.match(/title=["']([^"']*)["']/i);
+            const ariaMatch = linkTag.match(/aria-label=["']([^"']*)["']/i);
+            const caption = (titleMatch && titleMatch[1]) || (ariaMatch && ariaMatch[1]) || '';
+            
+            // Calculate relevance with boost for content-heavy links
+            const combinedText = `${text} ${caption} ${context}`;
+            let relevance = this.calculateRelevance(combinedText);
+            
+            // Boost links with substantial text (likely articles/content)
+            if (text.length > 20 && text.length < 100) {
+                relevance += 0.2;
+            }
+            
+            // Boost links with descriptive context
+            if (context.length > 50) {
+                relevance += 0.1;
+            }
+            
+            // Penalize links at page edges (likely header/footer even if not detected)
+            const pagePosition = linkStart / this.html.length;
+            if (pagePosition < 0.1 || pagePosition > 0.9) {
+                relevance -= 0.3;
+            }
+            
+            // Detect media type
+            const mediaType = this.getMediaType(href);
+            
+            links.push({
+                href,
+                text,
+                caption,
+                context,
+                relevance: Math.max(0, Math.min(1, relevance)), // Clamp to 0-1
+                mediaType
+            });
         }
 
-        // Sort by relevance (descending)
-        return links.sort((a, b) => b.relevance - a.relevance);
+        // Sort by relevance (descending) and limit to maxLinks
+        return links
+            .sort((a, b) => b.relevance - a.relevance)
+            .slice(0, maxLinks);
     }
 
     /**

@@ -25,6 +25,7 @@ export interface ProviderConfig {
   apiKey: string;          // User's API key for this provider
   modelName?: string;      // ONLY for openai-compatible - preserved through to upstream
   rateLimitTPM?: number;   // ONLY for openai-compatible - explicit rate limit or undefined
+  enabled?: boolean;       // Whether this provider should be used (defaults to true if undefined)
 }
 
 export interface Settings {

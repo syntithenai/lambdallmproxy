@@ -1,0 +1,9 @@
+
+> lambdallmproxy@1.0.0 test
+> jest tests/integration/chat-endpoint.test.js --testNamePattern=should reject unauthenticated
+
+  console.log
+    AWS SDK not found, skipping mock
+
+      at Object.log (tests/setup.js:21:11)
+

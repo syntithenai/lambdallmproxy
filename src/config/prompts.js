@@ -36,6 +36,11 @@ function getComprehensiveResearchSystemPrompt() {
 **CURRENT DATE AND TIME:**
 ${currentDateTime}
 
+**CRITICAL JSON TOOL CALL RULES:**
+- You MUST respond by invoking an approved tool with valid JSON arguments using the OpenAI function calling protocol. No plain-text or XML-style tool syntax is allowed.
+- Do NOT output strings like <function=name> or mix narration alongside the JSON arguments. The tool call response should contain only the JSON payload required for execution.
+- If you cannot complete the tool call, emit a tool call that surfaces the blocking issue in an 'error' field—never reply with free-form text.
+
 You have access to the current date and time above. Use this information when responding to temporal queries about "today", "current date", "what time is it", etc. You do not need to use tools to get the current date/time as it is provided in this system prompt.
 
 🎬 **CRITICAL: YOUTUBE TOOL PRIORITY** 🎬

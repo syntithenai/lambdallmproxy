@@ -13,6 +13,17 @@ const { GROQ_RATE_LIMITS } = require('./groq-rate-limits');
 const https = require('https');
 
 /**
+ * Models that appear in the API but don't actually work (403/404 errors)
+ * These models will be filtered out from the available models list
+ */
+// Blacklisted models that appear in the API but don't actually work
+const BLACKLISTED_MODELS = new Set([
+  'allam-2-7b',  // Returns 404 "model does not exist" despite being in API list
+  'meta-llama/llama-4-scout-17b-16e-instruct',  // Returns 403/404 "does not exist or no access"
+  'meta-llama/llama-guard-4-12b'  // Returns "does not exist or no access"
+]);
+
+/**
  * Fetch available models from Groq API
  * @returns {Promise<Set<string>>} - Set of available model IDs
  */
@@ -39,8 +50,13 @@ async function fetchAvailableModels() {
         try {
           const response = JSON.parse(data);
           if (response.data && Array.isArray(response.data)) {
-            const availableModels = new Set(response.data.map(model => model.id));
-            console.log(`Successfully fetched ${availableModels.size} available models from Groq API`);
+            // Filter out blacklisted models
+            const availableModels = new Set(
+              response.data
+                .map(model => model.id)
+                .filter(id => !BLACKLISTED_MODELS.has(id))
+            );
+            console.log(`Successfully fetched ${availableModels.size} available models from Groq API (${response.data.length - availableModels.size} blacklisted)`);
             resolve(availableModels);
           } else if (response.error) {
             console.warn('Groq API returned error:', response.error.message, '- falling back to all configured models');
@@ -156,42 +172,84 @@ function detectImageData(prompt) {
   return false;
 }
 
+const DEFAULT_FALLBACK_PRIORITY = [
+  'llama-3.1-8b-instant',
+  'llama-3.3-70b-versatile',
+  'mixtral-8x7b-32768'
+];
+
 /**
  * Select the optimal Groq model based on query, reasoning level, token limit, and prompt content
  * @param {string} query - The user query text
- * @param {string} reasoningLevel - 'basic', 'intermediate', 'advanced'
+ * @param {string|Array} reasoningLevel - 'basic', 'intermediate', 'advanced'
  * @param {number} tokenLimit - Maximum tokens allowed for the response
  * @param {Object|string} fullPrompt - The full prompt object/structure sent to Groq API (optional)
+ * @param {Object} options - Additional selection options
+ * @param {Array<string>} options.excludeModels - List of models that should not be selected (with or without provider prefix)
+ * @param {Array<string>} options.preferredFallbacks - Priority list of fallback models
+ * @param {Set<string>} options.availableModels - Pre-fetched set of available model IDs
  * @returns {Promise<string>} - Selected model name (e.g., 'groq:llama-3.1-8b-instant')
  */
-async function selectModel(query, reasoningLevel = 'intermediate', tokenLimit = 4000, fullPrompt = null) {
+async function selectModel(query, reasoningLevel = 'intermediate', tokenLimit = 4000, fullPrompt = null, options = {}) {
+  const {
+    excludeModels = [],
+    preferredFallbacks = [],
+    availableModels = null
+  } = options || {};
+
+  const excludedModels = new Set(
+    (Array.isArray(excludeModels) ? excludeModels : [])
+      .filter(Boolean)
+      .map(model => model.replace(/^groq:/, ''))
+  );
+
+  const fallbackPriority = (Array.isArray(preferredFallbacks) && preferredFallbacks.length > 0
+    ? preferredFallbacks
+    : DEFAULT_FALLBACK_PRIORITY)
+      .map(model => model.replace(/^groq:/, ''))
+      .filter(model => !excludedModels.has(model));
+
+  const resolvedTokenLimit = (typeof tokenLimit === 'number' && tokenLimit > 0)
+    ? tokenLimit
+    : 4000;
+
   const queryComplexity = analyzeQueryComplexity(query);
   const requiredReasoning = mapReasoningLevel(reasoningLevel);
   const hasImageData = detectImageData(fullPrompt);
 
-  console.log(`Model selection: complexity=${queryComplexity}, reasoning=${requiredReasoning}, tokenLimit=${tokenLimit}, hasImageData=${hasImageData}`);
+  console.log(`Model selection: complexity=${queryComplexity}, reasoning=${requiredReasoning}, tokenLimit=${resolvedTokenLimit}, hasImageData=${hasImageData}`);
 
   // Filter models that can handle the token limit
-  const availableModels = Object.entries(GROQ_RATE_LIMITS).filter(([modelName, limits]) => {
-    return limits.context_window >= tokenLimit * 2; // Ensure room for input + output
+  const modelEntries = Object.entries(GROQ_RATE_LIMITS).filter(([modelName, limits]) => {
+    if (excludedModels.has(modelName)) {
+      return false;
+    }
+
+    if (!limits || typeof limits.context_window !== 'number') {
+      return true;
+    }
+
+    const contextRequirement = Math.max(resolvedTokenLimit * 2, resolvedTokenLimit + 1000);
+    return limits.context_window >= contextRequirement;
   });
 
-  if (availableModels.length === 0) {
-    console.warn(`No models can handle token limit ${tokenLimit}, using smallest context model`);
-    return 'groq:llama-3.1-8b-instant'; // Fallback
+  if (modelEntries.length === 0) {
+    console.warn(`No models can handle token limit ${resolvedTokenLimit}, using smallest context model`);
+
+    const emergencyFallback = fallbackPriority[0] || 'llama-3.1-8b-instant';
+    return `groq:${emergencyFallback}`;
   }
 
   // Score models based on requirements
-  const scoredModels = availableModels.map(([modelName, limits]) => {
+  const scoredModels = modelEntries.map(([modelName, limits]) => {
     let score = 0;
 
     // Vision capability is critical when images are present
     if (hasImageData) {
       if (limits.vision_capable) {
         score += 20; // Major boost for vision-capable models when images are detected
-        // Prefer llama-4-scout for its higher TPM when images are present
-        if (modelName === 'meta-llama/llama-4-scout-17b-16e-instruct') score += 5;
-        if (modelName === 'meta-llama/llama-4-maverick-17b-128e-instruct') score += 3;
+        // Prefer llama-4-maverick (scout is blacklisted)
+        if (modelName === 'meta-llama/llama-4-maverick-17b-128e-instruct') score += 5;
       } else {
         score -= 10; // Penalize non-vision models when images are present
       }
@@ -207,7 +265,7 @@ async function selectModel(query, reasoningLevel = 'intermediate', tokenLimit = 
     if (queryComplexity === 'complex' && limits.speed === 'moderate') score += 3;
 
     // Token efficiency (prefer higher TPM for longer responses)
-    if (tokenLimit > 2000 && limits.tpm >= 6000) score += 3;
+    if (resolvedTokenLimit > 2000 && limits.tpm >= 6000) score += 3;
 
     return { modelName, score, limits };
   });
@@ -217,18 +275,37 @@ async function selectModel(query, reasoningLevel = 'intermediate', tokenLimit = 
 
   // Fetch available models and check if our top choice is available
   try {
-    const availableModelIds = await fetchAvailableModels();
+    const availableModelIds = availableModels instanceof Set
+      ? availableModels
+      : await fetchAvailableModels();
+
+    const candidateScores = scoredModels.filter(({ modelName }) => !excludedModels.has(modelName));
+
+    // Try preferred fallback order first when explicitly provided
+    for (const fallback of fallbackPriority) {
+      if (!excludedModels.has(fallback)) {
+        console.log(`Selected fallback model: ${fallback}`);
+        return `groq:${fallback}`;
+      }
+    }
+
+    const hasAvailabilityData = availableModelIds && typeof availableModelIds.has === 'function';
 
     // Find the first available model from our scored list
-    for (const { modelName } of scoredModels) {
-      if (availableModelIds.has(modelName)) {
-        console.log(`Selected model: ${modelName} (score: ${scoredModels.find(m => m.modelName === modelName)?.score})`);
+    for (const { modelName } of candidateScores) {
+      if (!hasAvailabilityData || availableModelIds.has(modelName)) {
+        const selectedScore = scoredModels.find(m => m.modelName === modelName)?.score;
+        console.log(`Selected model: ${modelName} (score: ${selectedScore})`);
         return `groq:${modelName}`;
       }
     }
 
     // If none of our preferred models are available, fall back to the first available model
-    const firstAvailable = Array.from(availableModelIds)[0];
+    const availabilitySource = hasAvailabilityData
+      ? Array.from(availableModelIds)
+      : scoredModels.map(candidate => candidate.modelName);
+
+    const firstAvailable = availabilitySource.find(modelName => !excludedModels.has(modelName));
     if (firstAvailable) {
       console.warn(`None of preferred models available, falling back to: ${firstAvailable}`);
       return `groq:${firstAvailable}`;
@@ -238,9 +315,17 @@ async function selectModel(query, reasoningLevel = 'intermediate', tokenLimit = 
   }
 
   // Final fallback to top scored model
-  const selectedModel = scoredModels[0].modelName;
-  console.log(`Selected model (fallback): ${selectedModel} (score: ${scoredModels[0].score})`);
-  return `groq:${selectedModel}`;
+  const finalCandidates = scoredModels.filter(candidate => !excludedModels.has(candidate.modelName));
+
+  if (finalCandidates.length > 0) {
+    const selectedModel = finalCandidates[0].modelName;
+    console.log(`Selected model (fallback): ${selectedModel} (score: ${finalCandidates[0].score})`);
+    return `groq:${selectedModel}`;
+  }
+
+  const lastResort = fallbackPriority[0] || scoredModels[0]?.modelName || 'llama-3.1-8b-instant';
+  console.warn(`All candidate models were excluded. Using last resort: ${lastResort}`);
+  return `groq:${lastResort}`;
 }
 
 module.exports = {

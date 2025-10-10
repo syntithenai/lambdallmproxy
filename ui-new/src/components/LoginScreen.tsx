@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
+// Track if we've already attempted One Tap in this session
+// to prevent "Cannot continue with Google" popup on rapid re-renders
+let hasAttemptedOneTap = false;
+
 export const LoginScreen: React.FC = () => {
   const { login } = useAuth();
   const buttonRef = useRef<HTMLDivElement>(null);
@@ -35,16 +39,28 @@ export const LoginScreen: React.FC = () => {
           );
 
           // Attempt silent sign-in for returning users
-          console.log('LoginScreen: Attempting One Tap sign-in');
-          (google.accounts.id.prompt as any)((notification: any) => {
-            if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-              console.log('LoginScreen: One Tap not displayed:', notification.getNotDisplayedReason());
-            } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-              console.log('LoginScreen: One Tap skipped:', notification.getSkippedReason());
-            } else {
-              console.log('LoginScreen: One Tap displayed successfully');
+          // Only attempt once per session to prevent "Cannot continue with Google" popup
+          if (!hasAttemptedOneTap) {
+            hasAttemptedOneTap = true;
+            console.log('LoginScreen: Attempting One Tap sign-in (first time this session)');
+            
+            try {
+              (google.accounts.id.prompt as any)((notification: any) => {
+                if (notification.isNotDisplayed && notification.isNotDisplayed()) {
+                  console.log('LoginScreen: One Tap not displayed:', notification.getNotDisplayedReason());
+                } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
+                  console.log('LoginScreen: One Tap skipped:', notification.getSkippedReason());
+                } else {
+                  console.log('LoginScreen: One Tap displayed successfully');
+                }
+              });
+            } catch (error) {
+              // Silently catch any Google One Tap errors to prevent popup
+              console.log('LoginScreen: One Tap prompt failed silently:', error);
             }
-          });
+          } else {
+            console.log('LoginScreen: Skipping One Tap (already attempted this session)');
+          }
         } else {
           console.log('LoginScreen: Google SDK not loaded yet, retrying...');
           setTimeout(initializeGoogleButton, 100);

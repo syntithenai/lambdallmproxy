@@ -1,0 +1,91 @@
+
+> lambdallmproxy@1.0.0 test
+> jest tests/integration/chat-endpoint.test.js
+
+  console.log
+    AWS SDK not found, skipping mock
+
+      at Object.log (tests/setup.js:21:11)
+
+FAIL tests/integration/chat-endpoint.test.js
+  Chat Endpoint
+    ✕ should reject unauthenticated requests (6 ms)
+    ✕ should validate required fields (2 ms)
+    ✕ should handle missing API key (2 ms)
+    ✓ should parse OpenAI stream correctly (1 ms)
+    ✓ should execute tool calls correctly (2 ms)
+    ✓ should handle tool execution errors (1 ms)
+    ✕ should verify auth token correctly (1 ms)
+
+  ● Chat Endpoint › should reject unauthenticated requests
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "UNAUTHORIZED"
+    Received: "ERROR"
+
+      141 |         const errorEvents = mockStream.getEvents('error');
+      142 |         expect(errorEvents.length).toBe(1);
+    > 143 |         expect(errorEvents[0].data.code).toBe('UNAUTHORIZED');
+          |                                          ^
+      144 |     });
+      145 |     
+      146 |     test('should validate required fields', async () => {
+
+      at Object.toBe (tests/integration/chat-endpoint.test.js:143:42)
+
+  ● Chat Endpoint › should validate required fields
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "INVALID_REQUEST"
+    Received: "ERROR"
+
+      161 |         const errorEvents = mockStream.getEvents('error');
+      162 |         expect(errorEvents.length).toBe(1);
+    > 163 |         expect(errorEvents[0].data.code).toBe('INVALID_REQUEST');
+          |                                          ^
+      164 |         expect(errorEvents[0].data.error).toContain('messages');
+      165 |     });
+      166 |     
+
+      at Object.toBe (tests/integration/chat-endpoint.test.js:163:42)
+
+  ● Chat Endpoint › should handle missing API key
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "CONFIGURATION_ERROR"
+    Received: "ERROR"
+
+      185 |         const errorEvents = mockStream.getEvents('error');
+      186 |         expect(errorEvents.length).toBe(1);
+    > 187 |         expect(errorEvents[0].data.code).toBe('CONFIGURATION_ERROR');
+          |                                          ^
+      188 |     });
+      189 |     
+      190 |     test('should parse OpenAI stream correctly', async () => {
+
+      at Object.toBe (tests/integration/chat-endpoint.test.js:187:42)
+
+  ● Chat Endpoint › should verify auth token correctly
+
+    expect(received).toBeTruthy()
+
+    Received: null
+
+      290 |     test('should verify auth token correctly', async () => {
+      291 |         const validUser = await chatEndpoint.verifyAuthToken('Bearer valid-token');
+    > 292 |         expect(validUser).toBeTruthy();
+          |                           ^
+      293 |         expect(validUser.email).toBe('test@example.com');
+      294 |         
+      295 |         const invalidUser = await chatEndpoint.verifyAuthToken('Bearer invalid-token');
+
+      at Object.toBeTruthy (tests/integration/chat-endpoint.test.js:292:27)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 3 passed, 7 total
+Snapshots:   0 total
+Time:        0.209 s, estimated 1 s
+Ran all test suites matching /tests\/integration\/chat-endpoint.test.js/i.

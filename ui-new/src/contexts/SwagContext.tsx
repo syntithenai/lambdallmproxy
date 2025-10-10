@@ -10,6 +10,7 @@ export interface ContentSnippet {
   updateDate: number;
   sourceType: 'user' | 'assistant' | 'tool';
   selected?: boolean;
+  tags?: string[];
 }
 
 interface SwagContextType {
@@ -22,6 +23,9 @@ interface SwagContextType {
   selectAll: () => void;
   selectNone: () => void;
   getSelectedSnippets: () => ContentSnippet[];
+  getAllTags: () => string[];
+  addTagsToSnippets: (ids: string[], tags: string[]) => void;
+  removeTagsFromSnippets: (ids: string[], tags: string[]) => void;
   storageStats: { totalSize: number; limit: number; percentUsed: number } | null;
 }
 
@@ -185,6 +189,41 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return snippets.filter(s => s.selected);
   };
 
+  const getAllTags = () => {
+    const tagSet = new Set<string>();
+    snippets.forEach(snippet => {
+      if (snippet.tags) {
+        snippet.tags.forEach(tag => tagSet.add(tag));
+      }
+    });
+    return Array.from(tagSet).sort();
+  };
+
+  const addTagsToSnippets = (ids: string[], tags: string[]) => {
+    setSnippets(prev => prev.map(snippet => {
+      if (ids.includes(snippet.id)) {
+        const existingTags = snippet.tags || [];
+        const newTags = [...new Set([...existingTags, ...tags])];
+        return { ...snippet, tags: newTags, updateDate: Date.now() };
+      }
+      return snippet;
+    }));
+  };
+
+  const removeTagsFromSnippets = (ids: string[], tags: string[]) => {
+    setSnippets(prev => prev.map(snippet => {
+      if (ids.includes(snippet.id) && snippet.tags) {
+        const remainingTags = snippet.tags.filter(tag => !tags.includes(tag));
+        return { 
+          ...snippet, 
+          tags: remainingTags.length > 0 ? remainingTags : undefined,
+          updateDate: Date.now() 
+        };
+      }
+      return snippet;
+    }));
+  };
+
   return (
     <SwagContext.Provider value={{
       snippets,
@@ -196,6 +235,9 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       selectAll,
       selectNone,
       getSelectedSnippets,
+      getAllTags,
+      addTagsToSnippets,
+      removeTagsFromSnippets,
       storageStats
     }}>
       {children}

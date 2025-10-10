@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { StorageStats } from './StorageStats';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
@@ -23,6 +24,9 @@ export const SwagPage: React.FC = () => {
     selectAll, 
     selectNone,
     getSelectedSnippets,
+    getAllTags,
+    addTagsToSnippets,
+    removeTagsFromSnippets,
     storageStats
   } = useSwag();
 
@@ -31,8 +35,15 @@ export const SwagPage: React.FC = () => {
   const [viewingSnippet, setViewingSnippet] = useState<ContentSnippet | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editTitle, setEditTitle] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
   const [newDocName, setNewDocName] = useState('');
   const [showNewDocDialog, setShowNewDocDialog] = useState(false);
+  const [showTagDialog, setShowTagDialog] = useState(false);
+  const [tagDialogMode, setTagDialogMode] = useState<'add' | 'remove'>('add');
+  const [selectedTagsForOperation, setSelectedTagsForOperation] = useState<string[]>([]);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchTags, setSearchTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -154,22 +165,53 @@ export const SwagPage: React.FC = () => {
           await loadGoogleDocs();
         }
         break;
+      case 'tag':
+        setTagDialogMode('add');
+        setSelectedTagsForOperation([]);
+        setShowTagDialog(true);
+        break;
+      case 'untag':
+        setTagDialogMode('remove');
+        setSelectedTagsForOperation([]);
+        setShowTagDialog(true);
+        break;
       default:
         console.warn('⚠️ Unknown operation:', operation);
     }
+  };
+
+  const handleTagOperation = () => {
+    const selected = getSelectedSnippets();
+    if (selected.length === 0 || selectedTagsForOperation.length === 0) {
+      showWarning('Please select tags');
+      return;
+    }
+
+    if (tagDialogMode === 'add') {
+      addTagsToSnippets(selected.map(s => s.id), selectedTagsForOperation);
+      showSuccess(`Added ${selectedTagsForOperation.length} tag(s) to ${selected.length} snippet(s)`);
+    } else {
+      removeTagsFromSnippets(selected.map(s => s.id), selectedTagsForOperation);
+      showSuccess(`Removed ${selectedTagsForOperation.length} tag(s) from ${selected.length} snippet(s)`);
+    }
+    
+    setShowTagDialog(false);
+    setSelectedTagsForOperation([]);
   };
 
   const handleEditSnippet = (snippet: ContentSnippet) => {
     setEditingSnippet(snippet);
     setEditContent(snippet.content);
     setEditTitle(snippet.title || '');
+    setEditTags(snippet.tags || []);
   };
 
   const handleSaveEdit = () => {
     if (editingSnippet) {
       updateSnippet(editingSnippet.id, {
         content: editContent,
-        title: editTitle.trim() || undefined
+        title: editTitle.trim() || undefined,
+        tags: editTags.length > 0 ? editTags : undefined
       });
       setEditingSnippet(null);
     }
@@ -183,6 +225,33 @@ export const SwagPage: React.FC = () => {
       default: return 'bg-gray-500';
     }
   };
+
+  // Filter snippets based on search query and tags
+  const filteredSnippets = snippets.filter(snippet => {
+    // Text search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const matchesContent = snippet.content.toLowerCase().includes(query);
+      const matchesTitle = snippet.title?.toLowerCase().includes(query);
+      if (!matchesContent && !matchesTitle) {
+        return false;
+      }
+    }
+
+    // Tag filter
+    if (searchTags.length > 0) {
+      if (!snippet.tags || snippet.tags.length === 0) {
+        return false;
+      }
+      // All selected tags must be present in the snippet
+      const hasAllTags = searchTags.every(tag => snippet.tags?.includes(tag));
+      if (!hasAllTags) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -222,6 +291,71 @@ export const SwagPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Search and Filter Bar */}
+        {snippets.length > 0 && (
+          <div className="mt-4 flex items-center gap-4 flex-wrap">
+            {/* Search Input */}
+            <div className="flex-1 min-w-[300px]">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search snippets by title or content..."
+                  className="w-full px-4 py-2 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <svg className="w-5 h-5 absolute left-3 top-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Tag Filter */}
+            {getAllTags().length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Filter by tags:</span>
+                {getAllTags().map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => {
+                      if (searchTags.includes(tag)) {
+                        setSearchTags(searchTags.filter(t => t !== tag));
+                      } else {
+                        setSearchTags([...searchTags, tag]);
+                      }
+                    }}
+                    className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                      searchTags.includes(tag)
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+                {searchTags.length > 0 && (
+                  <button
+                    onClick={() => setSearchTags([])}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Bulk Actions Bar */}
         {snippets.length > 0 && (
           <div className="mt-4 flex items-center gap-4 flex-wrap">
@@ -256,6 +390,8 @@ export const SwagPage: React.FC = () => {
               value=""
             >
               <option value="">Bulk Operations...</option>
+              <option value="tag">Add Tags...</option>
+              <option value="untag">Remove Tags...</option>
               <option value="merge">Combine Snippets</option>
               <option value="delete">Delete Selected</option>
               <optgroup label="Append to Google Doc">
@@ -288,9 +424,17 @@ export const SwagPage: React.FC = () => {
             <p className="text-lg">No content snippets yet</p>
             <p className="text-sm mt-2">Use the grab button in chat to save content here</p>
           </div>
+        ) : filteredSnippets.length === 0 ? (
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+            <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <p className="text-lg">No matching snippets</p>
+            <p className="text-sm mt-2">Try adjusting your search or tag filters</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...snippets].sort((a, b) => (b.updateDate || b.timestamp) - (a.updateDate || a.timestamp)).map(snippet => (
+            {[...filteredSnippets].sort((a, b) => (b.updateDate || b.timestamp) - (a.updateDate || a.timestamp)).map(snippet => (
               <div
                 key={snippet.id}
                 className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-sm border-2 transition-all ${
@@ -328,12 +472,34 @@ export const SwagPage: React.FC = () => {
                     </h3>
                   )}
 
+                  {/* Tags */}
+                  {snippet.tags && snippet.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {snippet.tags.map(tag => (
+                        <span 
+                          key={tag}
+                          className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!searchTags.includes(tag)) {
+                              setSearchTags([...searchTags, tag]);
+                            }
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Content Preview */}
                   <div 
                     className="text-sm text-gray-700 dark:text-gray-300 mb-3 max-h-48 overflow-hidden cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded p-2 -m-2 transition-colors"
                     onClick={() => setViewingSnippet(snippet)}
                   >
-                    <JsonOrText content={snippet.content} className="line-clamp-6" />
+                    <div className="line-clamp-6">
+                      <MarkdownRenderer content={snippet.content} />
+                    </div>
                   </div>
 
                   {/* Edit Button */}
@@ -379,6 +545,66 @@ export const SwagPage: React.FC = () => {
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-lg"
                   placeholder="Enter a title..."
                 />
+              </div>
+
+              {/* Tags Section */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Tags
+                </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {editTags.map(tag => (
+                    <span 
+                      key={tag}
+                      className="px-3 py-1 text-sm bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full flex items-center gap-2"
+                    >
+                      {tag}
+                      <button
+                        onClick={() => setEditTags(editTags.filter(t => t !== tag))}
+                        className="hover:text-red-600 dark:hover:text-red-400"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newTagInput}
+                    onChange={(e) => setNewTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newTagInput.trim()) {
+                        e.preventDefault();
+                        const tag = newTagInput.trim();
+                        if (!editTags.includes(tag)) {
+                          setEditTags([...editTags, tag]);
+                        }
+                        setNewTagInput('');
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    placeholder="Type a tag and press Enter..."
+                    list="existing-tags"
+                  />
+                  <datalist id="existing-tags">
+                    {getAllTags().map(tag => (
+                      <option key={tag} value={tag} />
+                    ))}
+                  </datalist>
+                  <button
+                    onClick={() => {
+                      const tag = newTagInput.trim();
+                      if (tag && !editTags.includes(tag)) {
+                        setEditTags([...editTags, tag]);
+                        setNewTagInput('');
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1">
@@ -512,6 +738,142 @@ export const SwagPage: React.FC = () => {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tag Dialog */}
+      {showTagDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                {tagDialogMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {tagDialogMode === 'add' 
+                  ? 'Select or create tags to add to selected snippets' 
+                  : 'Select tags to remove from selected snippets'}
+              </p>
+            </div>
+
+            <div className="p-6">
+              {/* Selected Tags */}
+              {selectedTagsForOperation.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {selectedTagsForOperation.map(tag => (
+                    <span 
+                      key={tag}
+                      className="px-3 py-1 text-sm bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full flex items-center gap-2"
+                    >
+                      {tag}
+                      <button
+                        onClick={() => setSelectedTagsForOperation(selectedTagsForOperation.filter(t => t !== tag))}
+                        className="hover:text-red-600 dark:hover:text-red-400"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Tag Input */}
+              {tagDialogMode === 'add' && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Add New Tag
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTagInput}
+                      onChange={(e) => setNewTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newTagInput.trim()) {
+                          e.preventDefault();
+                          const tag = newTagInput.trim();
+                          if (!selectedTagsForOperation.includes(tag)) {
+                            setSelectedTagsForOperation([...selectedTagsForOperation, tag]);
+                          }
+                          setNewTagInput('');
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      placeholder="Type a tag and press Enter..."
+                      list="all-tags"
+                    />
+                    <datalist id="all-tags">
+                      {getAllTags().map(tag => (
+                        <option key={tag} value={tag} />
+                      ))}
+                    </datalist>
+                    <button
+                      onClick={() => {
+                        const tag = newTagInput.trim();
+                        if (tag && !selectedTagsForOperation.includes(tag)) {
+                          setSelectedTagsForOperation([...selectedTagsForOperation, tag]);
+                          setNewTagInput('');
+                        }
+                      }}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Existing Tags */}
+              {getAllTags().length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {tagDialogMode === 'add' ? 'Or Select Existing' : 'Select Tags to Remove'}
+                  </label>
+                  <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                    {getAllTags().map(tag => (
+                      <button
+                        key={tag}
+                        onClick={() => {
+                          if (selectedTagsForOperation.includes(tag)) {
+                            setSelectedTagsForOperation(selectedTagsForOperation.filter(t => t !== tag));
+                          } else {
+                            setSelectedTagsForOperation([...selectedTagsForOperation, tag]);
+                          }
+                        }}
+                        className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                          selectedTagsForOperation.includes(tag)
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowTagDialog(false);
+                  setSelectedTagsForOperation([]);
+                  setNewTagInput('');
+                }}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTagOperation}
+                disabled={selectedTagsForOperation.length === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {tagDialogMode === 'add' ? 'Add Tags' : 'Remove Tags'}
               </button>
             </div>
           </div>

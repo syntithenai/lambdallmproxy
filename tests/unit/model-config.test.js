@@ -133,9 +133,9 @@ describe('Model Configuration', () => {
       const avoidFormat = 'anthropic'; // <function=...> tags
       
       // The default model should work well with OpenAI format
-      const defaultModel = 'llama-3.1-70b-versatile';
+      const defaultModel = 'openai/gpt-oss-120b';
       
-      expect(defaultModel).toContain('llama-3.1');
+      expect(defaultModel).toContain('openai');
       expect(expectedFormat).toBe('openai');
       expect(avoidFormat).not.toBe(expectedFormat);
     });
@@ -245,24 +245,24 @@ describe('Backward Compatibility', () => {
     // We should still support it, just not default to it
     
     const supportedModels = [
-      'llama-3.1-70b-versatile',
+      'openai/gpt-oss-120b',
       'llama-3.3-70b-versatile',  // Still supported
       'mixtral-8x7b-32768',
       'llama-3.1-8b-instant'
     ];
     
     expect(supportedModels).toContain('llama-3.3-70b-versatile');
-    expect(supportedModels[0]).toBe('llama-3.1-70b-versatile'); // But 3.1 is first
+    expect(supportedModels[0]).toBe('openai/gpt-oss-120b'); // But openai/gpt-oss-120b is first
   });
 
   test('should handle user settings migration', () => {
-    // Old settings may have llama-3.3
+    // Old settings may have llama-3.3 or deprecated llama-3.1
     const oldSettings = {
       largeModel: 'llama-3.3-70b-versatile'
     };
     
     // New default
-    const defaultModel = 'llama-3.1-70b-versatile';
+    const defaultModel = 'openai/gpt-oss-120b';
     
     // User settings should override default
     const effectiveModel = oldSettings.largeModel || defaultModel;

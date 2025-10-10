@@ -122,16 +122,6 @@ function enrichGroqModels(models) {
             supportsTools: true, supportsVision: false, supportsStreaming: true,
             rateLimits: { tokensPerMinute: 5000, requestsPerMinute: 30 }
         },
-        'gemma2-9b-it': { 
-            input: 0.20, output: 0.20, category: 'small',
-            supportsTools: true, supportsVision: false, supportsStreaming: true,
-            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
-        },
-        'gemma-7b-it': { 
-            input: 0.07, output: 0.07, category: 'small',
-            supportsTools: false, supportsVision: false, supportsStreaming: true,
-            rateLimits: { tokensPerMinute: 15000, requestsPerMinute: 30 }
-        },
         'llama-3.1-70b-versatile': { 
             input: 0.59, output: 0.79, category: 'large',
             supportsTools: true, supportsVision: false, supportsStreaming: true,

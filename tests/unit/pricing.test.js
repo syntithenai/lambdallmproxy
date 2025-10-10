@@ -74,7 +74,7 @@ describe('Pricing Module', () => {
                 },
                 groq: {
                     models: {
-                        'llama-3.1-70b-versatile': { input: 0.00000059, output: 0.00000079 },
+                        'llama-3.3-70b-versatile': { input: 0.00000059, output: 0.00000079 },
                         'llama-3.1-8b-instant': { input: 0.00000005, output: 0.00000008 }
                     }
                 }

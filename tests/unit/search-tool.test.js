@@ -2,6 +2,29 @@
  * Test search tool updates
  */
 
+// Mock search function
+const mockSearchFn = jest.fn().mockResolvedValue({
+    query: 'javascript tutorial',
+    results: [
+        { title: 'Result 1', url: 'https://example.com/1', description: 'Desc 1', content: '' },
+        { title: 'Result 2', url: 'https://example.com/2', description: 'Desc 2', content: '' }
+    ],
+    count: 2,
+    totalFound: 100,
+    limit: 2,
+    fetchContent: false,
+    timeout: 10,
+    processingTimeMs: 50,
+    timestamp: new Date().toISOString()
+});
+
+// Mock search module to prevent actual network requests
+jest.mock('../../src/search', () => ({
+    DuckDuckGoSearcher: jest.fn().mockImplementation(() => ({
+        search: mockSearchFn
+    }))
+}));
+
 const { callFunction } = require('../../src/tools');
 
 describe('Search Tool Updates', () => {

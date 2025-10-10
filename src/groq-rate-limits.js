@@ -23,16 +23,6 @@ const GROQ_RATE_LIMITS = {
     speed: "moderate",
     vision_capable: false
   },
-  "gemma2-9b-it": {
-    rpm: 30,
-    rpd: 14400,
-    tpm: 15000,
-    tpd: 500000,
-    context_window: 8192,
-    reasoning_capability: "intermediate",
-    speed: "fast",
-    vision_capable: false
-  },
   "llama-3.1-8b-instant": {
     rpm: 30,
     rpd: 14400,
@@ -43,7 +33,7 @@ const GROQ_RATE_LIMITS = {
     speed: "fast",
     vision_capable: false
   },
-  "llama-3.1-70b-versatile": {
+  "llama-3.3-70b-versatile": {
     rpm: 30,
     rpd: 1000,
     tpm: 12000,

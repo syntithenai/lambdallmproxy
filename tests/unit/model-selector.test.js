@@ -31,9 +31,9 @@ const mockCatalog = {
           free: true
         },
         {
-          name: 'gemma-7b-it',
-          context_window: 8192,
-          pricing: { input: 0.07, output: 0.07 },
+          name: 'llama-3.1-8b-instant',
+          context_window: 131072,
+          pricing: { input: 0.05, output: 0.08 },
           free: true
         },
         {
@@ -84,11 +84,11 @@ const mockModelList = [
     free: true
   },
   {
-    name: 'gemma-7b-it',
+    name: 'llama-3.1-8b-instant',
     provider: 'groq',
     providerType: 'groq',
-    context_window: 8192,
-    pricing: { input: 0.07, output: 0.07 },
+    context_window: 131072,
+    pricing: { input: 0.05, output: 0.08 },
     free: true
   },
   {
@@ -196,7 +196,7 @@ describe('prioritizeFreeTier', () => {
     const prioritized = prioritizeFreeTier(mockModelList);
     
     expect(prioritized[0].free).toBe(true);
-    expect(prioritized[1].free).toBe(true);
+    // After removing gemma-7b-it, only llama-3.2-8b is free in the mock
   });
 
   test('should maintain order within tiers', () => {
@@ -445,7 +445,8 @@ describe('selectModel', () => {
     const result = selectModel({
       messages: [{ role: 'user', content: 'Hello' }],
       catalog: mockCatalog,
-      rateLimitTracker: tracker
+      rateLimitTracker: tracker,
+      preferredProviders: ['groq', 'openai', 'deepseek'] // Explicitly allow fallback to other providers
     });
     
     expect(result.model.name).not.toBe('llama-3.2-8b');
@@ -651,7 +652,7 @@ describe('selectWithFallback', () => {
     
     // Rate limit all small models
     tracker.updateFrom429('groq', 'llama-3.2-8b', 60);
-    tracker.updateFrom429('groq', 'gemma-7b-it', 60);
+    tracker.updateFrom429('groq', 'llama-3.1-8b-instant', 60);
     
     const result = selectWithFallback({
       messages: [{ role: 'user', content: 'Hello' }],

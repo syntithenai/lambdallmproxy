@@ -77,17 +77,16 @@ function compressSearchResultsForLLM(query, results) {
   // Add CRITICAL URLS section at the top (before media) - THIS IS MANDATORY FOR LLM TO SEE
   if (allUrls.length > 0) {
     sections.push('\n═══════════════════════════════════════════════════════════════════════════════');
-    sections.push('🚨 CRITICAL: YOU MUST COPY THESE URLS INTO YOUR RESPONSE 🚨');
+    sections.push('🚨 IMPORTANT: REVIEW THESE URLS BEFORE RESPONDING 🚨');
     sections.push('═══════════════════════════════════════════════════════════════════════════════');
-    sections.push('The following URLs MUST be included in your response as clickable markdown links:');
+    sections.push('Helpful URLs you can cite as clickable markdown links:');
     sections.push('');
     for (let i = 0; i < allUrls.length; i++) {
       const { title, url } = allUrls[i];
       sections.push(`${i + 1}. [${title}](${url})`);
     }
     sections.push('');
-    sections.push('❌ FORBIDDEN: Mentioning these source names without their URLs');
-    sections.push('✅ REQUIRED: Copy the markdown links above into your response');
+    sections.push('✅ Suggested: Include these markdown links when summarizing sources');
     sections.push('═══════════════════════════════════════════════════════════════════════════════\n');
   }
   
@@ -506,8 +505,8 @@ async function callFunction(name, args = {}, context = {}) {
                   // Extract top 3 most relevant images with captions
                   const images = parser.extractImages(3);
                   
-                  // Extract all links with relevance scores
-                  const allLinks = parser.extractLinks();
+                  // Extract top 30 most relevant links (reduced from unlimited)
+                  const allLinks = parser.extractLinks(30);
                   
                   // Categorize links by media type
                   const categorized = parser.categorizeLinks(allLinks);
@@ -656,8 +655,7 @@ Brief answer with URLs:`;
                       'groq:llama-3.3-70b-versatile',      // 64k TPM
                       'groq:llama-3.1-8b-instant',         // 120k TPM
                       'groq:mixtral-8x7b-32768',           // 60k TPM
-                      'groq:llama-3.2-11b-vision-preview', // 60k TPM
-                      'groq:gemma2-9b-it'                  // 60k TPM
+                      'groq:llama-3.2-11b-vision-preview'  // 60k TPM
                     ];
                 
                 console.log(`🔄 Model pool for load balancing: ${modelPool.join(', ')}`);
@@ -1067,8 +1065,8 @@ Brief answer with URLs:`;
           // Extract top 3 most relevant images
           images = parser.extractImages(3);
           
-          // Extract and categorize links
-          const allLinks = parser.extractLinks();
+          // Extract top 25 most relevant links (reduced from unlimited)
+          const allLinks = parser.extractLinks(25);
           const categorized = parser.categorizeLinks(allLinks);
           
           youtube = categorized.youtube;

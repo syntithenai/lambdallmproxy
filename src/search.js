@@ -443,19 +443,23 @@ class DuckDuckGoSearcher {
      */
     isNavigationLink(url) {
         const navPatterns = [
-            '/page/',
-            '/edit/',
-            '/user/',
-            '/admin/',
-            'javascript:',
-            '#',
-            'mailto:',
-            '/search?',
-            '/tag/',
-            '/category/'
+            '/page/', '/edit/', '/user/', '/admin/', '/login/', '/signup/',
+            'javascript:', '#', 'mailto:', '/search?', '/tag/', '/category/',
+            '/privacy', '/terms', '/about-us', '/contact', '/sitemap',
+            '?share=', '?utm_', '/share/', '/print/', '/pdf/',
+            '/cookie-policy', '/disclaimer', '/advertise'
         ];
         
-        return navPatterns.some(pattern => url.includes(pattern));
+        // Ad and tracking patterns
+        const adPatterns = [
+            'doubleclick.', 'googlesyndication.', 'googleadservices.',
+            'advertising.', 'outbrain.', 'taboola.', 'criteo.',
+            '/ad/', '/ads/', '/banner/', '/promo/'
+        ];
+        
+        const urlLower = url.toLowerCase();
+        return navPatterns.some(pattern => urlLower.includes(pattern)) ||
+               adPatterns.some(pattern => urlLower.includes(pattern));
     }
 
     /**
@@ -1056,9 +1060,9 @@ class DuckDuckGoSearcher {
             
             // Extract images, videos, and media from HTML
             try {
-                const htmlParser = new SimpleHTMLParser(rawContent);
+                const htmlParser = new SimpleHTMLParser(rawContent, query);
                 const images = htmlParser.extractImages(10); // Get up to 10 images
-                const links = htmlParser.extractLinks();
+                const links = htmlParser.extractLinks(30); // Get top 30 most relevant links
                 const categorized = htmlParser.categorizeLinks(links);
                 
                 // Transform images to expected format (extractImages returns {src, alt, title, caption, ...})

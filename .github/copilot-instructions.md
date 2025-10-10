@@ -8,6 +8,8 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
 
 ### 1.1. Deployment and Build Process
 
+- **Mandatory**: After completing any code or documentation changes, run the appropriate deployment command before finishing the task (e.g., `make deploy-lambda-fast` for backend updates, `make deploy-ui` for UI changes).
+
 #### Lambda Function Deployment
 
 - **⚡ Fast Deployment** (RECOMMENDED): After modifying backend code in `src/`:

@@ -830,9 +830,9 @@ Examples when you MUST use tools:
 Remember: Use the function calling mechanism, not text output. The API will handle execution automatically.`;
       }
       
-      // Strip out UI-only fields (llmApiCalls, isStreaming) before sending to API
+      // Strip out UI-only fields (llmApiCalls, isStreaming, toolResults) before sending to API
       const cleanMessages = messages.map(msg => {
-        const { llmApiCalls, isStreaming, ...cleanMsg } = msg;
+        const { llmApiCalls, isStreaming, toolResults, ...cleanMsg } = msg as any;
         return cleanMsg;
       });
       
@@ -889,15 +889,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       
       // Clean UI-only fields before sending to API
       const cleanedMessages = messagesWithSystem.map(msg => {
-        const { _attachments, llmApiCalls, isStreaming, ...cleanMsg } = msg as any;
+        const { _attachments, llmApiCalls, isStreaming, toolResults, ...cleanMsg } = msg as any;
         return cleanMsg;
       });
       
       // Phase 2: No model selection - backend decides based on PROVIDER_CATALOG.json
       // Backend will automatically detect images and select vision-capable models
-      // Send providers array instead of model field
+      // Send providers array instead of model field - filter out disabled providers
+      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
+      
       const requestPayload: any = {
-        providers: settings.providers,  // NEW: Send all configured providers
+        providers: enabledProviders,  // NEW: Send only enabled providers
         messages: cleanedMessages,
         temperature: 0.7,
         stream: true  // Always use streaming
@@ -937,30 +939,24 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   const lastMessageIndex = prev.length - 1;
                   const lastMessage = prev[lastMessageIndex];
                   
-                  console.log('🟦 Delta received, currentStreamingBlockIndex:', currentStreamingBlockIndex, 'lastMessage:', lastMessage?.role, 'isStreaming:', lastMessage?.isStreaming);
+                  console.log('🟦 Delta received, lastMessage role:', lastMessage?.role, 
+                    'isStreaming:', lastMessage?.isStreaming,
+                    'hasContent:', !!lastMessage?.content,
+                    'contentLength:', lastMessage?.content?.length || 0);
                   
                   // Check if there's a tool message after the last assistant message
                   const hasToolMessageAfterAssistant = lastMessage?.role === 'tool';
                   
-                  // If last message is a streaming assistant message AND no tool execution happened, append to it
-                  if (lastMessage && lastMessage.role === 'assistant' && lastMessage.isStreaming && !hasToolMessageAfterAssistant) {
+                  // If last message is assistant (streaming or placeholder), update it
+                  if (lastMessage && lastMessage.role === 'assistant' && !hasToolMessageAfterAssistant) {
                     const newMessages = [...prev];
                     newMessages[lastMessageIndex] = {
                       ...lastMessage,
-                      content: (lastMessage.content || '') + data.content
-                    };
-                    console.log('🟦 Appending to existing streaming block at index:', lastMessageIndex);
-                    return newMessages;
-                  } else if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content && !hasToolMessageAfterAssistant) {
-                    // If last message is an empty assistant (placeholder from llm_request), update it with content
-                    // This handles both cases: with or without llmApiCalls already attached
-                    const newMessages = [...prev];
-                    newMessages[lastMessageIndex] = {
-                      ...lastMessage,
-                      content: data.content,
+                      content: (lastMessage.content || '') + data.content,
                       isStreaming: true
                     };
-                    console.log('🟦 Updating placeholder assistant message with content at index:', lastMessageIndex);
+                    console.log('🟦 Updating assistant at index:', lastMessageIndex, 
+                      'newContentLength:', newMessages[lastMessageIndex].content.length);
                     return newMessages;
                   } else {
                     // Create a new streaming block (tool execution happened OR first message)
@@ -969,7 +965,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       content: data.content,
                       isStreaming: true
                     };
-                    console.log('🟦 Creating NEW streaming block at index:', prev.length, 'prev messages count:', prev.length, 'reason:', hasToolMessageAfterAssistant ? 'tool execution' : 'first message');
+                    console.log('🟦 Creating NEW streaming block, reason:', 
+                      hasToolMessageAfterAssistant ? 'tool execution' : 'no assistant message');
                     return [...prev, newBlock];
                   }
                 });
@@ -1063,48 +1060,87 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 } : t
               ));
               
-              // Add tool message to messages array
-              // Collect llmApiCalls from:
-              // 1. The assistant message that triggered this tool (for main chat LLM call)
-              // 2. Any tool-internal LLM calls (e.g., search_web summarization)
+              // Embed tool result in the assistant message that triggered it
+              // This keeps tool results grouped with the response, making the agentic process compact
               setMessages(prev => {
-                console.log('🟪 Adding tool result, prev messages:', prev.length, 'tool:', data.name);
+                console.log('🟪 Embedding tool result in assistant message, tool:', data.name, 'tool_call_id:', data.id);
+                console.log('🟪 Current messages array length:', prev.length);
                 
+                const newMessages = [...prev];
                 let llmApiCalls: any[] = [];
                 
-                // Find the assistant message with llmApiCalls for this tool
-                for (let i = prev.length - 1; i >= 0; i--) {
-                  if (prev[i].role === 'assistant' && prev[i].llmApiCalls && prev[i].tool_calls) {
+                // Log all assistant messages with their tool_calls for debugging
+                console.log('🟪 Assistant messages in array:');
+                prev.forEach((msg, idx) => {
+                  if (msg.role === 'assistant') {
+                    console.log(`  [${idx}] has tool_calls:`, !!msg.tool_calls, 
+                      msg.tool_calls ? `(${msg.tool_calls.length} calls: ${msg.tool_calls.map((tc: any) => tc.id).join(', ')})` : '');
+                  }
+                });
+                
+                // Find the FIRST (earliest) assistant message with the matching tool call
+                // Search forward to find the first occurrence, not the last
+                for (let i = 0; i < newMessages.length; i++) {
+                  if (newMessages[i].role === 'assistant' && newMessages[i].tool_calls) {
                     // Check if this assistant has the tool call that matches
-                    const hasMatchingToolCall = prev[i].tool_calls?.some((tc: any) => tc.id === data.id);
+                    const hasMatchingToolCall = newMessages[i].tool_calls?.some((tc: any) => tc.id === data.id);
                     if (hasMatchingToolCall) {
+                      console.log('🟪 ✅ Found FIRST assistant with matching tool call at index:', i, 'of', newMessages.length);
+                      
                       // Extract ONLY tool-internal LLM calls (summarization, etc.)
-                      // These have phase like 'page_summary', 'synthesis_summary', 'description_summary'
-                      const toolInternalCalls = prev[i].llmApiCalls?.filter((call: any) => 
+                      const toolInternalCalls = newMessages[i].llmApiCalls?.filter((call: any) => 
                         call.phase && call.tool === 'search_web' && 
                         (call.phase === 'page_summary' || call.phase === 'synthesis_summary' || call.phase === 'description_summary')
                       ) || [];
                       
                       if (toolInternalCalls.length > 0) {
                         llmApiCalls = toolInternalCalls;
-                        console.log('🟪 Collected', toolInternalCalls.length, 'tool-internal llmApiCalls from assistant at index', i);
-                      } else {
-                        console.log('🟪 No tool-internal LLM calls found for', data.name);
                       }
+                      
+                      // Create tool result object to embed in assistant message
+                      const toolResult = {
+                        role: 'tool' as const,
+                        content: data.content,
+                        tool_call_id: data.id,
+                        name: data.name,
+                        ...(llmApiCalls.length > 0 && { llmApiCalls })
+                      };
+                      
+                      // Embed tool results in assistant message instead of creating separate message
+                      if (!newMessages[i].toolResults) {
+                        newMessages[i] = {
+                          ...newMessages[i],
+                          toolResults: [toolResult]
+                        };
+                      } else {
+                        newMessages[i] = {
+                          ...newMessages[i],
+                          toolResults: [...(newMessages[i].toolResults || []), toolResult]
+                        };
+                      }
+                      
+                      console.log('🟪 Embedded tool result in assistant message at index', i, ', total toolResults:', newMessages[i].toolResults?.length);
                       break;
                     }
+                  } else if (newMessages[i].role === 'assistant') {
+                    console.log(`  [${i}] is assistant but has no tool_calls`);
                   }
                 }
                 
-                const toolMessage: ChatMessage = {
-                  role: 'tool',
-                  content: data.content,
-                  tool_call_id: data.id,
-                  name: data.name,
-                  ...(llmApiCalls.length > 0 && { llmApiCalls })
-                };
+                // Check if we found a match
+                const foundMatch = newMessages.some((msg) => 
+                  msg.role === 'assistant' && msg.toolResults?.some((tr: any) => tr.tool_call_id === data.id)
+                );
+                if (!foundMatch) {
+                  console.warn('🟪 ⚠️ Could not find assistant message with matching tool_call_id:', data.id);
+                  console.warn('🟪 Available tool_call_ids:', 
+                    newMessages
+                      .filter(m => m.role === 'assistant' && m.tool_calls)
+                      .flatMap(m => m.tool_calls?.map((tc: any) => tc.id) || [])
+                  );
+                }
                 
-                return [...prev, toolMessage];
+                return newMessages;
               });
               
               // If this was a web search, extract and save the results
@@ -1217,7 +1253,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   const lastContent = lastMessage?.content ? getMessageText(lastMessage.content).trim() : '';
                   
                   // Check if there's a tool message between the last assistant message and now
-                  // If there is, we should ALWAYS create a new block (this is a new iteration)
+                  // If there is, we should check if there's already a streaming assistant message
                   let hasToolMessageAfterLastAssistant = false;
                   for (let i = prev.length - 1; i >= 0; i--) {
                     if (prev[i].role === 'assistant') {
@@ -1230,8 +1266,26 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   }
                   
                   // If there's a tool message after the last assistant message, this is a new iteration
-                  // Always create a new block in this case
+                  // BUT: Check if there's already a streaming assistant message (created by delta handler)
                   if (hasToolMessageAfterLastAssistant) {
+                    // Check if last message is a streaming assistant (created by delta handler)
+                    if (lastMessage?.role === 'assistant' && lastMessage.isStreaming) {
+                      // Update the existing streaming message instead of creating a new one
+                      console.log('🟡 Updating existing streaming assistant with message_complete data');
+                      const newMessages = [...prev];
+                      newMessages[lastMessageIndex] = {
+                        ...lastMessage,
+                        content: data.content || lastMessage.content || '',
+                        tool_calls: data.tool_calls || lastMessage.tool_calls,
+                        extractedContent: data.extractedContent || lastMessage.extractedContent,
+                        llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
+                        isStreaming: false
+                      };
+                      return newMessages;
+                    }
+                    
+                    // No streaming message exists, create a new one
+                    console.log('🟢 Creating new assistant message for new iteration');
                     const assistantMessage: ChatMessage = {
                       role: 'assistant',
                       content: data.content || '',
@@ -1242,21 +1296,27 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     return [...prev, assistantMessage];
                   }
                   
-                  // If last message is assistant and its content is a prefix of the final content,
-                  // this is likely a partial streaming message that needs to be updated
-                  if (lastMessage?.role === 'assistant' && 
-                      lastContent && 
-                      finalContent.startsWith(lastContent)) {
-                    const newMessages = [...prev];
-                    newMessages[lastMessageIndex] = {
-                      ...lastMessage,
-                      content: data.content || '',
-                      tool_calls: data.tool_calls || lastMessage.tool_calls,
-                      extractedContent: data.extractedContent || lastMessage.extractedContent,
-                      llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
-                      isStreaming: false
-                    };
-                    return newMessages;
+                  // Update last assistant if it's empty/streaming OR if content matches
+                  if (lastMessage?.role === 'assistant') {
+                    // Update if: streaming, empty, or content is a prefix
+                    const shouldUpdate = 
+                      lastMessage.isStreaming ||
+                      !lastContent ||
+                      (lastContent && finalContent.startsWith(lastContent));
+                    
+                    if (shouldUpdate) {
+                      console.log('🟡 Updating last assistant message with message_complete data');
+                      const newMessages = [...prev];
+                      newMessages[lastMessageIndex] = {
+                        ...lastMessage,
+                        content: data.content || lastMessage.content || '',
+                        tool_calls: data.tool_calls || lastMessage.tool_calls,
+                        extractedContent: data.extractedContent || lastMessage.extractedContent,
+                        llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
+                        isStreaming: false
+                      };
+                      return newMessages;
+                    }
                   }
                   
                   // Skip if exact duplicate (non-streaming assistant with identical content)
@@ -1380,31 +1440,28 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               break;
               
             case 'llm_response':
-              // Update ALL LLM API calls with responses (including search tool summaries)
+              // Update LLM API calls with response data
+              // Note: message_complete event will provide the complete llmApiCalls array
+              // This handler is mainly for updating existing calls with response data
               console.log('🟢 LLM API Response:', data);
               setMessages(prev => {
                 const newMessages = [...prev];
-                let foundMatchingCall = false;
-                let assistantMessageIndex = -1;
                 
                 // Find the last assistant message
                 for (let i = newMessages.length - 1; i >= 0; i--) {
                   if (newMessages[i].role === 'assistant' && newMessages[i].llmApiCalls) {
-                    assistantMessageIndex = i;
                     const apiCalls = newMessages[i].llmApiCalls!;
                     const lastCall = apiCalls[apiCalls.length - 1];
                     
                     if (lastCall && lastCall.phase === data.phase && !lastCall.response) {
-                      // Store response with HTTP headers and status
-                      // Also update provider and model in case they weren't set initially
+                      // Update existing call with response data
                       lastCall.response = data.response;
                       lastCall.httpHeaders = data.httpHeaders;
                       lastCall.httpStatus = data.httpStatus;
                       if (data.provider) lastCall.provider = data.provider;
                       if (data.model) lastCall.model = data.model;
-                      console.log('🟢 Updated existing llmApiCall response for phase:', data.phase, 'at index:', i,
+                      console.log('🟢 Updated llmApiCall response for phase:', data.phase, 
                         'provider:', lastCall.provider, 'model:', lastCall.model);
-                      foundMatchingCall = true;
                       newMessages[i] = {
                         ...newMessages[i],
                         llmApiCalls: [...apiCalls] // Trigger re-render
@@ -1412,28 +1469,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     }
                     break;
                   }
-                }
-                
-                // If no matching call found, create a new one (happens for iteration 2+)
-                if (!foundMatchingCall && assistantMessageIndex >= 0) {
-                  console.log('🟢 Creating new llmApiCall for llm_response without prior request, iteration:', data.iteration);
-                  const apiCalls = newMessages[assistantMessageIndex].llmApiCalls!;
-                  const newCall = {
-                    phase: data.phase,
-                    provider: data.provider || 'Unknown',
-                    model: data.model || 'Unknown',
-                    request: data.llmApiCall?.request || {},
-                    response: data.response,
-                    httpHeaders: data.httpHeaders,
-                    httpStatus: data.httpStatus,
-                    timestamp: data.timestamp
-                  };
-                  apiCalls.push(newCall);
-                  console.log('🟢 Created new llmApiCall with provider:', newCall.provider, 'model:', newCall.model);
-                  newMessages[assistantMessageIndex] = {
-                    ...newMessages[assistantMessageIndex],
-                    llmApiCalls: [...apiCalls] // Trigger re-render
-                  };
                 }
                 
                 return newMessages;
@@ -1602,7 +1637,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             className="btn-secondary text-xs px-3 py-1.5"
             title={systemPrompt ? "Edit system prompt and planning" : "Add system prompt and planning"}
           >
-            {systemPrompt ? '✏️ Edit Plan' : '➕ Add Plan'}
+            {systemPrompt ? '✏️ Edit Plan' : 'Make A Plan'}
           </button>
           {systemPrompt && (
             <div 
@@ -1784,6 +1819,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       }
                     } catch (e) {
                       // Not JSON or not scrape results
+                    }
+                  }
+                  
+                  // Try to parse execute_javascript results for better display
+                  let jsResult: any = null;
+                  if (msg.name === 'execute_javascript' && typeof msg.content === 'string') {
+                    try {
+                      const parsed = JSON.parse(msg.content);
+                      if (parsed.result !== undefined || parsed.error) {
+                        jsResult = parsed;
+                      }
+                    } catch (e) {
+                      // Not JSON or not execute results
                     }
                   }
                   
@@ -2019,6 +2067,35 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                     </div>
                                   )}
                                 </div>
+                              ) : jsResult ? (
+                                <div className="space-y-3">
+                                  {/* Show error if present */}
+                                  {jsResult.error && (
+                                    <div className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded p-2">
+                                      <span className="font-semibold text-red-800 dark:text-red-200">❌ Error:</span>
+                                      <p className="text-red-700 dark:text-red-300 text-xs mt-1 font-mono">{jsResult.error}</p>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Show result if present */}
+                                  {jsResult.result !== undefined && (
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <span className="font-semibold text-purple-800 dark:text-purple-200">✅ Output:</span>
+                                        {toolCall?.executedAt && (
+                                          <span className="text-xs text-gray-600 dark:text-gray-400">
+                                            ({toolCall.runtime || 'N/A'})
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="bg-gray-50 dark:bg-gray-950 p-3 rounded border border-green-300 dark:border-green-700">
+                                        <pre className="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
+                                          {String(jsResult.result)}
+                                        </pre>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <pre className="whitespace-pre-wrap text-xs text-gray-800 dark:text-gray-200">
                                   {getMessageText(msg.content)}
@@ -2181,6 +2258,184 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         
                         {/* Extracted content from tool calls (sources, images, videos, media) */}
                         {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
+                        
+                        {/* Tool results embedded in this assistant message - render like tool messages */}
+                        {msg.toolResults && msg.toolResults.length > 0 && (
+                          <div className="mt-4 space-y-3">
+                            {msg.toolResults.map((toolResult: any, trIdx: number) => {
+                              const isToolExpanded = expandedToolMessages.has(idx * 1000 + trIdx);
+                              
+                              // Try to parse search results for better display
+                              let searchResults: any = null;
+                              if (toolResult.name === 'search_web' && typeof toolResult.content === 'string') {
+                                try {
+                                  const parsed = JSON.parse(toolResult.content);
+                                  if (parsed.results && Array.isArray(parsed.results)) {
+                                    searchResults = parsed.results;
+                                  }
+                                } catch (e) {
+                                  // Not JSON or not search results
+                                }
+                              }
+                              
+                              // Try to parse execute_javascript results for better display
+                              let jsResult: any = null;
+                              let jsCode: string = '';
+                              if (toolResult.name === 'execute_javascript' && typeof toolResult.content === 'string') {
+                                try {
+                                  const parsed = JSON.parse(toolResult.content);
+                                  if (parsed.result !== undefined || parsed.error) {
+                                    jsResult = parsed;
+                                    // Find the tool call to get the code
+                                    const toolCall = msg.tool_calls?.find((tc: any) => tc.id === toolResult.tool_call_id);
+                                    if (toolCall) {
+                                      try {
+                                        const args = JSON.parse(toolCall.function.arguments);
+                                        jsCode = args.code || '';
+                                      } catch (e) {
+                                        // Ignore parse errors
+                                      }
+                                    }
+                                  }
+                                } catch (e) {
+                                  // Not JSON or not execute results
+                                }
+                              }
+                              
+                              return (
+                                <div key={trIdx} className="bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700 rounded-lg p-3">
+                                  <div className="flex items-center justify-between gap-2 mb-2">
+                                    <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                                      <span>🔧 {toolResult.name || 'Tool Result'}</span>
+                                      {/* Show query for search tools */}
+                                      {msg.tool_calls && (toolResult.name === 'search_web' || toolResult.name === 'search_youtube') && (() => {
+                                        const toolCall = msg.tool_calls.find((tc: any) => tc.id === toolResult.tool_call_id);
+                                        if (toolCall) {
+                                          try {
+                                            const parsed = JSON.parse(toolCall.function.arguments);
+                                            if (parsed.query) {
+                                              return (
+                                                <span className="font-normal text-purple-600 dark:text-purple-400 italic">
+                                                  - "{parsed.query}"
+                                                </span>
+                                              );
+                                            }
+                                          } catch (e) {
+                                            // Ignore parse errors
+                                          }
+                                        }
+                                        return null;
+                                      })()}
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        const newExpanded = new Set(expandedToolMessages);
+                                        const key = idx * 1000 + trIdx;
+                                        if (isToolExpanded) {
+                                          newExpanded.delete(key);
+                                        } else {
+                                          newExpanded.add(key);
+                                        }
+                                        setExpandedToolMessages(newExpanded);
+                                      }}
+                                      className="text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-200"
+                                      title={isToolExpanded ? 'Collapse' : 'Expand'}
+                                    >
+                                      {isToolExpanded ? '▲' : '▼'}
+                                    </button>
+                                  </div>
+                                  {isToolExpanded && (
+                                    <div className="text-xs space-y-2">
+                                      {/* Search results with nice formatting */}
+                                      {searchResults && searchResults.length > 0 ? (
+                                        <div className="space-y-3">
+                                          {searchResults.map((result: any, rIdx: number) => {
+                                            const pageContent = result.page_content || result.content;
+                                            const hasContent = pageContent && pageContent.length > 0;
+                                            
+                                            return (
+                                              <div key={rIdx} className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-800">
+                                                <a 
+                                                  href={result.url} 
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer"
+                                                  className="font-semibold text-purple-700 dark:text-purple-300 hover:underline block mb-1"
+                                                >
+                                                  {result.title}
+                                                </a>
+                                                {result.snippet && (
+                                                  <p className="text-gray-700 dark:text-gray-300 text-xs mb-2">{result.snippet}</p>
+                                                )}
+                                                <a 
+                                                  href={result.url} 
+                                                  target="_blank" 
+                                                  rel="noopener noreferrer"
+                                                  className="text-blue-600 dark:text-blue-400 hover:underline text-[10px] break-all block mb-2"
+                                                >
+                                                  {result.url}
+                                                </a>
+                                                
+                                                {/* Show loaded page content if available */}
+                                                {hasContent && (
+                                                  <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-700">
+                                                    <div className="text-[10px] font-semibold text-purple-700 dark:text-purple-400 mb-1">
+                                                      📄 Page Content ({pageContent.length.toLocaleString()} chars)
+                                                    </div>
+                                                    <div className="bg-gray-50 dark:bg-gray-950 p-2 rounded max-h-60 overflow-y-auto">
+                                                      <pre className="whitespace-pre-wrap text-[10px] text-gray-700 dark:text-gray-300">
+                                                        {pageContent.substring(0, 2000)}{pageContent.length > 2000 ? '...' : ''}
+                                                      </pre>
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : jsResult ? (
+                                        <div className="space-y-3">
+                                          {/* Show the code that was executed */}
+                                          {jsCode && (
+                                            <div>
+                                              <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">💻 Code:</div>
+                                              <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
+                                                <pre className="whitespace-pre-wrap leading-relaxed">{jsCode}</pre>
+                                              </div>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Show error if present */}
+                                          {jsResult.error && (
+                                            <div className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded p-2">
+                                              <span className="font-semibold text-red-800 dark:text-red-200">❌ Error:</span>
+                                              <p className="text-red-700 dark:text-red-300 text-xs mt-1 font-mono">{jsResult.error}</p>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Show result if present */}
+                                          {jsResult.result !== undefined && (
+                                            <div>
+                                              <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">✅ Output:</div>
+                                              <div className="bg-gray-50 dark:bg-gray-950 p-3 rounded border border-green-300 dark:border-green-700">
+                                                <pre className="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
+                                                  {String(jsResult.result)}
+                                                </pre>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <pre className="whitespace-pre-wrap text-xs text-gray-800 dark:text-gray-200 max-h-80 overflow-y-auto">
+                                          {toolResult.content}
+                                        </pre>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="whitespace-pre-wrap">

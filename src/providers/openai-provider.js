@@ -54,9 +54,14 @@ class OpenAIProvider extends BaseProvider {
     };
 
     // Add tools if provided
-    if (options.tools && Array.isArray(options.tools)) {
+    if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
       body.tools = options.tools;
-      body.tool_choice = options.tool_choice || 'auto';
+      body.tool_choice = options.tool_choice || 'required';
+      // CRITICAL: Cannot set response_format when using tools/function calling
+      // This causes "json mode cannot be combined with tool/function calling" error
+      if (options.parallel_tool_calls !== undefined) {
+        body.parallel_tool_calls = options.parallel_tool_calls;
+      }
     }
 
     // Add frequency and presence penalties if provided

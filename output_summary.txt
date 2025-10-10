@@ -1,0 +1,100 @@
+  ● Main Router Integration Tests › Error Handling › should include CORS headers in error responses
+
+    expect(received).toHaveProperty(path, value)
+
+    Matcher error: received value must not be null nor undefined
+
+    Received has value: undefined
+
+      234 |             await handler(event, mockStream);
+      235 |             
+    > 236 |             expect(mockStream.metadata?.headers).toHaveProperty('Content-Type', 'application/json');
+          |                                                  ^
+      237 |         });
+      238 |     });
+      239 |     
+
+      at Object.toHaveProperty (tests/integration/endpoints.test.js:236:50)
+
+FAIL tests/integration/lambda-handler.test.js
+  ● Lambda Handler Core Logic (Streaming) › rejects non-POST requests with error event
+
+    TypeError: Cannot read properties of undefined (reading 'filter')
+
+      106 |     await invokeHandler({ httpMethod: 'OPTIONS' });
+      107 |
+    > 108 |     const errorEvents = collector.events.filter(e => e.type === 'error');
+          |                                          ^
+      109 |     expect(errorEvents.length).toBeGreaterThan(0);
+      110 |     expect(errorEvents[0].data.error).toContain('Method not allowed');
+      111 |     expect(collector.state.ended).toBe(true);
+
+      at Object.filter (tests/integration/lambda-handler.test.js:108:42)
+
+FAIL tests/unit/search-tool.test.js
+  ● Search Tool Updates › search_web tool › should include all raw search response fields
+
+    TypeError: searcher.search is not a function
+
+      452 |           };
+      453 |           
+    > 454 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      455 |           
+      456 |           // Emit content loading event
+      457 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:454:38)
+      at Object.callFunction (tests/unit/search-tool.test.js:31:34)
+
+  ● Search Tool Updates › search_web tool › should include summary fields when generate_summary is true
+
+    TypeError: searcher.search is not a function
+
+      452 |           };
+      453 |           
+    > 454 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      455 |           
+      456 |           // Emit content loading event
+      457 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:454:38)
+      at Object.callFunction (tests/unit/search-tool.test.js:77:34)
+
+  ● Search Tool Updates › search_web tool › should include content fields when load_content is true
+
+    TypeError: searcher.search is not a function
+
+      452 |           };
+      453 |           
+    > 454 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      455 |           
+      456 |           // Emit content loading event
+      457 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:454:38)
+      at Object.callFunction (tests/unit/search-tool.test.js:101:34)
+
+  ● Search Tool Updates › search_web tool › should handle missing parameters with defaults
+
+    TypeError: searcher.search is not a function
+
+      452 |           };
+      453 |           
+    > 454 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      455 |           
+      456 |           // Emit content loading event
+      457 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:454:38)
+      at Object.callFunction (tests/unit/search-tool.test.js:122:34)
+
+
+Test Suites: 7 failed, 28 passed, 35 total
+Tests:       36 failed, 649 passed, 685 total
+Snapshots:   0 total
+Time:        71.221 s
+Ran all test suites.

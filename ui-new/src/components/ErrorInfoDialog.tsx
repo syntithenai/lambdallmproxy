@@ -1,5 +1,6 @@
 import React from 'react';
 import { useDialogClose } from '../hooks/useDialogClose';
+import { useToast } from './ToastManager';
 
 interface JsonTreeProps {
   data: any;
@@ -62,6 +63,7 @@ interface ErrorInfoDialogProps {
 
 export const ErrorInfoDialog: React.FC<ErrorInfoDialogProps> = ({ errorData, onClose }) => {
   const dialogRef = useDialogClose(true, onClose);
+  const { showSuccess, showError } = useToast();
 
   return (
     <div ref={dialogRef} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -222,7 +224,9 @@ export const ErrorInfoDialog: React.FC<ErrorInfoDialogProps> = ({ errorData, onC
                 <button
                   onClick={() => {
                     const jsonStr = JSON.stringify(errorData, null, 2);
-                    navigator.clipboard.writeText(jsonStr);
+                    navigator.clipboard.writeText(jsonStr)
+                      .then(() => showSuccess('Copied to clipboard!'))
+                      .catch(() => showError('Failed to copy'));
                   }}
                   className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 flex items-center gap-1"
                   title="Copy full JSON to clipboard"
@@ -245,7 +249,9 @@ export const ErrorInfoDialog: React.FC<ErrorInfoDialogProps> = ({ errorData, onC
           <button
             onClick={() => {
               const jsonStr = JSON.stringify(errorData, null, 2);
-              navigator.clipboard.writeText(jsonStr);
+              navigator.clipboard.writeText(jsonStr)
+                .then(() => showSuccess('Copied to clipboard!'))
+                .catch(() => showError('Failed to copy'));
             }}
             className="btn-secondary"
           >

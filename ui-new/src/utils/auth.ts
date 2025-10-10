@@ -175,30 +175,10 @@ export const refreshGoogleToken = async (): Promise<string | null> => {
       });
 
       // Attempt silent sign-in (won't show popup if auto_select works)
-      try {
-        (google.accounts.id.prompt as any)((notification: any) => {
-          if (!hasResolved) {
-            if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-              hasResolved = true;
-              clearTimeout(timeout);
-              console.log('Silent refresh not available:', notification.getNotDisplayedReason());
-              resolve(null);
-            } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-              hasResolved = true;
-              clearTimeout(timeout);
-              console.log('Silent refresh skipped:', notification.getSkippedReason());
-              resolve(null);
-            }
-          }
-        });
-      } catch (e) {
-        if (!hasResolved) {
-          hasResolved = true;
-          clearTimeout(timeout);
-          console.log('Silent sign-in failed:', e);
-          resolve(null);
-        }
-      }
+      // DO NOT call prompt() as it can show "Cannot continue with Google" popup
+      // Instead, rely on auto_select in initialize() for silent refresh
+      // If auto_select works, the callback will be triggered automatically
+      // If it fails, we just time out gracefully without showing any UI
     });
   } catch (error) {
     console.error('Token refresh failed:', error);

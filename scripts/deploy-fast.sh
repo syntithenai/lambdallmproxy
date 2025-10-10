@@ -57,6 +57,8 @@ cp "$OLDPWD"/src/llm_tools_adapter.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/tools.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/tavily-search.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/pricing_scraper.js ./
+cp "$OLDPWD"/src/model-selector.js ./
+cp "$OLDPWD"/src/groq-rate-limits.js ./
 
 # Copy modular components
 mkdir -p config utils services streaming endpoints tools model-selection routing retry

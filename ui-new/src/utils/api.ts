@@ -32,6 +32,13 @@ export interface ChatMessage {
     httpStatus?: number;  // HTTP status code from LLM API
     timestamp: string;
   }>;
+  toolResults?: Array<{   // Tool execution results embedded in assistant message
+    role: 'tool';
+    content: string;
+    tool_call_id: string;
+    name: string;
+    llmApiCalls?: any[];
+  }>;
   errorData?: any;        // Full error object for error transparency
   extractedContent?: {    // Extracted content from tool calls (search results, images, videos, media)
     sources?: Array<{

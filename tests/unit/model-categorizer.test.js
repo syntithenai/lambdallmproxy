@@ -33,8 +33,8 @@ describe('Model Categorization', () => {
     });
 
     describe('large models', () => {
-      it('should categorize llama-3.1-70b as large', () => {
-        expect(categorizeModel('llama-3.1-70b-versatile')).toBe(ModelCategory.LARGE);
+      it('should categorize llama-3.3-70b as large', () => {
+        expect(categorizeModel('llama-3.3-70b-versatile')).toBe(ModelCategory.LARGE);
       });
 
       it('should categorize llama-3.3-70b as large', () => {

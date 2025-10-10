@@ -321,14 +321,14 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
             
             if (isToolFormatError) {
                 console.error(`⚠️ Model generated malformed tool calls. This model may not support tool calling properly.`);
-                console.error(`💡 Recommendation: Try using a different model with better tool-calling support (e.g., groq:llama-3.1-70b-versatile or openai:gpt-4)`);
+                console.error(`💡 Recommendation: Try using a different model with better tool-calling support (e.g., groq:llama-3.3-70b-versatile or openai:gpt-4)`);
                 
                 stream?.writeEvent?.('error', {
-                    error: `Model does not support tool calling properly. Try a different model like groq:llama-3.1-70b-versatile or openai:gpt-4. Error: ${errorMsg}`,
+                    error: `Model does not support tool calling properly. Try a different model like groq:llama-3.3-70b-versatile or openai:gpt-4. Error: ${errorMsg}`,
                     phase: 'tool_iteration',
                     iteration: iter + 1,
                     model_incompatible: true,
-                    suggested_models: ['groq:llama-3.1-70b-versatile', 'groq:llama-3.3-70b-versatile', 'openai:gpt-4', 'openai:gpt-4o']
+                    suggested_models: ['groq:llama-3.3-70b-versatile', 'groq:llama-3.3-70b-specdec', 'openai:gpt-4', 'openai:gpt-4o']
                 });
             } else {
                 stream?.writeEvent?.('error', {

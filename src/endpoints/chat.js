@@ -14,6 +14,16 @@ const { createProgressEmitter } = require('../utils/progress-emitter');
 const { getOrEstimateUsage, providerReturnsUsage } = require('../utils/token-estimation');
 const { buildProviderPool, hasAvailableProviders } = require('../credential-pool');
 
+const GROQ_RATE_LIMIT_FALLBACK_MODELS = [
+    'llama-3.1-8b-instant',
+    'llama-3.3-70b-versatile',
+    'mixtral-8x7b-32768'
+];
+
+const JSON_TOOL_CALL_REMINDER_TEXT = 'You must answer with a tool call using valid JSON arguments and no extra text. Use the official OpenAI function-calling format.';
+const LEGACY_TOOL_CALL_REGEX = /<\s*function\s*=\s*[^>]+>/i;
+const MAX_JSON_TOOL_REMINDERS = 2;
+
 /**
  * Format tool result for LLM consumption
  * Compresses search results into minimal markdown format
@@ -476,45 +486,104 @@ async function handler(event, responseStream) {
             return;
         }
         
-        // If no model specified, use intelligent selection based on request complexity
-        if (!model) {
-            // Quick heuristic: check message complexity
-            const totalLength = messages.reduce((sum, msg) => 
-                sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0
-            );
-            const hasTools = tools && tools.length > 0;
-            const isComplex = totalLength > 1000 || messages.length > 5 || hasTools;
-            
-            // Select appropriate model based on complexity
-            if (isComplex) {
-                model = 'llama-3.3-70b-versatile'; // Large model for complex requests
-            } else {
-                model = 'llama-3.1-8b-instant'; // Fast model for simple requests
-            }
-            
-            console.log(`Auto-selected model: ${model} (complex=${isComplex}, length=${totalLength}, messages=${messages.length}, tools=${hasTools})`);
-        }
+        // Select provider from pool
+        // Priority: free tier first (groq-free), then paid providers
+        const freeProviders = providerPool.filter(p => p.type === 'groq-free' || p.type === 'gemini-free');
+        const paidProviders = providerPool.filter(p => p.type !== 'groq-free' && p.type !== 'gemini-free');
         
-        // Determine target URL and API key based on provider
-        const { provider: detectedProvider } = parseProviderModel(model);
-        const provider = body.provider || detectedProvider;
-        const apiKey = provider === 'groq' 
-            ? process.env.GROQ_API_KEY 
-            : process.env.OPENAI_API_KEY;
+        // Try free providers first, then paid
+        // Use 'let' to allow provider switching on rate limits
+        let selectedProvider = freeProviders[0] || paidProviders[0];
         
-        if (!apiKey) {
+        if (!selectedProvider) {
             sseWriter.writeEvent('error', {
-                error: `API key not configured for provider: ${provider}`,
+                error: 'No providers available in pool (this should not happen)',
                 code: 'CONFIGURATION_ERROR'
             });
             responseStream.end();
             return;
         }
         
-        const targetUrl = body.targetUrl || 
-            (provider === 'groq' 
-                ? 'https://api.groq.com/openai/v1/chat/completions'
-                : process.env.OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions');
+        console.log(`🎯 Selected provider: ${selectedProvider.type} (source: ${selectedProvider.source})`);
+        
+        // Helper function to get endpoint URL for a provider
+        const getEndpointUrl = (provider) => {
+            if (provider.apiEndpoint) {
+                const baseUrl = provider.apiEndpoint.replace(/\/$/, '');
+                return baseUrl.endsWith('/chat/completions') 
+                    ? baseUrl 
+                    : `${baseUrl}/chat/completions`;
+            } else if (provider.type === 'groq-free' || provider.type === 'groq') {
+                return 'https://api.groq.com/openai/v1/chat/completions';
+            } else if (provider.type === 'openai') {
+                return 'https://api.openai.com/v1/chat/completions';
+            } else if (provider.type === 'gemini-free' || provider.type === 'gemini') {
+                return 'https://generativelanguage.googleapis.com/v1beta/chat/completions';
+            } else if (provider.type === 'together') {
+                return 'https://api.together.xyz/v1/chat/completions';
+            }
+            return null;
+        };
+        
+        // Helper function to select appropriate model for a provider
+        const selectModelForProvider = (provider, requestedModel, isComplex) => {
+            if (provider.modelName) {
+                return provider.modelName;
+            } else if (provider.type === 'groq-free' || provider.type === 'groq') {
+                const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'llama-3.1-70b-versatile'];
+                if (requestedModel && groqModels.includes(requestedModel)) {
+                    return requestedModel;
+                }
+                return isComplex ? 'llama-3.3-70b-versatile' : 'llama-3.1-8b-instant';
+            } else if (provider.type === 'openai') {
+                const openaiModels = ['gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+                if (requestedModel && openaiModels.includes(requestedModel)) {
+                    return requestedModel;
+                }
+                return isComplex ? 'gpt-4o' : 'gpt-4o-mini';
+            } else if (provider.type === 'gemini-free' || provider.type === 'gemini') {
+                return 'gemini-1.5-flash';
+            } else if (provider.type === 'together') {
+                return 'meta-llama/Llama-3-70b-chat-hf';
+            }
+            return 'gpt-4o-mini'; // Safe default
+        };
+        
+        // Determine API endpoint based on provider type
+        let targetUrl = getEndpointUrl(selectedProvider);
+        if (!targetUrl) {
+            sseWriter.writeEvent('error', {
+                error: `Unknown provider type: ${selectedProvider.type}`,
+                code: 'CONFIGURATION_ERROR'
+            });
+            responseStream.end();
+            return;
+        }
+        
+        let apiKey = selectedProvider.apiKey;
+        
+        // Quick heuristic: check message complexity for model selection
+        const totalLength = messages.reduce((sum, msg) => 
+            sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0
+        );
+        const hasTools = tools && tools.length > 0;
+        const isComplex = totalLength > 1000 || messages.length > 5 || hasTools;
+        
+        // Validate/override model based on selected provider type
+        // This ensures model compatibility regardless of what the UI sent
+        const requestedModel = model; // Save original request
+        
+        model = selectModelForProvider(selectedProvider, model, isComplex);
+        
+        if (requestedModel && requestedModel !== model) {
+            console.log(`⚠️ Model override: requested "${requestedModel}" incompatible with provider ${selectedProvider.type}, using "${model}" instead`);
+        } else if (!requestedModel) {
+            console.log(`🤖 Auto-selected model: ${model} (provider: ${selectedProvider.type}, complex: ${isComplex})`);
+        } else {
+            console.log(`✅ Using requested model: ${model} (provider: ${selectedProvider.type})`);
+        }
+        
+        let provider = selectedProvider.type;
         
         // Build tool context
         const toolContext = {
@@ -526,6 +595,8 @@ async function handler(event, responseStream) {
             timestamp: new Date().toISOString()
         };
         
+        const hasToolsConfigured = Array.isArray(tools) && tools.length > 0;
+
         // Send status event
         sseWriter.writeEvent('status', {
             status: 'processing',
@@ -537,6 +608,7 @@ async function handler(event, responseStream) {
         let currentMessages = [...messages];
         let iterationCount = 0;
         const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 15;
+        let jsonToolCallReminderCount = 0;
         
         // Track all LLM API calls across iterations
         const allLlmApiCalls = [];
@@ -605,8 +677,19 @@ async function handler(event, responseStream) {
             };
             
             // Add tools only if provided
-            if (tools && tools.length > 0) {
+            if (hasToolsConfigured) {
                 requestBody.tools = tools;
+                if (requestBody.tool_choice === undefined) {
+                    requestBody.tool_choice = body.tool_choice || 'required';
+                }
+                // CRITICAL: Cannot set response_format when using tools/function calling
+                // This causes "json mode cannot be combined with tool/function calling" error
+                // The API will return JSON for tool calls automatically
+                if (body.parallel_tool_calls !== undefined) {
+                    requestBody.parallel_tool_calls = body.parallel_tool_calls;
+                } else if (requestBody.parallel_tool_calls === undefined) {
+                    requestBody.parallel_tool_calls = false;
+                }
             }
             
             // Store request body for error reporting
@@ -627,18 +710,154 @@ async function handler(event, responseStream) {
                 timestamp: new Date().toISOString()
             });
             
-            // Make streaming request
-            const response = await makeStreamingRequest(targetUrl, apiKey, requestBody);
+            // Make streaming request with smart retry logic
+            let response, httpHeaders, httpStatus;
+            let lastError = null;
+            const maxRetries = 3;
+            const attemptedModels = new Set([model]);
+            const attemptedProviders = new Set([selectedProvider.id]);
+            let sameModelRetries = 0;
             
-            // Capture HTTP headers from response
-            const httpHeaders = response.httpHeaders || {};
-            const httpStatus = response.httpStatus;
+            for (let retryAttempt = 0; retryAttempt < maxRetries; retryAttempt++) {
+                try {
+                    const currentRequestBody = {
+                        ...requestBody,
+                        model: requestBody.model || model
+                    };
+                    
+                    console.log(`🔄 Attempt ${retryAttempt + 1}/${maxRetries}: provider=${provider}, model=${currentRequestBody.model}`);
+                    
+                    response = await makeStreamingRequest(targetUrl, apiKey, currentRequestBody);
+                    
+                    httpHeaders = response.httpHeaders || {};
+                    httpStatus = response.httpStatus;
+                    console.log(`✅ Request succeeded on attempt ${retryAttempt + 1}`);
+                    break;
+                    
+                } catch (error) {
+                    lastError = error;
+                    console.error(`❌ Attempt ${retryAttempt + 1} failed:`, error.message);
+                    console.log(`🔍 Error details: statusCode=${error.statusCode}, code=${error.code}, message=${error.message?.substring(0, 200)}`);
+                    
+                    const isRateLimitError = 
+                        error.message?.includes('Rate limit') ||
+                        error.message?.includes('rate limit') ||
+                        error.message?.includes('rate_limit_exceeded') ||
+                        error.message?.includes('tokens per day') ||
+                        error.message?.includes('TPD') ||
+                        error.message?.includes('429') ||
+                        error.statusCode === 429;
+                    
+                    const isNetworkError = 
+                        error.code === 'ECONNRESET' ||
+                        error.code === 'ETIMEDOUT' ||
+                        error.code === 'ECONNREFUSED' ||
+                        error.message?.includes('timeout') ||
+                        error.message?.includes('network') ||
+                        (error.statusCode >= 500 && error.statusCode < 600);
+                    
+                    const isLastAttempt = retryAttempt === maxRetries - 1;
+                    
+                    // Handle rate limit: try different models on same provider, then switch provider
+                    if (isRateLimitError) {
+                        console.log(`🔀 Rate limit hit on provider ${provider}, model ${model}`);
+                        
+                        // Define fallback models for each provider type
+                        const providerModelFallbacks = {
+                            'openai': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
+                            'openai-compatible': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
+                            'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+                            'groq-free': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
+                        };
+                        
+                        // First, try other models on the same provider
+                        const fallbackModels = providerModelFallbacks[selectedProvider.type] || [];
+                        const nextModel = fallbackModels.find(m => !attemptedModels.has(m));
+                        
+                        if (nextModel) {
+                            // Try different model on same provider
+                            model = nextModel;
+                            attemptedModels.add(model);
+                            
+                            // Update request body
+                            requestBody.model = model;
+                            if (lastRequestBody) {
+                                lastRequestBody.model = model;
+                                if (lastRequestBody.request) {
+                                    lastRequestBody.request.model = model;
+                                }
+                            }
+                            
+                            console.log(`🔄 Trying different model on same provider: ${model} (${selectedProvider.type})`);
+                            continue; // Retry with new model
+                        }
+                        
+                        // All models exhausted on this provider, try next provider
+                        console.log(`⚠️ All models exhausted on provider ${provider}`);
+                        const nextProvider = providerPool.find(p => !attemptedProviders.has(p.id));
+                        
+                        if (nextProvider) {
+                            // Switch to new provider
+                            selectedProvider = nextProvider;
+                            provider = selectedProvider.type;
+                            apiKey = selectedProvider.apiKey;
+                            targetUrl = getEndpointUrl(selectedProvider);
+                            model = selectModelForProvider(selectedProvider, requestedModel, isComplex);
+                            
+                            attemptedProviders.add(selectedProvider.id);
+                            attemptedModels.add(model);
+                            
+                            // Update request body
+                            requestBody.model = model;
+                            if (lastRequestBody) {
+                                lastRequestBody.provider = provider;
+                                lastRequestBody.model = model;
+                                if (lastRequestBody.request) {
+                                    lastRequestBody.request.model = model;
+                                }
+                            }
+                            
+                            console.log(`🚀 Switching to provider: ${provider}, model: ${model}`);
+                            continue; // Retry with new provider
+                        }
+                        
+                        // No more providers or models available
+                        console.error(`🛑 Rate limit on all available providers and models (tried ${attemptedProviders.size} provider(s), ${attemptedModels.size} model(s))`);
+                        console.log(`💡 Tip: Configure additional providers in your settings for better availability`);
+                        throw error;
+                    }
+                    
+                    // Handle network/server errors: retry same model with backoff
+                    if (isNetworkError) {
+                        sameModelRetries++;
+                        
+                        if (sameModelRetries >= 3 || isLastAttempt) {
+                            console.error(`🛑 Network error persists after ${sameModelRetries} retries`);
+                            throw error;
+                        }
+                        
+                        const backoffDelay = Math.min(1000 * Math.pow(2, sameModelRetries - 1), 5000);
+                        console.log(`⏳ Network error, retrying same model in ${backoffDelay}ms (attempt ${sameModelRetries}/3)...`);
+                        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                        continue;
+                    }
+                    
+                    // Other errors: fail immediately
+                    console.error(`🛑 Non-retryable error: ${error.message}`);
+                    throw error;
+                }
+            }
+            
+            if (!response) {
+                throw lastError || new Error('Request failed after all retries');
+            }
             
             console.log('📋 DEBUG chat endpoint - httpHeaders:', JSON.stringify(httpHeaders, null, 2));
             console.log('📊 DEBUG chat endpoint - httpStatus:', httpStatus);
             
             // Parse streaming response
             let assistantMessage = { role: 'assistant', content: '' };
+            let assistantMessageRecorded = false;
             let currentToolCalls = [];
             let hasToolCalls = false;
             let finishReason = null;
@@ -718,10 +937,13 @@ async function handler(event, responseStream) {
             }
             
             // Create LLM API call tracking object
+            // Structure: Top-level provider, model, phase for easy UI access
             const llmApiCall = {
+                provider: provider,
+                model: model,
+                phase: 'chat_iteration',
+                iteration: iterationCount,
                 request: {
-                    model: model,
-                    provider: provider,
                     messages: cleanMessages.length,
                     temperature: temperature,
                     max_tokens: max_tokens
@@ -732,6 +954,8 @@ async function handler(event, responseStream) {
                     finish_reason: finishReason,
                     usage: finalUsage // Use actual or estimated usage
                 },
+                httpHeaders: httpHeaders || {},
+                httpStatus: httpStatus,
                 timestamp: new Date().toISOString()
             };
             
@@ -782,6 +1006,31 @@ async function handler(event, responseStream) {
             
             console.log(`🔍 Tool execution decision: iteration=${iterationCount}, hasToolCalls=${hasToolCalls}, finishReason=${finishReason}, contentLength=${assistantMessage.content.length}, hasSubstantiveAnswer=${hasSubstantiveAnswer}, tooManyIterations=${tooManyIterations}, shouldExecuteTools=${shouldExecuteTools}`);
             
+            const containsLegacyToolSyntax = LEGACY_TOOL_CALL_REGEX.test(assistantMessage.content || '');
+            const missingStructuredToolCall = hasToolsConfigured && (!hasToolCalls || currentToolCalls.length === 0);
+
+            if (missingStructuredToolCall && containsLegacyToolSyntax && jsonToolCallReminderCount < MAX_JSON_TOOL_REMINDERS) {
+                jsonToolCallReminderCount++;
+                assistantMessageRecorded = true;
+                currentMessages.push(assistantMessage);
+
+                const reminderPayload = `${JSON_TOOL_CALL_REMINDER_TEXT}\n\nYour previous reply contained unsupported syntax like "<function=...>". Call the appropriate tool with valid JSON arguments only.`;
+                currentMessages.push({
+                    role: 'user',
+                    content: reminderPayload
+                });
+
+                sseWriter.writeEvent('status', {
+                    status: 'retrying',
+                    reason: 'json_tool_call_reminder',
+                    reminderCount: jsonToolCallReminderCount,
+                    timestamp: new Date().toISOString()
+                });
+
+                console.warn(`🔁 Reinforcing JSON tool call requirement (reminder ${jsonToolCallReminderCount}/${MAX_JSON_TOOL_REMINDERS})`);
+                continue;
+            }
+
             // If tool calls detected and should execute
             if (shouldExecuteTools) {
                 // Filter out empty tool calls
@@ -804,6 +1053,7 @@ async function handler(event, responseStream) {
                         llmApiCalls: allLlmApiCalls // Include all accumulated token usage data
                     });
                     
+                    assistantMessageRecorded = true;
                     currentMessages.push(assistantMessage);
                     
                     // Execute tools
@@ -984,14 +1234,17 @@ async function handler(event, responseStream) {
                 const searchResultLinks = uniqueUrls.filter(u => u.isSearchResult);
                 const scrapedLinks = uniqueUrls.filter(u => !u.isSearchResult);
                 
-                // Prioritize links: search results first, then most relevant scraped links
+                // Prioritize links: search results first, then top 5 most relevant scraped links
                 const prioritizedLinks = [
                     ...searchResultLinks,
-                    ...scrapedLinks.slice(0, 10) // Top 10 scraped links
+                    ...scrapedLinks.slice(0, 5) // Top 5 scraped links (reduced from 10)
                 ];
                 
-                // All links for expandable section (search results + all scraped)
-                const allLinks = uniqueUrls;
+                // Limit all links for expandable section (search results + top 20 scraped)
+                const allLinks = [
+                    ...searchResultLinks,
+                    ...scrapedLinks.slice(0, 20) // Limit total scraped links
+                ];
                 
                 // Separate YouTube videos from regular videos
                 const youtubeVideos = uniqueVideos.filter(v => 
@@ -1076,7 +1329,10 @@ async function handler(event, responseStream) {
             }
             
             // No tool calls or final response - send completion
-            currentMessages.push(assistantMessage);
+            if (!assistantMessageRecorded) {
+                currentMessages.push(assistantMessage);
+                assistantMessageRecorded = true;
+            }
             
             console.log(`📤 Sending final response: ${assistantMessage.content.length} chars`);
             console.log(`📤 Preview: ${assistantMessage.content.substring(0, 100)}...`);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { JsonTree } from './JsonTree';
+import { calculateCost, formatCost, getCostBreakdown } from '../utils/pricing';
 
 interface LlmApiCall {
   phase: string;
@@ -192,13 +193,31 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
                     </div>
                   </div>
                   
-                  {/* Response metadata with timing and token info */}
+                  {/* Response metadata with timing, tokens, and cost info */}
                   <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
                     {call.response ? (
                       <>
-                        {tokensIn > 0 && <span>📥 {tokensIn.toLocaleString()} in</span>}
-                        {tokensOut > 0 && <span>📤 {tokensOut.toLocaleString()} out</span>}
-                        {totalTokens > 0 && <span>📊 {totalTokens.toLocaleString()} total</span>}
+                        {/* Cost Information */}
+                        {(() => {
+                          const cost = calculateCost(call.model, tokensIn, tokensOut);
+                          const breakdown = getCostBreakdown(call.model, tokensIn, tokensOut);
+                          
+                          if (breakdown.hasPricing && cost !== null) {
+                            return (
+                              <span className="font-semibold text-green-600 dark:text-green-400" title={`Input: ${formatCost(breakdown.inputCost)} • Output: ${formatCost(breakdown.outputCost)}`}>
+                                💰 {formatCost(cost)}
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                        
+                        {/* Token counts (smaller, secondary) */}
+                        {tokensIn > 0 && <span className="text-xs opacity-75">📥 {tokensIn.toLocaleString()}</span>}
+                        {tokensOut > 0 && <span className="text-xs opacity-75">📤 {tokensOut.toLocaleString()}</span>}
+                        {totalTokens > 0 && <span className="text-xs opacity-75">📊 {totalTokens.toLocaleString()}</span>}
+                        
+                        {/* Timing information */}
                         {totalTime && <span>⏱️ {totalTime.toFixed(3)}s</span>}
                         {queueTime && <span>⏳ queue: {queueTime.toFixed(3)}s</span>}
                         {promptTime && <span>🔄 prompt: {promptTime.toFixed(3)}s</span>}

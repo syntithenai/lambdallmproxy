@@ -1,6 +1,7 @@
 import React from 'react';
 import { JsonTree } from './JsonTree';
 import { useDialogClose } from '../hooks/useDialogClose';
+import { calculateCost, formatCost, getCostBreakdown } from '../utils/pricing';
 
 interface LlmApiCall {
   phase: string;
@@ -109,13 +110,13 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
     return model.replace(/^(openai:|groq:|anthropic:)/, '');
   };
 
-  // Calculate total tokens
-  const totalTokensIn = apiCalls.reduce((sum, call) => 
-    sum + (call.response?.usage?.prompt_tokens || 0), 0);
-  const totalTokensOut = apiCalls.reduce((sum, call) => 
-    sum + (call.response?.usage?.completion_tokens || 0), 0);
-  const totalTokens = apiCalls.reduce((sum, call) => 
-    sum + (call.response?.usage?.total_tokens || 0), 0);
+  // Calculate total cost across all calls
+  const totalCost = apiCalls.reduce((sum, call) => {
+    const tokensIn = call.response?.usage?.prompt_tokens || 0;
+    const tokensOut = call.response?.usage?.completion_tokens || 0;
+    const cost = calculateCost(call.model, tokensIn, tokensOut);
+    return sum + (cost || 0);
+  }, 0);
 
   return (
     <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -128,10 +129,10 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
             </h3>
             <div className="flex gap-4 mt-1 text-sm text-gray-600 dark:text-gray-400">
               <span>{apiCalls.length} call{apiCalls.length !== 1 ? 's' : ''}</span>
-              {totalTokens > 0 && (
+              {totalCost > 0 && (
                 <>
                   <span>•</span>
-                  <span className="font-medium">Total: 📥 {totalTokensIn.toLocaleString()} in • 📤 {totalTokensOut.toLocaleString()} out • 📊 {totalTokens.toLocaleString()} total</span>
+                  <span className="font-semibold text-green-600 dark:text-green-400">💰 Total Cost: {formatCost(totalCost)}</span>
                 </>
               )}
             </div>
@@ -150,7 +151,6 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
           {apiCalls.map((call, index) => {
             const tokensIn = call.response?.usage?.prompt_tokens || 0;
             const tokensOut = call.response?.usage?.completion_tokens || 0;
-            const callTotal = call.response?.usage?.total_tokens || 0;
             
             // Extract timing information
             const queueTime = call.response?.usage?.queue_time;
@@ -181,13 +181,35 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
                     </div>
                   </div>
                   
-                  {/* Response metadata with timing and token info */}
+                  {/* Response metadata with cost, timing, and token info */}
                   <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
                     {call.response ? (
                       <>
-                        {tokensIn > 0 && <span className="font-medium">📥 {tokensIn.toLocaleString()} in</span>}
-                        {tokensOut > 0 && <span className="font-medium">📤 {tokensOut.toLocaleString()} out</span>}
-                        {callTotal > 0 && <span className="font-medium">📊 {callTotal.toLocaleString()} total</span>}
+                        {/* Cost Information (Primary) */}
+                        {(() => {
+                          const cost = calculateCost(call.model, tokensIn, tokensOut);
+                          const breakdown = getCostBreakdown(call.model, tokensIn, tokensOut);
+                          
+                          if (breakdown.hasPricing && cost !== null) {
+                            return (
+                              <span className="font-semibold text-green-600 dark:text-green-400" title={`Input: ${formatCost(breakdown.inputCost)} • Output: ${formatCost(breakdown.outputCost)}`}>
+                                💰 {formatCost(cost)}
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                        
+                        {/* Token counts (Secondary, smaller) - show breakdown only if we have the data */}
+                        {(tokensIn > 0 || tokensOut > 0) && (
+                          <span className="opacity-75">
+                            {tokensIn > 0 && `📥 ${tokensIn.toLocaleString()} in`}
+                            {tokensIn > 0 && tokensOut > 0 && ' • '}
+                            {tokensOut > 0 && `� ${tokensOut.toLocaleString()} out`}
+                          </span>
+                        )}
+                        
+                        {/* Timing information */}
                         {totalTime && <span>⏱️ {totalTime.toFixed(3)}s</span>}
                         {queueTime && <span>⏳ queue: {queueTime.toFixed(3)}s</span>}
                         {promptTime && <span>🔄 prompt: {promptTime.toFixed(3)}s</span>}
@@ -264,9 +286,9 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
         {/* Dialog Footer */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
           <div className="text-sm text-gray-600 dark:text-gray-400">
-            {totalTokens > 0 && (
-              <span className="font-medium">
-                Total Tokens: 📥 {totalTokensIn.toLocaleString()} in • 📤 {totalTokensOut.toLocaleString()} out • 📊 {totalTokens.toLocaleString()} total
+            {totalCost > 0 && (
+              <span className="font-semibold text-green-600 dark:text-green-400">
+                💰 Total Cost: {formatCost(totalCost)}
               </span>
             )}
           </div>

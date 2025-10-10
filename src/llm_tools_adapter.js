@@ -123,6 +123,10 @@ function normalizeFromChat(responseWithHeaders) {
 }
 
 async function llmResponsesWithTools({ model, input, tools, options }) {
+  const toolsConfigured = Array.isArray(tools) && tools.length > 0;
+  const defaultToolChoice = toolsConfigured ? 'required' : 'auto';
+  const defaultResponseFormat = toolsConfigured ? { type: 'json_object' } : undefined;
+
   // Default parameters optimized for comprehensive, detailed, verbose responses
   const temperature = options?.temperature ?? 0.8;
   const max_tokens = options?.max_tokens ?? 4096;
@@ -166,13 +170,19 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       model: normalizedModel.replace(/^openai:/, ''),
       messages,
       tools,
-      tool_choice: 'auto',
+      tool_choice: options?.tool_choice ?? defaultToolChoice,
+      // CRITICAL: Cannot set response_format when using tools/function calling
+      // Only include response_format if NO tools are provided
+      ...((!tools || tools.length === 0) && { response_format: options?.response_format ?? defaultResponseFormat }),
       temperature,
       max_tokens,
       top_p,
       frequency_penalty,
       presence_penalty
     };
+    if (options?.parallel_tool_calls !== undefined) {
+      payload.parallel_tool_calls = options.parallel_tool_calls;
+    }
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${options?.apiKey || process.env.OPENAI_API_KEY}`
@@ -204,7 +214,10 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       model: normalizedModel.replace(/^groq:/, ''),
       messages,
       tools,
-      tool_choice: 'auto',
+      tool_choice: options?.tool_choice ?? defaultToolChoice,
+      // CRITICAL: Cannot set response_format when using tools/function calling
+      // Only include response_format if NO tools are provided
+      ...((!tools || tools.length === 0) && { response_format: options?.response_format ?? defaultResponseFormat }),
       temperature,
       max_tokens,
       top_p,
@@ -212,6 +225,9 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       presence_penalty,
       ...mapReasoningForGroq(normalizedModel, options)
     };
+    if (options?.parallel_tool_calls !== undefined) {
+      payload.parallel_tool_calls = options.parallel_tool_calls;
+    }
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${options?.apiKey || process.env.GROQ_API_KEY}`

@@ -20,7 +20,7 @@ const {
 const {
     MAX_TOOL_ITERATIONS,
     DEFAULT_REASONING_EFFORT,
-    COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT
+    getComprehensiveResearchSystemPrompt
 } = require('../../src/config/prompts');
 
 describe('Configuration Modules', () => {
@@ -57,13 +57,14 @@ describe('Configuration Modules', () => {
         test('should export prompt constants', () => {
             expect(typeof MAX_TOOL_ITERATIONS).toBe('number');
             expect(typeof DEFAULT_REASONING_EFFORT).toBe('string');
-            expect(typeof COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT).toBe('string');
+            expect(typeof getComprehensiveResearchSystemPrompt).toBe('function');
         });
 
         test('should have reasonable defaults', () => {
             expect(MAX_TOOL_ITERATIONS).toBeGreaterThan(0);
             expect(DEFAULT_REASONING_EFFORT).toMatch(/low|medium|high/);
-            expect(COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT).toContain('TOOL USAGE GUIDELINES');
+            const prompt = getComprehensiveResearchSystemPrompt();
+            expect(prompt).toContain('CRITICAL JSON TOOL CALL RULES');
         });
     });
 });

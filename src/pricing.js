@@ -169,10 +169,9 @@ function parseGroqPricing(html) {
     
     // Common Groq model patterns and pricing extraction
     const modelPatterns = [
-        { pattern: /llama-3\.1-70b[^$]*\$([0-9.]+)[^$]*input[^$]*\$([0-9.]+)[^$]*output/i, model: 'llama-3.1-70b-versatile' },
+        { pattern: /llama-3\.3-70b[^$]*\$([0-9.]+)[^$]*input[^$]*\$([0-9.]+)[^$]*output/i, model: 'llama-3.3-70b-versatile' },
         { pattern: /llama-3\.1-8b[^$]*\$([0-9.]+)[^$]*input[^$]*\$([0-9.]+)[^$]*output/i, model: 'llama-3.1-8b-instant' },
-        { pattern: /mixtral-8x7b[^$]*\$([0-9.]+)[^$]*input[^$]*\$([0-9.]+)[^$]*output/i, model: 'mixtral-8x7b-32768' },
-        { pattern: /gemma-7b[^$]*\$([0-9.]+)[^$]*input[^$]*\$([0-9.]+)[^$]*output/i, model: 'gemma-7b-it' },
+        { pattern: /mixtral-8x7b[^$]*\$([0-9.]+)[^$]*input[^$]*\$([0-9.]+)[^$]*output/i, model: 'mixtral-8x7b-32768' }
     ];
     
     for (const { pattern, model } of modelPatterns) {
@@ -189,10 +188,9 @@ function parseGroqPricing(html) {
     if (Object.keys(pricing.models).length === 0) {
         console.warn('Failed to parse Groq pricing, using fallback values');
         pricing.models = {
-            'llama-3.1-70b-versatile': { input: 0.00000059, output: 0.00000079 },
+            'llama-3.3-70b-versatile': { input: 0.00000059, output: 0.00000079 },
             'llama-3.1-8b-instant': { input: 0.00000005, output: 0.00000008 },
-            'mixtral-8x7b-32768': { input: 0.00000024, output: 0.00000024 },
-            'gemma-7b-it': { input: 0.00000007, output: 0.00000007 }
+            'mixtral-8x7b-32768': { input: 0.00000024, output: 0.00000024 }
         };
     }
     

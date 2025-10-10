@@ -30,15 +30,15 @@ describe('Proxy Endpoint', () => {
             expect(result.errors).toHaveLength(0);
         });
         
-        it('should reject request without model', () => {
+        it('should accept request without model (uses intelligent selection)', () => {
             const body = {
                 messages: [{ role: 'user', content: 'Test' }]
             };
             
             const result = validateOpenAIRequest(body);
             
-            expect(result.isValid).toBe(false);
-            expect(result.errors).toContain('model field is required and must be a string');
+            expect(result.isValid).toBe(true);
+            expect(result.errors).toHaveLength(0);
         });
         
         it('should reject request without messages', () => {
