@@ -142,9 +142,10 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                 statusCode: oauthResponse.statusCode,
                 headers: oauthResponse.headers
             };
-            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-            responseStream.write(oauthResponse.body);
-            responseStream.end();
+            const httpResponseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            httpResponseStream.write(oauthResponse.body);
+            httpResponseStream.end();
+            console.log('OAuth callback response sent');
             return;
         }
         
