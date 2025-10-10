@@ -177,6 +177,7 @@ CRITICAL TOOL USAGE RULES:
 - DO NOT describe what you would do - ACTUALLY CALL THE TOOL using the function calling mechanism
 - The system will automatically execute your tool calls and provide you with results
 - After receiving tool results, incorporate them naturally into your response
+- IMPORTANT: After execute_javascript returns a result, provide the final answer to the user IMMEDIATELY. Do NOT make additional tool calls unless absolutely necessary or the user asks a follow-up question.
 
 Examples when you MUST use tools:
 - "transcribe this video https://youtube.com/watch?v=abc" → Call transcribe_url with url parameter
