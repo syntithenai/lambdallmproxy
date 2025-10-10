@@ -65,3 +65,4 @@ output.txt
 # Backup files with secrets
 *.env.backup.*
 ENV_AUDIT_AND_CLEANUP_*.md
+output.txt
