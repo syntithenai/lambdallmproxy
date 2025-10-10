@@ -4,6 +4,7 @@ import { useSearchResults } from '../contexts/SearchResultsContext';
 import { usePlaylist } from '../contexts/PlaylistContext';
 import { useSwag } from '../contexts/SwagContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
@@ -50,6 +51,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   setShowMCPDialog
 }) => {
   const { accessToken } = useAuth();
+  const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracks } = usePlaylist();
   const { addSnippet } = useSwag();
@@ -917,6 +919,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         console.log('Sending streaming request with tools:', tools.map(t => t.function.name));
       }
       
+      // Get YouTube OAuth token if available
+      const youtubeToken = await getYouTubeToken();
+      
       // Use streaming API
       await sendChatMessageStreaming(
         requestPayload,
@@ -1494,7 +1499,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           setToolStatus([]);
           abortControllerRef.current = null;
         },
-        abortControllerRef.current.signal
+        abortControllerRef.current.signal,
+        youtubeToken // Pass YouTube OAuth token if available
       );
     } catch (error) {
       console.error('Chat error:', error);

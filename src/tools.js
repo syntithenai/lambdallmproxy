@@ -1202,7 +1202,31 @@ Brief answer with URLs:`;
       if (!url) return JSON.stringify({ error: 'url required' });
 
       try {
-        // Extract onProgress callback and toolCallId from context if available
+        // Check if YouTube URL and if OAuth token is available
+        const isYouTubeUrl = /youtube\.com|youtu\.be|youtube\.com\/shorts/.test(url);
+        const youtubeAccessToken = context.youtubeAccessToken || null;
+
+        // Prioritize YouTube Transcript API if token available
+        if (isYouTubeUrl && youtubeAccessToken) {
+          console.log('Using YouTube Transcript API (OAuth authenticated)');
+          try {
+            const { getYouTubeTranscript } = require('./youtube-api');
+            const transcript = await getYouTubeTranscript(url, youtubeAccessToken);
+            
+            return JSON.stringify({
+              text: transcript,
+              source: 'youtube_api',
+              url,
+              language: 'auto-detected'
+            });
+          } catch (ytError) {
+            console.warn('YouTube API failed, falling back to Whisper:', ytError.message);
+            // Fall through to Whisper transcription
+          }
+        }
+
+        // Fallback: Whisper transcription (existing behavior)
+        console.log('Using Whisper API for transcription');
         const onProgress = context.onProgress || null;
         const toolCallId = context.toolCallId || null;
 
@@ -1230,7 +1254,10 @@ Brief answer with URLs:`;
           toolCallId
         });
 
-        return JSON.stringify(result);
+        return JSON.stringify({
+          ...result,
+          source: 'whisper'
+        });
       } catch (error) {
         console.error('Transcribe tool error:', error);
         return JSON.stringify({ 

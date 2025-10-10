@@ -196,7 +196,8 @@ export const sendChatMessageStreaming = async (
   onEvent: (event: string, data: any) => void,
   onComplete?: () => void,
   onError?: (error: Error) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  youtubeToken?: string | null
 ): Promise<void> => {
   const { createSSERequest, handleSSEResponse } = await import('./streaming');
   
@@ -204,7 +205,8 @@ export const sendChatMessageStreaming = async (
     `${API_BASE}/chat`,
     request,
     token,
-    signal
+    signal,
+    youtubeToken
   );
   
   await handleSSEResponse(response, onEvent, onComplete, onError);

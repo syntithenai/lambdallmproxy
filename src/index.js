@@ -21,6 +21,7 @@ const chatEndpoint = require('./endpoints/chat');
 const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
+const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 
 /**
  * Handle CORS preflight requests
@@ -129,6 +130,46 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(transcribeResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        // OAuth2 endpoints (buffered responses)
+        if (method === 'GET' && path === '/oauth/callback') {
+            console.log('Routing to OAuth callback endpoint');
+            const oauthResponse = await oauthCallbackEndpoint(event);
+            const metadata = {
+                statusCode: oauthResponse.statusCode,
+                headers: oauthResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(oauthResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        if (method === 'POST' && path === '/oauth/refresh') {
+            console.log('Routing to OAuth refresh endpoint');
+            const refreshResponse = await oauthRefreshEndpoint(event);
+            const metadata = {
+                statusCode: refreshResponse.statusCode,
+                headers: refreshResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(refreshResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        if (method === 'POST' && path === '/oauth/revoke') {
+            console.log('Routing to OAuth revoke endpoint');
+            const revokeResponse = await oauthRevokeEndpoint(event);
+            const metadata = {
+                statusCode: revokeResponse.statusCode,
+                headers: revokeResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(revokeResponse.body);
             responseStream.end();
             return;
         }

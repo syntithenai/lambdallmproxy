@@ -112,21 +112,30 @@ export async function handleSSEResponse(
  * @param body - Request body
  * @param token - Authorization token
  * @param signal - AbortSignal for cancellation (optional)
+ * @param youtubeToken - Optional YouTube OAuth access token
  * @returns Fetch response promise
  */
 export async function createSSERequest(
   url: string,
   body: any,
   token: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  youtubeToken?: string | null
 ): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'text/event-stream'
+  };
+
+  // Add YouTube OAuth token if available
+  if (youtubeToken) {
+    headers['X-YouTube-Token'] = youtubeToken;
+  }
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'text/event-stream'
-    },
+    headers,
     body: JSON.stringify(body),
     signal
   });

@@ -463,6 +463,12 @@ async function handler(event, responseStream) {
             googleToken = authHeader.substring(7);
         }
         
+        // Extract YouTube OAuth token from custom header (for YouTube Transcript API)
+        const youtubeToken = event.headers['x-youtube-token'] || event.headers['X-YouTube-Token'] || null;
+        if (youtubeToken) {
+            console.log('YouTube OAuth token detected for transcript access');
+        }
+        
         // Set verified user from auth result
         const verifiedUser = authResult.user;
         
@@ -591,6 +597,7 @@ async function handler(event, responseStream) {
             model,
             apiKey,
             googleToken,
+            youtubeAccessToken: youtubeToken, // Pass YouTube OAuth token for transcript access
             tavilyApiKey,
             timestamp: new Date().toISOString()
         };

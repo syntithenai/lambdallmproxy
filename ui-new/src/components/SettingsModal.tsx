@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
+import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import type { Settings } from '../types/provider';
 import { ProviderList } from './ProviderList';
 
@@ -27,6 +28,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenMCPDialog 
 }) => {
   const { settings, setSettings } = useSettings();
+  const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
 
   const [tempSettings, setTempSettings] = useState<Settings>(settings);
   const [activeTab, setActiveTab] = useState<'provider' | 'tools'>('provider');
@@ -214,6 +216,98 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               </label>
+            </div>
+          </div>
+
+          {/* YouTube Transcripts OAuth */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              🎬 YouTube Transcripts
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Enable direct access to YouTube transcripts using Google's API. 
+              Faster and more accurate than audio transcription.
+            </p>
+            
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 mt-0.5">
+                  {isConnected ? (
+                    <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isConnected}
+                        disabled={isLoading}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            initiateOAuthFlow();
+                          } else {
+                            if (confirm('Disconnect YouTube access? You can reconnect anytime.')) {
+                              disconnect();
+                            }
+                          }
+                        }}
+                        className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                      />
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                        {isLoading ? 'Connecting...' : 'Enable YouTube Transcripts'}
+                      </span>
+                    </label>
+                    
+                    {isConnected && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded-full">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        Connected
+                      </span>
+                    )}
+                  </div>
+                  
+                  {error && (
+                    <div className="mt-2 text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
+                      <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                      <span>{error}</span>
+                    </div>
+                  )}
+                  
+                  {isConnected && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => {
+                          if (confirm('Are you sure you want to disconnect YouTube access?')) {
+                            disconnect();
+                          }
+                        }}
+                        className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 underline"
+                      >
+                        Disconnect YouTube Access
+                      </button>
+                    </div>
+                  )}
+                  
+                  <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                    <p>✓ Much faster than audio transcription (seconds vs. minutes)</p>
+                    <p>✓ More accurate for videos with high-quality captions</p>
+                    <p>✓ Automatically falls back to Whisper if captions unavailable</p>
+                    <p>✓ Read-only access (cannot modify your YouTube account)</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

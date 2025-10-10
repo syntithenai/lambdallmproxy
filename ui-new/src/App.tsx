@@ -5,6 +5,7 @@ import { SearchResultsProvider } from './contexts/SearchResultsContext';
 import { PlaylistProvider } from './contexts/PlaylistContext';
 import { SwagProvider } from './contexts/SwagContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
+import { YouTubeAuthProvider } from './contexts/YouTubeAuthContext';
 import { ToastProvider } from './components/ToastManager';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
@@ -203,13 +204,15 @@ function App() {
       <ToastProvider>
         <AuthProvider>
           <SettingsProvider>
-            <PlaylistProvider>
-              <SearchResultsProvider>
-                <SwagProvider>
-                  <AppContent />
-                </SwagProvider>
-              </SearchResultsProvider>
-            </PlaylistProvider>
+            <YouTubeAuthProvider>
+              <PlaylistProvider>
+                <SearchResultsProvider>
+                  <SwagProvider>
+                    <AppContent />
+                  </SwagProvider>
+                </SearchResultsProvider>
+              </PlaylistProvider>
+            </YouTubeAuthProvider>
           </SettingsProvider>
         </AuthProvider>
       </ToastProvider>

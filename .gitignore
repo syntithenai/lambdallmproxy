@@ -61,3 +61,7 @@ temp/
 deployment/
 lambda get-function-configuration --function-name llmproxy --region us-east-1 --query Environment.Variables --output json
 output.txt
+
+# Backup files with secrets
+*.env.backup.*
+ENV_AUDIT_AND_CLEANUP_*.md
