@@ -14,10 +14,11 @@ const { createProgressEmitter } = require('../utils/progress-emitter');
 const { getOrEstimateUsage, providerReturnsUsage } = require('../utils/token-estimation');
 const { buildProviderPool, hasAvailableProviders } = require('../credential-pool');
 
+// NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
+// NOTE: llama-3.1-70b-versatile was decommissioned by Groq in Oct 2025
 const GROQ_RATE_LIMIT_FALLBACK_MODELS = [
     'llama-3.1-8b-instant',
-    'llama-3.3-70b-versatile',
-    'mixtral-8x7b-32768'
+    'llama-3.3-70b-versatile'
 ];
 
 const JSON_TOOL_CALL_REMINDER_TEXT = 'You must answer with a tool call using valid JSON arguments and no extra text. Use the official OpenAI function-calling format.';
@@ -241,8 +242,10 @@ async function makeStreamingRequest(targetUrl, apiKey, requestBody) {
                     let errorData = '';
                     res.on('data', (chunk) => errorData += chunk);
                     res.on('end', () => {
+                        console.error(`❌ API Error Response (${res.statusCode}):`, errorData);
                         try {
                             const error = JSON.parse(errorData);
+                            console.error('❌ Parsed API Error:', JSON.stringify(error, null, 2));
                             reject(new Error(error.error?.message || 'API request failed'));
                         } catch (e) {
                             reject(new Error(`API returned ${res.statusCode}: ${errorData}`));
@@ -283,10 +286,17 @@ async function makeStreamingRequest(targetUrl, apiKey, requestBody) {
 async function executeToolCalls(toolCalls, context, sseWriter) {
     const results = [];
     
+    // Get memory tracker for monitoring tool execution
+    const { getMemoryTracker } = require('../utils/memory-tracker');
+    const memoryTracker = getMemoryTracker();
+    
     for (const toolCall of toolCalls) {
         const { id, function: { name, arguments: args } } = toolCall;
         
         try {
+            // Memory snapshot before tool execution
+            memoryTracker.snapshot(`tool-start-${name}`);
+            
             sseWriter.writeEvent('tool_call_start', {
                 id,
                 name,
@@ -317,6 +327,11 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
             
             // Execute tool
             const result = await callFunction(name, parsedArgs, toolContext);
+            
+            // Memory snapshot after tool execution
+            memoryTracker.snapshot(`tool-end-${name}`);
+            const memUsage = memoryTracker.getCurrentUsage();
+            console.log(`🔧 Tool ${name} memory: ${memUsage.heapUsedMB.toFixed(2)}MB heap, ${memUsage.rssMB.toFixed(2)}MB RSS`);
             
             // Format result for LLM (compress search results)
             const formattedResult = formatToolResultForLLM(name, parsedArgs, result);
@@ -385,8 +400,14 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
  * @returns {Promise<void>}
  */
 async function handler(event, responseStream) {
+    const requestStartTime = Date.now(); // Track request start time for logging
     let sseWriter = null;
     let lastRequestBody = null; // Track last request for error reporting (moved to function scope)
+    
+    // Get memory tracker from parent handler
+    const { getMemoryTracker } = require('../utils/memory-tracker');
+    const memoryTracker = getMemoryTracker();
+    memoryTracker.snapshot('chat-handler-start');
     
     try {
         // Initialize SSE stream with proper headers
@@ -471,6 +492,7 @@ async function handler(event, responseStream) {
         
         // Set verified user from auth result
         const verifiedUser = authResult.user;
+        const userEmail = verifiedUser?.email || authResult.email || 'unknown';
         
         // Validate required fields
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -493,13 +515,33 @@ async function handler(event, responseStream) {
         }
         
         // Select provider from pool
-        // Priority: free tier first (groq-free), then paid providers
-        const freeProviders = providerPool.filter(p => p.type === 'groq-free' || p.type === 'gemini-free');
-        const paidProviders = providerPool.filter(p => p.type !== 'groq-free' && p.type !== 'gemini-free');
+        // Calculate estimated token count for context length determination
+        const estimatedTokens = messages.reduce((sum, msg) => {
+            const contentLength = typeof msg.content === 'string' ? msg.content.length : 0;
+            return sum + Math.ceil(contentLength / 4); // Rough estimate: 4 chars ≈ 1 token
+        }, 0);
         
-        // Try free providers first, then paid
-        // Use 'let' to allow provider switching on rate limits
-        let selectedProvider = freeProviders[0] || paidProviders[0];
+        // Priority for large context (>100K tokens): gemini-free > gemini > groq-free > other
+        // Priority for normal context: groq-free > openai > groq > gemini-free > gemini
+        const isLargeContext = estimatedTokens > 100000;
+        
+        let selectedProvider;
+        if (isLargeContext) {
+            // Large context: prefer Gemini (1M-2M token context window)
+            console.log(`📏 Large context detected (${estimatedTokens} tokens), prioritizing Gemini models`);
+            const geminiProviders = providerPool.filter(p => p.type === 'gemini-free' || p.type === 'gemini');
+            const otherProviders = providerPool.filter(p => p.type !== 'gemini-free' && p.type !== 'gemini');
+            selectedProvider = geminiProviders[0] || otherProviders[0];
+        } else {
+            // Normal context: prefer Groq over Gemini
+            const groqProviders = providerPool.filter(p => p.type === 'groq-free' || p.type === 'groq');
+            const otherProviders = providerPool.filter(p => p.type !== 'groq-free' && p.type !== 'groq');
+            const geminiProviders = otherProviders.filter(p => p.type === 'gemini-free' || p.type === 'gemini');
+            const nonGeminiOther = otherProviders.filter(p => p.type !== 'gemini-free' && p.type !== 'gemini');
+            
+            // Priority: groq > openai/other > gemini
+            selectedProvider = groqProviders[0] || nonGeminiOther[0] || geminiProviders[0];
+        }
         
         if (!selectedProvider) {
             sseWriter.writeEvent('error', {
@@ -524,9 +566,11 @@ async function handler(event, responseStream) {
             } else if (provider.type === 'openai') {
                 return 'https://api.openai.com/v1/chat/completions';
             } else if (provider.type === 'gemini-free' || provider.type === 'gemini') {
-                return 'https://generativelanguage.googleapis.com/v1beta/chat/completions';
+                return 'https://generativelanguage.googleapis.com/v1beta/openai/v1/chat/completions';
             } else if (provider.type === 'together') {
                 return 'https://api.together.xyz/v1/chat/completions';
+            } else if (provider.type === 'atlascloud') {
+                return 'https://api.atlascloud.ai/v1/chat/completions';
             }
             return null;
         };
@@ -536,7 +580,7 @@ async function handler(event, responseStream) {
             if (provider.modelName) {
                 return provider.modelName;
             } else if (provider.type === 'groq-free' || provider.type === 'groq') {
-                const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'llama-3.1-70b-versatile'];
+                const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
                 if (requestedModel && groqModels.includes(requestedModel)) {
                     return requestedModel;
                 }
@@ -548,9 +592,26 @@ async function handler(event, responseStream) {
                 }
                 return isComplex ? 'gpt-4o' : 'gpt-4o-mini';
             } else if (provider.type === 'gemini-free' || provider.type === 'gemini') {
-                return 'gemini-1.5-flash';
+                const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                if (requestedModel && geminiModels.includes(requestedModel)) {
+                    return requestedModel;
+                }
+                // Use gemini-2.5-flash for most requests (1M context)
+                // Use gemini-2.0-flash for ultra-large context (2M context)
+                return isComplex ? 'gemini-2.0-flash' : 'gemini-2.5-flash';
             } else if (provider.type === 'together') {
-                return 'meta-llama/Llama-3-70b-chat-hf';
+                const togetherModels = ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'];
+                if (requestedModel && requestedModel.includes('llama') || requestedModel.includes('deepseek')) {
+                    return requestedModel;
+                }
+                return isComplex ? 'meta-llama/Llama-3.3-70B-Instruct-Turbo' : 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo';
+            } else if (provider.type === 'atlascloud') {
+                const atlasModels = ['deepseek-ai/DeepSeek-R1', 'deepseek-ai/DeepSeek-V3', 'meta-llama/Llama-3.3-70B-Instruct-Turbo'];
+                if (requestedModel && (requestedModel.includes('llama') || requestedModel.includes('deepseek') || requestedModel.includes('claude') || requestedModel.includes('gemini'))) {
+                    return requestedModel;
+                }
+                // Prefer DeepSeek-R1 for complex tasks (cheaper and powerful)
+                return isComplex ? 'deepseek-ai/DeepSeek-R1' : 'deepseek-ai/DeepSeek-V3';
             }
             return 'gpt-4o-mini'; // Safe default
         };
@@ -673,30 +734,46 @@ async function handler(event, responseStream) {
                 });
             }
             
+            // Build base request body - Gemini has stricter parameter requirements
+            const isGeminiProvider = selectedProvider.type === 'gemini-free' || selectedProvider.type === 'gemini';
+            
             const requestBody = {
                 model,
                 messages: cleanMessages,
                 temperature,
                 max_tokens,
-                top_p,
-                frequency_penalty,
-                presence_penalty
+                top_p
             };
+            
+            // Only add frequency_penalty and presence_penalty for non-Gemini providers
+            // Gemini's OpenAI-compatible API doesn't support these parameters
+            if (!isGeminiProvider) {
+                requestBody.frequency_penalty = frequency_penalty;
+                requestBody.presence_penalty = presence_penalty;
+            }
             
             // Add tools only if provided
             if (hasToolsConfigured) {
                 requestBody.tools = tools;
-                if (requestBody.tool_choice === undefined) {
-                    requestBody.tool_choice = body.tool_choice || 'required';
+                // Let LLM decide whether to use tools or respond directly
+                // Explicitly set to 'auto' unless client specifies otherwise
+                if (body.tool_choice !== undefined) {
+                    requestBody.tool_choice = body.tool_choice;
+                } else {
+                    // Gemini doesn't support 'required' for tool_choice, use 'auto' instead
+                    requestBody.tool_choice = 'auto'; // Explicitly set default
                 }
+                // 'auto' = LLM chooses whether to call tools or respond with text
+                
                 // CRITICAL: Cannot set response_format when using tools/function calling
                 // This causes "json mode cannot be combined with tool/function calling" error
                 // The API will return JSON for tool calls automatically
+                
+                // Enable parallel tool calls for efficiency (default behavior)
                 if (body.parallel_tool_calls !== undefined) {
                     requestBody.parallel_tool_calls = body.parallel_tool_calls;
-                } else if (requestBody.parallel_tool_calls === undefined) {
-                    requestBody.parallel_tool_calls = false;
                 }
+                // Default is true (parallel calls enabled) - don't override unless requested
             }
             
             // Store request body for error reporting
@@ -770,11 +847,13 @@ async function handler(event, responseStream) {
                         console.log(`🔀 Rate limit hit on provider ${provider}, model ${model}`);
                         
                         // Define fallback models for each provider type
+                        // NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
+                        // NOTE: llama-3.1-70b-versatile was decommissioned by Groq in Oct 2025
                         const providerModelFallbacks = {
                             'openai': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
                             'openai-compatible': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
-                            'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
-                            'groq-free': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
+                            'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+                            'groq-free': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
                         };
                         
                         // First, try other models on the same provider
@@ -874,6 +953,11 @@ async function handler(event, responseStream) {
                 const delta = chunk.choices?.[0]?.delta;
                 const choice = chunk.choices?.[0];
                 
+                // DEBUG: Log chunks with tool_calls or finish_reason
+                if (delta?.tool_calls || choice?.finish_reason === 'tool_calls') {
+                    console.log(`🔧 DEBUG Gemini chunk:`, JSON.stringify(chunk, null, 2));
+                }
+                
                 if (!delta && !choice) {
                     // Check for usage data in non-choice chunks
                     if (chunk.usage) {
@@ -886,6 +970,7 @@ async function handler(event, responseStream) {
                 // Capture finish_reason
                 if (choice?.finish_reason) {
                     finishReason = choice.finish_reason;
+                    console.log(`🏁 Finish reason: ${finishReason}`);
                 }
                 
                 // Capture usage from choice (some providers send it here)
@@ -905,28 +990,53 @@ async function handler(event, responseStream) {
                 // Handle tool calls
                 if (delta.tool_calls) {
                     hasToolCalls = true;
+                    console.log(`🔧 Delta tool_calls received:`, JSON.stringify(delta.tool_calls));
                     
                     for (const tc of delta.tool_calls) {
-                        const index = tc.index;
+                        // Gemini doesn't include 'index' property, it sends complete tool calls in one chunk
+                        // Use the provided index if available, otherwise find by ID or append to end
+                        let index = tc.index;
+                        
+                        if (index === undefined) {
+                            // Gemini sends complete tool call without index
+                            // Check if this tool call ID already exists
+                            if (tc.id) {
+                                index = currentToolCalls.findIndex(existing => existing?.id === tc.id);
+                            }
+                            // If not found or no ID, append to end
+                            if (index === -1 || index === undefined) {
+                                index = currentToolCalls.length;
+                            }
+                        }
                         
                         // Initialize tool call if needed
                         if (!currentToolCalls[index]) {
                             currentToolCalls[index] = {
                                 id: tc.id || '',
-                                type: 'function',
+                                type: tc.type || 'function',
                                 function: { name: '', arguments: '' }
                             };
                         }
                         
-                        // Accumulate tool call data
+                        // Accumulate tool call data (for streaming) or replace (for complete chunks)
                         if (tc.id) {
                             currentToolCalls[index].id = tc.id;
                         }
                         if (tc.function?.name) {
-                            currentToolCalls[index].function.name += tc.function.name;
+                            // If name is complete (Gemini style), replace instead of append
+                            if (tc.function.name && !tc.index) {
+                                currentToolCalls[index].function.name = tc.function.name;
+                            } else {
+                                currentToolCalls[index].function.name += tc.function.name;
+                            }
                         }
                         if (tc.function?.arguments) {
-                            currentToolCalls[index].function.arguments += tc.function.arguments;
+                            // If arguments are complete (Gemini style), replace instead of append
+                            if (tc.function.arguments && !tc.index) {
+                                currentToolCalls[index].function.arguments = tc.function.arguments;
+                            } else {
+                                currentToolCalls[index].function.arguments += tc.function.arguments;
+                            }
                         }
                     }
                 }
@@ -951,9 +1061,11 @@ async function handler(event, responseStream) {
                 phase: 'chat_iteration',
                 iteration: iterationCount,
                 request: {
-                    messages: cleanMessages.length,
+                    model: model, // Include model in request
+                    messages: cleanMessages, // Full messages array for transparency
                     temperature: temperature,
-                    max_tokens: max_tokens
+                    max_tokens: max_tokens,
+                    tools: requestBody.tools // Include tools if present
                 },
                 response: {
                     content: assistantMessage.content,
@@ -1003,15 +1115,44 @@ async function handler(event, responseStream) {
             // 3. LLM provided a substantive answer (>200 chars) even with tool_calls
             //    (this catches cases where LLM gives answer but suggests optional follow-up)
             // 4. We've already done 8+ iterations (safety limit for tool-heavy workflows)
+            // 5. Previous iteration had successful execute_javascript (prevents endless calculation cycles)
+            
+            // Check if last iteration executed execute_javascript successfully
+            let hasSuccessfulJsExecution = false;
+            if (iterationCount > 1) {
+                // Look at tool messages from current context
+                const recentToolMessages = currentMessages.filter(m => m.role === 'tool');
+                for (const toolMsg of recentToolMessages) {
+                    if (toolMsg.name === 'execute_javascript' && toolMsg.content) {
+                        try {
+                            const result = JSON.parse(toolMsg.content);
+                            // If result exists and no error, it's a successful execution
+                            if (result.result !== undefined && !result.error) {
+                                hasSuccessfulJsExecution = true;
+                                break;
+                            }
+                        } catch (e) {
+                            // Not JSON, skip
+                        }
+                    }
+                }
+            }
+            
             const hasSubstantiveAnswer = assistantMessage.content.trim().length > 200; // Full answer threshold
             const tooManyIterations = iterationCount >= 8; // Safety limit (increased from 5)
+            
+            // Filter out undefined/empty tool calls (sparse array issue)
+            const validToolCalls = currentToolCalls.filter(tc => tc && tc.function && tc.function.name);
+            console.log(`🔧 DEBUG Tool calls: total=${currentToolCalls.length}, valid=${validToolCalls.length}, hasToolCalls=${hasToolCalls}`, JSON.stringify(validToolCalls));
+            
             const shouldExecuteTools = hasToolCalls && 
-                                      currentToolCalls.length > 0 && 
+                                      validToolCalls.length > 0 &&  // Use validToolCalls instead
                                       finishReason !== 'stop' &&  // LLM wants to continue
                                       !hasSubstantiveAnswer &&     // No complete answer yet
+                                      !hasSuccessfulJsExecution && // No recent successful calculation
                                       !tooManyIterations;          // Safety limit
             
-            console.log(`🔍 Tool execution decision: iteration=${iterationCount}, hasToolCalls=${hasToolCalls}, finishReason=${finishReason}, contentLength=${assistantMessage.content.length}, hasSubstantiveAnswer=${hasSubstantiveAnswer}, tooManyIterations=${tooManyIterations}, shouldExecuteTools=${shouldExecuteTools}`);
+            console.log(`🔍 Tool execution decision: iteration=${iterationCount}, hasToolCalls=${hasToolCalls}, finishReason=${finishReason}, contentLength=${assistantMessage.content.length}, hasSubstantiveAnswer=${hasSubstantiveAnswer}, hasSuccessfulJsExecution=${hasSuccessfulJsExecution}, tooManyIterations=${tooManyIterations}, shouldExecuteTools=${shouldExecuteTools}`);
             
             const containsLegacyToolSyntax = LEGACY_TOOL_CALL_REGEX.test(assistantMessage.content || '');
             const missingStructuredToolCall = hasToolsConfigured && (!hasToolCalls || currentToolCalls.length === 0);
@@ -1040,9 +1181,7 @@ async function handler(event, responseStream) {
 
             // If tool calls detected and should execute
             if (shouldExecuteTools) {
-                // Filter out empty tool calls
-                const validToolCalls = currentToolCalls.filter(tc => tc.id && tc.function.name);
-                
+                // validToolCalls already computed above
                 if (validToolCalls.length > 0) {
                     assistantMessage.tool_calls = validToolCalls;
                     
@@ -1352,6 +1491,18 @@ async function handler(event, responseStream) {
                 // Note: NOT including tool_calls - they're already sent via tool_call_* events
             };
             
+            // Add tool results to the message for transparency (embedded in assistant message)
+            const toolResultMessages = currentMessages.filter(m => m.role === 'tool');
+            if (toolResultMessages.length > 0) {
+                messageCompleteData.toolResults = toolResultMessages.map(tm => ({
+                    role: 'tool',
+                    content: tm.rawResult || tm.content, // Use full result for transparency
+                    tool_call_id: tm.tool_call_id,
+                    name: tm.name,
+                    llmApiCalls: tm.llmApiCalls || [] // Include any nested LLM calls from tools
+                }));
+            }
+            
             // Add extracted content if available (sources, images, videos, media)
             if (extractedContent) {
                 messageCompleteData.extractedContent = extractedContent;
@@ -1366,12 +1517,58 @@ async function handler(event, responseStream) {
             
             console.log(`✅ Completing request after ${iterationCount} iterations`);
             
+            // Log to Google Sheets (async, don't block response)
+            try {
+                const { logToGoogleSheets } = require('../services/google-sheets-logger');
+                const requestEndTime = Date.now();
+                const durationMs = requestStartTime ? (requestEndTime - requestStartTime) : 0;
+                
+                // Aggregate token usage across all LLM API calls
+                let totalPromptTokens = 0;
+                let totalCompletionTokens = 0;
+                let totalTokens = 0;
+                
+                for (const apiCall of allLlmApiCalls) {
+                    const usage = apiCall.response?.usage;
+                    if (usage) {
+                        totalPromptTokens += usage.prompt_tokens || 0;
+                        totalCompletionTokens += usage.completion_tokens || 0;
+                        totalTokens += usage.total_tokens || 0;
+                    }
+                }
+                
+                // Log the request (non-blocking)
+                logToGoogleSheets({
+                    userEmail: userEmail,
+                    provider: provider || 'unknown',
+                    model: model || 'unknown',
+                    promptTokens: totalPromptTokens,
+                    completionTokens: totalCompletionTokens,
+                    totalTokens: totalTokens,
+                    durationMs: durationMs,
+                    timestamp: new Date().toISOString()
+                }).catch(err => {
+                    console.error('Failed to log to Google Sheets:', err.message);
+                });
+            } catch (err) {
+                // Don't fail the request if logging fails
+                console.error('Google Sheets logging error:', err.message);
+            }
+            
+            // Add memory tracking snapshot before completing
+            memoryTracker.snapshot('chat-complete');
+            const memoryMetadata = memoryTracker.getResponseMetadata();
+            
             sseWriter.writeEvent('complete', {
                 status: 'success',
                 messages: currentMessages,
                 iterations: iterationCount,
-                extractedContent: extractedContent || undefined
+                extractedContent: extractedContent || undefined,
+                ...memoryMetadata
             });
+            
+            // Log memory summary
+            console.log('📊 Chat endpoint ' + memoryTracker.getSummary());
             
             responseStream.end();
             return;
@@ -1383,6 +1580,29 @@ async function handler(event, responseStream) {
             code: 'MAX_ITERATIONS',
             iterations: iterationCount
         });
+        
+        // Log error to Google Sheets
+        try {
+            const { logToGoogleSheets } = require('../services/google-sheets-logger');
+            const requestEndTime = Date.now();
+            const durationMs = requestStartTime ? (requestEndTime - requestStartTime) : 0;
+            
+            logToGoogleSheets({
+                userEmail: userEmail,
+                provider: provider || 'unknown',
+                model: model || 'unknown',
+                promptTokens: 0,
+                completionTokens: 0,
+                totalTokens: 0,
+                durationMs: durationMs,
+                timestamp: new Date().toISOString(),
+                errorCode: 'MAX_ITERATIONS',
+                errorMessage: `Maximum tool execution iterations reached (${iterationCount})`
+            }).catch(err => console.error('Failed to log error to Google Sheets:', err.message));
+        } catch (err) {
+            console.error('Google Sheets error logging failed:', err.message);
+        }
+        
         responseStream.end();
         
     } catch (error) {
@@ -1405,6 +1625,31 @@ async function handler(event, responseStream) {
                 messageCount: lastRequestBody.request.messages.length,
                 hasTools: !!lastRequestBody.request.tools
             }, null, 2));
+        }
+        
+        // Log error to Google Sheets
+        try {
+            const { logToGoogleSheets } = require('../services/google-sheets-logger');
+            const requestEndTime = Date.now();
+            const durationMs = requestStartTime ? (requestEndTime - requestStartTime) : 0;
+            
+            // userEmail might not be defined if error occurs before auth
+            const logUserEmail = (typeof userEmail !== 'undefined') ? userEmail : 'unknown';
+            
+            logToGoogleSheets({
+                userEmail: logUserEmail,
+                provider: provider || (lastRequestBody ? lastRequestBody.provider : 'unknown'),
+                model: model || (lastRequestBody ? lastRequestBody.model : 'unknown'),
+                promptTokens: 0,
+                completionTokens: 0,
+                totalTokens: 0,
+                durationMs: durationMs,
+                timestamp: new Date().toISOString(),
+                errorCode: error.code || 'ERROR',
+                errorMessage: error.message || 'Internal server error'
+            }).catch(err => console.error('Failed to log error to Google Sheets:', err.message));
+        } catch (err) {
+            console.error('Google Sheets error logging failed:', err.message);
         }
         
         // Only use sseWriter if it was initialized

@@ -38,7 +38,7 @@ const YouTubeAuthContext = createContext<YouTubeAuthContextValue | undefined>(un
 const OAUTH_CONFIG = {
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
   redirectUri: `${import.meta.env.VITE_API_BASE}/oauth/callback`,
-  scope: 'https://www.googleapis.com/auth/youtube.readonly',
+  scope: 'https://www.googleapis.com/auth/youtube.force-ssl', // Required for captions.list API
   authUrl: 'https://accounts.google.com/o/oauth2/v2/auth'
 };
 
@@ -205,7 +205,8 @@ export const YouTubeAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       const jwtToken = getJwtToken();
       if (!jwtToken) {
-        throw new Error('JWT authentication required');
+        console.log('Cannot refresh YouTube tokens: JWT authentication not available');
+        return;
       }
 
       const apiEndpoint = import.meta.env.VITE_API_ENDPOINT || 

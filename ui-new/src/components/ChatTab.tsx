@@ -14,10 +14,12 @@ import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
 import { SearchProgress } from './SearchProgress';
+import { YouTubeSearchProgress, type YouTubeSearchProgressData } from './YouTubeSearchProgress';
 import { LlmInfoDialog } from './LlmInfoDialog';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
 import { VoiceInputDialog } from './VoiceInputDialog';
 import ExtractedContent from './ExtractedContent';
+import { JsonTree } from './JsonTree';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
@@ -122,6 +124,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     timestamp?: string;
   }>>(new Map());
   
+  // YouTube search progress tracking
+  const [youtubeSearchProgress, setYoutubeSearchProgress] = useState<Map<string, YouTubeSearchProgressData>>(new Map());
+  
   // Search result content viewer dialog
   const [viewingSearchResult, setViewingSearchResult] = useState<{
     result: any;
@@ -162,8 +167,78 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleCaptureContent = (content: string, sourceType: 'user' | 'assistant' | 'tool', title?: string) => {
-    addSnippet(content, sourceType, title);
+  const formatContentWithMedia = (content: string, extractedContent?: ChatMessage['extractedContent']): string => {
+    let fullContent = content;
+
+    if (!extractedContent) {
+      return fullContent;
+    }
+
+    // Add extracted images as markdown
+    if (extractedContent.images && extractedContent.images.length > 0) {
+      fullContent += '\n\n## Images\n\n';
+      extractedContent.images.forEach(img => {
+        fullContent += `![${img.alt || 'Image'}](${img.src})\n`;
+        if (img.source) {
+          fullContent += `*Source: ${img.source}*\n\n`;
+        }
+      });
+    }
+
+    // Add YouTube videos as markdown links
+    if (extractedContent.youtubeVideos && extractedContent.youtubeVideos.length > 0) {
+      fullContent += '\n\n## YouTube Videos\n\n';
+      extractedContent.youtubeVideos.forEach(video => {
+        fullContent += `- [${video.title || 'YouTube Video'}](${video.src})`;
+        if (video.source) {
+          fullContent += ` - *${video.source}*`;
+        }
+        fullContent += '\n';
+      });
+    }
+
+    // Add other videos as markdown links
+    if (extractedContent.otherVideos && extractedContent.otherVideos.length > 0) {
+      fullContent += '\n\n## Videos\n\n';
+      extractedContent.otherVideos.forEach(video => {
+        fullContent += `- [${video.title || 'Video'}](${video.src})`;
+        if (video.source) {
+          fullContent += ` - *${video.source}*`;
+        }
+        fullContent += '\n';
+      });
+    }
+
+    // Add other media
+    if (extractedContent.media && extractedContent.media.length > 0) {
+      fullContent += '\n\n## Media\n\n';
+      extractedContent.media.forEach(media => {
+        fullContent += `- [${media.type}](${media.src})`;
+        if (media.source) {
+          fullContent += ` - *${media.source}*`;
+        }
+        fullContent += '\n';
+      });
+    }
+
+    // Add sources as markdown links
+    if (extractedContent.sources && extractedContent.sources.length > 0) {
+      fullContent += '\n\n## Sources\n\n';
+      extractedContent.sources.forEach(source => {
+        fullContent += `- [${source.title}](${source.url})`;
+        if (source.snippet) {
+          fullContent += `\n  > ${source.snippet}`;
+        }
+        fullContent += '\n';
+      });
+    }
+
+    return fullContent;
+  };
+
+  const handleCaptureContent = (content: string, sourceType: 'user' | 'assistant' | 'tool', title?: string, extractedContent?: ChatMessage['extractedContent']) => {
+    const fullContent = formatContentWithMedia(content, extractedContent);
+    addSnippet(fullContent, sourceType, title);
     showSuccess('Content captured to Swag!');
   };
 
@@ -222,6 +297,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setCurrentStreamingBlockIndex(null);
     setTranscriptionProgress(new Map());
     setSearchProgress(new Map());
+    setYoutubeSearchProgress(new Map());
     setViewingSearchResult(null);
     setCurrentChatId(null); // Start a new chat session
     localStorage.removeItem('last_active_chat_id');
@@ -798,8 +874,33 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
 
     try {
+      // Get current date and time
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const timeStr = now.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit',
+        timeZoneName: 'short'
+      });
+      const isoStr = now.toISOString();
+      const currentDateTime = `${dateStr}, ${timeStr} (ISO: ${isoStr})`;
+      
       // Build system prompt with default and tool suggestions
       let finalSystemPrompt = systemPrompt.trim() || 'You are a helpful assistant';
+      
+      // Inject current date/time at the beginning
+      finalSystemPrompt = `**CURRENT DATE AND TIME:**
+${currentDateTime}
+
+You have access to the current date and time above. Use this information when responding to temporal queries about "today", "current date", "what time is it", "this week", "this month", "this year", etc. You do not need to use tools to get the current date/time as it is provided in this system prompt.
+
+${finalSystemPrompt}`;
       
       // Add tool suggestions if tools are enabled
       if (tools.length > 0) {
@@ -818,6 +919,7 @@ CRITICAL TOOL USAGE RULES:
 - DO NOT describe what you would do - ACTUALLY CALL THE TOOL using the function calling mechanism
 - The system will automatically execute your tool calls and provide you with results
 - After receiving tool results, incorporate them naturally into your response
+- IMPORTANT: After execute_javascript returns a result, provide the final answer to the user IMMEDIATELY. Do NOT make additional tool calls unless absolutely necessary or the user asks a follow-up question.
 
 Examples when you MUST use tools:
 - "transcribe this video https://youtube.com/watch?v=abc" → Call transcribe_url with url parameter
@@ -900,12 +1002,36 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       // Send providers array instead of model field - filter out disabled providers
       const enabledProviders = settings.providers.filter(p => p.enabled !== false);
       
+      // Load proxy settings from localStorage
+      const proxySettings = localStorage.getItem('proxy_settings');
+      let proxyUsername: string | undefined;
+      let proxyPassword: string | undefined;
+      if (proxySettings) {
+        try {
+          const parsed = JSON.parse(proxySettings);
+          if (parsed.enabled && parsed.username && parsed.password) {
+            proxyUsername = parsed.username;
+            proxyPassword = parsed.password;
+            console.log('🌐 Proxy settings loaded from localStorage:', parsed.username);
+          }
+        } catch (e) {
+          console.error('Failed to parse proxy settings:', e);
+        }
+      }
+      
       const requestPayload: any = {
         providers: enabledProviders,  // NEW: Send only enabled providers
         messages: cleanedMessages,
         temperature: 0.7,
         stream: true  // Always use streaming
       };
+      
+      // Add proxy settings if enabled
+      if (proxyUsername && proxyPassword) {
+        requestPayload.proxyUsername = proxyUsername;
+        requestPayload.proxyPassword = proxyPassword;
+        console.log('🌐 Including proxy credentials in request');
+      }
       
       // Add Tavily API key if available
       if (settings.tavilyApiKey && settings.tavilyApiKey.trim()) {
@@ -1221,6 +1347,54 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     return prev;
                   });
                 }
+              }
+              break;
+              
+            case 'youtube_search_progress':
+              // YouTube search progress events (fetching_transcripts, fetching_transcript, transcript_fetched, transcript_failed, complete)
+              console.log('🎬 YouTube search progress event:', data);
+              
+              // If starting a new search, clear old progress
+              if (data.phase === 'fetching_transcripts') {
+                setYoutubeSearchProgress(new Map());
+              }
+              
+              // Create a unique key for each event based on phase and video
+              let youtubeProgressKey: string;
+              if (data.phase === 'fetching_transcript' || data.phase === 'transcript_fetched' || data.phase === 'transcript_failed') {
+                // For per-video events, use current video number
+                youtubeProgressKey = `youtube_video_${data.currentVideo || 0}`;
+              } else {
+                // For general events, use phase
+                youtubeProgressKey = `youtube_${data.phase}`;
+              }
+              
+              setYoutubeSearchProgress(prev => {
+                const newMap = new Map(prev);
+                newMap.set(youtubeProgressKey, data);
+                return newMap;
+              });
+              
+              // Auto-expand the tool section when YouTube search starts
+              if (data.phase === 'fetching_transcripts') {
+                // Find the most recent assistant message with search_youtube tool
+                setMessages(prev => {
+                  for (let i = prev.length - 1; i >= 0; i--) {
+                    const msg = prev[i];
+                    if (msg.role === 'assistant' && msg.tool_calls) {
+                      const youtubeToolIndex = msg.tool_calls.findIndex(tc => tc.function.name === 'search_youtube');
+                      if (youtubeToolIndex !== -1) {
+                        setExpandedToolMessages(prevExpanded => {
+                          const newExpanded = new Set(prevExpanded);
+                          newExpanded.add(i);
+                          return newExpanded;
+                        });
+                        break;
+                      }
+                    }
+                  }
+                  return prev;
+                });
               }
               break;
               
@@ -2215,6 +2389,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </div>
                         )}
                         
+                        {/* Show YouTube search progress for search_youtube tool calls */}
+                        {msg.tool_calls && msg.tool_calls.some((tc: any) => tc.function.name === 'search_youtube') && (
+                          <div className="mb-3 space-y-2">
+                            {Array.from(youtubeSearchProgress.values()).map((progress, idx) => (
+                              <YouTubeSearchProgress key={idx} data={progress} />
+                            ))}
+                          </div>
+                        )}
+                        
                         {/* Show transcription progress for tool calls in progress (NOT complete) */}
                         {msg.tool_calls && msg.tool_calls.map((tc: any, tcIdx: number) => {
                           if (tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)) {
@@ -2517,7 +2700,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           Gmail
                         </button>
                         <button
-                          onClick={() => handleCaptureContent(getMessageText(msg.content), 'assistant')}
+                          onClick={() => handleCaptureContent(getMessageText(msg.content), 'assistant', undefined, msg.extractedContent)}
                           className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
                           title="Capture to Swag"
                         >
@@ -3180,6 +3363,38 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     </div>
                   </div>
                 )}
+
+                {/* Full Scraped Data - JSON Tree View */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                    🔍 Full Scraped Data (JSON)
+                  </h3>
+                  <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                    <JsonTree
+                      data={{
+                        url: viewingSearchResult.result.url,
+                        title: viewingSearchResult.result.title,
+                        description: viewingSearchResult.result.description,
+                        snippet: viewingSearchResult.result.snippet,
+                        fullScrapedContent: viewingSearchResult.result.content,
+                        contentFormat: viewingSearchResult.result.contentFormat,
+                        summarizedContent: viewingSearchResult.result.summary || viewingSearchResult.result.description,
+                        links: viewingSearchResult.result.links || [],
+                        images: viewingSearchResult.result.images || [],
+                        youtubeLinks: viewingSearchResult.result.youtube || viewingSearchResult.result.videos || [],
+                        otherMedia: viewingSearchResult.result.media || viewingSearchResult.result.audio || [],
+                        metadata: {
+                          contentLength: viewingSearchResult.result.content?.length || 0,
+                          linkCount: viewingSearchResult.result.links?.length || 0,
+                          imageCount: viewingSearchResult.result.images?.length || 0,
+                          youtubeCount: (viewingSearchResult.result.youtube || viewingSearchResult.result.videos || []).length,
+                          mediaCount: (viewingSearchResult.result.media || viewingSearchResult.result.audio || []).length
+                        }
+                      }}
+                      expanded={false}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 

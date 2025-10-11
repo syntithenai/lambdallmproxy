@@ -89,6 +89,14 @@ async function downloadAudio(videoId, onProgress) {
         let downloadedSize = 0;
         let totalSize = 0;
 
+        // Get download timeout from environment (default: 30 seconds)
+        const downloadTimeout = parseInt(process.env.MEDIA_DOWNLOAD_TIMEOUT) || 30000;
+        
+        // Set up timeout
+        const timeoutId = setTimeout(() => {
+            reject(new Error(`YouTube download timeout after ${downloadTimeout / 1000} seconds. The video may be too large or YouTube is too slow to respond.`));
+        }, downloadTimeout);
+
         try {
             // Get audio stream with additional options
             const audioStream = ytdl(videoId, {
@@ -113,6 +121,7 @@ async function downloadAudio(videoId, onProgress) {
             });
 
             audioStream.on('error', (error) => {
+                clearTimeout(timeoutId);
                 const errorMsg = error.message || '';
                 if (errorMsg.includes('410') || errorMsg.includes('Gone')) {
                     reject(new Error(`Video stream unavailable. The video may have been deleted or made private during download.`));
@@ -132,6 +141,7 @@ async function downloadAudio(videoId, onProgress) {
                 .audioFrequency(16000)
                 .format('wav')
                 .on('error', (err) => {
+                    clearTimeout(timeoutId);
                     reject(new Error(`FFmpeg error: ${err.message}`));
                 })
                 .pipe(outputStream);
@@ -142,15 +152,18 @@ async function downloadAudio(videoId, onProgress) {
             });
 
             outputStream.on('end', () => {
+                clearTimeout(timeoutId);
                 const buffer = Buffer.concat(chunks);
                 resolve(buffer);
             });
 
             outputStream.on('error', (error) => {
+                clearTimeout(timeoutId);
                 reject(error);
             });
 
         } catch (error) {
+            clearTimeout(timeoutId);
             reject(error);
         }
     });

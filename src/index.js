@@ -22,6 +22,7 @@ const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
+const { resetMemoryTracker } = require('./utils/memory-tracker');
 
 /**
  * Handle CORS preflight requests
@@ -47,6 +48,10 @@ function handleCORS(event) {
  * @returns {Promise<void>} Streams response via responseStream
  */
 exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+    // Initialize memory tracking for this invocation
+    const memoryTracker = resetMemoryTracker();
+    memoryTracker.snapshot('handler-start');
+    
     try {
         console.log('Incoming request:', {
             path: event.path || event.rawPath,
@@ -57,6 +62,9 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         // Get HTTP method and path
         const method = event.httpMethod || event.requestContext?.http?.method || 'GET';
         const path = event.path || event.rawPath || '/';
+        
+        // Track memory after initial setup
+        memoryTracker.snapshot('routing-setup');
         
         // Handle CORS preflight
         if (method === 'OPTIONS') {
@@ -202,6 +210,10 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
     } catch (error) {
         console.error('Router error:', error);
         
+        // Track memory at error point
+        memoryTracker.snapshot('error');
+        console.error('Memory at error:', memoryTracker.getSummary());
+        
         // Note: CORS headers handled by Lambda Function URL configuration
         const errorResponse = {
             statusCode: 500,
@@ -214,6 +226,14 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         };
         responseStream.write(JSON.stringify(errorResponse));
         responseStream.end();
+    } finally {
+        // Final memory snapshot and logging
+        memoryTracker.snapshot('handler-end');
+        console.log('📊 ' + memoryTracker.getSummary());
+        
+        // Log detailed breakdown for analysis
+        const stats = memoryTracker.getStatistics();
+        console.log('Memory recommendation:', stats.recommendation);
     }
 });
 

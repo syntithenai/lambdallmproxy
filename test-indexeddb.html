@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>IndexedDB Migration Test</title>
+</head>
+<body>
+  <h1>IndexedDB Migration Test</h1>
+  <button onclick="testMigration()">Test Migration</button>
+  <button onclick="testSave()">Test Save Chat</button>
+  <button onclick="testLoad()">Test Load Chats</button>
+  <button onclick="testCleanup()">Test Cleanup</button>
+  <div id="output"></div>
+
+  <script>
+    // Simulate the migration
+    function testMigration() {
+      log('Setting up test data in localStorage...');
+      
+      // Create some test chat history
+      localStorage.setItem('chat_history_test1', JSON.stringify([
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi there!' }
+      ]));
+      localStorage.setItem('chat_history_test2', JSON.stringify([
+        { role: 'user', content: 'How are you?' },
+        { role: 'assistant', content: 'I am doing well!' }
+      ]));
+      
+      log('Created 2 test chat histories in localStorage');
+      log('Open browser console and check Application > Storage > Local Storage');
+    }
+
+    function testSave() {
+      log('Testing IndexedDB save...');
+      openDB().then(db => {
+        const tx = db.transaction('chats', 'readwrite');
+        const store = tx.objectStore('chats');
+        
+        const chat = {
+          id: 'chat_' + Date.now(),
+          messages: [
+            { role: 'user', content: 'Test message' },
+            { role: 'assistant', content: 'Test response' }
+          ],
+          timestamp: Date.now(),
+          title: 'Test Chat'
+        };
+        
+        store.put(chat);
+        return tx.complete;
+      }).then(() => {
+        log('✅ Successfully saved test chat to IndexedDB');
+        log('Check Application > Storage > IndexedDB > ChatHistoryDB');
+      }).catch(err => {
+        log('❌ Error: ' + err.message);
+      });
+    }
+
+    function testLoad() {
+      log('Loading all chats from IndexedDB...');
+      openDB().then(db => {
+        const tx = db.transaction('chats', 'readonly');
+        const store = tx.objectStore('chats');
+        return store.getAll();
+      }).then(chats => {
+        log('✅ Loaded ' + chats.length + ' chats:');
+        chats.forEach(chat => {
+          log('  - ' + chat.id + ': ' + chat.title + ' (' + chat.messages.length + ' messages)');
+        });
+      }).catch(err => {
+        log('❌ Error: ' + err.message);
+      });
+    }
+
+    function testCleanup() {
+      log('Testing cleanup (keeping 2 most recent)...');
+      openDB().then(async db => {
+        const tx = db.transaction('chats', 'readonly');
+        const store = tx.objectStore('chats');
+        const index = store.index('timestamp');
+        const chats = await index.getAll();
+        
+        log('Found ' + chats.length + ' total chats');
+        
+        if (chats.length > 2) {
+          // Sort by timestamp descending
+          chats.sort((a, b) => b.timestamp - a.timestamp);
+          
+          // Delete old ones
+          const txDel = db.transaction('chats', 'readwrite');
+          const storeDel = txDel.objectStore('chats');
+          
+          for (let i = 2; i < chats.length; i++) {
+            await storeDel.delete(chats[i].id);
+            log('  Deleted: ' + chats[i].id);
+          }
+          
+          log('✅ Cleanup complete, kept 2 most recent chats');
+        } else {
+          log('No cleanup needed, only ' + chats.length + ' chats');
+        }
+      }).catch(err => {
+        log('❌ Error: ' + err.message);
+      });
+    }
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('ChatHistoryDB', 1);
+        
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains('chats')) {
+            const store = db.createObjectStore('chats', { keyPath: 'id' });
+            store.createIndex('timestamp', 'timestamp', { unique: false });
+            log('Created chats object store with timestamp index');
+          }
+        };
+      });
+    }
+
+    function log(message) {
+      const output = document.getElementById('output');
+      const line = document.createElement('div');
+      line.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+      output.appendChild(line);
+      console.log(message);
+    }
+
+    // Auto-initialize on load
+    window.addEventListener('load', () => {
+      log('Page loaded. Ready to test IndexedDB migration.');
+      log('Click buttons above to run tests.');
+    });
+  </script>
+</body>
+</html>

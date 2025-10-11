@@ -1,7 +1,9 @@
 /**
  * Chat History Cache Utility
- * Caches chat conversations in localStorage with first user message as title
+ * Caches chat conversations in IndexedDB with first user message as title
  */
+
+import { chatHistoryDB } from './chatHistoryDB';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -71,8 +73,6 @@ export interface CachedChat {
   lastUpdated: number;
 }
 
-const CHAT_CACHE_KEY = 'llm_proxy_chat_history';
-
 /**
  * Generate a unique ID for a chat
  */
@@ -90,15 +90,19 @@ function generateTitle(firstUserMessage: string): string {
 }
 
 /**
- * Get all cached chats
+ * Get all cached chats from IndexedDB
  */
-export function getAllCachedChats(): CachedChat[] {
+export async function getAllCachedChats(): Promise<CachedChat[]> {
   try {
-    const cached = localStorage.getItem(CHAT_CACHE_KEY);
-    if (!cached) return [];
-    
-    const chats = JSON.parse(cached);
-    return Array.isArray(chats) ? chats : [];
+    const chats = await chatHistoryDB.getAllChats();
+    // Convert to CachedChat format
+    return chats.map(chat => ({
+      id: chat.id,
+      title: chat.title || 'Untitled Chat',
+      messages: chat.messages,
+      timestamp: chat.timestamp,
+      lastUpdated: chat.timestamp
+    }));
   } catch (error) {
     console.error('Error reading chat cache:', error);
     return [];
@@ -106,17 +110,15 @@ export function getAllCachedChats(): CachedChat[] {
 }
 
 /**
- * Save or update a chat conversation
+ * Save or update a chat conversation in IndexedDB
  */
-export function saveCachedChat(chatId: string | null, messages: ChatMessage[]): string {
+export async function saveCachedChat(chatId: string | null, messages: ChatMessage[]): Promise<string> {
   try {
     if (messages.length === 0) {
       console.log('No messages to save');
       return chatId || '';
     }
 
-    const chats = getAllCachedChats();
-    
     // Find first user message for title
     const firstUserMessage = messages.find(m => m.role === 'user');
     if (!firstUserMessage) {
@@ -125,39 +127,20 @@ export function saveCachedChat(chatId: string | null, messages: ChatMessage[]): 
     }
 
     const title = generateTitle(firstUserMessage.content);
-    const now = Date.now();
 
     if (chatId) {
       // Update existing chat
-      const existingIndex = chats.findIndex(c => c.id === chatId);
-      if (existingIndex >= 0) {
-        chats[existingIndex] = {
-          ...chats[existingIndex],
-          messages,
-          lastUpdated: now
-        };
-        localStorage.setItem(CHAT_CACHE_KEY, JSON.stringify(chats));
-        return chatId;
-      }
+      await chatHistoryDB.saveChat(chatId, messages, title);
+      return chatId;
     }
 
     // Create new chat
     const newChatId = generateChatId();
-    const newChat: CachedChat = {
-      id: newChatId,
-      title,
-      messages,
-      timestamp: now,
-      lastUpdated: now
-    };
-
-    // Add to beginning of array (most recent first)
-    chats.unshift(newChat);
-
-    // Limit to 100 most recent chats
-    const limitedChats = chats.slice(0, 100);
-
-    localStorage.setItem(CHAT_CACHE_KEY, JSON.stringify(limitedChats));
+    await chatHistoryDB.saveChat(newChatId, messages, title);
+    
+    // Cleanup old chats (keep 100 most recent)
+    await chatHistoryDB.cleanupOldChats(100);
+    
     return newChatId;
   } catch (error) {
     console.error('Error saving chat to cache:', error);
@@ -166,32 +149,50 @@ export function saveCachedChat(chatId: string | null, messages: ChatMessage[]): 
 }
 
 /**
- * Delete a cached chat by ID
+ * Delete a cached chat by ID from IndexedDB
  */
-export function deleteCachedChat(chatId: string): void {
+export async function deleteCachedChat(chatId: string): Promise<void> {
   try {
-    const chats = getAllCachedChats();
-    const filtered = chats.filter(c => c.id !== chatId);
-    localStorage.setItem(CHAT_CACHE_KEY, JSON.stringify(filtered));
+    await chatHistoryDB.deleteChat(chatId);
   } catch (error) {
     console.error('Error deleting cached chat:', error);
   }
 }
 
 /**
- * Get a specific cached chat by ID
+ * Get a specific cached chat by ID from IndexedDB
  */
-export function getCachedChat(chatId: string): CachedChat | null {
-  const chats = getAllCachedChats();
-  return chats.find(c => c.id === chatId) || null;
+export async function getCachedChat(chatId: string): Promise<CachedChat | null> {
+  try {
+    const messages = await chatHistoryDB.getChat(chatId);
+    if (!messages) return null;
+    
+    const chat = await chatHistoryDB.getAllChats();
+    const found = chat.find(c => c.id === chatId);
+    if (!found) return null;
+    
+    return {
+      id: found.id,
+      title: found.title || 'Untitled Chat',
+      messages: found.messages,
+      timestamp: found.timestamp,
+      lastUpdated: found.timestamp
+    };
+  } catch (error) {
+    console.error('Error getting cached chat:', error);
+    return null;
+  }
 }
 
 /**
- * Clear all cached chats
+ * Clear all cached chats from IndexedDB
  */
-export function clearAllCachedChats(): void {
+export async function clearAllCachedChats(): Promise<void> {
   try {
-    localStorage.removeItem(CHAT_CACHE_KEY);
+    const chats = await chatHistoryDB.getAllChats();
+    for (const chat of chats) {
+      await chatHistoryDB.deleteChat(chat.id);
+    }
   } catch (error) {
     console.error('Error clearing chat cache:', error);
   }

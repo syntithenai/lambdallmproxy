@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { JsonTree } from './JsonTree';
-import { calculateCost, formatCost, getCostBreakdown } from '../utils/pricing';
+import { formatCost, getCostBreakdown, calculateDualPricing } from '../utils/pricing';
 
 interface LlmApiCall {
   phase: string;
@@ -197,25 +197,35 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
                   <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
                     {call.response ? (
                       <>
-                        {/* Cost Information */}
+                        {/* Cost Information - Dual Pricing */}
                         {(() => {
-                          const cost = calculateCost(call.model, tokensIn, tokensOut);
+                          const pricing = calculateDualPricing(call.model, tokensIn, tokensOut);
                           const breakdown = getCostBreakdown(call.model, tokensIn, tokensOut);
                           
-                          if (breakdown.hasPricing && cost !== null) {
-                            return (
-                              <span className="font-semibold text-green-600 dark:text-green-400" title={`Input: ${formatCost(breakdown.inputCost)} • Output: ${formatCost(breakdown.outputCost)}`}>
-                                💰 {formatCost(cost)}
-                              </span>
-                            );
+                          if (breakdown.hasPricing) {
+                            if (pricing.isFree && pricing.paidEquivalentCost !== null) {
+                              // Free tier model: show $0 + paid equivalent
+                              return (
+                                <span className="font-semibold text-green-600 dark:text-green-400" title={`Free tier model • Input: ${formatCost(breakdown.inputCost)} • Output: ${formatCost(breakdown.outputCost)}`}>
+                                  💰 {pricing.formattedActual} <span className="text-xs opacity-75">(would be {pricing.formattedPaidEquivalent} on paid plan)</span>
+                                </span>
+                              );
+                            } else if (pricing.actualCost !== null) {
+                              // Paid model: show actual cost
+                              return (
+                                <span className="font-semibold text-green-600 dark:text-green-400" title={`Input: ${formatCost(breakdown.inputCost)} • Output: ${formatCost(breakdown.outputCost)}`}>
+                                  💰 {pricing.formattedActual}
+                                </span>
+                              );
+                            }
                           }
                           return null;
                         })()}
                         
-                        {/* Token counts (smaller, secondary) */}
-                        {tokensIn > 0 && <span className="text-xs opacity-75">📥 {tokensIn.toLocaleString()}</span>}
-                        {tokensOut > 0 && <span className="text-xs opacity-75">📤 {tokensOut.toLocaleString()}</span>}
-                        {totalTokens > 0 && <span className="text-xs opacity-75">📊 {totalTokens.toLocaleString()}</span>}
+                        {/* Token counts - ALWAYS show in/out/total for all models */}
+                        {tokensIn > 0 && <span className="text-xs opacity-75">📥 {tokensIn.toLocaleString()} in</span>}
+                        {tokensOut > 0 && <span className="text-xs opacity-75">📤 {tokensOut.toLocaleString()} out</span>}
+                        {totalTokens > 0 && <span className="text-xs opacity-75">📊 {totalTokens.toLocaleString()} total</span>}
                         
                         {/* Timing information */}
                         {totalTime && <span>⏱️ {totalTime.toFixed(3)}s</span>}
@@ -321,6 +331,80 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
               </div>
             );
           })}
+
+          {/* Summary Totals Footer */}
+          {apiCalls.length > 1 && (
+            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border-2 border-blue-200 dark:border-blue-700">
+              <h4 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+                <span>📊</span>
+                <span>TOTAL SUMMARY</span>
+                <span className="text-sm font-normal opacity-75">({apiCalls.length} API {apiCalls.length === 1 ? 'Call' : 'Calls'})</span>
+              </h4>
+              {(() => {
+                // Calculate totals
+                let totalTokensIn = 0;
+                let totalTokensOut = 0;
+                let totalTokensAll = 0;
+                let totalActualCost = 0;
+                let totalPaidEquivalentCost = 0;
+                let totalDuration = 0;
+                let hasFreeModels = false;
+                
+                apiCalls.forEach(call => {
+                  const tokensIn = call.response?.usage?.prompt_tokens || 0;
+                  const tokensOut = call.response?.usage?.completion_tokens || 0;
+                  const tokens = call.response?.usage?.total_tokens || 0;
+                  const duration = call.response?.usage?.total_time || 0;
+                  
+                  totalTokensIn += tokensIn;
+                  totalTokensOut += tokensOut;
+                  totalTokensAll += tokens;
+                  totalDuration += duration;
+                  
+                  const pricing = calculateDualPricing(call.model, tokensIn, tokensOut);
+                  if (pricing.isFree) {
+                    hasFreeModels = true;
+                    totalPaidEquivalentCost += pricing.paidEquivalentCost || 0;
+                  } else {
+                    totalActualCost += pricing.actualCost || 0;
+                  }
+                });
+                
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Tokens Column */}
+                    <div className="space-y-1">
+                      <div className="font-semibold text-gray-700 dark:text-gray-300">Token Usage</div>
+                      <div className="text-sm">📥 {totalTokensIn.toLocaleString()} in</div>
+                      <div className="text-sm">📤 {totalTokensOut.toLocaleString()} out</div>
+                      <div className="text-sm font-bold">📊 {totalTokensAll.toLocaleString()} total</div>
+                    </div>
+                    
+                    {/* Cost Column */}
+                    <div className="space-y-1">
+                      <div className="font-semibold text-gray-700 dark:text-gray-300">Cost</div>
+                      <div className="text-lg font-bold text-green-600 dark:text-green-400">
+                        💰 {formatCost(totalActualCost)}
+                      </div>
+                      {hasFreeModels && totalPaidEquivalentCost > 0 && (
+                        <div className="text-xs opacity-75">
+                          (would be {formatCost(totalPaidEquivalentCost)} on paid plan)
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Duration Column */}
+                    <div className="space-y-1">
+                      <div className="font-semibold text-gray-700 dark:text-gray-300">Duration</div>
+                      <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                        ⏱️ {totalDuration.toFixed(2)}s
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
       )}
 

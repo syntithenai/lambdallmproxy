@@ -7,10 +7,14 @@ const { PROVIDERS } = require('./providers');
 
 function isOpenAIModel(model) { return typeof model === 'string' && model.startsWith('openai:'); }
 function isGroqModel(model) { return typeof model === 'string' && model.startsWith('groq:'); }
+function isGeminiModel(model) { return typeof model === 'string' && model.startsWith('gemini:'); }
 
-// Check if model name (without prefix) is a known OpenAI model
+// Check if model name (without prefix) is a known model by provider
 function isKnownOpenAIModel(modelName) {
   return PROVIDERS.openai.models.includes(modelName);
+}
+function isKnownGeminiModel(modelName) {
+  return PROVIDERS.gemini.models.includes(modelName);
 }
 
 function openAISupportsReasoning(model) {
@@ -29,6 +33,12 @@ function groqSupportsReasoning(model) {
   return list.includes(m);
 }
 
+function geminiSupportsReasoning(model) {
+  // Gemini 2.5 models support reasoning
+  const m = String(model || '').replace(/^gemini:/, '');
+  return m.startsWith('gemini-2.5');
+}
+
 function mapReasoningForOpenAI(model, options) {
   if (!openAISupportsReasoning(model)) return {};
   const effort = options?.reasoningEffort || process.env.REASONING_EFFORT || 'low';
@@ -39,6 +49,13 @@ function mapReasoningForGroq(model, options) {
   if (!groqSupportsReasoning(model)) return {};
   const effort = options?.reasoningEffort || process.env.REASONING_EFFORT || 'low';
   return { include_reasoning: true, reasoning_effort: effort, reasoning_format: 'raw' };
+}
+
+function mapReasoningForGemini(model, options) {
+  if (!geminiSupportsReasoning(model)) return {};
+  const effort = options?.reasoningEffort || process.env.REASONING_EFFORT || 'medium';
+  // Gemini supports: low (1024), medium (8192), high (24576), or none
+  return { reasoning_effort: effort };
 }
 
 function httpsRequestJson({ hostname, path, method = 'POST', headers = {}, bodyObj, timeoutMs = 30000 }) {
@@ -136,13 +153,16 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
 
   // Auto-detect and add provider prefix if missing
   let normalizedModel = model;
-  if (!isOpenAIModel(model) && !isGroqModel(model)) {
-    // Check if it's a known OpenAI model name (like gpt-4o, gpt-4, etc.)
+  if (!isOpenAIModel(model) && !isGroqModel(model) && !isGeminiModel(model)) {
+    // Check if it's a known model name from any provider
     if (isKnownOpenAIModel(model)) {
       console.log(`⚠️ Model "${model}" is an OpenAI model, adding openai: prefix`);
       normalizedModel = `openai:${model}`;
+    } else if (isKnownGeminiModel(model)) {
+      console.log(`⚠️ Model "${model}" is a Gemini model, adding gemini: prefix`);
+      normalizedModel = `gemini:${model}`;
     } else {
-      // If no prefix and not a known OpenAI model, assume groq
+      // If no prefix and not a known model, assume groq
       console.log(`⚠️ Model "${model}" missing provider prefix, assuming groq:${model}`);
       normalizedModel = `groq:${model}`;
     }
@@ -185,7 +205,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     }
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${options?.apiKey || process.env.OPENAI_API_KEY}`
+      'Authorization': `Bearer ${options?.apiKey}`
     };
     const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
     return normalizeFromChat(data);
@@ -230,9 +250,63 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     }
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${options?.apiKey || process.env.GROQ_API_KEY}`
+      'Authorization': `Bearer ${options?.apiKey}`
     };
     const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
+    return normalizeFromChat(data);
+  }
+
+  if (isGeminiModel(normalizedModel)) {
+    // Gemini OpenAI-compatible chat.completions
+    const hostname = PROVIDERS.gemini.hostname;
+    const path = PROVIDERS.gemini.path;
+    const messages = (input || []).map(block => {
+      if (block.type === 'function_call_output') {
+        return { role: 'tool', content: block.output, tool_call_id: block.call_id };
+      }
+      if (block.role) {
+        const message = { role: block.role, content: block.content };
+        // Preserve tool_calls for assistant messages
+        if (block.tool_calls) {
+          message.tool_calls = block.tool_calls;
+        }
+        return message;
+      }
+      return null;
+    }).filter(Boolean);
+
+    // Build payload - Gemini API has stricter requirements
+    const payload = {
+      model: normalizedModel.replace(/^gemini:/, ''),
+      messages,
+      temperature,
+      max_tokens,
+      top_p,
+      ...mapReasoningForGemini(normalizedModel, options)
+    };
+    
+    // Only include tools if provided (Gemini doesn't need empty tools array)
+    if (tools && tools.length > 0) {
+      payload.tools = tools;
+      // Gemini OpenAI API only supports 'auto' or 'none' for tool_choice, not 'required'
+      // If explicitly set to 'required', convert to 'auto'
+      const toolChoice = options?.tool_choice ?? defaultToolChoice;
+      payload.tool_choice = toolChoice === 'required' ? 'auto' : toolChoice;
+    }
+    
+    // CRITICAL: Cannot set response_format when using tools/function calling
+    if (!tools || tools.length === 0) {
+      payload.response_format = options?.response_format ?? defaultResponseFormat;
+    }
+    if (options?.parallel_tool_calls !== undefined) {
+      payload.parallel_tool_calls = options.parallel_tool_calls;
+    }
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${options?.apiKey}`,
+      'x-goog-api-key': options?.apiKey  // Gemini also accepts API key in this header
+    };
+    const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 60000 });
     return normalizeFromChat(data);
   }
 

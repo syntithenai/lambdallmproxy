@@ -117,17 +117,29 @@ async function downloadMedia(url, onProgress) {
         return await downloadFromS3(s3Info.bucket, s3Info.key, onProgress);
     }
     
+    // Get download timeout from environment (default: 30 seconds)
+    const downloadTimeout = parseInt(process.env.MEDIA_DOWNLOAD_TIMEOUT) || 30000;
+    
     let response;
     try {
-        response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'audio/*,video/*,*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': new URL(url).origin + '/'
-            },
-            redirect: 'follow' // Follow redirects (important for archive.org)
-        });
+        // Create an AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), downloadTimeout);
+        
+        try {
+            response = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'audio/*,video/*,*/*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': new URL(url).origin + '/'
+                },
+                redirect: 'follow' // Follow redirects (important for archive.org)
+            });
+        } finally {
+            clearTimeout(timeoutId);
+        }
 
         console.log(`📡 Response status: ${response.status} ${response.statusText}`);
         console.log(`📄 Content-Type: ${response.headers.get('content-type')}`);
@@ -138,6 +150,12 @@ async function downloadMedia(url, onProgress) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
     } catch (fetchError) {
+        // Handle timeout specifically
+        if (fetchError.name === 'AbortError') {
+            console.error(`⏱️ Download timeout after ${downloadTimeout}ms`);
+            throw new Error(`Download timeout: Media failed to load within ${downloadTimeout / 1000} seconds. The file may be too large or the server is too slow.`);
+        }
+        
         console.error(`❌ Fetch failed:`, fetchError);
         console.error(`   URL: ${url}`);
         console.error(`   Error message: ${fetchError.message}`);

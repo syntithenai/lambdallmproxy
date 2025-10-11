@@ -11,6 +11,7 @@
  */
 
 const { verifyGoogleToken } = require('../auth');
+const { loadEnvironmentProviders } = require('../credential-pool');
 const FormData = require('form-data');
 const https = require('https');
 
@@ -260,8 +261,11 @@ async function handler(event) {
 
         console.log(`🎤 Audio file received: ${audioPart.filename}, ${audioPart.data.length} bytes`);
 
-        // Get OpenAI API key from environment
-        const openaiApiKey = process.env.OPENAI_API_KEY;
+        // Get OpenAI API key from environment providers
+        const envProviders = loadEnvironmentProviders();
+        const openaiProvider = envProviders.find(p => p.type === 'openai');
+        const openaiApiKey = openaiProvider?.apiKey;
+        
         if (!openaiApiKey) {
             return {
                 statusCode: 500,
@@ -269,7 +273,7 @@ async function handler(event) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    error: 'OpenAI API key not configured'
+                    error: 'OpenAI API key not configured. Please add an OpenAI provider with type="openai" in environment variables.'
                 })
             };
         }

@@ -222,17 +222,9 @@ async function handler(event) {
             };
         }
         
-        // Determine API key to use (prefer env vars for authenticated users)
-        const targetProvider = body.provider || 'openai'; // Default to OpenAI
-        const envApiKey = targetProvider === 'groq' 
-            ? process.env.GROQ_API_KEY 
-            : process.env.OPENAI_API_KEY;
-        
-        const apiKey = envApiKey || body.apiKey || '';
-        
-        if (envApiKey) {
-            console.log(`Using environment API key for verified user: ${verifiedUser.email}`);
-        }
+        // Determine API key to use
+        // Note: Legacy endpoint - credentials should be provided by user
+        const apiKey = body.apiKey || '';
         
         // Validate API key
         if (!apiKey) {

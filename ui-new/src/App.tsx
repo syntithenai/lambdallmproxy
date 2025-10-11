@@ -7,6 +7,7 @@ import { SwagProvider } from './contexts/SwagContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { YouTubeAuthProvider } from './contexts/YouTubeAuthContext';
 import { ToastProvider } from './components/ToastManager';
+import { chatHistoryDB } from './utils/chatHistoryDB';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { PlaylistButton } from './components/PlaylistButton';
@@ -41,6 +42,25 @@ function AppContent() {
     youtube: true,
     transcribe: true
   });
+
+  // Migrate chat history from localStorage to IndexedDB on mount
+  useEffect(() => {
+    const migrateData = async () => {
+      try {
+        console.log('Starting migration from localStorage to IndexedDB...');
+        const migratedCount = await chatHistoryDB.migrateFromLocalStorage();
+        console.log(`Migration complete: ${migratedCount} chats migrated`);
+        
+        // Cleanup old chats, keep 100 most recent
+        await chatHistoryDB.cleanupOldChats(100);
+        console.log('Cleanup complete: kept 100 most recent chats');
+      } catch (error) {
+        console.error('Error during migration:', error);
+      }
+    };
+    
+    migrateData();
+  }, []);
 
   // Check authorization status on mount
   useEffect(() => {

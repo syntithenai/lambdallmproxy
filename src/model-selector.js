@@ -10,6 +10,7 @@
  */
 
 const { GROQ_RATE_LIMITS } = require('./groq-rate-limits');
+const { loadEnvironmentProviders } = require('./credential-pool');
 const https = require('https');
 
 /**
@@ -29,12 +30,23 @@ const BLACKLISTED_MODELS = new Set([
  */
 async function fetchAvailableModels() {
   return new Promise((resolve, reject) => {
+    // Get Groq API key from environment providers
+    const envProviders = loadEnvironmentProviders();
+    const groqProvider = envProviders.find(p => p.type === 'groq' || p.type === 'groq-free');
+    const groqApiKey = groqProvider?.apiKey;
+    
+    if (!groqApiKey) {
+      console.warn('⚠️ No Groq provider configured, cannot fetch available models');
+      resolve(new Set());
+      return;
+    }
+    
     const options = {
       hostname: 'api.groq.com',
       path: '/openai/v1/models',
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Authorization': `Bearer ${groqApiKey}`,
         'Content-Type': 'application/json'
       }
     };

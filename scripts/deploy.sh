@@ -66,6 +66,7 @@ cp "$OLDPWD"/src/tavily-search.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/pricing_scraper.js ./
 cp "$OLDPWD"/src/model-selector.js ./
 cp "$OLDPWD"/src/groq-rate-limits.js ./
+cp "$OLDPWD"/src/youtube-api.js ./ 2>/dev/null || true
 
 # Copy modular components (new refactored structure)
 mkdir -p config utils services streaming endpoints tools model-selection routing retry
@@ -311,6 +312,54 @@ if [ $? -eq 0 ]; then
 else
     echo -e "${RED}❌ Could not retrieve Function URL configuration${NC}"
     echo -e "${YELLOW}💡 You may need to create a Function URL first${NC}"
+fi
+
+# Update UI .env file with Lambda URL
+echo -e "${BLUE}🔄 Updating UI .env file with Lambda URL...${NC}"
+FUNCTION_URL=$(aws lambda get-function-url-config \
+    --function-name "$FUNCTION_NAME" \
+    --region "$REGION" \
+    --query 'FunctionUrl' \
+    --output text 2>/dev/null | tr -d '\n' | sed 's/\/$//')
+
+if [ -n "$FUNCTION_URL" ]; then
+    UI_ENV_FILE="$OLDPWD/ui-new/.env"
+    if [ -f "$UI_ENV_FILE" ]; then
+        # Create backup before modifying
+        cp "$UI_ENV_FILE" "${UI_ENV_FILE}.backup.$(date +%Y%m%d-%H%M%S)"
+        echo -e "${YELLOW}📋 Created backup: ${UI_ENV_FILE}.backup.$(date +%Y%m%d-%H%M%S)${NC}"
+        
+        # Update VITE_API_BASE with current Lambda URL
+        if grep -q "VITE_API_BASE=" "$UI_ENV_FILE"; then
+            sed -i "s|VITE_API_BASE=.*|VITE_API_BASE=${FUNCTION_URL}|" "$UI_ENV_FILE"
+            echo -e "${GREEN}✅ Updated VITE_API_BASE in ${UI_ENV_FILE}${NC}"
+        else
+            echo "VITE_API_BASE=${FUNCTION_URL}" >> "$UI_ENV_FILE"
+            echo -e "${GREEN}✅ Added VITE_API_BASE to ${UI_ENV_FILE}${NC}"
+        fi
+        
+        # Update VITE_LAMBDA_URL with current Lambda URL
+        if grep -q "VITE_LAMBDA_URL=" "$UI_ENV_FILE"; then
+            sed -i "s|VITE_LAMBDA_URL=.*|VITE_LAMBDA_URL=${FUNCTION_URL}|" "$UI_ENV_FILE"
+            echo -e "${GREEN}✅ Updated VITE_LAMBDA_URL in ${UI_ENV_FILE}${NC}"
+        else
+            echo "VITE_LAMBDA_URL=${FUNCTION_URL}" >> "$UI_ENV_FILE"
+            echo -e "${GREEN}✅ Added VITE_LAMBDA_URL to ${UI_ENV_FILE}${NC}"
+        fi
+        
+        # Add timestamp comment at the top
+        sed -i "1i# Auto-updated by deployment script: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" "$UI_ENV_FILE"
+        
+        echo -e "${GREEN}✅ UI .env file updated with Lambda URL: ${FUNCTION_URL}${NC}"
+        echo -e "${YELLOW}💡 Rebuild the UI to apply changes:${NC}"
+        echo -e "   ${BLUE}make build-ui${NC}  or  ${BLUE}make deploy-ui${NC}"
+    else
+        echo -e "${YELLOW}⚠️  UI .env file not found at ${UI_ENV_FILE}${NC}"
+        echo -e "${YELLOW}💡 Consider creating it with:${NC}"
+        echo -e "   ${BLUE}VITE_API_BASE=${FUNCTION_URL}${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Could not retrieve Lambda Function URL${NC}"
 fi
 
 # Cleanup

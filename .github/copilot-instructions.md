@@ -2,7 +2,20 @@
 
 This document provides comprehensive instructions for GitHub Copilot to effectively assist in the development of the project.
 
+## 0. Documentation Organization
 
+### 0.1. Developer Log
+
+- **Location**: All development documentation, implementation logs, and technical notes MUST be created in the `developer_log/` directory.
+- **Exception**: Only `README.md` should remain in the project root.
+- **Naming Convention**: Use descriptive uppercase names with underscores, e.g., `FEATURE_MEMORY_TRACKING.md`, `FIX_ENDPOINT_SYNC.md`, `IMPLEMENTATION_PROVIDER_INTEGRATION.md`
+- **Organization**: Group related documents by topic when creating new files:
+  - Features: `FEATURE_*.md`
+  - Fixes: `FIX_*.md`
+  - Implementation: `IMPLEMENTATION_*.md`
+  - Deployment: `DEPLOYMENT_*.md`
+  - Architecture: `ARCHITECTURE_*.md`
+- **Cross-References**: When referencing other documentation, use relative paths: `See developer_log/FEATURE_MEMORY_TRACKING.md`
 
 ## 1. Core Project Directives & Workflow
 
@@ -34,6 +47,23 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
     - `scripts/build-docs.sh` - Builds React UI from `ui-new/` to `docs/` (called by `make build-ui` and `make deploy-ui`)
     - `scripts/deploy-docs.sh` - Commits and pushes `docs/` to GitHub (called by `make deploy-ui`, which calls build-docs.sh first)
 
+#### Environment Variables Deployment
+
+- **⚠️ CRITICAL**: Environment variables in `.env` are LOCAL ONLY and NOT automatically uploaded to Lambda
+- **Required Action**: After modifying `.env` file, you MUST run `make deploy-env` to sync variables to Lambda
+- **When to Deploy**:
+    1.  **After changing any environment variable** in `.env` file
+    2.  **After adding new environment variables** that the backend code uses
+    3.  **When troubleshooting** issues related to configuration (e.g., API keys, feature flags)
+- **Script Details**:
+    - `scripts/deploy-env.sh` - Reads `.env` and updates Lambda environment variables via AWS CLI
+    - Variables are parsed, validated, and uploaded to AWS Lambda Console programmatically
+    - Sensitive values (API keys, secrets) are displayed as `[REDACTED]` during deployment
+- **Environment Files**:
+    - `.env` - Your actual configuration (NEVER commit to git, already in .gitignore)
+    - `.env.example` - Template with empty/demo values (safe to commit)
+    - `.env.backup.*` - Automatic backups created when updating `.env`
+
 #### Quick Reference
 
 ```bash
@@ -41,6 +71,7 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
 make deploy-lambda           # Full deployment with dependencies
 make deploy-lambda-fast      # Fast deployment (code only)
 make setup-layer             # Create dependencies layer (run once)
+make deploy-env              # Deploy environment variables from .env to Lambda
 
 # UI/Documentation  
 make build-ui                # Build React UI to docs/

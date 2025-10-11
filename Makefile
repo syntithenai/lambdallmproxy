@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help deploy-lambda deploy-lambda-fast build-ui deploy-ui all update-catalog clean serve logs logs-tail
+.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev
 
 # Default target - Show help
 help:
@@ -13,10 +13,16 @@ help:
 	@echo "  make deploy-lambda       - Deploy Lambda function (full with dependencies)"
 	@echo "  make deploy-lambda-fast  - Deploy Lambda function (code only, 10 sec)"
 	@echo "  make setup-layer         - Create Lambda layer (run once before fast deploy)"
+	@echo "  make deploy-env          - Deploy environment variables from .env to Lambda"
 	@echo ""
 	@echo "UI/Documentation:"
 	@echo "  make build-ui            - Build React UI to docs/"
 	@echo "  make deploy-ui           - Build and push UI to GitHub Pages"
+	@echo ""
+	@echo "Local Development:"
+	@echo "  make run-lambda-local    - Run Lambda function locally on port 3000"
+	@echo "  make serve-ui            - Serve UI locally on port 8081"
+	@echo "  make dev                 - Run both Lambda (3000) and UI (8081) locally"
 	@echo ""
 	@echo "Combined:"
 	@echo "  make all                 - Deploy everything (Lambda + UI)"
@@ -46,6 +52,12 @@ setup-layer:
 	@chmod +x scripts/deploy-layer.sh
 	./scripts/deploy-layer.sh
 	@echo "✅ Layer created! Now use 'make deploy-lambda-fast' for rapid deployments"
+
+# Deploy environment variables from .env to Lambda
+deploy-env:
+	@echo "🔧 Deploying environment variables to Lambda..."
+	@chmod +x scripts/deploy-env.sh
+	./scripts/deploy-env.sh --yes
 
 # Build React UI to docs/
 build-ui:
@@ -95,3 +107,41 @@ logs:
 logs-tail:
 	@echo "📋 Tailing Lambda logs (Ctrl+C to stop)..."
 	@aws logs tail /aws/lambda/llmproxy --follow --format short
+
+# Run Lambda function locally on port 3000
+run-lambda-local:
+	@echo "🏃 Starting local Lambda server on port 3000..."
+	@chmod +x scripts/run-local-lambda.js
+	@node scripts/run-local-lambda.js
+
+# Serve UI locally on port 8081
+serve-ui:
+	@echo "🖥️ Starting local UI server on port 8081..."
+	@if [ ! -d docs ]; then \
+		echo "⚠️ docs/ not found. Building UI first..."; \
+		make build-ui; \
+	fi
+	@echo "📍 UI available at: http://localhost:8081"
+	@echo "Press Ctrl+C to stop"
+	@cd docs && python3 -m http.server 8081
+
+# Run both Lambda (3000) and UI (8081) locally for development
+dev:
+	@echo "🚀 Starting local development environment..."
+	@echo ""
+	@echo "This will start:"
+	@echo "  📍 Lambda server: http://localhost:3000"
+	@echo "  📍 UI server: http://localhost:8081"
+	@echo ""
+	@echo "Press Ctrl+C to stop both servers"
+	@echo ""
+	@if [ ! -d docs ]; then \
+		echo "⚠️ Building UI first..."; \
+		make build-ui; \
+		echo ""; \
+	fi
+	@trap 'kill 0' INT; \
+	node scripts/run-local-lambda.js & \
+	sleep 2; \
+	cd docs && python3 -m http.server 8081 & \
+	wait

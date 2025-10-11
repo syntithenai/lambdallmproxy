@@ -16,7 +16,7 @@ const { MemoryTracker, TokenAwareMemoryTracker } = require('./memory-tracker');
 const { SimpleHTMLParser } = require('./html-parser');
 const { DuckDuckGoSearcher } = require('./search');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
-const { toolFunctions, callFunction } = require('./tools');
+const { getToolFunctions, callFunction } = require('./tools');
 const { loadAllPricing, calculateLLMCost } = require('./pricing');
 const { createProgressEmitter } = require('./utils/progress-emitter');
 
@@ -258,6 +258,8 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
     // Track full tool results for final synthesis (separate from truncated conversation history)
     const fullToolResults = [];
 
+    // Get tool functions with environment-based filtering
+    const toolFunctions = getToolFunctions();
     // Starting tool loop with ${toolFunctions?.length || 0} available tools
 
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {

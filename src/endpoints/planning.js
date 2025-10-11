@@ -170,7 +170,7 @@ async function handler(event, responseStream) {
         // Parse request body
         const body = JSON.parse(event.body || '{}');
         const query = body.query || '';
-        const apiKey = body.apiKey || process.env.GROQ_API_KEY || '';
+        const apiKey = body.apiKey || '';
         const model = body.model || 'groq:llama-3.3-70b-versatile';
         
         // Validate inputs

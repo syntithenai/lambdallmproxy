@@ -13,7 +13,7 @@ const { extractContent } = require('./html-content-extractor');
  * Integrated DuckDuckGo scraper for search functionality
  */
 class DuckDuckGoSearcher {
-    constructor() {
+    constructor(proxyUsername = null, proxyPassword = null) {
         this.baseUrl = 'https://duckduckgo.com/';
         this.userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
         this.memoryTracker = new TokenAwareMemoryTracker();
@@ -24,6 +24,21 @@ class DuckDuckGoSearcher {
             'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does',
             'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can'
         ]);
+        
+        // Proxy configuration
+        this.proxyAgent = null;
+        if (proxyUsername && proxyPassword) {
+            try {
+                const { HttpsProxyAgent } = require('https-proxy-agent');
+                const proxyUrl = `http://${proxyUsername}-rotate:${proxyPassword}@p.webshare.io:80/`;
+                this.proxyAgent = new HttpsProxyAgent(proxyUrl);
+                console.log(`🔧 DuckDuckGo search - Proxy: ENABLED (${proxyUsername}-rotate@p.webshare.io)`);
+            } catch (error) {
+                console.error('Failed to create proxy agent for DuckDuckGo:', error);
+            }
+        } else {
+            console.log('🔧 DuckDuckGo search - Proxy: DISABLED');
+        }
         
         // Enhanced anti-blocking session management
         this.requestHistory = [];
@@ -1214,12 +1229,13 @@ class DuckDuckGoSearcher {
 
     /**
      * Fetch URL with timeout and redirects
+     * Automatically falls back to direct connection if proxy fails
      * @param {string} url - URL to fetch
      * @param {number} timeoutMs - Timeout in milliseconds
      * @returns {Promise<string>} Response body
      */
     async fetchUrl(url, timeoutMs = 10000) {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error(`Request timeout after ${timeoutMs}ms`));
             }, timeoutMs);
@@ -1252,6 +1268,12 @@ class DuckDuckGoSearcher {
                     },
                     timeout: timeoutMs
                 };
+                
+                // Add proxy agent if available (will fallback to direct if proxy fails)
+                const usingProxy = this.proxyAgent && isHttps;
+                if (usingProxy) {
+                    options.agent = this.proxyAgent;
+                }
 
                 const req = client.request(options, (res) => {
                     // Handle redirects (301, 302, 303, 307, 308)
@@ -1325,19 +1347,55 @@ class DuckDuckGoSearcher {
 
                 req.on('error', (err) => {
                     clearTimeout(timeout);
-                    reject(new Error(`Failed to fetch ${requestUrl}: ${err.message}`));
+                    // Mark proxy-related errors for fallback handling
+                    if (usingProxy && (err.message.includes('proxy') || err.message.includes('ECONNREFUSED') || err.message.includes('ETIMEDOUT') || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND')) {
+                        reject(new Error(`PROXY_FAILED:${err.message}`));
+                    } else {
+                        reject(new Error(`Failed to fetch ${requestUrl}: ${err.message}`));
+                    }
                 });
 
                 req.on('timeout', () => {
                     req.destroy();
                     clearTimeout(timeout);
-                    reject(new Error(`Request timeout after ${timeoutMs}ms`));
+                    if (usingProxy) {
+                        reject(new Error(`PROXY_FAILED:Request timeout after ${timeoutMs}ms`));
+                    } else {
+                        reject(new Error(`Request timeout after ${timeoutMs}ms`));
+                    }
                 });
 
                 req.end();
             };
 
-            makeRequest(url);
+            // Try with proxy first, fallback to direct if proxy fails
+            try {
+                await makeRequest(url);
+            } catch (error) {
+                if (this.proxyAgent && error.message.startsWith('PROXY_FAILED:')) {
+                    const originalError = error.message.replace('PROXY_FAILED:', '');
+                    console.log(`⚠️ Proxy failed (${originalError}), retrying direct connection...`);
+                    // Temporarily disable proxy for retry
+                    const originalProxyAgent = this.proxyAgent;
+                    this.proxyAgent = null;
+                    try {
+                        await makeRequest(url);
+                        console.log(`✅ Direct connection successful`);
+                    } catch (retryError) {
+                        // Restore proxy agent
+                        this.proxyAgent = originalProxyAgent;
+                        clearTimeout(timeout);
+                        reject(new Error(`Both proxy and direct connection failed: ${retryError.message}`));
+                        return;
+                    }
+                    // Restore proxy agent
+                    this.proxyAgent = originalProxyAgent;
+                } else {
+                    clearTimeout(timeout);
+                    reject(error);
+                    return;
+                }
+            }
         });
     }
 

@@ -31,14 +31,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
 
   const [tempSettings, setTempSettings] = useState<Settings>(settings);
-  const [activeTab, setActiveTab] = useState<'provider' | 'tools'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy'>('provider');
+  
+  // Proxy settings state
+  const [proxyUsername, setProxyUsername] = useState('');
+  const [proxyPassword, setProxyPassword] = useState('');
+  const [proxyEnabled, setProxyEnabled] = useState(false);
 
   useEffect(() => {
     setTempSettings(settings);
+    
+    // Load proxy settings from localStorage
+    const savedProxySettings = localStorage.getItem('proxy_settings');
+    if (savedProxySettings) {
+      try {
+        const parsed = JSON.parse(savedProxySettings);
+        setProxyUsername(parsed.username || '');
+        setProxyPassword(parsed.password || '');
+        setProxyEnabled(parsed.enabled !== false); // Default to true
+      } catch (e) {
+        console.error('Failed to parse proxy settings:', e);
+      }
+    }
   }, [settings, isOpen]);
 
   const handleSave = () => {
     setSettings(tempSettings);
+    
+    // Save proxy settings to localStorage
+    localStorage.setItem('proxy_settings', JSON.stringify({
+      username: proxyUsername,
+      password: proxyPassword,
+      enabled: proxyEnabled
+    }));
+    
     console.log('Settings saved:', tempSettings);
     onClose();
   };
@@ -86,6 +112,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             🛠️ Tools
+          </button>
+          <button
+            onClick={() => setActiveTab('proxy')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'proxy'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            🌐 Proxy
           </button>
         </div>
 
@@ -331,6 +367,68 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Add and manage Model Context Protocol servers for extended functionality
             </p>
+          </div>
+        </div>
+        )}
+
+        {/* Proxy Tab */}
+        {activeTab === 'proxy' && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">
+              Webshare Proxy Configuration
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Configure residential proxy for YouTube, DuckDuckGo, and content scraping to avoid rate limiting
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={proxyUsername}
+                  onChange={(e) => setProxyUsername(e.target.value)}
+                  placeholder="exrihquq"
+                  className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={proxyPassword}
+                  onChange={(e) => setProxyPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="proxyEnabled"
+                  checked={proxyEnabled}
+                  onChange={(e) => setProxyEnabled(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="proxyEnabled" className="text-sm text-gray-700 dark:text-gray-300">
+                  Enable proxy for all requests
+                </label>
+              </div>
+            </div>
+            
+            <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 space-y-1 bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
+              <p>✓ Rotating residential IPs via p.webshare.io:80</p>
+              <p>✓ Avoids rate limiting from Google and other services</p>
+              <p>✓ Get credentials from <a href="https://proxy2.webshare.io/userapi/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline">Webshare Dashboard</a></p>
+              <p>⚠️ UI settings override environment variables</p>
+            </div>
           </div>
         </div>
         )}

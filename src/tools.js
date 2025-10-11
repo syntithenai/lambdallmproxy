@@ -197,7 +197,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'search_youtube',
-      description: '🎬 SEARCH/FIND YouTube videos (NOT for transcription). Use when user wants to FIND or SEARCH for videos. **DO NOT USE if user wants to transcribe, get transcript, or extract text from a specific YouTube URL** - use transcribe_url instead. Use search_youtube for: "find YouTube videos about X", "search YouTube for X", "show me videos about X". Returns video titles, descriptions, links, and caption availability. Results are automatically added to a playlist. **CRITICAL: You MUST include ALL video URLs in your response as a formatted markdown list with [Title](URL) format.**',
+      description: '🎬 SEARCH/FIND YouTube videos (NOT for transcription). Use when user wants to FIND or SEARCH for videos. **DO NOT USE if user wants to transcribe, get transcript, or extract text from a specific YouTube URL** - use transcribe_url or get_youtube_transcript instead. Use search_youtube for: "find YouTube videos about X", "search YouTube for X", "show me videos about X". Returns video titles, descriptions, links, and caption availability. Results are automatically added to a playlist. **CRITICAL: You MUST include ALL video URLs in your response as a formatted markdown list with [Title](URL) format.**',
       parameters: {
         type: 'object',
         properties: {
@@ -220,6 +220,34 @@ const toolFunctions = [
           }
         },
         required: ['query'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_youtube_transcript',
+      description: '📝 Get detailed YouTube video transcript with timestamps and metadata. **USE THIS when user wants timestamps, segments, or detailed transcript info** (e.g., "get transcript with timestamps", "show me the captions at 1:30", "what language is the video in"). For simple text transcription without timestamps, use transcribe_url instead. **REQUIRES: YouTube OAuth authentication** (user must be logged in and have YouTube enabled in settings). Returns structured data with: full text, timed segments, language info, duration, and whether captions are auto-generated.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'YouTube video URL (youtube.com/watch?v=..., youtu.be/..., youtube.com/shorts/...)'
+          },
+          include_timestamps: {
+            type: 'boolean',
+            default: true,
+            description: 'Include detailed timestamps for each segment (default: true)'
+          },
+          language: {
+            type: 'string',
+            default: 'en',
+            description: 'Preferred language code (e.g., "en", "es", "fr", "de"). Falls back to English if not available.'
+          }
+        },
+        required: ['url'],
         additionalProperties: false
       }
     }
@@ -405,7 +433,9 @@ async function callFunction(name, args = {}, context = {}) {
         } catch (error) {
           console.error('Tavily search failed, falling back to DuckDuckGo:', error.message);
           // Fall back to DuckDuckGo on error
-          const searcher = new DuckDuckGoSearcher();
+          const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+          const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+          const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
           for (const query of queries) {
             const out = await searcher.search(query, limit, true, timeout);
             const results = (out?.results || []).map(r => ({
@@ -425,7 +455,10 @@ async function callFunction(name, args = {}, context = {}) {
         }
       } else {
         // Use DuckDuckGo search - always load content
-        const searcher = new DuckDuckGoSearcher();
+        // Get proxy credentials from context or environment
+        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+        const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
         
         // Execute searches for all queries
         for (const query of queries) {
@@ -1017,7 +1050,9 @@ Brief answer with URLs:`;
           } catch (tavilyError) {
             console.error('Tavily extract failed, falling back to DuckDuckGo:', tavilyError.message);
             // Fall back to DuckDuckGo on error
-            const searcher = new DuckDuckGoSearcher();
+            const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+            const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+            const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
             const raw = await searcher.fetchUrl(url, timeout * 1000);
             const extracted = extractContent(raw);
             
@@ -1032,7 +1067,9 @@ Brief answer with URLs:`;
           }
         } else {
           // Use DuckDuckGo fetcher
-          const searcher = new DuckDuckGoSearcher();
+          const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+          const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+          const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
           const raw = await searcher.fetchUrl(url, timeout * 1000);
           const extracted = extractContent(raw);
           
@@ -1055,7 +1092,9 @@ Brief answer with URLs:`;
         
         if (scrapeService === 'duckduckgo') {
           // For DuckDuckGo, we have access to raw HTML
-          const searcher = new DuckDuckGoSearcher();
+          const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+          const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+          const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
           const rawHtml = await searcher.fetchUrl(url, timeout * 1000);
           
           // Use URL as query context for relevance (extract domain/path keywords)
@@ -1206,7 +1245,12 @@ Brief answer with URLs:`;
         const isYouTubeUrl = /youtube\.com|youtu\.be|youtube\.com\/shorts/.test(url);
         const youtubeAccessToken = context.youtubeAccessToken || null;
 
+        // Check if Whisper transcription is disabled via environment variable
+        // NOTE: This only disables WHISPER for YouTube, not YouTube API transcripts
+        const disableYouTubeWhisper = process.env.DISABLE_YOUTUBE_TRANSCRIPTION === 'true';
+
         // Prioritize YouTube Transcript API if token available
+        // YouTube API transcripts work regardless of DISABLE_YOUTUBE_TRANSCRIPTION flag
         if (isYouTubeUrl && youtubeAccessToken) {
           console.log('Using YouTube Transcript API (OAuth authenticated)');
           try {
@@ -1220,12 +1264,33 @@ Brief answer with URLs:`;
               language: 'auto-detected'
             });
           } catch (ytError) {
-            console.warn('YouTube API failed, falling back to Whisper:', ytError.message);
+            console.warn('YouTube API failed:', ytError.message);
+            
+            // Check if Whisper fallback is allowed for YouTube
+            if (isYouTubeUrl && disableYouTubeWhisper) {
+              return JSON.stringify({
+                error: 'YouTube API transcript unavailable and Whisper transcription is disabled for YouTube URLs. Please enable YouTube API captions or set DISABLE_YOUTUBE_TRANSCRIPTION=false to use Whisper.',
+                url,
+                youtubeApiError: ytError.message,
+                whisperDisabled: true
+              });
+            }
+            console.log('Falling back to Whisper transcription');
             // Fall through to Whisper transcription
           }
         }
 
-        // Fallback: Whisper transcription (existing behavior)
+        // Check if this is a YouTube URL without OAuth and Whisper is disabled
+        if (isYouTubeUrl && !youtubeAccessToken && disableYouTubeWhisper) {
+          return JSON.stringify({
+            error: 'YouTube transcription via Whisper is disabled. Please authenticate with YouTube OAuth to use YouTube API transcripts, or set DISABLE_YOUTUBE_TRANSCRIPTION=false.',
+            url,
+            whisperDisabled: true,
+            needsOAuth: true
+          });
+        }
+
+        // Fallback: Whisper transcription (for non-YouTube or when enabled)
         console.log('Using Whisper API for transcription');
         const onProgress = context.onProgress || null;
         const toolCallId = context.toolCallId || null;
@@ -1239,6 +1304,26 @@ Brief answer with URLs:`;
         const apiKey = provider === 'groq' 
           ? context.apiKey 
           : (context.openaiApiKey || context.apiKey);
+
+        // Check if the API key is actually a Gemini key (which doesn't support Whisper)
+        if (apiKey && apiKey.startsWith('AIza')) {
+          return JSON.stringify({
+            error: 'Audio transcription requires OpenAI or Groq API credentials. Gemini does not support Whisper transcription. Please configure LLAMDA_LLM_PROXY_PROVIDER_TYPE_N=openai or groq-free with the corresponding API key to enable transcription.',
+            url,
+            source: 'whisper',
+            hint: 'Add an OpenAI provider (for Whisper-1) or Groq provider (for Whisper-large-v3-turbo) to your environment configuration.'
+          });
+        }
+
+        // Validate that we have a suitable API key
+        if (!apiKey) {
+          return JSON.stringify({
+            error: 'No Whisper-compatible API key found. Audio transcription requires OpenAI or Groq credentials.',
+            url,
+            source: 'whisper',
+            hint: 'Configure LLAMDA_LLM_PROXY_PROVIDER_TYPE_N with openai or groq-free and provide the corresponding API key.'
+          });
+        }
 
         // Use provider-specific model name
         const model = provider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1';
@@ -1277,6 +1362,7 @@ Brief answer with URLs:`;
       try {
         const https = require('https');
         const querystring = require('querystring');
+        const { createWebshareProxyAgent } = require('./youtube-api');
         
         // Map order parameter to YouTube API order values
         const orderMap = {
@@ -1286,6 +1372,14 @@ Brief answer with URLs:`;
           'rating': 'rating'
         };
         const apiOrder = orderMap[order] || 'relevance';
+        
+        // Get proxy credentials from context (posted from UI) or environment variables
+        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+        
+        // Create proxy agent if credentials available
+        const proxyAgent = createWebshareProxyAgent(proxyUsername, proxyPassword);
+        console.log(`🔧 YouTube API search - Proxy: ${proxyAgent ? 'ENABLED' : 'DISABLED'}`);
         
         // Use YouTube Data API v3 with API key
         const apiKey = 'AIzaSyDFLprO5B-qKsoHprb8BooVmVTT0B5Mnus';
@@ -1298,32 +1392,183 @@ Brief answer with URLs:`;
           key: apiKey
         })}`;
         
-        const apiResponse = await new Promise((resolve, reject) => {
-          https.get(apiUrl, {
-            headers: {
-              'Accept': 'application/json',
-              'Referer': 'https://lambdallmproxy.pages.dev/'
-            }
-          }, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-              if (res.statusCode === 200) {
-                resolve(data);
+        const requestOptions = {
+          headers: {
+            'Accept': 'application/json',
+            'Referer': 'https://lambdallmproxy.pages.dev/'
+          }
+        };
+        
+        // Add proxy agent if available
+        const usingProxy = !!proxyAgent;
+        if (proxyAgent) {
+          requestOptions.agent = proxyAgent;
+        }
+        
+        // Fetch YouTube API with automatic fallback to direct connection if proxy fails
+        let apiResponse;
+        try {
+          apiResponse = await new Promise((resolve, reject) => {
+            https.get(apiUrl, requestOptions, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => {
+                if (res.statusCode === 200) {
+                  resolve(data);
+                } else {
+                  reject(new Error(`YouTube API returned status ${res.statusCode}: ${data}`));
+                }
+              });
+            }).on('error', (err) => {
+              // Mark proxy-related errors for fallback
+              if (usingProxy && (err.message.includes('proxy') || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND')) {
+                reject(new Error(`PROXY_FAILED:${err.message}`));
               } else {
-                reject(new Error(`YouTube API returned status ${res.statusCode}: ${data}`));
+                reject(err);
               }
             });
-          }).on('error', reject);
-        });
+          });
+        } catch (error) {
+          // Retry without proxy if proxy failed
+          if (usingProxy && error.message.startsWith('PROXY_FAILED:')) {
+            const originalError = error.message.replace('PROXY_FAILED:', '');
+            console.log(`⚠️ YouTube API proxy failed (${originalError}), retrying direct connection...`);
+            delete requestOptions.agent;
+            apiResponse = await new Promise((resolve, reject) => {
+              https.get(apiUrl, requestOptions, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                  if (res.statusCode === 200) {
+                    console.log(`✅ YouTube API direct connection successful`);
+                    resolve(data);
+                  } else {
+                    reject(new Error(`YouTube API returned status ${res.statusCode}: ${data}`));
+                  }
+                });
+              }).on('error', reject);
+            });
+          } else {
+            throw error;
+          }
+        }
         
         const apiData = JSON.parse(apiResponse);
         const videoIds = (apiData.items || []).map(item => item.id.videoId);
         
+        // Try to fetch transcripts from public videos (no OAuth required)
+        // Use YouTube's timedtext endpoint which works for public videos
+        console.log(`🎬 YouTube search: ${videoIds.length} videos, fetching public transcripts...`);
+        
         // Fetch captions information and transcripts for all videos
-        const captionsInfoPromises = videoIds.map(async (videoId) => {
+        // Process sequentially with delays to avoid rate limiting
+        const captionsInfo = [];
+        const { getYouTubeTranscriptViaInnerTube } = require('./youtube-api');
+        
+        // Reuse proxy credentials from above (already set from context or env)
+        console.log(`🔧 DEBUG: Starting transcript fetch loop for ${videoIds.length} videos`);
+        console.log(`🔧 DEBUG: Proxy credentials - username: ${proxyUsername ? 'SET' : 'NOT SET'}, password: ${proxyPassword ? 'SET' : 'NOT SET'}`);
+        
+        // Create progress callback to emit YouTube search progress events
+        const onProgress = (data) => {
+          if (context?.writeEvent) {
+            context.writeEvent('youtube_search_progress', data);
+          }
+        };
+        
+        // Emit streaming event for YouTube search progress
+        if (onProgress) {
+          onProgress({
+            type: 'youtube_search_progress',
+            phase: 'fetching_transcripts',
+            totalVideos: videoIds.length,
+            currentVideo: 0,
+            message: `Found ${videoIds.length} videos, fetching transcripts...`
+          });
+        }
+        
+        for (let i = 0; i < videoIds.length; i++) {
+          const videoId = videoIds[i];
+          console.log(`🔧 DEBUG: Processing video ${i+1}/${videoIds.length}: ${videoId}`);
+          
+          // Emit progress for this video
+          if (onProgress) {
+            onProgress({
+              type: 'youtube_search_progress',
+              phase: 'fetching_transcript',
+              totalVideos: videoIds.length,
+              currentVideo: i + 1,
+              videoId,
+              message: `Fetching transcript ${i+1}/${videoIds.length}: ${videoId}`
+            });
+          }
+          
           try {
-            // First, check for caption availability using the API
+            // Try to fetch public transcript using InnerTube API (best method, works with proxy)
+            try {
+              const transcript = await getYouTubeTranscriptViaInnerTube(videoId, {
+                language: 'en',
+                proxyUsername,
+                proxyPassword,
+                includeTimestamps: false
+              });
+              
+              if (transcript && transcript.length > 0) {
+                // Truncate transcript to first 500 characters for search results
+                const truncatedTranscript = transcript.length > 500 
+                  ? transcript.substring(0, 500) + '...' 
+                  : transcript;
+                
+                console.log(`✅ Fetched InnerTube transcript for ${videoId} (${transcript.length} chars)`);
+                
+                // Emit success event
+                if (onProgress) {
+                  onProgress({
+                    type: 'youtube_search_progress',
+                    phase: 'transcript_fetched',
+                    totalVideos: videoIds.length,
+                    currentVideo: i + 1,
+                    videoId,
+                    transcriptLength: transcript.length,
+                    message: `✅ Fetched transcript (${transcript.length} chars)`
+                  });
+                }
+                
+                captionsInfo.push({ 
+                  videoId, 
+                  hasCaptions: true, 
+                  transcript: truncatedTranscript,
+                  fullTranscriptLength: transcript.length,
+                  language: 'en',
+                  method: 'innertube'
+                });
+                
+                // Add delay between requests to avoid rate limiting (500ms)
+                if (i < videoIds.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                continue;
+              }
+            } catch (transcriptError) {
+              console.error(`❌ InnerTube transcript fetch failed for ${videoId}:`, transcriptError.message);
+              
+              // Emit failure event
+              if (onProgress) {
+                onProgress({
+                  type: 'youtube_search_progress',
+                  phase: 'transcript_failed',
+                  totalVideos: videoIds.length,
+                  currentVideo: i + 1,
+                  videoId,
+                  error: transcriptError.message,
+                  message: `⚠️ Transcript unavailable: ${transcriptError.message.substring(0, 50)}`
+                });
+              }
+              
+              // Fall through to caption check
+            }
+            
+            // Fall back to checking caption availability (without fetching content)
             const captionsUrl = `https://www.googleapis.com/youtube/v3/captions?${querystring.stringify({
               part: 'snippet',
               videoId: videoId,
@@ -1355,25 +1600,34 @@ Brief answer with URLs:`;
                 c.snippet.language === 'en' || c.snippet.language.startsWith('en')
               ) || captionsData.items[0];
               
-              // Note: YouTube's timedtext API for fetching transcripts is restricted
-              // and requires OAuth authentication which is not feasible in serverless context.
-              // We can only detect caption availability, not fetch content.
-              
-              return { 
+              captionsInfo.push({ 
                 videoId, 
                 hasCaptions: true, 
                 captionId: enCaption.id, 
                 language: enCaption.snippet.language,
                 trackKind: enCaption.snippet.trackKind // 'standard' or 'asr'
-              };
+              });
+            } else {
+              captionsInfo.push({ videoId, hasCaptions: false, transcript: null });
             }
-            return { videoId, hasCaptions: false, transcript: null };
           } catch (err) {
-            return { videoId, hasCaptions: false, transcript: null };
+            captionsInfo.push({ videoId, hasCaptions: false, transcript: null });
           }
-        });
+        }
         
-        const captionsInfo = await Promise.all(captionsInfoPromises);
+        // Emit completion event
+        const successCount = captionsInfo.filter(c => c.transcript).length;
+        if (onProgress) {
+          onProgress({
+            type: 'youtube_search_progress',
+            phase: 'complete',
+            totalVideos: videoIds.length,
+            successCount,
+            failedCount: videoIds.length - successCount,
+            message: `✅ Transcript fetch complete: ${successCount}/${videoIds.length} successful`
+          });
+        }
+        
         const captionsMap = {};
         captionsInfo.forEach(info => {
           captionsMap[info.videoId] = info;
@@ -1393,11 +1647,17 @@ Brief answer with URLs:`;
             hasCaptions: captionInfo.hasCaptions || false
           };
           
-          // Include caption details if available
-          if (captionInfo.hasCaptions) {
+          // Include transcript if fetched successfully
+          if (captionInfo.transcript) {
+            videoData.transcript = captionInfo.transcript;
+            videoData.transcriptLength = captionInfo.fullTranscriptLength;
+            videoData.transcriptNote = `Full transcript available (${captionInfo.fullTranscriptLength} chars). Showing first 500 characters.`;
+          }
+          // Otherwise include caption availability info
+          else if (captionInfo.hasCaptions) {
             videoData.captionLanguage = captionInfo.language;
             videoData.captionType = captionInfo.trackKind === 'asr' ? 'auto-generated' : 'manual';
-            videoData.captionsNote = `${videoData.captionType === 'auto-generated' ? 'Auto-generated' : 'Manual'} captions available in ${captionInfo.language}. View on YouTube to access full captions.`;
+            videoData.captionsNote = `${videoData.captionType === 'auto-generated' ? 'Auto-generated' : 'Manual'} captions available in ${captionInfo.language}. Transcript could not be fetched. Use get_youtube_transcript or transcribe_url tool for full content.`;
           }
           
           return videoData;
@@ -1415,6 +1675,135 @@ Brief answer with URLs:`;
         return JSON.stringify({ 
           error: `YouTube search failed: ${error.message}`,
           query 
+        });
+      }
+    }
+    
+    case 'get_youtube_transcript': {
+      const url = String(args.url || '').trim();
+      if (!url) return JSON.stringify({ error: 'url required' });
+      
+      const includeTimestamps = args.include_timestamps !== false; // Default true
+      const language = args.language || 'en';
+      
+      try {
+        const { getYouTubeTranscriptViaInnerTube, getYouTubeTranscript, extractYouTubeVideoId } = require('./youtube-api');
+        
+        // Validate YouTube URL
+        const videoId = extractYouTubeVideoId(url);
+        if (!videoId) {
+          return JSON.stringify({
+            error: 'Invalid YouTube URL',
+            url,
+            message: 'Could not extract video ID from URL. Supported formats: youtube.com/watch?v=..., youtu.be/..., youtube.com/shorts/...'
+          });
+        }
+        
+        console.log(`📝 Fetching detailed transcript for ${videoId} (timestamps: ${includeTimestamps}, language: ${language})`);
+        
+        let result;
+        let source = 'innertube';
+        
+        // Get proxy credentials from context (posted from UI) or environment variables
+        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+        
+        // Try InnerTube API first (works for all public videos)
+        try {
+          console.log('🔄 Attempting InnerTube API for detailed transcript...');
+          result = await getYouTubeTranscriptViaInnerTube(videoId, {
+            language,
+            includeTimestamps,
+            proxyUsername,
+            proxyPassword
+          });
+          console.log(`✅ InnerTube API succeeded`);
+        } catch (innerTubeError) {
+          console.log(`⚠️ InnerTube API failed: ${innerTubeError.message}`);
+          
+          // Fall back to OAuth API if user is authenticated
+          const youtubeToken = context?.youtubeAccessToken;
+          if (youtubeToken) {
+            console.log('🔄 Falling back to OAuth API...');
+            try {
+              result = await getYouTubeTranscript(url, youtubeToken, {
+                includeTimestamps,
+                language
+              });
+              source = 'oauth';
+              console.log(`✅ OAuth API succeeded`);
+            } catch (oauthError) {
+              console.log(`❌ OAuth API also failed: ${oauthError.message}`);
+              throw innerTubeError; // Throw original error
+            }
+          } else {
+            // No OAuth token, throw InnerTube error
+            throw innerTubeError;
+          }
+        }
+        
+        // If timestamps were requested and result is an object with snippets
+        if (includeTimestamps && result && typeof result === 'object' && result.snippets) {
+          const fullText = result.snippets.map(s => s.text).join(' ');
+          console.log(`✅ Fetched transcript with ${result.snippets.length} snippets (${fullText.length} chars) via ${source}`);
+          
+          return JSON.stringify({
+            success: true,
+            url,
+            videoId: result.videoId,
+            text: fullText,
+            snippets: result.snippets,
+            metadata: {
+              totalCharacters: fullText.length,
+              snippetCount: result.snippets.length,
+              language: result.language,
+              languageCode: result.languageCode,
+              isGenerated: result.isGenerated,
+              source,
+              format: 'timestamped'
+            },
+            note: 'Full transcript with timestamps. Each snippet includes start, duration, and text.'
+          });
+        }
+        
+        // If result is plain text
+        if (typeof result === 'string') {
+          console.log(`✅ Fetched plain text transcript (${result.length} chars) via ${source}`);
+          return JSON.stringify({
+            success: true,
+            url,
+            videoId,
+            text: result,
+            metadata: {
+              totalCharacters: result.length,
+              format: 'plain_text',
+              source
+            }
+          });
+        }
+        
+        // Unexpected format
+        throw new Error('Unexpected transcript format returned');
+        
+      } catch (error) {
+        console.error('❌ get_youtube_transcript error:', error);
+        
+        // Provide helpful error messages
+        let errorMessage = error.message || 'Unknown error';
+        let suggestion = 'Try using transcribe_url tool as an alternative (uses Whisper API)';
+        
+        if (errorMessage.includes('No captions available')) {
+          errorMessage = 'This video does not have captions/subtitles available.';
+          suggestion = 'Use transcribe_url tool to transcribe the video audio with Whisper API.';
+        } else if (errorMessage.includes('ytInitialPlayerResponse')) {
+          errorMessage = 'Could not extract caption data from YouTube page. The video may be private or restricted.';
+          suggestion = 'Use transcribe_url tool to transcribe the video audio with Whisper API.';
+        }
+        
+        return JSON.stringify({
+          error: errorMessage,
+          url,
+          suggestion
         });
       }
     }
@@ -1465,23 +1854,6 @@ function analyzeSourceCredibility(results) {
   return scoredResults.sort((a, b) => b.credibilityScore - a.credibilityScore);
 }
 
-// Pick an available model and API key for summarization
-function selectSummaryModel() {
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const groqKey = process.env.GROQ_API_KEY;
-  
-  // Prefer Groq for summaries since it's working and has good rate limits
-  if (groqKey) {
-    const m = process.env.GROQ_MODEL ? `groq:${process.env.GROQ_MODEL}` : 'groq:llama-3.1-8b-instant';
-    return { model: m, apiKey: groqKey };
-  }
-  if (openaiKey) {
-    const m = process.env.OPENAI_MODEL ? `openai:${process.env.OPENAI_MODEL}` : 'openai:gpt-4o-mini';
-    return { model: m, apiKey: openaiKey };
-  }
-  return { model: null, apiKey: null };
-}
-
 // Build a concise prompt for summaries with essential citations only
 function buildSummaryPrompt(query, results, hasContent) {
   const maxItems = Math.min(results.length, 2); // Emergency limit: max 2 sources
@@ -1508,8 +1880,42 @@ ${items}
 Requirements: Cite URLs, prioritize facts from multiple sources, 2-3 sentences max.`;
 }
 
+/**
+ * Get tool functions with dynamic descriptions based on environment
+ * Modifies tool availability based on configuration
+ */
+function getToolFunctions() {
+  const tools = [...toolFunctions]; // Clone array
+  
+  // If YouTube Whisper transcription is disabled, update the transcribe_url description
+  // NOTE: This only affects Whisper transcription, not YouTube API transcripts (OAuth)
+  const disableYouTubeWhisper = process.env.DISABLE_YOUTUBE_TRANSCRIPTION === 'true';
+  console.log(`🎬 getToolFunctions: DISABLE_YOUTUBE_TRANSCRIPTION=${process.env.DISABLE_YOUTUBE_TRANSCRIPTION}, whisperDisabled=${disableYouTubeWhisper}`);
+  
+  if (disableYouTubeWhisper) {
+    const transcribeToolIndex = tools.findIndex(t => t.function.name === 'transcribe_url');
+    console.log(`🎬 Found transcribe_url tool at index: ${transcribeToolIndex}`);
+    if (transcribeToolIndex >= 0) {
+      const newDescription = '🎙️ Transcribe audio or video content from URLs. **YOUTUBE WHISPER DISABLED**: For YouTube videos, requires OAuth authentication to use YouTube API transcripts (Whisper method disabled). For other media types (.mp3, .mp4, .wav, .m4a, etc.), uses OpenAI Whisper transcription. Automatically handles large files by chunking. Shows real-time progress with stop capability.';
+      tools[transcribeToolIndex] = {
+        ...tools[transcribeToolIndex],
+        function: {
+          ...tools[transcribeToolIndex].function,
+          description: newDescription
+        }
+      };
+      console.log(`🎬 Updated transcribe_url description: YouTube requires OAuth (Whisper disabled)`);
+    }
+  } else {
+    console.log(`🎬 YouTube Whisper transcription is ENABLED`);
+  }
+  
+  return tools;
+}
+
 module.exports = {
   toolFunctions,
+  getToolFunctions,
   callFunction,
   compressSearchResultsForLLM
 };

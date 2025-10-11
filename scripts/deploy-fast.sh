@@ -59,6 +59,7 @@ cp "$OLDPWD"/src/tavily-search.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/pricing_scraper.js ./
 cp "$OLDPWD"/src/model-selector.js ./
 cp "$OLDPWD"/src/groq-rate-limits.js ./
+cp "$OLDPWD"/src/youtube-api.js ./ 2>/dev/null || true
 
 # Copy modular components
 mkdir -p config utils services streaming endpoints tools model-selection routing retry
@@ -130,10 +131,62 @@ STATUS=$(aws lambda get-function \
 
 echo -e "${BLUE}Status: ${STATUS}${NC}"
 
+# Get Lambda Function URL
+echo -e "${YELLOW}🔍 Retrieving Lambda Function URL...${NC}"
+FUNCTION_URL=$(aws lambda get-function-url-config \
+    --function-name "$FUNCTION_NAME" \
+    --region "$REGION" \
+    --query 'FunctionUrl' \
+    --output text 2>/dev/null | tr -d '\n' | sed 's/\/$//')
+
+if [ -n "$FUNCTION_URL" ]; then
+    echo -e "${GREEN}✅ Lambda URL: ${FUNCTION_URL}${NC}"
+    
+    # Update UI .env file
+    UI_ENV_FILE="$OLDPWD/ui-new/.env"
+    if [ -f "$UI_ENV_FILE" ]; then
+        echo -e "${YELLOW}📝 Updating UI environment configuration...${NC}"
+        
+        # Create backup
+        cp "$UI_ENV_FILE" "${UI_ENV_FILE}.backup.$(date +%Y%m%d-%H%M%S)"
+        
+        # Update VITE_API_BASE
+        if grep -q "VITE_API_BASE=" "$UI_ENV_FILE"; then
+            # Replace existing value
+            sed -i "s|VITE_API_BASE=.*|VITE_API_BASE=${FUNCTION_URL}|" "$UI_ENV_FILE"
+        else
+            # Add new value
+            echo "VITE_API_BASE=${FUNCTION_URL}" >> "$UI_ENV_FILE"
+        fi
+        
+        # Update VITE_LAMBDA_URL (legacy)
+        if grep -q "VITE_LAMBDA_URL=" "$UI_ENV_FILE"; then
+            sed -i "s|VITE_LAMBDA_URL=.*|VITE_LAMBDA_URL=${FUNCTION_URL}|" "$UI_ENV_FILE"
+        else
+            echo "VITE_LAMBDA_URL=${FUNCTION_URL}" >> "$UI_ENV_FILE"
+        fi
+        
+        # Add update timestamp comment
+        if ! grep -q "# Auto-updated:" "$UI_ENV_FILE"; then
+            sed -i "1i# Auto-updated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" "$UI_ENV_FILE"
+        else
+            sed -i "s|# Auto-updated:.*|# Auto-updated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")|" "$UI_ENV_FILE"
+        fi
+        
+        echo -e "${GREEN}✅ UI .env updated with Lambda URL${NC}"
+        echo -e "${BLUE}   Rebuild UI with: make build-ui or make deploy-ui${NC}"
+    else
+        echo -e "${YELLOW}⚠️  UI .env file not found at ${UI_ENV_FILE}${NC}"
+        echo -e "${YELLOW}   Create it with: echo 'VITE_API_BASE=${FUNCTION_URL}' > ${UI_ENV_FILE}${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Could not retrieve Lambda Function URL${NC}"
+fi
+
 # Cleanup
 cd "$OLDPWD"
 rm -rf "$TEMP_DIR"
 
 echo -e "${GREEN}🎉 Fast deployment complete!${NC}"
 echo -e "${BLUE}⚡ Deployment time: ~5-10 seconds vs 2-3 minutes with full deploy${NC}"
-echo -e "${YELLOW}💡 Test at: ${LAMBDA_URL:-https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/}${NC}"
+echo -e "${YELLOW}💡 Test at: ${FUNCTION_URL:-https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws/}${NC}"

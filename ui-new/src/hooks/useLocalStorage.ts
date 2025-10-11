@@ -18,7 +18,45 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
       // Use the functional form of setStoredValue to ensure we always work with the latest state
       setStoredValue((currentValue) => {
         const valueToStore = value instanceof Function ? value(currentValue) : value;
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        
+        try {
+          window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        } catch (storageError: any) {
+          // Handle QuotaExceededError
+          if (storageError?.name === 'QuotaExceededError') {
+            console.warn(`localStorage quota exceeded for key "${key}". Attempting cleanup...`);
+            
+            // Try to free up space by removing old data
+            try {
+              // Remove old chat history items (keep only last 5)
+              const chatKeys = getAllKeys('chat_history_');
+              if (chatKeys.length > 5) {
+                const sortedKeys = chatKeys.sort().slice(0, chatKeys.length - 5);
+                sortedKeys.forEach(k => window.localStorage.removeItem(k));
+                console.log(`Removed ${sortedKeys.length} old chat history items`);
+              }
+              
+              // Try again after cleanup
+              window.localStorage.setItem(key, JSON.stringify(valueToStore));
+              console.log(`Successfully saved after cleanup`);
+            } catch (retryError) {
+              console.error(`Failed to save even after cleanup:`, retryError);
+              // If still failing, save a minimal version
+              if (key === 'app_settings') {
+                const minimal = { 
+                  version: (valueToStore as any).version,
+                  providers: [], 
+                  tavilyApiKey: '' 
+                };
+                window.localStorage.setItem(key, JSON.stringify(minimal));
+                console.warn('Saved minimal settings due to quota');
+              }
+            }
+          } else {
+            throw storageError;
+          }
+        }
+        
         return valueToStore;
       });
     } catch (error) {
@@ -45,3 +83,40 @@ export function getAllKeys(prefix: string): string[] {
     return [];
   }
 }
+
+export function getLocalStorageSize(): { total: number; byKey: Record<string, number> } {
+  const byKey: Record<string, number> = {};
+  let total = 0;
+  
+  try {
+    for (const key in localStorage) {
+      if (localStorage.hasOwnProperty(key)) {
+        const value = localStorage.getItem(key) || '';
+        const size = new Blob([value]).size;
+        byKey[key] = size;
+        total += size;
+      }
+    }
+  } catch (error) {
+    console.error('Error calculating localStorage size:', error);
+  }
+  
+  return { total, byKey };
+}
+
+export function cleanupOldChatHistory(keepCount: number = 5) {
+  try {
+    const chatKeys = getAllKeys('chat_history_');
+    if (chatKeys.length > keepCount) {
+      const sortedKeys = chatKeys.sort().slice(0, chatKeys.length - keepCount);
+      sortedKeys.forEach(k => window.localStorage.removeItem(k));
+      console.log(`Cleaned up ${sortedKeys.length} old chat history items`);
+      return sortedKeys.length;
+    }
+    return 0;
+  } catch (error) {
+    console.error('Error cleaning up chat history:', error);
+    return 0;
+  }
+}
+

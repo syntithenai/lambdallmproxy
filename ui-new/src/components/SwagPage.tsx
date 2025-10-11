@@ -39,7 +39,7 @@ export const SwagPage: React.FC = () => {
   const [newDocName, setNewDocName] = useState('');
   const [showNewDocDialog, setShowNewDocDialog] = useState(false);
   const [showTagDialog, setShowTagDialog] = useState(false);
-  const [tagDialogMode, setTagDialogMode] = useState<'add' | 'remove'>('add');
+  const [tagDialogMode, setTagDialogMode] = useState<'add' | 'remove' | 'filter'>('add');
   const [selectedTagsForOperation, setSelectedTagsForOperation] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,6 +48,8 @@ export const SwagPage: React.FC = () => {
 
   useEffect(() => {
     initGoogleAuth().catch(console.error);
+    // Preload Google Docs
+    loadGoogleDocs();
   }, []);
 
   const loadGoogleDocs = async () => {
@@ -61,6 +63,11 @@ export const SwagPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenDoc = (docId: string) => {
+    // Open Google Doc in new tab
+    window.open(`https://docs.google.com/document/d/${docId}/edit`, '_blank');
   };
 
   const handleCreateDoc = async () => {
@@ -130,14 +137,13 @@ export const SwagPage: React.FC = () => {
     console.log('🔧 Bulk operation triggered:', operation);
     const selected = getSelectedSnippets();
     console.log('📋 Selected snippets:', selected.length);
-    
-    if (selected.length === 0) {
-      showWarning('No snippets selected');
-      return;
-    }
 
     // Handle append-docId format
     if (operation.startsWith('append-')) {
+      if (selected.length === 0) {
+        showWarning('No snippets selected');
+        return;
+      }
       const docId = operation.substring(7); // Remove 'append-' prefix
       console.log('📎 Appending to document:', docId);
       await handleAppendToDoc(docId);
@@ -145,7 +151,35 @@ export const SwagPage: React.FC = () => {
     }
 
     switch (operation) {
+      case 'new-doc':
+        // Create new doc and append selected snippets
+        if (selected.length === 0) {
+          showWarning('No snippets selected');
+          return;
+        }
+        const docName = prompt('Enter document name:', `Snippets ${new Date().toLocaleDateString()}`);
+        if (!docName?.trim()) {
+          return;
+        }
+        try {
+          setLoading(true);
+          const doc = await createGoogleDoc(docName);
+          setGoogleDocs(prev => [doc, ...prev]);
+          showSuccess(`Document "${doc.name}" created!`);
+          // Now append selected snippets
+          await handleAppendToDoc(doc.id);
+        } catch (error) {
+          console.error('Failed to create document:', error);
+          showError('Failed to create document. Please grant permissions and try again.');
+        } finally {
+          setLoading(false);
+        }
+        break;
       case 'merge':
+        if (selected.length === 0) {
+          showWarning('No snippets selected');
+          return;
+        }
         if (selected.length < 2) {
           showWarning('Please select at least 2 snippets to merge');
           return;
@@ -154,6 +188,10 @@ export const SwagPage: React.FC = () => {
         showSuccess('Snippets merged successfully');
         break;
       case 'delete':
+        if (selected.length === 0) {
+          showWarning('No snippets selected');
+          return;
+        }
         if (confirm(`Delete ${selected.length} snippet(s)?`)) {
           deleteSnippets(selected.map(s => s.id));
           showSuccess(`${selected.length} snippet(s) deleted`);
@@ -166,14 +204,40 @@ export const SwagPage: React.FC = () => {
         }
         break;
       case 'tag':
+        if (selected.length === 0) {
+          showWarning('No snippets selected');
+          return;
+        }
         setTagDialogMode('add');
         setSelectedTagsForOperation([]);
         setShowTagDialog(true);
         break;
       case 'untag':
+        if (selected.length === 0) {
+          showWarning('No snippets selected');
+          return;
+        }
         setTagDialogMode('remove');
         setSelectedTagsForOperation([]);
         setShowTagDialog(true);
+        break;
+      case 'tag-all':
+        // Tag all snippets (don't require selection)
+        selectAll();
+        setTimeout(() => {
+          setTagDialogMode('add');
+          setSelectedTagsForOperation([]);
+          setShowTagDialog(true);
+        }, 100);
+        break;
+      case 'untag-all':
+        // Untag all snippets (don't require selection)
+        selectAll();
+        setTimeout(() => {
+          setTagDialogMode('remove');
+          setSelectedTagsForOperation([]);
+          setShowTagDialog(true);
+        }, 100);
         break;
       default:
         console.warn('⚠️ Unknown operation:', operation);
@@ -181,6 +245,14 @@ export const SwagPage: React.FC = () => {
   };
 
   const handleTagOperation = () => {
+    if (tagDialogMode === 'filter') {
+      // Apply tag filters
+      setSearchTags(selectedTagsForOperation);
+      setShowTagDialog(false);
+      setSelectedTagsForOperation([]);
+      return;
+    }
+
     const selected = getSelectedSnippets();
     if (selected.length === 0 || selectedTagsForOperation.length === 0) {
       showWarning('Please select tags');
@@ -256,119 +328,114 @@ export const SwagPage: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
+        <div className="flex items-center justify-between gap-4 mb-2">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
               Content Swag
             </h1>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {snippets.length} snippet{snippets.length !== 1 ? 's' : ''}
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* Storage Stats */}
-            {storageStats && (
-              <div className="w-64">
-                <StorageStats
-                  totalSize={storageStats.totalSize}
-                  limit={storageStats.limit}
-                  percentUsed={storageStats.percentUsed}
-                />
+          {/* Storage Stats */}
+          {storageStats && (
+            <div className="w-48">
+              <StorageStats
+                totalSize={storageStats.totalSize}
+                limit={storageStats.limit}
+                percentUsed={storageStats.percentUsed}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Tag Filter Section - Show active filters above search */}
+        {snippets.length > 0 && (
+          <div>
+            {/* Active Tag Filters */}
+            {searchTags.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Filtering:</span>
+                {searchTags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => setSearchTags(searchTags.filter(t => t !== tag))}
+                    className="px-2 py-0.5 text-xs rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center gap-1"
+                  >
+                    {tag}
+                    <span>×</span>
+                  </button>
+                ))}
+                <button
+                  onClick={() => setSearchTags([])}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Clear
+                </button>
               </div>
             )}
 
-            <button
-              onClick={() => setShowNewDocDialog(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Google Doc
-            </button>
-          </div>
-        </div>
-
-        {/* Search and Filter Bar */}
-        {snippets.length > 0 && (
-          <div className="mt-4 flex items-center gap-4 flex-wrap">
-            {/* Search Input */}
-            <div className="flex-1 min-w-[300px]">
-              <div className="relative">
+            {/* Search Bar with Tag Filter Button */}
+            <div className="flex gap-2 items-center max-w-2xl">
+              <div className="relative flex-1">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search snippets by title or content..."
-                  className="w-full px-4 py-2 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="Search snippets..."
+                  className="w-full px-3 py-1.5 pl-8 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
-                <svg className="w-5 h-5 absolute left-3 top-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 absolute left-2.5 top-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                 )}
               </div>
-            </div>
 
-            {/* Tag Filter */}
-            {getAllTags().length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Filter by tags:</span>
-                {getAllTags().map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => {
-                      if (searchTags.includes(tag)) {
-                        setSearchTags(searchTags.filter(t => t !== tag));
-                      } else {
-                        setSearchTags([...searchTags, tag]);
-                      }
-                    }}
-                    className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                      searchTags.includes(tag)
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
-                {searchTags.length > 0 && (
-                  <button
-                    onClick={() => setSearchTags([])}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    Clear filters
-                  </button>
-                )}
-              </div>
-            )}
+              {/* Plus Button for Tag Filter */}
+              {getAllTags().length > 0 && (
+                <button
+                  onClick={() => {
+                    // Show tag picker dialog
+                    setShowTagDialog(true);
+                    setTagDialogMode('filter');
+                    setSelectedTagsForOperation([...searchTags]);
+                  }}
+                  className="w-8 h-8 flex items-center justify-center rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors flex-shrink-0"
+                  title="Filter by tags"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
         {/* Bulk Actions Bar */}
         {snippets.length > 0 && (
-          <div className="mt-4 flex items-center gap-4 flex-wrap">
-            <div className="flex gap-2">
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <div className="flex gap-1">
               <button
                 onClick={selectAll}
-                className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Select All
               </button>
               <button
                 onClick={selectNone}
-                className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Select None
               </button>
@@ -376,8 +443,12 @@ export const SwagPage: React.FC = () => {
 
             <div className="flex-1" />
 
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {getSelectedSnippets().length} selected
+            </span>
+
             <select
-              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
               onChange={(e) => {
                 const value = e.target.value;
                 console.log('📝 Dropdown changed:', value);
@@ -386,17 +457,21 @@ export const SwagPage: React.FC = () => {
                   e.target.value = '';
                 }
               }}
-              disabled={getSelectedSnippets().length === 0}
               value=""
+              disabled={getSelectedSnippets().length === 0}
             >
               <option value="">Bulk Operations...</option>
-              <option value="tag">Add Tags...</option>
-              <option value="untag">Remove Tags...</option>
-              <option value="merge">Combine Snippets</option>
-              <option value="delete">Delete Selected</option>
-              <optgroup label="Append to Google Doc">
+              <optgroup label="With Selected Snippets">
+                <option value="tag">Add Tags...</option>
+                <option value="untag">Remove Tags...</option>
+                <option value="tag-all">Tag All Snippets...</option>
+                <option value="untag-all">Untag All Snippets...</option>
+                <option value="merge">Combine Snippets</option>
+                <option value="delete">Delete Selected</option>
+              </optgroup>
+              <optgroup label="Add to Google Doc">
                 {googleDocs.length === 0 ? (
-                  <option value="append">Load Documents...</option>
+                  <option value="append">Load Existing...</option>
                 ) : (
                   googleDocs.map(doc => (
                     <option key={doc.id} value={`append-${doc.id}`}>
@@ -404,12 +479,35 @@ export const SwagPage: React.FC = () => {
                     </option>
                   ))
                 )}
+                <option value="new-doc">📄 New Google Doc</option>
               </optgroup>
             </select>
 
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {getSelectedSnippets().length} selected
-            </span>
+            {/* Google Docs Dropdown */}
+            <select
+              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) => {
+                const docId = e.target.value;
+                if (docId) {
+                  handleOpenDoc(docId);
+                  e.target.value = ''; // Reset selection
+                }
+              }}
+              value=""
+            >
+              <option value="">Documents</option>
+              {googleDocs.length === 0 ? (
+                <option value="" disabled>
+                  {loading ? 'Loading...' : 'No documents'}
+                </option>
+              ) : (
+                googleDocs.map(doc => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.name}
+                  </option>
+                ))
+              )}
+            </select>
           </div>
         )}
       </div>
@@ -472,25 +570,42 @@ export const SwagPage: React.FC = () => {
                     </h3>
                   )}
 
-                  {/* Tags */}
-                  {snippet.tags && snippet.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {snippet.tags.map(tag => (
-                        <span 
-                          key={tag}
-                          className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!searchTags.includes(tag)) {
-                              setSearchTags([...searchTags, tag]);
-                            }
-                          }}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {/* Tags Section with Add Button */}
+                  <div className="flex flex-wrap items-center gap-1 mb-2 min-h-[24px]">
+                    {snippet.tags && snippet.tags.map(tag => (
+                      <span 
+                        key={tag}
+                        className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!searchTags.includes(tag)) {
+                            setSearchTags([...searchTags, tag]);
+                          }
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Select just this snippet and show tag dialog
+                        selectNone();
+                        toggleSelection(snippet.id);
+                        setTimeout(() => {
+                          setTagDialogMode('add');
+                          setSelectedTagsForOperation([]);
+                          setShowTagDialog(true);
+                        }, 50);
+                      }}
+                      className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 transition-colors flex-shrink-0"
+                      title="Add tags"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+                  </div>
 
                   {/* Content Preview */}
                   <div 
@@ -718,7 +833,19 @@ export const SwagPage: React.FC = () => {
             {/* Content - Scrollable */}
             <div className="flex-1 overflow-y-auto p-6">
               <div className="text-gray-800 dark:text-gray-200">
-                <JsonOrText content={viewingSnippet.content} />
+                {/* Render as JSON tree if valid JSON, otherwise always use markdown */}
+                {(() => {
+                  const content = viewingSnippet.content;
+                  
+                  // First check if it's valid JSON
+                  if (isJsonString(content)) {
+                    return <JsonOrText content={content} />;
+                  }
+                  
+                  // Otherwise, always render as markdown
+                  // Markdown handles plain text gracefully, so this is safe
+                  return <MarkdownRenderer content={content} />;
+                })()}
               </div>
             </div>
 
@@ -750,12 +877,14 @@ export const SwagPage: React.FC = () => {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                {tagDialogMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+                {tagDialogMode === 'add' ? 'Add Tags' : tagDialogMode === 'remove' ? 'Remove Tags' : 'Filter by Tags'}
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 {tagDialogMode === 'add' 
                   ? 'Select or create tags to add to selected snippets' 
-                  : 'Select tags to remove from selected snippets'}
+                  : tagDialogMode === 'remove'
+                  ? 'Select tags to remove from selected snippets'
+                  : 'Select tags to filter snippets'}
               </p>
             </div>
 
@@ -780,7 +909,7 @@ export const SwagPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Tag Input */}
+              {/* Tag Input - Only for Add mode */}
               {tagDialogMode === 'add' && (
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -830,7 +959,7 @@ export const SwagPage: React.FC = () => {
               {getAllTags().length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    {tagDialogMode === 'add' ? 'Or Select Existing' : 'Select Tags to Remove'}
+                    {tagDialogMode === 'add' ? 'Or Select Existing' : tagDialogMode === 'remove' ? 'Select Tags to Remove' : 'Select Tags'}
                   </label>
                   <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
                     {getAllTags().map(tag => (
@@ -870,10 +999,10 @@ export const SwagPage: React.FC = () => {
               </button>
               <button
                 onClick={handleTagOperation}
-                disabled={selectedTagsForOperation.length === 0}
+                disabled={tagDialogMode !== 'filter' && selectedTagsForOperation.length === 0}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {tagDialogMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+                {tagDialogMode === 'add' ? 'Add Tags' : tagDialogMode === 'remove' ? 'Remove Tags' : 'Apply Filter'}
               </button>
             </div>
           </div>

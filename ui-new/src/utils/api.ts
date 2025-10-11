@@ -1,5 +1,158 @@
 // API client for Lambda endpoints
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+
+// Constants
+const LOCAL_LAMBDA_URL = import.meta.env.VITE_LOCAL_LAMBDA_URL || 'http://localhost:3000';
+const REMOTE_LAMBDA_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_LAMBDA_URL || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+const LOCAL_STORAGE_KEY = 'lambdaproxy_use_remote';
+
+// Log configuration for debugging
+console.log('🔧 API Configuration:', {
+  remote: REMOTE_LAMBDA_URL,
+  local: LOCAL_LAMBDA_URL,
+  source: import.meta.env.VITE_API_BASE ? 'env' : 'fallback'
+});
+
+/**
+ * Determine if we're running on localhost
+ */
+function isLocalhost(): boolean {
+  const hostname = window.location.hostname;
+  return hostname === 'localhost' || 
+         hostname === '127.0.0.1' ||
+         hostname.startsWith('192.168.') ||
+         hostname.startsWith('10.') ||
+         hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) !== null;
+}
+
+/**
+ * Check if we should use remote Lambda (from localStorage marker)
+ */
+function shouldUseRemote(): boolean {
+  try {
+    return localStorage.getItem(LOCAL_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mark that we should use remote Lambda
+ */
+function markUseRemote(): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
+    console.log('🌐 Switched to remote Lambda (saved to localStorage)');
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+/**
+ * Check if local Lambda is available
+ */
+async function isLocalLambdaAvailable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
+    
+    const response = await fetch(`${LOCAL_LAMBDA_URL}/health`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the appropriate API base URL
+ * - If on localhost and local Lambda is available, use it
+ * - If on localhost and local Lambda is not available, fall back to remote and remember choice
+ * - If not on localhost, always use remote
+ */
+async function getApiBase(): Promise<string> {
+  // If environment variable is set, always use it
+  if (import.meta.env.VITE_API_BASE) {
+    return import.meta.env.VITE_API_BASE;
+  }
+  
+  // If not on localhost, always use remote
+  if (!isLocalhost()) {
+    return REMOTE_LAMBDA_URL;
+  }
+  
+  // On localhost: check if we've already decided to use remote
+  if (shouldUseRemote()) {
+    return REMOTE_LAMBDA_URL;
+  }
+  
+  // Try local Lambda first
+  const localAvailable = await isLocalLambdaAvailable();
+  
+  if (localAvailable) {
+    console.log('🏠 Using local Lambda server at', LOCAL_LAMBDA_URL);
+    return LOCAL_LAMBDA_URL;
+  } else {
+    console.log('🌐 Local Lambda not available, falling back to remote');
+    markUseRemote();
+    return REMOTE_LAMBDA_URL;
+  }
+}
+
+// Cache the API base to avoid checking on every request
+let cachedApiBase: string | null = null;
+let apiBasePromise: Promise<string> | null = null;
+
+/**
+ * Get cached API base or determine it
+ */
+async function getCachedApiBase(): Promise<string> {
+  if (cachedApiBase) {
+    return cachedApiBase;
+  }
+  
+  if (!apiBasePromise) {
+    apiBasePromise = getApiBase().then(base => {
+      cachedApiBase = base;
+      return base;
+    });
+  }
+  
+  return apiBasePromise;
+}
+
+/**
+ * Reset the cached API base (useful for testing or manual switching)
+ */
+export function resetApiBase(): void {
+  cachedApiBase = null;
+  apiBasePromise = null;
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    console.log('🔄 API base cache reset');
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+/**
+ * Force use of remote Lambda (useful for debugging)
+ */
+export function forceRemote(): void {
+  markUseRemote();
+  cachedApiBase = REMOTE_LAMBDA_URL;
+  console.log('🌐 Forced to use remote Lambda');
+}
+
+/**
+ * Get current API base URL (for debugging)
+ */
+export async function getCurrentApiBase(): Promise<string> {
+  return getCachedApiBase();
+}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -104,7 +257,8 @@ export const sendChatMessage = async (
   token: string,
   signal?: AbortSignal
 ): Promise<Response> => {
-  const response = await fetch(`${API_BASE}/proxy`, {
+  const apiBase = await getCachedApiBase();
+  const response = await fetch(`${apiBase}/proxy`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -137,6 +291,7 @@ export const generatePlan = async (
   }
 ): Promise<void> => {
   const { createSSERequest, handleSSEResponse } = await import('./streaming');
+  const apiBase = await getCachedApiBase();
   
   const requestBody: any = { query };
   
@@ -157,7 +312,7 @@ export const generatePlan = async (
   }
   
   const response = await createSSERequest(
-    `${API_BASE}/planning`,
+    `${apiBase}/planning`,
     requestBody,
     token
   );
@@ -175,9 +330,10 @@ export const performSearch = async (
   onError?: (error: Error) => void
 ): Promise<void> => {
   const { createSSERequest, handleSSEResponse } = await import('./streaming');
+  const apiBase = await getCachedApiBase();
   
   const response = await createSSERequest(
-    `${API_BASE}/search`,
+    `${apiBase}/search`,
     {
       queries,
       maxResults: options.maxResults || 5,
@@ -200,9 +356,10 @@ export const sendChatMessageStreaming = async (
   youtubeToken?: string | null
 ): Promise<void> => {
   const { createSSERequest, handleSSEResponse } = await import('./streaming');
+  const apiBase = await getCachedApiBase();
   
   const response = await createSSERequest(
-    `${API_BASE}/chat`,
+    `${apiBase}/chat`,
     request,
     token,
     signal,

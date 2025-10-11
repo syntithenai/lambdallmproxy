@@ -16,20 +16,23 @@ const uuidv4 = generateUuid;
 /**
  * Load providers from environment variables
  * Reads indexed environment variables in the format:
- * - LLAMDA_LLM_PROXY_PROVIDER_TYPE_0=groq-free
- * - LLAMDA_LLM_PROXY_PROVIDER_KEY_0=gsk_...
- * - LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_0=https://api.groq.com/openai/v1 (optional)
- * - LLAMDA_LLM_PROXY_PROVIDER_MODEL_0=llama-3.1-70b-instruct (optional, for openai-compatible)
- * - LLAMDA_LLM_PROXY_PROVIDER_RATE_LIMIT_0=10000 (optional, TPM for openai-compatible)
+ * - LLAMDA_LLM_PROXY_PROVIDER_TYPE_N=groq-free
+ * - LLAMDA_LLM_PROXY_PROVIDER_KEY_N=gsk_...
+ * - LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_N=https://api.groq.com/openai/v1 (optional)
+ * - LLAMDA_LLM_PROXY_PROVIDER_MODEL_N=llama-3.1-70b-instruct (optional, for openai-compatible)
+ * - LLAMDA_LLM_PROXY_PROVIDER_RATE_LIMIT_N=10000 (optional, TPM for openai-compatible)
+ * 
+ * Where N can be any non-negative integer (0, 1, 2, 5, 10, etc.)
+ * Scans indices 0-99 to find all configured providers, allowing gaps in numbering
  * 
  * @returns {Array<Object>} Array of provider configurations
  */
 function loadEnvironmentProviders() {
     const providers = [];
-    let index = 0;
+    const MAX_PROVIDER_INDEX = 99; // Scan up to index 99
     
-    // Read indexed environment variables
-    while (true) {
+    // Scan all possible indices (allows gaps in numbering)
+    for (let index = 0; index <= MAX_PROVIDER_INDEX; index++) {
         const typeKey = `LLAMDA_LLM_PROXY_PROVIDER_TYPE_${index}`;
         const keyKey = `LLAMDA_LLM_PROXY_PROVIDER_KEY_${index}`;
         const endpointKey = `LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_${index}`;
@@ -39,9 +42,9 @@ function loadEnvironmentProviders() {
         const type = process.env[typeKey];
         const apiKey = process.env[keyKey];
         
-        // Stop when no more providers found
+        // Skip if provider not configured at this index
         if (!type || !apiKey) {
-            break;
+            continue;
         }
         
         // Build provider config
@@ -49,7 +52,8 @@ function loadEnvironmentProviders() {
             id: `env-provider-${index}`,
             type: type,
             apiKey: apiKey,
-            source: 'environment'
+            source: 'environment',
+            index: index // Track original index for debugging
         };
         
         // Add optional endpoint (for openai-compatible)
@@ -69,14 +73,12 @@ function loadEnvironmentProviders() {
         
         providers.push(provider);
         console.log(`📦 Loaded environment provider ${index}: ${type} (source: environment)`);
-        
-        index++;
     }
     
     if (providers.length > 0) {
-        console.log(`✅ Loaded ${providers.length} environment provider(s)`);
+        console.log(`✅ Loaded ${providers.length} environment provider(s) (scanned indices 0-${MAX_PROVIDER_INDEX})`);
     } else {
-        console.log(`ℹ️ No environment providers configured`);
+        console.log(`ℹ️ No environment providers configured (scanned indices 0-${MAX_PROVIDER_INDEX})`);
     }
     
     return providers;
