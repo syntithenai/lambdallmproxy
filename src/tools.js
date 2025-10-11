@@ -1121,9 +1121,10 @@ Brief answer with URLs:`;
         // Note: Tavily doesn't provide raw HTML, so we can't extract images/links when using Tavily
         
         // Token-aware truncation to prevent context overflow
-        // Limit scraped content to ~20k tokens (~80k chars) to leave room for conversation history
-        const MAX_SCRAPE_CHARS = 80000;
-        const MAX_SCRAPE_TOKENS = 20000;
+        // With load balancing system, we can be more generous with content
+        // Limit scraped content to ~100k tokens (~400k chars) to provide comprehensive information
+        const MAX_SCRAPE_CHARS = 400000;
+        const MAX_SCRAPE_TOKENS = 100000;
         let truncatedContent = content;
         let wasTruncated = false;
         
@@ -1747,6 +1748,35 @@ Brief answer with URLs:`;
           const fullText = result.snippets.map(s => s.text).join(' ');
           console.log(`✅ Fetched transcript with ${result.snippets.length} snippets (${fullText.length} chars) via ${source}`);
           
+          // Check if transcript is very long and needs summarization
+          // Threshold: 200k chars (~50k tokens) - reasonable for most models with load balancing
+          const YOUTUBE_SUMMARY_THRESHOLD = 200000;
+          
+          if (fullText.length > YOUTUBE_SUMMARY_THRESHOLD) {
+            console.log(`⚠️ YouTube transcript is very long (${fullText.length} chars > ${YOUTUBE_SUMMARY_THRESHOLD}), will include note about summarization`);
+            
+            // Return full transcript but include a note about its length
+            // The LLM can decide whether to summarize based on the user's query
+            return JSON.stringify({
+              success: true,
+              url,
+              videoId: result.videoId,
+              text: fullText,
+              snippets: result.snippets,
+              metadata: {
+                totalCharacters: fullText.length,
+                snippetCount: result.snippets.length,
+                language: result.language,
+                languageCode: result.languageCode,
+                isGenerated: result.isGenerated,
+                source,
+                format: 'timestamped',
+                lengthWarning: `This transcript is very long (${Math.floor(fullText.length / 1000)}k characters, ~${Math.floor(fullText.length / 4 / 1000)}k tokens). Consider focusing on specific sections or asking for a summary of key points.`
+              },
+              note: 'Full transcript with timestamps. Each snippet includes start, duration, and text. Note: This is a very long transcript - you may want to summarize key points or focus on specific sections relevant to the user\'s query.'
+            });
+          }
+          
           return JSON.stringify({
             success: true,
             url,
@@ -1769,6 +1799,28 @@ Brief answer with URLs:`;
         // If result is plain text
         if (typeof result === 'string') {
           console.log(`✅ Fetched plain text transcript (${result.length} chars) via ${source}`);
+          
+          // Check if transcript is very long
+          const YOUTUBE_SUMMARY_THRESHOLD = 200000;
+          
+          if (result.length > YOUTUBE_SUMMARY_THRESHOLD) {
+            console.log(`⚠️ YouTube transcript is very long (${result.length} chars > ${YOUTUBE_SUMMARY_THRESHOLD}), will include note about summarization`);
+            
+            return JSON.stringify({
+              success: true,
+              url,
+              videoId,
+              text: result,
+              metadata: {
+                totalCharacters: result.length,
+                format: 'plain_text',
+                source,
+                lengthWarning: `This transcript is very long (${Math.floor(result.length / 1000)}k characters, ~${Math.floor(result.length / 4 / 1000)}k tokens). Consider focusing on specific sections or asking for a summary of key points.`
+              },
+              note: 'Full plain text transcript. Note: This is a very long transcript - you may want to summarize key points or focus on specific sections relevant to the user\'s query.'
+            });
+          }
+          
           return JSON.stringify({
             success: true,
             url,

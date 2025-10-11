@@ -436,7 +436,8 @@ async function handler(event, responseStream) {
         
         // Apply defaults for parameters that optimize for comprehensive, verbose responses
         const temperature = body.temperature !== undefined ? body.temperature : 0.8;
-        const max_tokens = body.max_tokens !== undefined ? body.max_tokens : 4096;
+        // Default to longer responses (16384 tokens), will be adjusted per-model later
+        let max_tokens = body.max_tokens !== undefined ? body.max_tokens : 16384;
         const top_p = body.top_p !== undefined ? body.top_p : 0.95;
         const frequency_penalty = body.frequency_penalty !== undefined ? body.frequency_penalty : 0.3;
         const presence_penalty = body.presence_penalty !== undefined ? body.presence_penalty : 0.4;
@@ -651,6 +652,34 @@ async function handler(event, responseStream) {
         }
         
         let provider = selectedProvider.type;
+        
+        // Adjust max_tokens based on model capabilities and rate limits
+        // This ensures we use longer responses where supported, and constrain where necessary
+        if (body.max_tokens === undefined) { // Only adjust if user didn't explicitly set it
+            if (provider === 'gemini-free' || provider === 'gemini') {
+                // Gemini models have large context windows (1-2M tokens) and high output limits
+                max_tokens = 16384; // Allow very long responses
+                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (large context model)`);
+            } else if (provider === 'groq-free' || provider === 'groq') {
+                // Groq has rate limits, but supports up to 8k output
+                max_tokens = 8192; // Generous but rate-limit aware
+                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (rate-limited model)`);
+            } else if (provider === 'openai') {
+                // OpenAI supports large outputs (16k+ for gpt-4)
+                max_tokens = 16384; // Very generous
+                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (high-capability model)`);
+            } else if (provider === 'together' || provider === 'atlascloud') {
+                // Together/Atlas support large outputs
+                max_tokens = 16384;
+                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (high-capability model)`);
+            } else {
+                // Unknown provider, use conservative default
+                max_tokens = 4096;
+                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (conservative default)`);
+            }
+        } else {
+            console.log(`📏 Using user-specified max_tokens: ${max_tokens}`);
+        }
         
         // Build tool context
         const toolContext = {

@@ -166,7 +166,17 @@ ${Be}
 
 You have access to the current date and time above. Use this information when responding to temporal queries about "today", "current date", "what time is it", "this week", "this month", "this year", etc. You do not need to use tools to get the current date/time as it is provided in this system prompt.
 
-${Le}`,xt.length>0){const Ze=xt.map(X=>X.function.name).join(", ");Le+=`
+${Le}
+
+**RESPONSE STYLE GUIDELINES:**
+- Provide comprehensive, detailed, and thorough responses
+- Include relevant examples, context, and explanations to enhance understanding
+- When answering technical questions, include code examples, step-by-step explanations, and best practices
+- When answering research questions, provide multiple perspectives, cite sources with markdown links, and give comprehensive overviews
+- Don't be overly brief - users prefer detailed, informative answers over short summaries
+- Use markdown formatting (headings, lists, code blocks, bold, italic) to make responses clear and well-structured
+- When scraping or researching, include substantial quoted content and detailed analysis
+- Aim for responses that fully answer the question and anticipate follow-up questions`,xt.length>0){const Ze=xt.map(X=>X.function.name).join(", ");Le+=`
 
 You have access to these tools: ${Ze}.
 
