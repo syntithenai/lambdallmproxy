@@ -888,7 +888,10 @@ async function handler(event, responseStream) {
                         error.message?.includes('rate limit') ||
                         error.message?.includes('rate_limit_exceeded') ||
                         error.message?.includes('tokens per day') ||
+                        error.message?.includes('tokens per minute') ||
                         error.message?.includes('TPD') ||
+                        error.message?.includes('TPM') ||
+                        error.message?.includes('Request too large') ||
                         error.message?.includes('429') ||
                         error.statusCode === 429;
                     
