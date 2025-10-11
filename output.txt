@@ -1,5 +1,24 @@
-[dotenv@17.2.2] injecting env (22) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
-✅ Lambda handler loaded successfully
+🔨 Building React UI...
+./scripts/build-docs.sh
+[0;34m🔧 Building React UI from ui-new...[0m
 
-🚀 Local Lambda Development Server
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+> ui-new@0.0.0 build
+> tsc -b && vite build
+
+You are using Node.js 20.12.2. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.
+vite v7.1.9 building for production...
+transforming...
+✓ 545 modules transformed.
+rendering chunks...
+computing gzip size...
+../docs/index.html                      1.10 kB │ gzip:   0.62 kB
+../docs/assets/index-DsWe7Mw0.css      59.27 kB │ gzip:  10.69 kB
+../docs/assets/streaming-BIIc-Wdd.js    1.20 kB │ gzip:   0.68 kB
+../docs/assets/index-C3uY_Tpj.js      815.77 kB │ gzip: 237.26 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.31s
+[0;32m✅ Build complete! Files in docs/[0m
