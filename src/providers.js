@@ -36,17 +36,20 @@ const PROVIDERS = {
             'gemini-1.5-pro'       // 2M context, legacy
         ]
     },
+    // Together AI - PAID SERVICE (no free tier)
+    // Pricing (Oct 2025): Llama 3.3 70B: $0.88/M tokens, Llama 3.1 8B: $0.18/M tokens
+    // See: https://www.together.ai/pricing
     together: {
         hostname: 'api.together.xyz',
         path: '/v1/chat/completions',
         models: [
             'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8',
             'meta-llama/Llama-4-Scout-17B-16E-Instruct',
-            'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-            'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
-            'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
-            'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
-            'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+            'meta-llama/Llama-3.3-70B-Instruct-Turbo',  // $0.88/M tokens (in/out)
+            'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',  // $3.50/M tokens
+            'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',  // $0.88/M tokens
+            'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',  // $0.18/M tokens (cheapest)
+
             'deepseek-ai/DeepSeek-V3.1',
             'deepseek-ai/DeepSeek-V3',
             'deepseek-ai/DeepSeek-R1',
@@ -61,6 +64,8 @@ const PROVIDERS = {
             'zai-org/GLM-4.5-Air-FP8'
         ]
     },
+    // Atlas Cloud - PAID SERVICE (API marketplace for various models)
+    // Pricing varies by model
     atlascloud: {
         hostname: 'api.atlascloud.ai',
         path: '/v1/chat/completions',

@@ -548,8 +548,9 @@ async function handler(event, responseStream) {
             return sum + Math.ceil(contentLength / 4); // Rough estimate: 4 chars ≈ 1 token
         }, 0);
         
-        // Priority for large context (>100K tokens): gemini-free > gemini > groq-free > other
-        // Priority for normal context: groq-free > openai > groq > gemini-free > gemini
+        // Priority for large context (>100K tokens): gemini-free > gemini > groq-free > other (together, openai, atlascloud)
+        // Priority for normal context: groq-free > other paid (openai, together, atlascloud) > groq > gemini-free > gemini
+        // Note: Together AI and Atlas Cloud are PAID services (no free tier)
         const isLargeContext = estimatedTokens > 100000;
         
         let selectedProvider;
@@ -627,12 +628,16 @@ async function handler(event, responseStream) {
                 // Use gemini-2.0-flash for ultra-large context (2M context)
                 return isComplex ? 'gemini-2.0-flash' : 'gemini-2.5-flash';
             } else if (provider.type === 'together') {
+                // Together AI is a PAID service - Pricing as of Oct 2025:
+                // - Llama 3.3 70B: $0.88/M tokens (input), $0.88/M tokens (output)
+                // - Llama 3.1 8B: $0.18/M tokens (both input/output)
                 const togetherModels = ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'];
                 if (requestedModel && (requestedModel.includes('llama') || requestedModel.includes('deepseek'))) {
                     return requestedModel;
                 }
                 return isComplex ? 'meta-llama/Llama-3.3-70B-Instruct-Turbo' : 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo';
             } else if (provider.type === 'atlascloud') {
+                // Atlas Cloud is a PAID service - provides access to various models
                 const atlasModels = ['deepseek-ai/DeepSeek-R1', 'deepseek-ai/DeepSeek-V3', 'meta-llama/Llama-3.3-70B-Instruct-Turbo'];
                 if (requestedModel && (requestedModel.includes('llama') || requestedModel.includes('deepseek') || requestedModel.includes('claude') || requestedModel.includes('gemini'))) {
                     return requestedModel;
