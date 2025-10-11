@@ -172,66 +172,165 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const formatContentWithMedia = (content: string, extractedContent?: ChatMessage['extractedContent']): string => {
     let fullContent = content;
 
+    // Extract inline images and links from markdown content
+    const inlineImages: string[] = [];
+    const inlineLinks: string[] = [];
+    const youtubeLinks: string[] = [];
+    
+    // Match markdown images: ![alt](url)
+    const imageRegex = /!\[([^\]]*)\]\(([^\)]+)\)/g;
+    let match;
+    while ((match = imageRegex.exec(content)) !== null) {
+      if (!inlineImages.includes(match[2])) {
+        inlineImages.push(match[2]);
+      }
+    }
+    
+    // Match markdown links: [text](url)
+    const linkRegex = /\[([^\]]+)\]\(([^\)]+)\)/g;
+    while ((match = linkRegex.exec(content)) !== null) {
+      const url = match[2];
+      // Check if it's a YouTube link
+      if (url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)/)) {
+        if (!youtubeLinks.includes(url)) {
+          youtubeLinks.push(url);
+        }
+      } else if (!inlineLinks.includes(url)) {
+        inlineLinks.push(url);
+      }
+    }
+    
+    // Match HTML images: <img src="url">
+    const htmlImageRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/g;
+    while ((match = htmlImageRegex.exec(content)) !== null) {
+      if (!inlineImages.includes(match[1])) {
+        inlineImages.push(match[1]);
+      }
+    }
+    
+    // Match HTML links: <a href="url">
+    const htmlLinkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]+)<\/a>/g;
+    while ((match = htmlLinkRegex.exec(content)) !== null) {
+      const url = match[1];
+      if (url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)/)) {
+        if (!youtubeLinks.includes(url)) {
+          youtubeLinks.push(url);
+        }
+      } else if (!inlineLinks.includes(url)) {
+        inlineLinks.push(url);
+      }
+    }
+
     if (!extractedContent) {
+      // Even without extractedContent, add sections for inline content
+      if (inlineImages.length > 0) {
+        fullContent += '\n\n---\n\n## Inline Images\n\n';
+        inlineImages.forEach(src => {
+          fullContent += `![Image](${src})\n`;
+        });
+      }
+      
+      if (youtubeLinks.length > 0) {
+        fullContent += '\n\n## Inline YouTube Videos\n\n';
+        youtubeLinks.forEach(url => {
+          fullContent += `- [YouTube Video](${url})\n`;
+          fullContent += `  <iframe width="560" height="315" src="${url.replace('watch?v=', 'embed/')}" frameborder="0" allowfullscreen></iframe>\n\n`;
+        });
+      }
+      
+      if (inlineLinks.length > 0) {
+        fullContent += '\n\n## Inline Links\n\n';
+        inlineLinks.forEach(url => {
+          fullContent += `- [${url}](${url})\n`;
+        });
+      }
+      
       return fullContent;
     }
 
-    // Add extracted images as markdown
+    // Add a separator before extracted content
+    fullContent += '\n\n---\n';
+
+    // Add extracted images as markdown with HTML fallback
     if (extractedContent.images && extractedContent.images.length > 0) {
-      fullContent += '\n\n## Images\n\n';
+      fullContent += '\n\n## Extracted Images\n\n';
       extractedContent.images.forEach(img => {
+        // Add both markdown and HTML for maximum compatibility
         fullContent += `![${img.alt || 'Image'}](${img.src})\n`;
+        fullContent += `<img src="${img.src}" alt="${img.alt || 'Image'}" style="max-width:100%;height:auto;" />\n`;
         if (img.source) {
-          fullContent += `*Source: ${img.source}*\n\n`;
+          fullContent += `*Source: [${img.source}](${img.source})*\n\n`;
         }
       });
     }
 
-    // Add YouTube videos as markdown links
+    // Add YouTube videos with embed codes
     if (extractedContent.youtubeVideos && extractedContent.youtubeVideos.length > 0) {
       fullContent += '\n\n## YouTube Videos\n\n';
       extractedContent.youtubeVideos.forEach(video => {
-        fullContent += `- [${video.title || 'YouTube Video'}](${video.src})`;
+        fullContent += `### ${video.title || 'YouTube Video'}\n\n`;
+        fullContent += `[Watch on YouTube](${video.src})\n\n`;
+        // Add embed code
+        const embedUrl = video.src.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/');
+        fullContent += `<iframe width="560" height="315" src="${embedUrl}" frameborder="0" allowfullscreen></iframe>\n\n`;
         if (video.source) {
-          fullContent += ` - *${video.source}*`;
+          fullContent += `*Source: [${video.source}](${video.source})*\n\n`;
         }
-        fullContent += '\n';
       });
     }
 
-    // Add other videos as markdown links
+    // Add other videos with HTML5 video tags
     if (extractedContent.otherVideos && extractedContent.otherVideos.length > 0) {
       fullContent += '\n\n## Videos\n\n';
       extractedContent.otherVideos.forEach(video => {
-        fullContent += `- [${video.title || 'Video'}](${video.src})`;
+        fullContent += `### ${video.title || 'Video'}\n\n`;
+        fullContent += `[Download Video](${video.src})\n\n`;
+        // Add HTML5 video tag
+        fullContent += `<video controls style="max-width:100%;height:auto;">\n`;
+        fullContent += `  <source src="${video.src}" type="video/mp4">\n`;
+        fullContent += `  Your browser does not support the video tag.\n`;
+        fullContent += `</video>\n\n`;
         if (video.source) {
-          fullContent += ` - *${video.source}*`;
+          fullContent += `*Source: [${video.source}](${video.source})*\n\n`;
         }
-        fullContent += '\n';
       });
     }
 
-    // Add other media
+    // Add other media with appropriate HTML tags
     if (extractedContent.media && extractedContent.media.length > 0) {
       fullContent += '\n\n## Media\n\n';
       extractedContent.media.forEach(media => {
-        fullContent += `- [${media.type}](${media.src})`;
-        if (media.source) {
-          fullContent += ` - *${media.source}*`;
+        fullContent += `### ${media.type}\n\n`;
+        fullContent += `[Download Media](${media.src})\n\n`;
+        
+        // Add appropriate HTML tag based on media type
+        if (media.type.toLowerCase().includes('audio')) {
+          fullContent += `<audio controls style="width:100%;">\n`;
+          fullContent += `  <source src="${media.src}">\n`;
+          fullContent += `  Your browser does not support the audio tag.\n`;
+          fullContent += `</audio>\n\n`;
+        } else if (media.type.toLowerCase().includes('video')) {
+          fullContent += `<video controls style="max-width:100%;height:auto;">\n`;
+          fullContent += `  <source src="${media.src}">\n`;
+          fullContent += `  Your browser does not support the video tag.\n`;
+          fullContent += `</video>\n\n`;
         }
-        fullContent += '\n';
+        
+        if (media.source) {
+          fullContent += `*Source: [${media.source}](${media.source})*\n\n`;
+        }
       });
     }
 
-    // Add sources as markdown links
+    // Add sources as markdown links with enhanced formatting
     if (extractedContent.sources && extractedContent.sources.length > 0) {
-      fullContent += '\n\n## Sources\n\n';
-      extractedContent.sources.forEach(source => {
-        fullContent += `- [${source.title}](${source.url})`;
+      fullContent += '\n\n## Sources & References\n\n';
+      extractedContent.sources.forEach((source, idx) => {
+        fullContent += `${idx + 1}. **[${source.title}](${source.url})**\n`;
         if (source.snippet) {
-          fullContent += `\n  > ${source.snippet}`;
+          fullContent += `   > ${source.snippet}\n`;
         }
-        fullContent += '\n';
+        fullContent += `   - URL: [${source.url}](${source.url})\n\n`;
       });
     }
 
