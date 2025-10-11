@@ -5,6 +5,7 @@ import { usePlaylist } from '../contexts/PlaylistContext';
 import { useSwag } from '../contexts/SwagContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
+import { useUsage } from '../contexts/UsageContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
@@ -59,6 +60,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { addSnippet } = useSwag();
   const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
+  const { addCost } = useUsage();
   
   // Use regular state for messages - async storage causes race conditions
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1524,6 +1526,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             case 'complete':
               // All processing complete
               console.log('Stream complete:', data);
+              
+              // Update usage cost if available
+              if (data.cost && typeof data.cost === 'number') {
+                addCost(data.cost);
+              }
               break;
               
             case 'error':

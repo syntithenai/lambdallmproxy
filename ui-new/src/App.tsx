@@ -6,6 +6,7 @@ import { PlaylistProvider } from './contexts/PlaylistContext';
 import { SwagProvider } from './contexts/SwagContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { YouTubeAuthProvider } from './contexts/YouTubeAuthContext';
+import { UsageProvider, useUsage } from './contexts/UsageContext';
 import { ToastProvider } from './components/ToastManager';
 import { chatHistoryDB } from './utils/chatHistoryDB';
 import { LoginScreen } from './components/LoginScreen';
@@ -21,6 +22,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 function AppContent() {
   const { isAuthenticated, getToken } = useAuth();
   const { settings } = useSettings();
+  const { usage, loading: usageLoading } = useUsage();
   const navigate = useNavigate();
   const location = useLocation();
   const [showSettings, setShowSettings] = useState(false);
@@ -126,11 +128,13 @@ function AppContent() {
     );
   }
 
-  // Show provider setup gate if blocked
-  if (isBlocked) {
+  // Show provider setup gate if blocked OR if usage exceeded
+  const isUsageExceeded = usage?.exceeded || false;
+  
+  if (isBlocked || isUsageExceeded) {
     return (
       <ProviderSetupGate 
-        isBlocked={isBlocked} 
+        isBlocked={isBlocked || isUsageExceeded} 
         onUnblock={() => setIsBlocked(false)} 
       />
     );
@@ -147,6 +151,26 @@ function AppContent() {
           </h1>
           <div className="flex items-center gap-3">
             <PlaylistButton />
+            
+            {/* Usage Badge */}
+            {usage && !usageLoading && (
+              <div 
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+                  usage.exceeded 
+                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' 
+                    : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                }`}
+                title={`You have used $${usage.totalCost.toFixed(2)} of your $${usage.creditLimit.toFixed(2)} credit`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-medium">
+                  Usage ${usage.totalCost.toFixed(2)} / Credit ${usage.creditLimit.toFixed(2)}
+                </span>
+              </div>
+            )}
+            
             {location.pathname === '/swag' ? (
               <button
                 onClick={() => navigate('/')}
@@ -223,17 +247,19 @@ function App() {
     <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
-          <SettingsProvider>
-            <YouTubeAuthProvider>
-              <PlaylistProvider>
-                <SearchResultsProvider>
-                  <SwagProvider>
-                    <AppContent />
-                  </SwagProvider>
-                </SearchResultsProvider>
-              </PlaylistProvider>
-            </YouTubeAuthProvider>
-          </SettingsProvider>
+          <UsageProvider>
+            <SettingsProvider>
+              <YouTubeAuthProvider>
+                <PlaylistProvider>
+                  <SearchResultsProvider>
+                    <SwagProvider>
+                      <AppContent />
+                    </SwagProvider>
+                  </SearchResultsProvider>
+                </PlaylistProvider>
+              </YouTubeAuthProvider>
+            </SettingsProvider>
+          </UsageProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

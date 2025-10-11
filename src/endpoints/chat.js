@@ -1559,11 +1559,27 @@ async function handler(event, responseStream) {
             memoryTracker.snapshot('chat-complete');
             const memoryMetadata = memoryTracker.getResponseMetadata();
             
+            // Calculate cost for this request
+            const { calculateCost } = require('../services/google-sheets-logger');
+            let requestCost = 0;
+            for (const apiCall of allLlmApiCalls) {
+                const usage = apiCall.response?.usage;
+                if (usage && apiCall.model) {
+                    const cost = calculateCost(
+                        apiCall.model,
+                        usage.prompt_tokens || 0,
+                        usage.completion_tokens || 0
+                    );
+                    requestCost += cost;
+                }
+            }
+            
             sseWriter.writeEvent('complete', {
                 status: 'success',
                 messages: currentMessages,
                 iterations: iterationCount,
                 extractedContent: extractedContent || undefined,
+                cost: parseFloat(requestCost.toFixed(4)), // Cost for this request
                 ...memoryMetadata
             });
             

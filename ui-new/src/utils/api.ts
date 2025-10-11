@@ -109,7 +109,7 @@ let apiBasePromise: Promise<string> | null = null;
 /**
  * Get cached API base or determine it
  */
-async function getCachedApiBase(): Promise<string> {
+export async function getCachedApiBase(): Promise<string> {
   if (cachedApiBase) {
     return cachedApiBase;
   }

@@ -22,6 +22,7 @@ const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
+const { handleUsageRequest } = require('./endpoints/usage');
 const { resetMemoryTracker } = require('./utils/memory-tracker');
 
 /**
@@ -95,6 +96,20 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'POST' && path === '/chat') {
             console.log('Routing to chat endpoint');
             await chatEndpoint.handler(event, responseStream);
+            return;
+        }
+        
+        if (method === 'GET' && path === '/usage') {
+            console.log('Routing to usage endpoint (buffered)');
+            // Note: Usage endpoint returns standard response, not streaming
+            const usageResponse = await handleUsageRequest(event);
+            const metadata = {
+                statusCode: usageResponse.statusCode,
+                headers: usageResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(usageResponse.body);
+            responseStream.end();
             return;
         }
         

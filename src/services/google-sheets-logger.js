@@ -333,8 +333,101 @@ async function initializeSheet() {
     }
 }
 
+/**
+ * Get all sheet data for a specific range
+ */
+async function getSheetData(spreadsheetId, range, accessToken) {
+    return new Promise((resolve, reject) => {
+        const encodedRange = encodeURIComponent(range);
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    resolve(JSON.parse(data));
+                } else {
+                    reject(new Error(`Get sheet data failed: ${res.statusCode} - ${data}`));
+                }
+            });
+        });
+
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/**
+ * Get total cost for a specific user by aggregating from Google Sheets
+ * 
+ * @param {string} userEmail - User's email address
+ * @returns {Promise<number>} Total cost in dollars
+ */
+async function getUserTotalCost(userEmail) {
+    try {
+        // Check if Google Sheets logging is configured
+        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
+        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
+        
+        if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
+            console.log('ℹ️ Google Sheets logging not configured - returning 0 cost');
+            return 0;
+        }
+        
+        // Format private key (handle escaped newlines)
+        const formattedKey = privateKey.replace(/\\n/g, '\n');
+        
+        // Get OAuth access token
+        const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
+        
+        // Read all data from the sheet (columns A-K, skip header row)
+        const range = `${sheetName}!A2:K`;
+        const sheetData = await getSheetData(spreadsheetId, range, accessToken);
+        
+        if (!sheetData.values || sheetData.values.length === 0) {
+            console.log(`ℹ️ No usage data found for ${userEmail}`);
+            return 0;
+        }
+        
+        // Aggregate cost for the user
+        // Column indexes: 0=Timestamp, 1=Email, 2=Provider, 3=Model, 4=TokensIn, 5=TokensOut, 6=TotalTokens, 7=Cost, 8=Duration, 9=ErrorCode, 10=ErrorMessage
+        let totalCost = 0;
+        let recordCount = 0;
+        
+        for (const row of sheetData.values) {
+            const rowEmail = row[1]; // Column B (index 1) is User Email
+            const rowCost = parseFloat(row[7]) || 0; // Column H (index 7) is Cost ($)
+            
+            if (rowEmail === userEmail) {
+                totalCost += rowCost;
+                recordCount++;
+            }
+        }
+        
+        console.log(`📊 Found ${recordCount} records for ${userEmail}, total cost: $${totalCost.toFixed(4)}`);
+        
+        return totalCost;
+    } catch (error) {
+        console.error('❌ Failed to get user total cost:', error.message);
+        // Return 0 on error to avoid blocking users
+        return 0;
+    }
+}
+
 module.exports = {
     logToGoogleSheets,
     initializeSheet,
-    calculateCost
+    calculateCost,
+    getUserTotalCost
 };
