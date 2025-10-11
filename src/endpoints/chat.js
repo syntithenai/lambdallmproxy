@@ -602,7 +602,7 @@ async function handler(event, responseStream) {
                 return isComplex ? 'gemini-2.0-flash' : 'gemini-2.5-flash';
             } else if (provider.type === 'together') {
                 const togetherModels = ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'];
-                if (requestedModel && requestedModel.includes('llama') || requestedModel.includes('deepseek')) {
+                if (requestedModel && (requestedModel.includes('llama') || requestedModel.includes('deepseek'))) {
                     return requestedModel;
                 }
                 return isComplex ? 'meta-llama/Llama-3.3-70B-Instruct-Turbo' : 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo';
