@@ -369,12 +369,30 @@ make deploy-ui
 
 ### Test 4: Reset Preference
 
+**Method 1: URL Parameter** (Recommended - User Friendly)
+```bash
+# Simply add ?reset=true to the URL
+open http://localhost:8081/?reset=true
+
+# Parameter is automatically removed after processing
+# Console shows: "🔄 Reset parameter detected - clearing remote Lambda preference"
+```
+
+**Method 2: Browser Console** (Developer Approach)
 ```javascript
-// Browser console
+// Manually clear localStorage
 localStorage.removeItem('lambdaproxy_use_remote');
 location.reload();
 
 // Should attempt local Lambda check again
+```
+
+**Method 3: API Function** (Programmatic)
+```javascript
+// Use the exported API function
+import { resetApiBase } from './utils/api';
+resetApiBase();
+location.reload();
 ```
 
 ## Architecture Diagram
@@ -462,13 +480,38 @@ LOCAL_LAMBDA_PORT=3001 make run-lambda-local
 
 ### Issue: UI Not Using Local Lambda
 
+**Cause**: UI has cached preference to use remote Lambda (stored in localStorage after previous failed health check).
+
+**Solution 1: Reset URL Parameter** ⭐ Recommended
+```bash
+# Simply visit with ?reset=true parameter
+open http://localhost:8081/?reset=true
+
+# The parameter:
+# - Clears the localStorage flag
+# - Resets the API base cache
+# - Forces a new health check
+# - Automatically removes itself from URL
+
+# Console output:
+# 🔄 Reset parameter detected - clearing remote Lambda preference
+# 🔄 API base cache reset
+# 🏠 Using local Lambda server at http://localhost:3000
+```
+
+**Solution 2: Browser Console**
 ```javascript
-// Browser console
+// Manually clear localStorage
 localStorage.removeItem('lambdaproxy_use_remote');
 location.reload();
+```
 
-// Or force reset
+**Solution 3: API Function**
+```javascript
+// Use the exported function
+import { resetApiBase } from './utils/api';
 resetApiBase();
+location.reload();
 ```
 
 ### Issue: CORS Errors
