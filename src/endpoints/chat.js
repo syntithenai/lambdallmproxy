@@ -309,8 +309,34 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
                 status: 'executing'
             });
             
-            // Parse arguments
-            const parsedArgs = JSON.parse(args);
+            // Parse arguments with error handling for malformed JSON
+            let parsedArgs = {};
+            try {
+                parsedArgs = JSON.parse(args);
+            } catch (parseError) {
+                console.error(`⚠️ Failed to parse tool arguments for ${name}:`, parseError.message);
+                console.error(`⚠️ Raw arguments string: "${args}"`);
+                
+                // Try to fix common issues
+                let fixedArgs = args.trim();
+                
+                // If it's just a partial JSON, try adding missing braces
+                if (fixedArgs && !fixedArgs.startsWith('{')) {
+                    fixedArgs = '{' + fixedArgs;
+                }
+                if (fixedArgs && !fixedArgs.endsWith('}')) {
+                    fixedArgs = fixedArgs + '}';
+                }
+                
+                try {
+                    parsedArgs = JSON.parse(fixedArgs);
+                    console.log(`✅ Fixed malformed JSON for ${name}`);
+                } catch (retryError) {
+                    console.error(`❌ Could not fix JSON for ${name}, using empty object`);
+                    // Fall back to empty object - tool will use defaults
+                    parsedArgs = {};
+                }
+            }
             
             // Create tool context with event writer
             const toolContext = {
