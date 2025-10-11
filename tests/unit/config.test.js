@@ -64,7 +64,11 @@ describe('Configuration Modules', () => {
             expect(MAX_TOOL_ITERATIONS).toBeGreaterThan(0);
             expect(DEFAULT_REASONING_EFFORT).toMatch(/low|medium|high/);
             const prompt = getComprehensiveResearchSystemPrompt();
-            expect(prompt).toContain('CRITICAL JSON TOOL CALL RULES');
+            // Updated to match optimized prompt structure
+            expect(prompt).toContain('TOOLS');
+            expect(prompt).toContain('execute_javascript');
+            expect(prompt).toContain('search_web');
+            expect(prompt).toContain('RESPONSE');
         });
     });
 });

@@ -1,24 +1,40 @@
-🔨 Building React UI...
-./scripts/build-docs.sh
-[0;34m🔧 Building React UI from ui-new...[0m
+      ✓ should have reduced emphasis markers (CRITICAL/NEVER)
+      ✓ should have no emojis
+      ✓ should not have excessive examples section
+    No Functional Loss
+      ✓ should still have OpenAI function calling mention
+      ✓ should still specify all tool parameters
+      ✓ should still warn about brief responses (1 ms)
+      ✓ should still mention citing sources
+  System Prompt Structure Validation
+    ✓ should have clear sections (TOOLS, RESPONSE, etc.)
+    ✓ should start with a clear AI assistant description (1 ms)
+    ✓ should have date/time near the beginning
+    ✓ should not have excessive whitespace or line breaks
+  Token Estimation
+    ✓ should estimate tokens correctly (1 ms)
+  Critical Rules Checklist
+    ✓ CRITICAL RULE: Tool parameter restrictions (additionalProperties: false)
+    ✓ CRITICAL RULE: Date/time handling (use provided, never guess) (1 ms)
+    ✓ CRITICAL RULE: YouTube priority (search_youtube for videos)
+    ✓ CRITICAL RULE: Multi-query support (array of queries)
+    ✓ CRITICAL RULE: Response format (Markdown with headings, lists, code)
+    ✓ CRITICAL RULE: Completeness check before finalizing (1 ms)
+    ✓ CRITICAL RULE: Comprehensive response length (1000-3000 words)
+    ✓ CRITICAL RULE: Tool usage when helpful
+  Removed Redundancies Validation
+    ✓ should not have 8+ NEVER statements (1 ms)
+    ✓ should not have 12+ CRITICAL statements
+    ✓ should not have emojis
+    ✓ should not have verbose example categories
+    ✓ should not have excessive transitional phrases (1 ms)
+    ✓ should not have redundant temporal sections
+    ✓ should not have explicit markdown instruction lists
+  Output Format
+    ✓ should print optimization summary (3 ms)
 
-> ui-new@0.0.0 build
-> tsc -b && vite build
-
-You are using Node.js 20.12.2. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.
-vite v7.1.9 building for production...
-transforming...
-✓ 546 modules transformed.
-rendering chunks...
-computing gzip size...
-../docs/index.html                      1.10 kB │ gzip:   0.62 kB
-../docs/assets/index-DsWe7Mw0.css      59.27 kB │ gzip:  10.69 kB
-../docs/assets/streaming-BIIc-Wdd.js    1.20 kB │ gzip:   0.68 kB
-../docs/assets/index-ByqFOWUk.js      818.75 kB │ gzip: 238.23 kB
-
-(!) Some chunks are larger than 500 kB after minification. Consider:
-- Using dynamic import() to code-split the application
-- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
-- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-✓ built in 2.37s
-[0;32m✅ Build complete! Files in docs/[0m
+Test Suites: 1 passed, 1 total
+Tests:       43 passed, 43 total
+Snapshots:   0 total
+Time:        0.186 s, estimated 1 s
+Ran all test suites matching /tests\/integration\/system_prompt_optimization.test.js/i.

@@ -226,7 +226,7 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
 
         // Update system prompt with determined persona and environmental context
-        dynamicSystemPrompt = researchPlan.optimal_persona + ' CRITICAL TOOL RULES: Always use the available search_web and execute_javascript tools when they can enhance your response. Use search tools for current information and calculations tools for math problems. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, ONLY provide the "query" parameter. NEVER add extra properties like count, results, limit, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking. Cite all sources with URLs. CRITICAL: Do NOT include XML tags, JSON objects, or function call syntax in your text responses. NEVER write things like <execute_javascript>{\"code\": \"...\"}</execute_javascript> in your response. Tool calls happen automatically through the API.' + environmentContext;
+        dynamicSystemPrompt = researchPlan.optimal_persona + ' Use tools when helpful. Strict params only. Cite sources.' + environmentContext;
         
     } catch (e) {
         console.warn('Planning query failed, proceeding with default approach:', e.message);
@@ -244,7 +244,7 @@ Generate 1-5 specific, targeted research questions based on query complexity. Fo
         const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
         const environmentContext = `\n\nCurrent Context: Today is ${dayOfWeek}, ${currentDateTime}. Use this temporal context when discussing recent events, current status, or time-sensitive information.`;
         
-        dynamicSystemPrompt = (systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT) + ' CRITICAL TOOL RULES: Always use available tools (search_web, execute_javascript, scrape_web_content) when they can provide better, more current, or more accurate information. For math questions, always use execute_javascript. For current events or factual queries, always use search_web. PARAMETER RULES: When calling execute_javascript, ONLY provide the "code" parameter. When calling search_web, ONLY provide the "query" parameter. When calling scrape_web_content, ONLY provide the "url" parameter. NEVER add extra properties like count, results, limit, etc. The schemas have additionalProperties: false and will reject extra parameters with HTTP 400 errors. RESPONSE FORMAT: Start with the direct answer, then show work if needed. Be concise and minimize descriptive text about your thinking. CRITICAL: Do NOT include XML tags, JSON objects, or function call syntax in your text responses. NEVER write things like <execute_javascript>{\"code\": \"...\"}</execute_javascript> or <function=search_web> or <function=execute_javascript> in your response. This API uses OpenAI function calling format, NOT Anthropic/Claude syntax. Tool calls happen automatically through the API.' + environmentContext;
+        dynamicSystemPrompt = (systemPrompt || COMPREHENSIVE_RESEARCH_SYSTEM_PROMPT) + ' Use tools when helpful. Strict params only.' + environmentContext;
     }
     } // Close the block for planning
 
