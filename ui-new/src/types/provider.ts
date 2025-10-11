@@ -16,6 +16,7 @@ export type ProviderType =
   | 'gemini-free'         // Gemini free tier - https://generativelanguage.googleapis.com/v1beta
   | 'gemini'              // Gemini paid tier - https://generativelanguage.googleapis.com/v1beta
   | 'together'            // Together AI - https://api.together.xyz/v1
+  | 'atlascloud'          // Atlas Cloud - https://api.atlascloud.ai/v1
   | 'openai-compatible';  // Custom endpoint - user specifies endpoint AND modelName
 
 export interface ProviderConfig {
@@ -57,6 +58,7 @@ export const PROVIDER_ENDPOINTS: Record<Exclude<ProviderType, 'openai-compatible
   'gemini': 'https://generativelanguage.googleapis.com/v1beta',
   'gemini-free': 'https://generativelanguage.googleapis.com/v1beta',
   'together': 'https://api.together.xyz/v1',
+  'atlascloud': 'https://api.atlascloud.ai/v1',
 };
 
 /**
@@ -92,6 +94,11 @@ export const PROVIDER_INFO: Record<ProviderType, { name: string; icon: string; d
     name: 'Together AI',
     icon: '🔌',
     description: 'Open source models with trial credits'
+  },
+  'atlascloud': {
+    name: 'Atlas Cloud',
+    icon: '☁️',
+    description: 'API marketplace for various LLM models'
   },
   'openai-compatible': {
     name: 'OpenAI Compatible (Custom)',

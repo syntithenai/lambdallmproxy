@@ -16,6 +16,7 @@ const API_KEY_PATTERNS: Record<ProviderType, RegExp> = {
   'gemini-free': /^AIza[a-zA-Z0-9_-]{35}$/,
   'gemini': /^AIza[a-zA-Z0-9_-]{35}$/,
   'together': /^[a-zA-Z0-9_-]{32,}$/,
+  'atlascloud': /^apikey-[a-f0-9]{32}$/,
   'openai-compatible': /.+/, // Any non-empty string
 };
 
@@ -36,6 +37,7 @@ export function validateApiKey(apiKey: string, providerType: ProviderType): { va
       'gemini-free': 'Gemini API key must start with "AIza" followed by 35 characters',
       'gemini': 'Gemini API key must start with "AIza" followed by 35 characters',
       'together': 'Together AI API key must be at least 32 characters',
+      'atlascloud': 'Atlas Cloud API key must start with "apikey-" followed by 32 hex characters',
       'openai-compatible': 'API key cannot be empty',
     };
     return { valid: false, error: errorMessages[providerType] };
