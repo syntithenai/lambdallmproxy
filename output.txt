@@ -1,1 +1,5 @@
-📋 Fetching recent Lambda logs...
+[dotenv@17.2.2] injecting env (22) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+✅ Lambda handler loaded successfully
+
+🚀 Local Lambda Development Server
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -40,6 +40,49 @@ app.use((req, res, next) => {
   next();
 });
 
+// Mock awslambda.streamifyResponse for local development
+global.awslambda = {
+  streamifyResponse: (handler) => {
+    // Return a wrapper that calls the handler and handles streaming
+    return async (event, context) => {
+      // Create a mock response stream
+      const chunks = [];
+      const responseStream = {
+        write: (data) => {
+          chunks.push(data);
+        },
+        end: () => {
+          // Stream has ended, chunks contain the response
+        },
+        setContentType: (type) => {
+          responseStream.contentType = type;
+        },
+        contentType: 'application/json'
+      };
+      
+      // Add HttpResponseStream.from method
+      responseStream.from = (stream, metadata) => {
+        responseStream.metadata = metadata;
+        return responseStream;
+      };
+      
+      await handler(event, responseStream, context);
+      
+      return {
+        chunks,
+        metadata: responseStream.metadata,
+        contentType: responseStream.contentType
+      };
+    };
+  },
+  HttpResponseStream: {
+    from: (responseStream, metadata) => {
+      responseStream.metadata = metadata;
+      return responseStream;
+    }
+  }
+};
+
 // Load the Lambda handler
 let handler;
 try {
@@ -63,6 +106,7 @@ try {
   console.log('✅ Lambda handler loaded successfully');
 } catch (error) {
   console.error('❌ ERROR loading Lambda handler:', error.message);
+  console.error(error.stack);
   process.exit(1);
 }
 
@@ -149,8 +193,29 @@ const handleRequest = async (req, res) => {
     // Call the Lambda handler
     const response = await handler(event, context);
     
-    // Convert Lambda response to Express response
-    if (response) {
+    // Handle streaming response from streamifyResponse wrapper
+    if (response && response.chunks) {
+      const metadata = response.metadata || {};
+      const statusCode = metadata.statusCode || 200;
+      const headers = metadata.headers || {};
+      
+      // Set headers
+      Object.keys(headers).forEach(key => {
+        res.setHeader(key, headers[key]);
+      });
+      
+      res.status(statusCode);
+      
+      // Write all chunks
+      for (const chunk of response.chunks) {
+        res.write(chunk);
+      }
+      
+      res.end();
+      console.log(`📤 Response: ${statusCode} (streaming, ${response.chunks.length} chunks)`);
+    }
+    // Handle regular Lambda response
+    else if (response) {
       lambdaToExpressResponse(response, res);
       console.log(`📤 Response: ${response.statusCode || 200}`);
     } else {
