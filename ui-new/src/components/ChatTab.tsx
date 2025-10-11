@@ -1526,6 +1526,31 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     ...(data.extractedContent && { extractedContent: data.extractedContent }),
                     ...(data.llmApiCalls && { llmApiCalls: data.llmApiCalls })
                   };
+                  
+                  // Check if this is a fallback/incomplete response
+                  const isFallbackResponse = 
+                    data.content?.includes('Based on the search results above') ||
+                    data.content?.includes('I apologize, but I was unable to generate a response') ||
+                    data.content?.includes('I was unable to provide') ||
+                    (!data.content && !data.tool_calls) ||  // Empty response with no tool calls
+                    (data.content && data.content.trim().length < 10 && !data.tool_calls);  // Very short response with no tools
+                  
+                  if (isFallbackResponse) {
+                    // Find the last user message index for retry context
+                    let lastUserMsgIndex = -1;
+                    for (let i = prev.length - 1; i >= 0; i--) {
+                      if (prev[i].role === 'user') {
+                        lastUserMsgIndex = i;
+                        break;
+                      }
+                    }
+                    
+                    assistantMessage.isRetryable = true;
+                    assistantMessage.originalErrorMessage = 'Incomplete or fallback response';
+                    assistantMessage.originalUserPromptIndex = lastUserMsgIndex >= 0 ? lastUserMsgIndex : undefined;
+                    assistantMessage.retryCount = 0;
+                  }
+                  
                   return [...prev, assistantMessage];
                 });
                 // Reset state after creating new block
@@ -1555,11 +1580,24 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 // The AuthContext will handle logout via useAuth
               }
               
+              // Find the last user message index for retry context
+              let lastUserMsgIndex = -1;
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === 'user') {
+                  lastUserMsgIndex = i;
+                  break;
+                }
+              }
+              
               // Capture full error data for transparency
               const errorMessage: ChatMessage = {
                 role: 'assistant',
                 content: `❌ Error: ${errorMsg}`,
-                errorData: data  // Store full error object including code, stack, etc.
+                errorData: data,  // Store full error object including code, stack, etc.
+                isRetryable: true,  // Mark as retryable
+                originalErrorMessage: errorMsg,
+                originalUserPromptIndex: lastUserMsgIndex >= 0 ? lastUserMsgIndex : undefined,
+                retryCount: 0
               };
               setMessages(prev => [...prev, errorMessage]);
               break;
@@ -1699,13 +1737,35 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       
       // Handle aborted requests
       if (error instanceof Error && error.name === 'AbortError') {
+        // Find the last user message index for retry context
+        let lastUserMsgIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'user') {
+            lastUserMsgIndex = i;
+            break;
+          }
+        }
+        
         const timeoutMessage: ChatMessage = {
           role: 'assistant',
-          content: '⏱️ Request timed out after 4 minutes. This may happen when tools take too long to execute. Try simplifying your request or disabling some tools.'
+          content: '⏱️ Request timed out after 4 minutes. This may happen when tools take too long to execute. Try simplifying your request or disabling some tools.',
+          isRetryable: true,  // Mark timeout as retryable
+          originalErrorMessage: 'Request timed out',
+          originalUserPromptIndex: lastUserMsgIndex >= 0 ? lastUserMsgIndex : undefined,
+          retryCount: 0
         };
         setMessages(prev => [...prev, timeoutMessage]);
         showWarning('Request timed out after 4 minutes. Try disabling some tools or simplifying your request.');
       } else {
+        // Find the last user message index for retry context
+        let lastUserMsgIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'user') {
+            lastUserMsgIndex = i;
+            break;
+          }
+        }
+        
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         const errorMessage: ChatMessage = {
           role: 'assistant',
@@ -1715,7 +1775,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             message: error.message,
             name: error.name,
             stack: error.stack
-          } : { message: String(error) }
+          } : { message: String(error) },
+          isRetryable: true,  // Mark as retryable
+          originalErrorMessage: errorMsg,
+          originalUserPromptIndex: lastUserMsgIndex >= 0 ? lastUserMsgIndex : undefined,
+          retryCount: 0
         };
         setMessages(prev => [...prev, errorMessage]);
         showError(`Chat error: ${errorMsg}`);
@@ -1725,6 +1789,62 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       setToolStatus([]);
       abortControllerRef.current = null;
     }
+  };
+
+  const handleRetry = async (messageIndex: number) => {
+    const retryMessage = messages[messageIndex];
+    
+    if (!retryMessage || !retryMessage.isRetryable) {
+      showError('This message cannot be retried');
+      return;
+    }
+    
+    // Check retry limit
+    const retryCount = retryMessage.retryCount || 0;
+    if (retryCount >= 3) {
+      showError('Maximum retry attempts (3) reached');
+      return;
+    }
+    
+    // Find the original user prompt
+    const userPromptIndex = retryMessage.originalUserPromptIndex;
+    if (userPromptIndex === undefined || userPromptIndex < 0) {
+      showError('Cannot find original user prompt for retry');
+      return;
+    }
+    
+    const userPrompt = messages[userPromptIndex];
+    if (!userPrompt || userPrompt.role !== 'user') {
+      showError('Invalid user prompt for retry');
+      return;
+    }
+    
+    // Extract all messages from user prompt to failed message (inclusive of tool messages)
+    const contextMessages = messages.slice(userPromptIndex + 1, messageIndex);
+    
+    // Separate tool results and intermediate assistant messages
+    const previousToolResults = contextMessages.filter(m => m.role === 'tool');
+    const intermediateMessages = contextMessages.filter(m => m.role === 'assistant' || m.role === 'tool');
+    
+    console.log('🔄 Retrying request:', {
+      userPromptIndex,
+      messageIndex,
+      retryCount: retryCount + 1,
+      previousToolResults: previousToolResults.length,
+      intermediateMessages: intermediateMessages.length,
+      failureReason: retryMessage.originalErrorMessage
+    });
+    
+    // Show toast notification
+    showSuccess(`Retrying request (attempt ${retryCount + 2}) with full context...`);
+    
+    // Remove the failed message
+    setMessages(prev => prev.slice(0, messageIndex));
+    
+    // Restore user input for now (TODO: implement full context retry)
+    const userContent = getMessageText(userPrompt.content);
+    setInput(userContent);
+    showSuccess('User message restored to input - click Send to retry');
   };
 
   const handleLoadChat = async (entry: ChatHistoryEntry) => {
@@ -2766,6 +2886,23 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
                             Error Info
+                          </button>
+                        )}
+                        {/* Try Again button for retryable messages */}
+                        {msg.isRetryable && (!msg.retryCount || msg.retryCount < 3) && (
+                          <button
+                            onClick={() => handleRetry(idx)}
+                            disabled={isLoading}
+                            className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-900 dark:hover:text-orange-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                            title="Retry this request with full context"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Try Again
+                            {msg.retryCount && msg.retryCount > 0 && (
+                              <span className="text-[10px] opacity-75">({msg.retryCount + 1})</span>
+                            )}
                           </button>
                         )}
                       </div>

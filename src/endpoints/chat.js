@@ -457,8 +457,36 @@ async function handler(event, responseStream) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        let { messages, model, tools, providers: userProviders } = body;
+        let { messages, model, tools, providers: userProviders, isRetry, retryContext } = body;
         const tavilyApiKey = body.tavilyApiKey || '';
+        
+        // Handle retry requests - inject previous context
+        if (isRetry && retryContext) {
+            console.log('🔄 Retry request detected:', {
+                attemptNumber: retryContext.attemptNumber,
+                failureReason: retryContext.failureReason,
+                previousToolResults: retryContext.previousToolResults?.length || 0,
+                intermediateMessages: retryContext.intermediateMessages?.length || 0
+            });
+            
+            // Inject previous tool results and intermediate messages back into conversation
+            if (retryContext.previousToolResults && retryContext.previousToolResults.length > 0) {
+                console.log(`   📦 Restoring ${retryContext.previousToolResults.length} tool result(s) to context`);
+                // Insert tool results after the user message
+                messages = [...messages, ...retryContext.previousToolResults];
+            }
+            
+            if (retryContext.intermediateMessages && retryContext.intermediateMessages.length > 0) {
+                console.log(`   💬 Restoring ${retryContext.intermediateMessages.length} intermediate message(s) to context`);
+            }
+            
+            // Add retry system message to explain this is a retry
+            const retrySystemMessage = {
+                role: 'system',
+                content: `This is retry attempt ${retryContext.attemptNumber || 1}. Previous attempt failed with: ${retryContext.failureReason || 'Unknown error'}. Please try to provide a complete and helpful response.`
+            };
+            messages = [retrySystemMessage, ...messages];
+        }
         
         // Apply defaults for parameters that optimize for comprehensive, verbose responses
         const temperature = body.temperature !== undefined ? body.temperature : 0.8;

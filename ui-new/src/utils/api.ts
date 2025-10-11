@@ -220,6 +220,11 @@ export interface ChatMessage {
       source: string;
     }>;
   };
+  // Retry support
+  isRetryable?: boolean;             // Mark message as retryable (error or incomplete response)
+  retryCount?: number;               // Number of retry attempts for this message
+  originalErrorMessage?: string;     // Original error message for retry context
+  originalUserPromptIndex?: number;  // Index of original user prompt for retry
 }
 
 export interface ProxyRequest {
@@ -347,7 +352,16 @@ export const performSearch = async (
 
 // Chat endpoint with SSE streaming and tool execution
 export const sendChatMessageStreaming = async (
-  request: ProxyRequest & { tools?: any[] },
+  request: ProxyRequest & { 
+    tools?: any[];
+    isRetry?: boolean;
+    retryContext?: {
+      previousToolResults?: ChatMessage[];
+      intermediateMessages?: ChatMessage[];
+      failureReason?: string;
+      attemptNumber?: number;
+    };
+  },
   token: string,
   onEvent: (event: string, data: any) => void,
   onComplete?: () => void,
