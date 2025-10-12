@@ -1083,12 +1083,25 @@ async function handler(event, responseStream) {
                 const { isStreaming, errorData, llmApiCalls, extractedContent, rawResult, evaluations, ...cleanMsg } = msg;
                 
                 // CRITICAL: Clean malformed function calls from assistant messages
-                // Some LLMs generate text-based function calls like: <function_name>{"param": "value"} </function>
+                // Some LLMs generate text-based function calls in various formats:
+                // - <function=name> or <function=name>text</function>
+                // - <function_name>{"param": "value"} </function>
+                // - Other XML-style tags with function syntax
                 // These are invalid and cause API errors. Remove them from content.
                 if (cleanMsg.role === 'assistant' && cleanMsg.content && typeof cleanMsg.content === 'string') {
-                    const malformedFunctionPattern = /<[^>]+>\s*\{[^}]*\}\s*<\/[^>]+>/g;
                     const originalContent = cleanMsg.content;
-                    cleanMsg.content = cleanMsg.content.replace(malformedFunctionPattern, '').trim();
+                    let content = cleanMsg.content;
+                    
+                    // Pattern 1: <function=name> syntax (with or without closing tag)
+                    content = content.replace(/<function=[^>]+>(?:<\/function>)?/gi, '');
+                    
+                    // Pattern 2: <tag_name>{...json...} </tag_name>
+                    content = content.replace(/<[^>]+>\s*\{[^}]*\}\s*<\/[^>]+>/g, '');
+                    
+                    // Pattern 3: Any remaining XML-style function/tool tags
+                    content = content.replace(/<\/?(?:function|tool)[^>]*>/gi, '');
+                    
+                    cleanMsg.content = content.trim();
                     
                     if (originalContent !== cleanMsg.content) {
                         console.log('🧹 Cleaned malformed function call from assistant message');
@@ -1098,6 +1111,18 @@ async function handler(event, responseStream) {
                 }
                 
                 return cleanMsg;
+            }).filter(msg => {
+                // Remove assistant messages with empty content AND no tool_calls
+                // These can cause API errors with some providers
+                if (msg.role === 'assistant') {
+                    const hasContent = msg.content && msg.content.trim().length > 0;
+                    const hasToolCalls = msg.tool_calls && msg.tool_calls.length > 0;
+                    if (!hasContent && !hasToolCalls) {
+                        console.log('🧹 Filtered out empty assistant message with no tool_calls');
+                        return false;
+                    }
+                }
+                return true;
             });
             
             // Debug: Count tool messages being sent to LLM

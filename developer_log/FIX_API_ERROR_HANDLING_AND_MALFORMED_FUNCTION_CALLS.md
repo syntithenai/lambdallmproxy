@@ -47,15 +47,25 @@ reject(new Error(errorMessage));
 
 ### 2. Malformed Function Call Cleaning
 
-**File**: `src/endpoints/chat.js` (lines 1082-1102)
+**File**: `src/endpoints/chat.js` (lines 1082-1115)
 
-Added detection and removal of malformed function calls from assistant messages:
+Added comprehensive detection and removal of malformed function calls from assistant messages:
 
 ```javascript
 if (cleanMsg.role === 'assistant' && cleanMsg.content && typeof cleanMsg.content === 'string') {
-    const malformedFunctionPattern = /<[^>]+>\s*\{[^}]*\}\s*<\/[^>]+>/g;
     const originalContent = cleanMsg.content;
-    cleanMsg.content = cleanMsg.content.replace(malformedFunctionPattern, '').trim();
+    let content = cleanMsg.content;
+    
+    // Pattern 1: <function=name> syntax (with or without closing tag)
+    content = content.replace(/<function=[^>]+>(?:<\/function>)?/gi, '');
+    
+    // Pattern 2: <tag_name>{...json...} </tag_name>
+    content = content.replace(/<[^>]+>\s*\{[^}]*\}\s*<\/[^>]+>/g, '');
+    
+    // Pattern 3: Any remaining XML-style function/tool tags
+    content = content.replace(/<\/?(?:function|tool)[^>]*>/gi, '');
+    
+    cleanMsg.content = content.trim();
     
     if (originalContent !== cleanMsg.content) {
         console.log('🧹 Cleaned malformed function call from assistant message');
@@ -65,11 +75,15 @@ if (cleanMsg.role === 'assistant' && cleanMsg.content && typeof cleanMsg.content
 }
 ```
 
-**Pattern Detection**:
-- Matches: `<function_name>{...json...} </function>`
-- Matches: `<tool_name> {"param": "value"} </tool>`
-- Removes invalid XML/JSON hybrid syntax
-- Logs when cleaning occurs for debugging
+**Pattern Detection** (3 comprehensive patterns):
+1. `<function=search>` - Simple function tag syntax
+2. `<function_name>{...json...} </function>` - XML/JSON hybrid
+3. `<tool>...</tool>` - Generic function/tool tags
+
+**Additional Filtering**:
+- Filters out completely empty assistant messages (no content AND no tool_calls)
+- Prevents API errors from invalid message structures
+- Logs when filtering occurs for debugging
 
 **Benefits**:
 - Prevents API rejection due to malformed messages
@@ -101,17 +115,20 @@ The improved error handler now tries all these paths.
 
 ### Malformed Function Call Examples
 
-**Invalid formats cleaned**:
+**Invalid formats cleaned** (all patterns now detected):
 ```
-<scrape_web_content>{"url": "..."} </function>
-<search_web> {"query": "..."} </search_web>
-<execute_js>{"code": "..."}</execute_js>
+<function=search>                                    # Pattern 1: Simple syntax
+<function=scrape_web_content></function>            # Pattern 1: With closing tag
+<scrape_web_content>{"url": "..."} </function>      # Pattern 2: XML/JSON hybrid
+<search_web> {"query": "..."} </search_web>         # Pattern 2: Matching tags
+<tool>some text</tool>                              # Pattern 3: Generic tool tags
 ```
 
 **Valid formats preserved**:
 - Plain text content
 - Proper tool_calls array with structured calls
 - Normal assistant responses
+- Assistant messages with tool_calls AND content
 
 ## Testing
 
@@ -245,10 +262,11 @@ make logs
   - `developer_log/FIX_RETRY_INDEX_TRACKING.md` (retry mechanism)
   - `developer_log/CHAT_ENDPOINT_DOCUMENTATION.md` (endpoint overview)
 
-## Commit
+## Commits
 
+### Initial Fix (commit 19b4092)
 ```bash
-git add src/endpoints/chat.js
+git add src/endpoints/chat.js developer_log/FIX_API_ERROR_HANDLING_AND_MALFORMED_FUNCTION_CALLS.md
 git commit -m "fix: improve API error messages and clean malformed function calls
 
 - Enhanced error handler to try multiple error structure paths
@@ -256,4 +274,16 @@ git commit -m "fix: improve API error messages and clean malformed function call
 - Prevents API rejections from invalid message formats
 - Improved debugging through detailed error messages
 - Added logging for malformed message cleaning operations"
+```
+
+### Enhanced Fix (current)
+```bash
+git add src/endpoints/chat.js developer_log/FIX_API_ERROR_HANDLING_AND_MALFORMED_FUNCTION_CALLS.md
+git commit -m "fix: enhance malformed function call detection for <function=name> syntax
+
+- Added Pattern 1: <function=name> detection
+- Added Pattern 3: Generic <function>/<tool> tag removal
+- Filter out completely empty assistant messages
+- Comprehensive cleaning of all malformed function call formats
+- Resolves 400 error from gemini-free provider"
 ```
