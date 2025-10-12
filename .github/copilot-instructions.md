@@ -19,7 +19,32 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
 
 ## 1. Core Project Directives & Workflow
 
-### 1.1. Deployment and Build Process
+### 1.1. Security and Secret Management
+
+- **⚠️ CRITICAL: Pre-Commit Secret Check**: Before committing ANY changes, you MUST check for exposed secrets:
+    1.  **Manual Review**: Scan all modified files for API keys, tokens, passwords, or credentials
+    2.  **Pattern Check**: Look for common secret patterns:
+        - API keys starting with: `sk-`, `gsk_`, `AIza`, `AKIA`, `ya29.`
+        - Bearer tokens, OAuth tokens, JWT tokens
+        - Database connection strings with passwords
+        - Private keys (RSA, SSH, PGP)
+    3.  **File Review**: Pay special attention to:
+        - Any `.js` or `.ts` files with "init", "setup", "config" in the name
+        - `.env` files (should NEVER be committed)
+        - Test files with hardcoded credentials
+        - Documentation with example credentials (use placeholders like `YOUR_API_KEY_HERE`)
+    4.  **Verification**: Run `git diff --cached` before committing to review exactly what will be committed
+- **Never Commit**:
+    - `.env` files (already in `.gitignore`)
+    - Files matching patterns in `.gitignore` (e.g., `SETUP_UI_PROVIDERS.js`, `ui-client-init*.js`)
+    - Any file containing real API keys or credentials
+- **Safe Practices**:
+    - Use environment variables for secrets (`.env` for local, Lambda environment for production)
+    - Use placeholder values in example/template files (e.g., `.env.example`)
+    - Redact secrets in logs and documentation with `[REDACTED]` or `***`
+    - If a secret is accidentally committed, immediately rewrite git history and revoke the exposed credential
+
+### 1.2. Deployment and Build Process
 
 - **Mandatory**: After completing any code or documentation changes, run the appropriate deployment command before finishing the task (e.g., `make deploy-lambda-fast` for backend updates, `make deploy-ui` for UI changes).
 
@@ -87,13 +112,13 @@ make all                     # Deploy both Lambda and UI
 - **Testing**: When testing the Lambda function, ensure all required parameters, including the API key, are provided, unless a test specifically requires their omission.
 - **Debugging**: Always check CloudWatch logs using `make logs` after deployment to verify function behavior and catch errors.
 
-### 1.2. Terminal Command Execution
+### 1.3. Terminal Command Execution
 
 - **Output Redirection**: When you run a terminal command, you MUST redirect its output to a file named `output.txt`. Overwrite the file for each new command to prevent it from growing too large.
     - Example: `ls -l > output.txt`
 - **Reading Command Output**: You MUST read the `output.txt` file to see the results of your commands. This is a workaround for a known issue where direct command output is not reliably read.
 
-### 1.3. Local Development Server
+### 1.4. Local Development Server
 
 - **Port**: The local development server MUST run on port **8081**.
 - **Commands**:
@@ -101,7 +126,7 @@ make all                     # Deploy both Lambda and UI
 - **Access**: The local application is available at `http://localhost:8081`.
 
 
-### 1.4. Test-Driven Development (TDD)
+### 1.5. Test-Driven Development (TDD)
 
 - **New Features**: When a new feature is requested, you MUST first create a test for that feature.
 - **Iteration**: You MUST iterate on the implementation until the test passes. This ensures that all new functionality is covered by tests and helps prevent regressions.
