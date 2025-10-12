@@ -311,6 +311,11 @@ const toolFunctions = [
             enum: ['relevance', 'date', 'viewCount', 'rating'],
             default: 'relevance',
             description: 'Sort order for results: relevance (default), date (newest first), viewCount (most viewed), rating (highest rated)'
+          },
+          generate_summary: {
+            type: 'boolean',
+            description: 'When true, generate a single LLM summary of all video transcripts (batch processing). Useful for comparing or synthesizing information across multiple videos.',
+            default: false
           }
         },
         required: ['query'],
@@ -339,6 +344,11 @@ const toolFunctions = [
             type: 'string',
             default: 'en',
             description: 'Preferred language code (e.g., "en", "es", "fr", "de"). Falls back to English if not available.'
+          },
+          generate_summary: {
+            type: 'boolean',
+            description: 'When true, generate an LLM summary of the transcript to reduce content size. Useful for long transcripts.',
+            default: false
           }
         },
         required: ['url'],
@@ -431,6 +441,11 @@ const toolFunctions = [
           prompt: {
             type: 'string',
             description: 'Optional: Text to guide the model\'s style or continue a previous segment. Can improve accuracy for specific terminology or context.'
+          },
+          generate_summary: {
+            type: 'boolean',
+            description: 'When true, generate an LLM summary of the transcript to reduce content size. Useful for long transcripts.',
+            default: false
           }
         },
         required: ['url'],
@@ -809,7 +824,9 @@ Brief answer with URLs:`;
                   });
                 }
 
+                const synthesisStartTime = Date.now();
                 const directSynthesisResp = await llmResponsesWithTools(directSynthesisRequestBody);
+                const synthesisEndTime = Date.now();
                 
                 // Emit LLM response event
                 if (context?.writeEvent) {
@@ -820,6 +837,30 @@ Brief answer with URLs:`;
                     response: directSynthesisResp,
                     timestamp: new Date().toISOString()
                   });
+                }
+                
+                // Log to Google Sheets
+                try {
+                  const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                  const usage = directSynthesisResp?.rawResponse?.usage || {};
+                  const [provider, modelName] = model.split(':');
+                  
+                  logToGoogleSheets({
+                    userEmail: context?.userEmail || 'anonymous',
+                    provider,
+                    model: modelName || model,
+                    promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                    completionTokens: usage.completion_tokens || usage.output_tokens || 0,
+                    totalTokens: usage.total_tokens || 0,
+                    durationMs: synthesisEndTime - synthesisStartTime,
+                    timestamp: new Date().toISOString(),
+                    requestType: 'search_summary',
+                    metadata: { query, phase: 'direct_synthesis' }
+                  }).catch(err => {
+                    console.error('Failed to log search summary to Google Sheets:', err.message);
+                  });
+                } catch (err) {
+                  console.error('Google Sheets logging error (search summary):', err.message);
                 }
                 
                 summary = directSynthesisResp?.text || directSynthesisResp?.finalText || 'Unable to generate synthesis';
@@ -911,7 +952,9 @@ ${result.content.substring(0, maxContentChars)}
                     });
                   }
                   
+                  const pageStartTime = Date.now();
                   const pageResp = await llmResponsesWithTools(pageSummaryRequestBody);
+                  const pageEndTime = Date.now();
                   const pageSummaryText = pageResp?.text || pageResp?.finalText || 'Unable to generate summary';
                   
                   // No delay needed - different models have separate TPM limits
@@ -931,6 +974,30 @@ ${result.content.substring(0, maxContentChars)}
                       },
                       timestamp: new Date().toISOString()
                     });
+                  }
+                  
+                  // Log page summary to Google Sheets
+                  try {
+                    const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                    const usage = pageResp?.rawResponse?.usage || {};
+                    const [provider, modelName] = summaryModel.split(':');
+                    
+                    logToGoogleSheets({
+                      userEmail: context?.userEmail || 'anonymous',
+                      provider,
+                      model: modelName || summaryModel,
+                      promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                      completionTokens: usage.completion_tokens || usage.output_tokens || 0,
+                      totalTokens: usage.total_tokens || 0,
+                      durationMs: pageEndTime - pageStartTime,
+                      timestamp: new Date().toISOString(),
+                      requestType: 'search_page_summary',
+                      metadata: { query, url: result.url, page_index: i }
+                    }).catch(err => {
+                      console.error('Failed to log page summary to Google Sheets:', err.message);
+                    });
+                  } catch (err) {
+                    console.error('Google Sheets logging error (page summary):', err.message);
                   }
                   
                   pageSummaries.push({
@@ -1000,7 +1067,9 @@ Brief answer with URLs:`;
                 });
               }
               
+              const finalSynthesisStartTime = Date.now();
               const synthesisResp = await llmResponsesWithTools(synthesisRequestBody);
+              const finalSynthesisEndTime = Date.now();
               
               // Emit LLM response event with usage data
               if (context?.writeEvent) {
@@ -1014,6 +1083,30 @@ Brief answer with URLs:`;
                   },
                   timestamp: new Date().toISOString()
                 });
+              }
+              
+              // Log final synthesis to Google Sheets
+              try {
+                const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                const usage = synthesisResp?.rawResponse?.usage || {};
+                const [provider, modelName] = synthesisModel.split(':');
+                
+                logToGoogleSheets({
+                  userEmail: context?.userEmail || 'anonymous',
+                  provider,
+                  model: modelName || synthesisModel,
+                  promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                  completionTokens: usage.completion_tokens || usage.output_tokens || 0,
+                  totalTokens: usage.total_tokens || 0,
+                  durationMs: finalSynthesisEndTime - finalSynthesisStartTime,
+                  timestamp: new Date().toISOString(),
+                  requestType: 'search_final_synthesis',
+                  metadata: { query, page_count: pageSummaries.length }
+                }).catch(err => {
+                  console.error('Failed to log final synthesis to Google Sheets:', err.message);
+                });
+              } catch (err) {
+                console.error('Google Sheets logging error (final synthesis):', err.message);
               }
               
               summary = synthesisResp?.text || synthesisResp?.finalText || null;
@@ -1206,6 +1299,13 @@ Brief answer with URLs:`;
       try {
         let content, format, originalLength, extractedLength, compressionRatio, warning, extractionError;
         let scrapeService = 'duckduckgo'; // Track which service was actually used
+        let rawHtml = ''; // Store raw HTML for image/link extraction
+        
+        // Extract images and links from raw HTML BEFORE any processing
+        let images = [];
+        let youtube = [];
+        let media = [];
+        let links = [];
         
         if (useTavily) {
           // Use Tavily Extract API
@@ -1224,13 +1324,32 @@ Brief answer with URLs:`;
             scrapeService = 'tavily';
             
             console.log(`✅ [Tavily] Extract completed: ${extractedLength} chars`);
+            console.log(`📝 Tavily doesn't provide raw HTML - images/links unavailable for ${url}`);
           } catch (tavilyError) {
             console.error('[Tavily] Extract failed, trying DuckDuckGo with proxy:', tavilyError.message);
             // Fall back to DuckDuckGo with proxy
             const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
-            const raw = await searcher.fetchUrl(url, timeout * 1000);
-            const extracted = extractContent(raw);
+            rawHtml = await searcher.fetchUrl(url, timeout * 1000);
             
+            // Extract images and links BEFORE content extraction
+            try {
+              const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
+              const parser = new SimpleHTMLParser(rawHtml, urlQuery);
+              
+              images = parser.extractImages(3);
+              const allLinks = parser.extractLinks(25);
+              const categorized = parser.categorizeLinks(allLinks);
+              
+              youtube = categorized.youtube;
+              media = [...categorized.video, ...categorized.audio, ...categorized.media];
+              links = categorized.regular;
+              
+              console.log(`🖼️ Extracted ${images.length} images, ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
+            } catch (extractError) {
+              console.warn(`⚠️ Could not extract images/links:`, extractError.message);
+            }
+            
+            const extracted = extractContent(rawHtml);
             content = extracted.content;
             format = extracted.format;
             originalLength = extracted.originalLength;
@@ -1243,9 +1362,27 @@ Brief answer with URLs:`;
         } else {
           // Use DuckDuckGo fetcher with proxy
           const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
-          const raw = await searcher.fetchUrl(url, timeout * 1000);
-          const extracted = extractContent(raw);
+          rawHtml = await searcher.fetchUrl(url, timeout * 1000);
           
+          // Extract images and links BEFORE content extraction
+          try {
+            const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
+            const parser = new SimpleHTMLParser(rawHtml, urlQuery);
+            
+            images = parser.extractImages(3);
+            const allLinks = parser.extractLinks(25);
+            const categorized = parser.categorizeLinks(allLinks);
+            
+            youtube = categorized.youtube;
+            media = [...categorized.video, ...categorized.audio, ...categorized.media];
+            links = categorized.regular;
+            
+            console.log(`🖼️ Extracted ${images.length} images, ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
+          } catch (extractError) {
+            console.warn(`⚠️ Could not extract images/links:`, extractError.message);
+          }
+          
+          const extracted = extractContent(rawHtml);
           content = extracted.content;
           format = extracted.format;
           originalLength = extracted.originalLength;
@@ -1256,43 +1393,7 @@ Brief answer with URLs:`;
           scrapeService = 'duckduckgo_proxy';
         }
         
-        console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`);
-        
-        // Extract images and links from raw HTML before processing with relevance
-        let images = [];
-        let youtube = [];
-        let media = [];
-        let links = [];
-        
-        if (scrapeService === 'duckduckgo') {
-          // For DuckDuckGo, we have access to raw HTML
-          const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-          const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
-          const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
-          const rawHtml = await searcher.fetchUrl(url, timeout * 1000);
-          
-          // Use URL as query context for relevance (extract domain/path keywords)
-          const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
-          const parser = new SimpleHTMLParser(rawHtml, urlQuery);
-          
-          // Extract top 3 most relevant images
-          images = parser.extractImages(3);
-          
-          // Extract top 25 most relevant links (reduced from unlimited)
-          const allLinks = parser.extractLinks(25);
-          const categorized = parser.categorizeLinks(allLinks);
-          
-          youtube = categorized.youtube;
-          media = [
-            ...categorized.video,
-            ...categorized.audio,
-            ...categorized.media
-          ];
-          links = categorized.regular;
-          
-          console.log(`🖼️ Extracted ${images.length} images, ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
-        }
-        // Note: Tavily doesn't provide raw HTML, so we can't extract images/links when using Tavily
+        console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`)
         
         // Token-aware truncation to prevent context overflow
         // With load balancing system, we can be more generous with content
@@ -1623,9 +1724,102 @@ Brief answer with URLs:`;
           toolCallId
         });
 
+        // Generate summary if requested
+        const generateSummary = args.generate_summary === true;
+        let summary = null;
+        
+        if (generateSummary && result.text) {
+          try {
+            console.log('🔄 Generating LLM summary of transcript...');
+            
+            const summaryPrompt = `Summarize this transcript concisely (2-3 paragraphs):
+
+${result.text}
+
+Summary:`;
+
+            const summaryInput = [
+              { role: 'system', content: 'You are a professional content summarizer. Extract key points and main ideas concisely.' },
+              { role: 'user', content: summaryPrompt }
+            ];
+
+            const summaryRequestBody = {
+              model: context.model || 'groq:llama-3.3-70b-versatile',
+              input: summaryInput,
+              tools: [],
+              options: {
+                apiKey: context.apiKey,
+                temperature: 0.3,
+                max_tokens: 500,
+                timeoutMs: 30000
+              }
+            };
+
+            // Emit LLM request event
+            if (context?.writeEvent) {
+              context.writeEvent('llm_request', {
+                phase: 'transcript_summary',
+                tool: 'transcribe_url',
+                model: context.model || 'groq:llama-3.3-70b-versatile',
+                url,
+                request: summaryRequestBody,
+                timestamp: new Date().toISOString()
+              });
+            }
+
+            const summaryStartTime = Date.now();
+            const summaryResp = await llmResponsesWithTools(summaryRequestBody);
+            const summaryEndTime = Date.now();
+            
+            summary = summaryResp?.text || summaryResp?.finalText || 'Unable to generate summary';
+            
+            // Emit LLM response event
+            if (context?.writeEvent) {
+              context.writeEvent('llm_response', {
+                phase: 'transcript_summary',
+                tool: 'transcribe_url',
+                model: context.model || 'groq:llama-3.3-70b-versatile',
+                url,
+                response: summaryResp,
+                timestamp: new Date().toISOString()
+              });
+            }
+            
+            // Log to Google Sheets
+            try {
+              const { logToGoogleSheets } = require('./services/google-sheets-logger');
+              const usage = summaryResp?.rawResponse?.usage || {};
+              const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
+              
+              logToGoogleSheets({
+                userEmail: context?.userEmail || 'anonymous',
+                provider: summaryProvider,
+                model: summaryModel || context.model,
+                promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                completionTokens: usage.completion_tokens || usage.output_tokens || 0,
+                totalTokens: usage.total_tokens || 0,
+                durationMs: summaryEndTime - summaryStartTime,
+                timestamp: new Date().toISOString(),
+                requestType: 'transcript_summary',
+                metadata: { url, transcriptLength: result.text.length }
+              }).catch(err => {
+                console.error('Failed to log transcript summary to Google Sheets:', err.message);
+              });
+            } catch (err) {
+              console.error('Google Sheets logging error (transcript summary):', err.message);
+            }
+            
+            console.log('✅ Transcript summary generated');
+          } catch (summaryError) {
+            console.error('Failed to generate transcript summary:', summaryError.message);
+            summary = `Error generating summary: ${summaryError.message}`;
+          }
+        }
+
         return JSON.stringify({
           ...result,
-          source: 'whisper'
+          source: 'whisper',
+          summary: summary || undefined
         });
       } catch (error) {
         console.error('Transcribe tool error:', error);
@@ -1646,7 +1840,19 @@ Brief answer with URLs:`;
         const path = require('path');
         const { checkMultipleProviders } = require('./utils/provider-health');
         
-        const catalogPath = path.join(__dirname, '..', 'PROVIDER_CATALOG.json');
+        // In Lambda, __dirname is /var/task/src, so we need to go up one level
+        // Try multiple possible locations
+        let catalogPath = path.join(__dirname, '..', 'PROVIDER_CATALOG.json');
+        if (!fs.existsSync(catalogPath)) {
+          // Fallback: try /var/task/PROVIDER_CATALOG.json directly
+          catalogPath = '/var/task/PROVIDER_CATALOG.json';
+          if (!fs.existsSync(catalogPath)) {
+            // Fallback: try same directory as tools.js
+            catalogPath = path.join(__dirname, 'PROVIDER_CATALOG.json');
+          }
+        }
+        
+        console.log(`📂 Loading PROVIDER_CATALOG from: ${catalogPath}`);
         const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
         
         if (!catalog.image || !catalog.image.providers) {
@@ -1704,7 +1910,7 @@ Brief answer with URLs:`;
         
         // 3. Check provider availability for all matching models
         const uniqueProviders = [...new Set(matchingModels.map(m => m.provider))];
-        const availabilityResults = await checkMultipleProviders(uniqueProviders);
+        const availabilityResults = await checkMultipleProviders(uniqueProviders, context);
         
         console.log('🔍 Provider availability:', JSON.stringify(availabilityResults, null, 2));
         
@@ -2113,11 +2319,119 @@ Brief answer with URLs:`;
           return videoData;
         });
         
+        // Generate batch summary if requested
+        const generateSummary = args.generate_summary === true;
+        let batchSummary = null;
+        
+        if (generateSummary) {
+          // Collect all available transcripts
+          const videosWithTranscripts = videos.filter(v => v.transcript);
+          
+          if (videosWithTranscripts.length > 0) {
+            try {
+              console.log(`🔄 Generating batch LLM summary of ${videosWithTranscripts.length} YouTube transcripts...`);
+              
+              // Format transcripts as requested: {content}\nFROM {link}\n\n
+              const formattedTranscripts = videosWithTranscripts.map(v => {
+                return `${v.transcript}\nFROM ${v.url}`;
+              }).join('\n\n');
+              
+              const summaryPrompt = `Summarize and synthesize the key points from these ${videosWithTranscripts.length} YouTube video transcripts about "${query}":
+
+${formattedTranscripts}
+
+Provide a comprehensive summary (3-4 paragraphs) covering main themes, key insights, and notable differences or commonalities across the videos:`;
+
+              const summaryInput = [
+                { role: 'system', content: 'You are a professional content analyst. Synthesize information from multiple sources, identifying key themes, insights, and patterns.' },
+                { role: 'user', content: summaryPrompt }
+              ];
+
+              const summaryRequestBody = {
+                model: context.model || 'groq:llama-3.3-70b-versatile',
+                input: summaryInput,
+                tools: [],
+                options: {
+                  apiKey: context.apiKey,
+                  temperature: 0.3,
+                  max_tokens: 800,
+                  timeoutMs: 45000
+                }
+              };
+
+              // Emit LLM request event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_request', {
+                  phase: 'youtube_batch_summary',
+                  tool: 'search_youtube',
+                  model: context.model || 'groq:llama-3.3-70b-versatile',
+                  query,
+                  videoCount: videosWithTranscripts.length,
+                  request: summaryRequestBody,
+                  timestamp: new Date().toISOString()
+                });
+              }
+
+              const summaryStartTime = Date.now();
+              const summaryResp = await llmResponsesWithTools(summaryRequestBody);
+              const summaryEndTime = Date.now();
+              
+              batchSummary = summaryResp?.text || summaryResp?.finalText || 'Unable to generate batch summary';
+              
+              // Emit LLM response event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_response', {
+                  phase: 'youtube_batch_summary',
+                  tool: 'search_youtube',
+                  model: context.model || 'groq:llama-3.3-70b-versatile',
+                  query,
+                  videoCount: videosWithTranscripts.length,
+                  response: summaryResp,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              // Log to Google Sheets
+              try {
+                const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                const usage = summaryResp?.rawResponse?.usage || {};
+                const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
+                
+                logToGoogleSheets({
+                  userEmail: context?.userEmail || 'anonymous',
+                  provider: summaryProvider,
+                  model: summaryModel || context.model,
+                  promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                  completionTokens: usage.completion_tokens || usage.output_tokens || 0,
+                  totalTokens: usage.total_tokens || 0,
+                  durationMs: summaryEndTime - summaryStartTime,
+                  timestamp: new Date().toISOString(),
+                  requestType: 'youtube_batch_summary',
+                  metadata: { query, videoCount: videosWithTranscripts.length }
+                }).catch(err => {
+                  console.error('Failed to log YouTube batch summary to Google Sheets:', err.message);
+                });
+              } catch (err) {
+                console.error('Google Sheets logging error (YouTube batch summary):', err.message);
+              }
+              
+              console.log(`✅ YouTube batch summary generated for ${videosWithTranscripts.length} videos`);
+            } catch (summaryError) {
+              console.error('Failed to generate YouTube batch summary:', summaryError.message);
+              batchSummary = `Error generating batch summary: ${summaryError.message}`;
+            }
+          } else {
+            console.log('⚠️ No transcripts available for batch summary');
+            batchSummary = 'No transcripts were available to summarize. Videos may not have captions enabled.';
+          }
+        }
+        
         return JSON.stringify({
           query,
           count: videos.length,
           order,
-          videos
+          videos,
+          batchSummary: batchSummary || undefined
         });
         
       } catch (error) {
@@ -2197,6 +2511,98 @@ Brief answer with URLs:`;
           const fullText = result.snippets.map(s => s.text).join(' ');
           console.log(`✅ Fetched transcript with ${result.snippets.length} snippets (${fullText.length} chars) via ${source}`);
           
+          // Generate summary if requested
+          const generateSummary = args.generate_summary === true;
+          let summary = null;
+          
+          if (generateSummary) {
+            try {
+              console.log('🔄 Generating LLM summary of YouTube transcript...');
+              
+              const summaryPrompt = `Summarize this YouTube video transcript concisely (2-3 paragraphs):
+
+${fullText}
+
+Summary:`;
+
+              const summaryInput = [
+                { role: 'system', content: 'You are a professional content summarizer. Extract key points and main ideas concisely.' },
+                { role: 'user', content: summaryPrompt }
+              ];
+
+              const summaryRequestBody = {
+                model: context.model || 'groq:llama-3.3-70b-versatile',
+                input: summaryInput,
+                tools: [],
+                options: {
+                  apiKey: context.apiKey,
+                  temperature: 0.3,
+                  max_tokens: 500,
+                  timeoutMs: 30000
+                }
+              };
+
+              // Emit LLM request event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_request', {
+                  phase: 'youtube_transcript_summary',
+                  tool: 'get_youtube_transcript',
+                  model: context.model || 'groq:llama-3.3-70b-versatile',
+                  url,
+                  request: summaryRequestBody,
+                  timestamp: new Date().toISOString()
+                });
+              }
+
+              const summaryStartTime = Date.now();
+              const summaryResp = await llmResponsesWithTools(summaryRequestBody);
+              const summaryEndTime = Date.now();
+              
+              summary = summaryResp?.text || summaryResp?.finalText || 'Unable to generate summary';
+              
+              // Emit LLM response event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_response', {
+                  phase: 'youtube_transcript_summary',
+                  tool: 'get_youtube_transcript',
+                  model: context.model || 'groq:llama-3.3-70b-versatile',
+                  url,
+                  response: summaryResp,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              // Log to Google Sheets
+              try {
+                const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                const usage = summaryResp?.rawResponse?.usage || {};
+                const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
+                
+                logToGoogleSheets({
+                  userEmail: context?.userEmail || 'anonymous',
+                  provider: summaryProvider,
+                  model: summaryModel || context.model,
+                  promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                  completionTokens: usage.completion_tokens || usage.output_tokens || 0,
+                  totalTokens: usage.total_tokens || 0,
+                  durationMs: summaryEndTime - summaryStartTime,
+                  timestamp: new Date().toISOString(),
+                  requestType: 'youtube_transcript_summary',
+                  metadata: { url, transcriptLength: fullText.length }
+                }).catch(err => {
+                  console.error('Failed to log YouTube transcript summary to Google Sheets:', err.message);
+                });
+              } catch (err) {
+                console.error('Google Sheets logging error (YouTube transcript summary):', err.message);
+              }
+              
+              console.log('✅ YouTube transcript summary generated');
+            } catch (summaryError) {
+              console.error('Failed to generate YouTube transcript summary:', summaryError.message);
+              summary = `Error generating summary: ${summaryError.message}`;
+            }
+          }
+          
           // Check if transcript is very long and needs summarization
           // Threshold: 200k chars (~50k tokens) - reasonable for most models with load balancing
           const YOUTUBE_SUMMARY_THRESHOLD = 200000;
@@ -2212,6 +2618,7 @@ Brief answer with URLs:`;
               videoId: result.videoId,
               text: fullText,
               snippets: result.snippets,
+              summary: summary || undefined,
               metadata: {
                 totalCharacters: fullText.length,
                 snippetCount: result.snippets.length,
@@ -2232,6 +2639,7 @@ Brief answer with URLs:`;
             videoId: result.videoId,
             text: fullText,
             snippets: result.snippets,
+            summary: summary || undefined,
             metadata: {
               totalCharacters: fullText.length,
               snippetCount: result.snippets.length,
@@ -2249,6 +2657,98 @@ Brief answer with URLs:`;
         if (typeof result === 'string') {
           console.log(`✅ Fetched plain text transcript (${result.length} chars) via ${source}`);
           
+          // Generate summary if requested
+          const generateSummary = args.generate_summary === true;
+          let summary = null;
+          
+          if (generateSummary) {
+            try {
+              console.log('🔄 Generating LLM summary of YouTube transcript (plain text)...');
+              
+              const summaryPrompt = `Summarize this YouTube video transcript concisely (2-3 paragraphs):
+
+${result}
+
+Summary:`;
+
+              const summaryInput = [
+                { role: 'system', content: 'You are a professional content summarizer. Extract key points and main ideas concisely.' },
+                { role: 'user', content: summaryPrompt }
+              ];
+
+              const summaryRequestBody = {
+                model: context.model || 'groq:llama-3.3-70b-versatile',
+                input: summaryInput,
+                tools: [],
+                options: {
+                  apiKey: context.apiKey,
+                  temperature: 0.3,
+                  max_tokens: 500,
+                  timeoutMs: 30000
+                }
+              };
+
+              // Emit LLM request event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_request', {
+                  phase: 'youtube_transcript_summary',
+                  tool: 'get_youtube_transcript',
+                  model: context.model || 'groq:llama-3.3-70b-versatile',
+                  url,
+                  request: summaryRequestBody,
+                  timestamp: new Date().toISOString()
+                });
+              }
+
+              const summaryStartTime = Date.now();
+              const summaryResp = await llmResponsesWithTools(summaryRequestBody);
+              const summaryEndTime = Date.now();
+              
+              summary = summaryResp?.text || summaryResp?.finalText || 'Unable to generate summary';
+              
+              // Emit LLM response event
+              if (context?.writeEvent) {
+                context.writeEvent('llm_response', {
+                  phase: 'youtube_transcript_summary',
+                  tool: 'get_youtube_transcript',
+                  model: context.model || 'groq:llama-3.3-70b-versatile',
+                  url,
+                  response: summaryResp,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              // Log to Google Sheets
+              try {
+                const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                const usage = summaryResp?.rawResponse?.usage || {};
+                const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
+                
+                logToGoogleSheets({
+                  userEmail: context?.userEmail || 'anonymous',
+                  provider: summaryProvider,
+                  model: summaryModel || context.model,
+                  promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                  completionTokens: usage.completion_tokens || usage.output_tokens || 0,
+                  totalTokens: usage.total_tokens || 0,
+                  durationMs: summaryEndTime - summaryStartTime,
+                  timestamp: new Date().toISOString(),
+                  requestType: 'youtube_transcript_summary',
+                  metadata: { url, transcriptLength: result.length }
+                }).catch(err => {
+                  console.error('Failed to log YouTube transcript summary to Google Sheets:', err.message);
+                });
+              } catch (err) {
+                console.error('Google Sheets logging error (YouTube transcript summary):', err.message);
+              }
+              
+              console.log('✅ YouTube transcript summary generated');
+            } catch (summaryError) {
+              console.error('Failed to generate YouTube transcript summary:', summaryError.message);
+              summary = `Error generating summary: ${summaryError.message}`;
+            }
+          }
+          
           // Check if transcript is very long
           const YOUTUBE_SUMMARY_THRESHOLD = 200000;
           
@@ -2260,6 +2760,7 @@ Brief answer with URLs:`;
               url,
               videoId,
               text: result,
+              summary: summary || undefined,
               metadata: {
                 totalCharacters: result.length,
                 format: 'plain_text',
@@ -2275,6 +2776,7 @@ Brief answer with URLs:`;
             url,
             videoId,
             text: result,
+            summary: summary || undefined,
             metadata: {
               totalCharacters: result.length,
               format: 'plain_text',
@@ -2552,6 +3054,17 @@ async function executeMCPTool(namespacedName, args = {}, context = {}) {
     
     const [serverName, toolName] = parts;
     
+    // Emit start event
+    if (context?.writeEvent) {
+      context.writeEvent('mcp_tool_start', {
+        tool: namespacedName,
+        server: serverName,
+        toolName: toolName,
+        arguments: args,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     // Find server URL from context
     const mcpServers = context.mcpServers || [];
     const server = mcpServers.find(s => s.name === serverName);
@@ -2571,9 +3084,30 @@ async function executeMCPTool(namespacedName, args = {}, context = {}) {
       });
     }
     
+    // Emit progress event
+    if (context?.writeEvent) {
+      context.writeEvent('mcp_tool_progress', {
+        tool: namespacedName,
+        phase: 'executing',
+        server: serverName,
+        url: server.url,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     // Execute the tool
     console.log(`[MCP] Executing ${toolName} on ${serverName} (${server.url})`);
     const result = await mcpClient.executeTool(server.url, toolName, args);
+    
+    // Emit processing event
+    if (context?.writeEvent) {
+      context.writeEvent('mcp_tool_progress', {
+        tool: namespacedName,
+        phase: 'processing',
+        contentItems: result.length,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     // MCP returns content array, we need to format it
     // For now, concatenate all text content
@@ -2585,8 +3119,9 @@ async function executeMCPTool(namespacedName, args = {}, context = {}) {
     // Include non-text content in metadata
     const otherContent = result.filter(item => item.type !== 'text');
     
+    let finalResult;
     if (otherContent.length > 0) {
-      return JSON.stringify({
+      finalResult = JSON.stringify({
         text: textContent,
         metadata: {
           server: serverName,
@@ -2594,11 +3129,35 @@ async function executeMCPTool(namespacedName, args = {}, context = {}) {
           otherContent: otherContent
         }
       });
+    } else {
+      finalResult = textContent;
     }
     
-    return textContent;
+    // Emit completion event
+    if (context?.writeEvent) {
+      context.writeEvent('mcp_tool_complete', {
+        tool: namespacedName,
+        server: serverName,
+        toolName: toolName,
+        contentLength: finalResult.length,
+        hasMetadata: otherContent.length > 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    return finalResult;
   } catch (error) {
     console.error(`[MCP] Tool execution failed:`, error.message);
+    
+    // Emit error event
+    if (context?.writeEvent) {
+      context.writeEvent('mcp_tool_error', {
+        tool: namespacedName,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     return JSON.stringify({ 
       error: `MCP tool execution failed: ${error.message}` 
     });

@@ -75,9 +75,19 @@ cp -r "$OLDPWD"/src/retry/* ./retry/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/mcp/* ./mcp/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
 
+# Copy PROVIDER_CATALOG.json (required for image generation)
+if cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null; then
+    echo -e "${GREEN}✅ Copied PROVIDER_CATALOG.json${NC}"
+    ls -lh PROVIDER_CATALOG.json
+else
+    echo -e "${RED}❌ Failed to copy PROVIDER_CATALOG.json${NC}"
+fi
+
 # List files
 echo -e "${YELLOW}📦 Code files to deploy:${NC}"
 find . -name "*.js" | head -20
+echo -e "${YELLOW}📦 JSON files to deploy:${NC}"
+find . -name "*.json" -not -path "*/node_modules/*"
 
 # Create the deployment package (CODE ONLY - no node_modules!)
 echo -e "${YELLOW}🗜️  Creating lightweight package...${NC}"

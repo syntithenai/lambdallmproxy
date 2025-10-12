@@ -12,6 +12,7 @@ interface EnabledTools {
   youtube: boolean;
   transcribe: boolean;
   generate_chart: boolean;
+  generate_image: boolean;
 }
 
 interface SettingsModalProps {
@@ -279,6 +280,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
                     Create interactive flowcharts, sequence diagrams, ER diagrams, Gantt charts, and more
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.generate_image}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, generate_image: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    🎨 Generate Images (AI)
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Create images using DALL-E, Stable Diffusion, and other AI models with quality tier selection
                   </div>
                 </div>
               </label>

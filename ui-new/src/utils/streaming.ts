@@ -107,12 +107,14 @@ export async function handleSSEResponse(
 }
 
 /**
- * Create an SSE streaming request
- * @param url - Endpoint URL
+ * Create an SSE request with proper headers and retry logic
+ * @param url - The URL to request
  * @param body - Request body
- * @param token - Authorization token
- * @param signal - AbortSignal for cancellation (optional)
+ * @param token - Auth token
+ * @param signal - AbortSignal for cancellation
  * @param youtubeToken - Optional YouTube OAuth access token
+ * @param maxRetries - Maximum number of retry attempts (default: 3)
+ * @param initialRetryDelay - Initial retry delay in ms (default: 1000)
  * @returns Fetch response promise
  */
 export async function createSSERequest(
@@ -120,7 +122,9 @@ export async function createSSERequest(
   body: any,
   token: string,
   signal?: AbortSignal,
-  youtubeToken?: string | null
+  youtubeToken?: string | null,
+  maxRetries: number = 3,
+  initialRetryDelay: number = 1000
 ): Promise<Response> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -133,16 +137,79 @@ export async function createSSERequest(
     headers['X-YouTube-Token'] = youtubeToken;
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal
-  });
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal
+      });
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        // Handle 429 Rate Limit with retry
+        if (response.status === 429 && attempt < maxRetries - 1) {
+          // Check for Retry-After header (can be in seconds or HTTP date)
+          const retryAfterHeader = response.headers.get('Retry-After');
+          let delay: number;
+          
+          if (retryAfterHeader) {
+            // Try parsing as seconds first
+            const retryAfterSeconds = parseInt(retryAfterHeader);
+            if (!isNaN(retryAfterSeconds)) {
+              delay = retryAfterSeconds * 1000;
+            } else {
+              // Try parsing as HTTP date
+              const retryAfterDate = new Date(retryAfterHeader);
+              if (!isNaN(retryAfterDate.getTime())) {
+                delay = Math.max(0, retryAfterDate.getTime() - Date.now());
+              } else {
+                // Fallback to exponential backoff
+                delay = initialRetryDelay * Math.pow(2, attempt);
+              }
+            }
+          } else {
+            // Exponential backoff: 1s, 2s, 4s...
+            delay = initialRetryDelay * Math.pow(2, attempt);
+          }
+          
+          console.warn(`⚠️ Rate limited (429), retrying in ${(delay / 1000).toFixed(1)}s... (attempt ${attempt + 1}/${maxRetries})`);
+          
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue; // Retry the request
+        }
+        
+        // For non-429 errors or last attempt, throw immediately
+        throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+      }
+
+      // Success - return the response
+      return response;
+      
+    } catch (error) {
+      lastError = error as Error;
+      
+      // Don't retry on abort signal
+      if (signal?.aborted) {
+        throw new Error('Request aborted by user');
+      }
+      
+      // Don't retry on last attempt
+      if (attempt >= maxRetries - 1) {
+        break;
+      }
+      
+      // For network errors, use exponential backoff
+      const delay = initialRetryDelay * Math.pow(2, attempt);
+      console.warn(`⚠️ Request failed, retrying in ${(delay / 1000).toFixed(1)}s... (attempt ${attempt + 1}/${maxRetries})`, error);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
 
-  return response;
+  // All retries exhausted
+  throw lastError || new Error(`Request failed after ${maxRetries} attempts`);
 }

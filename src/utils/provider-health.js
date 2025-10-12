@@ -16,8 +16,10 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Check if provider has required API key configured
+ * @param {string} provider - Provider name
+ * @param {Object} context - Request context with API keys from UI
  */
-function hasApiKey(provider) {
+function hasApiKey(provider, context = {}) {
   const envVarMap = {
     'openai': 'OPENAI_API_KEY',
     'together': 'TOGETHER_API_KEY',
@@ -25,6 +27,20 @@ function hasApiKey(provider) {
     'replicate': 'REPLICATE_API_TOKEN'
   };
   
+  const contextKeyMap = {
+    'openai': 'openaiApiKey',
+    'together': 'togetherApiKey',
+    'gemini': 'geminiApiKey',
+    'replicate': 'replicateApiKey'
+  };
+  
+  // Check context first (from UI)
+  const contextKey = contextKeyMap[provider.toLowerCase()];
+  if (contextKey && context[contextKey]) {
+    return true;
+  }
+  
+  // Fallback to environment variables
   const envVar = envVarMap[provider.toLowerCase()];
   if (!envVar) return false;
   
@@ -34,14 +50,16 @@ function hasApiKey(provider) {
 
 /**
  * Check if provider is enabled via feature flag
+ * @param {string} provider - Provider name
+ * @param {Object} context - Request context
  */
-function isEnabled(provider) {
+function isEnabled(provider, context = {}) {
   const envVar = `ENABLE_IMAGE_GENERATION_${provider.toUpperCase()}`;
   const value = process.env[envVar];
   
   // If not explicitly set, default to true if API key exists
   if (value === undefined || value === '') {
-    return hasApiKey(provider);
+    return hasApiKey(provider, context);
   }
   
   return value === 'true' || value === '1';
@@ -77,12 +95,14 @@ function cacheAvailability(provider, result) {
  * Check provider availability (with caching)
  * 
  * @param {string} provider - Provider name (openai, together, gemini, replicate)
+ * @param {Object} context - Request context with API keys from UI
  * @param {boolean} skipCache - Force fresh check
  * @returns {Promise<Object>} - {available, reason, details}
  */
-async function checkProviderAvailability(provider, skipCache = false) {
-  // Check cache first
-  if (!skipCache) {
+async function checkProviderAvailability(provider, context = {}, skipCache = false) {
+  // Check cache first (skip cache if context has API keys since they can change per request)
+  const hasContextKeys = context.openaiApiKey || context.togetherApiKey || context.geminiApiKey || context.replicateApiKey;
+  if (!skipCache && !hasContextKeys) {
     const cached = getCachedAvailability(provider);
     if (cached) {
       return cached;
@@ -98,22 +118,27 @@ async function checkProviderAvailability(provider, skipCache = false) {
   };
   
   // Check 1: API key exists
-  const keyExists = hasApiKey(provider);
+  const keyExists = hasApiKey(provider, context);
   result.details.hasApiKey = keyExists;
   
   if (!keyExists) {
     result.reason = `No API key configured for ${provider}`;
-    cacheAvailability(provider, result);
+    // Only cache if no context keys (environment-based check)
+    if (!hasContextKeys) {
+      cacheAvailability(provider, result);
+    }
     return result;
   }
   
   // Check 2: Feature flag enabled
-  const enabled = isEnabled(provider);
+  const enabled = isEnabled(provider, context);
   result.details.enabled = enabled;
   
   if (!enabled) {
     result.reason = `Image generation disabled for ${provider}`;
-    cacheAvailability(provider, result);
+    if (!hasContextKeys) {
+      cacheAvailability(provider, result);
+    }
     return result;
   }
   
@@ -143,10 +168,12 @@ async function checkProviderAvailability(provider, skipCache = false) {
 
 /**
  * Check availability for multiple providers
+ * @param {Array<string>} providers - Array of provider names
+ * @param {Object} context - Request context with API keys from UI
  */
-async function checkMultipleProviders(providers) {
+async function checkMultipleProviders(providers, context = {}) {
   const checks = await Promise.all(
-    providers.map(p => checkProviderAvailability(p))
+    providers.map(p => checkProviderAvailability(p, context))
   );
   
   return checks.reduce((acc, check) => {

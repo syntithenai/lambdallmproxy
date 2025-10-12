@@ -24,6 +24,9 @@ import { VoiceInputDialog } from './VoiceInputDialog';
 import ExtractedContent from './ExtractedContent';
 import { GeneratedImageBlock } from './GeneratedImageBlock';
 import { JsonTree } from './JsonTree';
+import { ImageGallery } from './ImageGallery';
+import { MediaSections } from './MediaSections';
+import { ToolResultJsonViewer } from './JsonTreeViewer';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
@@ -40,6 +43,7 @@ interface EnabledTools {
   youtube: boolean;
   transcribe: boolean;
   generate_chart: boolean;
+  generate_image: boolean;
 }
 
 interface ChatTabProps {
@@ -64,7 +68,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { addSnippet } = useSwag();
   const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
-  const { addCost } = useUsage();
+  const { addCost, usage } = useUsage();
   const { isConnected: isCastConnected, sendMessages: sendCastMessages } = useCast();
   const { location } = useLocation();
   
@@ -153,6 +157,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // Continue button for error recovery
   const [showContinueButton, setShowContinueButton] = useState(false);
   const [continueContext, setContinueContext] = useState<any>(null);
+  
+  // Request cost tracking
+  const [lastRequestCost, setLastRequestCost] = useState<number>(0);
   
   // File attachment state
   const [attachedFiles, setAttachedFiles] = useState<Array<{
@@ -347,10 +354,80 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     return fullContent;
   };
 
-  const handleCaptureContent = (content: string, sourceType: 'user' | 'assistant' | 'tool', title?: string, extractedContent?: ChatMessage['extractedContent']) => {
-    const fullContent = formatContentWithMedia(content, extractedContent);
-    addSnippet(fullContent, sourceType, title);
-    showSuccess('Content captured to Swag!');
+  const handleGrabImage = async (imageUrl: string) => {
+    try {
+      // Convert image to base64 before storing
+      const { imageUrlToBase64 } = await import('../utils/imageUtils');
+      const base64Image = await imageUrlToBase64(imageUrl);
+      
+      // Create HTML with base64 image
+      const imageHtml = `<img src="${base64Image}" alt="Grabbed image" style="max-width: 100%; height: auto;" />`;
+      addSnippet(imageHtml, 'assistant', 'Image');
+      showSuccess('Image added to Swag!');
+    } catch (error) {
+      console.error('Failed to grab image:', error);
+      // Fallback to original URL if conversion fails
+      const imageHtml = `<img src="${imageUrl}" alt="Grabbed image" style="max-width: 100%; height: auto;" />`;
+      addSnippet(imageHtml, 'assistant', 'Image');
+      showSuccess('Image added to Swag (without conversion)!');
+    }
+  };
+
+  const handleCaptureContent = async (content: string, sourceType: 'user' | 'assistant' | 'tool', title?: string, extractedContent?: ChatMessage['extractedContent'], toolResults?: any[]) => {
+    try {
+      // Extract media from tool results if available
+      let enhancedExtractedContent = extractedContent;
+      
+      if (toolResults && toolResults.length > 0) {
+        // Extract all media from tool results
+        const mediaFromTools = extractMediaFromMessage({ toolResults });
+        
+        // Merge with existing extractedContent
+        if (mediaFromTools.images.length > 0 || mediaFromTools.links.length > 0 || 
+            mediaFromTools.youtubeLinks.length > 0 || mediaFromTools.otherMedia.length > 0) {
+          
+          enhancedExtractedContent = {
+            ...extractedContent,
+            images: [
+              ...(extractedContent?.images || []),
+              ...mediaFromTools.images.map(src => ({ src, alt: '', source: '' }))
+            ],
+            youtubeVideos: [
+              ...(extractedContent?.youtubeVideos || []),
+              ...mediaFromTools.youtubeLinks.map(yt => ({ src: yt.url, title: yt.title || '', source: yt.url }))
+            ],
+            otherVideos: [
+              ...(extractedContent?.otherVideos || []),
+              ...mediaFromTools.otherMedia.filter(m => m.type.includes('video')).map(m => ({ src: m.url, title: '', source: m.url }))
+            ],
+            media: [
+              ...(extractedContent?.media || []),
+              ...mediaFromTools.otherMedia.filter(m => m.type.includes('audio')).map(m => ({ src: m.url, type: m.type, source: m.url }))
+            ],
+            sources: [
+              ...(extractedContent?.sources || []),
+              ...mediaFromTools.links.map(link => ({ url: link.url, title: link.title || link.url, snippet: '' }))
+            ]
+          };
+        }
+      }
+      
+      // Format content with media
+      const formattedContent = formatContentWithMedia(content, enhancedExtractedContent);
+      
+      // Convert all images in the HTML to base64
+      const { convertHtmlImagesToBase64 } = await import('../utils/imageUtils');
+      const contentWithBase64Images = await convertHtmlImagesToBase64(formattedContent);
+      
+      addSnippet(contentWithBase64Images, sourceType, title);
+      showSuccess('Content captured to Swag!');
+    } catch (error) {
+      console.error('Failed to capture content with base64 conversion:', error);
+      // Fallback to original behavior
+      const fullContent = formatContentWithMedia(content, extractedContent);
+      addSnippet(fullContent, sourceType, title);
+      showSuccess('Content captured to Swag (without image conversion)!');
+    }
   };
 
   // Handle voice transcription completion
@@ -441,6 +518,158 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         .join('\n');
     }
     return '';
+  };
+
+  // Helper to extract media from tool results in a message
+  const extractMediaFromMessage = (message: any) => {
+    const media = {
+      images: [] as string[],
+      links: [] as Array<{ url: string; title?: string }>,
+      youtubeLinks: [] as Array<{ url: string; title?: string }>,
+      otherMedia: [] as Array<{ url: string; type: string }>
+    };
+    
+    // Extract from tool results if present
+    if (message.toolResults) {
+      message.toolResults.forEach((result: any) => {
+        try {
+          const data = typeof result.content === 'string' ? JSON.parse(result.content) : result.content;
+          
+          // Search web results
+          if (data.results && Array.isArray(data.results)) {
+            data.results.forEach((r: any) => {
+              // Images from search results - handle both string URLs and objects
+              if (r.images && Array.isArray(r.images)) {
+                r.images.forEach((img: any) => {
+                  if (typeof img === 'string') {
+                    media.images.push(img);
+                  } else if (img && img.src) {
+                    media.images.push(img.src);
+                  } else if (img && img.url) {
+                    media.images.push(img.url);
+                  }
+                });
+              }
+              // Links from search results
+              if (r.url) {
+                media.links.push({ url: r.url, title: r.title });
+              }
+              // Links from extracted content
+              if (r.links && Array.isArray(r.links)) {
+                r.links.forEach((link: any) => {
+                  if (typeof link === 'string') {
+                    media.links.push({ url: link });
+                  } else if (link && link.href) {
+                    media.links.push({ url: link.href, title: link.text });
+                  } else if (link && link.url) {
+                    media.links.push({ url: link.url, title: link.text || link.title });
+                  }
+                });
+              }
+            });
+          }
+          
+          // YouTube search results
+          if (data.videos && Array.isArray(data.videos)) {
+            data.videos.forEach((v: any) => {
+              if (v.url) {
+                media.youtubeLinks.push({ url: v.url, title: v.title });
+              }
+            });
+          }
+          
+          // Direct images array (from image scraping)
+          if (data.images && Array.isArray(data.images)) {
+            data.images.forEach((img: any) => {
+              if (typeof img === 'string') {
+                media.images.push(img);
+              } else if (img && img.src) {
+                media.images.push(img.src);
+              } else if (img && img.url) {
+                media.images.push(img.url);
+              }
+            });
+          }
+          
+          // Page content with images
+          if (data.page_content && data.images) {
+            if (Array.isArray(data.images)) {
+              data.images.forEach((img: any) => {
+                if (typeof img === 'string') {
+                  media.images.push(img);
+                } else if (img && img.src) {
+                  media.images.push(img.src);
+                } else if (img && img.url) {
+                  media.images.push(img.url);
+                }
+              });
+            }
+          }
+          
+        } catch (e) {
+          // Skip invalid JSON or non-JSON content
+        }
+      });
+    }
+    
+    // Deduplicate
+    media.images = [...new Set(media.images)].filter(Boolean);
+    media.links = Array.from(new Map(media.links.filter(l => l.url).map(l => [l.url, l])).values());
+    media.youtubeLinks = Array.from(new Map(media.youtubeLinks.filter(l => l.url).map(l => [l.url, l])).values());
+    
+    return media;
+  };
+
+  // Helper to format cost display
+  const formatCost = (cost: number): string => {
+    if (cost < 0.0001) return `<$0.0001`;
+    if (cost < 0.01) return `$${cost.toFixed(4)}`;
+    return `$${cost.toFixed(3)}`;
+  };
+
+  // Helper to calculate cost from llmApiCalls using pricing from google-sheets-logger.js
+  const calculateCostFromLlmApiCalls = (llmApiCalls: any[]): number => {
+    if (!llmApiCalls || llmApiCalls.length === 0) return 0;
+    
+    // Pricing per 1M tokens (matches src/services/google-sheets-logger.js)
+    const pricing: Record<string, { input: number; output: number }> = {
+      // Gemini models (free tier)
+      'gemini-2.0-flash': { input: 0, output: 0 },
+      'gemini-2.5-flash': { input: 0, output: 0 },
+      'gemini-2.5-pro': { input: 0, output: 0 },
+      'gemini-1.5-flash': { input: 0, output: 0 },
+      'gemini-1.5-pro': { input: 0, output: 0 },
+      // OpenAI models
+      'gpt-4o': { input: 2.50, output: 10.00 },
+      'gpt-4o-mini': { input: 0.150, output: 0.600 },
+      'gpt-4-turbo': { input: 10.00, output: 30.00 },
+      'gpt-4': { input: 30.00, output: 60.00 },
+      'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
+      'o1-preview': { input: 15.00, output: 60.00 },
+      'o1-mini': { input: 3.00, output: 12.00 },
+      // Groq models (free tier)
+      'llama-3.1-8b-instant': { input: 0, output: 0 },
+      'llama-3.3-70b-versatile': { input: 0, output: 0 },
+      'llama-3.1-70b-versatile': { input: 0, output: 0 },
+      'mixtral-8x7b-32768': { input: 0, output: 0 },
+    };
+
+    let totalCost = 0;
+    for (const call of llmApiCalls) {
+      const model = call.model;
+      const usage = call.response?.usage;
+      if (!model || !usage) continue;
+
+      const modelPricing = pricing[model] || { input: 0, output: 0 };
+      const promptTokens = usage.prompt_tokens || 0;
+      const completionTokens = usage.completion_tokens || 0;
+
+      const inputCost = (promptTokens / 1000000) * modelPricing.input;
+      const outputCost = (completionTokens / 1000000) * modelPricing.output;
+      totalCost += inputCost + outputCost;
+    }
+
+    return totalCost;
   };
 
   // Drag and drop handlers
@@ -779,6 +1008,44 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               }
             },
             required: ['description']
+          }
+        }
+      });
+    }
+
+    if (enabledTools.generate_image) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'generate_image',
+          description: '🎨 Generate images using AI (DALL-E, Stable Diffusion). Use when user requests: "generate image", "create picture", "draw", "make photo". Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001). Returns button for user confirmation before generation.',
+          parameters: {
+            type: 'object',
+            properties: {
+              prompt: {
+                type: 'string',
+                description: 'Detailed description of the image to generate (e.g., "a low resolution image of a cat sitting on a windowsill")'
+              },
+              quality: {
+                type: 'string',
+                enum: ['ultra', 'high', 'standard', 'fast'],
+                default: 'standard',
+                description: 'Quality tier: ultra (photorealistic), high (detailed), standard (illustrations), fast (drafts). Infer from prompt keywords like "low res"=fast, "photorealistic"=ultra, "simple"=standard'
+              },
+              size: {
+                type: 'string',
+                enum: ['256x256', '512x512', '1024x1024', '1792x1024', '1024x1792'],
+                default: '1024x1024',
+                description: 'Image dimensions. Use smaller sizes (256x256, 512x512) for "low res" requests'
+              },
+              style: {
+                type: 'string',
+                enum: ['natural', 'vivid'],
+                default: 'natural',
+                description: 'Style: natural (realistic) or vivid (dramatic). DALL-E 3 only'
+              }
+            },
+            required: ['prompt']
           }
         }
       });
@@ -1760,6 +2027,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // Update usage cost if available
               if (data.cost && typeof data.cost === 'number') {
                 addCost(data.cost);
+                setLastRequestCost(data.cost);
+                console.log(`💰 Request cost: $${data.cost.toFixed(4)}`);
               }
               break;
               
@@ -2880,10 +3149,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                               sum + (call.response?.usage?.completion_tokens || 0), 0);
                                             const hasEstimated = msg.llmApiCalls.some((call: any) => 
                                               call.response?.usage?.estimated === true);
-                                            if (tokensIn > 0 || tokensOut > 0) {
+                                            const cost = calculateCostFromLlmApiCalls(msg.llmApiCalls);
+                                            if (tokensIn > 0 || tokensOut > 0 || cost > 0) {
                                               return (
                                                 <span className="ml-1 text-[10px] opacity-75">
-                                                  ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
+                                                  ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''}{cost > 0 && (tokensIn > 0 || tokensOut > 0) ? ' • ' : ''}{cost > 0 ? formatCost(cost) : ''})
                                                 </span>
                                               );
                                             }
@@ -2914,10 +3184,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           sum + (call.response?.usage?.completion_tokens || 0), 0);
                                         const hasEstimated = msg.llmApiCalls.some((call: any) => 
                                           call.response?.usage?.estimated === true);
-                                        if (tokensIn > 0 || tokensOut > 0) {
+                                        const cost = calculateCostFromLlmApiCalls(msg.llmApiCalls);
+                                        if (tokensIn > 0 || tokensOut > 0 || cost > 0) {
                                           return (
                                             <span className="ml-1 text-[10px] opacity-75">
-                                              ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
+                                              ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''}{cost > 0 && (tokensIn > 0 || tokensOut > 0) ? ' • ' : ''}{cost > 0 ? formatCost(cost) : ''})
                                             </span>
                                           );
                                         }
@@ -3007,6 +3278,39 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         
                         {/* Extracted content from tool calls (sources, images, videos, media) */}
                         {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
+                        
+                        {/* Show selected images and media sections ONLY on final assistant message with content */}
+                        {(() => {
+                          // Check if this is the final assistant message with actual text content
+                          const isFinalAssistantMessage = msg.content && !msg.isStreaming && 
+                            // Check if there are no subsequent assistant messages with content
+                            !messages.slice(idx + 1).some(m => m.role === 'assistant' && m.content);
+                          
+                          if (!isFinalAssistantMessage) return null;
+                          
+                          const media = extractMediaFromMessage(msg);
+                          const hasAnyMedia = media.images.length > 0 || media.links.length > 0 || 
+                                            media.youtubeLinks.length > 0 || media.otherMedia.length > 0;
+                          
+                          if (!hasAnyMedia) return null;
+                          
+                          return (
+                            <>
+                              {/* Show first 3 images immediately after response text */}
+                              {media.images.length > 0 && (
+                                <ImageGallery 
+                                  images={media.images}
+                                  maxDisplay={3}
+                                  onImageClick={(url) => window.open(url, '_blank')}
+                                  onGrabImage={handleGrabImage}
+                                />
+                              )}
+                              
+                              {/* Expandable media sections at the end */}
+                              <MediaSections {...media} onGrabImage={handleGrabImage} />
+                            </>
+                          );
+                        })()}
                         
                         {/* Tool results embedded in this assistant message - render like tool messages */}
                         {msg.toolResults && msg.toolResults.length > 0 && (
@@ -3174,9 +3478,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           )}
                                         </div>
                                       ) : (
-                                        <pre className="whitespace-pre-wrap text-xs text-gray-800 dark:text-gray-200 max-h-80 overflow-y-auto">
-                                          {toolResult.content}
-                                        </pre>
+                                        <ToolResultJsonViewer content={toolResult.content} />
                                       )}
                                     </div>
                                   )}
@@ -3273,6 +3575,23 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       </div>
                     )}
                     
+                    {/* Request cost badge for the last assistant message */}
+                    {msg.role === 'assistant' && !isLoading && lastRequestCost > 0 && idx === messages.length - 1 && (
+                      <div className="mt-2 flex items-center justify-end">
+                        <div className="inline-flex items-center gap-1 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-700 text-green-700 dark:text-green-300 px-2 py-1 rounded text-xs">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                          </svg>
+                          Request cost: {formatCost(lastRequestCost)}
+                          {usage && (
+                            <span className="ml-1 opacity-75">
+                              (Total: {formatCost(usage.totalCost)})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
                     {/* Copy/Share/Capture/Info buttons for assistant messages */}
                     {msg.role === 'assistant' && (msg.content || msg.llmApiCalls) && (
                       <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
@@ -3309,7 +3628,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           Gmail
                         </button>
                         <button
-                          onClick={() => handleCaptureContent(getMessageText(msg.content), 'assistant', undefined, msg.extractedContent)}
+                          onClick={() => handleCaptureContent(getMessageText(msg.content), 'assistant', undefined, msg.extractedContent, msg.toolResults)}
                           className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
                           title="Capture to Swag"
                         >
@@ -3318,7 +3637,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </svg>
                           Grab
                         </button>
-                        {/* Info button with token counts */}
+                        {/* Info button with token counts and cost */}
                         {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
                           <button
                             onClick={() => setShowLlmInfo(idx)}
@@ -3336,10 +3655,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 sum + (call.response?.usage?.completion_tokens || 0), 0);
                               const hasEstimated = msg.llmApiCalls.some((call: any) => 
                                 call.response?.usage?.estimated === true);
-                              if (tokensIn > 0 || tokensOut > 0) {
+                              const cost = calculateCostFromLlmApiCalls(msg.llmApiCalls);
+                              if (tokensIn > 0 || tokensOut > 0 || cost > 0) {
                                 return (
                                   <span className="ml-1 text-[10px] opacity-75">
-                                    ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''})
+                                    ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''}{cost > 0 && (tokensIn > 0 || tokensOut > 0) ? ' • ' : ''}{cost > 0 ? formatCost(cost) : ''})
                                   </span>
                                 );
                               }

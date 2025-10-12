@@ -21,6 +21,7 @@ const chatEndpoint = require('./endpoints/chat');
 const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
+const proxyImageEndpoint = require('./endpoints/proxy-image');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 const { handleUsageRequest } = require('./endpoints/usage');
 const { resetMemoryTracker } = require('./utils/memory-tracker');
@@ -245,6 +246,20 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(fixResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Proxy image endpoint (buffered response)
+        if (method === 'POST' && path === '/proxy-image') {
+            console.log('Routing to proxy-image endpoint');
+            const imageResponse = await proxyImageEndpoint.handler(event);
+            const metadata = {
+                statusCode: imageResponse.statusCode,
+                headers: imageResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(imageResponse.body);
             responseStream.end();
             return;
         }

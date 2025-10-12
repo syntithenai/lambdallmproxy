@@ -69,7 +69,7 @@ cp "$OLDPWD"/src/groq-rate-limits.js ./
 cp "$OLDPWD"/src/youtube-api.js ./ 2>/dev/null || true
 
 # Copy modular components (new refactored structure)
-mkdir -p config utils services streaming endpoints tools model-selection routing retry
+mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true  
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
@@ -79,6 +79,11 @@ cp -r "$OLDPWD"/src/tools/* ./tools/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/model-selection/* ./model-selection/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/routing/* ./routing/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/retry/* ./retry/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/mcp/* ./mcp/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
+
+# Copy PROVIDER_CATALOG.json (required for image generation)
+cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null || echo -e "${YELLOW}⚠️  PROVIDER_CATALOG.json not found${NC}"
 
 # Create package.json for the Lambda function with dependencies
 cat > package.json << EOF
@@ -109,7 +114,7 @@ echo -e "${YELLOW}📦 Files to be packaged:${NC}"
 ls -la *.js
 
 # Create the deployment package (include node_modules)
-zip -q -r "$ZIP_FILE" index.js package.json *.js config/ utils/ services/ streaming/ endpoints/ tools/ node_modules/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
+zip -q -r "$ZIP_FILE" index.js package.json *.js PROVIDER_CATALOG.json config/ utils/ services/ streaming/ endpoints/ tools/ model-selection/ routing/ retry/ mcp/ image-providers/ node_modules/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
 
 # Get current function configuration for backup
 aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" > function-backup.json 2>/dev/null

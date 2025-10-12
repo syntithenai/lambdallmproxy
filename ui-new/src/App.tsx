@@ -40,13 +40,15 @@ function AppContent() {
     youtube: boolean;
     transcribe: boolean;
     generate_chart: boolean;
+    generate_image: boolean;
   }>('chat_enabled_tools', {
     web_search: true,
     execute_js: true,
     scrape_url: true,
     youtube: true,
     transcribe: true,
-    generate_chart: true
+    generate_chart: true,
+    generate_image: true
   });
 
   // Migrate chat history from localStorage to IndexedDB on mount

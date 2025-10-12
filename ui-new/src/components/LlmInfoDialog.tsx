@@ -151,14 +151,18 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
     }
   };
 
-  // Calculate total cost across all calls with dual pricing + image generation
-  const { totalActualCost, totalPaidEquivalent, hasFreeModels } = apiCalls.reduce((acc, call) => {
+  // Calculate total cost and tokens across all calls with dual pricing + image generation
+  const { totalActualCost, totalPaidEquivalent, hasFreeModels, totalPromptTokens, totalCompletionTokens, totalTokens, hasPricing } = apiCalls.reduce((acc, call) => {
     // Check if this is an image generation call
     if (call.type === 'image_generation' && call.cost !== undefined) {
       return {
         totalActualCost: acc.totalActualCost + call.cost,
         totalPaidEquivalent: acc.totalPaidEquivalent + call.cost,
-        hasFreeModels: acc.hasFreeModels
+        hasFreeModels: acc.hasFreeModels,
+        totalPromptTokens: acc.totalPromptTokens,
+        totalCompletionTokens: acc.totalCompletionTokens,
+        totalTokens: acc.totalTokens,
+        hasPricing: acc.hasPricing
       };
     }
     
@@ -166,13 +170,18 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
     const tokensIn = call.response?.usage?.prompt_tokens || 0;
     const tokensOut = call.response?.usage?.completion_tokens || 0;
     const pricing = calculateDualPricing(call.model, tokensIn, tokensOut);
+    const breakdown = getCostBreakdown(call.model, tokensIn, tokensOut);
     
     return {
       totalActualCost: acc.totalActualCost + (pricing.actualCost || 0),
       totalPaidEquivalent: acc.totalPaidEquivalent + (pricing.paidEquivalentCost || 0),
-      hasFreeModels: acc.hasFreeModels || pricing.isFree
+      hasFreeModels: acc.hasFreeModels || pricing.isFree,
+      totalPromptTokens: acc.totalPromptTokens + tokensIn,
+      totalCompletionTokens: acc.totalCompletionTokens + tokensOut,
+      totalTokens: acc.totalTokens + tokensIn + tokensOut,
+      hasPricing: acc.hasPricing || breakdown.hasPricing
     };
-  }, { totalActualCost: 0, totalPaidEquivalent: 0, hasFreeModels: false });
+  }, { totalActualCost: 0, totalPaidEquivalent: 0, hasFreeModels: false, totalPromptTokens: 0, totalCompletionTokens: 0, totalTokens: 0, hasPricing: false });
 
   return (
     <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
@@ -185,16 +194,41 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
             </h3>
             <div className="flex gap-4 mt-1 text-sm text-gray-600 dark:text-gray-400">
               <span>{apiCalls.length} call{apiCalls.length !== 1 ? 's' : ''}</span>
+              
+              {/* Token Summary */}
+              {totalTokens > 0 && (
+                <>
+                  <span>•</span>
+                  <span>
+                    📊 {totalTokens.toLocaleString()} tokens
+                    <span className="text-xs opacity-75 ml-1">
+                      ({totalPromptTokens.toLocaleString()} in, {totalCompletionTokens.toLocaleString()} out)
+                    </span>
+                  </span>
+                </>
+              )}
+              
+              {/* Cost Summary */}
               {totalActualCost > 0 && (
                 <>
                   <span>•</span>
                   <span className="font-semibold text-green-600 dark:text-green-400">
-                    💰 Total Cost: {formatCost(totalActualCost)}
+                    💰 {formatCost(totalActualCost)}
                     {hasFreeModels && totalPaidEquivalent > 0 && (
                       <span className="text-xs opacity-75 ml-1">
                         (would be {formatCost(totalPaidEquivalent)} on paid)
                       </span>
                     )}
+                  </span>
+                </>
+              )}
+              
+              {/* Pricing Warning */}
+              {!hasPricing && totalTokens > 0 && (
+                <>
+                  <span>•</span>
+                  <span className="font-medium text-yellow-600 dark:text-yellow-400" title="Pricing information not available for some models">
+                    ⚠️ No pricing info
                   </span>
                 </>
               )}
@@ -322,6 +356,13 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
                                 </span>
                               );
                             }
+                          } else {
+                            // Show warning when no pricing information is available
+                            return (
+                              <span className="font-medium text-yellow-600 dark:text-yellow-400" title="Pricing information not available for this model">
+                                ⚠️ No pricing info
+                              </span>
+                            );
                           }
                           return null;
                         })()}
@@ -447,7 +488,18 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
 
         {/* Dialog Footer */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
-          <div className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="text-sm text-gray-600 dark:text-gray-400 flex gap-4">
+            {/* Token Summary */}
+            {totalTokens > 0 && (
+              <span>
+                📊 {totalTokens.toLocaleString()} tokens
+                <span className="text-xs opacity-75 ml-1">
+                  ({totalPromptTokens.toLocaleString()} in, {totalCompletionTokens.toLocaleString()} out)
+                </span>
+              </span>
+            )}
+            
+            {/* Cost Summary */}
             {totalActualCost > 0 && (
               <span className="font-semibold text-green-600 dark:text-green-400">
                 💰 Total Cost: {formatCost(totalActualCost)}
@@ -456,6 +508,13 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
                     (would be {formatCost(totalPaidEquivalent)} on paid plan)
                   </span>
                 )}
+              </span>
+            )}
+            
+            {/* Pricing Warning */}
+            {!hasPricing && totalTokens > 0 && (
+              <span className="font-medium text-yellow-600 dark:text-yellow-400">
+                ⚠️ Some models lack pricing data
               </span>
             )}
           </div>

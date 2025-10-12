@@ -60,9 +60,19 @@ const PRICING = {
 };
 
 /**
- * Calculate cost based on token usage
+ * Calculate cost based on token usage or fixed cost (for image generation)
+ * @param {string} model - Model name
+ * @param {number} promptTokens - Input tokens (0 for image generation)
+ * @param {number} completionTokens - Output tokens (0 for image generation)
+ * @param {number} fixedCost - Fixed cost for non-token-based requests (image generation)
  */
-function calculateCost(model, promptTokens, completionTokens) {
+function calculateCost(model, promptTokens, completionTokens, fixedCost = null) {
+    // If fixed cost provided (e.g., image generation), use that
+    if (fixedCost !== null && fixedCost !== undefined) {
+        return fixedCost;
+    }
+    
+    // Otherwise calculate from tokens
     const pricing = PRICING[model] || { input: 0, output: 0 };
     const inputCost = (promptTokens / 1000000) * pricing.input;
     const outputCost = (completionTokens / 1000000) * pricing.output;
@@ -280,11 +290,12 @@ async function logToGoogleSheets(logData) {
         // Ensure the sheet tab exists (creates it if needed)
         await ensureSheetExists(spreadsheetId, sheetName, accessToken);
         
-        // Calculate cost
+        // Calculate cost (use provided cost for image generation, or calculate from tokens)
         const cost = calculateCost(
             logData.model,
             logData.promptTokens || 0,
-            logData.completionTokens || 0
+            logData.completionTokens || 0,
+            logData.cost  // Pass through fixed cost if provided (e.g., for image generation)
         );
         
         // Format duration

@@ -210,15 +210,34 @@ async function handleGenerateImage(event) {
       }
     };
     
-    // Save to tracking (if enabled)
-    // TODO: Implement LLM call tracking
-    // try {
-    //   if (userEmail) {
-    //     await recordLLMApiCall(userEmail, llmApiCall);
-    //   }
-    // } catch (trackError) {
-    //   console.warn('⚠️ Failed to record LLM API call:', trackError.message);
-    // }
+    // Log to Google Sheets (async, don't block response)
+    try {
+      const { logToGoogleSheets } = require('../services/google-sheets-logger');
+      
+      // Log image generation request
+      logToGoogleSheets({
+        userEmail: userEmail || 'anonymous',
+        provider: selectedProvider,
+        model: selectedModel,
+        promptTokens: 0, // Image generation doesn't use tokens
+        completionTokens: 0,
+        totalTokens: 0,
+        cost: result.cost || 0,
+        durationMs: totalDuration,
+        timestamp: new Date().toISOString(),
+        requestType: 'image_generation', // Custom field to distinguish from text generation
+        metadata: {
+          size,
+          quality,
+          prompt: prompt.substring(0, 50) + (prompt.length > 50 ? '...' : ''),
+          fallbackUsed
+        }
+      }).catch(err => {
+        console.error('Failed to log image generation to Google Sheets:', err.message);
+      });
+    } catch (err) {
+      console.error('Google Sheets logging error (image generation):', err.message);
+    }
     
     // Return successful response
     return {

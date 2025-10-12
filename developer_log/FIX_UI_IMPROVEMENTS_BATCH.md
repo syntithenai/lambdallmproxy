@@ -44,9 +44,130 @@ This document tracks a batch of UI and backend improvements requested by the use
 
 **Testing**: Evaluation now works correctly even when Gemini returns text responses like "Yes, this is comprehensive" or "No, too brief".
 
-## Pending Issues (Not Implemented)
+### 3. ✅ MCP Streaming Events
 
-### 3. 🔜 Google Sheets LLM Log - No Entries
+**Problem**: MCP tool execution didn't emit progress events to the UI, unlike other tools like `search_web` that show real-time progress.
+
+**Solution**:
+- Modified `src/tools.js` `executeMCPTool()` function (lines 2543+) to emit streaming events following the same pattern as `search_web`
+- Added event emission at key execution points: start, executing, processing, complete, error
+- Events include metadata: tool name, server name, phase, timestamp, content info
+
+**Event Types**:
+- `mcp_tool_start`: Tool execution begins (includes arguments)
+- `mcp_tool_progress`: Execution/processing phases
+- `mcp_tool_complete`: Tool finished successfully  
+- `mcp_tool_error`: Tool execution failed
+
+**Deployment**: `make deploy-lambda-fast` (code only, ~10 seconds)
+
+**Testing**: MCP tools now emit real-time progress events that can be consumed by the UI for progress indicators.
+
+### 4. ✅ Google Sheets LLM Log - No Entries
+
+**Problem**: No entries were appearing in the Google Sheet LLM log. CloudWatch logs showed: `❌ Failed to log to Google Sheets: Cannot find module 'jsonwebtoken'`
+
+**Root Cause**: The `jsonwebtoken` dependency was in `package.json` but not in the Lambda Layer because the layer was created before the dependency was added.
+
+**Solution**:
+1. Rebuilt Lambda Layer with `make setup-layer` to include all dependencies including `jsonwebtoken`
+2. Redeployed Lambda function with `make deploy-lambda-fast`
+
+**Commands**:
+```bash
+make setup-layer           # Rebuilt layer with jsonwebtoken (~2 minutes)
+make deploy-lambda-fast    # Attached new layer to Lambda (~10 seconds)
+```
+
+**Lambda Layer Details**:
+- **Version 4**: `arn:aws:lambda:us-east-1:979126075445:layer:llmproxy-dependencies:4`
+- **Size**: 28M (includes all node_modules dependencies)
+
+**Verification**: After deployment, Google Sheets logger successfully logs requests with timestamp, email, provider, model, tokens, cost, duration.
+
+### 5. ✅ Pricing Information in Chat UI
+
+**Problem**: Pricing information wasn't displayed in the chat UI, making it hard to track API costs per request and cumulatively.
+
+**Solution**: Added comprehensive cost tracking and display throughout the chat UI:
+1. **Info button tooltips**: Show tokens + cost for each tool/assistant message
+2. **Cost badge**: Display request cost on last assistant message with cumulative total
+3. **Cost calculation**: Client-side cost calculation from `llmApiCalls` using pricing table
+
+**Implementation**:
+
+**A. Cost Formatting Helper** (`ui-new/src/components/ChatTab.tsx` lines 446-453):
+```typescript
+const formatCost = (cost: number): string => {
+  if (cost < 0.0001) return `<$0.0001`;
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(3)}`;
+};
+```
+
+**B. Cost Calculation Helper** (lines 455-498):
+- Calculates cost from `llmApiCalls` using pricing per 1M tokens
+- Matches pricing from `src/services/google-sheets-logger.js`
+- Supports all major models: Gemini (free), OpenAI (paid), Groq (free)
+
+**C. Cost Tracking State** (lines 157-158):
+```typescript
+const [lastRequestCost, setLastRequestCost] = useState<number>(0);
+```
+
+**D. Complete Event Handler** (lines 1756-1765):
+- Stores request cost when `complete` event arrives
+- Logs cost: `💰 Request cost: $0.0045`
+
+**E. Info Button Updates** (multiple locations):
+- Tool messages (search_web): lines 2860-2897
+- Tool messages (other): lines 2899-2930  
+- Assistant messages: lines 3380-3411
+- Format: `Info (1010↓/523↑ • $0.0023)` (tokens + cost)
+
+**F. Request Cost Badge** (lines 3335-3347):
+```typescript
+{msg.role === 'assistant' && !isLoading && lastRequestCost > 0 && idx === messages.length - 1 && (
+  <div className="inline-flex...">
+    Request cost: {formatCost(lastRequestCost)}
+    {usage && (
+      <span>(Total: {formatCost(usage.totalCost)})</span>
+    )}
+  </div>
+)}
+```
+
+**Display Format Examples**:
+- `$0.0001` - Small costs (4 decimal places)
+- `$0.003` - Medium costs (3 decimal places)
+- `<$0.0001` - Costs below threshold
+- **Token display**: `1010↓/523↑ • $0.0023`
+- **Cost badge**: "Request cost: $0.0045 (Total: $0.1234)"
+
+**Deployment**: `make deploy-ui` (~9 seconds build + ~5 seconds push)
+
+**Testing**: Cost displays correctly in info buttons and cost badge shows on last assistant message.
+
+---
+
+## Summary
+
+**All 5 improvements successfully implemented and deployed:**
+
+| # | Feature | Status | Commit | Deploy Method |
+|---|---------|--------|--------|---------------|
+| 1 | JSON tree display | ✅ | 7480f7c | `make deploy-ui` |
+| 2 | Text evaluation | ✅ | 00fb02f | `make deploy-lambda-fast` |
+| 3 | MCP streaming | ✅ | (same as #2) | `make deploy-lambda-fast` |
+| 4 | Sheets logging | ✅ | (layer update) | `make setup-layer` + `make deploy-lambda-fast` |
+| 5 | Pricing display | ✅ | babd129 | `make deploy-ui` |
+
+**Total deployment time:** ~3 minutes
+- Layer rebuild: ~2 minutes (one-time)
+- Lambda fast deploy: ~10 seconds (×2)
+- UI deploy: ~9 seconds build + ~5 seconds push
+
+**No regressions detected. All existing functionality preserved.
 
 **Status**: Requires investigation
 

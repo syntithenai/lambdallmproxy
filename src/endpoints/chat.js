@@ -1059,11 +1059,32 @@ async function handler(event, responseStream) {
             console.log(`📏 Using user-specified max_tokens: ${max_tokens}`);
         }
         
+        // Extract provider-specific API keys from provider pool for image generation
+        const providerApiKeys = {};
+        providerPool.forEach(provider => {
+            if (provider.apiKey && provider.type) {
+                // Map provider types to standard keys
+                const keyMap = {
+                    'openai': 'openaiApiKey',
+                    'together': 'togetherApiKey',
+                    'gemini': 'geminiApiKey',
+                    'gemini-free': 'geminiApiKey',
+                    'replicate': 'replicateApiKey'
+                };
+                const keyName = keyMap[provider.type];
+                if (keyName && !providerApiKeys[keyName]) {
+                    providerApiKeys[keyName] = provider.apiKey;
+                }
+            }
+        });
+        
         // Build tool context
         const toolContext = {
             user: verifiedUser.email,
+            userEmail: verifiedUser.email,
             model,
             apiKey,
+            ...providerApiKeys, // Add all provider-specific API keys for tools
             googleToken,
             youtubeAccessToken: youtubeToken, // Pass YouTube OAuth token for transcript access
             tavilyApiKey,
