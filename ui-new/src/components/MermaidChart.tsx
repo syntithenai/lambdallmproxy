@@ -50,7 +50,8 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, onLlmApiCall 
       startOnLoad: false,
       theme: 'default',
       securityLevel: 'loose',
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      logLevel: 'error' // Only log errors to console, don't render them
     });
   }, []);
 
@@ -74,11 +75,30 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, onLlmApiCall 
         // Insert SVG
         containerRef.current.innerHTML = svg;
         
+        // Clean up any error messages that Mermaid might have inserted into the DOM
+        // Remove any divs with error messages that appear at the bottom of the page
+        const errorDivs = document.querySelectorAll('div[id^="d"]');
+        errorDivs.forEach(div => {
+          const text = div.textContent || '';
+          if (text.includes('Syntax error in text') || text.includes('mermaid version')) {
+            div.remove();
+          }
+        });
+        
         console.log('✅ Mermaid chart rendered successfully');
       } catch (err: any) {
         console.error('❌ Mermaid rendering error:', err);
         const errorMessage = err.message || String(err);
         setError(errorMessage);
+        
+        // Clean up any error messages that Mermaid inserted before throwing the error
+        const errorDivs = document.querySelectorAll('div[id^="d"]');
+        errorDivs.forEach(div => {
+          const text = div.textContent || '';
+          if (text.includes('Syntax error in text') || text.includes('mermaid version')) {
+            div.remove();
+          }
+        });
         
         // Auto-fix if we haven't exceeded retry limit
         if (fixAttempts.length < 3) {
