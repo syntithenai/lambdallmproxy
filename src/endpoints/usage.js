@@ -27,8 +27,8 @@ async function handleUsageRequest(event) {
             return {
                 statusCode: 401,
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
+                    'Content-Type': 'application/json'
+                    // Note: CORS headers handled by AWS Lambda Function URL configuration
                 },
                 body: JSON.stringify({
                     error: 'Unauthorized',
@@ -53,8 +53,8 @@ async function handleUsageRequest(event) {
             return {
                 statusCode: 401,
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
+                    'Content-Type': 'application/json'
+                    // Note: CORS headers handled by AWS Lambda Function URL configuration
                 },
                 body: JSON.stringify({
                     error: 'Unauthorized',
@@ -87,8 +87,8 @@ async function handleUsageRequest(event) {
             statusCode: 200,
             headers: {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
                 'Cache-Control': 'no-cache, no-store, must-revalidate'
+                // Note: CORS headers handled by AWS Lambda Function URL configuration
             },
             body: JSON.stringify(response)
         };
@@ -99,8 +99,8 @@ async function handleUsageRequest(event) {
         return {
             statusCode: 500,
             headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Content-Type': 'application/json'
+                // Note: CORS headers handled by AWS Lambda Function URL configuration
             },
             body: JSON.stringify({
                 error: 'Internal Server Error',
