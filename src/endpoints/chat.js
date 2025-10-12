@@ -1328,13 +1328,36 @@ async function handler(event, responseStream) {
                             // Reset same-model retries for new provider
                             sameModelRetries = 0;
                             
-                            // Update request body
+                            // Update request body for new provider
                             requestBody.model = model;
+                            
+                            // Handle provider-specific parameter compatibility
+                            const isSwitchingToGemini = selectedProvider.type === 'gemini-free' || selectedProvider.type === 'gemini';
+                            if (isSwitchingToGemini) {
+                                // Gemini doesn't support frequency_penalty and presence_penalty
+                                delete requestBody.frequency_penalty;
+                                delete requestBody.presence_penalty;
+                                console.log('🧹 Removed unsupported parameters for Gemini provider');
+                            } else if (!requestBody.frequency_penalty && !requestBody.presence_penalty) {
+                                // Switching back to a provider that supports penalties, add them back
+                                requestBody.frequency_penalty = frequency_penalty;
+                                requestBody.presence_penalty = presence_penalty;
+                                console.log('✅ Restored penalty parameters for non-Gemini provider');
+                            }
+                            
                             if (lastRequestBody) {
                                 lastRequestBody.provider = provider;
                                 lastRequestBody.model = model;
                                 if (lastRequestBody.request) {
                                     lastRequestBody.request.model = model;
+                                    // Sync penalty parameters
+                                    if (isSwitchingToGemini) {
+                                        delete lastRequestBody.request.frequency_penalty;
+                                        delete lastRequestBody.request.presence_penalty;
+                                    } else {
+                                        lastRequestBody.request.frequency_penalty = frequency_penalty;
+                                        lastRequestBody.request.presence_penalty = presence_penalty;
+                                    }
                                 }
                             }
                             
