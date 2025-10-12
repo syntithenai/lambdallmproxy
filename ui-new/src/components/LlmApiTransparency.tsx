@@ -84,6 +84,10 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
       case 'final_synthesis':
       case 'final_response':
         return '✨ Final Answer';
+      case 'self_evaluation':
+        return '🔍 Self-Evaluation';
+      case 'chat_iteration':
+        return '💬 Chat Iteration';
       default:
         return phase;
     }
