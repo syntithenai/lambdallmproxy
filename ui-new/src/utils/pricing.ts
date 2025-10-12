@@ -242,6 +242,19 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     input: 0.625,
     output: 5.00,
   },
+  // Google Gemini Free API (direct access, not via Atlas Cloud)
+  'gemini-2.0-flash': {
+    input: 0.00,  // Free tier: 1,500 RPD
+    output: 0.00,
+  },
+  'gemini-1.5-flash': {
+    input: 0.00,  // Free tier: 1,500 RPD
+    output: 0.00,
+  },
+  'gemini-1.5-pro': {
+    input: 0.00,  // Free tier: 1,500 RPD
+    output: 0.00,
+  },
   // GLM via Atlas Cloud
   'zai-org/GLM-4.5': {
     input: 0.60,
