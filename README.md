@@ -2,6 +2,24 @@
 
 An advanced AWS Lambda function that combines comprehensive web search with large language model processing to provide thorough, well-researched answers with citations and source references.
 
+## 🧠 Intelligent Model Selection
+
+The proxy features a **sophisticated model selection system** that automatically chooses the best LLM model for each request based on:
+
+- **Request complexity** (simple facts vs. complex reasoning)
+- **Cost optimization** (free tier prioritization, cost-per-quality scoring)
+- **Rate limiting** (proactive checking, automatic failover)
+- **Model health** (tracks reliability, avoids consistently failing models)
+- **Performance** (historical latency tracking for speed optimization)
+
+**Optimization Modes:**
+- 💰 **Cheap** (default): Free providers first, minimal token usage
+- ⚖️ **Balanced**: Cost-per-quality optimization
+- 💪 **Powerful**: Best available models for complex tasks
+- ⚡ **Fastest**: Historical performance-based selection (Groq typically 50-100ms TTFT)
+
+📖 **[Read the complete Model Selection Documentation →](MODEL_SELECTION.md)**
+
 ## Quick Start - Use the Makefile!
 
 **⚡ For all deployments and builds, use the Makefile commands:**

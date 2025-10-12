@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "lastUpdated": "2025-10-09",
+  "version": "1.0.1",
+  "lastUpdated": "2025-10-12",
   "chat": {
     "description": "Chat/completion LLM providers",
     "providers": {
@@ -13,9 +13,9 @@
         "freeTier": {
           "available": true,
           "limits": {
-            "requestsPerMinute": 7000,
+            "requestsPerMinute": 30,
             "requestsPerDay": 14400,
-            "tokensPerMinute": 30000,
+            "tokensPerMinute": 6000,
             "tokensPerDay": null
           }
         },
@@ -39,8 +39,29 @@
             "supportsVision": false,
             "supportsStreaming": true,
             "rateLimits": {
-              "tokensPerMinute": 30000,
-              "requestsPerMinute": 7000
+              "tokensPerMinute": 6000,
+              "requestsPerMinute": 30
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "llama-3.3-70b-versatile": {
+            "id": "llama-3.3-70b-versatile",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 32768,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 6000,
+              "requestsPerMinute": 30
             },
             "deprecated": false,
             "available": true
@@ -276,7 +297,7 @@
           "limits": {
             "requestsPerMinute": 15,
             "requestsPerDay": 1500,
-            "tokensPerMinute": 32000,
+            "tokensPerMinute": 1000000,
             "tokensPerDay": 50000000
           }
         },
@@ -300,8 +321,8 @@
             "supportsVision": true,
             "supportsStreaming": true,
             "rateLimits": {
-              "tokensPerMinute": 4000000,
-              "requestsPerMinute": 1500
+              "tokensPerMinute": 1000000,
+              "requestsPerMinute": 15
             },
             "deprecated": false,
             "available": true
@@ -321,8 +342,8 @@
             "supportsVision": true,
             "supportsStreaming": true,
             "rateLimits": {
-              "tokensPerMinute": 4000000,
-              "requestsPerMinute": 360
+              "tokensPerMinute": 1000000,
+              "requestsPerMinute": 15
             },
             "deprecated": false,
             "available": true
@@ -342,8 +363,29 @@
             "supportsVision": true,
             "supportsStreaming": true,
             "rateLimits": {
-              "tokensPerMinute": 4000000,
-              "requestsPerMinute": 10
+              "tokensPerMinute": 1000000,
+              "requestsPerMinute": 15
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "gemini-2.5-flash": {
+            "id": "gemini-2.5-flash",
+            "category": "small",
+            "contextWindow": 1000000,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 1000000,
+              "requestsPerMinute": 15
             },
             "deprecated": false,
             "available": true
@@ -507,6 +549,82 @@
             "rateLimits": {
               "tokensPerMinute": 100000,
               "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true
+          }
+        }
+      },
+      "atlascloud": {
+        "name": "Atlas Cloud",
+        "type": "atlascloud",
+        "apiBase": "https://api.atlascloud.ai/v1",
+        "supportsStreaming": true,
+        "supportsTools": true,
+        "freeTier": {
+          "available": false
+        },
+        "rateLimitHeaders": {
+          "format": "standard",
+          "prefix": "x-ratelimit-"
+        },
+        "models": {
+          "deepseek-ai/DeepSeek-R1": {
+            "id": "deepseek-ai/DeepSeek-R1",
+            "category": "reasoning",
+            "contextWindow": 65536,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.55,
+              "output": 2.19,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 60
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "deepseek-ai/DeepSeek-V3": {
+            "id": "deepseek-ai/DeepSeek-V3",
+            "category": "large",
+            "contextWindow": 65536,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.27,
+              "output": 1.10,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 60
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "meta-llama/Llama-3.3-70B-Instruct-Turbo": {
+            "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 32768,
+            "pricing": {
+              "input": 0.88,
+              "output": 0.88,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 60
             },
             "deprecated": false,
             "available": true

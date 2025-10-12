@@ -102,12 +102,18 @@ function getModelsByCategory(providerCatalog, category) {
   const results = [];
 
   for (const [providerType, providerInfo] of Object.entries(providerCatalog.providers)) {
-    if (!providerInfo.models || !Array.isArray(providerInfo.models)) {
+    if (!providerInfo.models) {
       continue;
     }
 
-    for (const model of providerInfo.models) {
-      const modelCategory = categorizeModel(model.name);
+    // Handle both object and array formats
+    const models = Array.isArray(providerInfo.models) 
+      ? providerInfo.models 
+      : Object.values(providerInfo.models);
+
+    for (const model of models) {
+      // Use catalog's category if available, otherwise categorize by name
+      const modelCategory = model.category || categorizeModel(model.name || model.id);
       if (modelCategory === category) {
         results.push({
           ...model,

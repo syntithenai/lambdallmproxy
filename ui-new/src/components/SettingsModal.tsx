@@ -153,6 +153,94 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           
           {/* Provider List Component */}
           <ProviderList />
+          
+          {/* Model Selection Optimization */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              🎯 Model Selection Strategy
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Choose how the system selects models for your requests. This balances cost, quality, and performance.
+            </p>
+            
+            <div className="space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer p-4 rounded-lg border-2 transition-all hover:border-blue-300 dark:hover:border-blue-700 has-[:checked]:border-blue-500 dark:has-[:checked]:border-blue-400 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-900/20">
+                <input
+                  type="radio"
+                  name="optimization"
+                  value="cheap"
+                  checked={(tempSettings.optimization || 'cheap') === 'cheap'}
+                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
+                    💰 Cheap (Recommended)
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Prioritize free providers (Groq, Gemini) and smallest capable models. Falls back to paid providers only when rate-limited. Best for most use cases.
+                  </div>
+                </div>
+              </label>
+              
+              <label className="flex items-start gap-3 cursor-pointer p-4 rounded-lg border-2 transition-all hover:border-blue-300 dark:hover:border-blue-700 has-[:checked]:border-blue-500 dark:has-[:checked]:border-blue-400 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-900/20">
+                <input
+                  type="radio"
+                  name="optimization"
+                  value="balanced"
+                  checked={tempSettings.optimization === 'balanced'}
+                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
+                    ⚖️ Balanced
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Choose models that reliably do the job without compromising quality. Uses free tier when quality is equivalent, paid models when quality matters. Balances cost vs. capability.
+                  </div>
+                </div>
+              </label>
+              
+              <label className="flex items-start gap-3 cursor-pointer p-4 rounded-lg border-2 transition-all hover:border-blue-300 dark:hover:border-blue-700 has-[:checked]:border-blue-500 dark:has-[:checked]:border-blue-400 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-900/20">
+                <input
+                  type="radio"
+                  name="optimization"
+                  value="powerful"
+                  checked={tempSettings.optimization === 'powerful'}
+                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
+                    💪 Powerful
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Use the best available models (GPT-4o, Gemini 2.5 Pro, o1) for maximum capability. Prioritizes quality over cost. Uses reasoning models for complex analysis.
+                  </div>
+                </div>
+              </label>
+              
+              <label className="flex items-start gap-3 cursor-pointer p-4 rounded-lg border-2 transition-all hover:border-blue-300 dark:hover:border-blue-700 has-[:checked]:border-blue-500 dark:has-[:checked]:border-blue-400 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-900/20">
+                <input
+                  type="radio"
+                  name="optimization"
+                  value="fastest"
+                  checked={tempSettings.optimization === 'fastest'}
+                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
+                    ⚡ Fastest
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Prioritize low-latency models (Groq) for quick responses. May sacrifice some quality for speed in simple requests. Great for interactive sessions.
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
         </div>
         )}
 

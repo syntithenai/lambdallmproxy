@@ -1464,8 +1464,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         providers: enabledProviders,  // NEW: Send only enabled providers
         messages: cleanedMessages,
         temperature: 0.7,
-        stream: true  // Always use streaming
+        stream: true,  // Always use streaming
+        optimization: settings.optimization || 'cheap'  // Model selection strategy
       };
+      
+      console.log(`🎯 Model selection optimization: ${requestPayload.optimization}`);
       
       // Add location data if available
       if (location) {
@@ -2399,8 +2402,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       messages: continueContext.messages,  // Full message history including tool results
       temperature: 0.7,
       stream: true,
-      isContinuation: true  // Critical: Flag to bypass message filtering
+      isContinuation: true,  // Critical: Flag to bypass message filtering
+      optimization: settings.optimization || 'cheap'  // Model selection strategy
     };
+    
+    console.log(`🎯 Continuation request with optimization: ${requestPayload.optimization}`);
     
     // Add location data if available (same as initial request)
     if (location) {

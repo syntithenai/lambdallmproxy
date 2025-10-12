@@ -7,12 +7,15 @@
 const https = require('https');
 const http = require('http');
 const { verifyGoogleToken, getAllowedEmails, authenticateRequest } = require('../auth');
-const { callFunction, compressSearchResultsForLLM, mergeTools } = require('../tools');
+const { callFunction, compressSearchResultsForLLM, mergeTools} = require('../tools');
 const { createSSEStreamAdapter } = require('../streaming/sse-writer');
 const { parseProviderModel } = require('../providers');
 const { createProgressEmitter } = require('../utils/progress-emitter');
 const { getOrEstimateUsage, providerReturnsUsage } = require('../utils/token-estimation');
 const { buildProviderPool, hasAvailableProviders } = require('../credential-pool');
+const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
+const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
+const providerCatalog = require('../../PROVIDER_CATALOG.json');
 
 // NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
 // NOTE: llama-3.1-70b-versatile was decommissioned by Groq in Oct 2025
@@ -24,6 +27,91 @@ const GROQ_RATE_LIMIT_FALLBACK_MODELS = [
 const JSON_TOOL_CALL_REMINDER_TEXT = 'You must answer with a tool call using valid JSON arguments and no extra text. Use the official OpenAI function-calling format.';
 const LEGACY_TOOL_CALL_REGEX = /<\s*function\s*=\s*[^>]+>/i;
 const MAX_JSON_TOOL_REMINDERS = 2;
+
+// Global singleton rate limit tracker (persists across Lambda warm starts)
+let globalRateLimitTracker = null;
+
+/**
+ * Get or create the global rate limit tracker
+ * Singleton pattern ensures state persists across requests in same Lambda instance
+ * @returns {RateLimitTracker} Global rate limit tracker instance
+ */
+function getRateLimitTracker() {
+    if (!globalRateLimitTracker) {
+        console.log('🔄 Initializing global RateLimitTracker...');
+        globalRateLimitTracker = new RateLimitTracker({
+            autoReset: true,
+            persistence: null // In-memory for now
+        });
+        
+        // Initialize from catalog
+        initializeTrackerFromCatalog(globalRateLimitTracker, providerCatalog);
+        console.log('✅ RateLimitTracker initialized');
+    }
+    return globalRateLimitTracker;
+}
+
+/**
+ * Initialize rate limit tracker with limits from provider catalog
+ * @param {RateLimitTracker} tracker - Rate limit tracker instance
+ * @param {Object} catalog - Provider catalog
+ */
+function initializeTrackerFromCatalog(tracker, catalog) {
+    if (!catalog || !catalog.chat || !catalog.chat.providers) {
+        console.warn('⚠️ Invalid catalog structure, skipping tracker initialization');
+        return;
+    }
+    
+    let modelCount = 0;
+    for (const [providerType, providerInfo] of Object.entries(catalog.chat.providers)) {
+        if (!providerInfo.models) continue;
+        
+        // Handle both object and array formats
+        const models = Array.isArray(providerInfo.models) 
+            ? providerInfo.models 
+            : Object.values(providerInfo.models);
+        
+        for (const model of models) {
+            if (model.rateLimits) {
+                tracker.getModelLimit(providerType, model.id, model.rateLimits);
+                modelCount++;
+            }
+        }
+    }
+    
+    console.log(`📊 Initialized rate limits for ${modelCount} models across ${Object.keys(catalog.chat.providers).length} providers`);
+}
+
+/**
+ * Build runtime catalog filtered to available providers
+ * @param {Object} baseCatalog - Base provider catalog
+ * @param {Array} availableProviders - Provider pool
+ * @returns {Object} Filtered catalog
+ */
+function buildRuntimeCatalog(baseCatalog, availableProviders) {
+    // Deep clone catalog
+    const catalog = JSON.parse(JSON.stringify(baseCatalog));
+    
+    if (!catalog.chat || !catalog.chat.providers) {
+        return catalog;
+    }
+    
+    // Get set of available provider types
+    const availableTypes = new Set(availableProviders.map(p => p.type));
+    
+    // Filter to only include configured providers
+    const filteredProviders = {};
+    for (const [type, info] of Object.entries(catalog.chat.providers)) {
+        if (availableTypes.has(type)) {
+            filteredProviders[type] = info;
+        }
+    }
+    
+    catalog.chat.providers = filteredProviders;
+    catalog.providers = filteredProviders; // For compatibility with selector
+    
+    return catalog;
+}
 
 /**
  * Evaluate if the response comprehensively answers the user's query
@@ -1008,54 +1096,128 @@ async function handler(event, responseStream) {
         
         let apiKey = selectedProvider.apiKey;
         
-        // Quick heuristic: check message complexity for model selection
-        const totalLength = messages.reduce((sum, msg) => 
-            sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0
-        );
-        const hasTools = tools && tools.length > 0;
-        const isComplex = totalLength > 1000 || messages.length > 5 || hasTools;
+        // Get optimization preference from request (default to 'cheap')
+        const optimizationPreference = body.optimization || 'cheap';
         
-        // Validate/override model based on selected provider type
-        // This ensures model compatibility regardless of what the UI sent
+        // Map optimization to selection strategy
+        const strategyMap = {
+            'cheap': SelectionStrategy.FREE_TIER,
+            'balanced': SelectionStrategy.BALANCED,
+            'powerful': SelectionStrategy.QUALITY_OPTIMIZED,
+            'fastest': SelectionStrategy.SPEED_OPTIMIZED  // STEP 13: Use speed-optimized strategy
+        };
+        
+        const strategy = strategyMap[optimizationPreference] || SelectionStrategy.BALANCED;
+        
+        // Get rate limit tracker
+        const rateLimitTracker = getRateLimitTracker();
+        
+        // Build runtime catalog with only available providers
+        const runtimeCatalog = buildRuntimeCatalog(providerCatalog, providerPool);
+        
+        // Use sophisticated model selection
+        let selection;
+        let selectedModel = null;
         const requestedModel = model; // Save original request
         
-        model = selectModelForProvider(selectedProvider, model, isComplex);
+        try {
+            selection = selectModel({
+                messages,
+                tools,
+                catalog: runtimeCatalog,
+                rateLimitTracker,
+                preferences: {
+                    strategy,
+                    preferFree: optimizationPreference === 'cheap',
+                    maxCostPerMillion: Infinity // No limit for now
+                },
+                roundRobinSelector: new RoundRobinSelector(),
+                max_tokens: body.max_tokens || null
+            });
+            
+            selectedModel = selection.model;
+            
+            console.log('🎯 Model selected:', {
+                model: selectedModel.name || selectedModel.id,
+                provider: selectedModel.providerType,
+                category: selection.category,
+                requestType: selection.analysis.type,
+                estimatedTokens: selection.totalTokens,
+                strategy: strategy,
+                optimization: optimizationPreference
+            });
+            
+        } catch (error) {
+            console.error('❌ Model selection failed:', error.message);
+            
+            // Try fallback
+            try {
+                selection = selectWithFallback({
+                    messages,
+                    tools,
+                    catalog: runtimeCatalog,
+                    rateLimitTracker,
+                    preferences: { 
+                        strategy, 
+                        preferFree: optimizationPreference === 'cheap' 
+                    }
+                });
+                selectedModel = selection.model;
+                console.log('🔄 Fallback model selected:', selectedModel.name || selectedModel.id);
+            } catch (fallbackError) {
+                console.error('🛑 No models available:', fallbackError.message);
+                
+                // Final fallback to original simple selection
+                console.log('⚠️ Falling back to simple model selection');
+                const totalLength = messages.reduce((sum, msg) => 
+                    sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0
+                );
+                const isComplex = totalLength > 1000 || messages.length > 5 || (tools && tools.length > 0);
+                model = selectModelForProvider(selectedProvider, requestedModel, isComplex);
+                selectedModel = { name: model, providerType: selectedProvider.type };
+            }
+        }
         
-        if (requestedModel && requestedModel !== model) {
-            console.log(`⚠️ Model override: requested "${requestedModel}" incompatible with provider ${selectedProvider.type}, using "${model}" instead`);
-        } else if (!requestedModel) {
-            console.log(`🤖 Auto-selected model: ${model} (provider: ${selectedProvider.type}, complex: ${isComplex})`);
-        } else {
-            console.log(`✅ Using requested model: ${model} (provider: ${selectedProvider.type})`);
+        // Update variables based on selection
+        if (selectedModel) {
+            model = selectedModel.name || selectedModel.id;
+            
+            // Find provider that matches selected model
+            const matchingProvider = providerPool.find(p => p.type === selectedModel.providerType);
+            if (matchingProvider) {
+                selectedProvider = matchingProvider;
+                apiKey = selectedProvider.apiKey;
+                targetUrl = getEndpointUrl(selectedProvider);
+            }
         }
         
         let provider = selectedProvider.type;
         
-        // Adjust max_tokens based on model capabilities and rate limits
-        // This ensures we use longer responses where supported, and constrain where necessary
-        if (body.max_tokens === undefined) { // Only adjust if user didn't explicitly set it
-            if (provider === 'gemini-free' || provider === 'gemini') {
-                // Gemini models have large context windows (1-2M tokens) and high output limits
-                max_tokens = 16384; // Allow very long responses
-                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (large context model)`);
-            } else if (provider === 'groq-free' || provider === 'groq') {
-                // Groq has rate limits, but supports up to 8k output
-                max_tokens = 8192; // Generous but rate-limit aware
-                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (rate-limited model)`);
-            } else if (provider === 'openai') {
-                // OpenAI supports large outputs (16k+ for gpt-4)
-                max_tokens = 16384; // Very generous
-                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (high-capability model)`);
-            } else if (provider === 'together' || provider === 'atlascloud') {
-                // Together/Atlas support large outputs
-                max_tokens = 16384;
-                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (high-capability model)`);
-            } else {
-                // Unknown provider, use conservative default
-                max_tokens = 4096;
-                console.log(`📏 Adjusted max_tokens for ${provider}: ${max_tokens} (conservative default)`);
-            }
+        // Log model selection result
+        if (requestedModel && requestedModel !== model) {
+            console.log(`⚠️ Model override: requested "${requestedModel}", selected "${model}" (${provider})`);
+        } else if (!requestedModel) {
+            console.log(`🤖 Auto-selected model: ${model} (provider: ${provider})`);
         } else {
+            console.log(`✅ Using requested model: ${model} (provider: ${provider})`);
+        }
+        
+        // STEP 10: Dynamic max_tokens based on model, optimization, and constraints
+        if (body.max_tokens === undefined) { // Only adjust if user didn't explicitly set it
+            const { getOptimalMaxTokens } = require('../utils/content-optimizer');
+            
+            max_tokens = getOptimalMaxTokens({
+                model: selectedModel,
+                optimization: optimizationPreference,
+                requestType: selection?.analysis?.type || 'SIMPLE',
+                inputTokens: selection?.inputTokens || estimatedInputTokens,
+                rateLimitTracker: rateLimitTracker,
+                provider: provider
+            });
+            
+            console.log(`📏 Dynamic max_tokens: ${max_tokens} (model: ${model}, optimization: ${optimizationPreference}, type: ${selection?.analysis?.type || 'SIMPLE'})`);
+        } else {
+            max_tokens = body.max_tokens;
             console.log(`📏 Using user-specified max_tokens: ${max_tokens}`);
         }
         
@@ -1089,7 +1251,11 @@ async function handler(event, responseStream) {
             youtubeAccessToken: youtubeToken, // Pass YouTube OAuth token for transcript access
             tavilyApiKey,
             mcpServers, // Pass MCP servers for tool routing
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            // STEP 11: Pass model context for content optimization
+            selectedModel: selectedModel,
+            optimization: optimizationPreference,
+            inputTokens: selection?.inputTokens || estimatedInputTokens
         };
         
         const hasToolsConfigured = Array.isArray(tools) && tools.length > 0;
@@ -1271,6 +1437,62 @@ async function handler(event, responseStream) {
                 timestamp: new Date().toISOString()
             });
             
+            // STEP 5: Proactive rate limit checking before making the request
+            // Check if the selected model is available for this request
+            const estimatedInputTokens = selection?.analysis?.estimatedTokens || 1000;
+            const rateLimitTracker = getRateLimitTracker();
+            
+            if (!rateLimitTracker.isAvailable(provider, model, estimatedInputTokens)) {
+                console.log(`⚠️ Proactive rate limit check: ${provider}/${model} unavailable or rate-limited`);
+                
+                // Try to find an alternative model using selectWithFallback
+                try {
+                    const fallbackSelection = selectWithFallback({
+                        messages,
+                        tools,
+                        catalog: runtimeCatalog,
+                        rateLimitTracker,
+                        preferences: { 
+                            strategy, 
+                            preferFree: optimizationPreference === 'cheap' 
+                        },
+                        excludeModels: [model]  // Don't select the same model again
+                    });
+                    
+                    // Update to use fallback model
+                    const fallbackModel = fallbackSelection.model;
+                    model = fallbackModel.name || fallbackModel.id;
+                    
+                    // Find provider that matches fallback model
+                    const matchingProvider = providerPool.find(p => p.type === fallbackModel.providerType);
+                    if (matchingProvider) {
+                        selectedProvider = matchingProvider;
+                        apiKey = selectedProvider.apiKey;
+                        targetUrl = getEndpointUrl(selectedProvider);
+                        provider = selectedProvider.type;
+                        
+                        // Update request body with new model
+                        requestBody.model = model;
+                        
+                        console.log(`🔄 Switched to fallback model: ${model} (${provider}) due to rate limits`);
+                        
+                        // Emit model switch event
+                        sseWriter.writeEvent('model_switched', {
+                            reason: 'rate_limit_proactive',
+                            previousModel: requestBody.model,
+                            newModel: model,
+                            provider,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                } catch (fallbackError) {
+                    console.log(`⚠️ No fallback available, proceeding with ${provider}/${model} (may hit rate limit)`);
+                    // Continue with original model - reactive handling will catch 429 errors
+                }
+            } else {
+                console.log(`✅ Proactive rate limit check: ${provider}/${model} available`);
+            }
+            
             // Make streaming request with smart retry logic
             let response, httpHeaders, httpStatus;
             let lastError = null;
@@ -1278,6 +1500,11 @@ async function handler(event, responseStream) {
             const attemptedModels = new Set([model]);
             const attemptedProviders = new Set([selectedProvider.id]);
             let sameModelRetries = 0;
+            
+            // STEP 12: Track request timing for performance optimization
+            let requestStartTime = null;
+            let timeToFirstToken = null;
+            let firstTokenReceived = false;
             
             for (let retryAttempt = 0; retryAttempt < maxRetries; retryAttempt++) {
                 try {
@@ -1288,11 +1515,24 @@ async function handler(event, responseStream) {
                     
                     console.log(`🔄 Attempt ${retryAttempt + 1}/${maxRetries}: provider=${provider}, model=${currentRequestBody.model}`);
                     
+                    // STEP 12: Capture request start time
+                    requestStartTime = Date.now();
+                    
                     response = await makeStreamingRequest(targetUrl, apiKey, currentRequestBody);
                     
                     httpHeaders = response.httpHeaders || {};
                     httpStatus = response.httpStatus;
                     console.log(`✅ Request succeeded on attempt ${retryAttempt + 1}`);
+                    
+                    // STEP 5: Update rate limit tracker from response headers
+                    if (httpHeaders) {
+                        rateLimitTracker.updateFromHeaders(provider, model, httpHeaders);
+                        console.log(`📊 Updated rate limit state from response headers for ${provider}/${model}`);
+                    }
+                    
+                    // STEP 14: Record successful request for health tracking
+                    rateLimitTracker.recordSuccess(provider, model);
+                    
                     break;
                     
                 } catch (error) {
@@ -1325,6 +1565,29 @@ async function handler(event, responseStream) {
                     // Handle rate limit: try different models on same provider, then switch provider
                     if (isRateLimitError) {
                         console.log(`🔀 Rate limit hit on provider ${provider}, model ${model}`);
+                        
+                        // STEP 5: Update rate limit tracker with 429 error
+                        // Extract retry-after if available from error response
+                        let retryAfter = null;
+                        if (error.response?.headers) {
+                            const retryAfterHeader = error.response.headers['retry-after'];
+                            if (retryAfterHeader) {
+                                retryAfter = parseInt(retryAfterHeader, 10);
+                                if (isNaN(retryAfter)) {
+                                    // Try parsing as date
+                                    const retryDate = new Date(retryAfterHeader);
+                                    if (!isNaN(retryDate.getTime())) {
+                                        retryAfter = Math.ceil((retryDate.getTime() - Date.now()) / 1000);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        rateLimitTracker.updateFrom429(provider, model, retryAfter);
+                        console.log(`📊 Updated rate limit tracker with 429 error for ${provider}/${model}${retryAfter ? ` (retry after ${retryAfter}s)` : ''}`);
+                        
+                        // STEP 14: Record error for health tracking
+                        rateLimitTracker.recordError(provider, model);
                         
                         // Define fallback models for each provider type
                         // NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
@@ -1502,6 +1765,13 @@ async function handler(event, responseStream) {
                 
                 // Handle text content
                 if (delta.content) {
+                    // STEP 12: Capture time to first token
+                    if (!firstTokenReceived && requestStartTime) {
+                        timeToFirstToken = Date.now() - requestStartTime;
+                        firstTokenReceived = true;
+                        console.log(`⏱️ Time to first token: ${timeToFirstToken}ms (provider: ${provider}, model: ${model})`);
+                    }
+                    
                     assistantMessage.content += delta.content;
                     sseWriter.writeEvent('delta', {
                         content: delta.content
@@ -1621,7 +1891,12 @@ async function handler(event, responseStream) {
                 },
                 httpHeaders: httpHeaders || {},
                 httpStatus: httpStatus,
-                llmApiCall: llmApiCall // Include tracking data in event
+                llmApiCall: llmApiCall, // Include tracking data in event
+                // STEP 12: Include performance metrics in transparency info
+                performance: timeToFirstToken ? {
+                    timeToFirstToken,
+                    totalDuration: requestStartTime ? (Date.now() - requestStartTime) : null
+                } : null
             };
             
             console.log('🔧 DEBUG chat endpoint - Event data to send:', JSON.stringify(eventData, null, 2));
@@ -2256,6 +2531,24 @@ async function handler(event, responseStream) {
                     }
                 }
                 
+                // STEP 5: Track actual token usage in rate limit tracker
+                if (totalTokens > 0) {
+                    const rateLimitTracker = getRateLimitTracker();
+                    rateLimitTracker.trackRequest(provider, model, totalTokens);
+                    console.log(`📊 Tracked ${totalTokens} tokens for ${provider}/${model} in rate limit tracker`);
+                }
+                
+                // STEP 12: Record performance metrics in rate limit tracker
+                if (timeToFirstToken && requestStartTime) {
+                    const rateLimitTracker = getRateLimitTracker();
+                    rateLimitTracker.recordPerformance(provider, model, {
+                        timeToFirstToken,
+                        totalDuration: durationMs,
+                        timestamp: Date.now()
+                    });
+                    console.log(`⏱️ Recorded performance: TTFT=${timeToFirstToken}ms, total=${durationMs}ms for ${provider}/${model}`);
+                }
+                
                 // Log the request (non-blocking)
                 logToGoogleSheets({
                     userEmail: userEmail,
@@ -2265,6 +2558,7 @@ async function handler(event, responseStream) {
                     completionTokens: totalCompletionTokens,
                     totalTokens: totalTokens,
                     durationMs: durationMs,
+                    timeToFirstToken: timeToFirstToken || null, // STEP 12: Include TTFT in logs
                     timestamp: new Date().toISOString()
                 }).catch(err => {
                     console.error('Failed to log to Google Sheets:', err.message);

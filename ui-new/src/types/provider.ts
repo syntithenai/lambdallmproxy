@@ -29,11 +29,14 @@ export interface ProviderConfig {
   enabled?: boolean;       // Whether this provider should be used (defaults to true if undefined)
 }
 
+export type OptimizationPreference = 'cheap' | 'balanced' | 'powerful' | 'fastest';
+
 export interface Settings {
   version: '2.0.0';
   providers: ProviderConfig[]; // Array of configured providers (unlimited)
   tavilyApiKey: string;        // Unchanged - for search functionality
   syncToGoogleDrive?: boolean; // Enable automatic sync to Google Drive (default: false)
+  optimization?: OptimizationPreference; // Model selection strategy (default: 'cheap')
 }
 
 /**

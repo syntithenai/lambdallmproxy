@@ -29,6 +29,15 @@ class ModelRateLimit {
     // History for rolling windows
     this.requestHistory = [];
     this.tokenHistory = [];
+    
+    // STEP 12: Performance tracking
+    this.performanceHistory = [];
+    
+    // STEP 14: Health tracking
+    this.consecutiveErrors = 0;
+    this.totalRequests = 0;
+    this.successfulRequests = 0;
+    this.lastResponseHeaders = null; // For debugging
   }
 
   /**
@@ -86,22 +95,32 @@ class ModelRateLimit {
   }
 
   /**
-   * Update from response headers
+   * Update from response headers (STEP 14: Enhanced for multiple providers)
    * @param {Object} headers - HTTP response headers
    */
   updateFromHeaders(headers) {
-    // Parse x-ratelimit-* headers
+    // STEP 14: Store headers for debugging
+    this.lastResponseHeaders = headers;
+    
+    // Parse standard x-ratelimit-* headers (OpenAI, Groq, Together)
     const remaining = this.parseHeader(headers['x-ratelimit-remaining-requests']);
     const limit = this.parseHeader(headers['x-ratelimit-limit-requests']);
     const reset = this.parseHeader(headers['x-ratelimit-reset-requests']);
     
     const tokensRemaining = this.parseHeader(headers['x-ratelimit-remaining-tokens']);
     const tokensLimit = this.parseHeader(headers['x-ratelimit-limit-tokens']);
+    
+    // STEP 14: Parse Google/Gemini specific headers (x-goog-quota-user-*)
+    const googRemaining = this.parseHeader(headers['x-goog-quota-user-remaining-requests-per-minute']);
+    const googLimit = this.parseHeader(headers['x-goog-quota-user-limit-requests-per-minute']);
+    const googTokensRemaining = this.parseHeader(headers['x-goog-quota-user-remaining-tokens-per-minute']);
+    const googTokensLimit = this.parseHeader(headers['x-goog-quota-user-limit-tokens-per-minute']);
 
-    // Update limits if present
+    // Update limits if present (standard headers)
     if (limit !== null) {
       this.requestsPerMinute = limit;
       if (remaining !== null) {
+        this.requestsRemaining = remaining;
         this.requestsUsed = limit - remaining;
       }
     }
@@ -109,7 +128,25 @@ class ModelRateLimit {
     if (tokensLimit !== null) {
       this.tokensPerMinute = tokensLimit;
       if (tokensRemaining !== null) {
+        this.tokensRemaining = tokensRemaining;
         this.tokensUsed = tokensLimit - tokensRemaining;
+      }
+    }
+    
+    // STEP 14: Update from Google headers if standard headers not present
+    if (limit === null && googLimit !== null) {
+      this.requestsPerMinute = googLimit;
+      if (googRemaining !== null) {
+        this.requestsRemaining = googRemaining;
+        this.requestsUsed = googLimit - googRemaining;
+      }
+    }
+    
+    if (tokensLimit === null && googTokensLimit !== null) {
+      this.tokensPerMinute = googTokensLimit;
+      if (googTokensRemaining !== null) {
+        this.tokensRemaining = googTokensRemaining;
+        this.tokensUsed = googTokensLimit - googTokensRemaining;
       }
     }
 
@@ -230,6 +267,101 @@ class ModelRateLimit {
     
     const parsed = parseInt(value, 10);
     return isNaN(parsed) ? null : parsed;
+  }
+
+  /**
+   * STEP 12: Record performance metrics for speed optimization
+   * @param {Object} metrics - Performance metrics
+   */
+  recordPerformance(metrics) {
+    if (!this.performanceHistory) {
+      this.performanceHistory = [];
+    }
+    
+    this.performanceHistory.push({
+      timeToFirstToken: metrics.timeToFirstToken,
+      totalDuration: metrics.totalDuration,
+      timestamp: metrics.timestamp || Date.now()
+    });
+    
+    // Keep only last 100 entries to prevent memory bloat
+    if (this.performanceHistory.length > 100) {
+      this.performanceHistory.shift();
+    }
+  }
+
+  /**
+   * STEP 12: Get average performance metrics
+   * @returns {Object} Average TTFT and duration
+   */
+  getAveragePerformance() {
+    if (!this.performanceHistory || this.performanceHistory.length === 0) {
+      return null;
+    }
+    
+    const recent = this.performanceHistory.slice(-20); // Last 20 requests
+    const avgTTFT = recent.reduce((sum, m) => sum + m.timeToFirstToken, 0) / recent.length;
+    const avgDuration = recent.reduce((sum, m) => sum + m.totalDuration, 0) / recent.length;
+    
+    return {
+      avgTTFT: Math.round(avgTTFT),
+      avgDuration: Math.round(avgDuration),
+      sampleSize: recent.length
+    };
+  }
+
+  /**
+   * STEP 14: Record successful request (health tracking)
+   */
+  recordSuccess() {
+    this.consecutiveErrors = 0;
+    this.totalRequests++;
+    this.successfulRequests++;
+  }
+
+  /**
+   * STEP 14: Record failed request (health tracking)
+   */
+  recordError() {
+    this.consecutiveErrors++;
+    this.totalRequests++;
+  }
+
+  /**
+   * STEP 14: Get health score (0-100)
+   * @returns {number} Health score
+   */
+  getHealthScore() {
+    if (this.totalRequests === 0) {
+      return 100; // No data, assume healthy
+    }
+    
+    // Success rate (70% weight)
+    const successRate = this.successfulRequests / this.totalRequests;
+    const successScore = successRate * 70;
+    
+    // Consecutive error penalty (deduct 3 points per error, max 30)
+    const errorPenalty = Math.min(this.consecutiveErrors * 3, 30);
+    
+    // If no errors, add 30 bonus points (total can reach 100)
+    const consecutiveErrorBonus = this.consecutiveErrors === 0 ? 30 : 0;
+    
+    const totalScore = successScore - errorPenalty + consecutiveErrorBonus;
+    return Math.max(0, Math.min(100, Math.round(totalScore)));
+  }
+
+  /**
+   * STEP 14: Check if model is healthy enough to use
+   * @returns {boolean} True if healthy
+   */
+  isHealthy() {
+    // Unhealthy if: 3+ consecutive errors OR health score < 10
+    if (this.consecutiveErrors >= 3) {
+      return false;
+    }
+    
+    const healthScore = this.getHealthScore();
+    return healthScore >= 10;
   }
 }
 
@@ -516,6 +648,92 @@ class RateLimitTracker {
       
       this.providers.set(provider, providerMap);
     }
+  }
+
+  /**
+   * STEP 12: Record performance metrics for a model
+   * @param {string} provider - Provider name
+   * @param {string} model - Model name
+   * @param {Object} metrics - Performance metrics
+   */
+  recordPerformance(provider, model, metrics) {
+    const modelLimit = this.getModelLimit(provider, model);
+    if (modelLimit) {
+      modelLimit.recordPerformance(metrics);
+    }
+  }
+
+  /**
+   * STEP 12: Get average performance for a model
+   * @param {string} provider - Provider name
+   * @param {string} model - Model name
+   * @returns {Object|null} Average performance metrics
+   */
+  getAveragePerformance(provider, model) {
+    const modelLimit = this.getModelLimit(provider, model);
+    return modelLimit ? modelLimit.getAveragePerformance() : null;
+  }
+
+  /**
+   * STEP 13: Get fastest available models
+   * @param {Array<Object>} models - Candidate models
+   * @returns {Array<Object>} Models sorted by speed (fastest first)
+   */
+  sortBySpeed(models) {
+    return models.map(model => {
+      const perf = this.getAveragePerformance(model.providerType || model.provider, model.name);
+      return {
+        ...model,
+        avgTTFT: perf?.avgTTFT || Infinity
+      };
+    }).sort((a, b) => a.avgTTFT - b.avgTTFT);
+  }
+
+  /**
+   * STEP 14: Record successful request
+   * @param {string} provider - Provider name
+   * @param {string} model - Model name
+   */
+  recordSuccess(provider, model) {
+    const modelLimit = this.getModelLimit(provider, model);
+    if (modelLimit) {
+      modelLimit.recordSuccess();
+    }
+  }
+
+  /**
+   * STEP 14: Record failed request
+   * @param {string} provider - Provider name
+   * @param {string} model - Model name
+   */
+  recordError(provider, model) {
+    const modelLimit = this.getModelLimit(provider, model);
+    if (modelLimit) {
+      modelLimit.recordError();
+    }
+  }
+
+  /**
+   * STEP 14: Get health score for a model
+   * @param {string} provider - Provider name
+   * @param {string} model - Model name
+   * @returns {number} Health score (0-100)
+   */
+  getHealthScore(provider, model) {
+    const modelLimit = this.getModelLimit(provider, model);
+    return modelLimit ? modelLimit.getHealthScore() : 100;
+  }
+
+  /**
+   * STEP 14: Filter models by health
+   * @param {Array<Object>} models - Candidate models
+   * @returns {Array<Object>} Healthy models only
+   */
+  filterByHealth(models) {
+    return models.filter(model => {
+      const modelLimit = this.getModelLimit(model.providerType || model.provider, model.name);
+      return !modelLimit || modelLimit.isHealthy();
+    });
   }
 }
 

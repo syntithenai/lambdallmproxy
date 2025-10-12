@@ -21,7 +21,8 @@ const SelectionStrategy = {
   COST_OPTIMIZED: 'cost_optimized',     // Prefer cheapest models
   QUALITY_OPTIMIZED: 'quality_optimized', // Prefer best models
   BALANCED: 'balanced',                  // Balance cost and quality
-  FREE_TIER: 'free_tier'                 // Prefer free tier models
+  FREE_TIER: 'free_tier',                // Prefer free tier models
+  SPEED_OPTIMIZED: 'speed_optimized'     // STEP 13: Prefer fastest models
 };
 
 /**
@@ -60,24 +61,59 @@ function filterByCost(models, maxCostPerMillion) {
 }
 
 /**
- * Prioritize free tier models
+ * Prioritize free tier models (STEP 7: Cheap Mode)
+ * Prefer smallest capable free models first to save large ones for when needed
  * @param {Array<Object>} models - Candidate models
- * @returns {Array<Object>} Models sorted with free tier first
+ * @returns {Array<Object>} Models sorted with free tier first (small to large)
  */
 function prioritizeFreeTier(models) {
   const freeTier = models.filter(m => m.free === true);
   const paid = models.filter(m => m.free !== true);
+  
+  // Within free tier, prefer smallest capable models first
+  // Save large context models (gemini-2.0-flash 2M) for when needed
+  freeTier.sort((a, b) => {
+    // Sort by context window (smaller first) - smaller models are usually faster and less rate-limited
+    return a.context_window - b.context_window;
+  });
+  
+  // Within paid tier, sort by cost (cheapest first) as fallback
+  paid.sort((a, b) => {
+    const avgCostA = (a.pricing.input + a.pricing.output) / 2;
+    const avgCostB = (b.pricing.input + b.pricing.output) / 2;
+    return avgCostA - avgCostB;
+  });
+  
   return [...freeTier, ...paid];
 }
 
 /**
- * Prioritize models by quality (context window size as proxy)
+ * Prioritize models by quality (STEP 8: Powerful Mode)
+ * Prefer best paid models, reasoning models for complex analysis
  * @param {Array<Object>} models - Candidate models
- * @returns {Array<Object>} Models sorted by quality
+ * @param {Object} analysis - Request analysis (optional)
+ * @returns {Array<Object>} Models sorted by quality (best first)
  */
-function prioritizeQuality(models) {
+function prioritizeQuality(models, analysis = null) {
   return [...models].sort((a, b) => {
-    // Larger context window = better model (generally)
+    // Reasoning models get highest priority for complex analysis
+    const aIsReasoning = a.category === 'REASONING' || a.name?.includes('o1') || a.name?.includes('deepseek-r1');
+    const bIsReasoning = b.category === 'REASONING' || b.name?.includes('o1') || b.name?.includes('deepseek-r1');
+    
+    if (aIsReasoning && !bIsReasoning) return -1;
+    if (!aIsReasoning && bIsReasoning) return 1;
+    
+    // Within same reasoning tier, prioritize by cost (higher cost = better quality generally)
+    // This puts gpt-4o, gemini-2.5-pro before gpt-4o-mini, gemini-2.5-flash
+    const avgCostA = (a.pricing.input + a.pricing.output) / 2;
+    const avgCostB = (b.pricing.input + b.pricing.output) / 2;
+    
+    // Higher cost first (reverse sort)
+    if (Math.abs(avgCostB - avgCostA) > 0.01) { // Significant cost difference
+      return avgCostB - avgCostA;
+    }
+    
+    // If costs similar, prefer larger context window
     return b.context_window - a.context_window;
   });
 }
@@ -217,6 +253,17 @@ function selectModel(options = {}) {
     if (candidates.length === 0) {
       throw new Error('All models are rate limited');
     }
+    
+    // STEP 14: Filter by health (remove unhealthy models)
+    if (typeof rateLimitTracker.filterByHealth === 'function') {
+      const healthyCandidates = rateLimitTracker.filterByHealth(candidates);
+      if (healthyCandidates.length > 0) {
+        candidates = healthyCandidates;
+        console.log(`🏥 Health filter: ${candidates.length} healthy models available`);
+      } else {
+        console.log('⚠️ No healthy models available, using all candidates');
+      }
+    }
   }
 
   // Step 6: Filter by cost constraint
@@ -231,6 +278,7 @@ function selectModel(options = {}) {
   // Step 7: Apply strategy
   switch (strategy) {
     case SelectionStrategy.FREE_TIER:
+      // STEP 7: Cheap mode - free tier with smallest models first
       candidates = prioritizeFreeTier(candidates);
       break;
     
@@ -239,16 +287,76 @@ function selectModel(options = {}) {
       break;
     
     case SelectionStrategy.QUALITY_OPTIMIZED:
-      candidates = prioritizeQuality(candidates);
+      // STEP 8: Powerful mode - best models with reasoning priority
+      candidates = prioritizeQuality(candidates, analysis);
+      break;
+    
+    case SelectionStrategy.SPEED_OPTIMIZED:
+      // STEP 13: Fastest mode - prioritize by historical latency
+      if (rateLimitTracker && typeof rateLimitTracker.sortBySpeed === 'function') {
+        candidates = rateLimitTracker.sortBySpeed(candidates);
+        console.log('⚡ Speed-optimized selection based on historical performance');
+      } else {
+        // Fallback: Groq typically fastest, then Gemini, then others
+        const providerSpeedOrder = ['groq', 'groq-free', 'gemini-free', 'gemini', 'together', 'atlascloud', 'openai'];
+        candidates = [...candidates].sort((a, b) => {
+          const aProvider = (a.providerType || a.provider || '').toLowerCase();
+          const bProvider = (b.providerType || b.provider || '').toLowerCase();
+          const aIndex = providerSpeedOrder.indexOf(aProvider);
+          const bIndex = providerSpeedOrder.indexOf(bProvider);
+          return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+        });
+        console.log('⚡ Speed-optimized selection using provider heuristics');
+      }
       break;
     
     case SelectionStrategy.BALANCED:
-      // Free tier first, then sort by cost within each tier
-      if (preferFree) {
-        candidates = prioritizeFreeTier(candidates);
-      } else {
-        candidates = prioritizeCost(candidates);
-      }
+      // STEP 9: Balanced mode - optimize cost-per-quality ratio
+      // Prefer free tier when quality is equivalent
+      // Use paid models when quality difference is significant
+      candidates = [...candidates].sort((a, b) => {
+        const aIsFree = a.free === true;
+        const bIsFree = b.free === true;
+        
+        // Both free or both paid - compare by capability/cost ratio
+        if (aIsFree === bIsFree) {
+          if (aIsFree) {
+            // Both free: prefer models that are more capable (larger context) but still reasonable
+            // Balance between llama-3.1-8b-instant (fast/small) and llama-3.3-70b (capable/large)
+            const aCapability = a.context_window / 10000; // Normalize to 0-10 range
+            const bCapability = b.context_window / 10000;
+            return bCapability - aCapability; // Higher capability first within free tier
+          } else {
+            // Both paid: optimize cost-per-quality
+            // gpt-4o-mini (cheap+capable) should rank higher than gpt-4o (expensive) for simple tasks
+            const avgCostA = (a.pricing.input + a.pricing.output) / 2;
+            const avgCostB = (b.pricing.input + b.pricing.output) / 2;
+            const qualityA = a.context_window / 100000; // Normalize quality metric
+            const qualityB = b.context_window / 100000;
+            
+            // Cost-per-quality ratio (lower is better)
+            const ratioA = avgCostA / (qualityA || 1);
+            const ratioB = avgCostB / (qualityB || 1);
+            
+            return ratioA - ratioB;
+          }
+        }
+        
+        // One free, one paid
+        // For simple/complex requests, free tier is often good enough
+        // For reasoning or very complex tasks, paid models win
+        const needsHighQuality = analysis.type === 'REASONING' || 
+                                analysis.requiresReasoning ||
+                                (analysis.type === 'COMPLEX' && analysis.hasTools);
+        
+        if (needsHighQuality) {
+          // Paid models first for high-quality needs
+          return aIsFree ? 1 : -1;
+        } else {
+          // Free models first for standard needs
+          return aIsFree ? -1 : 1;
+        }
+      });
       break;
     
     default:

@@ -537,10 +537,28 @@ async function callFunction(name, args = {}, context = {}) {
       
       if (queries.length === 0) return JSON.stringify({ error: 'query required' });
       
-      const limit = clampInt(args.limit, 1, 50, 3);
+      // STEP 11: Dynamic result count based on model capacity
+      const { getOptimalSearchResultCount, getOptimalContentLength } = require('./utils/content-optimizer');
+      const optimalResultCount = getOptimalSearchResultCount({
+        model: context.selectedModel,
+        inputTokens: context.inputTokens || 1000,
+        optimization: context.optimization || 'cheap'
+      });
+      
+      const limit = clampInt(args.limit, 1, 50, optimalResultCount);
       const timeout = clampInt(args.timeout, 1, 60, 15);
       const loadContent = true; // Always load content from search results
       const generateSummary = args.generate_summary === true;
+      
+      // STEP 11: Dynamic content truncation based on model capacity
+      const maxContentChars = getOptimalContentLength({
+        model: context.selectedModel,
+        inputTokens: context.inputTokens || 1000,
+        optimization: context.optimization || 'cheap',
+        contentType: 'webpage'
+      });
+      
+      console.log(`📊 Content optimization: ${limit} results, ${maxContentChars} chars per page (model: ${context.selectedModel?.name || 'unknown'}, optimization: ${context.optimization || 'cheap'})`);
       
       // Check if Tavily API key is available
       const tavilyApiKey = context.tavilyApiKey;
@@ -582,11 +600,10 @@ async function callFunction(name, args = {}, context = {}) {
               r.originalLength = originalLength;
               r.intelligentlyExtracted = true;
               
-              // HARD LIMIT: 5000 chars per result (same as DuckDuckGo)
-              const MAX_SEARCH_RESULT_CHARS = 5000;
-              if (r.content && r.content.length > MAX_SEARCH_RESULT_CHARS) {
-                console.log(`✂️ Truncating Tavily result: ${r.content.length} → ${MAX_SEARCH_RESULT_CHARS} chars`);
-                r.content = r.content.substring(0, MAX_SEARCH_RESULT_CHARS) + '\n\n[Content truncated to fit model limits]';
+              // STEP 11: Dynamic content limit based on model capacity
+              if (r.content && r.content.length > maxContentChars) {
+                console.log(`✂️ Truncating Tavily result: ${r.content.length} → ${maxContentChars} chars`);
+                r.content = r.content.substring(0, maxContentChars) + '\n\n[Content truncated to fit model limits]';
                 r.truncated = true;
               }
             }
@@ -687,12 +704,10 @@ async function callFunction(name, args = {}, context = {}) {
               result.intelligentlyExtracted = true;
               if (r.truncated) result.truncated = r.truncated;
               
-              // HARD LIMIT: Ensure content never exceeds 5000 chars per result
-              // This prevents massive tool responses that exceed model context
-              const MAX_SEARCH_RESULT_CHARS = 5000;
-              if (result.content && result.content.length > MAX_SEARCH_RESULT_CHARS) {
-                console.log(`✂️ Truncating search result content: ${result.content.length} → ${MAX_SEARCH_RESULT_CHARS} chars`);
-                result.content = result.content.substring(0, MAX_SEARCH_RESULT_CHARS) + '\n\n[Content truncated to fit model limits]';
+              // STEP 11: Dynamic content limit based on model capacity
+              if (result.content && result.content.length > maxContentChars) {
+                console.log(`✂️ Truncating search result content: ${result.content.length} → ${maxContentChars} chars`);
+                result.content = result.content.substring(0, maxContentChars) + '\n\n[Content truncated to fit model limits]';
                 result.truncated = true;
               }
               

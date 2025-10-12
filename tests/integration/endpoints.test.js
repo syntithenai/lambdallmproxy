@@ -24,8 +24,15 @@ global.awslambda = {
   streamifyResponse: jest.fn((fn) => fn),
   HttpResponseStream: {
     from: jest.fn((stream, metadata) => {
+        // Create a wrapper stream that has both the original stream methods
+        // and the metadata property
+        const wrappedStream = Object.create(stream);
+        wrappedStream.metadata = metadata;
+        wrappedStream.write = stream.write.bind(stream);
+        wrappedStream.end = stream.end.bind(stream);
+        // Also set metadata on original stream for test assertions
         stream.metadata = metadata;
-        return stream;
+        return wrappedStream;
     })
   }
 };
