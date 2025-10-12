@@ -9,6 +9,10 @@
 env-vars.json
 env-vars-*.json
 
+# UI provider setup scripts with API keys
+SETUP_UI_PROVIDERS.js
+ui-client-init*.js
+
 # Node.js dependencies
 node_modules/
 npm-debug.log*
