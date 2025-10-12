@@ -133,6 +133,47 @@ A response is NOT comprehensive if:
             const jsonMatch = evalText.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 evalResult = JSON.parse(jsonMatch[0]);
+            } else {
+                // Fallback: If Gemini returns plain text instead of JSON, parse it
+                console.log('⚠️ No JSON found in evaluation response, attempting text parsing');
+                const lowerText = evalText.toLowerCase().trim();
+                
+                // Check for keywords indicating comprehensive/not comprehensive
+                const isComprehensive = 
+                    lowerText.includes('comprehensive') ||
+                    lowerText.includes('yes') ||
+                    lowerText.includes('true') ||
+                    lowerText.includes('complete') ||
+                    lowerText.includes('sufficient');
+                    
+                const isNotComprehensive =
+                    lowerText.includes('not comprehensive') ||
+                    lowerText.includes('no') ||
+                    lowerText.includes('false') ||
+                    lowerText.includes('incomplete') ||
+                    lowerText.includes('insufficient') ||
+                    lowerText.includes('too brief');
+                
+                // If we can determine comprehensiveness from text
+                if (isNotComprehensive) {
+                    evalResult = { 
+                        comprehensive: false, 
+                        reason: `Text evaluation: ${evalText.substring(0, 100)}`
+                    };
+                } else if (isComprehensive) {
+                    evalResult = { 
+                        comprehensive: true, 
+                        reason: `Text evaluation: ${evalText.substring(0, 100)}`
+                    };
+                } else {
+                    // Can't determine - assume comprehensive (fail-safe)
+                    evalResult = {
+                        comprehensive: true,
+                        reason: `Could not parse text evaluation, assuming comprehensive: ${evalText.substring(0, 100)}`
+                    };
+                }
+                
+                console.log(`✅ Parsed text evaluation: comprehensive=${evalResult.comprehensive}`);
             }
         } catch (parseError) {
             console.error('Failed to parse evaluation response:', parseError.message);
