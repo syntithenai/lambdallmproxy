@@ -2669,10 +2669,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                     <span className="text-purple-900 dark:text-purple-100">{toolCall.function.name}</span>
                                   </div>
                                   
-                                  {/* Show code if available in arguments */}
+                                  {/* Show arguments as JSON tree or special code display */}
                                   {toolCall.function.arguments && (() => {
                                     try {
                                       const parsed = JSON.parse(toolCall.function.arguments);
+                                      
+                                      // Special display for code
                                       if (parsed.code) {
                                         return (
                                           <div>
@@ -2683,6 +2685,16 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           </div>
                                         );
                                       }
+                                      
+                                      // For all other tools (including generate_chart), show JSON tree
+                                      return (
+                                        <div>
+                                          <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">Arguments:</div>
+                                          <div className="bg-gray-900 dark:bg-gray-950 p-3 rounded font-mono text-xs overflow-x-auto max-h-96 overflow-y-auto">
+                                            <JsonTree data={parsed} expandAll={true} />
+                                          </div>
+                                        </div>
+                                      );
                                     } catch (e) {
                                       console.error('Error parsing tool arguments:', e);
                                     }
