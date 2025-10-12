@@ -33,6 +33,7 @@ export interface Settings {
   version: '2.0.0';
   providers: ProviderConfig[]; // Array of configured providers (unlimited)
   tavilyApiKey: string;        // Unchanged - for search functionality
+  syncToGoogleDrive?: boolean; // Enable automatic sync to Google Drive (default: false)
 }
 
 /**

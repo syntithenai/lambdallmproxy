@@ -3,17 +3,23 @@
 
 SHELL := /bin/bash
 
-.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev
+.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer
 
 # Default target - Show help
 help:
 	@echo "🚀 Lambda LLM Proxy - Deployment Commands"
 	@echo ""
-	@echo "Lambda Function:"
-	@echo "  make deploy-lambda       - Deploy Lambda function (full with dependencies)"
-	@echo "  make deploy-lambda-fast  - Deploy Lambda function (code only, 10 sec)"
+	@echo "Main Lambda Function:"
+	@echo "  make deploy-lambda       - Deploy main Lambda function (full with dependencies)"
+	@echo "  make deploy-lambda-fast  - Deploy main Lambda function (code only, 10 sec)"
 	@echo "  make setup-layer         - Create Lambda layer (run once before fast deploy)"
 	@echo "  make deploy-env          - Deploy environment variables from .env to Lambda"
+	@echo ""
+	@echo "Puppeteer Lambda Function:"
+	@echo "  make setup-puppeteer            - Setup Puppeteer Lambda function (one-time)"
+	@echo "  make deploy-puppeteer           - Deploy Puppeteer Lambda code"
+	@echo "  make setup-puppeteer-permissions - Allow main Lambda to invoke Puppeteer"
+	@echo "  make logs-puppeteer             - View Puppeteer Lambda logs"
 	@echo ""
 	@echo "UI/Documentation:"
 	@echo "  make build-ui            - Build React UI to docs/"
@@ -21,15 +27,16 @@ help:
 	@echo ""
 	@echo "Local Development:"
 	@echo "  make run-lambda-local    - Run Lambda function locally on port 3000"
-	@echo "  make serve-ui            - Serve UI locally on port 8081"
+	@echo "  make serve-ui            - Start Vite dev server on port 8081 (with hot reload)"
+	@echo "  make serve-ui-prod       - Serve production build on port 8082"
 	@echo "  make dev                 - Run both Lambda (3000) and UI (8081) locally"
 	@echo ""
 	@echo "Combined:"
-	@echo "  make all                 - Deploy everything (Lambda + UI)"
+	@echo "  make all                 - Deploy everything (Main Lambda + UI)"
 	@echo ""
 	@echo "Utilities:"
-	@echo "  make logs                - View recent Lambda CloudWatch logs"
-	@echo "  make logs-tail           - Tail Lambda CloudWatch logs (live)"
+	@echo "  make logs                - View recent main Lambda CloudWatch logs"
+	@echo "  make logs-tail           - Tail main Lambda CloudWatch logs (live)"
 	@echo "  make update-catalog      - Update PROVIDER_CATALOG.json with latest data"
 	@echo "  make clean               - Clean temporary files"
 	@echo "  make serve               - Serve UI locally on port 8081"
@@ -58,6 +65,29 @@ deploy-env:
 	@echo "🔧 Deploying environment variables to Lambda..."
 	@chmod +x scripts/deploy-env.sh
 	./scripts/deploy-env.sh --yes
+
+# Setup Puppeteer Lambda function (one-time setup)
+setup-puppeteer:
+	@echo "🎭 Setting up Puppeteer Lambda function..."
+	@chmod +x scripts/setup-puppeteer-function.sh
+	./scripts/setup-puppeteer-function.sh
+
+# Deploy Puppeteer Lambda code
+deploy-puppeteer:
+	@echo "🎭 Deploying Puppeteer Lambda function..."
+	@chmod +x scripts/deploy-puppeteer-lambda.sh
+	./scripts/deploy-puppeteer-lambda.sh
+
+# Setup permissions for main Lambda to invoke Puppeteer Lambda
+setup-puppeteer-permissions:
+	@echo "🔐 Setting up Puppeteer Lambda permissions..."
+	@chmod +x scripts/setup-main-lambda-permissions.sh
+	./scripts/setup-main-lambda-permissions.sh
+
+# View Puppeteer Lambda logs
+logs-puppeteer:
+	@echo "📋 Viewing Puppeteer Lambda logs..."
+	@aws logs tail /aws/lambda/llmproxy-puppeteer --follow --region us-east-1
 
 # Build React UI to docs/
 build-ui:
@@ -114,16 +144,25 @@ run-lambda-local:
 	@chmod +x scripts/run-local-lambda.js
 	@node scripts/run-local-lambda.js
 
-# Serve UI locally on port 8081
+# Serve UI locally using Vite dev server (recommended for development)
 serve-ui:
-	@echo "🖥️ Starting local UI server on port 8081..."
+	@echo "🖥️ Starting Vite dev server..."
+	@echo "📍 UI will be available at: http://localhost:8081"
+	@echo "✨ Hot reload enabled - changes auto-refresh"
+	@echo "Press Ctrl+C to stop"
+	@cd ui-new && npm run dev
+
+# Serve pre-built UI from docs/ (for testing production build)
+serve-ui-prod:
+	@echo "🖥️ Starting production UI server on port 8082..."
 	@if [ ! -d docs ]; then \
 		echo "⚠️ docs/ not found. Building UI first..."; \
 		make build-ui; \
 	fi
-	@echo "📍 UI available at: http://localhost:8081"
+	@echo "📍 UI available at: http://localhost:8082"
+	@echo "⚠️  Note: This serves the production build with GitHub Pages base path"
 	@echo "Press Ctrl+C to stop"
-	@cd docs && python3 -m http.server 8081
+	@cd docs && python3 -m http.server 8082
 
 # Run both Lambda (3000) and UI (8081) locally for development
 dev:
@@ -131,17 +170,12 @@ dev:
 	@echo ""
 	@echo "This will start:"
 	@echo "  📍 Lambda server: http://localhost:3000"
-	@echo "  📍 UI server: http://localhost:8081"
+	@echo "  📍 UI dev server: http://localhost:8081 (with hot reload)"
 	@echo ""
 	@echo "Press Ctrl+C to stop both servers"
 	@echo ""
-	@if [ ! -d docs ]; then \
-		echo "⚠️ Building UI first..."; \
-		make build-ui; \
-		echo ""; \
-	fi
 	@trap 'kill 0' INT; \
 	node scripts/run-local-lambda.js & \
 	sleep 2; \
-	cd docs && python3 -m http.server 8081 & \
+	cd ui-new && npm run dev & \
 	wait

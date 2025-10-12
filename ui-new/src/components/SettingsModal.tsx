@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
+import { useLocation } from '../contexts/LocationContext';
 import type { Settings } from '../types/provider';
 import { ProviderList } from './ProviderList';
 
@@ -10,6 +11,7 @@ interface EnabledTools {
   scrape_url: boolean;
   youtube: boolean;
   transcribe: boolean;
+  generate_chart: boolean;
 }
 
 interface SettingsModalProps {
@@ -29,9 +31,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const { settings, setSettings } = useSettings();
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
+  const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
 
   const [tempSettings, setTempSettings] = useState<Settings>(settings);
-  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location'>('provider');
   
   // Proxy settings state
   const [proxyUsername, setProxyUsername] = useState('');
@@ -122,6 +125,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             🌐 Proxy
+          </button>
+          <button
+            onClick={() => setActiveTab('location')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'location'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            📍 Location
           </button>
         </div>
 
@@ -252,99 +265,100 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.generate_chart}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, generate_chart: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    📊 Generate Charts & Diagrams
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Create interactive flowcharts, sequence diagrams, ER diagrams, Gantt charts, and more
+                  </div>
+                </div>
+              </label>
             </div>
           </div>
 
-          {/* YouTube Transcripts OAuth */}
+          {/* YouTube Transcripts - Simple Checkbox */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              🎬 YouTube Transcripts
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Enable direct access to YouTube transcripts using Google's API. 
-              Faster and more accurate than audio transcription.
-            </p>
-            
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-0.5">
-                  {isConnected ? (
-                    <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={isConnected}
-                        disabled={isLoading}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            initiateOAuthFlow();
-                          } else {
-                            if (confirm('Disconnect YouTube access? You can reconnect anytime.')) {
-                              disconnect();
-                            }
-                          }
-                        }}
-                        className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                      />
-                      <span className="font-medium text-gray-900 dark:text-gray-100">
-                        {isLoading ? 'Connecting...' : 'Enable YouTube Transcripts'}
-                      </span>
-                    </label>
-                    
-                    {isConnected && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded-full">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Connected
-                      </span>
-                    )}
+            <div className="mb-4">
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={isConnected}
+                  onChange={(e) => {
+                    // Don't trigger OAuth on checkbox click
+                    // User needs to explicitly use the connect button below
+                    e.preventDefault();
+                  }}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    📺 Use YouTube Captions API
                   </div>
-                  
-                  {error && (
-                    <div className="mt-2 text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
-                      <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                      </svg>
-                      <span>{error}</span>
-                    </div>
-                  )}
-                  
-                  {isConnected && (
-                    <div className="mt-3">
-                      <button
-                        onClick={() => {
-                          if (confirm('Are you sure you want to disconnect YouTube access?')) {
-                            disconnect();
-                          }
-                        }}
-                        className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 underline"
-                      >
-                        Disconnect YouTube Access
-                      </button>
-                    </div>
-                  )}
-                  
-                  <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                    <p>✓ Much faster than audio transcription (seconds vs. minutes)</p>
-                    <p>✓ More accurate for videos with high-quality captions</p>
-                    <p>✓ Automatically falls back to Whisper if captions unavailable</p>
-                    <p>✓ Read-only access (cannot modify your YouTube account)</p>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Direct access to YouTube transcripts (faster than Whisper transcription)
                   </div>
                 </div>
-              </div>
+                {isConnected && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded-full">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Connected
+                  </span>
+                )}
+              </label>
             </div>
+
+            {/* Connection Controls - Only show if not connected */}
+            {!isConnected && (
+              <div className="ml-11 mb-4">
+                <button
+                  onClick={initiateOAuthFlow}
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
+                >
+                  {isLoading ? 'Connecting...' : 'Connect YouTube Account'}
+                </button>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  Requires Google account authorization (read-only access)
+                </p>
+              </div>
+            )}
+
+            {/* Disconnect Button - Only show if connected */}
+            {isConnected && (
+              <div className="ml-11 mb-4">
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure you want to disconnect YouTube access?')) {
+                      disconnect();
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-red-300 dark:border-red-700 rounded-lg transition-colors"
+                >
+                  Disconnect YouTube Access
+                </button>
+              </div>
+            )}
+
+            {/* Error Display */}
+            {error && (
+              <div className="ml-11 mb-4 text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
+                <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span>{error}</span>
+              </div>
+            )}
           </div>
 
           {/* MCP Servers */}
@@ -426,8 +440,169 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 space-y-1 bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
               <p>✓ Rotating residential IPs via p.webshare.io:80</p>
               <p>✓ Avoids rate limiting from Google and other services</p>
-              <p>✓ Get credentials from <a href="https://proxy2.webshare.io/userapi/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline">Webshare Dashboard</a></p>
+              <p>✓ Get credentials from <a href="https://dashboard.webshare.io/dashboard" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline">Webshare Dashboard</a></p>
               <p>⚠️ UI settings override environment variables</p>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* Location Tab */}
+        {activeTab === 'location' && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">
+              📍 Location Services
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Enable location services to provide context-aware responses for local queries (weather, restaurants, directions, etc.)
+            </p>
+            
+            {/* Location Status Card */}
+            <div className={`p-6 rounded-lg border-2 ${
+              location 
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                : permissionState === 'denied'
+                ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+                : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700'
+            }`}>
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  {locationLoading ? (
+                    <svg className="w-12 h-12 text-blue-500 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" strokeWidth="3" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  ) : location ? (
+                    <svg className="w-12 h-12 text-green-500" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                    </svg>
+                  ) : permissionState === 'denied' ? (
+                    <svg className="w-12 h-12 text-red-500" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm1 13h-2v-2h2v2zm0-4h-2V7h2v4z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-12 h-12 text-gray-400" viewBox="0 0 24 24" fill="currentColor" opacity="0.5">
+                      <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
+                    </svg>
+                  )}
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  <div className="mb-3">
+                    {locationLoading ? (
+                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        Getting your location...
+                      </div>
+                    ) : location ? (
+                      <>
+                        <div className="text-lg font-semibold text-green-700 dark:text-green-400 mb-2">
+                          Location Enabled
+                        </div>
+                        {location.address && (
+                          <div className="space-y-1">
+                            {location.address.formatted && (
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                {location.address.formatted}
+                              </div>
+                            )}
+                            {!location.address.formatted && (
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                {[location.address.city, location.address.state, location.address.country].filter(Boolean).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="mt-2 text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                          <div>Coordinates: {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</div>
+                          <div>Accuracy: ±{location.accuracy.toFixed(0)} meters</div>
+                          <div>Updated: {new Date(location.timestamp).toLocaleString()}</div>
+                        </div>
+                      </>
+                    ) : permissionState === 'denied' ? (
+                      <>
+                        <div className="text-lg font-semibold text-red-700 dark:text-red-400 mb-2">
+                          Location Access Denied
+                        </div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300">
+                          You have denied location access. To enable it, please update your browser settings and reload the page.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                          Location Not Enabled
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          Click the button below to share your location. This helps provide better responses for location-specific queries.
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  
+                  {locationError && (
+                    <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg">
+                      <div className="text-sm text-red-700 dark:text-red-400 flex items-start gap-2">
+                        <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        <span>{locationError}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="mt-4 flex gap-3">
+                    {!location && permissionState !== 'denied' && (
+                      <button
+                        onClick={requestLocation}
+                        disabled={locationLoading}
+                        className="btn-primary px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {locationLoading ? 'Getting Location...' : 'Enable Location'}
+                      </button>
+                    )}
+                    
+                    {location && (
+                      <>
+                        <button
+                          onClick={requestLocation}
+                          disabled={locationLoading}
+                          className="btn-secondary px-4 py-2"
+                        >
+                          🔄 Refresh
+                        </button>
+                        <button
+                          onClick={clearLocation}
+                          className="btn-secondary px-4 py-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                        >
+                          🗑️ Clear
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Privacy Notice */}
+            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                    Privacy & Usage
+                  </h4>
+                  <div className="text-xs text-blue-800 dark:text-blue-300 space-y-1">
+                    <p>✓ Your location is stored locally in your browser (not on our servers)</p>
+                    <p>✓ Location data is only sent to the Lambda function when you send a chat message</p>
+                    <p>✓ Automatically expires after 24 hours</p>
+                    <p>✓ You can clear your location data at any time</p>
+                    <p>✓ Used for: weather, local businesses, directions, time zones, regional info</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

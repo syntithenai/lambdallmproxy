@@ -6,7 +6,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { StorageStats } from './StorageStats';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
-  createGoogleDoc, 
+  createGoogleDocInFolder, 
   listGoogleDocs, 
   appendToGoogleDoc, 
   initGoogleAuth 
@@ -78,11 +78,11 @@ export const SwagPage: React.FC = () => {
 
     try {
       setLoading(true);
-      const doc = await createGoogleDoc(newDocName);
+      const doc = await createGoogleDocInFolder(newDocName);
       setGoogleDocs(prev => [doc, ...prev]);
       setNewDocName('');
       setShowNewDocDialog(false);
-      showSuccess(`Document "${doc.name}" created successfully!`);
+      showSuccess(`Document "${doc.name}" created successfully in Research Agent folder!`);
     } catch (error) {
       console.error('Failed to create document:', error);
       showError('Failed to create document. Please grant permissions and try again.');
@@ -163,9 +163,9 @@ export const SwagPage: React.FC = () => {
         }
         try {
           setLoading(true);
-          const doc = await createGoogleDoc(docName);
+          const doc = await createGoogleDocInFolder(docName);
           setGoogleDocs(prev => [doc, ...prev]);
-          showSuccess(`Document "${doc.name}" created!`);
+          showSuccess(`Document "${doc.name}" created in Research Agent folder!`);
           // Now append selected snippets
           await handleAppendToDoc(doc.id);
         } catch (error) {

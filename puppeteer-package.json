@@ -1,0 +1,21 @@
+{
+  "name": "lambdallmproxy-puppeteer",
+  "version": "1.0.0",
+  "description": "Puppeteer Lambda function for web scraping with headless Chromium",
+  "main": "src/puppeteer-handler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "puppeteer",
+    "chromium",
+    "lambda",
+    "web-scraping"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@sparticuz/chromium": "^131.0.0",
+    "puppeteer-core": "^23.11.1"
+  }
+}

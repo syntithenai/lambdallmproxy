@@ -68,7 +68,7 @@ export const LoginScreen: React.FC = () => {
           {/* App Logo/Icon */}
           <div className="inline-flex items-center justify-center mb-4">
             <img 
-              src="/agent.png" 
+              src={`${import.meta.env.BASE_URL}agent.png`}
               alt="Research Agent" 
               className="w-24 h-24 object-contain"
             />

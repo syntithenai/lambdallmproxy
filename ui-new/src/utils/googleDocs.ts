@@ -358,3 +358,322 @@ export const revokeGoogleAuth = () => {
     });
   }
 };
+
+// ============================================================================
+// FOLDER AND SETTINGS MANAGEMENT
+// ============================================================================
+
+const RESEARCH_AGENT_FOLDER_NAME = 'Research Agent';
+const SETTINGS_FILE_NAME = 'Research Agent Settings';
+
+/**
+ * Find or create the "Research Agent" folder
+ */
+export const findOrCreateResearchAgentFolder = async (): Promise<string> => {
+  console.log('📁 Finding or creating Research Agent folder...');
+  const token = await requestGoogleAuth();
+
+  // Search for existing folder
+  const searchQuery = `mimeType='application/vnd.google-apps.folder' and name='${RESEARCH_AGENT_FOLDER_NAME}' and trashed=false`;
+  console.log('🔍 Searching for folder:', searchQuery);
+
+  const searchResponse = await fetch(
+    'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(searchQuery) + '&fields=files(id,name)',
+    {
+      headers: {
+        'Authorization': 'Bearer ' + token
+      }
+    }
+  );
+
+  if (!searchResponse.ok) {
+    const errorData = await searchResponse.json().catch(() => ({}));
+    throw new Error('Failed to search for folder: ' + (errorData.error?.message || searchResponse.statusText));
+  }
+
+  const searchData = await searchResponse.json();
+  
+  if (searchData.files && searchData.files.length > 0) {
+    const folderId = searchData.files[0].id;
+    console.log('✅ Found existing folder:', folderId);
+    return folderId;
+  }
+
+  // Create new folder
+  console.log('📁 Creating new folder...');
+  const createResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name: RESEARCH_AGENT_FOLDER_NAME,
+      mimeType: 'application/vnd.google-apps.folder',
+      description: 'Storage for Research Agent settings and snippets'
+    })
+  });
+
+  if (!createResponse.ok) {
+    const errorData = await createResponse.json().catch(() => ({}));
+    throw new Error('Failed to create folder: ' + (errorData.error?.message || createResponse.statusText));
+  }
+
+  const folderData = await createResponse.json();
+  console.log('✅ Created new folder:', folderData.id);
+  return folderData.id;
+};
+
+/**
+ * Find settings file in the Research Agent folder
+ */
+export const findSettingsFile = async (folderId: string): Promise<string | null> => {
+  console.log('📄 Searching for settings file in folder:', folderId);
+  const token = await requestGoogleAuth();
+
+  const searchQuery = `name='${SETTINGS_FILE_NAME}' and '${folderId}' in parents and trashed=false`;
+  console.log('🔍 Query:', searchQuery);
+
+  const response = await fetch(
+    'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(searchQuery) + '&fields=files(id,name)',
+    {
+      headers: {
+        'Authorization': 'Bearer ' + token
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error('Failed to search for settings file: ' + (errorData.error?.message || response.statusText));
+  }
+
+  const data = await response.json();
+  
+  if (data.files && data.files.length > 0) {
+    console.log('✅ Found settings file:', data.files[0].id);
+    return data.files[0].id;
+  }
+
+  console.log('ℹ️  No settings file found');
+  return null;
+};
+
+/**
+ * Create settings file in the Research Agent folder
+ */
+export const createSettingsFile = async (folderId: string, settingsJson: string): Promise<string> => {
+  console.log('📄 Creating settings file in folder:', folderId);
+  const token = await requestGoogleAuth();
+
+  // Create as a text file with JSON content
+  const boundary = '-------314159265358979323846';
+  const delimiter = '\r\n--' + boundary + '\r\n';
+  const closeDelim = '\r\n--' + boundary + '--';
+
+  const metadata = {
+    name: SETTINGS_FILE_NAME,
+    mimeType: 'text/plain',
+    parents: [folderId],
+    description: 'Research Agent Settings - Contains API keys and provider configuration'
+  };
+
+  const multipartRequestBody =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    'Content-Type: text/plain\r\n\r\n' +
+    settingsJson +
+    closeDelim;
+
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'multipart/related; boundary=' + boundary
+    },
+    body: multipartRequestBody
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error('Failed to create settings file: ' + (errorData.error?.message || response.statusText));
+  }
+
+  const fileData = await response.json();
+  console.log('✅ Settings file created:', fileData.id);
+  return fileData.id;
+};
+
+/**
+ * Update existing settings file content
+ */
+export const updateSettingsFile = async (fileId: string, settingsJson: string): Promise<void> => {
+  console.log('📝 Updating settings file:', fileId);
+  const token = await requestGoogleAuth();
+
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
+    method: 'PATCH',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'text/plain'
+    },
+    body: settingsJson
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error('Failed to update settings file: ' + (errorData.error?.message || response.statusText));
+  }
+
+  console.log('✅ Settings file updated');
+};
+
+/**
+ * Load settings from Google Drive
+ */
+export const loadSettingsFromDrive = async (): Promise<string | null> => {
+  try {
+    console.log('📥 Loading settings from Google Drive...');
+    const folderId = await findOrCreateResearchAgentFolder();
+    const fileId = await findSettingsFile(folderId);
+
+    if (!fileId) {
+      console.log('ℹ️  No settings file found in Google Drive');
+      return null;
+    }
+
+    const token = await requestGoogleAuth();
+    const response = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media', {
+      headers: {
+        'Authorization': 'Bearer ' + token
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to download settings: ' + response.statusText);
+    }
+
+    const content = await response.text();
+    console.log('✅ Settings loaded from Google Drive');
+    return content;
+  } catch (error) {
+    console.error('❌ Failed to load settings from Google Drive:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save settings to Google Drive
+ */
+export const saveSettingsToDrive = async (settingsJson: string): Promise<void> => {
+  try {
+    console.log('💾 Saving settings to Google Drive...');
+    const folderId = await findOrCreateResearchAgentFolder();
+    const fileId = await findSettingsFile(folderId);
+
+    if (fileId) {
+      await updateSettingsFile(fileId, settingsJson);
+    } else {
+      await createSettingsFile(folderId, settingsJson);
+    }
+
+    console.log('✅ Settings saved to Google Drive');
+  } catch (error) {
+    console.error('❌ Failed to save settings to Google Drive:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update createGoogleDoc to use the Research Agent folder
+ */
+export const createGoogleDocInFolder = async (title: string): Promise<GoogleDoc> => {
+  console.log('📄 Creating Google Doc in Research Agent folder:', title);
+  const token = await requestGoogleAuth();
+  const folderId = await findOrCreateResearchAgentFolder();
+
+  console.log('🚀 Making API request to Google Docs...');
+  const response = await fetch('https://docs.googleapis.com/v1/documents', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      title
+    })
+  });
+  
+  console.log('📩 Response status:', response.status, response.statusText);
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const errorMessage = errorData.error?.message || response.statusText;
+    const fullError = 'Failed to create document: ' + errorMessage + '. Please grant permissions and try again.';
+    console.error('❌', fullError);
+    throw new Error(fullError);
+  }
+  
+  const doc = await response.json();
+  const documentId = doc.documentId;
+  
+  // Move document to Research Agent folder
+  try {
+    console.log('📁 Moving document to Research Agent folder...');
+    const moveResponse = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${documentId}?addParents=${folderId}&fields=id,parents`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'Bearer ' + token
+        }
+      }
+    );
+    
+    if (moveResponse.ok) {
+      console.log('✅ Document moved to folder');
+    } else {
+      console.warn('⚠️ Could not move document to folder (document still created)');
+    }
+  } catch (moveError) {
+    console.warn('⚠️ Could not move document to folder:', moveError);
+  }
+
+  // Add app metadata
+  try {
+    console.log('🏷️  Adding app metadata to document...');
+    const metadataResponse = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${documentId}?fields=id`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          properties: {
+            createdByApp: 'LambdaLLMProxy-Swag',
+            appVersion: '1.0'
+          },
+          description: 'Created by LLM Proxy Swag feature'
+        })
+      }
+    );
+    
+    if (metadataResponse.ok) {
+      console.log('✅ Metadata added successfully');
+    } else {
+      console.warn('⚠️ Could not add metadata (document still created)');
+    }
+  } catch (metaError) {
+    console.warn('⚠️ Could not add metadata:', metaError);
+  }
+  
+  return {
+    id: documentId,
+    name: title,
+    modifiedTime: new Date().toISOString()
+  };
+};

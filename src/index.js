@@ -24,6 +24,24 @@ const transcribeEndpoint = require('./endpoints/transcribe');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 const { handleUsageRequest } = require('./endpoints/usage');
 const { resetMemoryTracker } = require('./utils/memory-tracker');
+const { handleGenerateImage } = require('./endpoints/generate-image');
+const fixMermaidChartEndpoint = require('./endpoints/fix-mermaid-chart');
+const { getProviderHealthStatus } = require('./utils/provider-health');
+const { initializeCache, getFullStats } = require('./utils/cache');
+
+// Initialize cache on cold start
+let cacheInitialized = false;
+async function ensureCacheInitialized() {
+    if (!cacheInitialized) {
+        try {
+            await initializeCache();
+            cacheInitialized = true;
+            console.log('✅ Cache initialized successfully');
+        } catch (error) {
+            console.warn('⚠️ Cache initialization failed (will work without cache):', error.message);
+        }
+    }
+}
 
 /**
  * Handle CORS preflight requests
@@ -49,6 +67,11 @@ function handleCORS(event) {
  * @returns {Promise<void>} Streams response via responseStream
  */
 exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+    // Initialize cache on first invocation (non-blocking)
+    ensureCacheInitialized().catch(err => {
+        console.warn('Cache initialization failed in background:', err.message);
+    });
+    
     // Initialize memory tracking for this invocation
     const memoryTracker = resetMemoryTracker();
     memoryTracker.snapshot('handler-start');
@@ -195,6 +218,118 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(revokeResponse.body);
             responseStream.end();
+            return;
+        }
+        
+        // Image generation endpoint (buffered response)
+        if (method === 'POST' && path === '/generate-image') {
+            console.log('Routing to generate-image endpoint');
+            const imageResponse = await handleGenerateImage(event);
+            const metadata = {
+                statusCode: imageResponse.statusCode,
+                headers: imageResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(imageResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Fix Mermaid chart endpoint (buffered response)
+        if (method === 'POST' && path === '/fix-mermaid-chart') {
+            console.log('Routing to fix-mermaid-chart endpoint');
+            const fixResponse = await fixMermaidChartEndpoint.handler(event);
+            const metadata = {
+                statusCode: fixResponse.statusCode,
+                headers: fixResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(fixResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Provider health check endpoint (buffered response)
+        if (method === 'GET' && path === '/health-check/image-providers') {
+            console.log('Routing to image provider health check endpoint');
+            try {
+                const healthStatus = await getProviderHealthStatus();
+                const healthResponse = {
+                    statusCode: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': event.headers?.origin || event.headers?.Origin || '*',
+                        'Access-Control-Allow-Credentials': 'true'
+                    },
+                    body: JSON.stringify(healthStatus)
+                };
+                const metadata = {
+                    statusCode: healthResponse.statusCode,
+                    headers: healthResponse.headers
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(healthResponse.body);
+                responseStream.end();
+            } catch (error) {
+                console.error('Health check error:', error);
+                const errorResponse = {
+                    statusCode: 500,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': event.headers?.origin || event.headers?.Origin || '*'
+                    },
+                    body: JSON.stringify({ error: error.message })
+                };
+                const metadata = {
+                    statusCode: errorResponse.statusCode,
+                    headers: errorResponse.headers
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(errorResponse.body);
+                responseStream.end();
+            }
+            return;
+        }
+        
+        // Cache statistics endpoint (buffered response)
+        if (method === 'GET' && path === '/cache-stats') {
+            console.log('Routing to cache-stats endpoint');
+            try {
+                const cacheStats = await getFullStats();
+                const statsResponse = {
+                    statusCode: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': event.headers?.origin || event.headers?.Origin || '*',
+                        'Access-Control-Allow-Credentials': 'true'
+                    },
+                    body: JSON.stringify(cacheStats)
+                };
+                const metadata = {
+                    statusCode: statsResponse.statusCode,
+                    headers: statsResponse.headers
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(statsResponse.body);
+                responseStream.end();
+            } catch (error) {
+                console.error('Cache stats error:', error);
+                const errorResponse = {
+                    statusCode: 500,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': event.headers?.origin || event.headers?.Origin || '*'
+                    },
+                    body: JSON.stringify({ error: error.message })
+                };
+                const metadata = {
+                    statusCode: errorResponse.statusCode,
+                    headers: errorResponse.headers
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(errorResponse.body);
+                responseStream.end();
+            }
             return;
         }
         

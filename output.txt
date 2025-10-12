@@ -1,40 +1,34 @@
-      ✓ should have reduced emphasis markers (CRITICAL/NEVER)
-      ✓ should have no emojis
-      ✓ should not have excessive examples section
-    No Functional Loss
-      ✓ should still have OpenAI function calling mention
-      ✓ should still specify all tool parameters
-      ✓ should still warn about brief responses (1 ms)
-      ✓ should still mention citing sources
-  System Prompt Structure Validation
-    ✓ should have clear sections (TOOLS, RESPONSE, etc.)
-    ✓ should start with a clear AI assistant description (1 ms)
-    ✓ should have date/time near the beginning
-    ✓ should not have excessive whitespace or line breaks
-  Token Estimation
-    ✓ should estimate tokens correctly (1 ms)
-  Critical Rules Checklist
-    ✓ CRITICAL RULE: Tool parameter restrictions (additionalProperties: false)
-    ✓ CRITICAL RULE: Date/time handling (use provided, never guess) (1 ms)
-    ✓ CRITICAL RULE: YouTube priority (search_youtube for videos)
-    ✓ CRITICAL RULE: Multi-query support (array of queries)
-    ✓ CRITICAL RULE: Response format (Markdown with headings, lists, code)
-    ✓ CRITICAL RULE: Completeness check before finalizing (1 ms)
-    ✓ CRITICAL RULE: Comprehensive response length (1000-3000 words)
-    ✓ CRITICAL RULE: Tool usage when helpful
-  Removed Redundancies Validation
-    ✓ should not have 8+ NEVER statements (1 ms)
-    ✓ should not have 12+ CRITICAL statements
-    ✓ should not have emojis
-    ✓ should not have verbose example categories
-    ✓ should not have excessive transitional phrases (1 ms)
-    ✓ should not have redundant temporal sections
-    ✓ should not have explicit markdown instruction lists
-  Output Format
-    ✓ should print optimization summary (3 ms)
-
-Test Suites: 1 passed, 1 total
-Tests:       43 passed, 43 total
-Snapshots:   0 total
-Time:        0.186 s, estimated 1 s
-Ran all test suites matching /tests\/integration\/system_prompt_optimization.test.js/i.
+[0;34m⚡ Fast deploying Lambda function llmproxy...[0m
+[0;32m✅ Using Layer ARN: [0m
+[1;33m📦 Code files to deploy:[0m
+./credential-pool.js
+./search.js
+./utils/stop-signal.js
+./utils/progress-emitter.js
+./utils/cache.js
+./utils/error-handling.js
+./utils/circuit-breaker.js
+./utils/provider-health.js
+./utils/token-estimation.js
+./utils/memory-tracker.js
+./model-selection/rate-limit-tracker.js
+./model-selection/token-calculator.js
+./model-selection/selector.js
+./model-selection/categorizer.js
+./model-selection/request-analyzer.js
+./pricing_scraper.js
+./services/google-sheets-logger.js
+./services/tracking-service.js
+./html-parser.js
+./config/memory.js
+[1;33m🗜️  Creating lightweight package...[0m
+[0;32mPackage size: 243K (much smaller without dependencies!)[0m
+[1;33m☁️  Uploading to S3...[0m
+Completed 242.6 KiB/242.6 KiB (81.8 KiB/s) with 1 file(s) remainingupload: ./function.zip to s3://llmproxy-deployments-11363/functions/llmproxy-20251012-154915.zip
+[1;33m🚀 Updating Lambda function...[0m
+[0;32m✅ Function code deployed successfully[0m
+[1;33m🔗 Ensuring layer is attached...[0m
+[0;32m✅ Layer attached[0m
+[1;33m⏳ Waiting for function to be ready...[0m
+[0;34mStatus: Active	Successful[0m
+[1;33m🔍 Retrieving Lambda Function URL...[0m

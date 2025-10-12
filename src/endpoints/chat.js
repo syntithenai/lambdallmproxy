@@ -7,7 +7,7 @@
 const https = require('https');
 const http = require('http');
 const { verifyGoogleToken, getAllowedEmails, authenticateRequest } = require('../auth');
-const { callFunction, compressSearchResultsForLLM } = require('../tools');
+const { callFunction, compressSearchResultsForLLM, mergeTools } = require('../tools');
 const { createSSEStreamAdapter } = require('../streaming/sse-writer');
 const { parseProviderModel } = require('../providers');
 const { createProgressEmitter } = require('../utils/progress-emitter');
@@ -24,6 +24,158 @@ const GROQ_RATE_LIMIT_FALLBACK_MODELS = [
 const JSON_TOOL_CALL_REMINDER_TEXT = 'You must answer with a tool call using valid JSON arguments and no extra text. Use the official OpenAI function-calling format.';
 const LEGACY_TOOL_CALL_REGEX = /<\s*function\s*=\s*[^>]+>/i;
 const MAX_JSON_TOOL_REMINDERS = 2;
+
+/**
+ * Evaluate if the response comprehensively answers the user's query
+ * Uses a minimal LLM call with just user prompts and assistant responses
+ * @param {Array} messages - Conversation messages
+ * @param {string} finalResponse - The final assistant response to evaluate
+ * @param {string} model - Model to use for evaluation (cheap model)
+ * @param {string} apiKey - API key
+ * @param {string} provider - Provider name
+ * @returns {Promise<Object>} {isComprehensive: boolean, reason: string, usage: object}
+ */
+async function evaluateResponseComprehensiveness(messages, finalResponse, model, apiKey, provider) {
+    try {
+        // Build minimal evaluation context: only user prompts and assistant responses (no tool results, no media)
+        const evaluationMessages = [];
+        
+        for (const msg of messages) {
+            if (msg.role === 'user') {
+                // Strip media attachments from user messages for evaluation
+                let content = msg.content;
+                if (typeof content === 'string') {
+                    evaluationMessages.push({ role: 'user', content });
+                } else if (Array.isArray(content)) {
+                    // Extract only text parts, skip images/media
+                    const textParts = content.filter(part => part.type === 'text');
+                    if (textParts.length > 0) {
+                        const textContent = textParts.map(part => part.text).join('\n');
+                        evaluationMessages.push({ role: 'user', content: textContent });
+                    }
+                }
+            } else if (msg.role === 'assistant' && msg.content && msg.content.trim().length > 0) {
+                // Include assistant responses (but not tool_calls)
+                evaluationMessages.push({ role: 'assistant', content: msg.content });
+            }
+            // Skip 'tool' and 'system' messages
+        }
+        
+        // Add the final response we're evaluating
+        evaluationMessages.push({ role: 'assistant', content: finalResponse });
+        
+        // Minimal system prompt for evaluation
+        const evaluationSystemPrompt = `You are a response quality evaluator. Your job is to determine if the assistant's final response comprehensively answers the user's query.
+
+Respond with ONLY a JSON object in this exact format:
+{"comprehensive": true/false, "reason": "brief explanation"}
+
+A response is comprehensive if:
+- It directly addresses the user's question or request
+- It provides sufficient detail and information
+- It doesn't leave obvious questions unanswered
+- It doesn't end with "let me search" or indicate incomplete work
+
+A response is NOT comprehensive if:
+- It's too brief or vague
+- It ignores part of the multi-part question
+- It says it will do something but hasn't done it yet
+- It's clearly incomplete or cut off`;
+
+        // Make minimal LLM call for evaluation
+        const evalRequestBody = {
+            model: model,
+            messages: [
+                { role: 'system', content: evaluationSystemPrompt },
+                ...evaluationMessages
+            ],
+            temperature: 0.1, // Low temperature for consistent evaluation
+            max_tokens: 200, // Just need a JSON response
+            stream: false // Non-streaming for simpler parsing
+        };
+        
+        console.log(`🔍 Evaluating response comprehensiveness with ${model}`);
+        
+        const { llmResponsesWithTools } = require('../llm_tools_adapter');
+        
+        // Convert messages to input format expected by llmResponsesWithTools
+        const input = evalRequestBody.messages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+        }));
+        
+        const evalResponse = await llmResponsesWithTools({
+            model: model,
+            input: input,
+            tools: [], // No tools needed for evaluation
+            options: {
+                apiKey: apiKey,
+                temperature: 0.1,
+                max_tokens: 200,
+                enforceJson: false,
+                timeoutMs: 15000
+            }
+        });
+        
+        // Parse response
+        let evalText = evalResponse.text || '';
+        if (evalResponse.output && Array.isArray(evalResponse.output)) {
+            const textOutput = evalResponse.output.find(item => item.type === 'text');
+            if (textOutput) evalText = textOutput.text || '';
+        }
+        
+        console.log(`🔍 Evaluation response: ${evalText.substring(0, 200)}`);
+        
+        // Try to parse JSON from response
+        let evalResult = { comprehensive: true, reason: 'Evaluation failed - assuming comprehensive' };
+        try {
+            // Extract JSON from response (may have markdown code blocks)
+            const jsonMatch = evalText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                evalResult = JSON.parse(jsonMatch[0]);
+            }
+        } catch (parseError) {
+            console.error('Failed to parse evaluation response:', parseError.message);
+        }
+        
+        return {
+            isComprehensive: evalResult.comprehensive === true,
+            reason: evalResult.reason || 'No reason provided',
+            usage: evalResponse.rawResponse?.usage || null,
+            rawResponse: evalResponse.rawResponse || null,
+            httpHeaders: evalResponse.httpHeaders || {},
+            httpStatus: evalResponse.httpStatus
+        };
+        
+    } catch (error) {
+        console.error('Response evaluation failed:', error.message);
+        
+        // Check if this is an auth/API key error
+        const isAuthError = error.message?.includes('Invalid API Key') || 
+                           error.message?.includes('401') ||
+                           error.message?.includes('authentication') ||
+                           error.message?.includes('unauthorized');
+        
+        if (isAuthError) {
+            console.warn('⚠️ Evaluation skipped due to authentication error - proceeding without evaluation');
+            return {
+                isComprehensive: true,
+                reason: 'Evaluation skipped - API authentication failed',
+                usage: null,
+                error: error.message,
+                skipEvaluation: true // Signal to skip further evaluation attempts
+            };
+        }
+        
+        // For other errors, assume comprehensive to avoid blocking response
+        return {
+            isComprehensive: true,
+            reason: 'Evaluation failed - assuming comprehensive',
+            usage: null,
+            error: error.message
+        };
+    }
+}
 
 /**
  * Format tool result for LLM consumption
@@ -246,7 +398,16 @@ async function makeStreamingRequest(targetUrl, apiKey, requestBody) {
                         try {
                             const error = JSON.parse(errorData);
                             console.error('❌ Parsed API Error:', JSON.stringify(error, null, 2));
-                            reject(new Error(error.error?.message || 'API request failed'));
+                            
+                            // Try multiple error message paths to provide better error details
+                            const errorMessage = 
+                                error.error?.message || 
+                                error.message || 
+                                error.error || 
+                                (error.details ? JSON.stringify(error.details) : null) ||
+                                `API request failed (${res.statusCode})`;
+                            
+                            reject(new Error(errorMessage));
                         } catch (e) {
                             reject(new Error(`API returned ${res.statusCode}: ${errorData}`));
                         }
@@ -457,8 +618,118 @@ async function handler(event, responseStream) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        let { messages, model, tools, providers: userProviders, isRetry, retryContext } = body;
+        let { messages, model, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location } = body;
         const tavilyApiKey = body.tavilyApiKey || '';
+        
+        // Store location data to be injected into system prompt later
+        // (Don't prepend as separate system message - causes duplicate system messages)
+        let locationContext = null;
+        if (location && location.latitude && location.longitude) {
+            const locationInfo = [];
+            locationInfo.push(`User's Current Location:`);
+            locationInfo.push(`- Coordinates: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)} (±${location.accuracy?.toFixed(0) || '?'}m)`);
+            
+            if (location.address) {
+                const addr = location.address;
+                if (addr.formatted) {
+                    locationInfo.push(`- Address: ${addr.formatted}`);
+                } else {
+                    const parts = [];
+                    if (addr.city) parts.push(addr.city);
+                    if (addr.state) parts.push(addr.state);
+                    if (addr.country) parts.push(addr.country);
+                    if (parts.length > 0) {
+                        locationInfo.push(`- Location: ${parts.join(', ')}`);
+                    }
+                }
+            }
+            
+            locationInfo.push('');
+            locationInfo.push('Please use this location information when answering location-specific queries such as:');
+            locationInfo.push('- Weather and climate information');
+            locationInfo.push('- Local businesses, restaurants, and services');
+            locationInfo.push('- Directions and navigation');
+            locationInfo.push('- Area-specific recommendations');
+            locationInfo.push('- Time zones and local time');
+            locationInfo.push('- Regional news or events');
+            
+            locationContext = '\n\n' + locationInfo.join('\n');
+            
+            console.log('📍 Location will be injected into system prompt:', 
+                location.address?.city || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
+        }
+        
+        // Merge all system messages and inject location context
+        // This prevents duplicate system messages which confuse the LLM
+        if (messages && messages.length > 0) {
+            // Find all system messages
+            const systemMessages = messages.filter(m => m.role === 'system');
+            const nonSystemMessages = messages.filter(m => m.role !== 'system');
+            
+            if (systemMessages.length > 0) {
+                // Merge all system messages into one
+                const mergedSystemContent = systemMessages.map(m => m.content).join('\n\n');
+                const finalSystemContent = locationContext 
+                    ? mergedSystemContent + locationContext 
+                    : mergedSystemContent;
+                
+                // Reconstruct messages array with single system message at the start
+                messages = [
+                    { role: 'system', content: finalSystemContent },
+                    ...nonSystemMessages
+                ];
+                
+                console.log(`📍 Merged ${systemMessages.length} system message(s)` + 
+                    (locationContext ? ' and added location context' : ''));
+            } else if (locationContext) {
+                // No system message exists, prepend one with location context
+                messages.unshift({
+                    role: 'system',
+                    content: 'You are a helpful AI assistant with access to powerful tools. For calculations, math problems, or data processing, use the execute_javascript tool. For current information or research, use search_web. **CRITICAL: For ANY diagrams, charts, flowcharts, or visualizations, you MUST use the generate_chart tool - NEVER use execute_javascript for charts.** Always use tools when they can provide better answers than your training data.' + locationContext
+                });
+                console.log('📍 Location context added as new system message');
+            } else {
+                // No system message at all, add default with tool guidance
+                messages.unshift({
+                    role: 'system',
+                    content: 'You are a helpful AI assistant with access to powerful tools. For calculations, math problems, or data processing, use the execute_javascript tool. For current information or research, use search_web. **CRITICAL: For ANY diagrams, charts, flowcharts, or visualizations, you MUST use the generate_chart tool - NEVER use execute_javascript for charts.** Always use tools when they can provide better answers than your training data.'
+                });
+                console.log('✨ Added default system message with tool guidance');
+            }
+        }
+        
+        // Parse MCP servers if provided
+        let mcpServers = [];
+        if (mcp_servers) {
+            try {
+                // mcp_servers can be a JSON string or an array
+                mcpServers = typeof mcp_servers === 'string' 
+                    ? JSON.parse(mcp_servers) 
+                    : mcp_servers;
+                
+                if (!Array.isArray(mcpServers)) {
+                    console.warn('[MCP] mcp_servers must be an array, ignoring');
+                    mcpServers = [];
+                } else {
+                    console.log(`[MCP] Received ${mcpServers.length} MCP server(s):`, mcpServers.map(s => s.name).join(', '));
+                }
+            } catch (error) {
+                console.error('[MCP] Failed to parse mcp_servers:', error.message);
+                mcpServers = [];
+            }
+        }
+        
+        // Merge MCP tools with built-in tools
+        if (mcpServers.length > 0) {
+            try {
+                console.log('[MCP] Merging MCP tools with built-in tools...');
+                tools = await mergeTools(tools || [], mcpServers);
+                console.log(`[MCP] Merged tools: ${tools.length} total`);
+            } catch (error) {
+                console.error('[MCP] Failed to merge tools:', error.message);
+                // Continue with built-in tools only
+            }
+        }
         
         // Handle retry requests - inject previous context
         if (isRetry && retryContext) {
@@ -486,6 +757,13 @@ async function handler(event, responseStream) {
                 content: `This is retry attempt ${retryContext.attemptNumber || 1}. Previous attempt failed with: ${retryContext.failureReason || 'Unknown error'}. Please try to provide a complete and helpful response.`
             };
             messages = [retrySystemMessage, ...messages];
+        }
+        
+        // Handle continuation requests - allow tool results through
+        if (isContinuation) {
+            console.log('🔄 Continuation request detected - tool results will be preserved');
+            // Messages already include tool results and full context from error/limit state
+            // No need to filter aggressively
         }
         
         // Apply defaults for parameters that optimize for comprehensive, verbose responses
@@ -748,6 +1026,7 @@ async function handler(event, responseStream) {
             googleToken,
             youtubeAccessToken: youtubeToken, // Pass YouTube OAuth token for transcript access
             tavilyApiKey,
+            mcpServers, // Pass MCP servers for tool routing
             timestamp: new Date().toISOString()
         };
         
@@ -777,24 +1056,47 @@ async function handler(event, responseStream) {
             // Filter out tool messages from previous query cycles (token optimization)
             // Only apply filtering on first iteration (initial messages from client)
             // Subsequent iterations contain tool calls/results from current cycle
+            // UNLESS this is a continuation request - then keep all tool results
             const isInitialRequest = (iterationCount === 1);
+            const shouldFilter = isInitialRequest && !isContinuation;
             
             // Debug: Log message roles before filtering
             if (iterationCount === 1) {
                 const beforeRoles = currentMessages.map((m, i) => `${i}:${m.role}`).join(', ');
                 console.log(`🔍 Messages BEFORE filtering (iteration ${iterationCount}): ${beforeRoles}`);
+                if (isContinuation) {
+                    console.log(`🔄 Continuation mode: skipping tool message filtering`);
+                }
             }
             
-            const filteredMessages = filterToolMessagesForCurrentCycle(currentMessages, isInitialRequest);
+            const filteredMessages = shouldFilter 
+                ? filterToolMessagesForCurrentCycle(currentMessages, isInitialRequest)
+                : currentMessages;
             
             // Debug: Log message roles after filtering
             const afterRoles = filteredMessages.map((m, i) => `${i}:${m.role}`).join(', ');
             console.log(`🔍 Messages AFTER filtering (iteration ${iterationCount}): ${afterRoles}`);
             
             // Clean messages by removing UI-specific properties before sending to LLM
-            // CRITICAL: Remove extractedContent and rawResult - they're only for extraction, never for LLM
+            // CRITICAL: Remove extractedContent, rawResult, evaluations - they're only for UI/extraction, never for LLM
             const cleanMessages = filteredMessages.map(msg => {
-                const { isStreaming, errorData, llmApiCalls, extractedContent, rawResult, ...cleanMsg } = msg;
+                const { isStreaming, errorData, llmApiCalls, extractedContent, rawResult, evaluations, ...cleanMsg } = msg;
+                
+                // CRITICAL: Clean malformed function calls from assistant messages
+                // Some LLMs generate text-based function calls like: <function_name>{"param": "value"} </function>
+                // These are invalid and cause API errors. Remove them from content.
+                if (cleanMsg.role === 'assistant' && cleanMsg.content && typeof cleanMsg.content === 'string') {
+                    const malformedFunctionPattern = /<[^>]+>\s*\{[^}]*\}\s*<\/[^>]+>/g;
+                    const originalContent = cleanMsg.content;
+                    cleanMsg.content = cleanMsg.content.replace(malformedFunctionPattern, '').trim();
+                    
+                    if (originalContent !== cleanMsg.content) {
+                        console.log('🧹 Cleaned malformed function call from assistant message');
+                        console.log('   Original:', originalContent.substring(0, 200));
+                        console.log('   Cleaned:', cleanMsg.content.substring(0, 200));
+                    }
+                }
+                
                 return cleanMsg;
             });
             
@@ -971,7 +1273,21 @@ async function handler(event, responseStream) {
                         
                         // All models exhausted on this provider, try next provider
                         console.log(`⚠️ All models exhausted on provider ${provider}`);
-                        const nextProvider = providerPool.find(p => !attemptedProviders.has(p.id));
+                        
+                        // Prioritize switching to a DIFFERENT provider type when rate limited
+                        // This helps when Groq is rate limited but OpenAI/Gemini are still available
+                        const currentProviderType = selectedProvider.type;
+                        let nextProvider = providerPool.find(p => 
+                            !attemptedProviders.has(p.id) && 
+                            p.type !== currentProviderType && 
+                            p.type !== 'groq-free' && 
+                            p.type !== 'groq'
+                        );
+                        
+                        // If no different provider type, try any unattempted provider
+                        if (!nextProvider) {
+                            nextProvider = providerPool.find(p => !attemptedProviders.has(p.id));
+                        }
                         
                         if (nextProvider) {
                             // Switch to new provider
@@ -984,6 +1300,9 @@ async function handler(event, responseStream) {
                             attemptedProviders.add(selectedProvider.id);
                             attemptedModels.add(model);
                             
+                            // Reset same-model retries for new provider
+                            sameModelRetries = 0;
+                            
                             // Update request body
                             requestBody.model = model;
                             if (lastRequestBody) {
@@ -994,13 +1313,14 @@ async function handler(event, responseStream) {
                                 }
                             }
                             
-                            console.log(`🚀 Switching to provider: ${provider}, model: ${model}`);
+                            console.log(`🚀 Switching to different provider type: ${provider}, model: ${model}`);
                             continue; // Retry with new provider
                         }
                         
                         // No more providers or models available
                         console.error(`🛑 Rate limit on all available providers and models (tried ${attemptedProviders.size} provider(s), ${attemptedModels.size} model(s))`);
-                        console.log(`💡 Tip: Configure additional providers in your settings for better availability`);
+                        console.log(`💡 Tip: Configure additional providers (OpenAI, Gemini, Anthropic) in your settings for automatic failover`);
+                        console.log(`📊 Current providers configured: ${providerPool.map(p => p.type).join(', ')}`);
                         throw error;
                     }
                     
@@ -1310,6 +1630,7 @@ async function handler(event, responseStream) {
             const toolMessages = currentMessages.filter(m => m.role === 'tool');
             
             let extractedContent = null;
+            const imageGenerations = []; // Collect image generation results
             
             if (toolMessages.length > 0 && assistantMessage.content && assistantMessage.content.length > 0) {
                 const allUrls = [];
@@ -1437,6 +1758,27 @@ async function handler(event, responseStream) {
                                     });
                                 }
                             }
+                        }
+                        
+                        // Extract from generate_image results
+                        if (toolMsg.name === 'generate_image') {
+                            console.log(`🎨 Processing generate_image tool result`);
+                            imageGenerations.push({
+                                id: toolMsg.tool_call_id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                provider: parsed.provider || 'unknown',
+                                model: parsed.model || parsed.modelKey || 'unknown',
+                                modelKey: parsed.modelKey || parsed.model,
+                                cost: parsed.cost || 0,
+                                prompt: parsed.prompt || '',
+                                size: parsed.size || '1024x1024',
+                                style: parsed.style || 'natural',
+                                qualityTier: parsed.qualityTier || 'standard',
+                                constraints: parsed.constraints || {},
+                                availableAlternatives: parsed.availableAlternatives || [],
+                                status: 'pending', // Will be 'pending' until user clicks button
+                                ready: parsed.ready || false,
+                                message: parsed.message || ''
+                            });
                         }
                         
                     } catch (e) {
@@ -1571,14 +1913,184 @@ async function handler(event, responseStream) {
                 assistantMessageRecorded = true;
             }
             
-            console.log(`📤 Sending final response: ${assistantMessage.content.length} chars`);
+            console.log(`📤 Preparing final response: ${assistantMessage.content.length} chars`);
             console.log(`📤 Preview: ${assistantMessage.content.substring(0, 100)}...`);
+            
+            // SELF-EVALUATION: Check if response is comprehensive before sending
+            // Maximum 2 retry attempts if not comprehensive
+            const MAX_EVALUATION_RETRIES = 2;
+            let evaluationRetries = 0;
+            let finalContent = assistantMessage.content;
+            let evaluationResults = []; // Track all evaluation attempts
+            
+            while (evaluationRetries < MAX_EVALUATION_RETRIES) {
+                console.log(`🔍 Self-evaluation attempt ${evaluationRetries + 1}/${MAX_EVALUATION_RETRIES + 1}`);
+                
+                // Evaluate current response
+                const evaluation = await evaluateResponseComprehensiveness(
+                    currentMessages.slice(0, -1), // All messages except the final assistant message we're evaluating
+                    finalContent,
+                    model, // Use same model for evaluation
+                    apiKey,
+                    provider
+                );
+                
+                // Track evaluation call in LLM transparency
+                if (evaluation.usage || evaluation.rawResponse) {
+                    const evalLlmCall = {
+                        phase: 'self_evaluation', // UI looks for 'phase' property
+                        type: 'self_evaluation',
+                        iteration: evaluationRetries + 1,
+                        model: model,
+                        provider: provider,
+                        request: {
+                            purpose: 'evaluate_response_comprehensiveness',
+                            evaluation_attempt: evaluationRetries + 1
+                        },
+                        response: {
+                            usage: evaluation.usage,
+                            comprehensive: evaluation.isComprehensive,
+                            reason: evaluation.reason
+                        },
+                        httpHeaders: evaluation.httpHeaders || {},
+                        httpStatus: evaluation.httpStatus,
+                        timestamp: new Date().toISOString()
+                    };
+                    allLlmApiCalls.push(evalLlmCall);
+                    console.log(`📊 Tracked self-evaluation LLM call #${evaluationRetries + 1}`);
+                }
+                
+                evaluationResults.push({
+                    attempt: evaluationRetries + 1,
+                    comprehensive: evaluation.isComprehensive,
+                    reason: evaluation.reason
+                });
+                
+                // If evaluation should be skipped (e.g., auth error), exit evaluation loop but proceed with response
+                if (evaluation.skipEvaluation) {
+                    console.log(`⚠️ Evaluation skipped due to API error - proceeding with current response`);
+                    // Break out of evaluation loop - we'll send the response as-is
+                    break;
+                }
+                
+                if (evaluation.isComprehensive) {
+                    console.log(`✅ Response deemed comprehensive: ${evaluation.reason}`);
+                    break;
+                }
+                
+                console.log(`⚠️ Response not comprehensive: ${evaluation.reason}`);
+                
+                // Don't retry if we've hit max retries
+                if (evaluationRetries >= MAX_EVALUATION_RETRIES) {
+                    console.log(`⚠️ Max evaluation retries reached - proceeding with current response`);
+                    break;
+                }
+                
+                // Retry: Append encouragement and trigger continuation
+                console.log(`🔄 Retrying with encouragement (attempt ${evaluationRetries + 1}/${MAX_EVALUATION_RETRIES})`);
+                
+                // Build retry request with encouragement
+                const retryMessages = [...currentMessages];
+                
+                // Add an empty assistant message to trigger more output
+                retryMessages.push({
+                    role: 'user',
+                    content: 'Please provide a more comprehensive and complete answer. Think deeply about all aspects of the question and ensure you address everything thoroughly.'
+                });
+                
+                // Make retry request
+                try {
+                    const retryRequestBody = {
+                        model: model,
+                        messages: retryMessages,
+                        temperature: requestBody.temperature || 0.7,
+                        max_tokens: requestBody.max_tokens || undefined,
+                        stream: false // Non-streaming for simpler retry
+                    };
+                    
+                    console.log(`🔄 Sending retry request with ${retryMessages.length} messages`);
+                    
+                    const { llmResponsesWithTools } = require('../llm_tools_adapter');
+                    
+                    // Convert messages to input format expected by llmResponsesWithTools
+                    const retryInput = retryMessages.map(msg => ({
+                        role: msg.role,
+                        content: msg.content
+                    }));
+                    
+                    const retryResponse = await llmResponsesWithTools({
+                        model: model,
+                        input: retryInput,
+                        tools: [],
+                        options: {
+                            apiKey: apiKey,
+                            temperature: requestBody.temperature || 0.7,
+                            max_tokens: requestBody.max_tokens || 4096,
+                            enforceJson: false,
+                            timeoutMs: 30000
+                        }
+                    });
+                    
+                    // Extract retry content
+                    let retryContent = retryResponse.text || '';
+                    if (retryResponse.output && Array.isArray(retryResponse.output)) {
+                        const textOutput = retryResponse.output.find(item => item.type === 'text');
+                        if (textOutput) retryContent = textOutput.text || '';
+                    }
+                    
+                    // Track retry call in LLM transparency
+                    if (retryResponse.rawResponse) {
+                        const retryLlmCall = {
+                            type: 'comprehensive_retry',
+                            iteration: evaluationRetries + 1,
+                            model: model,
+                            provider: provider,
+                            request: {
+                                purpose: 'retry_for_comprehensiveness',
+                                retry_attempt: evaluationRetries + 1,
+                                messageCount: retryMessages.length
+                            },
+                            response: {
+                                usage: retryResponse.rawResponse.usage
+                            },
+                            httpHeaders: retryResponse.httpHeaders || {},
+                            httpStatus: retryResponse.httpStatus
+                        };
+                        allLlmApiCalls.push(retryLlmCall);
+                        console.log(`📊 Tracked retry LLM call #${evaluationRetries + 1}`);
+                    }
+                    
+                    if (retryContent && retryContent.trim().length > 0) {
+                        // Update final content with retry response
+                        finalContent = retryContent;
+                        // Update assistant message in currentMessages
+                        currentMessages[currentMessages.length - 1].content = retryContent;
+                        console.log(`✅ Retry produced ${retryContent.length} chars`);
+                    } else {
+                        console.log(`⚠️ Retry produced empty response - keeping original`);
+                        break;
+                    }
+                    
+                } catch (retryError) {
+                    console.error(`❌ Retry failed:`, retryError.message);
+                    break; // Give up on retry errors
+                }
+                
+                evaluationRetries++;
+            }
+            
+            // Update final assistant message content
+            assistantMessage.content = finalContent;
+            currentMessages[currentMessages.length - 1].content = finalContent;
+            
+            console.log(`📤 Sending final response after ${evaluationResults.length} evaluations: ${finalContent.length} chars`);
             
             // Send message_complete with content and extracted content
             const messageCompleteData = {
                 role: 'assistant',
-                content: assistantMessage.content,
-                llmApiCalls: allLlmApiCalls // Include all accumulated token usage data
+                content: finalContent,
+                llmApiCalls: allLlmApiCalls, // Include all accumulated token usage data (including evaluation calls)
+                evaluations: evaluationResults.length > 0 ? evaluationResults : undefined // Include evaluation attempts
                 // Note: NOT including tool_calls - they're already sent via tool_call_* events
             };
             
@@ -1599,7 +2111,13 @@ async function handler(event, responseStream) {
                 messageCompleteData.extractedContent = extractedContent;
             }
             
-            console.log(`📊 Sending final message_complete with ${allLlmApiCalls.length} llmApiCalls`);
+            // Add image generations if available
+            if (imageGenerations.length > 0) {
+                messageCompleteData.imageGenerations = imageGenerations;
+                console.log(`🎨 Including ${imageGenerations.length} image generation(s) in response`);
+            }
+            
+            console.log(`📊 Sending final message_complete with ${allLlmApiCalls.length} llmApiCalls (including ${evaluationResults.length} evaluations)`);
             if (allLlmApiCalls.length > 0) {
                 console.log(`📊 First call tokens: ${JSON.stringify(allLlmApiCalls[0].response?.usage)}`);
             }
@@ -1682,10 +2200,21 @@ async function handler(event, responseStream) {
         }
         
         // Max iterations reached with tools still being called
+        // Prepare continue context: include full message history with tool results for continuation
+        const continueContext = {
+            messages: currentMessages, // Full context including tool results
+            lastUserMessage: requestBody.messages[requestBody.messages.length - 1], // Original user message with media
+            provider: provider,
+            model: model,
+            extractedContent: extractedContent
+        };
+        
         sseWriter.writeEvent('error', {
             error: 'Maximum tool execution iterations reached',
             code: 'MAX_ITERATIONS',
-            iterations: iterationCount
+            iterations: iterationCount,
+            showContinueButton: true,
+            continueContext: continueContext
         });
         
         // Log error to Google Sheets
@@ -1718,9 +2247,22 @@ async function handler(event, responseStream) {
         // Build error event with request info if available
         const errorEvent = {
             error: error.message || 'Internal server error',
-            code: 'ERROR',
+            code: error.code || 'ERROR',
             timestamp: new Date().toISOString()
         };
+        
+        // Prepare continue context: include current conversation state for continuation
+        // Only if we have message context available
+        if (typeof currentMessages !== 'undefined' && currentMessages.length > 0) {
+            const continueContext = {
+                messages: currentMessages, // Full context including tool results
+                lastUserMessage: requestBody?.messages[requestBody.messages.length - 1], // Original user message with media
+                provider: provider,
+                model: model
+            };
+            errorEvent.showContinueButton = true;
+            errorEvent.continueContext = continueContext;
+        }
         
         // Include the last request that triggered the error
         if (lastRequestBody) {

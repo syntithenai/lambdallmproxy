@@ -774,5 +774,172 @@
       ],
       "maxCost": 20
     }
+  },
+  "image": {
+    "description": "Image generation providers and models",
+    "providers": {
+      "openai": {
+        "name": "OpenAI",
+        "type": "openai",
+        "apiBase": "https://api.openai.com/v1",
+        "supportsStyles": true,
+        "models": {
+          "dall-e-3": {
+            "id": "dall-e-3",
+            "type": "image",
+            "qualityTier": "high",
+            "contextWindow": 4000,
+            "supportedSizes": ["1024x1024", "1792x1024", "1024x1792"],
+            "supportedQualities": ["standard", "hd"],
+            "pricing": {
+              "standard_1024": 0.040,
+              "standard_1792": 0.080,
+              "hd_1024": 0.080,
+              "hd_1792": 0.120,
+              "unit": "per_image"
+            },
+            "capabilities": ["realistic", "artistic", "detailed", "text-in-image"],
+            "styles": ["vivid", "natural"],
+            "fallbackPriority": 1,
+            "available": true,
+            "deprecated": false
+          },
+          "dall-e-2": {
+            "id": "dall-e-2",
+            "type": "image",
+            "qualityTier": "standard",
+            "contextWindow": 1000,
+            "supportedSizes": ["256x256", "512x512", "1024x1024"],
+            "pricing": {
+              "256": 0.016,
+              "512": 0.018,
+              "1024": 0.020,
+              "unit": "per_image"
+            },
+            "capabilities": ["artistic", "fast"],
+            "fallbackPriority": 2,
+            "available": true,
+            "deprecated": false
+          }
+        }
+      },
+      "together": {
+        "name": "Together AI",
+        "type": "together",
+        "apiBase": "https://api.together.xyz/v1",
+        "supportsStyles": true,
+        "models": {
+          "stable-diffusion-xl": {
+            "id": "stabilityai/stable-diffusion-xl-base-1.0",
+            "type": "image",
+            "qualityTier": "standard",
+            "contextWindow": 77,
+            "supportedSizes": ["1024x1024", "768x768", "512x512"],
+            "pricing": {
+              "default": 0.002,
+              "unit": "per_image"
+            },
+            "capabilities": ["artistic", "fast", "stylized"],
+            "fallbackPriority": 1,
+            "available": true,
+            "deprecated": false
+          },
+          "stable-diffusion-2-1": {
+            "id": "stabilityai/stable-diffusion-2-1",
+            "type": "image",
+            "qualityTier": "fast",
+            "contextWindow": 77,
+            "supportedSizes": ["768x768", "512x512"],
+            "pricing": {
+              "default": 0.001,
+              "unit": "per_image"
+            },
+            "capabilities": ["artistic", "very-fast"],
+            "fallbackPriority": 2,
+            "available": true,
+            "deprecated": false
+          },
+          "playground-v2-5": {
+            "id": "playgroundai/playground-v2.5-1024px-aesthetic",
+            "type": "image",
+            "qualityTier": "high",
+            "contextWindow": 77,
+            "supportedSizes": ["1024x1024", "768x768"],
+            "pricing": {
+              "default": 0.003,
+              "unit": "per_image"
+            },
+            "capabilities": ["artistic", "aesthetic", "detailed"],
+            "fallbackPriority": 3,
+            "available": true,
+            "deprecated": false
+          }
+        }
+      },
+      "replicate": {
+        "name": "Replicate",
+        "type": "replicate",
+        "apiBase": "https://api.replicate.com/v1",
+        "supportsStyles": true,
+        "models": {
+          "sdxl": {
+            "id": "stability-ai/sdxl:latest",
+            "type": "image",
+            "qualityTier": "standard",
+            "contextWindow": 77,
+            "supportedSizes": ["1024x1024", "768x1024", "1024x768"],
+            "pricing": {
+              "default": 0.0025,
+              "unit": "per_image"
+            },
+            "capabilities": ["artistic", "fast", "customizable"],
+            "fallbackPriority": 2,
+            "available": true,
+            "deprecated": false
+          },
+          "realistic-vision": {
+            "id": "saidachmiz/realistic-vision-v5-1:latest",
+            "type": "image",
+            "qualityTier": "high",
+            "contextWindow": 77,
+            "supportedSizes": ["512x512", "768x768"],
+            "pricing": {
+              "default": 0.0018,
+              "unit": "per_image"
+            },
+            "capabilities": ["photorealistic", "detailed"],
+            "fallbackPriority": 4,
+            "available": true,
+            "deprecated": false
+          }
+        }
+      }
+    },
+    "qualityTiers": {
+      "ultra": {
+        "description": "Highest quality, photorealistic images",
+        "keywords": ["photorealistic", "ultra", "4k", "professional", "highest quality"],
+        "recommendedModels": ["gemini:imagen-3", "openai:dall-e-3:hd"],
+        "typicalCost": 0.12
+      },
+      "high": {
+        "description": "High quality, detailed artistic or realistic images",
+        "keywords": ["high quality", "detailed", "artistic", "realistic"],
+        "recommendedModels": ["openai:dall-e-3", "together:playground-v2-5"],
+        "typicalCost": 0.04
+      },
+      "standard": {
+        "description": "Good quality, balanced cost/performance",
+        "keywords": ["standard", "normal", "regular", "illustration"],
+        "recommendedModels": ["together:stable-diffusion-xl", "openai:dall-e-2", "replicate:sdxl"],
+        "typicalCost": 0.002
+      },
+      "fast": {
+        "description": "Fast generation, lower cost",
+        "keywords": ["fast", "quick", "draft", "sketch", "simple"],
+        "recommendedModels": ["together:stable-diffusion-2-1"],
+        "typicalCost": 0.001
+      }
+    }
   }
 }

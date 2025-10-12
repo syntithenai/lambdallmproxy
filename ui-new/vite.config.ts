@@ -3,8 +3,13 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  // Use subpath for production build (GitHub Pages), root path for dev server
+  base: command === 'build' ? '/lambdallmproxy/' : '/',
+  server: {
+    port: 8081,
+  },
   build: {
     outDir: '../docs',
     emptyOutDir: true,
@@ -14,4 +19,4 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-})
+}))

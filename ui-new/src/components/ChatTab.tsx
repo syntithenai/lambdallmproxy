@@ -6,6 +6,8 @@ import { useSwag } from '../contexts/SwagContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import { useUsage } from '../contexts/UsageContext';
+import { useCast } from '../contexts/CastContext';
+import { useLocation } from '../contexts/LocationContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
@@ -20,6 +22,7 @@ import { LlmInfoDialog } from './LlmInfoDialog';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
 import { VoiceInputDialog } from './VoiceInputDialog';
 import ExtractedContent from './ExtractedContent';
+import { GeneratedImageBlock } from './GeneratedImageBlock';
 import { JsonTree } from './JsonTree';
 import { 
   saveChatToHistory, 
@@ -36,6 +39,7 @@ interface EnabledTools {
   scrape_url: boolean;
   youtube: boolean;
   transcribe: boolean;
+  generate_chart: boolean;
 }
 
 interface ChatTabProps {
@@ -61,6 +65,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
   const { addCost } = useUsage();
+  const { isConnected: isCastConnected, sendMessages: sendCastMessages } = useCast();
+  const { location } = useLocation();
   
   // Use regular state for messages - async storage causes race conditions
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -143,6 +149,10 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Voice input dialog
   const [showVoiceInput, setShowVoiceInput] = useState(false);
+  
+  // Continue button for error recovery
+  const [showContinueButton, setShowContinueButton] = useState(false);
+  const [continueContext, setContinueContext] = useState<any>(null);
   
   // File attachment state
   const [attachedFiles, setAttachedFiles] = useState<Array<{
@@ -355,6 +365,14 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Sync messages to Chromecast when connected
+  useEffect(() => {
+    if (isCastConnected && messages.length > 0) {
+      console.log('Syncing messages to Chromecast:', messages.length);
+      sendCastMessages(messages);
+    }
+  }, [messages, isCastConnected, sendCastMessages]);
 
   // Close examples dropdown when clicking outside
   useEffect(() => {
@@ -739,6 +757,32 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         }
       });
     }
+
+    if (enabledTools.generate_chart) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'generate_chart',
+          description: '📊 **PRIMARY TOOL FOR ALL DIAGRAMS, CHARTS, AND VISUALIZATIONS**: Generate professional Mermaid diagrams automatically rendered as interactive SVG in the UI. **MANDATORY USE** when user requests: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, Gantt charts, pie charts, mindmaps, git graphs, or ANY visual diagram/chart/visualization. **DO NOT use execute_javascript to generate charts - ALWAYS use this tool instead**. Keywords: diagram, chart, flowchart, visualization, graph, workflow, UML, ERD, timeline, mindmap.',
+          parameters: {
+            type: 'object',
+            properties: {
+              description: {
+                type: 'string',
+                description: 'Clear description of what the chart should visualize (e.g., "User login flow", "Database schema for blog platform", "Project timeline")'
+              },
+              chart_type: {
+                type: 'string',
+                enum: ['flowchart', 'sequence', 'class', 'state', 'er', 'gantt', 'pie', 'git', 'mindmap'],
+                default: 'flowchart',
+                description: 'Type of diagram to generate. Choose based on use case: flowchart (processes), sequence (interactions), class (UML), state (FSM), er (database), gantt (timeline), pie (data), git (commits), mindmap (concepts)'
+              }
+            },
+            required: ['description']
+          }
+        }
+      });
+    }
     
     // Add enabled MCP servers (placeholder - would need MCP integration)
     mcpServers.filter(server => server.enabled).forEach(server => {
@@ -931,10 +975,14 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
     
     console.log('🔵 Adding user message:', typeof userMessage.content === 'string' ? userMessage.content.substring(0, 50) : `${attachedFiles.length} attachments`);
+    
+    // Track the index where the user message will be added (for retry functionality)
+    let currentUserMessageIndex: number = messages.length; // Initialize with current length
     setMessages(prev => {
       console.log('🔵 Current messages count before adding user:', prev.length);
+      currentUserMessageIndex = prev.length; // User message will be at this index
       const newMessages = [...prev, userMessage];
-      console.log('🔵 Messages after adding user:', newMessages.length, 'User message at index:', newMessages.length - 1);
+      console.log('🔵 Messages after adding user:', newMessages.length, 'User message at index:', currentUserMessageIndex);
       return newMessages;
     });
     
@@ -1104,7 +1152,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       
       // Clean UI-only fields before sending to API
       const cleanedMessages = messagesWithSystem.map(msg => {
-        const { _attachments, llmApiCalls, isStreaming, toolResults, ...cleanMsg } = msg as any;
+        const { 
+          _attachments, 
+          llmApiCalls, 
+          isStreaming, 
+          toolResults, 
+          isRetryable, 
+          retryCount, 
+          originalUserPromptIndex,
+          originalErrorMessage,
+          extractedContent,
+          rawResult,
+          evaluations,
+          errorData,
+          imageGenerations,
+          ...cleanMsg 
+        } = msg as any;
         return cleanMsg;
       });
       
@@ -1137,6 +1200,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         stream: true  // Always use streaming
       };
       
+      // Add location data if available
+      if (location) {
+        requestPayload.location = {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy: location.accuracy,
+          address: location.address,
+          timestamp: location.timestamp
+        };
+        console.log('📍 Including location in request:', 
+          location.address?.city || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
+      }
+      
       // Add proxy settings if enabled
       if (proxyUsername && proxyPassword) {
         requestPayload.proxyUsername = proxyUsername;
@@ -1154,6 +1230,16 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       if (tools.length > 0) {
         requestPayload.tools = tools;
         console.log('Sending streaming request with tools:', tools.map(t => t.function.name));
+      }
+      
+      // Add MCP servers (filter enabled only)
+      const enabledMCPServers = mcpServers.filter(s => s.enabled);
+      if (enabledMCPServers.length > 0) {
+        requestPayload.mcp_servers = enabledMCPServers.map(s => ({
+          name: s.name,
+          url: s.url
+        }));
+        console.log('[MCP] Sending MCP servers:', enabledMCPServers.map(s => s.name).join(', '));
       }
       
       // Get YouTube OAuth token if available
@@ -1525,7 +1611,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       content: data.content || newMessages[currentStreamingBlockIndex].content || '',
                       tool_calls: data.tool_calls || newMessages[currentStreamingBlockIndex].tool_calls,
                       extractedContent: data.extractedContent || newMessages[currentStreamingBlockIndex].extractedContent,
+                      imageGenerations: data.imageGenerations || newMessages[currentStreamingBlockIndex].imageGenerations,
                       llmApiCalls: data.llmApiCalls || newMessages[currentStreamingBlockIndex].llmApiCalls,
+                      evaluations: data.evaluations || newMessages[currentStreamingBlockIndex].evaluations,
                       isStreaming: false
                     };
                   }
@@ -1568,7 +1656,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         content: data.content || lastMessage.content || '',
                         tool_calls: data.tool_calls || lastMessage.tool_calls,
                         extractedContent: data.extractedContent || lastMessage.extractedContent,
+                        imageGenerations: data.imageGenerations || lastMessage.imageGenerations,
                         llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
+                        evaluations: data.evaluations || lastMessage.evaluations,
                         isStreaming: false
                       };
                       return newMessages;
@@ -1581,7 +1671,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       content: data.content || '',
                       ...(data.tool_calls && { tool_calls: data.tool_calls }),
                       ...(data.extractedContent && { extractedContent: data.extractedContent }),
-                      ...(data.llmApiCalls && { llmApiCalls: data.llmApiCalls })
+                      ...(data.imageGenerations && { imageGenerations: data.imageGenerations }),
+                      ...(data.llmApiCalls && { llmApiCalls: data.llmApiCalls }),
+                      ...(data.evaluations && { evaluations: data.evaluations })
                     };
                     return [...prev, assistantMessage];
                   }
@@ -1602,7 +1694,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         content: data.content || lastMessage.content || '',
                         tool_calls: data.tool_calls || lastMessage.tool_calls,
                         extractedContent: data.extractedContent || lastMessage.extractedContent,
+                        imageGenerations: data.imageGenerations || lastMessage.imageGenerations,
                         llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
+                        evaluations: data.evaluations || lastMessage.evaluations,
                         isStreaming: false
                       };
                       return newMessages;
@@ -1623,7 +1717,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     content: data.content || '',
                     ...(data.tool_calls && { tool_calls: data.tool_calls }),
                     ...(data.extractedContent && { extractedContent: data.extractedContent }),
-                    ...(data.llmApiCalls && { llmApiCalls: data.llmApiCalls })
+                    ...(data.imageGenerations && { imageGenerations: data.imageGenerations }),
+                    ...(data.llmApiCalls && { llmApiCalls: data.llmApiCalls }),
+                    ...(data.evaluations && { evaluations: data.evaluations })
                   };
                   
                   // Check if this is a fallback/incomplete response
@@ -1679,14 +1775,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 // The AuthContext will handle logout via useAuth
               }
               
-              // Find the last user message index for retry context
-              let lastUserMsgIndex = -1;
-              for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === 'user') {
-                  lastUserMsgIndex = i;
-                  break;
-                }
+              // Check if continue button should be shown
+              if (data.showContinueButton && data.continueContext) {
+                console.log('🔄 Continue button enabled for error:', errorMsg);
+                setShowContinueButton(true);
+                setContinueContext(data.continueContext);
               }
+              
+              // Use the tracked user message index for retry context
+              // (currentUserMessageIndex was set when we added the user message)
               
               // Capture full error data for transparency
               const errorMessage: ChatMessage = {
@@ -1695,7 +1792,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 errorData: data,  // Store full error object including code, stack, etc.
                 isRetryable: true,  // Mark as retryable
                 originalErrorMessage: errorMsg,
-                originalUserPromptIndex: lastUserMsgIndex >= 0 ? lastUserMsgIndex : undefined,
+                originalUserPromptIndex: currentUserMessageIndex,
                 retryCount: 0
               };
               setMessages(prev => [...prev, errorMessage]);
@@ -1836,35 +1933,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       
       // Handle aborted requests
       if (error instanceof Error && error.name === 'AbortError') {
-        // Find the last user message index for retry context
-        let lastUserMsgIndex = -1;
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === 'user') {
-            lastUserMsgIndex = i;
-            break;
-          }
-        }
-        
+        // Use the tracked user message index for retry context
         const timeoutMessage: ChatMessage = {
           role: 'assistant',
           content: '⏱️ Request timed out after 4 minutes. This may happen when tools take too long to execute. Try simplifying your request or disabling some tools.',
           isRetryable: true,  // Mark timeout as retryable
           originalErrorMessage: 'Request timed out',
-          originalUserPromptIndex: lastUserMsgIndex >= 0 ? lastUserMsgIndex : undefined,
+          originalUserPromptIndex: currentUserMessageIndex,
           retryCount: 0
         };
         setMessages(prev => [...prev, timeoutMessage]);
         showWarning('Request timed out after 4 minutes. Try disabling some tools or simplifying your request.');
       } else {
-        // Find the last user message index for retry context
-        let lastUserMsgIndex = -1;
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === 'user') {
-            lastUserMsgIndex = i;
-            break;
-          }
-        }
-        
+        // Use the tracked user message index for retry context
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         const errorMessage: ChatMessage = {
           role: 'assistant',
@@ -1877,7 +1958,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           } : { message: String(error) },
           isRetryable: true,  // Mark as retryable
           originalErrorMessage: errorMsg,
-          originalUserPromptIndex: lastUserMsgIndex >= 0 ? lastUserMsgIndex : undefined,
+          originalUserPromptIndex: currentUserMessageIndex,
           retryCount: 0
         };
         setMessages(prev => [...prev, errorMessage]);
@@ -1940,10 +2021,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     // Remove the failed message
     setMessages(prev => prev.slice(0, messageIndex));
     
-    // Restore user input for now (TODO: implement full context retry)
+    // Restore user input and trigger auto-submit
     const userContent = getMessageText(userPrompt.content);
     setInput(userContent);
-    showSuccess('User message restored to input - click Send to retry');
+    
+    // Set trigger to auto-submit when input updates
+    retryTriggerRef.current = true;
   };
 
   const handleLoadChat = async (entry: ChatHistoryEntry) => {
@@ -1972,6 +2055,214 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     setShowClearHistoryConfirm(false);
     setShowLoadDialog(false);
     showSuccess('All chat history cleared');
+  };
+
+  const handleContinue = async () => {
+    if (!continueContext) {
+      showError('No continuation context available');
+      return;
+    }
+    
+    console.log('🔄 Continuing from error/limit with context:', continueContext);
+    
+    // Hide the continue button
+    setShowContinueButton(false);
+    
+    // Clear any existing errors
+    clearAllToasts();
+    
+    // Build tools array from enabled tools
+    const tools = [];
+    if (enabledTools.web_search) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'web_search',
+          description: 'Search the web for information',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Search query' }
+            },
+            required: ['query']
+          }
+        }
+      });
+    }
+    if (enabledTools.execute_js) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'execute_js',
+          description: 'Execute JavaScript code',
+          parameters: {
+            type: 'object',
+            properties: {
+              code: { type: 'string', description: 'JavaScript code to execute' }
+            },
+            required: ['code']
+          }
+        }
+      });
+    }
+    if (enabledTools.scrape_url) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'scrape_web_content',
+          description: 'Scrape content from a URL',
+          parameters: {
+            type: 'object',
+            properties: {
+              url: { type: 'string', description: 'URL to scrape' }
+            },
+            required: ['url']
+          }
+        }
+      });
+    }
+    
+    // Build request payload with continuation flag
+    const enabledProviders = settings.providers.filter(p => p.enabled !== false);
+    
+    const requestPayload: any = {
+      providers: enabledProviders,
+      messages: continueContext.messages,  // Full message history including tool results
+      temperature: 0.7,
+      stream: true,
+      isContinuation: true  // Critical: Flag to bypass message filtering
+    };
+    
+    // Add location data if available (same as initial request)
+    if (location) {
+      requestPayload.location = {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracy,
+        address: location.address,
+        timestamp: location.timestamp
+      };
+      console.log('📍 Including location in continuation request:', 
+        location.address?.city || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
+    }
+    
+    // Add tools if any are enabled
+    if (tools.length > 0) {
+      requestPayload.tools = tools;
+    }
+    
+    // Add extracted content if available
+    if (continueContext.extractedContent) {
+      requestPayload.extractedContent = continueContext.extractedContent;
+    }
+    
+    // Add MCP servers (filter enabled only)
+    const enabledMCPServers = mcpServers.filter(s => s.enabled);
+    if (enabledMCPServers.length > 0) {
+      requestPayload.mcp_servers = enabledMCPServers.map(s => ({
+        name: s.name,
+        url: s.url
+      }));
+    }
+    
+    // Set loading state
+    setIsLoading(true);
+    
+    // Check for access token
+    if (!accessToken) {
+      showError('Please sign in to continue');
+      setShowContinueButton(true);
+      setIsLoading(false);
+      return;
+    }
+    
+    try {
+      // Use the existing streaming handler
+      await sendChatMessageStreaming(
+        requestPayload,
+        accessToken,
+        (eventType: string, data: any) => {
+          console.log('SSE Event (continuation):', eventType, data);
+          
+          // Use the same event handlers as regular messages
+          // The existing switch statement will handle all events
+          switch (eventType) {
+            case 'delta':
+              if (data.content) {
+                setStreamingContent(prev => prev + data.content);
+                
+                setMessages(prev => {
+                  const lastMessageIndex = prev.length - 1;
+                  const lastMessage = prev[lastMessageIndex];
+                  
+                  const hasToolMessageAfterAssistant = lastMessage?.role === 'tool';
+                  
+                  if (lastMessage && lastMessage.role === 'assistant' && !hasToolMessageAfterAssistant) {
+                    const newMessages = [...prev];
+                    newMessages[lastMessageIndex] = {
+                      ...lastMessage,
+                      content: (lastMessage.content || '') + data.content,
+                      isStreaming: true
+                    };
+                    return newMessages;
+                  } else {
+                    const newBlock: ChatMessage = {
+                      role: 'assistant',
+                      content: data.content,
+                      isStreaming: true
+                    };
+                    return [...prev, newBlock];
+                  }
+                });
+              }
+              break;
+              
+            case 'error':
+              const errorMsg = data.error;
+              showError(errorMsg);
+              
+              // Check for continue context again
+              if (data.showContinueButton && data.continueContext) {
+                setShowContinueButton(true);
+                setContinueContext(data.continueContext);
+              }
+              
+              const errorMessage: ChatMessage = {
+                role: 'assistant',
+                content: `❌ Error: ${errorMsg}`,
+                errorData: data,
+                isRetryable: true,
+                originalErrorMessage: errorMsg,
+                retryCount: 0
+              };
+              setMessages(prev => [...prev, errorMessage]);
+              break;
+              
+            case 'complete':
+              console.log('Continuation complete:', data);
+              if (data.cost && typeof data.cost === 'number') {
+                addCost(data.cost);
+              }
+              break;
+              
+            // Add other necessary event handlers as needed
+            default:
+              console.log('Unhandled event in continuation:', eventType, data);
+          }
+        },
+        undefined, // onComplete
+        undefined, // onError
+        abortControllerRef.current?.signal
+      );
+    } catch (error) {
+      console.error('Error during continuation:', error);
+      showError(error instanceof Error ? error.message : 'Failed to continue');
+      
+      // Re-enable continue button if needed
+      setShowContinueButton(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleNewChat = () => {
@@ -2120,6 +2411,27 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   </div>
                   <button onClick={() => handleExampleClick('Scrape and summarize the main content from https://news.ycombinator.com')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Scrape Hacker News</button>
                   <button onClick={() => handleExampleClick('Extract and analyze the key points from https://en.wikipedia.org/wiki/Artificial_intelligence')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Extract Wikipedia content</button>
+                  
+                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
+                    📊 Visual Charts & Diagrams
+                  </div>
+                  <button onClick={() => handleExampleClick('Create a flowchart showing the software development lifecycle from planning to deployment')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Flowchart: Software development lifecycle</button>
+                  <button onClick={() => handleExampleClick('Show a sequence diagram for user authentication with OAuth 2.0')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Sequence diagram: OAuth authentication</button>
+                  <button onClick={() => handleExampleClick('Generate a Gantt chart for a 3-month web application project with phases: Planning, Design, Development, Testing, Deployment')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Gantt chart: Project timeline</button>
+                  <button onClick={() => handleExampleClick('Create a class diagram showing relationships between User, Order, and Product entities in an e-commerce system')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Class diagram: E-commerce system</button>
+                  <button onClick={() => handleExampleClick('Show a pie chart of global renewable energy sources distribution: Solar 30%, Wind 35%, Hydro 25%, Geothermal 10%')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Pie chart: Energy distribution</button>
+                  <button onClick={() => handleExampleClick('Create an ER diagram for a blog database with tables: Users, Posts, Comments, and Tags')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">ER diagram: Blog database schema</button>
+                  <button onClick={() => handleExampleClick('Note: Charts auto-render with Mermaid.js. If there are syntax errors, the system automatically fixes them (up to 3 attempts). Fix costs ~$0.000016 per attempt.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-500 italic" disabled>ℹ️ Auto-fix with full cost tracking</button>
+                  
+                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
+                    📍 Location-Based Services
+                  </div>
+                  <button onClick={() => handleExampleClick('What are the top 5 restaurants near my current location?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find nearby restaurants</button>
+                  <button onClick={() => handleExampleClick('Search for coffee shops within 2 miles of my location that are open now')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find open coffee shops nearby</button>
+                  <button onClick={() => handleExampleClick('What is the weather forecast for my current location for the next 3 days?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Local weather forecast</button>
+                  <button onClick={() => handleExampleClick('Find the nearest hospital or emergency room to my location')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find nearest hospital</button>
+                  <button onClick={() => handleExampleClick('What are some interesting tourist attractions in my area?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find local attractions</button>
+                  <button onClick={() => handleExampleClick('Note: Enable location in Settings → Location tab. Your precise coordinates are used for searches but never stored. Location data stays in your browser.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-500 italic" disabled>ℹ️ Enable in Settings (privacy-first)</button>
                 </div>
               </div>
             )}
@@ -2897,6 +3209,55 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         
                         {/* Extracted content for non-markdown messages too */}
                         {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
+                        
+                        {/* Generated Images */}
+                        {msg.imageGenerations && msg.imageGenerations.length > 0 && (
+                          <div className="mt-3">
+                            {msg.imageGenerations.map((imgGen) => (
+                              <GeneratedImageBlock
+                                key={imgGen.id}
+                                data={imgGen}
+                                accessToken={accessToken}
+                                onCopy={(text) => {
+                                  navigator.clipboard.writeText(text).then(() => {
+                                    showSuccess('Image URL copied to clipboard!');
+                                  }).catch(() => {
+                                    showError('Failed to copy');
+                                  });
+                                }}
+                                onGrab={(markdown) => {
+                                  navigator.clipboard.writeText(markdown).then(() => {
+                                    showSuccess('Markdown copied to clipboard!');
+                                  }).catch(() => {
+                                    showError('Failed to copy');
+                                  });
+                                }}
+                                onLlmInfo={() => {
+                                  // Show the LLM info dialog for this message
+                                  setShowLlmInfo(idx);
+                                }}
+                                onStatusChange={(id, status, imageUrl, llmApiCall) => {
+                                  setMessages(prev => prev.map((m, mIdx) => {
+                                    if (m.imageGenerations) {
+                                      const updated = m.imageGenerations.map(ig =>
+                                        ig.id === id 
+                                          ? { ...ig, status, imageUrl, llmApiCall } 
+                                          : ig
+                                      );
+                                      // If llmApiCall provided, add to message's llmApiCalls array
+                                      const updatedMessage = { ...m, imageGenerations: updated };
+                                      if (llmApiCall && mIdx === idx) {
+                                        updatedMessage.llmApiCalls = [...(m.llmApiCalls || []), llmApiCall];
+                                      }
+                                      return updatedMessage;
+                                    }
+                                    return m;
+                                  }));
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     
@@ -2999,8 +3360,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
                             Try Again
-                            {msg.retryCount && msg.retryCount > 0 && (
-                              <span className="text-[10px] opacity-75">({msg.retryCount + 1})</span>
+                            {(msg.retryCount ?? 0) > 0 && (
+                              <span className="text-[10px] opacity-75">({(msg.retryCount ?? 0) + 1})</span>
                             )}
                           </button>
                         )}
@@ -3207,6 +3568,23 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+          
+          {/* Continue Button for Error Recovery */}
+          {showContinueButton && continueContext && (
+            <div className="flex justify-center py-3">
+              <button
+                onClick={handleContinue}
+                disabled={isLoading}
+                className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold text-base transition-all transform hover:scale-105 shadow-lg flex items-center gap-2"
+                title="Continue from where the error occurred"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+                Continue Processing
+              </button>
             </div>
           )}
           
@@ -3668,6 +4046,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {showLlmInfo !== null && messages[showLlmInfo]?.llmApiCalls && (
         <LlmInfoDialog 
           apiCalls={messages[showLlmInfo].llmApiCalls}
+          evaluations={(messages[showLlmInfo] as any).evaluations}
           onClose={() => setShowLlmInfo(null)}
         />
       )}

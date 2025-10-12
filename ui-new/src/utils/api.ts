@@ -225,6 +225,42 @@ export interface ChatMessage {
   retryCount?: number;               // Number of retry attempts for this message
   originalErrorMessage?: string;     // Original error message for retry context
   originalUserPromptIndex?: number;  // Index of original user prompt for retry
+  // Self-evaluation results
+  evaluations?: Array<{              // Self-evaluation results for response comprehensiveness
+    attempt: number;                 // Evaluation attempt number
+    comprehensive: boolean;          // Whether response was deemed comprehensive
+    reason: string;                  // Explanation of evaluation result
+  }>;
+  // Image generation results
+  imageGenerations?: Array<{         // Image generation tool results
+    id: string;                      // Unique identifier for this generation
+    provider: string;                // Provider name (openai, together, replicate, gemini)
+    model: string;                   // Model name/ID
+    modelKey?: string;               // Internal model key from PROVIDER_CATALOG
+    cost: number;                    // Estimated or actual cost in USD
+    prompt: string;                  // Image description prompt
+    size?: string;                   // Image dimensions (e.g., '1024x1024')
+    style?: string;                  // Style preference (e.g., 'natural', 'vivid')
+    qualityTier?: string;            // Quality tier (ultra, high, standard, fast)
+    constraints?: {                  // Model constraints
+      maxSize?: string;
+      supportedSizes?: string[];
+      supportsStyle?: boolean;
+    };
+    imageUrl?: string;               // Generated image URL (after generation)
+    llmApiCall?: any;                // LLM API call data for generation
+    status: 'pending' | 'generating' | 'complete' | 'error';  // Generation status
+    error?: string;                  // Error message if generation failed
+    fallbackUsed?: boolean;          // Whether a fallback provider was used
+    availableAlternatives?: Array<{  // Alternative providers that can handle request
+      provider: string;
+      model: string;
+      cost: number;
+      capabilities?: string[];
+    }>;
+    ready?: boolean;                 // Whether ready for generation (false = needs user click)
+    message?: string;                // Status/instruction message for user
+  }>;
 }
 
 export interface ProxyRequest {
@@ -381,4 +417,115 @@ export const sendChatMessageStreaming = async (
   );
   
   await handleSSEResponse(response, onEvent, onComplete, onError);
+};
+
+// Image Generation endpoint (non-streaming)
+export const generateImage = async (
+  prompt: string,
+  provider: string,
+  model: string,
+  modelKey: string,
+  size: string,
+  quality: string,
+  style: string,
+  token: string
+): Promise<{
+  success: boolean;
+  imageUrl?: string;
+  provider?: string;
+  model?: string;
+  cost?: number;
+  fallbackUsed?: boolean;
+  originalProvider?: string;
+  llmApiCall?: any;
+  metadata?: any;
+  error?: string;
+}> => {
+  const apiBase = await getCachedApiBase();
+  
+  const requestBody = {
+    prompt,
+    provider,
+    model,
+    modelKey,
+    size,
+    quality,
+    style,
+    accessToken: token
+  };
+  
+  try {
+    const response = await fetch(`${apiBase}/generate-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody),
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `HTTP ${response.status}: ${response.statusText}`
+      };
+    }
+    
+    return data;
+  } catch (error: any) {
+    console.error('Image generation request failed:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to generate image'
+    };
+  }
+};
+
+// Get image provider health status
+export const getImageProviderHealth = async (): Promise<{
+  timestamp: string;
+  providers: Record<string, {
+    provider: string;
+    available: boolean;
+    reason: string;
+    details?: any;
+    lastCheck: string;
+  }>;
+  summary: {
+    total: number;
+    available: number;
+    unavailable: number;
+  };
+}> => {
+  const apiBase = await getCachedApiBase();
+  
+  try {
+    const response = await fetch(`${apiBase}/health-check/image-providers`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error: any) {
+    console.error('Failed to fetch provider health:', error);
+    // Return error state
+    return {
+      timestamp: new Date().toISOString(),
+      providers: {},
+      summary: {
+        total: 0,
+        available: 0,
+        unavailable: 0
+      }
+    };
+  }
 };

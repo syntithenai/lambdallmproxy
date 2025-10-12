@@ -11,6 +11,100 @@ const { transcribeUrl } = require('./tools/transcribe');
 const { tavilySearch, tavilyExtract } = require('./tavily-search');
 const vm = require('vm');
 
+// AWS Lambda client for invoking Puppeteer Lambda
+const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
+const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+
+// MCP (Model Context Protocol) support
+const mcpClient = require('./mcp/client');
+const mcpCache = require('./mcp/tool-cache');
+
+// Cache system for search results, transcriptions, and scrapes
+const { getCacheKey, getFromCache, saveToCache, initializeCache } = require('./utils/cache');
+
+/**
+ * Cached search wrapper - checks cache before calling search API
+ * @param {string} query - Search query
+ * @param {string} service - Search service ('tavily' or 'duckduckgo')
+ * @param {number} maxResults - Maximum results
+ * @param {Function} searchFunction - Async function that performs the search
+ * @returns {Promise<Array>} Search results (from cache or API)
+ */
+async function cachedSearch(query, service, maxResults, searchFunction) {
+  // Generate cache key
+  const cacheKey = getCacheKey('search', {
+    query: query,
+    service: service,
+    maxResults: maxResults
+  });
+  
+  // Try to get from cache
+  try {
+    const cachedResults = await getFromCache('search', cacheKey);
+    if (cachedResults) {
+      console.log(`💾 Cache HIT for ${service} search: "${query}" (${cachedResults.length} results)`);
+      return { results: cachedResults, fromCache: true };
+    }
+  } catch (error) {
+    console.warn(`Cache read error for query "${query}":`, error.message);
+  }
+  
+  // Cache miss - fetch from API
+  console.log(`🔍 Cache MISS for ${service} search: "${query}" - fetching from API`);
+  const results = await searchFunction();
+  
+  // Save to cache (non-blocking)
+  if (results && Array.isArray(results) && results.length > 0) {
+    saveToCache('search', cacheKey, results, 3600).catch(error => {
+      console.warn(`Cache write error for query "${query}":`, error.message);
+    });
+  }
+  
+  return { results, fromCache: false };
+}
+
+// Puppeteer Lambda invocation helper
+async function invokePuppeteerLambda(url, options = {}) {
+  const puppeteerLambdaArn = process.env.PUPPETEER_LAMBDA_ARN;
+  
+  if (!puppeteerLambdaArn) {
+    throw new Error('PUPPETEER_LAMBDA_ARN environment variable not set');
+  }
+  
+  const payload = {
+    url,
+    timeout: options.timeout || 30000,
+    waitForNetworkIdle: options.waitForNetworkIdle !== false,
+    extractLinks: options.extractLinks !== false,
+    extractImages: options.extractImages !== false,
+    screenshot: options.screenshot || false
+  };
+  
+  console.log(`🚀 [Puppeteer Lambda] Invoking function: ${puppeteerLambdaArn}`);
+  
+  const command = new InvokeCommand({
+    FunctionName: puppeteerLambdaArn,
+    InvocationType: 'RequestResponse',
+    Payload: JSON.stringify(payload)
+  });
+  
+  const response = await lambdaClient.send(command);
+  const responsePayload = JSON.parse(new TextDecoder().decode(response.Payload));
+  
+  if (responsePayload.statusCode !== 200) {
+    const body = JSON.parse(responsePayload.body);
+    throw new Error(body.error || 'Puppeteer Lambda invocation failed');
+  }
+  
+  const body = JSON.parse(responsePayload.body);
+  
+  if (!body.success) {
+    throw new Error(body.error || 'Puppeteer Lambda returned failure');
+  }
+  
+  return body.data;
+}
+
 // Simple token estimation (rough approximation: 4 chars ≈ 1 token)
 function estimateTokens(text) {
   if (!text || typeof text !== 'string') return 0;
@@ -296,7 +390,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'execute_javascript',
-      description: 'Execute JavaScript code in a secure sandbox environment. Use for calculations, demonstrations, and data processing. Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically by the tool execution.',
+      description: '🧮 **PRIMARY TOOL FOR ALL CALCULATIONS AND MATH**: Execute JavaScript code in a secure sandbox environment. **MANDATORY USE** when user asks for: calculations, math problems, compound interest, percentages, conversions, data processing, algorithms, or any numerical computation. Also use for demonstrations and code examples. **ALWAYS call this tool for math instead of trying to calculate in your response.** Returns the console output and execution result. Use console.log() to display results. Example: For compound interest, use: "const principal = 10000; const rate = 0.07; const time = 15; const amount = principal * Math.pow(1 + rate, time); console.log(`Final amount: $${amount.toFixed(2)}`);". Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically.',
       parameters: {
         type: 'object',
         properties: {
@@ -340,6 +434,63 @@ const toolFunctions = [
           }
         },
         required: ['url'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_image',
+      description: '🎨 Generate images using AI. Analyzes quality requirements from prompt, checks provider availability, selects best model, and estimates cost. Returns button data for user to confirm and generate. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Detailed image description. Be specific about subject, style, lighting, composition, mood. Examples: "A serene mountain landscape at sunset with golden light", "Photorealistic portrait of a smiling woman in professional attire", "Cartoon-style illustration of a friendly robot"'
+          },
+          quality: {
+            type: 'string',
+            enum: ['ultra', 'high', 'standard', 'fast'],
+            description: 'Quality tier: ultra (photorealistic, 4k, professional), high (detailed, artistic), standard (normal, illustration), fast (quick, draft, sketch). If not specified, analyzes prompt for quality keywords.'
+          },
+          size: {
+            type: 'string',
+            enum: ['256x256', '512x512', '1024x1024', '1792x1024', '1024x1792'],
+            description: 'Image dimensions. Square: 256x256, 512x512, 1024x1024. Landscape: 1792x1024. Portrait: 1024x1792. Default: 1024x1024'
+          },
+          style: {
+            type: 'string',
+            enum: ['natural', 'vivid'],
+            description: 'DALL-E 3 only: natural (more realistic) or vivid (hyper-real, dramatic). Default: natural'
+          }
+        },
+        required: ['prompt'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_chart',
+      description: '📊 **PRIMARY TOOL FOR ALL DIAGRAMS, CHARTS, AND VISUALIZATIONS**: Generate professional Mermaid diagrams automatically rendered as interactive SVG in the UI. **MANDATORY USE** when user requests: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, Gantt charts, pie charts, mindmaps, git graphs, or ANY visual diagram/chart/visualization. **DO NOT use execute_javascript to generate charts - ALWAYS use this tool instead.** This tool generates beautiful, interactive diagrams that render directly in the UI. Simply call this tool and the system will handle the Mermaid code generation automatically. **Keywords that require this tool**: diagram, chart, flowchart, visualization, graph, workflow, process flow, data flow, architecture diagram, UML, ERD, timeline, mindmap.',
+      parameters: {
+        type: 'object',
+        properties: {
+          description: {
+            type: 'string',
+            description: 'Clear description of what the chart should visualize. Examples: "software development lifecycle from planning to deployment", "user authentication flow with JWT tokens", "database schema for e-commerce site with orders and customers", "project timeline for website launch", "state machine for order processing"'
+          },
+          chart_type: {
+            type: 'string',
+            enum: ['flowchart', 'sequence', 'class', 'state', 'er', 'gantt', 'pie', 'git', 'mindmap'],
+            default: 'flowchart',
+            description: 'Type of diagram: flowchart (processes/workflows/decisions), sequence (interactions/API calls/message flows), class (OOP structure/relationships), state (state machines/transitions), er (database schema/relationships), gantt (project timeline/schedule), pie (proportions/percentages), git (version control branches), mindmap (hierarchical concepts/brainstorming)'
+          }
+        },
+        required: ['description'],
         additionalProperties: false
       }
     }
@@ -1020,11 +1171,37 @@ Brief answer with URLs:`;
       if (!url) return JSON.stringify({ error: 'url required' });
       const timeout = clampInt(args.timeout, 1, 60, 15);
       
-      // Check if Tavily API key is available
+      // Check cache first
+      let cachedResult = null;
+      try {
+        const cacheKey = getCacheKey('scrapes', { url });
+        cachedResult = await getFromCache('scrapes', cacheKey);
+        
+        if (cachedResult) {
+          console.log(`💾 Cache HIT for scrape: ${url} (${cachedResult.content?.length || 0} chars)`);
+          // Add cache indicator to response
+          const response = { ...cachedResult, cached: true };
+          return JSON.stringify(response);
+        }
+      } catch (error) {
+        console.warn(`Cache read error for scrape:`, error.message);
+      }
+      
+      console.log(`🔍 Cache MISS for scrape: ${url} - fetching content`);
+      
+      // NEW FALLBACK STRATEGY: Try direct scraping first, then Puppeteer as fallback
+      // This keeps memory usage low on main Lambda and only uses Puppeteer when needed
+      
+      let directScrapingFailed = false;
+      let directScrapingError = null;
+      
+      // Try direct scraping first (with proxy support)
       const tavilyApiKey = context.tavilyApiKey;
       const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
+      const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+      const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
       
-      console.log(`📄 Scraping ${url} using: ${useTavily ? 'Tavily API' : 'DuckDuckGo'}`);
+      console.log(`📄 [Direct Scraping] Trying ${url} using: ${useTavily ? 'Tavily API' : 'DuckDuckGo with proxy'}`);
       
       try {
         let content, format, originalLength, extractedLength, compressionRatio, warning, extractionError;
@@ -1046,12 +1223,10 @@ Brief answer with URLs:`;
             compressionRatio = 1.0;
             scrapeService = 'tavily';
             
-            console.log(`✅ Tavily extract completed: ${extractedLength} chars`);
+            console.log(`✅ [Tavily] Extract completed: ${extractedLength} chars`);
           } catch (tavilyError) {
-            console.error('Tavily extract failed, falling back to DuckDuckGo:', tavilyError.message);
-            // Fall back to DuckDuckGo on error
-            const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-            const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+            console.error('[Tavily] Extract failed, trying DuckDuckGo with proxy:', tavilyError.message);
+            // Fall back to DuckDuckGo with proxy
             const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
             const raw = await searcher.fetchUrl(url, timeout * 1000);
             const extracted = extractContent(raw);
@@ -1063,12 +1238,10 @@ Brief answer with URLs:`;
             compressionRatio = extracted.compressionRatio;
             warning = extracted.warning;
             extractionError = extracted.error;
-            scrapeService = 'duckduckgo'; // Fallback was used
+            scrapeService = 'duckduckgo_proxy';
           }
         } else {
-          // Use DuckDuckGo fetcher
-          const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-          const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+          // Use DuckDuckGo fetcher with proxy
           const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
           const raw = await searcher.fetchUrl(url, timeout * 1000);
           const extracted = extractContent(raw);
@@ -1080,6 +1253,7 @@ Brief answer with URLs:`;
           compressionRatio = extracted.compressionRatio;
           warning = extracted.warning;
           extractionError = extracted.error;
+          scrapeService = 'duckduckgo_proxy';
         }
         
         console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`);
@@ -1171,9 +1345,118 @@ Brief answer with URLs:`;
           response.extractionError = extractionError;
         }
         
+        console.log(`✅ [Direct Scraping] Success: ${truncatedContent.length} chars, ${images.length} images, ${links.length} links`);
+        
+        // Save to cache (non-blocking) - TTL 1 hour for scrapes
+        try {
+          const cacheKey = getCacheKey('scrapes', { url });
+          saveToCache('scrapes', cacheKey, response, 3600).then(() => {
+            console.log(`💾 Cached scrape: ${url}`);
+          }).catch(error => {
+            console.warn(`Cache write error for scrape:`, error.message);
+          });
+        } catch (error) {
+          console.warn(`Cache error for scrape:`, error.message);
+        }
+        
         return JSON.stringify(response);
-      } catch (e) {
-        return JSON.stringify({ url, error: String(e?.message || e) });
+        
+      } catch (directScrapingError) {
+        // Direct scraping failed - try Puppeteer Lambda as fallback
+        console.error(`❌ [Direct Scraping] Failed:`, directScrapingError.message);
+        
+        // Check if Puppeteer Lambda is configured
+        const puppeteerLambdaArn = process.env.PUPPETEER_LAMBDA_ARN;
+        const usePuppeteer = process.env.USE_PUPPETEER !== 'false'; // Enabled by default
+        
+        if (!usePuppeteer) {
+          console.log(`⚠️ [Puppeteer] Disabled by USE_PUPPETEER=false`);
+          return JSON.stringify({ url, error: String(directScrapingError?.message || directScrapingError) });
+        }
+        
+        if (!puppeteerLambdaArn) {
+          console.log(`⚠️ [Puppeteer] Not configured (PUPPETEER_LAMBDA_ARN not set)`);
+          return JSON.stringify({ url, error: String(directScrapingError?.message || directScrapingError) });
+        }
+        
+        // Try Puppeteer Lambda as fallback
+        try {
+          console.log(`🤖 [Puppeteer] Falling back to Puppeteer Lambda for: ${url}`);
+          
+          const result = await invokePuppeteerLambda(url, {
+            timeout: timeout * 1000,
+            waitForNetworkIdle: true,
+            extractLinks: true,
+            extractImages: true
+          });
+          
+          // Format response similar to direct scraping
+          const response = {
+            scrapeService: 'puppeteer_lambda',
+            url: result.url,
+            title: result.title,
+            content: result.text,
+            format: 'text',
+            originalLength: result.text.length,
+            extractedLength: result.text.length,
+            compressionRatio: 1.0,
+            images: result.images.map(img => ({
+              src: img.url,
+              alt: img.alt,
+              caption: img.alt
+            })),
+            links: result.links.map(link => ({
+              href: link.url,
+              text: link.text
+            })),
+            meta: result.meta,
+            stats: result.stats
+          };
+          
+          // Token-aware truncation
+          const MAX_SCRAPE_CHARS = 400000;
+          if (response.content.length > MAX_SCRAPE_CHARS) {
+            const originalLength = response.content.length;
+            response.content = response.content.substring(0, MAX_SCRAPE_CHARS);
+            
+            // Try to break at sentence/paragraph boundary
+            const lastPeriod = response.content.lastIndexOf('.');
+            const lastNewline = response.content.lastIndexOf('\n');
+            const breakPoint = Math.max(lastPeriod, lastNewline);
+            
+            if (breakPoint > MAX_SCRAPE_CHARS * 0.8) {
+              response.content = response.content.substring(0, breakPoint + 1);
+            }
+            
+            response.content += `\n\n[Content truncated: ${originalLength} → ${response.content.length} chars to fit model limits.]`;
+            response.wasTruncated = true;
+            
+            console.log(`✂️ Truncated Puppeteer content: ${originalLength} → ${response.content.length} chars`);
+          }
+          
+          console.log(`✅ [Puppeteer] Scraping complete: ${response.content.length} chars, ${response.links?.length || 0} links, ${response.images?.length || 0} images`);
+          
+          // Save to cache (non-blocking) - TTL 1 hour for scrapes
+          try {
+            const cacheKey = getCacheKey('scrapes', { url });
+            saveToCache('scrapes', cacheKey, response, 3600).then(() => {
+              console.log(`💾 Cached Puppeteer scrape: ${url}`);
+            }).catch(error => {
+              console.warn(`Cache write error for Puppeteer scrape:`, error.message);
+            });
+          } catch (error) {
+            console.warn(`Cache error for Puppeteer scrape:`, error.message);
+          }
+          
+          return JSON.stringify(response);
+          
+        } catch (puppeteerError) {
+          console.error(`❌ [Puppeteer] Fallback also failed:`, puppeteerError.message);
+          return JSON.stringify({ 
+            url, 
+            error: `Both direct scraping and Puppeteer failed. Direct: ${directScrapingError.message}. Puppeteer: ${puppeteerError.message}` 
+          });
+        }
       }
     }
     case 'execute_javascript': {
@@ -1349,6 +1632,172 @@ Brief answer with URLs:`;
         return JSON.stringify({ 
           error: `Transcription failed: ${error.message}`,
           url 
+        });
+      }
+    }
+    
+    case 'generate_image': {
+      const prompt = String(args.prompt || '').trim();
+      if (!prompt) return JSON.stringify({ error: 'prompt required' });
+      
+      try {
+        // Load PROVIDER_CATALOG and provider health module
+        const fs = require('fs');
+        const path = require('path');
+        const { checkMultipleProviders } = require('./utils/provider-health');
+        
+        const catalogPath = path.join(__dirname, '..', 'PROVIDER_CATALOG.json');
+        const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+        
+        if (!catalog.image || !catalog.image.providers) {
+          return JSON.stringify({ 
+            error: 'Image generation not configured in PROVIDER_CATALOG',
+            available: false
+          });
+        }
+        
+        const { providers, qualityTiers } = catalog.image;
+        
+        // 1. Determine quality tier from args or analyze prompt
+        let qualityTier = args.quality;
+        if (!qualityTier) {
+          // Analyze prompt for quality keywords
+          const promptLower = prompt.toLowerCase();
+          for (const [tier, config] of Object.entries(qualityTiers)) {
+            if (config.keywords.some(keyword => promptLower.includes(keyword.toLowerCase()))) {
+              qualityTier = tier;
+              break;
+            }
+          }
+          qualityTier = qualityTier || 'standard'; // Default to standard
+        }
+        
+        console.log(`🎨 Image generation: quality=${qualityTier}, prompt="${prompt.substring(0, 50)}..."`);
+        
+        // 2. Find all models matching the quality tier
+        const matchingModels = [];
+        for (const [providerName, providerData] of Object.entries(providers)) {
+          for (const [modelKey, modelData] of Object.entries(providerData.models || {})) {
+            if (modelData.qualityTier === qualityTier) {
+              matchingModels.push({
+                provider: providerName,
+                modelKey,
+                model: modelData.id || modelKey,
+                qualityTier: modelData.qualityTier,
+                pricing: modelData.pricing,
+                supportedSizes: modelData.supportedSizes || ['1024x1024'],
+                capabilities: modelData.capabilities || [],
+                fallbackPriority: modelData.fallbackPriority || 99
+              });
+            }
+          }
+        }
+        
+        if (matchingModels.length === 0) {
+          return JSON.stringify({
+            error: `No models available for quality tier: ${qualityTier}`,
+            qualityTier,
+            availableTiers: Object.keys(qualityTiers),
+            ready: false
+          });
+        }
+        
+        // 3. Check provider availability for all matching models
+        const uniqueProviders = [...new Set(matchingModels.map(m => m.provider))];
+        const availabilityResults = await checkMultipleProviders(uniqueProviders);
+        
+        console.log('🔍 Provider availability:', JSON.stringify(availabilityResults, null, 2));
+        
+        // 4. Filter to only available providers
+        const availableModels = matchingModels.filter(m => {
+          const availability = availabilityResults[m.provider];
+          return availability && availability.available;
+        });
+        
+        if (availableModels.length === 0) {
+          // No providers available - return helpful error with alternatives
+          const unavailableReasons = matchingModels.map(m => {
+            const availability = availabilityResults[m.provider];
+            return {
+              provider: m.provider,
+              model: m.model,
+              reason: availability?.reason || 'Unknown'
+            };
+          });
+          
+          return JSON.stringify({
+            error: 'No image generation providers currently available',
+            qualityTier,
+            requestedModels: unavailableReasons,
+            ready: false,
+            hint: 'Check provider configuration: API keys, feature flags (ENABLE_IMAGE_GENERATION_*), and circuit breaker status'
+          });
+        }
+        
+        // 5. Sort by fallback priority (lower = preferred)
+        availableModels.sort((a, b) => a.fallbackPriority - b.fallbackPriority);
+        
+        // 6. Select best model
+        const selectedModel = availableModels[0];
+        
+        // 7. Estimate cost based on size
+        const size = args.size || '1024x1024';
+        let estimatedCost = 0;
+        
+        if (selectedModel.pricing) {
+          // Try to find exact size pricing
+          const pricingKey = Object.keys(selectedModel.pricing).find(key => 
+            key.includes(size.replace('x', '')) || key === 'default'
+          );
+          estimatedCost = selectedModel.pricing[pricingKey || 'default'] || qualityTiers[qualityTier]?.typicalCost || 0;
+        } else {
+          estimatedCost = qualityTiers[qualityTier]?.typicalCost || 0;
+        }
+        
+        // 8. Validate size compatibility
+        let finalSize = size;
+        if (!selectedModel.supportedSizes.includes(size)) {
+          // Find closest supported size
+          finalSize = selectedModel.supportedSizes.includes('1024x1024') 
+            ? '1024x1024' 
+            : selectedModel.supportedSizes[0];
+          console.log(`⚠️ Size ${size} not supported by ${selectedModel.model}, using ${finalSize}`);
+        }
+        
+        // 9. Build response with model selection and alternatives
+        const alternatives = availableModels.slice(1, 4).map(m => ({
+          provider: m.provider,
+          model: m.model,
+          cost: m.pricing?.default || qualityTiers[qualityTier]?.typicalCost || 0,
+          capabilities: m.capabilities
+        }));
+        
+        return JSON.stringify({
+          provider: selectedModel.provider,
+          model: selectedModel.model,
+          modelKey: selectedModel.modelKey,
+          qualityTier,
+          prompt,
+          size: finalSize,
+          style: args.style || 'natural',
+          cost: estimatedCost,
+          capabilities: selectedModel.capabilities,
+          ready: false, // User must click button to generate
+          availableAlternatives: alternatives,
+          constraints: {
+            maxSize: selectedModel.supportedSizes[selectedModel.supportedSizes.length - 1],
+            supportedSizes: selectedModel.supportedSizes,
+            supportsStyle: selectedModel.provider === 'openai' && selectedModel.modelKey === 'dall-e-3'
+          },
+          message: `Image ready to generate using ${selectedModel.provider} ${selectedModel.model} for $${estimatedCost.toFixed(3)}. Click button to confirm.`
+        });
+        
+      } catch (error) {
+        console.error('Generate image tool error:', error);
+        return JSON.stringify({ 
+          error: `Image generation setup failed: ${error.message}`,
+          ready: false,
+          stack: error.stack
         });
       }
     }
@@ -1860,8 +2309,60 @@ Brief answer with URLs:`;
       }
     }
     
-    default:
+    case 'generate_chart': {
+      // This is a prompt-only tool - it doesn't actually execute anything
+      // It tells the LLM to generate Mermaid charts inline in the response
+      const chart_type = args.chart_type || 'flowchart';
+      const description = args.description || '';
+      
+      console.log(`📊 Chart generation requested: ${chart_type} - ${description}`);
+      
+      // Return instructions for the LLM to follow
+      return JSON.stringify({
+        success: true,
+        chart_type,
+        description,
+        instructions: `Generate a Mermaid ${chart_type} diagram that visualizes: ${description}
+
+IMPORTANT: You MUST include the Mermaid chart in your response using the following format:
+
+\`\`\`mermaid
+[Your Mermaid diagram code here]
+\`\`\`
+
+Guidelines for ${chart_type} diagrams:
+${chart_type === 'flowchart' ? `- Start with: flowchart TD or flowchart LR
+- Use simple node IDs (letters/numbers/underscores only)
+- Define nodes: A[Label] or A(Label) or A{Decision?}
+- Connect with: A --> B or A -->|label| B
+- Avoid special characters in node IDs` : ''}
+${chart_type === 'sequence' ? `- Start with: sequenceDiagram
+- Define participants: participant A as Name
+- Show interactions: A->>B: message
+- Add notes: Note right of A: text` : ''}
+${chart_type === 'class' ? `- Start with: classDiagram
+- Define classes: class ClassName
+- Add attributes: ClassName : +attribute
+- Add methods: ClassName : +method()
+- Show relationships: ClassA --|> ClassB` : ''}
+${chart_type === 'gantt' ? `- Start with: gantt
+- Set date format: dateFormat YYYY-MM-DD
+- Define sections: section Name
+- Add tasks: Task : start, end` : ''}
+${chart_type === 'pie' ? `- Start with: pie title "Title"
+- Define slices: "Label" : value` : ''}
+
+After generating the chart, continue with any explanation or additional information.`
+      });
+    }
+    
+    default: {
+      // Check if this is an MCP tool (format: serverName__toolName)
+      if (name.includes('__')) {
+        return await executeMCPTool(name, args, context);
+      }
       return JSON.stringify({ error: `unknown function ${name}` });
+    }
   }
 }
 
@@ -1965,9 +2466,150 @@ function getToolFunctions() {
   return tools;
 }
 
+/**
+ * Merge built-in tools with tools from MCP servers
+ * 
+ * MCP tools are namespaced as: <server_name>__<tool_name>
+ * to avoid conflicts with built-in tools.
+ * 
+ * @param {Array} builtInTools - Array of built-in tool definitions
+ * @param {Array} mcpServers - Array of MCP server configurations: [{name, url}]
+ * @returns {Promise<Array>} Merged array of tool definitions
+ */
+async function mergeTools(builtInTools = [], mcpServers = []) {
+  if (!mcpServers || mcpServers.length === 0) {
+    return builtInTools;
+  }
+  
+  const mergedTools = [...builtInTools];
+  
+  // Fetch tools from each MCP server
+  for (const server of mcpServers) {
+    try {
+      // Validate server configuration
+      if (!server.name || !server.url) {
+        console.warn(`[MCP] Skipping invalid server config:`, server);
+        continue;
+      }
+      
+      // Validate URL
+      try {
+        mcpClient.validateServerUrl(server.url);
+      } catch (error) {
+        console.warn(`[MCP] Invalid server URL ${server.url}:`, error.message);
+        continue;
+      }
+      
+      // Get tools from cache or discover
+      const tools = await mcpCache.getTools(server.url);
+      
+      // Convert MCP tools to OpenAI function format with namespacing
+      for (const tool of tools) {
+        mergedTools.push({
+          type: 'function',
+          function: {
+            name: `${server.name}__${tool.name}`, // Namespace: server__tool
+            description: `[MCP: ${server.name}] ${tool.description}`,
+            parameters: tool.inputSchema || {
+              type: 'object',
+              properties: {},
+              required: []
+            }
+          }
+        });
+      }
+      
+      console.log(`[MCP] Merged ${tools.length} tools from ${server.name} (${server.url})`);
+    } catch (error) {
+      console.error(`[MCP] Failed to load tools from ${server.name} (${server.url}):`, error.message);
+      // Continue with other servers even if one fails
+    }
+  }
+  
+  return mergedTools;
+}
+
+/**
+ * Execute an MCP tool
+ * 
+ * Parses the namespaced tool name to extract server and tool,
+ * looks up the server URL, and executes the tool via MCP client.
+ * 
+ * @param {string} namespacedName - Tool name in format: serverName__toolName
+ * @param {Object} args - Tool arguments
+ * @param {Object} context - Execution context (must include mcpServers array)
+ * @returns {Promise<string>} JSON-stringified tool result
+ */
+async function executeMCPTool(namespacedName, args = {}, context = {}) {
+  try {
+    // Parse namespaced tool name
+    const parts = namespacedName.split('__');
+    if (parts.length !== 2) {
+      return JSON.stringify({ 
+        error: `Invalid MCP tool name format: ${namespacedName}. Expected: serverName__toolName` 
+      });
+    }
+    
+    const [serverName, toolName] = parts;
+    
+    // Find server URL from context
+    const mcpServers = context.mcpServers || [];
+    const server = mcpServers.find(s => s.name === serverName);
+    
+    if (!server) {
+      return JSON.stringify({ 
+        error: `MCP server not found: ${serverName}. Available servers: ${mcpServers.map(s => s.name).join(', ')}` 
+      });
+    }
+    
+    // Validate server URL
+    try {
+      mcpClient.validateServerUrl(server.url);
+    } catch (error) {
+      return JSON.stringify({ 
+        error: `Invalid MCP server URL: ${error.message}` 
+      });
+    }
+    
+    // Execute the tool
+    console.log(`[MCP] Executing ${toolName} on ${serverName} (${server.url})`);
+    const result = await mcpClient.executeTool(server.url, toolName, args);
+    
+    // MCP returns content array, we need to format it
+    // For now, concatenate all text content
+    const textContent = result
+      .filter(item => item.type === 'text')
+      .map(item => item.text)
+      .join('\n\n');
+    
+    // Include non-text content in metadata
+    const otherContent = result.filter(item => item.type !== 'text');
+    
+    if (otherContent.length > 0) {
+      return JSON.stringify({
+        text: textContent,
+        metadata: {
+          server: serverName,
+          tool: toolName,
+          otherContent: otherContent
+        }
+      });
+    }
+    
+    return textContent;
+  } catch (error) {
+    console.error(`[MCP] Tool execution failed:`, error.message);
+    return JSON.stringify({ 
+      error: `MCP tool execution failed: ${error.message}` 
+    });
+  }
+}
+
 module.exports = {
   toolFunctions,
   getToolFunctions,
   callFunction,
-  compressSearchResultsForLLM
+  compressSearchResultsForLLM,
+  mergeTools,
+  executeMCPTool
 };

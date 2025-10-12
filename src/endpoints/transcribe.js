@@ -12,6 +12,8 @@
 
 const { verifyGoogleToken } = require('../auth');
 const { loadEnvironmentProviders } = require('../credential-pool');
+const { getCacheKey, getFromCache, saveToCache } = require('../utils/cache');
+const crypto = require('crypto');
 const FormData = require('form-data');
 const https = require('https');
 
@@ -261,6 +263,10 @@ async function handler(event) {
 
         console.log(`🎤 Audio file received: ${audioPart.filename}, ${audioPart.data.length} bytes`);
 
+        // Generate hash of audio content for caching
+        const audioHash = crypto.createHash('md5').update(audioPart.data).digest('hex');
+        console.log(`🔑 Audio hash: ${audioHash}`);
+
         // Get OpenAI API key from environment providers
         const envProviders = loadEnvironmentProviders();
         const openaiProvider = envProviders.find(p => p.type === 'openai');
@@ -278,22 +284,50 @@ async function handler(event) {
             };
         }
 
-        // Call Whisper API
+        // Try to get transcription from cache
         let transcribedText;
+        let fromCache = false;
+        
         try {
-            transcribedText = await callWhisperAPI(audioPart.data, audioPart.filename, openaiApiKey);
-            console.log(`✅ Transcription successful: ${transcribedText.length} characters`);
-        } catch (e) {
-            console.error('Whisper API error:', e);
-            return {
-                statusCode: 500,
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    error: `Transcription failed: ${e.message}`
-                })
-            };
+            const cacheKey = getCacheKey('transcriptions', { audioHash });
+            const cachedResult = await getFromCache('transcriptions', cacheKey);
+            
+            if (cachedResult && cachedResult.text) {
+                transcribedText = cachedResult.text;
+                fromCache = true;
+                console.log(`💾 Cache HIT for transcription: ${audioHash} (${transcribedText.length} characters)`);
+            }
+        } catch (error) {
+            console.warn(`Cache read error for transcription:`, error.message);
+        }
+
+        // If not in cache, call Whisper API
+        if (!transcribedText) {
+            try {
+                transcribedText = await callWhisperAPI(audioPart.data, audioPart.filename, openaiApiKey);
+                console.log(`✅ Transcription successful: ${transcribedText.length} characters`);
+                
+                // Save to cache (non-blocking) - TTL 24 hours for transcriptions
+                const cacheKey = getCacheKey('transcriptions', { audioHash });
+                saveToCache('transcriptions', cacheKey, { text: transcribedText, filename: audioPart.filename }, 86400)
+                    .then(() => {
+                        console.log(`💾 Cached transcription: ${audioHash}`);
+                    })
+                    .catch(error => {
+                        console.warn(`Cache write error for transcription:`, error.message);
+                    });
+            } catch (e) {
+                console.error('Whisper API error:', e);
+                return {
+                    statusCode: 500,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        error: `Transcription failed: ${e.message}`
+                    })
+                };
+            }
         }
 
         // Return transcribed text
@@ -303,7 +337,9 @@ async function handler(event) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                text: transcribedText
+                text: transcribedText,
+                cached: fromCache,
+                audioHash: audioHash
             })
         };
 

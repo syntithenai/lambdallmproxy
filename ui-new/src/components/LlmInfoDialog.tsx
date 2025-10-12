@@ -12,14 +12,26 @@ interface LlmApiCall {
   httpHeaders?: any;
   httpStatus?: number;
   timestamp: string;
+  type?: string; // 'image_generation' or undefined for text
+  cost?: number; // For image generation calls
+  durationMs?: number; // Duration in milliseconds
+  metadata?: any; // Additional metadata (size, quality, style, etc.)
+  success?: boolean; // Success status
+}
+
+interface Evaluation {
+  attempt: number;
+  comprehensive: boolean;
+  reason: string;
 }
 
 interface LlmInfoDialogProps {
   apiCalls: LlmApiCall[];
+  evaluations?: Evaluation[];
   onClose: () => void;
 }
 
-export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose }) => {
+export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluations, onClose }) => {
   const dialogRef = useDialogClose(true, onClose);
 
   // Parse JSON strings in response object recursively
@@ -80,7 +92,14 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
   const getProviderFromModel = (model: string | undefined, provider?: string): string => {
     // Use explicit provider if available
     if (provider) {
-      return provider.charAt(0).toUpperCase() + provider.slice(1); // Capitalize first letter
+      // Image generation providers with proper display names
+      if (provider.toLowerCase() === 'openai') return 'OpenAI';
+      if (provider.toLowerCase() === 'together') return 'Together AI';
+      if (provider.toLowerCase() === 'replicate') return 'Replicate';
+      if (provider.toLowerCase() === 'gemini') return 'Google Gemini';
+      
+      // Default: capitalize first letter
+      return provider.charAt(0).toUpperCase() + provider.slice(1);
     }
     
     // Handle missing model
@@ -89,7 +108,7 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
     }
     
     // Fall back to model name detection
-    if (model.startsWith('gpt-') || model.startsWith('o1-')) {
+    if (model.startsWith('gpt-') || model.startsWith('o1-') || model.includes('dall-e')) {
       return 'OpenAI';
     }
     if (model.includes('claude')) {
@@ -97,6 +116,12 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
     }
     if (model.includes('llama') || model.includes('mixtral') || model.includes('gemma')) {
       return 'Groq';
+    }
+    if (model.includes('stable-diffusion')) {
+      return 'Together AI';
+    }
+    if (model.includes('sdxl') || model.includes('realistic-vision')) {
+      return 'Replicate';
     }
     return 'Unknown';
   };
@@ -110,8 +135,34 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
     return model.replace(/^(openai:|groq:|anthropic:)/, '');
   };
 
-  // Calculate total cost across all calls with dual pricing
+  // Get provider badge color for image generation
+  const getProviderBadgeColor = (provider: string): string => {
+    switch (provider.toLowerCase()) {
+      case 'openai':
+        return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+      case 'together':
+        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
+      case 'replicate':
+        return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300';
+      case 'gemini':
+        return 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300';
+      default:
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300';
+    }
+  };
+
+  // Calculate total cost across all calls with dual pricing + image generation
   const { totalActualCost, totalPaidEquivalent, hasFreeModels } = apiCalls.reduce((acc, call) => {
+    // Check if this is an image generation call
+    if (call.type === 'image_generation' && call.cost !== undefined) {
+      return {
+        totalActualCost: acc.totalActualCost + call.cost,
+        totalPaidEquivalent: acc.totalPaidEquivalent + call.cost,
+        hasFreeModels: acc.hasFreeModels
+      };
+    }
+    
+    // Regular text generation call
     const tokensIn = call.response?.usage?.prompt_tokens || 0;
     const tokensOut = call.response?.usage?.completion_tokens || 0;
     const pricing = calculateDualPricing(call.model, tokensIn, tokensOut);
@@ -179,13 +230,29 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
                 <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-700 dark:text-gray-300">
-                        {formatPhase(call.phase)}
-                      </span>
+                      {/* Call Type Icon */}
+                      {call.type === 'image_generation' ? (
+                        <span className="font-medium text-gray-700 dark:text-gray-300">
+                          🖼️ Image Generation
+                        </span>
+                      ) : (
+                        <span className="font-medium text-gray-700 dark:text-gray-300">
+                          {formatPhase(call.phase)}
+                        </span>
+                      )}
                       <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
-                      <span className="text-xs text-gray-600 dark:text-gray-400">
-                        {getProviderFromModel(call.model, call.provider)}
-                      </span>
+                      
+                      {/* Provider Badge with Color */}
+                      {call.type === 'image_generation' && call.provider ? (
+                        <span className={`text-xs px-2 py-1 rounded font-medium ${getProviderBadgeColor(call.provider)}`}>
+                          {getProviderFromModel(call.model, call.provider)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600 dark:text-gray-400">
+                          {getProviderFromModel(call.model, call.provider)}
+                        </span>
+                      )}
+                      
                       <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
                       <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-gray-700 dark:text-gray-300">
                         {getModelDisplay(call.model)}
@@ -195,7 +262,46 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
                   
                   {/* Response metadata with cost, timing, and token info */}
                   <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
-                    {call.response ? (
+                    {/* Image Generation Cost and Metadata */}
+                    {call.type === 'image_generation' ? (
+                      <>
+                        {/* Image generation cost */}
+                        {call.cost !== undefined && (
+                          <span className="font-semibold text-green-600 dark:text-green-400">
+                            💰 {formatCost(call.cost)}
+                          </span>
+                        )}
+                        
+                        {/* Image generation metadata */}
+                        {call.metadata?.size && (
+                          <span className="px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
+                            📐 {call.metadata.size}
+                          </span>
+                        )}
+                        {call.metadata?.quality && (
+                          <span className="px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300">
+                            ⭐ {call.metadata.quality}
+                          </span>
+                        )}
+                        {call.metadata?.style && (
+                          <span className="px-2 py-0.5 rounded bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300">
+                            🎨 {call.metadata.style}
+                          </span>
+                        )}
+                        
+                        {/* Duration */}
+                        {call.durationMs && (
+                          <span>⏱️ {(call.durationMs / 1000).toFixed(2)}s</span>
+                        )}
+                        
+                        {/* Success/failure status */}
+                        {call.success !== undefined && (
+                          <span className={call.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                            {call.success ? '✅ Success' : '❌ Failed'}
+                          </span>
+                        )}
+                      </>
+                    ) : call.response ? (
                       <>
                         {/* Cost Information - Dual Pricing (Primary) */}
                         {(() => {
@@ -301,6 +407,42 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
               </div>
             );
           })}
+
+          {/* Response Evaluation Section */}
+          {evaluations && evaluations.length > 0 && (
+            <div className="border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden bg-purple-50/50 dark:bg-purple-900/10">
+              <div className="px-4 py-3 bg-purple-100 dark:bg-purple-900/30 border-b border-purple-200 dark:border-purple-700">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100">
+                    🔍 Response Evaluation
+                  </h4>
+                  <span className="text-xs text-gray-600 dark:text-gray-400">
+                    ({evaluations.length} attempt{evaluations.length !== 1 ? 's' : ''})
+                  </span>
+                </div>
+              </div>
+              <div className="p-4 space-y-2">
+                {evaluations.map((evaluation, evalIdx) => (
+                  <div 
+                    key={evalIdx}
+                    className={`text-sm px-3 py-2 rounded-lg flex items-start gap-2 ${
+                      evaluation.comprehensive 
+                        ? 'bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 text-green-900 dark:text-green-100'
+                        : 'bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-100'
+                    }`}
+                  >
+                    <span className="font-semibold shrink-0">
+                      {evaluation.comprehensive ? '✅' : '⚠️'} Attempt {evaluation.attempt}:
+                    </span>
+                    <span className="flex-1">{evaluation.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Dialog Footer */}

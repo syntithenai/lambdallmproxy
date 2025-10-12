@@ -7,6 +7,8 @@ import { SwagProvider } from './contexts/SwagContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { YouTubeAuthProvider } from './contexts/YouTubeAuthContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
+import { CastProvider } from './contexts/CastContext';
+import { LocationProvider } from './contexts/LocationContext';
 import { ToastProvider } from './components/ToastManager';
 import { chatHistoryDB } from './utils/chatHistoryDB';
 import { LoginScreen } from './components/LoginScreen';
@@ -37,12 +39,14 @@ function AppContent() {
     scrape_url: boolean;
     youtube: boolean;
     transcribe: boolean;
+    generate_chart: boolean;
   }>('chat_enabled_tools', {
     web_search: true,
     execute_js: true,
     scrape_url: true,
     youtube: true,
-    transcribe: true
+    transcribe: true,
+    generate_chart: true
   });
 
   // Migrate chat history from localStorage to IndexedDB on mount
@@ -244,20 +248,24 @@ function AppContent() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ToastProvider>
         <AuthProvider>
           <UsageProvider>
             <SettingsProvider>
-              <YouTubeAuthProvider>
-                <PlaylistProvider>
-                  <SearchResultsProvider>
-                    <SwagProvider>
-                      <AppContent />
-                    </SwagProvider>
-                  </SearchResultsProvider>
-                </PlaylistProvider>
-              </YouTubeAuthProvider>
+              <LocationProvider>
+                <CastProvider>
+                  <YouTubeAuthProvider>
+                    <PlaylistProvider>
+                      <SearchResultsProvider>
+                        <SwagProvider>
+                          <AppContent />
+                        </SwagProvider>
+                      </SearchResultsProvider>
+                    </PlaylistProvider>
+                  </YouTubeAuthProvider>
+                </CastProvider>
+              </LocationProvider>
             </SettingsProvider>
           </UsageProvider>
         </AuthProvider>

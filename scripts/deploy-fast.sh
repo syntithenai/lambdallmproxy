@@ -62,7 +62,7 @@ cp "$OLDPWD"/src/groq-rate-limits.js ./
 cp "$OLDPWD"/src/youtube-api.js ./ 2>/dev/null || true
 
 # Copy modular components
-mkdir -p config utils services streaming endpoints tools model-selection routing retry
+mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
@@ -72,6 +72,8 @@ cp -r "$OLDPWD"/src/tools/* ./tools/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/model-selection/* ./model-selection/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/routing/* ./routing/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/retry/* ./retry/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/mcp/* ./mcp/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
 
 # List files
 echo -e "${YELLOW}📦 Code files to deploy:${NC}"

@@ -10,14 +10,18 @@ import type { ProviderConfig } from '../types/provider';
 import { PROVIDER_INFO } from '../types/provider';
 import { maskApiKey } from '../utils/providerValidation';
 import { useProviders } from '../hooks/useProviders';
+import { useSettings } from '../contexts/SettingsContext';
 import { ProviderForm } from './ProviderForm';
 
 export function ProviderList() {
   const { providers, addProvider, updateProvider, deleteProvider } = useProviders();
+  const { settings, setSettings, loadFromGoogleDrive, saveToGoogleDrive, clearSettings } = useSettings();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showWarning, setShowWarning] = useState(false);
+  const [isLoadingFromDrive, setIsLoadingFromDrive] = useState(false);
 
   const handleAdd = () => {
     setIsAdding(true);
@@ -76,8 +80,147 @@ export function ProviderList() {
 
   const editingProvider = editingId ? providers.find((p) => p.id === editingId) : undefined;
 
+  const handleToggleSyncToGoogleDrive = () => {
+    if (!settings.syncToGoogleDrive) {
+      setShowWarning(true);
+    } else {
+      // Disable sync
+      setSettings({ ...settings, syncToGoogleDrive: false });
+      setSuccess('Google Drive sync disabled');
+      setTimeout(() => setSuccess(null), 3000);
+    }
+  };
+
+  const handleConfirmSync = async () => {
+    setShowWarning(false);
+    setSettings({ ...settings, syncToGoogleDrive: true });
+    
+    // Save current settings to Google Drive
+    try {
+      await saveToGoogleDrive();
+      setSuccess('Google Drive sync enabled and settings saved');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError('Failed to save to Google Drive: ' + err.message);
+      setTimeout(() => setError(null), 5000);
+    }
+  };
+
+  const handleLoadFromGoogleDrive = async () => {
+    try {
+      setIsLoadingFromDrive(true);
+      await loadFromGoogleDrive();
+      setSuccess('Settings loaded from Google Drive');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError('Failed to load from Google Drive: ' + err.message);
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsLoadingFromDrive(false);
+    }
+  };
+
+  const handleClearSettings = () => {
+    if (window.confirm('⚠️ Are you sure you want to clear ALL settings? This will remove all configured providers and API keys. This action cannot be undone.')) {
+      clearSettings();
+      setSuccess('All settings cleared');
+      setTimeout(() => setSuccess(null), 3000);
+    }
+  };
+
+  const showLoadButton = providers.length === 0 || (providers.length === 1 && !providers[0].apiKey);
+
   return (
     <div className="space-y-4">
+      {/* Google Drive Sync Section */}
+      <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.syncToGoogleDrive || false}
+                onChange={handleToggleSyncToGoogleDrive}
+                className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+              />
+              <div>
+                <div className="font-medium text-white">
+                  💾 Save Credentials to Google Drive
+                </div>
+                <div className="text-sm text-gray-400 mt-1">
+                  Automatically sync your provider settings and API keys to Google Drive for backup and cross-device access
+                </div>
+              </div>
+            </label>
+          </div>
+          
+          <div className="flex gap-2">
+            {showLoadButton && (
+              <button
+                onClick={handleLoadFromGoogleDrive}
+                disabled={isLoadingFromDrive}
+                className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm disabled:opacity-50"
+                title="Load settings from Google Drive"
+              >
+                {isLoadingFromDrive ? '⏳' : '📥'} Load
+              </button>
+            )}
+            <button
+              onClick={handleClearSettings}
+              className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm"
+              title="Clear all settings"
+            >
+              🗑️ Clear
+            </button>
+          </div>
+        </div>
+        
+        {settings.syncToGoogleDrive && (
+          <div className="mt-3 p-3 bg-green-900/20 border border-green-700/50 rounded text-sm text-green-400">
+            ✓ Settings are automatically syncing to Google Drive folder: <span className="font-mono">Research Agent</span>
+          </div>
+        )}
+      </div>
+
+      {/* Warning Dialog */}
+      {showWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
+          <div className="card max-w-md w-full p-6 bg-gray-900 border-2 border-yellow-600">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="text-3xl">⚠️</div>
+              <div>
+                <h3 className="text-xl font-bold text-white mb-2">Security Warning</h3>
+                <p className="text-gray-300 mb-3">
+                  You are about to save <strong className="text-yellow-400">sensitive data</strong> (API keys and provider credentials) to a document in your Google Drive.
+                </p>
+                <ul className="space-y-2 text-sm text-gray-400 mb-4">
+                  <li>✓ File will be stored in folder: <span className="font-mono text-white">Research Agent</span></li>
+                  <li>✓ File name: <span className="font-mono text-white">Research Agent Settings</span></li>
+                  <li>✓ Only you have access (not shared publicly)</li>
+                  <li>⚠️ Contains API keys in plain text</li>
+                  <li>⚠️ Ensure your Google account is secure (2FA recommended)</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={handleConfirmSync}
+                className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors font-medium"
+              >
+                I Understand, Enable Sync
+              </button>
+              <button
+                onClick={() => setShowWarning(false)}
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-white">Configured Providers</h3>

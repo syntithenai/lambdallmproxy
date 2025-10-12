@@ -8,10 +8,21 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
+import { MermaidChart } from './MermaidChart';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  onLlmApiCall?: (apiCall: {
+    model: string;
+    provider: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    cost: number;
+    duration_ms: number;
+    purpose: string;
+  }) => void;
 }
 
 interface ImageGalleryProps {
@@ -70,7 +81,7 @@ function ImageGallery({ images }: ImageGalleryProps) {
   );
 }
 
-export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className = '', onLlmApiCall }: MarkdownRendererProps) {
   // Detect and extract image gallery
   const galleryRegex = /<!-- GALLERY_START -->([\s\S]*?)<!-- GALLERY_END -->/g;
   const galleryMatch = galleryRegex.exec(content);
@@ -150,6 +161,16 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
           // Code
           code: ({ className, children, ...props }) => {
             const isInline = !className;
+            
+            // Check if this is a mermaid chart
+            const match = /language-(\w+)/.exec(className || '');
+            const language = match ? match[1] : '';
+            
+            if (language === 'mermaid' && !isInline) {
+              const chartCode = String(children).replace(/\n$/, '');
+              return <MermaidChart chart={chartCode} onLlmApiCall={onLlmApiCall} />;
+            }
+            
             if (isInline) {
               return (
                 <code 
@@ -169,11 +190,19 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
               </code>
             );
           },
-          pre: ({ children }) => (
-            <pre className="mb-4 p-4 rounded-lg bg-gray-900 dark:bg-gray-950 overflow-x-auto">
-              {children}
-            </pre>
-          ),
+          pre: ({ children }) => {
+            // Check if the child is a mermaid chart
+            const childElement = children as any;
+            if (childElement?.props?.className?.includes('language-mermaid')) {
+              // Return the MermaidChart directly, not wrapped in <pre>
+              return children;
+            }
+            return (
+              <pre className="mb-4 p-4 rounded-lg bg-gray-900 dark:bg-gray-950 overflow-x-auto">
+                {children}
+              </pre>
+            );
+          },
           
           // Links
           a: ({ href, children }) => (
