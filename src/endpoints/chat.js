@@ -16,6 +16,8 @@ const { buildProviderPool, hasAvailableProviders } = require('../credential-pool
 const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
 const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
 const providerCatalog = require('../../PROVIDER_CATALOG.json');
+const { loadGuardrailConfig, validateGuardrailProvider } = require('../guardrails/config');
+const { createGuardrailValidator } = require('../guardrails/guardrail-factory');
 
 // NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
 // NOTE: llama-3.1-70b-versatile was decommissioned by Groq in Oct 2025
@@ -226,42 +228,54 @@ A response is NOT comprehensive if:
                 console.log('⚠️ No JSON found in evaluation response, attempting text parsing');
                 const lowerText = evalText.toLowerCase().trim();
                 
-                // Check for keywords indicating comprehensive/not comprehensive
-                const isComprehensive = 
-                    lowerText.includes('comprehensive') ||
-                    lowerText.includes('yes') ||
-                    lowerText.includes('true') ||
-                    lowerText.includes('complete') ||
-                    lowerText.includes('sufficient');
-                    
+                // IMPORTANT: Check negative indicators FIRST because "not comprehensive" contains "comprehensive"
+                // Check for keywords indicating NOT comprehensive (more specific patterns first)
                 const isNotComprehensive =
                     lowerText.includes('not comprehensive') ||
-                    lowerText.includes('no') ||
-                    lowerText.includes('false') ||
+                    lowerText.includes('isn\'t comprehensive') ||
+                    lowerText.includes('is not comprehensive') ||
+                    lowerText.match(/\bnot\s+(enough|sufficient|complete)/i) ||
                     lowerText.includes('incomplete') ||
                     lowerText.includes('insufficient') ||
-                    lowerText.includes('too brief');
+                    lowerText.includes('too brief') ||
+                    lowerText.includes('too short') ||
+                    lowerText.includes('lacks detail') ||
+                    lowerText.includes('missing information') ||
+                    // Check for "no" but not as part of other words (e.g., "know")
+                    lowerText.match(/\bno\b/) ||
+                    lowerText.match(/\bfalse\b/);
+                    
+                // Check for keywords indicating comprehensive (less specific, checked second)
+                const isComprehensive = 
+                    lowerText.includes('comprehensive') ||
+                    lowerText.includes('complete') ||
+                    lowerText.includes('sufficient') ||
+                    lowerText.includes('adequate') ||
+                    lowerText.includes('thorough') ||
+                    lowerText.match(/\byes\b/) ||
+                    lowerText.match(/\btrue\b/);
                 
                 // If we can determine comprehensiveness from text
+                // Check negative FIRST (more important to catch "not comprehensive")
                 if (isNotComprehensive) {
                     evalResult = { 
                         comprehensive: false, 
-                        reason: `Text evaluation: ${evalText.substring(0, 100)}`
+                        reason: `Text evaluation: ${evalText.substring(0, 150)}`
                     };
                 } else if (isComprehensive) {
                     evalResult = { 
                         comprehensive: true, 
-                        reason: `Text evaluation: ${evalText.substring(0, 100)}`
+                        reason: `Text evaluation: ${evalText.substring(0, 150)}`
                     };
                 } else {
                     // Can't determine - assume comprehensive (fail-safe)
                     evalResult = {
                         comprehensive: true,
-                        reason: `Could not parse text evaluation, assuming comprehensive: ${evalText.substring(0, 100)}`
+                        reason: `Could not parse text evaluation, assuming comprehensive: ${evalText.substring(0, 150)}`
                     };
                 }
                 
-                console.log(`✅ Parsed text evaluation: comprehensive=${evalResult.comprehensive}`);
+                console.log(`✅ Parsed text evaluation: comprehensive=${evalResult.comprehensive}, reason: ${evalResult.reason}`);
             }
         } catch (parseError) {
             console.error('Failed to parse evaluation response:', parseError.message);
@@ -939,6 +953,125 @@ async function handler(event, responseStream) {
         // Build provider pool (user + environment if authorized)
         const providerPool = buildProviderPool(userProviders, authResult.authorized);
         console.log(`🎯 Provider pool for ${authResult.email}: ${providerPool.length} provider(s) available`);
+        
+        // Initialize guardrails if enabled
+        let guardrailValidator = null;
+        try {
+            const guardrailConfig = loadGuardrailConfig();
+            if (guardrailConfig) {
+                // Build context with API keys for guardrail provider
+                const guardrailContext = {
+                    ...body, // Include all request context (may have API keys)
+                    authorized: authResult.authorized
+                };
+                
+                // Validate provider availability
+                validateGuardrailProvider(guardrailConfig.provider, guardrailContext);
+                
+                // Create validator
+                guardrailValidator = createGuardrailValidator(guardrailConfig, guardrailContext);
+                console.log('🛡️ Guardrails initialized for content filtering');
+            }
+        } catch (error) {
+            console.error('🛡️ Guardrail initialization error:', error.message);
+            sseWriter.writeEvent('error', {
+                error: error.message,
+                code: 'GUARDRAIL_CONFIG_ERROR',
+                type: 'guardrail_configuration_error',
+                statusCode: 500
+            });
+            responseStream.end();
+            return;
+        }
+        
+        // FILTER INPUT if guardrails enabled
+        if (guardrailValidator && messages && messages.length > 0) {
+            // Find the last user message to filter
+            const lastUserMessageIndex = messages.map((m, i) => m.role === 'user' ? i : -1)
+                .filter(i => i >= 0)
+                .pop();
+            
+            if (lastUserMessageIndex !== undefined && lastUserMessageIndex >= 0) {
+                const lastUserMessage = messages[lastUserMessageIndex];
+                let userInputText = '';
+                
+                // Extract text content from message (may be string or array)
+                if (typeof lastUserMessage.content === 'string') {
+                    userInputText = lastUserMessage.content;
+                } else if (Array.isArray(lastUserMessage.content)) {
+                    // Extract text parts from multimodal content
+                    userInputText = lastUserMessage.content
+                        .filter(part => part.type === 'text')
+                        .map(part => part.text)
+                        .join('\n');
+                }
+                
+                if (userInputText.trim().length > 0) {
+                    console.log(`🛡️ Filtering user input (${userInputText.length} chars)...`);
+                    
+                    try {
+                        const inputValidation = await guardrailValidator.validateInput(userInputText);
+                        
+                        // Track guardrail API call for cost transparency
+                        const guardrailApiCall = {
+                            type: 'guardrail_input',
+                            model: inputValidation.tracking.model,
+                            provider: inputValidation.tracking.provider,
+                            request: {
+                                messages: [{ role: 'user', content: '[FILTERED FOR GUARDRAIL CHECK]' }]
+                            },
+                            response: {
+                                usage: {
+                                    prompt_tokens: inputValidation.tracking.promptTokens || 0,
+                                    completion_tokens: inputValidation.tracking.completionTokens || 0,
+                                    total_tokens: (inputValidation.tracking.promptTokens || 0) + 
+                                                 (inputValidation.tracking.completionTokens || 0)
+                                }
+                            },
+                            totalTime: inputValidation.tracking.duration,
+                            timestamp: new Date().toISOString()
+                        };
+                        
+                        if (!inputValidation.safe) {
+                            console.warn('🛡️ Input REJECTED:', inputValidation.reason);
+                            
+                            // Send error with cost tracking and suggested revision
+                            sseWriter.writeEvent('error', {
+                                error: 'Your input was flagged by our content moderation system.',
+                                reason: inputValidation.reason,
+                                violations: inputValidation.violations,
+                                suggestedRevision: inputValidation.suggestedRevision,
+                                type: 'input_moderation_error',
+                                code: 'INPUT_FILTERED',
+                                statusCode: 400,
+                                llmApiCalls: [guardrailApiCall]
+                            });
+                            responseStream.end();
+                            return;
+                        }
+                        
+                        console.log('🛡️ Input validation PASSED');
+                        
+                        // Store guardrail API call in body for later inclusion in final response
+                        if (!body.llmApiCalls) body.llmApiCalls = [];
+                        body.llmApiCalls.push(guardrailApiCall);
+                        
+                    } catch (error) {
+                        console.error('🛡️ Input validation error:', error.message);
+                        // Fail safe: if guardrail check fails, block the request
+                        sseWriter.writeEvent('error', {
+                            error: 'Content moderation system error. Request blocked for safety.',
+                            reason: error.message,
+                            type: 'guardrail_system_error',
+                            code: 'GUARDRAIL_ERROR',
+                            statusCode: 500
+                        });
+                        responseStream.end();
+                        return;
+                    }
+                }
+            }
+        }
         
         // Extract Google OAuth token from Authorization header for API calls
         let googleToken = null;
@@ -2469,6 +2602,91 @@ async function handler(event, responseStream) {
             currentMessages[currentMessages.length - 1].content = finalContent;
             
             console.log(`📤 Sending final response after ${evaluationResults.length} evaluations: ${finalContent.length} chars`);
+            
+            // FILTER OUTPUT if guardrails enabled
+            if (guardrailValidator && finalContent && finalContent.trim().length > 0) {
+                console.log(`🛡️ Filtering output (${finalContent.length} chars)...`);
+                
+                try {
+                    const outputValidation = await guardrailValidator.validateOutput(finalContent);
+                    
+                    // Track guardrail API call for cost transparency
+                    const guardrailApiCall = {
+                        type: 'guardrail_output',
+                        model: outputValidation.tracking.model,
+                        provider: outputValidation.tracking.provider,
+                        request: {
+                            messages: [{ role: 'assistant', content: '[FILTERED FOR GUARDRAIL CHECK]' }]
+                        },
+                        response: {
+                            usage: {
+                                prompt_tokens: outputValidation.tracking.promptTokens || 0,
+                                completion_tokens: outputValidation.tracking.completionTokens || 0,
+                                total_tokens: (outputValidation.tracking.promptTokens || 0) + 
+                                             (outputValidation.tracking.completionTokens || 0)
+                            }
+                        },
+                        totalTime: outputValidation.tracking.duration,
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    // Always add guardrail call to llmApiCalls for cost tracking
+                    allLlmApiCalls.push(guardrailApiCall);
+                    
+                    if (!outputValidation.safe) {
+                        console.warn('🛡️ Output REJECTED:', outputValidation.reason);
+                        
+                        // Send error event with cost tracking
+                        sseWriter.writeEvent('error', {
+                            error: 'The generated response was flagged by our content moderation system and cannot be displayed.',
+                            reason: outputValidation.reason,
+                            violations: outputValidation.violations,
+                            type: 'output_moderation_error',
+                            code: 'OUTPUT_FILTERED',
+                            statusCode: 500,
+                            llmApiCalls: allLlmApiCalls // Include all costs (main LLM + guardrails)
+                        });
+                        responseStream.end();
+                        return;
+                    }
+                    
+                    console.log('🛡️ Output validation PASSED');
+                    
+                } catch (error) {
+                    console.error('🛡️ Output validation error:', error.message);
+                    // Fail safe: if guardrail check fails, block the output
+                    
+                    // Track error in guardrail call
+                    const guardrailErrorCall = {
+                        type: 'guardrail_output',
+                        model: 'error',
+                        provider: 'guardrail',
+                        request: {},
+                        response: {
+                            usage: {
+                                prompt_tokens: 0,
+                                completion_tokens: 0,
+                                total_tokens: 0
+                            },
+                            error: error.message
+                        },
+                        totalTime: 0,
+                        timestamp: new Date().toISOString()
+                    };
+                    allLlmApiCalls.push(guardrailErrorCall);
+                    
+                    sseWriter.writeEvent('error', {
+                        error: 'Content moderation system error. Response blocked for safety.',
+                        reason: error.message,
+                        type: 'guardrail_system_error',
+                        code: 'GUARDRAIL_ERROR',
+                        statusCode: 500,
+                        llmApiCalls: allLlmApiCalls
+                    });
+                    responseStream.end();
+                    return;
+                }
+            }
             
             // Send message_complete with content and extracted content
             const messageCompleteData = {

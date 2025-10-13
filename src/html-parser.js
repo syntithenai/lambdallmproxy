@@ -2,10 +2,11 @@
  * Simple HTML parser for extracting links and text
  */
 class SimpleHTMLParser {
-    constructor(html, query = '') {
+    constructor(html, query = '', baseUrl = '') {
         this.html = html;
         this.query = query.toLowerCase();
         this.queryWords = query ? query.toLowerCase().split(/\s+/).filter(w => w.length > 2) : [];
+        this.baseUrl = baseUrl;
     }
 
     /**
@@ -218,9 +219,20 @@ class SimpleHTMLParser {
                 continue;
             }
             
-            // Must be an absolute or relative URL (not anchor-only or javascript)
-            if (!href.startsWith('http') && !href.startsWith('/') && !href.startsWith('./')) {
+            // Skip anchors, javascript, and special schemes
+            if (href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
                 continue;
+            }
+            
+            // Convert relative URLs to absolute if baseUrl is provided
+            let absoluteUrl = href;
+            if (this.baseUrl && !href.startsWith('http')) {
+                try {
+                    absoluteUrl = new URL(href, this.baseUrl).href;
+                } catch (e) {
+                    console.warn('Failed to resolve URL:', href, 'base:', this.baseUrl, e.message);
+                    continue;
+                }
             }
             
             // Get context around the link (smaller range for performance)
@@ -253,11 +265,11 @@ class SimpleHTMLParser {
                 relevance -= 0.3;
             }
             
-            // Detect media type
-            const mediaType = this.getMediaType(href);
+            // Detect media type (use absolute URL)
+            const mediaType = this.getMediaType(absoluteUrl);
             
             links.push({
-                href,
+                href: absoluteUrl,
                 text,
                 caption,
                 context,
@@ -295,6 +307,17 @@ class SimpleHTMLParser {
             if (!src || src.startsWith('data:') || src.includes('pixel') || src.includes('track')) continue;
             if (src.match(/1x1|tracking|beacon|analytics|icon|logo|avatar|badge/i)) continue;
             
+            // Convert relative URLs to absolute if baseUrl is provided
+            let absoluteSrc = src;
+            if (this.baseUrl && !src.startsWith('http') && !src.startsWith('data:')) {
+                try {
+                    absoluteSrc = new URL(src, this.baseUrl).href;
+                } catch (e) {
+                    console.warn('Failed to resolve image URL:', src, 'base:', this.baseUrl, e.message);
+                    continue;
+                }
+            }
+            
             // Extract alt attribute
             const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
             const alt = altMatch ? altMatch[1] : '';
@@ -331,7 +354,7 @@ class SimpleHTMLParser {
             }
             
             images.push({
-                src,
+                src: absoluteSrc,
                 alt: alt || '',
                 title: title || '',
                 caption,

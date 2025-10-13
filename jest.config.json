@@ -15,6 +15,9 @@
     "lcov",
     "html"
   ],
+  "setupFiles": [
+    "<rootDir>/tests/mockAwsSdk.js"
+  ],
   "setupFilesAfterEnv": [
     "<rootDir>/tests/setup.js"
   ],

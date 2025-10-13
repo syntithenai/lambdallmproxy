@@ -9,7 +9,7 @@ process.env.AWS_REGION = 'us-east-1';
 process.env.ALLOWED_EMAILS = 'test@example.com,admin@test.com';
 process.env.GOOGLE_CLIENT_ID = 'test-client-id';
 
-// Mock AWS SDK globally if needed (only if it exists)
+// Mock AWS SDK v2 globally if needed (only if it exists)
 try {
   jest.mock('aws-sdk', () => ({
     config: {
@@ -17,9 +17,10 @@ try {
     }
   }));
 } catch (e) {
-  // AWS SDK not installed, skip mocking
-  console.log('AWS SDK not found, skipping mock');
+  // AWS SDK v2 not installed, skip mocking
 }
+
+// AWS SDK v3 mocked in tests/mockAwsSdk.js (setupFiles)
 
 // Global test utilities
 global.testUtils = require('./helpers/testUtils');

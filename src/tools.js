@@ -13,7 +13,15 @@ const vm = require('vm');
 
 // AWS Lambda client for invoking Puppeteer Lambda
 const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
-const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+
+// Lazy-load Lambda client to avoid initialization during imports (especially in tests)
+let lambdaClient = null;
+function getLambdaClient() {
+  if (!lambdaClient) {
+    lambdaClient = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+  }
+  return lambdaClient;
+}
 
 // MCP (Model Context Protocol) support
 const mcpClient = require('./mcp/client');
@@ -88,7 +96,7 @@ async function invokePuppeteerLambda(url, options = {}) {
     Payload: JSON.stringify(payload)
   });
   
-  const response = await lambdaClient.send(command);
+  const response = await getLambdaClient().send(command);
   const responsePayload = JSON.parse(new TextDecoder().decode(response.Payload));
   
   if (responsePayload.statusCode !== 200) {
@@ -714,7 +722,7 @@ async function callFunction(name, args = {}, context = {}) {
               // Extract images and links from raw HTML if available with relevance scoring
               if (r.rawHtml) {
                 try {
-                  const parser = new SimpleHTMLParser(r.rawHtml, query);
+                  const parser = new SimpleHTMLParser(r.rawHtml, query, r.url);
                   
                   // Extract top 3 most relevant images with captions
                   const images = parser.extractImages(3);
@@ -1349,7 +1357,7 @@ Brief answer with URLs:`;
             // Extract images and links BEFORE content extraction
             try {
               const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
-              const parser = new SimpleHTMLParser(rawHtml, urlQuery);
+              const parser = new SimpleHTMLParser(rawHtml, urlQuery, url);
               
               images = parser.extractImages(3);
               const allLinks = parser.extractLinks(25);
@@ -1382,7 +1390,7 @@ Brief answer with URLs:`;
           // Extract images and links BEFORE content extraction
           try {
             const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
-            const parser = new SimpleHTMLParser(rawHtml, urlQuery);
+            const parser = new SimpleHTMLParser(rawHtml, urlQuery, url);
             
             images = parser.extractImages(3);
             const allLinks = parser.extractLinks(25);

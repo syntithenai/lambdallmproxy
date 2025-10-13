@@ -13,6 +13,7 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
+import { calculateDualPricing } from '../utils/pricing';
 import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
@@ -27,6 +28,7 @@ import { JsonTree } from './JsonTree';
 import { ImageGallery } from './ImageGallery';
 import { MediaSections } from './MediaSections';
 import { ToolResultJsonViewer } from './JsonTreeViewer';
+import { YouTubeVideoResults } from './YouTubeVideoResults';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
@@ -64,12 +66,12 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { accessToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
-  const { addTracks } = usePlaylist();
+  const { addTracksToStart } = usePlaylist();
   const { addSnippet } = useSwag();
   const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
   const { addCost, usage } = useUsage();
-  const { isConnected: isCastConnected, sendMessages: sendCastMessages } = useCast();
+  const { isConnected: isCastConnected, sendMessages: sendCastMessages, sendScrollPosition } = useCast();
   const { location } = useLocation();
   
   // Use regular state for messages - async storage causes race conditions
@@ -172,6 +174,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const retryTriggerRef = useRef<boolean>(false);
   const examplesDropdownRef = useRef<HTMLDivElement>(null);
@@ -181,6 +184,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // Prompt history for up/down arrow navigation
   const [promptHistory, setPromptHistory] = useLocalStorage<string[]>('chat_prompt_history', []);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  
+  // Session summary expansion state
+  const [sessionSummaryExpanded, setSessionSummaryExpanded] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -451,6 +457,30 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   }, [messages, isCastConnected, sendCastMessages]);
 
+  // Sync scroll position to Chromecast when connected
+  useEffect(() => {
+    if (!isCastConnected || !messagesContainerRef.current) return;
+    
+    const container = messagesContainerRef.current;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    
+    const handleScroll = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (container && sendScrollPosition) {
+          sendScrollPosition(container.scrollTop);
+        }
+      }, 100); // Debounce scroll events
+    };
+    
+    container.addEventListener('scroll', handleScroll);
+    
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(timeoutId);
+    };
+  }, [isCastConnected, sendScrollPosition]);
+
   // Close examples dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -672,6 +702,77 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     return totalCost;
   };
 
+  // Calculate cost for a single message
+  const getMessageCost = (msg: any): number => {
+    if (!msg.llmApiCalls || msg.llmApiCalls.length === 0) return 0;
+    return calculateCostFromLlmApiCalls(msg.llmApiCalls);
+  };
+
+  // Calculate session total cost with breakdown
+  const getSessionCost = (): { 
+    total: number; 
+    free: number; 
+    paid: number; 
+    responses: number; 
+    calls: number;
+    totalTokens: number;
+  } => {
+    let total = 0;
+    let free = 0;
+    let paid = 0;
+    let responses = 0;
+    let calls = 0;
+    let totalTokens = 0;
+    
+    for (const msg of messages) {
+      if (msg.role === 'assistant' && msg.llmApiCalls) {
+        const msgCost = getMessageCost(msg);
+        responses++;
+        calls += msg.llmApiCalls.length;
+        
+        // Calculate tokens
+        for (const call of msg.llmApiCalls) {
+          totalTokens += call.response?.usage?.total_tokens || 0;
+        }
+        
+        // Check if any calls are free models and calculate "worth"
+        let msgFreeWorth = 0;
+        let hasFreeModels = false;
+        
+        for (const call of msg.llmApiCalls) {
+          const model = call.model;
+          if (model?.includes('gemini') || model?.includes('llama') || model?.includes('mixtral')) {
+            hasFreeModels = true;
+            // Calculate "worth" for free models using paid equivalent
+            const tokensIn = call.response?.usage?.prompt_tokens || 0;
+            const tokensOut = call.response?.usage?.completion_tokens || 0;
+            const pricing = calculateDualPricing(model, tokensIn, tokensOut);
+            msgFreeWorth += pricing.paidEquivalentCost || 0;
+          }
+        }
+        
+        if (hasFreeModels && msgCost === 0) {
+          free += msgFreeWorth;
+        } else {
+          paid += msgCost;
+        }
+        
+        total += msgCost;
+      }
+    }
+    
+    return { total, free, paid, responses, calls, totalTokens };
+  };
+
+  // Format cost for display
+  const formatCostDisplay = (cost: number): string => {
+    if (cost === 0) return '$0';
+    if (cost < 0.0001) return '<$0.0001';
+    if (cost < 0.01) return `$${cost.toFixed(4)}`;
+    if (cost < 1) return `$${cost.toFixed(3)}`;
+    return `$${cost.toFixed(2)}`;
+  };
+
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -829,7 +930,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       console.log('⚠️ No tool_calls in last message');
     }
 
-    // Add YouTube videos to playlist
+    // Add YouTube videos to playlist (at the start)
     if (youtubeResults.length > 0) {
       console.log(`🎵 Adding ${youtubeResults.length} videos to playlist`);
       const tracks = youtubeResults.map((video: any) => ({
@@ -842,12 +943,12 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         thumbnail: video.thumbnail || ''
       }));
       
-      addTracks(tracks);
+      addTracksToStart(tracks);
       showSuccess(`Added ${tracks.length} video${tracks.length !== 1 ? 's' : ''} to playlist`);
     } else {
       console.log('ℹ️ No YouTube videos found to add to playlist');
     }
-  }, [messages, addTracks, showSuccess]);
+  }, [messages, addTracksToStart, showSuccess]);
 
   const handleStop = () => {
     if (abortControllerRef.current) {
@@ -1279,7 +1380,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     const tools = buildToolsArray();
 
     // Set a client-side timeout (4 minutes) to prevent Lambda timeout
-    let timeoutId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     if (tools.length > 0) {
       timeoutId = setTimeout(() => {
         if (abortControllerRef.current) {
@@ -2038,6 +2139,72 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             case 'error':
               // Error occurred
               const errorMsg = data.error;
+              
+              // Handle guardrail-specific errors
+              if (data.type === 'input_moderation_error') {
+                console.warn('🛡️ Input moderation error:', data.reason);
+                
+                // Create error message
+                const moderationMsg = `❌ **Content Moderation Alert**\n\n${errorMsg}\n\n**Reason**: ${data.reason}\n\n**Violations**: ${data.violations?.join(', ') || 'Unknown'}`;
+                
+                // Add error message to chat
+                const moderationError: ChatMessage = {
+                  role: 'assistant',
+                  content: moderationMsg,
+                  llmApiCalls: data.llmApiCalls || []
+                };
+                setMessages(prev => [...prev, moderationError]);
+                
+                // If suggested revision exists, replace user input
+                if (data.suggestedRevision) {
+                  setInput(data.suggestedRevision);
+                  
+                  // Add suggestion message
+                  const suggestionMsg: ChatMessage = {
+                    role: 'assistant',
+                    content: `💡 **Suggested Revision**\n\nWe've updated your message to comply with content policies. You can edit and send it again.`
+                  };
+                  setMessages(prev => [...prev, suggestionMsg]);
+                } else {
+                  // Clear user input if no suggestion
+                  setInput('');
+                }
+                
+                break;
+              }
+              
+              if (data.type === 'output_moderation_error') {
+                console.warn('🛡️ Output moderation error:', data.reason);
+                
+                // Create error message
+                const moderationMsg = `❌ **Content Moderation Alert**\n\n${errorMsg}\n\n**Reason**: ${data.reason}\n\nThis response cannot be displayed due to content policy violations. Please try rephrasing your question.`;
+                
+                const moderationError: ChatMessage = {
+                  role: 'assistant',
+                  content: moderationMsg,
+                  llmApiCalls: data.llmApiCalls || []
+                };
+                setMessages(prev => [...prev, moderationError]);
+                
+                break;
+              }
+              
+              if (data.type === 'guardrail_configuration_error' || data.type === 'guardrail_system_error') {
+                console.error('🛡️ Guardrail system error:', data.error);
+                
+                const systemErrorMsg = `❌ **System Error**\n\n${errorMsg}\n\nThe content moderation system is experiencing issues. Please contact support if this persists.`;
+                
+                const systemError: ChatMessage = {
+                  role: 'assistant',
+                  content: systemErrorMsg
+                };
+                setMessages(prev => [...prev, systemError]);
+                
+                showError(errorMsg);
+                break;
+              }
+              
+              // Standard error handling
               showError(errorMsg);
               
               // Check if authentication error - auto-logout
@@ -2715,7 +2882,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
             No messages yet. Start a conversation!
@@ -3135,39 +3302,27 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   {msg.name === 'search_web' && (
                                     <button
                                       onClick={() => msg.llmApiCalls && msg.llmApiCalls.length > 0 ? setShowLlmInfo(idx) : null}
-                                      className={`text-xs flex items-center gap-1 ${
+                                      className={`text-xs px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors ${
                                         msg.llmApiCalls && msg.llmApiCalls.length > 0
-                                          ? 'text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-100 cursor-pointer'
+                                          ? 'bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 dark:hover:bg-purple-900/50 cursor-pointer'
                                           : 'text-gray-500 dark:text-gray-500 cursor-default'
                                       }`}
-                                      title={msg.llmApiCalls && msg.llmApiCalls.length > 0 ? "View LLM summarization info" : "No LLM summarization used"}
+                                      title={msg.llmApiCalls && msg.llmApiCalls.length > 0 ? `View LLM summarization info • ${formatCostDisplay(getMessageCost(msg))}` : "No LLM summarization used"}
                                     >
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
                                       {msg.llmApiCalls && msg.llmApiCalls.length > 0 ? (
                                         <>
-                                          Info
-                                          {(() => {
-                                            const tokensIn = msg.llmApiCalls.reduce((sum: number, call: any) => 
-                                              sum + (call.response?.usage?.prompt_tokens || 0), 0);
-                                            const tokensOut = msg.llmApiCalls.reduce((sum: number, call: any) => 
-                                              sum + (call.response?.usage?.completion_tokens || 0), 0);
-                                            const hasEstimated = msg.llmApiCalls.some((call: any) => 
-                                              call.response?.usage?.estimated === true);
-                                            const cost = calculateCostFromLlmApiCalls(msg.llmApiCalls);
-                                            if (tokensIn > 0 || tokensOut > 0 || cost > 0) {
-                                              return (
-                                                <span className="ml-1 text-[10px] opacity-75">
-                                                  ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''}{cost > 0 && (tokensIn > 0 || tokensOut > 0) ? ' • ' : ''}{cost > 0 ? formatCost(cost) : ''})
-                                                </span>
-                                              );
-                                            }
-                                            return null;
-                                          })()}
+                                          <span className="font-semibold text-green-600 dark:text-green-400">
+                                            💰 {formatCostDisplay(getMessageCost(msg))}
+                                          </span>
+                                          <span className="ml-0.5">ℹ️</span>
                                         </>
                                       ) : (
-                                        <span className="text-[10px]">No summarization</span>
+                                        <>
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                          </svg>
+                                          <span className="text-[10px]">No summarization</span>
+                                        </>
                                       )}
                                     </button>
                                   )}
@@ -3176,30 +3331,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   {msg.name !== 'search_web' && msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
                                     <button
                                       onClick={() => setShowLlmInfo(idx)}
-                                      className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-100 flex items-center gap-1"
-                                      title="View LLM transparency info"
+                                      className="text-xs px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 dark:hover:bg-purple-900/50 flex items-center gap-1 transition-colors"
+                                      title={`View LLM transparency info • ${formatCostDisplay(getMessageCost(msg))}`}
                                     >
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                      Info
-                                      {(() => {
-                                        const tokensIn = msg.llmApiCalls.reduce((sum: number, call: any) => 
-                                          sum + (call.response?.usage?.prompt_tokens || 0), 0);
-                                        const tokensOut = msg.llmApiCalls.reduce((sum: number, call: any) => 
-                                          sum + (call.response?.usage?.completion_tokens || 0), 0);
-                                        const hasEstimated = msg.llmApiCalls.some((call: any) => 
-                                          call.response?.usage?.estimated === true);
-                                        const cost = calculateCostFromLlmApiCalls(msg.llmApiCalls);
-                                        if (tokensIn > 0 || tokensOut > 0 || cost > 0) {
-                                          return (
-                                            <span className="ml-1 text-[10px] opacity-75">
-                                              ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''}{cost > 0 && (tokensIn > 0 || tokensOut > 0) ? ' • ' : ''}{cost > 0 ? formatCost(cost) : ''})
-                                            </span>
-                                          );
-                                        }
-                                        return null;
-                                      })()}
+                                      <span className="font-semibold text-green-600 dark:text-green-400">
+                                        💰 {formatCostDisplay(getMessageCost(msg))}
+                                      </span>
+                                      <span className="ml-0.5">ℹ️</span>
                                     </button>
                                   )}
                                 </div>
@@ -3276,11 +3414,70 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           return null;
                         })}
                         
+                        {/* Cost badge for assistant messages with LLM calls */}
+                        {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
+                          <div className="mb-3 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm">
+                              <span className="text-gray-700 dark:text-gray-300 font-medium">🤖 Assistant Response</span>
+                              <span className="hidden sm:inline text-gray-400">•</span>
+                              <span className="font-semibold text-green-600 dark:text-green-400">
+                                💰 {formatCostDisplay(getMessageCost(msg))}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                ({msg.llmApiCalls.length} LLM call{msg.llmApiCalls.length !== 1 ? 's' : ''})
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        
                         {/* Message content - only render if there's actual content */}
                         {msg.content && <MarkdownRenderer content={getMessageText(msg.content)} />}
                         {msg.isStreaming && (
                           <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
                         )}
+                        
+                        {/* YouTube Video Results with Play Buttons */}
+                        {(() => {
+                          // Extract YouTube videos from tool results in the next message
+                          const nextMsg = messages[idx + 1];
+                          if (nextMsg && nextMsg.role === 'tool') {
+                            const youtubeVideos: any[] = [];
+                            // Find tool results that match YouTube search tool calls
+                            if (msg.tool_calls) {
+                              msg.tool_calls.forEach((toolCall: any) => {
+                                if (toolCall.function?.name === 'search_youtube') {
+                                  // Find corresponding tool result in next message
+                                  const toolResult = messages.find((m, i) => 
+                                    i > idx && 
+                                    m.role === 'tool' && 
+                                    m.tool_call_id === toolCall.id
+                                  );
+                                  if (toolResult && toolResult.content) {
+                                    try {
+                                      const result = typeof toolResult.content === 'string' 
+                                        ? JSON.parse(toolResult.content) 
+                                        : toolResult.content;
+                                      if (result.videos && Array.isArray(result.videos)) {
+                                        youtubeVideos.push(...result.videos);
+                                      }
+                                    } catch (e) {
+                                      console.error('Failed to parse YouTube results:', e);
+                                    }
+                                  }
+                                }
+                              });
+                            }
+                            
+                            if (youtubeVideos.length > 0) {
+                              return (
+                                <YouTubeVideoResults
+                                  videos={youtubeVideos}
+                                />
+                              );
+                            }
+                          }
+                          return null;
+                        })()}
                         
                         {/* Extracted content from tool calls (sources, images, videos, media) */}
                         {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
@@ -3643,34 +3840,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </svg>
                           Grab
                         </button>
-                        {/* Info button with token counts and cost */}
+                        {/* Info button with cost prominently displayed */}
                         {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
                           <button
                             onClick={() => setShowLlmInfo(idx)}
-                            className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-100 flex items-center gap-1"
-                            title="View LLM transparency info"
+                            className="text-xs px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex items-center gap-1.5 transition-colors"
+                            title={`View LLM transparency info • ${msg.llmApiCalls.length} API call${msg.llmApiCalls.length !== 1 ? 's' : ''} • ${formatCostDisplay(getMessageCost(msg))}`}
                           >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            Info
-                            {(() => {
-                              const tokensIn = msg.llmApiCalls.reduce((sum: number, call: any) => 
-                                sum + (call.response?.usage?.prompt_tokens || 0), 0);
-                              const tokensOut = msg.llmApiCalls.reduce((sum: number, call: any) => 
-                                sum + (call.response?.usage?.completion_tokens || 0), 0);
-                              const hasEstimated = msg.llmApiCalls.some((call: any) => 
-                                call.response?.usage?.estimated === true);
-                              const cost = calculateCostFromLlmApiCalls(msg.llmApiCalls);
-                              if (tokensIn > 0 || tokensOut > 0 || cost > 0) {
-                                return (
-                                  <span className="ml-1 text-[10px] opacity-75">
-                                    ({hasEstimated && <span title="Estimated token count">~</span>}{tokensIn > 0 ? `${tokensIn}↓` : ''}{tokensIn > 0 && tokensOut > 0 ? '/' : ''}{tokensOut > 0 ? `${tokensOut}↑` : ''}{cost > 0 && (tokensIn > 0 || tokensOut > 0) ? ' • ' : ''}{cost > 0 ? formatCost(cost) : ''})
-                                  </span>
-                                );
-                              }
-                              return null;
-                            })()}
+                            <span className="font-semibold text-green-600 dark:text-green-400">
+                              💰 {formatCostDisplay(getMessageCost(msg))}
+                            </span>
+                            <span className="text-gray-600 dark:text-gray-400 hidden sm:inline">
+                              • {msg.llmApiCalls.length} call{msg.llmApiCalls.length !== 1 ? 's' : ''}
+                            </span>
+                            <span className="ml-0.5">ℹ️</span>
                           </button>
                         )}
                         {/* Error Info button for error messages */}
@@ -3857,6 +4040,94 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           </div>
         )}
         <div ref={messagesEndRef} />
+        
+        {/* Session Summary - sticky footer with costs */}
+        {messages.length > 0 && (() => {
+          const { total, free, paid, responses, calls, totalTokens } = getSessionCost();
+          
+          // Don't show if no assistant messages with LLM calls
+          if (responses === 0) return null;
+          
+          return (
+            <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t-2 border-blue-500 shadow-lg mt-6">
+              {/* Collapsed View */}
+              <div 
+                className="px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                onClick={() => setSessionSummaryExpanded(!sessionSummaryExpanded)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                    <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                      💰 {formatCostDisplay(total)}
+                    </span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {responses} response{responses !== 1 ? 's' : ''} • {calls} LLM call{calls !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <button className="text-gray-500 dark:text-gray-400 flex items-center gap-1 text-sm">
+                    {sessionSummaryExpanded ? '▼' : '▲'} <span className="hidden sm:inline">Session Summary</span>
+                  </button>
+                </div>
+              </div>
+              
+              {/* Expanded View */}
+              {sessionSummaryExpanded && (
+                <div className="px-4 pb-4 space-y-2 border-t border-gray-200 dark:border-gray-700">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                        Cost Breakdown
+                      </h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>💵 Paid Models:</span>
+                          <span className="font-semibold">{formatCostDisplay(paid)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>🆓 Free Models:</span>
+                          <span className="font-semibold">
+                            $0 
+                            {free > 0 && (
+                              <span className="text-xs text-gray-500 ml-1">
+                                (worth {formatCostDisplay(free)})
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
+                          <span className="font-semibold">Total:</span>
+                          <span className="font-bold text-green-600 dark:text-green-400">
+                            {formatCostDisplay(total)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                        Usage Statistics
+                      </h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>📝 Responses:</span>
+                          <span className="font-semibold">{responses}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>🔄 LLM Calls:</span>
+                          <span className="font-semibold">{calls}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>📊 Total Tokens:</span>
+                          <span className="font-semibold">{totalTokens.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Input Area */}

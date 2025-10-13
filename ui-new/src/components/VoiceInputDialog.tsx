@@ -29,7 +29,7 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const animationFrameRef = useRef<number | null>(null);
-  const silenceTimeoutRef = useRef<number | null>(null);
+  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   // Cleanup function

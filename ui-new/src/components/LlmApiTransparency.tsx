@@ -149,8 +149,56 @@ export const LlmApiTransparency: React.FC<LlmApiTransparencyProps> = ({ apiCalls
 
       {isExpanded && (
         <div className="p-4 space-y-3 bg-white dark:bg-gray-900">
+          
+          {/* Guardrail Calls Section (if any) */}
+          {(() => {
+            const guardrailCalls = apiCalls.filter((call: any) => 
+              call.type === 'guardrail_input' || call.type === 'guardrail_output'
+            );
+            
+            if (guardrailCalls.length > 0) {
+              return (
+                <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+                  <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+                    🛡️ Content Moderation ({guardrailCalls.length})
+                  </h4>
+                  {guardrailCalls.map((call: any, idx: number) => {
+                    const tokensIn = call.response?.usage?.prompt_tokens || 0;
+                    const tokensOut = call.response?.usage?.completion_tokens || 0;
+                    const totalTokens = tokensIn + tokensOut;
+                    const pricing = calculateDualPricing(call.model, tokensIn, tokensOut);
+                    const duration = call.totalTime || 0;
+                    
+                    return (
+                      <div key={idx} className="text-xs text-yellow-700 dark:text-yellow-300 mb-1 flex items-center gap-2">
+                        <span>{call.type === 'guardrail_input' ? '📥 Input Filter' : '📤 Output Filter'}:</span>
+                        <span className="font-mono">{call.model}</span>
+                        <span>•</span>
+                        <span>{totalTokens.toLocaleString()} tokens</span>
+                        {pricing.actualCost !== null && (
+                          <>
+                            <span>•</span>
+                            <span className="font-semibold">{pricing.formattedActual}</span>
+                          </>
+                        )}
+                        {duration > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>⏱️ {duration.toFixed(2)}s</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+            return null;
+          })()}
 
-          {apiCalls.map((call, index) => {
+          {apiCalls.filter((call: any) => 
+            call.type !== 'guardrail_input' && call.type !== 'guardrail_output'
+          ).map((call, index) => {
             const headersExpanded = expandedHeaders.has(index);
             const tokensIn = call.response?.usage?.prompt_tokens || 0;
             const tokensOut = call.response?.usage?.completion_tokens || 0;

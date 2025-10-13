@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { usePlaylist } from '../contexts/PlaylistContext';
+import { useDialogClose } from '../hooks/useDialogClose';
 
 interface PlaylistDialogProps {
   isOpen: boolean;
@@ -7,6 +8,7 @@ interface PlaylistDialogProps {
 }
 
 export const PlaylistDialog: React.FC<PlaylistDialogProps> = ({ isOpen, onClose }) => {
+  const dialogRef = useDialogClose(isOpen, onClose);
   const { 
     playlist, 
     currentTrackIndex, 
@@ -30,7 +32,7 @@ export const PlaylistDialog: React.FC<PlaylistDialogProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+    <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">

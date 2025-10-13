@@ -74,13 +74,17 @@ function prioritizeFreeTier(models) {
   // Save large context models (gemini-2.0-flash 2M) for when needed
   freeTier.sort((a, b) => {
     // Sort by context window (smaller first) - smaller models are usually faster and less rate-limited
-    return a.context_window - b.context_window;
+    const contextA = a.context_window || 0;
+    const contextB = b.context_window || 0;
+    return contextA - contextB;
   });
   
   // Within paid tier, sort by cost (cheapest first) as fallback
   paid.sort((a, b) => {
-    const avgCostA = (a.pricing.input + a.pricing.output) / 2;
-    const avgCostB = (b.pricing.input + b.pricing.output) / 2;
+    const pricingA = a.pricing || { input: 0, output: 0 };
+    const pricingB = b.pricing || { input: 0, output: 0 };
+    const avgCostA = (pricingA.input + pricingA.output) / 2;
+    const avgCostB = (pricingB.input + pricingB.output) / 2;
     return avgCostA - avgCostB;
   });
   

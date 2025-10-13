@@ -1075,7 +1075,7 @@ class DuckDuckGoSearcher {
             
             // Extract images, videos, and media from HTML
             try {
-                const htmlParser = new SimpleHTMLParser(rawContent, query);
+                const htmlParser = new SimpleHTMLParser(rawContent, query, result.url);
                 const images = htmlParser.extractImages(10); // Get up to 10 images
                 const links = htmlParser.extractLinks(30); // Get top 30 most relevant links
                 const categorized = htmlParser.categorizeLinks(links);

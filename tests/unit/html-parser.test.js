@@ -575,4 +575,78 @@ describe('SimpleHTMLParser', () => {
       expect(result).toBe('Nested text');
     });
   });
+
+  describe('URL Conversion - Relative to Absolute', () => {
+    
+    test('should convert relative links to absolute when baseUrl provided', () => {
+      const html = '<a href="/article/news">Breaking News Article</a><a href="story.html">Another Story Here</a>';
+      const parser = new SimpleHTMLParser(html, '', 'https://example.com/page/');
+      const links = parser.extractLinks();
+      
+      expect(links).toHaveLength(2);
+      expect(links[0].href).toBe('https://example.com/article/news');
+      expect(links[1].href).toBe('https://example.com/page/story.html');
+    });
+
+    test('should convert relative image URLs to absolute when baseUrl provided', () => {
+      const html = '<img src="/images/pic.jpg" alt="Picture" width="400"><img src="photo.png" alt="Photo" width="400">';
+      const parser = new SimpleHTMLParser(html, '', 'https://example.com/');
+      const images = parser.extractImages(10);
+      
+      expect(images).toHaveLength(2);
+      expect(images[0].src).toBe('https://example.com/images/pic.jpg');
+      expect(images[1].src).toBe('https://example.com/photo.png');
+    });
+
+    test('should handle ../ relative paths correctly', () => {
+      const html = '<a href="../parent.html">Parent</a>';
+      const parser = new SimpleHTMLParser(html, '', 'https://example.com/dir/subdir/');
+      const links = parser.extractLinks();
+      
+      expect(links).toHaveLength(1);
+      expect(links[0].href).toBe('https://example.com/dir/parent.html');
+    });
+
+    test('should leave absolute URLs unchanged', () => {
+      const html = '<a href="https://other.com/page">External</a>';
+      const parser = new SimpleHTMLParser(html, '', 'https://example.com/');
+      const links = parser.extractLinks();
+      
+      expect(links).toHaveLength(1);
+      expect(links[0].href).toBe('https://other.com/page');
+    });
+
+    test('should skip anchor-only links', () => {
+      const html = '<a href="#section">Section</a>';
+      const parser = new SimpleHTMLParser(html, '', 'https://example.com/');
+      const links = parser.extractLinks();
+      
+      expect(links).toHaveLength(0);
+    });
+
+    test('should skip javascript: links', () => {
+      const html = '<a href="javascript:void(0)">Click</a>';
+      const parser = new SimpleHTMLParser(html, '', 'https://example.com/');
+      const links = parser.extractLinks();
+      
+      expect(links).toHaveLength(0);
+    });
+
+    test('should work without baseUrl (backward compatibility)', () => {
+      const html = '<a href="https://example.com/page">Link</a>';
+      const parser = new SimpleHTMLParser(html, '');
+      const links = parser.extractLinks();
+      
+      expect(links).toHaveLength(1);
+      expect(links[0].href).toBe('https://example.com/page');
+    });
+
+    test('should skip data URIs in images', () => {
+      const html = '<img src="data:image/png;base64,ABC123" alt="Data">';
+      const parser = new SimpleHTMLParser(html, '', 'https://example.com/');
+      const images = parser.extractImages(10);
+      
+      expect(images).toHaveLength(0);
+    });
+  });
 });

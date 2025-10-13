@@ -12,6 +12,15 @@ declare global {
 
 declare const chrome: any;
 
+interface VideoTrack {
+  videoId: string;
+  url: string;
+  title: string;
+  channel?: string;
+  thumbnail?: string;
+  duration?: string;
+}
+
 interface CastContextType {
   isAvailable: boolean;
   isConnected: boolean;
@@ -21,6 +30,10 @@ interface CastContextType {
   endSession: () => void;
   sendMessages: (messages: ChatMessage[]) => void;
   sendScrollPosition: (position: number) => void;
+  // Video casting methods
+  castVideo: (track: VideoTrack, position?: number) => void;
+  sendVideoCommand: (command: 'play' | 'pause' | 'seek' | 'stop', data?: any) => void;
+  isCastingVideo: boolean;
 }
 
 const CastContext = createContext<CastContextType | undefined>(undefined);
@@ -42,6 +55,7 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
+  const [isCastingVideo, setIsCastingVideo] = useState(false);
 
   // Registered Application ID from Google Cast Console
   // Receiver URL: https://syntithenai.github.io/lambdallmproxy/chromecast-receiver.html
@@ -170,6 +184,71 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
     }
   }, [session, isConnected]);
 
+  // Video casting methods
+  const castVideo = useCallback((track: VideoTrack, position: number = 0) => {
+    if (!session || !isConnected) {
+      console.log('No active cast session for video');
+      return;
+    }
+
+    try {
+      const namespace = 'urn:x-cast:com.lambdallmproxy.video';
+      const message = {
+        type: 'VIDEO_COMMAND',
+        command: 'load',
+        data: {
+          videoId: track.videoId,
+          url: track.url,
+          title: track.title,
+          channel: track.channel,
+          thumbnail: track.thumbnail,
+          duration: track.duration,
+          position
+        },
+        timestamp: Date.now()
+      };
+
+      session.sendMessage(
+        namespace,
+        message,
+        () => {
+          console.log('Video cast command sent:', track.title);
+          setIsCastingVideo(true);
+        },
+        (error: any) => console.error('Error casting video:', error)
+      );
+    } catch (error) {
+      console.error('Error in castVideo:', error);
+    }
+  }, [session, isConnected]);
+
+  const sendVideoCommand = useCallback((command: 'play' | 'pause' | 'seek' | 'stop', data: any = {}) => {
+    if (!session || !isConnected) return;
+
+    try {
+      const namespace = 'urn:x-cast:com.lambdallmproxy.video';
+      const message = {
+        type: 'VIDEO_COMMAND',
+        command,
+        data,
+        timestamp: Date.now()
+      };
+
+      session.sendMessage(
+        namespace,
+        message,
+        () => console.log('Video command sent:', command),
+        (error: any) => console.error('Error sending video command:', error)
+      );
+
+      if (command === 'stop') {
+        setIsCastingVideo(false);
+      }
+    } catch (error) {
+      console.error('Error in sendVideoCommand:', error);
+    }
+  }, [session, isConnected]);
+
   // Load Cast SDK when component mounts
   useEffect(() => {
     // Check if script already exists
@@ -214,7 +293,10 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
     requestSession,
     endSession,
     sendMessages,
-    sendScrollPosition
+    sendScrollPosition,
+    castVideo,
+    sendVideoCommand,
+    isCastingVideo
   };
 
   return <CastContext.Provider value={value}>{children}</CastContext.Provider>;
