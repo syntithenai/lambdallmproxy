@@ -35,10 +35,12 @@ export const YouTubeVideoResults: React.FC<YouTubeVideoResultsProps> = ({
       // Play the track
       playTrack(trackIndex);
       
-      // Open the player dialog
+      // Optionally open the player dialog (user can also use header button)
       if (onOpenPlayer) {
         onOpenPlayer();
       }
+    } else {
+      console.warn('Video not found in playlist:', video.videoId);
     }
   };
 

@@ -192,66 +192,9 @@
       font-size: 32px;
       font-weight: 300;
     }
-
-    /* Video Player Styles */
-    #video-container {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      z-index: 1000;
-      display: none;
-    }
-
-    #video-container.active {
-      display: block;
-    }
-
-    #video-player {
-      width: 100%;
-      height: 100%;
-    }
-
-    #video-overlay {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: linear-gradient(transparent, rgba(0,0,0,0.8));
-      padding: 40px;
-      transition: opacity 0.3s ease;
-    }
-
-    #video-overlay.hidden {
-      opacity: 0;
-    }
-
-    #video-title {
-      font-size: 36px;
-      font-weight: 600;
-      margin-bottom: 10px;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-    }
-
-    #video-channel {
-      font-size: 24px;
-      opacity: 0.9;
-      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-    }
   </style>
 </head>
 <body>
-  <!-- Video Player Container -->
-  <div id="video-container">
-    <div id="video-player"></div>
-    <div id="video-overlay">
-      <div id="video-title"></div>
-      <div id="video-channel"></div>
-    </div>
-  </div>
-
   <div id="container">
     <div id="header">
       <h1>🤖 LLM Proxy Chat</h1>
@@ -275,18 +218,8 @@
     let messages = [];
     let autoScroll = true;
 
-    // Custom namespaces
+    // Custom namespace for our chat messages
     const NAMESPACE = 'urn:x-cast:com.lambdallmproxy.chat';
-    const VIDEO_NAMESPACE = 'urn:x-cast:com.lambdallmproxy.video';
-
-    // Video player elements
-    const videoContainer = document.getElementById('video-container');
-    const videoPlayer = document.getElementById('video-player');
-    const videoOverlay = document.getElementById('video-overlay');
-    const videoTitle = document.getElementById('video-title');
-    const videoChannel = document.getElementById('video-channel');
-    let currentVideoId = null;
-    let overlayTimeout = null;
 
     // Show status message temporarily
     function showStatus(message) {
@@ -351,101 +284,6 @@
         }, 100);
       }
     }
-
-    // Video Player Functions
-    function extractVideoId(url) {
-      const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-      return match ? match[1] : null;
-    }
-
-    function showVideoOverlay() {
-      videoOverlay.classList.remove('hidden');
-      
-      // Hide overlay after 5 seconds
-      if (overlayTimeout) clearTimeout(overlayTimeout);
-      overlayTimeout = setTimeout(() => {
-        videoOverlay.classList.add('hidden');
-      }, 5000);
-    }
-
-    function loadVideo(data) {
-      const videoId = data.videoId || extractVideoId(data.url);
-      if (!videoId) {
-        console.error('Could not extract video ID from URL:', data.url);
-        return;
-      }
-
-      currentVideoId = videoId;
-      const startTime = Math.floor(data.position || 0);
-
-      // Create YouTube iframe
-      videoPlayer.innerHTML = `
-        <iframe
-          id="youtube-player"
-          width="100%"
-          height="100%"
-          src="https://www.youtube.com/embed/${videoId}?autoplay=1&start=${startTime}&enablejsapi=1&controls=1&rel=0"
-          frameborder="0"
-          allow="autoplay; encrypted-media"
-          allowfullscreen
-        ></iframe>
-      `;
-
-      // Show video container and metadata
-      videoContainer.classList.add('active');
-      videoTitle.textContent = data.title || 'Playing Video';
-      videoChannel.textContent = data.channel || '';
-      showVideoOverlay();
-
-      showStatus('Video loaded');
-    }
-
-    function stopVideo() {
-      videoPlayer.innerHTML = '';
-      videoContainer.classList.remove('active');
-      currentVideoId = null;
-      showStatus('Video stopped');
-    }
-
-    // Handle video commands from sender
-    context.addCustomMessageListener(VIDEO_NAMESPACE, (event) => {
-      console.log('Received video command:', event.data);
-      
-      const { command, data } = event.data;
-      
-      switch (command) {
-        case 'load':
-          loadVideo(data);
-          break;
-        case 'play':
-          // YouTube iframe doesn't provide easy play control without YouTube IFrame API
-          showVideoOverlay();
-          showStatus('Play');
-          break;
-        case 'pause':
-          showVideoOverlay();
-          showStatus('Pause');
-          break;
-        case 'seek':
-          // Reload video at new position
-          if (currentVideoId && data.position !== undefined) {
-            const currentData = {
-              videoId: currentVideoId,
-              url: `https://www.youtube.com/watch?v=${currentVideoId}`,
-              title: videoTitle.textContent,
-              channel: videoChannel.textContent,
-              position: data.position
-            };
-            loadVideo(currentData);
-          }
-          break;
-        case 'stop':
-          stopVideo();
-          break;
-        default:
-          console.warn('Unknown video command:', command);
-      }
-    });
 
     // Handle messages from sender
     context.addCustomMessageListener(NAMESPACE, (event) => {
