@@ -457,11 +457,24 @@ async function verifyAuthToken(authHeader) {
  * @param {Function} onChunk - Callback for each parsed chunk
  * @returns {Promise<void>}
  */
-async function parseOpenAIStream(response, onChunk) {
+async function parseOpenAIStream(response, onChunk, sseWriter = null) {
     return new Promise((resolve, reject) => {
         let buffer = '';
+        let chunkCount = 0;
+        const DISCONNECT_CHECK_INTERVAL = 10; // Check every 10 chunks
         
         response.on('data', (chunk) => {
+            // Periodic disconnect check during streaming
+            if (sseWriter && sseWriter.isDisconnected?.()) {
+                chunkCount++;
+                if (chunkCount % DISCONNECT_CHECK_INTERVAL === 0) {
+                    console.log('⚠️ Client disconnected during LLM streaming, aborting');
+                    response.destroy(); // Stop reading from upstream
+                    reject(new Error('CLIENT_DISCONNECTED'));
+                    return;
+                }
+            }
+            
             buffer += chunk.toString();
             const lines = buffer.split('\n');
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
@@ -595,6 +608,12 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
     const memoryTracker = getMemoryTracker();
     
     for (const toolCall of toolCalls) {
+        // Check if client disconnected before processing next tool
+        if (sseWriter.isConnected && !sseWriter.isConnected()) {
+            console.log('⚠️ Client disconnected, stopping tool execution');
+            throw new Error('CLIENT_DISCONNECTED');
+        }
+        
         const { id, function: { name, arguments: args } } = toolCall;
         
         try {
@@ -1964,7 +1983,7 @@ async function handler(event, responseStream) {
                         }
                     }
                 }
-            });
+            }, sseWriter);
             
             // Get or estimate token usage
             // Some providers (Groq, OpenAI) return usage data, others don't
@@ -2896,6 +2915,24 @@ async function handler(event, responseStream) {
                 messageCount: lastRequestBody.request.messages.length,
                 hasTools: !!lastRequestBody.request.tools
             }, null, 2));
+        }
+        
+        // Handle client disconnect gracefully (don't log as error, just abort)
+        if (error.message === 'CLIENT_DISCONNECTED') {
+            console.log('🔴 Client disconnected during request, aborting handler');
+            if (sseWriter) {
+                try {
+                    sseWriter.writeEvent('disconnect', {
+                        reason: 'client_disconnected',
+                        timestamp: Date.now()
+                    });
+                } catch (disconnectErr) {
+                    // If we can't write the disconnect event, client is definitely gone
+                    console.log('Could not send disconnect event (client already gone)');
+                }
+            }
+            responseStream.end();
+            return; // Exit without further error logging
         }
         
         // Log error to Google Sheets

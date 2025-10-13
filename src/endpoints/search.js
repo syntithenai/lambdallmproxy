@@ -145,6 +145,10 @@ async function handler(event, responseStream) {
     
     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
     
+    // Create SSE writer with disconnect detection
+    const { createSSEStreamAdapter } = require('../streaming/sse-writer');
+    const sseWriter = createSSEStreamAdapter(responseStream);
+    
     try {
         // Get authorization header
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
@@ -159,10 +163,10 @@ async function handler(event, responseStream) {
         
         // Require authentication
         if (!verifiedUser) {
-            responseStream.write(`event: error\ndata: ${JSON.stringify({
+            sseWriter.writeEvent('error', {
                 error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
                 code: 'UNAUTHORIZED'
-            })}\n\n`);
+            });
             responseStream.end();
             return;
         }
@@ -179,17 +183,17 @@ async function handler(event, responseStream) {
         
         // Validate inputs
         if (!query || (Array.isArray(query) && query.length === 0)) {
-            responseStream.write(`event: error\ndata: ${JSON.stringify({
+            sseWriter.writeEvent('error', {
                 error: 'Query or queries parameter is required'
-            })}\n\n`);
+            });
             responseStream.end();
             return;
         }
         
         if (maxResults < 1 || maxResults > 20) {
-            responseStream.write(`event: error\ndata: ${JSON.stringify({
+            sseWriter.writeEvent('error', {
                 error: 'maxResults must be between 1 and 20'
-            })}\n\n`);
+            });
             responseStream.end();
             return;
         }
@@ -201,59 +205,80 @@ async function handler(event, responseStream) {
         };
         
         // Send status event
-        responseStream.write(`event: status\ndata: ${JSON.stringify({
+        sseWriter.writeEvent('status', {
             message: isMultipleQueries ? `Searching ${query.length} queries...` : 'Searching...'
-        })}\n\n`);
+        });
         
         // Perform search(es)
         if (isMultipleQueries) {
             // Multiple queries - stream results as they complete
             for (let i = 0; i < query.length; i++) {
+                // Check for client disconnect before each search
+                if (sseWriter.isDisconnected?.()) {
+                    console.log('⚠️ Client disconnected, aborting search');
+                    throw new Error('CLIENT_DISCONNECTED');
+                }
+                
                 try {
-                    responseStream.write(`event: search-start\ndata: ${JSON.stringify({
+                    sseWriter.writeEvent('search-start', {
                         query: query[i],
                         index: i
-                    })}\n\n`);
+                    });
                     
                     const results = await searchWithContent(query[i], options);
                     
-                    responseStream.write(`event: search-result\ndata: ${JSON.stringify({
+                    sseWriter.writeEvent('search-result', {
                         query: query[i],
                         index: i,
                         count: results.length,
                         results: results
-                    })}\n\n`);
+                    });
                 } catch (searchError) {
-                    responseStream.write(`event: search-error\ndata: ${JSON.stringify({
+                    sseWriter.writeEvent('search-error', {
                         query: query[i],
                         index: i,
                         error: searchError.message
-                    })}\n\n`);
+                    });
                 }
             }
         } else {
             // Single query
             const results = await searchWithContent(query, options);
-            responseStream.write(`event: result\ndata: ${JSON.stringify({
+            sseWriter.writeEvent('result', {
                 query: query,
                 count: results.length,
                 results: results
-            })}\n\n`);
+            });
         }
         
         // Send complete event
-        responseStream.write(`event: complete\ndata: ${JSON.stringify({
+        sseWriter.writeEvent('complete', {
             success: true
-        })}\n\n`);
+        });
         
         responseStream.end();
         
     } catch (error) {
         console.error('Search endpoint error:', error);
         
-        responseStream.write(`event: error\ndata: ${JSON.stringify({
+        // Handle client disconnect gracefully
+        if (error.message === 'CLIENT_DISCONNECTED') {
+            console.log('🔴 Client disconnected during search, aborting handler');
+            try {
+                sseWriter.writeEvent('disconnect', {
+                    reason: 'client_disconnected',
+                    timestamp: Date.now()
+                });
+            } catch (disconnectErr) {
+                console.log('Could not send disconnect event (client already gone)');
+            }
+            responseStream.end();
+            return;
+        }
+        
+        sseWriter.writeEvent('error', {
             error: error.message || 'Internal server error'
-        })}\n\n`);
+        });
         responseStream.end();
     }
 }

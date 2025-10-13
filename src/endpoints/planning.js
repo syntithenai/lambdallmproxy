@@ -141,6 +141,10 @@ async function handler(event, responseStream) {
     
     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
     
+    // Create SSE writer with disconnect detection
+    const { createSSEStreamAdapter } = require('../streaming/sse-writer');
+    const sseWriter = createSSEStreamAdapter(responseStream);
+    
     try {
         // Get authorization header
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
@@ -159,10 +163,10 @@ async function handler(event, responseStream) {
         
         // Require authentication
         if (!verifiedUser) {
-            responseStream.write(`event: error\ndata: ${JSON.stringify({
+            sseWriter.writeEvent('error', {
                 error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
                 code: 'UNAUTHORIZED'
-            })}\n\n`);
+            });
             responseStream.end();
             return;
         }
@@ -175,45 +179,60 @@ async function handler(event, responseStream) {
         
         // Validate inputs
         if (!query) {
-            responseStream.write(`event: error\ndata: ${JSON.stringify({
+            sseWriter.writeEvent('error', {
                 error: 'Query parameter is required'
-            })}\n\n`);
+            });
             responseStream.end();
             return;
         }
         
         if (!apiKey) {
-            responseStream.write(`event: error\ndata: ${JSON.stringify({
+            sseWriter.writeEvent('error', {
                 error: 'API key is required'
-            })}\n\n`);
+            });
             responseStream.end();
             return;
         }
         
         // Send status event
-        responseStream.write(`event: status\ndata: ${JSON.stringify({
+        sseWriter.writeEvent('status', {
             message: 'Generating research plan...'
-        })}\n\n`);
+        });
         
         // Generate plan
         const plan = await generatePlan(query, apiKey, model);
         
         // Send result event
-        responseStream.write(`event: result\ndata: ${JSON.stringify(plan)}\n\n`);
+        sseWriter.writeEvent('result', plan);
         
         // Send complete event
-        responseStream.write(`event: complete\ndata: ${JSON.stringify({
+        sseWriter.writeEvent('complete', {
             success: true
-        })}\n\n`);
+        });
         
         responseStream.end();
         
     } catch (error) {
         console.error('Planning endpoint error:', error);
         
-        responseStream.write(`event: error\ndata: ${JSON.stringify({
+        // Handle client disconnect gracefully
+        if (error.message === 'CLIENT_DISCONNECTED') {
+            console.log('🔴 Client disconnected during planning, aborting handler');
+            try {
+                sseWriter.writeEvent('disconnect', {
+                    reason: 'client_disconnected',
+                    timestamp: Date.now()
+                });
+            } catch (disconnectErr) {
+                console.log('Could not send disconnect event (client already gone)');
+            }
+            responseStream.end();
+            return;
+        }
+        
+        sseWriter.writeEvent('error', {
             error: error.message || 'Internal server error'
-        })}\n\n`);
+        });
         responseStream.end();
     }
 }

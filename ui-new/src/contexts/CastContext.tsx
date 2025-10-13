@@ -21,6 +21,15 @@ interface VideoTrack {
   duration?: string;
 }
 
+interface SnippetData {
+  id: string;
+  content: string;
+  title?: string;
+  tags?: string[];
+  created?: Date;
+  modified?: Date;
+}
+
 interface CastContextType {
   isAvailable: boolean;
   isConnected: boolean;
@@ -34,6 +43,11 @@ interface CastContextType {
   castVideo: (track: VideoTrack, position?: number) => void;
   sendVideoCommand: (command: 'play' | 'pause' | 'seek' | 'stop', data?: any) => void;
   isCastingVideo: boolean;
+  // Snippet casting methods
+  castSnippet: (snippet: SnippetData) => void;
+  sendSnippetScrollPosition: (position: number) => void;
+  stopSnippetCast: () => void;
+  isCastingSnippet: boolean;
 }
 
 const CastContext = createContext<CastContextType | undefined>(undefined);
@@ -56,6 +70,7 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [isCastingVideo, setIsCastingVideo] = useState(false);
+  const [isCastingSnippet, setIsCastingSnippet] = useState(false);
 
   // Registered Application ID from Google Cast Console
   // Receiver URL: https://syntithenai.github.io/lambdallmproxy/chromecast-receiver.html
@@ -249,6 +264,92 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
     }
   }, [session, isConnected]);
 
+  // Snippet casting methods
+  const castSnippet = useCallback((snippet: SnippetData) => {
+    if (!session || !isConnected) {
+      console.log('No active cast session for snippet');
+      return;
+    }
+
+    try {
+      const namespace = 'urn:x-cast:com.lambdallmproxy.snippet';
+      const message = {
+        type: 'SNIPPET_COMMAND',
+        command: 'load',
+        data: {
+          id: snippet.id,
+          content: snippet.content,
+          title: snippet.title || 'Untitled Snippet',
+          tags: snippet.tags || [],
+          created: snippet.created,
+          modified: snippet.modified
+        },
+        timestamp: Date.now()
+      };
+
+      session.sendMessage(
+        namespace,
+        message,
+        () => {
+          console.log('Snippet cast successfully:', snippet.title);
+          setIsCastingSnippet(true);
+        },
+        (error: any) => console.error('Error casting snippet:', error)
+      );
+    } catch (error) {
+      console.error('Error in castSnippet:', error);
+    }
+  }, [session, isConnected]);
+
+  const sendSnippetScrollPosition = useCallback((position: number) => {
+    if (!session || !isConnected || !isCastingSnippet) return;
+
+    try {
+      const namespace = 'urn:x-cast:com.lambdallmproxy.snippet';
+      const message = {
+        type: 'SNIPPET_COMMAND',
+        command: 'scroll',
+        data: { position },
+        timestamp: Date.now()
+      };
+
+      session.sendMessage(
+        namespace,
+        message,
+        () => console.log('Snippet scroll position sent:', position),
+        (error: any) => console.error('Error sending snippet scroll:', error)
+      );
+    } catch (error) {
+      console.error('Error in sendSnippetScrollPosition:', error);
+    }
+  }, [session, isConnected, isCastingSnippet]);
+
+  const stopSnippetCast = useCallback(() => {
+    if (!session || !isConnected || !isCastingSnippet) return;
+
+    try {
+      const namespace = 'urn:x-cast:com.lambdallmproxy.snippet';
+      const message = {
+        type: 'SNIPPET_COMMAND',
+        command: 'stop',
+        data: {},
+        timestamp: Date.now()
+      };
+
+      session.sendMessage(
+        namespace,
+        message,
+        () => {
+          console.log('Snippet cast stopped');
+          setIsCastingSnippet(false);
+        },
+        (error: any) => console.error('Error stopping snippet cast:', error)
+      );
+    } catch (error) {
+      console.error('Error in stopSnippetCast:', error);
+    }
+  }, [session, isConnected, isCastingSnippet]);
+
   // Load Cast SDK when component mounts
   useEffect(() => {
     // Check if script already exists
@@ -296,7 +397,11 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
     sendScrollPosition,
     castVideo,
     sendVideoCommand,
-    isCastingVideo
+    isCastingVideo,
+    castSnippet,
+    sendSnippetScrollPosition,
+    stopSnippetCast,
+    isCastingSnippet
   };
 
   return <CastContext.Provider value={value}>{children}</CastContext.Provider>;

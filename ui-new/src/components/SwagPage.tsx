@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
+import { useCast } from '../contexts/CastContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { StorageStats } from './StorageStats';
@@ -31,6 +32,13 @@ export const SwagPage: React.FC = () => {
     removeTagsFromSnippets,
     storageStats
   } = useSwag();
+  const { 
+    isAvailable: isCastAvailable, 
+    isConnected: isCastConnected, 
+    castSnippet, 
+    sendSnippetScrollPosition,
+    isCastingSnippet
+  } = useCast();
 
   const [googleDocs, setGoogleDocs] = useState<GoogleDoc[]>([]);
   const [editingSnippet, setEditingSnippet] = useState<ContentSnippet | null>(null);
@@ -51,6 +59,9 @@ export const SwagPage: React.FC = () => {
   const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState(false);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [snippetToEdit, setSnippetToEdit] = useState<string | null>(null);
+  
+  // Ref for scroll tracking in viewing dialog
+  const viewingScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     initGoogleAuth().catch(console.error);
@@ -587,57 +598,56 @@ export const SwagPage: React.FC = () => {
 
                   {/* Tags Section with Inline Management */}
                   <div className="mb-2">
-                    {/* Existing Tags (compact chips with delete and filter) */}
-                    {(snippet.tags || []).length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                        {(snippet.tags || []).map((tag, idx) => (
-                          <span 
-                            key={idx}
-                            className="group px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full flex items-center gap-1"
+                    {/* Tags and Add Tag Input - All Inline */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {/* Existing Tags (compact chips with delete and filter) */}
+                      {(snippet.tags || []).map((tag, idx) => (
+                        <span 
+                          key={idx}
+                          className="group px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full flex items-center gap-1"
+                        >
+                          <span
+                            className="cursor-pointer hover:underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!searchTags.includes(tag)) {
+                                setSearchTags([...searchTags, tag]);
+                              }
+                            }}
+                            title="Filter by this tag"
                           >
-                            <span
-                              className="cursor-pointer hover:underline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!searchTags.includes(tag)) {
-                                  setSearchTags([...searchTags, tag]);
-                                }
-                              }}
-                              title="Filter by this tag"
-                            >
-                              {tag}
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setTagToDelete(tag);
-                                setSnippetToEdit(snippet.id);
-                                setShowDeleteTagConfirm(true);
-                              }}
-                              className="opacity-60 hover:opacity-100 hover:text-red-600 dark:hover:text-red-400 transition-opacity"
-                              title="Remove tag"
-                            >
-                              ×
-                            </button>
+                            {tag}
                           </span>
-                        ))}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTagToDelete(tag);
+                              setSnippetToEdit(snippet.id);
+                              setShowDeleteTagConfirm(true);
+                            }}
+                            className="opacity-60 hover:opacity-100 hover:text-red-600 dark:hover:text-red-400 transition-opacity"
+                            title="Remove tag"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      
+                      {/* Inline Tag Autocomplete - Small, 1/3 width */}
+                      <div className="inline-block" onClick={(e) => e.stopPropagation()}>
+                        <TagAutocomplete
+                          existingTags={getAllTags()}
+                          currentTags={snippet.tags || []}
+                          onAddTag={(tag) => {
+                            updateSnippet(snippet.id, {
+                              tags: [...(snippet.tags || []), tag]
+                            });
+                            showSuccess(`Added tag "${tag}"`);
+                          }}
+                          placeholder="+ tag"
+                          className="text-xs w-20"
+                        />
                       </div>
-                    )}
-                    
-                    {/* Inline Tag Autocomplete */}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <TagAutocomplete
-                        existingTags={getAllTags()}
-                        currentTags={snippet.tags || []}
-                        onAddTag={(tag) => {
-                          updateSnippet(snippet.id, {
-                            tags: [...(snippet.tags || []), tag]
-                          });
-                          showSuccess(`Added tag "${tag}"`);
-                        }}
-                        placeholder="Add tag..."
-                        className="text-xs w-full sm:max-w-xs"
-                      />
                     </div>
                   </div>
 
@@ -651,13 +661,36 @@ export const SwagPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Edit Button */}
-                  <button
-                    onClick={() => handleEditSnippet(snippet)}
-                    className="w-full px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Edit
-                  </button>
+                  {/* Action Buttons */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditSnippet(snippet)}
+                      className="flex-1 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      Edit
+                    </button>
+                    {isCastAvailable && (
+                      <button
+                        onClick={() => {
+                          castSnippet({
+                            id: snippet.id,
+                            content: snippet.content,
+                            title: snippet.title,
+                            tags: snippet.tags,
+                            created: new Date(snippet.timestamp),
+                            modified: snippet.updateDate ? new Date(snippet.updateDate) : new Date(snippet.timestamp)
+                          });
+                          showSuccess(`Casting snippet to ${isCastConnected ? 'TV' : 'Chromecast'}`);
+                        }}
+                        className="px-3 py-2 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center gap-1"
+                        title="Cast to TV"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -879,8 +912,19 @@ export const SwagPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Content - Scrollable */}
-            <div className="flex-1 overflow-y-auto p-6">
+            {/* Content - Scrollable with scroll sync */}
+            <div 
+              ref={viewingScrollRef}
+              className="flex-1 overflow-y-auto p-6"
+              onScroll={(e) => {
+                // Send scroll position to Chromecast if casting this snippet
+                if (isCastingSnippet && isCastConnected) {
+                  const target = e.currentTarget;
+                  const scrollPercentage = (target.scrollTop / (target.scrollHeight - target.clientHeight)) * 100;
+                  sendSnippetScrollPosition(scrollPercentage);
+                }
+              }}
+            >
               <div className="text-gray-800 dark:text-gray-200">
                 {/* Render as JSON tree if valid JSON, otherwise always use markdown */}
                 {(() => {
@@ -899,22 +943,55 @@ export const SwagPage: React.FC = () => {
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setViewingSnippet(null);
-                  handleEditSnippet(viewingSnippet);
-                }}
-                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => setViewingSnippet(null)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Close
-              </button>
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+              {/* Cast Status */}
+              {isCastConnected && isCastingSnippet && (
+                <div className="text-sm text-purple-600 dark:text-purple-400 flex items-center gap-2">
+                  <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                  </svg>
+                  Casting to TV
+                </div>
+              )}
+              
+              <div className="flex gap-3 ml-auto">
+                {isCastAvailable && (
+                  <button
+                    onClick={() => {
+                      castSnippet({
+                        id: viewingSnippet.id,
+                        content: viewingSnippet.content,
+                        title: viewingSnippet.title,
+                        tags: viewingSnippet.tags,
+                        created: new Date(viewingSnippet.timestamp),
+                        modified: viewingSnippet.updateDate ? new Date(viewingSnippet.updateDate) : new Date(viewingSnippet.timestamp)
+                      });
+                      showSuccess(`Casting snippet to ${isCastConnected ? 'TV' : 'Chromecast'}`);
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                    Cast to TV
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setViewingSnippet(null);
+                    handleEditSnippet(viewingSnippet);
+                  }}
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setViewingSnippet(null)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -25,27 +25,70 @@ class StreamingResponse {
 }
 
 /**
- * Create an SSE stream adapter for responseStream
+ * Create an SSE stream adapter for responseStream with disconnect detection
  * @param {Object} responseStream - AWS Lambda response stream
- * @returns {Object} Stream adapter with writeEvent method
+ * @returns {Object} Stream adapter with writeEvent method and connection status
  */
 function createSSEStreamAdapter(responseStream) {
+    let isConnected = true;
+    let lastWriteTime = Date.now();
+    let checkInterval;
+    
+    // Check for stale connection every 10 seconds
+    checkInterval = setInterval(() => {
+        const timeSinceWrite = Date.now() - lastWriteTime;
+        if (timeSinceWrite > 30000) { // 30 second timeout
+            console.warn('⚠️ No writes for 30s, client likely disconnected');
+            isConnected = false;
+            clearInterval(checkInterval);
+        }
+    }, 10000);
+    
+    // Cleanup interval when stream ends
+    const originalEnd = responseStream.end ? responseStream.end.bind(responseStream) : null;
+    if (originalEnd) {
+        responseStream.end = function(...args) {
+            clearInterval(checkInterval);
+            return originalEnd(...args);
+        };
+    }
+    
     return {
         writeEvent: (type, data) => {
+            if (!isConnected) {
+                console.log('❌ Client disconnected, not writing event:', type);
+                throw new Error('CLIENT_DISCONNECTED');
+            }
+            
             try {
                 const eventText = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
                 responseStream.write(eventText);
+                lastWriteTime = Date.now();
             } catch (error) {
-                console.error('Error writing SSE event:', error);
+                console.error('❌ Error writing SSE event:', error);
+                isConnected = false;
+                clearInterval(checkInterval);
+                throw new Error('CLIENT_DISCONNECTED');
             }
         },
         write: (data) => {
+            if (!isConnected) {
+                console.log('❌ Client disconnected, not writing data');
+                throw new Error('CLIENT_DISCONNECTED');
+            }
+            
             try {
                 responseStream.write(`data: ${JSON.stringify(data)}\n\n`);
+                lastWriteTime = Date.now();
             } catch (error) {
-                console.error('Error writing SSE data:', error);
+                console.error('❌ Error writing SSE data:', error);
+                isConnected = false;
+                clearInterval(checkInterval);
+                throw new Error('CLIENT_DISCONNECTED');
             }
-        }
+        },
+        isConnected: () => isConnected,
+        getLastWriteTime: () => lastWriteTime
     };
 }
 

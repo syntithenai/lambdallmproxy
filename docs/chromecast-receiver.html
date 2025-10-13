@@ -218,8 +218,12 @@
     let messages = [];
     let autoScroll = true;
 
-    // Custom namespace for our chat messages
+    // Custom namespaces
     const NAMESPACE = 'urn:x-cast:com.lambdallmproxy.chat';
+    const SNIPPET_NAMESPACE = 'urn:x-cast:com.lambdallmproxy.snippet';
+    
+    // Snippet state
+    let currentSnippet = null;
 
     // Show status message temporarily
     function showStatus(message) {
@@ -285,6 +289,71 @@
       }
     }
 
+    // Simple markdown to HTML converter
+    function markdownToHtml(text) {
+      // Headers
+      text = text.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+      text = text.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+      text = text.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+      
+      // Bold and italic
+      text = text.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+      text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      
+      // Code blocks
+      text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+      text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+      
+      // Links
+      text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+      
+      // Line breaks
+      text = text.replace(/\n\n/g, '</p><p>');
+      text = text.replace(/\n/g, '<br>');
+      
+      return '<p>' + text + '</p>';
+    }
+
+    // Render snippet
+    function renderSnippet() {
+      if (!currentSnippet) {
+        renderMessages(); // Fall back to messages view
+        return;
+      }
+      
+      const tags = currentSnippet.tags && currentSnippet.tags.length > 0
+        ? `<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;">
+             ${currentSnippet.tags.map(tag => 
+               `<span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 12px; font-size: 14px;">${tag}</span>`
+             ).join('')}
+           </div>`
+        : '';
+      
+      const markdown = markdownToHtml(currentSnippet.content);
+      
+      messagesContainer.innerHTML = `
+        <div style="max-width: 1200px; margin: 0 auto;">
+          <div style="margin-bottom: 32px;">
+            <h1 style="font-size: 42px; margin-bottom: 16px; font-weight: 700;">
+              ${currentSnippet.title || 'Snippet'}
+            </h1>
+            ${tags}
+          </div>
+          <div style="font-size: 22px; line-height: 1.6;">
+            ${markdown}
+          </div>
+        </div>
+      `;
+      
+      // Apply scroll position if set
+      if (currentSnippet.scrollPosition !== undefined) {
+        const maxScroll = messagesContainer.scrollHeight - messagesContainer.clientHeight;
+        const scrollTop = (currentSnippet.scrollPosition / 100) * maxScroll;
+        messagesContainer.scrollTop = scrollTop;
+      }
+    }
+
     // Handle messages from sender
     context.addCustomMessageListener(NAMESPACE, (event) => {
       console.log('Received message:', event.data);
@@ -292,6 +361,7 @@
       const data = event.data;
       
       if (data.type === 'MESSAGES_UPDATE') {
+        currentSnippet = null; // Exit snippet mode
         messages = data.messages || [];
         renderMessages();
         showStatus(`${messages.length} message${messages.length !== 1 ? 's' : ''}`);
@@ -304,6 +374,34 @@
         setTimeout(() => {
           autoScroll = true;
         }, 2000);
+      }
+    });
+
+    // Handle snippet messages
+    context.addCustomMessageListener(SNIPPET_NAMESPACE, (event) => {
+      console.log('Received snippet command:', event.data);
+      
+      const data = event.data;
+      
+      if (data.type === 'SNIPPET_COMMAND') {
+        if (data.command === 'load') {
+          currentSnippet = data.data;
+          currentSnippet.scrollPosition = 0;
+          renderSnippet();
+          showStatus(`Viewing: ${data.data.title || 'Snippet'}`);
+        } else if (data.command === 'scroll') {
+          if (currentSnippet) {
+            currentSnippet.scrollPosition = data.data.position;
+            const maxScroll = messagesContainer.scrollHeight - messagesContainer.clientHeight;
+            const scrollTop = (data.data.position / 100) * maxScroll;
+            messagesContainer.scrollTop = scrollTop;
+          }
+        } else if (data.command === 'stop') {
+          currentSnippet = null;
+          messages = [];
+          renderMessages();
+          showStatus('Snippet viewing stopped');
+        }
       }
     });
 
