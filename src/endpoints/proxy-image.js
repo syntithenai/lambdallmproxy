@@ -159,38 +159,12 @@ async function handler(event) {
       };
     }
     
-    // Get proxy credentials from environment
-    const proxyUsername = process.env.WEBSHARE_PROXY_USERNAME;
-    const proxyPassword = process.env.WEBSHARE_PROXY_PASSWORD;
-    
-    // Try with proxy first if available, fallback to direct
-    let imageData;
-    let error;
-    
-    if (proxyUsername && proxyPassword) {
-      try {
-        const proxyAgent = createProxyAgent(proxyUsername, proxyPassword);
-        imageData = await fetchImage(imageUrl, proxyAgent);
-        console.log('✅ Image fetched successfully via proxy');
-      } catch (proxyErr) {
-        console.warn('⚠️ Proxy fetch failed, trying direct:', proxyErr.message);
-        error = proxyErr;
-        
-        // Fallback to direct fetch
-        try {
-          imageData = await fetchImage(imageUrl, null);
-          console.log('✅ Image fetched successfully (direct)');
-        } catch (directErr) {
-          console.error('❌ Direct fetch also failed:', directErr.message);
-          throw directErr;
-        }
-      }
-    } else {
-      // No proxy credentials, fetch directly
-      console.log('ℹ️ No proxy credentials, fetching directly');
-      imageData = await fetchImage(imageUrl, null);
-      console.log('✅ Image fetched successfully (direct)');
-    }
+    // NOTE: Proxy disabled for image fetching to reduce costs
+    // Only YouTube transcripts use proxy
+    // Fetch directly without proxy
+    console.log('ℹ️ Fetching image directly (proxy disabled)');
+    const imageData = await fetchImage(imageUrl, null);
+    console.log('✅ Image fetched successfully (direct)');
     
     // Return based on requested format
     if (returnFormat === 'binary') {
@@ -220,7 +194,7 @@ async function handler(event) {
           dataUri: dataUri,
           size: imageData.data.length,
           contentType: imageData.contentType,
-          usedProxy: !!(proxyUsername && proxyPassword && !error)
+          usedProxy: false // Proxy disabled for cost reduction
         })
       };
     }

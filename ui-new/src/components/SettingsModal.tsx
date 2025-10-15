@@ -3,8 +3,11 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useDialogClose } from '../hooks/useDialogClose';
-import type { Settings } from '../types/provider';
 import { ProviderList } from './ProviderList';
+import { TTSSettings } from './TTSSettings';
+import { RAGSettings } from './RAGSettings';
+import { BrowserFeaturesSettings } from './BrowserFeaturesSettings';
+import { TTS_FEATURE_ENABLED } from '../types/tts';
 
 interface EnabledTools {
   web_search: boolean;
@@ -36,8 +39,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
 
-  const [tempSettings, setTempSettings] = useState<Settings>(settings);
-  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag' | 'browser'>('provider');
   
   // Proxy settings state
   const [proxyUsername, setProxyUsername] = useState('');
@@ -45,8 +47,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [proxyEnabled, setProxyEnabled] = useState(false);
 
   useEffect(() => {
-    setTempSettings(settings);
-    
     // Load proxy settings from localStorage
     const savedProxySettings = localStorage.getItem('proxy_settings');
     if (savedProxySettings) {
@@ -59,25 +59,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         console.error('Failed to parse proxy settings:', e);
       }
     }
-  }, [settings, isOpen]);
+  }, [isOpen]);
 
-  const handleSave = () => {
-    setSettings(tempSettings);
-    
-    // Save proxy settings to localStorage
+  // Auto-save proxy settings whenever they change
+  const saveProxySettings = (username: string, password: string, enabled: boolean) => {
     localStorage.setItem('proxy_settings', JSON.stringify({
-      username: proxyUsername,
-      password: proxyPassword,
-      enabled: proxyEnabled
+      username,
+      password,
+      enabled
     }));
-    
-    console.log('Settings saved:', tempSettings);
-    onClose();
-  };
-
-  const handleCancel = () => {
-    setTempSettings(settings);
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -88,7 +78,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h2>
           <button
-            onClick={handleCancel}
+            onClick={onClose}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,6 +129,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             📍 Location
           </button>
+          {TTS_FEATURE_ENABLED && (
+            <button
+              onClick={() => setActiveTab('tts')}
+              className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+                activeTab === 'tts'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              🔊 TTS
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab('rag')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'rag'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            🧠 RAG
+          </button>
+          <button
+            onClick={() => setActiveTab('browser')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'browser'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            🌐 Browser
+          </button>
         </div>
 
         {/* Provider Tab */}
@@ -171,8 +193,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="cheap"
-                  checked={(tempSettings.optimization || 'cheap') === 'cheap'}
-                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  checked={(settings.optimization || 'cheap') === 'cheap'}
+                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -190,8 +212,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="balanced"
-                  checked={tempSettings.optimization === 'balanced'}
-                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  checked={settings.optimization === 'balanced'}
+                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -209,8 +231,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="powerful"
-                  checked={tempSettings.optimization === 'powerful'}
-                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  checked={settings.optimization === 'powerful'}
+                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -228,8 +250,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="fastest"
-                  checked={tempSettings.optimization === 'fastest'}
-                  onChange={(e) => setTempSettings({ ...tempSettings, optimization: e.target.value as any })}
+                  checked={settings.optimization === 'fastest'}
+                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -256,8 +278,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </label>
             <input
               type="password"
-              value={tempSettings.tavilyApiKey}
-              onChange={(e) => setTempSettings({ ...tempSettings, tavilyApiKey: e.target.value })}
+              value={settings.tavilyApiKey}
+              onChange={(e) => setSettings({ ...settings, tavilyApiKey: e.target.value })}
               className="input-field"
               placeholder="tvly-..."
             />
@@ -512,7 +534,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <input
                   type="text"
                   value={proxyUsername}
-                  onChange={(e) => setProxyUsername(e.target.value)}
+                  onChange={(e) => {
+                    const newUsername = e.target.value;
+                    setProxyUsername(newUsername);
+                    saveProxySettings(newUsername, proxyPassword, proxyEnabled);
+                  }}
                   placeholder="exrihquq"
                   className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
@@ -525,7 +551,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <input
                   type="password"
                   value={proxyPassword}
-                  onChange={(e) => setProxyPassword(e.target.value)}
+                  onChange={(e) => {
+                    const newPassword = e.target.value;
+                    setProxyPassword(newPassword);
+                    saveProxySettings(proxyUsername, newPassword, proxyEnabled);
+                  }}
                   placeholder="Enter password"
                   className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
@@ -536,7 +566,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="checkbox"
                   id="proxyEnabled"
                   checked={proxyEnabled}
-                  onChange={(e) => setProxyEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    const newEnabled = e.target.checked;
+                    setProxyEnabled(newEnabled);
+                    saveProxySettings(proxyUsername, proxyPassword, newEnabled);
+                  }}
                   className="w-4 h-4"
                 />
                 <label htmlFor="proxyEnabled" className="text-sm text-gray-700 dark:text-gray-300">
@@ -716,12 +750,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
         )}
 
+        {/* TTS Tab */}
+        {activeTab === 'tts' && (
+          <TTSSettings />
+        )}
+
+        {/* RAG Tab */}
+        {activeTab === 'rag' && (
+          <RAGSettings />
+        )}
+
+        {/* Browser Features Tab */}
+        {activeTab === 'browser' && (
+          <BrowserFeaturesSettings />
+        )}
+
         <div className="flex justify-end gap-3 mt-8">
-          <button onClick={handleCancel} className="btn-secondary">
-            Cancel
-          </button>
-          <button onClick={handleSave} className="btn-primary">
-            Save Settings
+          <button onClick={onClose} className="btn-primary">
+            Close
           </button>
         </div>
       </div>

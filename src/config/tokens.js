@@ -4,7 +4,8 @@
  */
 
 // --- Token limit configuration (optimized for comprehensive, detailed responses) ---
-const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 600);
+// Increased for Gemini models that use thinking/reasoning tokens (1200-2000 tokens for reasoning)
+const MAX_TOKENS_PLANNING = Number(process.env.MAX_TOKENS_PLANNING ?? 4096);
 const MAX_TOKENS_TOOL_SYNTHESIS = Number(process.env.MAX_TOKENS_TOOL_SYNTHESIS ?? 1024);
 
 // Dynamic token allocation based on complexity assessment - SIGNIFICANTLY INCREASED for verbose, detailed responses

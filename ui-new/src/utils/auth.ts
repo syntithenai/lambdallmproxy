@@ -137,6 +137,28 @@ export const isTokenExpiringSoon = (token: string): boolean => {
   }
 };
 
+// Check if token should be proactively refreshed (within 15 minutes of expiry)
+export const shouldRefreshToken = (token: string): boolean => {
+  try {
+    const decoded = decodeJWT(token);
+    if (!decoded || !decoded.exp) {
+      return true;
+    }
+    
+    const expirationTime = decoded.exp * 1000; // Convert to milliseconds
+    const currentTime = Date.now();
+    const fifteenMinutes = 15 * 60 * 1000;
+    
+    const remaining = expirationTime - currentTime;
+    
+    // Refresh if less than 15 minutes remaining
+    return remaining < fifteenMinutes;
+  } catch (e) {
+    console.error('Failed to check if token should refresh:', e);
+    return true;
+  }
+};
+
 // Request a new token from Google
 export const refreshGoogleToken = async (): Promise<string | null> => {
   try {

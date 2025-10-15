@@ -251,8 +251,8 @@ the planning prompt should consider the possibilty that it needs more informatio
 
 add a share link one click link to query from qrcode for plan
 
-
-automatic planning
+==============================================================
+make a plan for automatic planning
 when a user submits a prompt it is first sent to a planning endpoint that functions the same as the planning UI to modify the user query and system prompt before handing the request over to a normal flow
 
 
@@ -290,6 +290,20 @@ in swag, make tag selector in snippet content smaller. the same size as the tag 
 can i control the chromecast device to force the TV to use it's hdmi port when the software shows something on the tv.
 
 when viewing a snippet, show the snippet full screen on the tv and scroll with the sender device.
+
+text to speech should use the existing llm provider models for speech generation
+the text to speech configuration tab should have a block to allow entry of authentication details for 11labs becuase they only provide TTS services.
+
+what can i do to limit proxy requests. 
+
+missing play button on snippets in swag list page.
+play button only works once in full screen snippet page
+
+grabbed images are shown as 
+<img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAALABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAABwAF/8QAKRAAAQEEBwkAAAAAAAAAAAAAAQMAAgQFBhEUFlSV0xITFSEiJGal5f/EABUBAQEAAAAAAAAAAAAAAAAAAAUH/8QAIREAAAMIAwAAAAAAAAAAAAAABRESAAECAwYjMVFhcdH/2gAMAwEAAhEDEQA/AMRWg9KLvvJK0LnK0RZQ6QhJFE33n9hIAA2GsEEI1nec7PF9XcAvN3BPH/SfGYmvZNMLIchgtJq9k0wshyGC0mNGaphFEHLSk+cl41DC6Pnh67jolFt2D723/9k=" alt="Grabbed image" style="max-width: 100%; height: auto;" />
+
+the markdown renderer needs to show these as images
+
 
 
 
@@ -335,7 +349,7 @@ TODO (for next session):
 
 
 
-
+reasoning depth .....
 
 
 

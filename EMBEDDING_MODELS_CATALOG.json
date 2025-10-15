@@ -1,0 +1,108 @@
+{
+  "models": [
+    {
+      "id": "text-embedding-3-small",
+      "provider": "openai",
+      "name": "OpenAI Embedding 3 Small",
+      "dimensions": 1536,
+      "maxTokens": 8191,
+      "pricing": {
+        "perMillionTokens": 0.02
+      },
+      "availability": "high",
+      "recommended": true,
+      "description": "Latest small embedding model from OpenAI. Cost-effective and performs well for most use cases."
+    },
+    {
+      "id": "text-embedding-3-large",
+      "provider": "openai",
+      "name": "OpenAI Embedding 3 Large",
+      "dimensions": 3072,
+      "maxTokens": 8191,
+      "pricing": {
+        "perMillionTokens": 0.13
+      },
+      "availability": "high",
+      "recommended": false,
+      "description": "Highest quality OpenAI embedding model with larger dimensions. Best for applications requiring maximum accuracy."
+    },
+    {
+      "id": "text-embedding-ada-002",
+      "provider": "openai",
+      "name": "OpenAI Ada 002 (Legacy)",
+      "dimensions": 1536,
+      "maxTokens": 8191,
+      "pricing": {
+        "perMillionTokens": 0.10
+      },
+      "availability": "high",
+      "recommended": false,
+      "deprecated": true,
+      "description": "Legacy OpenAI embedding model. Consider upgrading to text-embedding-3-small for better cost and performance."
+    },
+    {
+      "id": "embed-english-v3.0",
+      "provider": "cohere",
+      "name": "Cohere Embed English v3",
+      "dimensions": 1024,
+      "maxTokens": 512,
+      "pricing": {
+        "perMillionTokens": 0.10
+      },
+      "availability": "medium",
+      "recommended": false,
+      "description": "Cohere's latest English embedding model. Good alternative to OpenAI with competitive pricing."
+    },
+    {
+      "id": "embed-multilingual-v3.0",
+      "provider": "cohere",
+      "name": "Cohere Embed Multilingual v3",
+      "dimensions": 1024,
+      "maxTokens": 512,
+      "pricing": {
+        "perMillionTokens": 0.10
+      },
+      "availability": "medium",
+      "recommended": false,
+      "description": "Supports 100+ languages. Best choice for non-English or multilingual content."
+    },
+    {
+      "id": "voyage-2",
+      "provider": "voyage",
+      "name": "Voyage AI v2",
+      "dimensions": 1024,
+      "maxTokens": 4096,
+      "pricing": {
+        "perMillionTokens": 0.10
+      },
+      "availability": "low",
+      "recommended": false,
+      "description": "High-quality embeddings from Voyage AI. Requires separate API key."
+    },
+    {
+      "id": "togethercomputer/m2-bert-80M-8k-retrieval",
+      "provider": "together",
+      "name": "Together AI M2-BERT",
+      "dimensions": 768,
+      "maxTokens": 8192,
+      "pricing": {
+        "perMillionTokens": 0.008
+      },
+      "availability": "medium",
+      "recommended": false,
+      "description": "Cost-effective embedding model from Together AI with long context support."
+    }
+  ],
+  "fallbackChain": [
+    "text-embedding-3-small",
+    "embed-english-v3.0",
+    "text-embedding-ada-002"
+  ],
+  "defaultModel": "text-embedding-3-small",
+  "notes": {
+    "consistency": "Changing embedding models requires re-embedding all existing chunks. Embeddings from different models are not comparable.",
+    "dimensions": "Higher dimensions generally provide better accuracy but require more storage and computation.",
+    "pricing": "Costs are approximate and subject to change. Check provider websites for current pricing.",
+    "availability": "High = widely available, Medium = some restrictions, Low = limited access or beta"
+  }
+}

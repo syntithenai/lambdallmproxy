@@ -6,8 +6,8 @@ const https = require('https');
 const { PROVIDERS } = require('./providers');
 
 function isOpenAIModel(model) { return typeof model === 'string' && model.startsWith('openai:'); }
-function isGroqModel(model) { return typeof model === 'string' && model.startsWith('groq:'); }
-function isGeminiModel(model) { return typeof model === 'string' && model.startsWith('gemini:'); }
+function isGroqModel(model) { return typeof model === 'string' && (model.startsWith('groq:') || model.startsWith('groq-free:')); }
+function isGeminiModel(model) { return typeof model === 'string' && (model.startsWith('gemini:') || model.startsWith('gemini-free:')); }
 
 // Check if model name (without prefix) is a known model by provider
 function isKnownOpenAIModel(modelName) {
@@ -23,7 +23,7 @@ function openAISupportsReasoning(model) {
 }
 
 function groqSupportsReasoning(model) {
-  const m = String(model || '').replace(/^groq:/, '');
+  const m = String(model || '').replace(/^groq(-free)?:/, '');
   // Strict allowlist via env: GROQ_REASONING_MODELS="modelA,modelB"
   const list = (process.env.GROQ_REASONING_MODELS || '')
     .split(',')
@@ -35,7 +35,7 @@ function groqSupportsReasoning(model) {
 
 function geminiSupportsReasoning(model) {
   // Gemini 2.5 models support reasoning
-  const m = String(model || '').replace(/^gemini:/, '');
+  const m = String(model || '').replace(/^gemini(-free)?:/, '');
   return m.startsWith('gemini-2.5');
 }
 
@@ -52,10 +52,11 @@ function mapReasoningForGroq(model, options) {
 }
 
 function mapReasoningForGemini(model, options) {
-  if (!geminiSupportsReasoning(model)) return {};
-  const effort = options?.reasoningEffort || process.env.REASONING_EFFORT || 'medium';
-  // Gemini supports: low (1024), medium (8192), high (24576), or none
-  return { reasoning_effort: effort };
+  // Gemini's OpenAI-compatible endpoint doesn't support reasoning_effort parameter
+  // The native Gemini API uses thinking_config, but we're using the OpenAI-compatible endpoint
+  // which doesn't expose this parameter. For now, return empty object.
+  // TODO: Consider switching to native Gemini API for reasoning models
+  return {};
 }
 
 function httpsRequestJson({ hostname, path, method = 'POST', headers = {}, bodyObj, timeoutMs = 30000 }) {
@@ -83,7 +84,25 @@ function httpsRequestJson({ hostname, path, method = 'POST', headers = {}, bodyO
         });
         
         if (status < 200 || status >= 300) {
-          return reject(new Error(`HTTP ${status}: ${data?.slice?.(0, 1000)}`));
+          // Enhanced error with full context for debugging
+          const errorContext = {
+            httpStatus: status,
+            httpHeaders: responseHeaders,
+            responseBody: data,
+            requestUrl: `https://${hostname}${path}`,
+            requestMethod: method
+          };
+          
+          console.error('🚨 LLM HTTP Error Context:', errorContext);
+          
+          // Create enhanced error with context
+          const error = new Error(`HTTP ${status}: ${data?.slice?.(0, 1000)}`);
+          error.httpStatus = status;
+          error.httpHeaders = responseHeaders;
+          error.responseBody = data;
+          error.requestUrl = `https://${hostname}${path}`;
+          
+          return reject(error);
         }
         try {
           const json = JSON.parse(data);
@@ -207,8 +226,20 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${options?.apiKey}`
     };
-    const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
-    return normalizeFromChat(data);
+    try {
+      const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
+      const result = normalizeFromChat(data);
+      // Add provider context to successful response
+      result.provider = 'openai';
+      result.model = normalizedModel;
+      return result;
+    } catch (error) {
+      // Enhance error with provider context
+      error.provider = 'openai';
+      error.model = normalizedModel;
+      error.endpoint = `https://${hostname}${path}`;
+      throw error;
+    }
   }
 
   if (isGroqModel(normalizedModel)) {
@@ -231,7 +262,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     }).filter(Boolean);
 
     const payload = {
-      model: normalizedModel.replace(/^groq:/, ''),
+      model: normalizedModel.replace(/^groq(-free)?:/, ''),
       messages,
       tools,
       tool_choice: options?.tool_choice ?? defaultToolChoice,
@@ -252,62 +283,185 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${options?.apiKey}`
     };
-    const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
-    return normalizeFromChat(data);
+    try {
+      const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
+      const result = normalizeFromChat(data);
+      // Add provider context to successful response
+      result.provider = 'groq';
+      result.model = normalizedModel;
+      return result;
+    } catch (error) {
+      // Enhance error with provider context
+      error.provider = 'groq';
+      error.model = normalizedModel;
+      error.endpoint = `https://${hostname}${path}`;
+      throw error;
+    }
   }
 
   if (isGeminiModel(normalizedModel)) {
-    // Gemini OpenAI-compatible chat.completions
+    // Gemini Native API (AI Studio keys only work with native API, not OpenAI-compatible)
     const hostname = PROVIDERS.gemini.hostname;
-    const path = PROVIDERS.gemini.path;
-    const messages = (input || []).map(block => {
+    let modelName = normalizedModel.replace(/^gemini(-free)?:/, '');
+    
+    // Gemini API uses exact model names without modification
+    // Available models as of Oct 2025: gemini-1.5-pro, gemini-1.5-flash, gemini-1.5-pro-002, etc.
+    const path = `/v1beta/models/${modelName}:generateContent`;
+    
+    console.log(`🔍 Gemini API: Using model "${modelName}", path: ${path}`);
+    
+    // Convert OpenAI-style messages to Gemini format
+    const contents = [];
+    for (const block of input || []) {
+      if (block.role === 'system') {
+        // System messages go in systemInstruction (separate from contents)
+        continue;
+      }
       if (block.type === 'function_call_output') {
-        return { role: 'tool', content: block.output, tool_call_id: block.call_id };
-      }
-      if (block.role) {
-        const message = { role: block.role, content: block.content };
-        // Preserve tool_calls for assistant messages
-        if (block.tool_calls) {
-          message.tool_calls = block.tool_calls;
+        contents.push({
+          role: 'function',
+          parts: [{ functionResponse: { name: block.call_id, response: { content: block.output } } }]
+        });
+      } else if (block.role) {
+        const role = block.role === 'assistant' ? 'model' : 'user';
+        const parts = [];
+        
+        if (typeof block.content === 'string') {
+          parts.push({ text: block.content });
         }
-        return message;
+        
+        // Handle tool calls
+        if (block.tool_calls) {
+          for (const tc of block.tool_calls) {
+            parts.push({
+              functionCall: {
+                name: tc.function.name,
+                args: JSON.parse(tc.function.arguments)
+              }
+            });
+          }
+        }
+        
+        if (parts.length > 0) {
+          contents.push({ role, parts });
+        }
       }
-      return null;
-    }).filter(Boolean);
-
-    // Build payload - Gemini API has stricter requirements
+    }
+    
+    // Extract system instruction
+    const systemMessage = (input || []).find(b => b.role === 'system');
+    
+    // Build payload for Gemini native API
     const payload = {
-      model: normalizedModel.replace(/^gemini:/, ''),
-      messages,
-      temperature,
-      max_tokens,
-      top_p,
-      ...mapReasoningForGemini(normalizedModel, options)
+      contents,
+      generationConfig: {
+        temperature,
+        maxOutputTokens: max_tokens || 8192,  // Default to 8192 if not specified
+        topP: top_p
+      }
     };
     
-    // Only include tools if provided (Gemini doesn't need empty tools array)
-    if (tools && tools.length > 0) {
-      payload.tools = tools;
-      // Gemini OpenAI API only supports 'auto' or 'none' for tool_choice, not 'required'
-      // If explicitly set to 'required', convert to 'auto'
-      const toolChoice = options?.tool_choice ?? defaultToolChoice;
-      payload.tool_choice = toolChoice === 'required' ? 'auto' : toolChoice;
+    if (systemMessage) {
+      payload.systemInstruction = { parts: [{ text: systemMessage.content }] };
     }
     
-    // CRITICAL: Cannot set response_format when using tools/function calling
-    if (!tools || tools.length === 0) {
-      payload.response_format = options?.response_format ?? defaultResponseFormat;
+    // Add tools if provided
+    if (tools && tools.length > 0) {
+      payload.tools = [{
+        functionDeclarations: tools.map(t => ({
+          name: t.function.name,
+          description: t.function.description,
+          parameters: t.function.parameters
+        }))
+      }];
     }
-    if (options?.parallel_tool_calls !== undefined) {
-      payload.parallel_tool_calls = options.parallel_tool_calls;
-    }
+    
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${options?.apiKey}`,
-      'x-goog-api-key': options?.apiKey  // Gemini also accepts API key in this header
+      'x-goog-api-key': options?.apiKey
     };
-    const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 60000 });
-    return normalizeFromChat(data);
+    
+    try {
+      const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 60000 });
+      
+      // Convert Gemini response to OpenAI format
+      const geminiResponse = data.data;
+      console.log('🔍 Full Gemini response:', JSON.stringify(geminiResponse, null, 2));
+      
+      const candidate = geminiResponse.candidates?.[0];
+      const content = candidate?.content;
+      
+      if (!content) {
+        console.error('❌ No content in Gemini response. Candidate:', JSON.stringify(candidate, null, 2));
+        console.error('❌ Prompt feedback:', JSON.stringify(geminiResponse.promptFeedback, null, 2));
+        throw new Error('No content in Gemini response');
+      }
+      
+      // Extract text and function calls from parts
+      let textContent = '';
+      const toolCalls = [];
+      
+      // Handle missing or empty parts array
+      const parts = content.parts || [];
+      
+      if (parts.length === 0) {
+        // Check if response was truncated
+        const finishReason = candidate?.finishReason;
+        const usageMetadata = geminiResponse.usageMetadata;
+        
+        console.error('❌ Gemini response has no parts:', {
+          finishReason,
+          thoughtsTokenCount: usageMetadata?.thoughtsTokenCount,
+          totalTokenCount: usageMetadata?.totalTokenCount,
+          promptTokenCount: usageMetadata?.promptTokenCount
+        });
+        
+        // Provide helpful error message
+        if (finishReason === 'MAX_TOKENS') {
+          throw new Error(`Response truncated (MAX_TOKENS). Used ${usageMetadata?.thoughtsTokenCount || 0} thinking tokens. Try increasing maxOutputTokens or using a model without extensive reasoning.`);
+        }
+        
+        throw new Error(`Gemini returned empty response. Finish reason: ${finishReason || 'unknown'}`);
+      }
+      
+      for (const part of parts) {
+        if (part.text) {
+          textContent += part.text;
+        }
+        if (part.functionCall) {
+          toolCalls.push({
+            id: `call_${Date.now()}_${toolCalls.length}`,
+            type: 'function',
+            function: {
+              name: part.functionCall.name,
+              arguments: JSON.stringify(part.functionCall.args)
+            }
+          });
+        }
+      }
+      
+      const result = {
+        role: 'assistant',
+        content: textContent || null,
+        text: textContent || '',  // Match normalizeFromChat format
+        output: toolCalls,         // Match normalizeFromChat format for tool calls
+        provider: 'gemini',
+        model: normalizedModel,
+        rawResponse: geminiResponse  // Include full response for debugging
+      };
+      
+      if (toolCalls.length > 0) {
+        result.tool_calls = toolCalls;
+      }
+      
+      return result;
+    } catch (error) {
+      // Enhance error with provider context
+      error.provider = 'gemini';
+      error.model = normalizedModel;
+      error.endpoint = `https://${hostname}${path}`;
+      throw error;
+    }
   }
 
   throw new Error(`Unsupported model for tool calls: ${model} (normalized: ${normalizedModel})`);

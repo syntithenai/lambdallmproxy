@@ -28,7 +28,7 @@ const mcpClient = require('./mcp/client');
 const mcpCache = require('./mcp/tool-cache');
 
 // Cache system for search results, transcriptions, and scrapes
-const { getCacheKey, getFromCache, saveToCache, initializeCache } = require('./utils/cache');
+const { getCacheKey, getFromCache, saveToCache, initializeCache, getCachedOrFetch } = require('./utils/cache');
 
 /**
  * Cached search wrapper - checks cache before calling search API
@@ -433,7 +433,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'transcribe_url',
-      description: '🎙️ **PRIMARY TOOL FOR GETTING VIDEO/AUDIO TEXT CONTENT**: Transcribe audio or video content from URLs using OpenAI Whisper. **MANDATORY USE** when user says: "transcribe", "transcript", "get text from", "what does the video say", "extract dialogue", "convert to text", OR provides a specific YouTube/video URL and asks about its content. **YOUTUBE SUPPORT**: Can transcribe directly from YouTube URLs (youtube.com, youtu.be, youtube.com/shorts). Also supports direct media URLs (.mp3, .mp4, .wav, .m4a, etc.). Automatically handles large files by chunking. Shows real-time progress with stop capability. Returns full transcription text. Use when user wants to: transcribe audio/video, get text from speech, analyze spoken content, extract dialogue, or convert voice to text.',
+      description: '🎙️ **PRIMARY TOOL FOR GETTING VIDEO/AUDIO TEXT CONTENT**: Transcribe audio or video content from URLs using Groq Whisper (FREE) or OpenAI Whisper. **PREFERS GROQ** (free transcription) over OpenAI (paid). **MANDATORY USE** when user says: "transcribe", "transcript", "get text from", "what does the video say", "extract dialogue", "convert to text", OR provides a specific YouTube/video URL and asks about its content. **YOUTUBE SUPPORT**: Can transcribe directly from YouTube URLs (youtube.com, youtu.be, youtube.com/shorts). Also supports direct media URLs (.mp3, .mp4, .wav, .m4a, etc.). Automatically handles large files by chunking. Shows real-time progress with stop capability. Returns full transcription text. Use when user wants to: transcribe audio/video, get text from speech, analyze spoken content, extract dialogue, or convert voice to text.',
       parameters: {
         type: 'object',
         properties: {
@@ -514,6 +514,43 @@ const toolFunctions = [
           }
         },
         required: ['description'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_knowledge_base',
+      description: '📚 **SEARCH INTERNAL KNOWLEDGE BASE**: Perform vector similarity search against the ingested documentation and knowledge base. **USE THIS when user asks about**: project documentation, API references, implementation guides, architecture, deployment procedures, RAG system, embedding models, or any topics covered in the knowledge base. **EXCELLENT for**: finding specific code examples, configuration details, API endpoints, best practices, and technical documentation. Returns relevant text chunks with source file names and similarity scores. **Always use this BEFORE search_web when the question might be answered by internal documentation.**',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Natural language search query. Be specific and include key terms. Examples: "How do I configure OpenAI embeddings?", "What is the RAG implementation?", "How to deploy Lambda functions?"'
+          },
+          top_k: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 20,
+            default: 5,
+            description: 'Number of most relevant results to return (default: 5, max: 20)'
+          },
+          threshold: {
+            type: 'number',
+            minimum: 0,
+            maximum: 1,
+            default: 0.5,
+            description: 'Minimum similarity score threshold (0-1). Higher values = more strict matching. Default: 0.5'
+          },
+          source_type: {
+            type: 'string',
+            enum: ['file', 'url', 'text'],
+            description: 'Optional: Filter results by source type (file, url, or text)'
+          }
+        },
+        required: ['query'],
         additionalProperties: false
       }
     }
@@ -623,10 +660,8 @@ async function callFunction(name, args = {}, context = {}) {
           console.log(`✅ Tavily search completed: ${tavilyResults.length} results with compressed content`);
         } catch (error) {
           console.error('Tavily search failed, falling back to DuckDuckGo:', error.message);
-          // Fall back to DuckDuckGo on error
-          const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-          const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
-          const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
+          // Fall back to DuckDuckGo on error (no proxy - direct connection)
+          const searcher = new DuckDuckGoSearcher(null, null); // No proxy credentials
           for (const query of queries) {
             const out = await searcher.search(query, limit, true, timeout);
             const results = (out?.results || []).map(r => ({
@@ -646,10 +681,8 @@ async function callFunction(name, args = {}, context = {}) {
         }
       } else {
         // Use DuckDuckGo search - always load content
-        // Get proxy credentials from context or environment
-        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
-        const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
+        // NOTE: Proxy disabled to reduce costs - only YouTube transcripts use proxy
+        const searcher = new DuckDuckGoSearcher(null, null); // No proxy credentials
         
         // Execute searches for all queries
         for (const query of queries) {
@@ -1583,6 +1616,209 @@ Brief answer with URLs:`;
         }
       }
     }
+    case 'search_knowledge_base': {
+      const query = String(args.query || '').trim();
+      if (!query) return JSON.stringify({ error: 'query required' });
+      
+      const topK = clampInt(args.top_k, 1, 20, 5);
+      const threshold = typeof args.threshold === 'number' 
+        ? Math.max(0, Math.min(1, args.threshold)) 
+        : 0.5;
+      const sourceType = args.source_type || null;
+      
+      console.log(`📚 RAG Search: query="${query}", topK=${topK}, threshold=${threshold}, sourceType=${sourceType || 'all'}`);
+      
+      // Emit search start event
+      if (context?.writeEvent) {
+        context.writeEvent('search_progress', {
+          tool: 'search_knowledge_base',
+          phase: 'searching',
+          query: query,
+          topK: topK,
+          threshold: threshold,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        // Set environment for libSQL
+        if (!process.env.LIBSQL_URL) {
+          process.env.LIBSQL_URL = 'file:///' + require('path').resolve('./rag-kb.db');
+        }
+        
+        // Import RAG modules
+        const search = require('./rag/search');
+        const embeddings = require('./rag/embeddings');
+        
+        // Check for embedding API key
+        const embeddingApiKey = process.env.OPENAI_API_KEY || context.apiKey;
+        if (!embeddingApiKey) {
+          return JSON.stringify({
+            error: 'OpenAI API key required for knowledge base search',
+            message: 'Set OPENAI_API_KEY environment variable or provide API key in context'
+          });
+        }
+        
+        // Use cache for query results (includes both embedding and search)
+        const cachedResults = await getCachedOrFetch(
+          'rag_queries',
+          { query, topK, threshold, sourceType },
+          async () => {
+            // Generate embedding for query (with separate embedding cache)
+            console.log('📚 Generating query embedding...');
+            
+            const embeddingModel = process.env.RAG_EMBEDDING_MODEL || 'text-embedding-3-small';
+            
+            // Cache embeddings separately for reuse across different search parameters
+            const embeddingResult = await getCachedOrFetch(
+              'rag_embeddings',
+              { text: query, model: embeddingModel },
+              async () => {
+                const result = await embeddings.generateEmbedding(
+                  query,
+                  embeddingModel,
+                  process.env.RAG_EMBEDDING_PROVIDER || 'openai',
+                  embeddingApiKey
+                );
+                // Convert Float32Array to regular array for JSON serialization
+                return { 
+                  embedding: Array.from(result.embedding),
+                  dimensions: result.dimensions,
+                  model: embeddingModel
+                };
+              }
+            );
+            
+            // Convert back to Float32Array if needed
+            let embeddingArray;
+            if (embeddingResult.embedding instanceof Float32Array) {
+              embeddingArray = embeddingResult.embedding;
+            } else if (Array.isArray(embeddingResult.embedding)) {
+              embeddingArray = new Float32Array(embeddingResult.embedding);
+            } else if (embeddingResult.embedding && typeof embeddingResult.embedding === 'object') {
+              // Handle case where it's been JSON-parsed into a plain object
+              embeddingArray = new Float32Array(Object.values(embeddingResult.embedding));
+            } else {
+              throw new Error('Invalid embedding format in cache');
+            }
+            
+            // Emit embedding phase
+            if (context?.writeEvent) {
+              context.writeEvent('search_progress', {
+                tool: 'search_knowledge_base',
+                phase: 'generating_embedding',
+                cached: embeddingResult._cached,
+                timestamp: new Date().toISOString()
+              });
+            }
+            
+            // Create generateEmbedding wrapper that returns cached embedding
+            const generateEmbedding = async (text) => {
+              return { embedding: embeddingArray };
+            };
+            
+            // Search knowledge base
+            console.log('📚 Searching knowledge base...');
+            const results = await search.searchWithText(
+              query,
+              generateEmbedding,
+              {
+                topK: topK,
+                threshold: threshold,
+                source_type: sourceType,
+              }
+            );
+            
+            return results;
+          }
+        );
+        
+        // Extract results from cache wrapper
+        // Note: getCachedOrFetch spreads the result, so arrays become objects with numeric keys
+        const wasCached = cachedResults._cached || false;
+        let results;
+        if (Array.isArray(cachedResults)) {
+          results = cachedResults;
+        } else if (cachedResults && typeof cachedResults === 'object') {
+          // Convert back to array if it was spread
+          const keys = Object.keys(cachedResults).filter(k => k !== '_cached' && k !== '_cacheKey' && !isNaN(k));
+          if (keys.length > 0) {
+            results = keys.sort((a, b) => parseInt(a) - parseInt(b)).map(k => cachedResults[k]);
+          } else {
+            results = [];
+          }
+        } else {
+          results = [];
+        }
+        
+        // Emit results phase
+        if (context?.writeEvent) {
+          context.writeEvent('search_progress', {
+            tool: 'search_knowledge_base',
+            phase: 'complete',
+            resultCount: Array.isArray(results) ? results.length : 0,
+            cached: wasCached,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        console.log(`📚 Found ${Array.isArray(results) ? results.length : 0} results${wasCached ? ' (cached)' : ''}`);
+        
+        if (!Array.isArray(results) || results.length === 0) {
+          return JSON.stringify({
+            success: true,
+            query: query,
+            results: [],
+            message: 'No relevant results found in knowledge base. Try a different query or use search_web for external information.'
+          });
+        }
+        
+        // Format results for LLM consumption
+        const formattedResults = results.map((result, index) => {
+          const source = result.source_file_name || result.source_url || 'Unknown';
+          const sourceType = result.source_type || 'unknown';
+          const similarity = result.similarity.toFixed(4);
+          
+          return {
+            rank: index + 1,
+            similarity_score: similarity,
+            source: source,
+            source_type: sourceType,
+            source_path: result.source_file_path || null,
+            source_url: result.source_url || null,
+            snippet_id: result.snippet_id || null,
+            text: result.chunk_text,
+            // Add markdown formatted version for easy display
+            markdown: `### ${index + 1}. ${source} (Score: ${similarity})\n\n${result.chunk_text}`
+          };
+        });
+        
+        // Create a summary markdown for the LLM
+        const summaryMarkdown = `# Knowledge Base Search Results\n\n` +
+          `**Query:** "${query}"\n` +
+          `**Results:** ${results.length} relevant documents found\n\n` +
+          `---\n\n` +
+          formattedResults.map(r => r.markdown).join('\n\n---\n\n');
+        
+        return JSON.stringify({
+          success: true,
+          query: query,
+          result_count: results.length,
+          results: formattedResults,
+          summary_markdown: summaryMarkdown,
+          cached: wasCached,
+          message: `Found ${results.length} relevant chunks from knowledge base with similarity scores ${formattedResults[0].similarity_score} to ${formattedResults[formattedResults.length-1].similarity_score}${wasCached ? ' (from cache)' : ''}`
+        });
+        
+      } catch (error) {
+        console.error('❌ RAG search error:', error);
+        return JSON.stringify({
+          error: 'Knowledge base search failed',
+          message: error.message,
+          details: error.stack
+        });
+      }
+    }
     case 'execute_javascript': {
       const code = String(args.code || '').trim();
       if (!code) return JSON.stringify({ error: 'code required' });
@@ -1703,15 +1939,33 @@ Brief answer with URLs:`;
         const onProgress = context.onProgress || null;
         const toolCallId = context.toolCallId || null;
 
-        // Determine provider from context (set in Lambda handler based on request)
-        // Priority: explicit provider > detect from API key
-        const provider = context.provider || (context.apiKey?.startsWith('gsk_') ? 'groq' : 'openai');
+        // Determine provider and API key with preference for Groq (free > paid) over OpenAI
+        // Priority: groq-free (FREE) > groq (paid) > openai (paid)
+        let provider = null;
+        let apiKey = null;
         
-        // Use the API key that matches the provider
-        // If Groq provider, use main API key; otherwise try OpenAI key first
-        const apiKey = provider === 'groq' 
-          ? context.apiKey 
-          : (context.openaiApiKey || context.apiKey);
+        // Check for Groq keys first (they start with gsk_)
+        if (context.apiKey?.startsWith('gsk_')) {
+          // Main API key is Groq
+          provider = 'groq';
+          apiKey = context.apiKey;
+          console.log('🎤 Using Groq Whisper (main API key) - FREE transcription');
+        } else if (context.groqApiKey) {
+          // Groq key available in context
+          provider = 'groq';
+          apiKey = context.groqApiKey;
+          console.log('🎤 Using Groq Whisper (groqApiKey) - FREE transcription');
+        } else if (context.openaiApiKey) {
+          // OpenAI key available
+          provider = 'openai';
+          apiKey = context.openaiApiKey;
+          console.log('🎤 Using OpenAI Whisper (openaiApiKey) - PAID transcription');
+        } else if (context.apiKey?.startsWith('sk-')) {
+          // Main API key is OpenAI
+          provider = 'openai';
+          apiKey = context.apiKey;
+          console.log('🎤 Using OpenAI Whisper (main API key) - PAID transcription');
+        }
 
         // Check if the API key is actually a Gemini key (which doesn't support Whisper)
         if (apiKey && apiKey.startsWith('AIza')) {
@@ -2041,7 +2295,6 @@ Summary:`;
       try {
         const https = require('https');
         const querystring = require('querystring');
-        const { createWebshareProxyAgent } = require('./youtube-api');
         
         // Map order parameter to YouTube API order values
         const orderMap = {
@@ -2052,13 +2305,9 @@ Summary:`;
         };
         const apiOrder = orderMap[order] || 'relevance';
         
-        // Get proxy credentials from context (posted from UI) or environment variables
-        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
-        
-        // Create proxy agent if credentials available
-        const proxyAgent = createWebshareProxyAgent(proxyUsername, proxyPassword);
-        console.log(`🔧 YouTube API search - Proxy: ${proxyAgent ? 'ENABLED' : 'DISABLED'}`);
+        // NOTE: Proxy disabled for YouTube search to reduce costs
+        // Only YouTube transcripts use proxy (see youtube-api.js)
+        console.log(`🔧 YouTube API search - Proxy: DISABLED (direct connection)`);
         
         // Use YouTube Data API v3 with API key
         const apiKey = 'AIzaSyDFLprO5B-qKsoHprb8BooVmVTT0B5Mnus';
@@ -2076,61 +2325,23 @@ Summary:`;
             'Accept': 'application/json',
             'Referer': 'https://lambdallmproxy.pages.dev/'
           }
+          // No proxy agent - direct connection only
         };
         
-        // Add proxy agent if available
-        const usingProxy = !!proxyAgent;
-        if (proxyAgent) {
-          requestOptions.agent = proxyAgent;
-        }
-        
-        // Fetch YouTube API with automatic fallback to direct connection if proxy fails
-        let apiResponse;
-        try {
-          apiResponse = await new Promise((resolve, reject) => {
-            https.get(apiUrl, requestOptions, (res) => {
-              let data = '';
-              res.on('data', chunk => data += chunk);
-              res.on('end', () => {
-                if (res.statusCode === 200) {
-                  resolve(data);
-                } else {
-                  reject(new Error(`YouTube API returned status ${res.statusCode}: ${data}`));
-                }
-              });
-            }).on('error', (err) => {
-              // Mark proxy-related errors for fallback
-              if (usingProxy && (err.message.includes('proxy') || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND')) {
-                reject(new Error(`PROXY_FAILED:${err.message}`));
+        // Fetch YouTube API with direct connection (no proxy)
+        const apiResponse = await new Promise((resolve, reject) => {
+          https.get(apiUrl, requestOptions, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+              if (res.statusCode === 200) {
+                resolve(data);
               } else {
-                reject(err);
+                reject(new Error(`YouTube API returned status ${res.statusCode}: ${data}`));
               }
             });
-          });
-        } catch (error) {
-          // Retry without proxy if proxy failed
-          if (usingProxy && error.message.startsWith('PROXY_FAILED:')) {
-            const originalError = error.message.replace('PROXY_FAILED:', '');
-            console.log(`⚠️ YouTube API proxy failed (${originalError}), retrying direct connection...`);
-            delete requestOptions.agent;
-            apiResponse = await new Promise((resolve, reject) => {
-              https.get(apiUrl, requestOptions, (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => {
-                  if (res.statusCode === 200) {
-                    console.log(`✅ YouTube API direct connection successful`);
-                    resolve(data);
-                  } else {
-                    reject(new Error(`YouTube API returned status ${res.statusCode}: ${data}`));
-                  }
-                });
-              }).on('error', reject);
-            });
-          } else {
-            throw error;
-          }
-        }
+          }).on('error', reject);
+        });
         
         const apiData = JSON.parse(apiResponse);
         const videoIds = (apiData.items || []).map(item => item.id.videoId);
@@ -2492,8 +2703,11 @@ Provide a comprehensive summary (3-4 paragraphs) covering main themes, key insig
         let source = 'innertube';
         
         // Get proxy credentials from context (posted from UI) or environment variables
+        // NOTE: Proxy is ONLY used for YouTube transcripts to avoid Google blocking
+        // All other tools (search_youtube, search_web) use direct connections
         const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
         const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+        console.log(`🔧 YouTube transcript - Proxy: ${proxyUsername && proxyPassword ? 'ENABLED' : 'DISABLED'}`);
         
         // Try InnerTube API first (works for all public videos)
         try {

@@ -41,16 +41,20 @@ const CACHE_CONFIG = {
     search: parseInt(process.env.CACHE_TTL_SEARCH || '3600'), // 1 hour
     transcriptions: parseInt(process.env.CACHE_TTL_TRANSCRIPTIONS || '86400'), // 24 hours
     scrapes: parseInt(process.env.CACHE_TTL_SCRAPES || '3600'), // 1 hour
+    rag_queries: parseInt(process.env.CACHE_TTL_RAG_QUERIES || '3600'), // 1 hour
+    rag_embeddings: parseInt(process.env.CACHE_TTL_RAG_EMBEDDINGS || '86400'), // 24 hours
   },
   
   // Cache subdirectories by type
-  types: ['search', 'transcriptions', 'scrapes'],
+  types: ['search', 'transcriptions', 'scrapes', 'rag_queries', 'rag_embeddings'],
   
   // File extensions by type
   extensions: {
     search: 'json',
     transcriptions: 'json',
     scrapes: 'html', // Can be 'html' or 'text'
+    rag_queries: 'json',
+    rag_embeddings: 'json',
   },
   
   // Metadata schema version
@@ -187,6 +191,22 @@ function normalizeParams(type, params) {
       if (params.includeText !== undefined) {
         normalized.includeText = Boolean(params.includeText);
       }
+      break;
+      
+    case 'rag_queries':
+      // Normalize RAG query parameters
+      normalized.query = (params.query || '').toLowerCase().trim();
+      normalized.topK = parseInt(params.topK || 5);
+      normalized.threshold = parseFloat(params.threshold || 0.5);
+      if (params.sourceType) {
+        normalized.sourceType = params.sourceType.toLowerCase();
+      }
+      break;
+      
+    case 'rag_embeddings':
+      // Normalize text for embedding cache
+      normalized.text = (params.text || '').toLowerCase().trim();
+      normalized.model = (params.model || 'text-embedding-3-small').toLowerCase();
       break;
       
     default:

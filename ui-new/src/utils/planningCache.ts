@@ -38,10 +38,15 @@ export function getAllCachedPlans(): CachedPlan[] {
 
 /**
  * Save a new plan to the cache
+ * Avoids duplicates by replacing any existing plan with the same query
  */
 export function saveCachedPlan(query: string, plan: any, systemPrompt?: string): void {
   try {
     const plans = getAllCachedPlans();
+    const normalizedQuery = query.trim().toLowerCase();
+    
+    // Remove any existing plans with the same query (case-insensitive)
+    const filteredPlans = plans.filter(p => p.query.trim().toLowerCase() !== normalizedQuery);
     
     const newPlan: CachedPlan = {
       id: generatePlanId(),
@@ -52,12 +57,13 @@ export function saveCachedPlan(query: string, plan: any, systemPrompt?: string):
     };
     
     // Add to beginning of array (most recent first)
-    plans.unshift(newPlan);
+    filteredPlans.unshift(newPlan);
     
     // Limit to 50 most recent plans
-    const limitedPlans = plans.slice(0, 50);
+    const limitedPlans = filteredPlans.slice(0, 50);
     
     localStorage.setItem(PLANNING_CACHE_KEY, JSON.stringify(limitedPlans));
+    console.log(`Plan saved (${filteredPlans.length > plans.length ? 'new' : 'replaced duplicate'}):`, query.trim());
   } catch (error) {
     console.error('Error saving plan to cache:', error);
   }

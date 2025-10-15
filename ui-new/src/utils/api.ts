@@ -321,6 +321,12 @@ export const sendChatMessage = async (
 export const generatePlan = async (
   query: string,
   token: string,
+  providers: Array<{
+    type: string;
+    apiKey: string;
+    enabled?: boolean;
+    [key: string]: any;
+  }>,
   model: string | undefined,
   onEvent: (event: string, data: any) => void,
   onComplete?: () => void,
@@ -334,9 +340,21 @@ export const generatePlan = async (
   const { createSSERequest, handleSSEResponse } = await import('./streaming');
   const apiBase = await getCachedApiBase();
   
-  const requestBody: any = { query };
+  // Filter and format providers for backend
+  const enabledProviders = providers.filter(p => p.enabled !== false);
+  const providersMap: Record<string, { apiKey: string; [key: string]: any }> = {};
   
-  // Only add model if provided (server will use default if not provided)
+  enabledProviders.forEach(provider => {
+    const { type, enabled, ...providerConfig } = provider;
+    providersMap[type] = providerConfig;
+  });
+  
+  const requestBody: any = { 
+    query,
+    providers: providersMap
+  };
+  
+  // Only add model if provided (server will use load balancing if not provided)
   if (model) {
     requestBody.model = model;
   }

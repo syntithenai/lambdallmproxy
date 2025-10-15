@@ -5,7 +5,8 @@ import {
   saveAuthState, 
   clearAuthState, 
   decodeJWT, 
-  isTokenExpiringSoon
+  isTokenExpiringSoon,
+  shouldRefreshToken
 } from '../utils/auth';
 import type { AuthState, GoogleUser } from '../utils/auth';
 
@@ -68,11 +69,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const refreshToken = useCallback(async (): Promise<boolean> => {
-    // Token refresh is disabled - user must re-login
-    console.log('Token refresh requested, but automatic refresh is disabled');
-    console.log('User will need to sign in again when token expires');
-    return false;
-  }, []);
+    try {
+      console.log('🔄 Attempting to refresh token...');
+      
+      if (!authState.accessToken) {
+        console.warn('No token to refresh');
+        return false;
+      }
+
+      // Use the refreshGoogleToken function from auth utils
+      const { refreshGoogleToken, decodeJWT, saveAuthState: saveAuthStateUtil } = await import('../utils/auth');
+      const newToken = await refreshGoogleToken();
+      
+      if (newToken) {
+        const decoded = decodeJWT(newToken);
+        if (decoded) {
+          const user: GoogleUser = {
+            email: decoded.email,
+            name: decoded.name,
+            picture: decoded.picture,
+            sub: decoded.sub
+          };
+          
+          saveAuthStateUtil(user, newToken);
+          setAuthState({
+            user,
+            accessToken: newToken,
+            isAuthenticated: true
+          });
+          
+          console.log('✅ Token refreshed successfully');
+          return true;
+        }
+      }
+      
+      console.warn('⚠️ Token refresh failed');
+      return false;
+    } catch (error) {
+      console.error('❌ Token refresh error:', error);
+      return false;
+    }
+  }, [authState.accessToken]);
 
   const getToken = useCallback(async (): Promise<string | null> => {
     if (!authState.accessToken) {
@@ -126,34 +163,59 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     attemptAutoLogin();
   }, [hasAttemptedAutoLogin, authState.isAuthenticated, login]);
 
-  // Check for token expiration periodically and logout if expired
+  // Automatic token refresh before expiration
   useEffect(() => {
     if (!authState.isAuthenticated || !authState.accessToken) {
       return;
     }
 
+    const currentToken = authState.accessToken;
+
     // Immediate check on mount
-    if (isTokenExpiringSoon(authState.accessToken)) {
-      console.warn('⚠️ Token expired on mount, logging out...');
-      // Removed toast warning - just log out silently
-      logout();
-      return;
+    if (shouldRefreshToken(currentToken)) {
+      console.log('🔄 Token should be refreshed on mount (less than 15 min remaining)');
+      refreshToken().then((success) => {
+        if (!success && isTokenExpiringSoon(currentToken)) {
+          // Only logout if token is actually expiring soon (< 5 min)
+          console.warn('⚠️ Token refresh failed and token expiring soon, logging out...');
+          logout();
+        }
+      });
+    } else if (isTokenExpiringSoon(currentToken)) {
+      // Token is critically close to expiring (< 5 min), must refresh or logout
+      console.warn('⚠️ Token critically close to expiring on mount, attempting refresh...');
+      refreshToken().then((success) => {
+        if (!success) {
+          console.warn('⚠️ Critical token refresh failed on mount, logging out...');
+          logout();
+        }
+      });
     }
 
-    // Check token every 30 seconds for expiration
-    const interval = setInterval(() => {
+    // Check token every 2 minutes for proactive refresh
+    const interval = setInterval(async () => {
       if (!authState.accessToken) return;
       
-      // Logout when expired (within 5 minutes) - removed warnings
-      if (isTokenExpiringSoon(authState.accessToken)) {
-        console.warn('⚠️ Token expired, logging out...');
-        // Removed toast warning - just log out silently
-        logout();
+      const currentToken = authState.accessToken;
+      
+      // Proactively refresh when within 15 minutes of expiry
+      if (shouldRefreshToken(currentToken)) {
+        console.log('🔄 Token within 15 minutes of expiry, attempting proactive refresh...');
+        
+        const success = await refreshToken();
+        
+        if (!success && isTokenExpiringSoon(currentToken)) {
+          // Only logout if refresh failed AND token is critically close to expiring
+          console.warn('⚠️ Proactive refresh failed and token expiring soon, logging out...');
+          logout();
+        } else if (!success) {
+          console.warn('⚠️ Proactive refresh failed but token still has time');
+        }
       }
-    }, 30 * 1000); // 30 seconds
+    }, 2 * 60 * 1000); // Check every 2 minutes
 
     return () => clearInterval(interval);
-  }, [authState.isAuthenticated, authState.accessToken, logout]);
+  }, [authState.isAuthenticated, authState.accessToken, logout, refreshToken]);
 
   return (
     <AuthContext.Provider value={{ ...authState, login, logout, refreshToken, getToken }}>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { generatePlan } from '../utils/api';
@@ -18,6 +19,7 @@ interface PlanningTabProps {
 
 export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defaultQuery }) => {
   const { getToken, isAuthenticated, accessToken } = useAuth();
+  const { settings } = useSettings();
   const { showError } = useToast();
   // Note: Planning endpoint uses server-side model configuration
   const [query, setQuery] = useLocalStorage<string>('planning_query', defaultQuery || '');
@@ -65,10 +67,21 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
         return;
       }
 
+      // Get enabled providers from settings
+      // IMPORTANT: Only send providers that are explicitly enabled (enabled === true)
+      const enabledProviders = settings.providers.filter((p: any) => p.enabled === true);
+      
+      if (enabledProviders.length === 0) {
+        setResult({ error: 'No providers configured. Please set up at least one provider in Settings.' });
+        setIsLoading(false);
+        return;
+      }
+
       await generatePlan(
         query,
         token,
-        undefined, // Planning endpoint uses server-side model configuration
+        enabledProviders,
+        undefined, // Let server use load balancing
         // Handle SSE events
         (event: string, data: any) => {
           console.log('Planning SSE event:', event, data);
@@ -88,9 +101,33 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
               break;
               
             case 'error':
-              // Display error
-              setResult({ error: data.error || 'Unknown error' });
-              showError(`Planning error: ${data.error || 'Unknown error'}`);
+              // Enhanced error display with provider/model info
+              const errorMsg = data.error || 'Unknown error';
+              const providerInfo = data.provider && data.model 
+                ? ` (Provider: ${data.provider}, Model: ${data.model})`
+                : '';
+              const fullError = `${errorMsg}${providerInfo}`;
+              
+              // Add helpful hints for common errors
+              let errorHint = '';
+              if (errorMsg.includes('Invalid API Key') || errorMsg.includes('401')) {
+                errorHint = '\n\n💡 Tip: Check your API key in Settings. Make sure it\'s valid and hasn\'t expired.';
+              } else if (data.isRateLimit || errorMsg.includes('rate limit')) {
+                errorHint = '\n\n💡 Tip: You\'ve hit the rate limit. Try again in a few moments or use a different provider.';
+              }
+              
+              setResult({ error: fullError + errorHint });
+              showError(`Planning error: ${fullError}${errorHint}`);
+              break;
+              
+            case 'llm_error':
+              // Handle LLM-specific errors
+              console.error('LLM Error:', data);
+              const llmError = data.error || 'LLM request failed';
+              const llmProviderInfo = data.provider && data.modelName
+                ? ` (${data.provider}:${data.modelName})`
+                : '';
+              showError(`LLM Error${llmProviderInfo}: ${llmError}`);
               break;
           }
         },

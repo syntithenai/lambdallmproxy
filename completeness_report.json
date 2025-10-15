@@ -1,0 +1,794 @@
+{
+  "chat": {
+    "models": [
+      {
+        "provider": "Groq Free Tier",
+        "type": "groq-free",
+        "model": "llama-3.1-8b-instant",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Groq Free Tier",
+        "type": "groq-free",
+        "model": "llama-3.3-70b-versatile",
+        "available": false,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [
+          "Model is marked as deprecated",
+          "Model marked as unavailable"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "llama-3.1-8b-instant",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "mixtral-8x7b-32768",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "openai/gpt-oss-120b",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "gpt-4o-mini",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "gpt-4o",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "o1-preview",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "o1-mini",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-1.5-flash",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-1.5-pro",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-2.5-pro",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-2.0-flash-exp",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-2.5-flash",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Paid",
+        "type": "gemini",
+        "model": "gemini-1.5-flash",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Paid",
+        "type": "gemini",
+        "model": "gemini-1.5-pro",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Google Gemini Paid",
+        "type": "gemini",
+        "model": "gemini-2.0-flash-exp",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Atlas Cloud",
+        "type": "atlascloud",
+        "model": "deepseek-ai/DeepSeek-R1",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Atlas Cloud",
+        "type": "atlascloud",
+        "model": "deepseek-ai/DeepSeek-V3",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      },
+      {
+        "provider": "Atlas Cloud",
+        "type": "atlascloud",
+        "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [],
+        "complete": true
+      }
+    ],
+    "issues": [
+      {
+        "provider": "Groq Free Tier",
+        "type": "groq-free",
+        "model": "llama-3.3-70b-versatile",
+        "available": false,
+        "completeness": {
+          "id": true,
+          "category": true,
+          "contextWindow": true,
+          "maxOutput": true,
+          "pricing": true,
+          "supportsTools": true,
+          "supportsVision": true,
+          "supportsStreaming": true
+        },
+        "missingFields": [],
+        "warnings": [
+          "Model is marked as deprecated",
+          "Model marked as unavailable"
+        ],
+        "complete": false
+      }
+    ]
+  },
+  "image": {
+    "models": [
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "dall-e-3",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "dall-e-2",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "stable-diffusion-xl",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "stable-diffusion-2-1",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "playground-v2-5",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Replicate",
+        "type": "replicate",
+        "model": "sdxl",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Replicate",
+        "type": "replicate",
+        "model": "realistic-vision",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      }
+    ],
+    "issues": [
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "dall-e-3",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "dall-e-2",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "stable-diffusion-xl",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "stable-diffusion-2-1",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "playground-v2-5",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Replicate",
+        "type": "replicate",
+        "model": "sdxl",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      },
+      {
+        "provider": "Replicate",
+        "type": "replicate",
+        "model": "realistic-vision",
+        "available": true,
+        "completeness": {
+          "id": true,
+          "pricing": true,
+          "supportsSizes": false,
+          "supportsQuality": false
+        },
+        "missingFields": [
+          "supportsSizes",
+          "supportsQuality"
+        ],
+        "warnings": [
+          "Supported sizes not specified"
+        ],
+        "complete": false
+      }
+    ]
+  }
+}

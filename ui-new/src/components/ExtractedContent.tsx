@@ -151,11 +151,11 @@ const ExtractedContent: React.FC<ExtractedContentProps> = ({ extractedContent })
         </div>
       )}
 
-      {/* All Images */}
-      {allImages && allImages.length > 3 && (
+      {/* All Images - Always show expandable section with ALL images */}
+      {allImages && allImages.length > 0 && (
         <details style={{ marginBottom: '1rem' }}>
           <summary style={{ cursor: 'pointer', fontWeight: '600', padding: '0.75rem', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
-            🖼️ All Images ({allImages.length})
+            🖼️ All Images ({allImages.length - hiddenImages.size})
           </summary>
           <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
             {allImages.map((image, idx) => (

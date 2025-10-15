@@ -13,7 +13,6 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
-import { calculateDualPricing } from '../utils/pricing';
 import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
@@ -28,7 +27,9 @@ import { JsonTree } from './JsonTree';
 import { ImageGallery } from './ImageGallery';
 import { MediaSections } from './MediaSections';
 import { ToolResultJsonViewer } from './JsonTreeViewer';
+import { ReadButton } from './ReadButton';
 import { YouTubeVideoResults } from './YouTubeVideoResults';
+import { ExamplesModal } from './ExamplesModal';
 import { 
   saveChatToHistory, 
   loadChatFromHistory, 
@@ -72,7 +73,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { settings } = useSettings();
   const { addCost, usage } = useUsage();
   const { isConnected: isCastConnected, sendMessages: sendCastMessages, sendScrollPosition } = useCast();
-  const { location } = useLocation();
+  const { location, isLoading: locationLoading, requestLocation, clearLocation } = useLocation();
   
   // Use regular state for messages - async storage causes race conditions
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -84,6 +85,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
   const [showPlanningDialog, setShowPlanningDialog] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
   
   const [mcpServers, setMcpServers] = useLocalStorage<Array<{
     id: string;
@@ -106,7 +108,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [expandedToolMessages, setExpandedToolMessages] = useState<Set<number>>(new Set());
   const [systemPromptExpanded, setSystemPromptExpanded] = useState(false);
   const [currentStreamingBlockIndex, setCurrentStreamingBlockIndex] = useState<number | null>(null);
-  const [showExamplesDropdown, setShowExamplesDropdown] = useState(false);
+  const [showExamplesModal, setShowExamplesModal] = useState(false);
   
   // Chat history tracking
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -184,9 +186,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // Prompt history for up/down arrow navigation
   const [promptHistory, setPromptHistory] = useLocalStorage<string[]>('chat_prompt_history', []);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
-  
-  // Session summary expansion state
-  const [sessionSummaryExpanded, setSessionSummaryExpanded] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -485,15 +484,15 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (examplesDropdownRef.current && !examplesDropdownRef.current.contains(event.target as Node)) {
-        setShowExamplesDropdown(false);
+        setShowExamplesModal(false);
       }
     };
 
-    if (showExamplesDropdown) {
+    if (showExamplesModal) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showExamplesDropdown]);
+  }, [showExamplesModal]);
 
   // Auto-submit when retry button is clicked
   useEffect(() => {
@@ -515,7 +514,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setMessages([]);
     setSystemPrompt(''); // Clear system prompt
     setInput(exampleText);
-    setShowExamplesDropdown(false);
+    setShowExamplesModal(false);
     
     // Clear all tracking states
     setToolStatus([]);
@@ -621,19 +620,34 @@ export const ChatTab: React.FC<ChatTabProps> = ({
             });
           }
           
-          // Page content with images
-          if (data.page_content && data.images) {
-            if (Array.isArray(data.images)) {
-              data.images.forEach((img: any) => {
-                if (typeof img === 'string') {
-                  media.images.push(img);
-                } else if (img && img.src) {
-                  media.images.push(img.src);
-                } else if (img && img.url) {
-                  media.images.push(img.url);
-                }
-              });
-            }
+          // Images from page_content object (scraped from web pages)
+          if (data.page_content?.images && Array.isArray(data.page_content.images)) {
+            data.page_content.images.forEach((img: any) => {
+              if (typeof img === 'string') {
+                media.images.push(img);
+              } else if (img && img.src) {
+                media.images.push(img.src);
+              } else if (img && img.url) {
+                media.images.push(img.url);
+              }
+            });
+          }
+          
+          // Extract images from search results (each result can have page_content.images)
+          if (data.results && Array.isArray(data.results)) {
+            data.results.forEach((result: any) => {
+              if (result.page_content?.images && Array.isArray(result.page_content.images)) {
+                result.page_content.images.forEach((img: any) => {
+                  if (typeof img === 'string') {
+                    media.images.push(img);
+                  } else if (img && img.src) {
+                    media.images.push(img.src);
+                  } else if (img && img.url) {
+                    media.images.push(img.url);
+                  }
+                });
+              }
+            });
           }
           
         } catch (e) {
@@ -706,62 +720,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const getMessageCost = (msg: any): number => {
     if (!msg.llmApiCalls || msg.llmApiCalls.length === 0) return 0;
     return calculateCostFromLlmApiCalls(msg.llmApiCalls);
-  };
-
-  // Calculate session total cost with breakdown
-  const getSessionCost = (): { 
-    total: number; 
-    free: number; 
-    paid: number; 
-    responses: number; 
-    calls: number;
-    totalTokens: number;
-  } => {
-    let total = 0;
-    let free = 0;
-    let paid = 0;
-    let responses = 0;
-    let calls = 0;
-    let totalTokens = 0;
-    
-    for (const msg of messages) {
-      if (msg.role === 'assistant' && msg.llmApiCalls) {
-        const msgCost = getMessageCost(msg);
-        responses++;
-        calls += msg.llmApiCalls.length;
-        
-        // Calculate tokens
-        for (const call of msg.llmApiCalls) {
-          totalTokens += call.response?.usage?.total_tokens || 0;
-        }
-        
-        // Check if any calls are free models and calculate "worth"
-        let msgFreeWorth = 0;
-        let hasFreeModels = false;
-        
-        for (const call of msg.llmApiCalls) {
-          const model = call.model;
-          if (model?.includes('gemini') || model?.includes('llama') || model?.includes('mixtral')) {
-            hasFreeModels = true;
-            // Calculate "worth" for free models using paid equivalent
-            const tokensIn = call.response?.usage?.prompt_tokens || 0;
-            const tokensOut = call.response?.usage?.completion_tokens || 0;
-            const pricing = calculateDualPricing(model, tokensIn, tokensOut);
-            msgFreeWorth += pricing.paidEquivalentCost || 0;
-          }
-        }
-        
-        if (hasFreeModels && msgCost === 0) {
-          free += msgFreeWorth;
-        } else {
-          paid += msgCost;
-        }
-        
-        total += msgCost;
-      }
-    }
-    
-    return { total, free, paid, responses, calls, totalTokens };
   };
 
   // Format cost for display
@@ -1427,7 +1385,14 @@ ${finalSystemPrompt}
 - Don't be overly brief - users prefer detailed, informative answers over short summaries
 - Use markdown formatting (headings, lists, code blocks, bold, italic) to make responses clear and well-structured
 - When scraping or researching, include substantial quoted content and detailed analysis
-- Aim for responses that fully answer the question and anticipate follow-up questions`;
+- Aim for responses that fully answer the question and anticipate follow-up questions
+
+**IMAGE PLACEMENT GUIDELINES:**
+- When including images in your response, distribute them naturally throughout the content next to relevant text sections
+- Place images near the paragraphs or sections they illustrate or relate to
+- AVOID placing all images at the top or bottom of your response in a single block
+- Intersperse images with text to create a more engaging, magazine-style layout
+- Use markdown image syntax: ![description](url) inline with your content where contextually appropriate`;
       
       // Add tool suggestions if tools are enabled
       if (tools.length > 0) {
@@ -1438,12 +1403,16 @@ CRITICAL TOOL USAGE RULES:
 - When users ask to TRANSCRIBE or get TRANSCRIPT from video/audio, you MUST call transcribe_url (NOT search_youtube)
 - When users say "transcribe this video [URL]", "get transcript", "what does the video say", you MUST call transcribe_url
 - When users want to FIND or SEARCH for videos, use search_youtube (e.g., "find videos about X")
-- When users ask to "scrape", "get content from", "read", "fetch", or "summarize" a website/URL, you MUST call the scrape_web_content tool
-- When users provide a URL and ask for information about it, you MUST call scrape_web_content with that URL
+- When users ask to "scrape", "get content from", "read", "fetch", "extract", "analyze", or "summarize" a website/URL, you MUST call the scrape_web_content tool
+- When users provide ANY URL (http/https) and ask questions about it, you MUST call scrape_web_content with that URL FIRST
+- MANDATORY: If a message contains a URL and asks to extract/analyze/summarize/get key points, you MUST call scrape_web_content - DO NOT provide an answer without first fetching the content
 - When users ask for current information, news, or web content, you MUST use search_web
-- When users ask for calculations or code execution, you MUST use execute_javascript
+- When users ask for calculations, math problems, or code execution, you MUST ALWAYS use execute_javascript - NEVER provide answers directly
+- MANDATORY: For "multiplication table", "calculate", "compute", "factorial", "compound interest", mathematical operations, or data processing, you MUST call execute_javascript
+- DO NOT provide mathematical answers or tables manually - ALWAYS use execute_javascript tool
 - DO NOT output tool parameters as JSON text in your response (e.g., don't write {"url": "...", "timeout": 15})
 - DO NOT describe what you would do - ACTUALLY CALL THE TOOL using the function calling mechanism
+- DO NOT write code for scraping or analyzing - USE THE TOOL INSTEAD
 - The system will automatically execute your tool calls and provide you with results
 - After receiving tool results, incorporate them naturally into your response
 - IMPORTANT: After execute_javascript returns a result, provide the final answer to the user IMMEDIATELY. Do NOT make additional tool calls unless absolutely necessary or the user asks a follow-up question.
@@ -1453,10 +1422,17 @@ Examples when you MUST use tools:
 - "get transcript from this video [URL]" → Call transcribe_url with url parameter
 - "find videos about AI" → Call search_youtube with query parameter
 - "scrape and summarize https://example.com" → Call scrape_web_content with url parameter
-- "get content from https://github.com/user/repo" → Call scrape_web_content with url parameter  
+- "get content from https://github.com/user/repo" → Call scrape_web_content with url parameter
+- "Extract and analyze the key points from https://example.com/article" → Call scrape_web_content with url parameter
+- "What does this page say: https://example.com" → Call scrape_web_content with url parameter
+- "Summarize this article https://example.com/news" → Call scrape_web_content with url parameter
+- "Read and analyze https://en.wikipedia.org/wiki/Topic" → Call scrape_web_content with url parameter
 - "Find current news about X" → Call search_web with query parameter
 - "What's the latest on X" → Call search_web with query parameter
 - "calculate 5 factorial" → Call execute_javascript with code parameter
+- "Generate a multiplication table for numbers 1-12" → Call execute_javascript with code parameter
+- "Calculate compound interest" → Call execute_javascript with code parameter
+- "Compute" or "Calculate" anything → Call execute_javascript with code parameter
 
 Remember: Use the function calling mechanism, not text output. The API will handle execution automatically.`;
       }
@@ -1542,7 +1518,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       // Phase 2: No model selection - backend decides based on PROVIDER_CATALOG.json
       // Backend will automatically detect images and select vision-capable models
       // Send providers array instead of model field - filter out disabled providers
-      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
+      // IMPORTANT: Only send providers that are explicitly enabled (enabled === true)
+      // Providers without 'enabled' field or with enabled=false are excluded
+      const enabledProviders = settings.providers.filter(p => p.enabled === true);
       
       // Load proxy settings from localStorage
       const proxySettings = localStorage.getItem('proxy_settings');
@@ -2488,9 +2466,43 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     showSuccess('Chat deleted');
   };
 
+  const handleDeleteSelectedChats = async () => {
+    if (selectedChatIds.size === 0) return;
+    
+    const count = selectedChatIds.size;
+    for (const chatId of selectedChatIds) {
+      await deleteChatFromHistory(chatId);
+    }
+    
+    const history = await getAllChatHistory();
+    setChatHistory(history);
+    setSelectedChatIds(new Set());
+    showSuccess(`${count} chat${count > 1 ? 's' : ''} deleted`);
+  };
+
+  const handleSelectAllChats = () => {
+    const allIds = new Set(chatHistory.map(entry => entry.id));
+    setSelectedChatIds(allIds);
+  };
+
+  const handleSelectNoneChats = () => {
+    setSelectedChatIds(new Set());
+  };
+
+  const handleToggleChatSelection = (chatId: string) => {
+    const newSelection = new Set(selectedChatIds);
+    if (newSelection.has(chatId)) {
+      newSelection.delete(chatId);
+    } else {
+      newSelection.add(chatId);
+    }
+    setSelectedChatIds(newSelection);
+  };
+
   const handleClearAllHistory = async () => {
     await clearAllChatHistory();
     setChatHistory([]);
+    setSelectedChatIds(new Set());
     setShowClearHistoryConfirm(false);
     setShowLoadDialog(false);
     showSuccess('All chat history cleared');
@@ -2562,7 +2574,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     }
     
     // Build request payload with continuation flag
-    const enabledProviders = settings.providers.filter(p => p.enabled !== false);
+    // IMPORTANT: Only send providers that are explicitly enabled (enabled === true)
+    const enabledProviders = settings.providers.filter(p => p.enabled === true);
     
     const requestPayload: any = {
       providers: enabledProviders,
@@ -2778,17 +2791,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         </div>
       )}
       
-      {/* System Prompt Display and Planning */}
-      <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <div className="flex items-center gap-2 max-w-screen-2xl mx-auto">
-          <button
-            onClick={() => setShowPlanningDialog(true)}
-            className="btn-secondary text-xs px-3 py-1.5"
-            title={systemPrompt ? "Edit system prompt and planning" : "Add system prompt and planning"}
-          >
-            {systemPrompt ? '✏️ Edit Plan' : 'Make A Plan'}
-          </button>
-          {systemPrompt && (
+      {/* System Prompt Display */}
+      {systemPrompt && (
+        <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <div className="flex items-center gap-2 max-w-screen-2xl mx-auto">
             <div 
               className="flex-1 text-sm text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded transition-colors"
               onClick={() => setSystemPromptExpanded(!systemPromptExpanded)}
@@ -2796,9 +2802,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             >
               {systemPromptExpanded ? systemPrompt : (systemPrompt.length > 200 ? systemPrompt.substring(0, 200) + '...' : systemPrompt)}
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
       
       {/* Chat Header with Actions */}
       <div className="flex flex-wrap items-center gap-2 p-4 border-b border-gray-200 dark:border-gray-700">
@@ -2809,75 +2815,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm">
             🕒 History
           </button>
-          <div className="relative" ref={examplesDropdownRef}>
-            <button 
-              onClick={() => setShowExamplesDropdown(!showExamplesDropdown)}
-              className="btn-secondary text-sm"
-            >
-              📝 Examples ▾
-            </button>
-            {showExamplesDropdown && (
-              <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 w-[400px] max-h-96 overflow-y-auto">
-                <div className="p-2">
-                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                    Web Search & Current Events
-                  </div>
-                  <button onClick={() => handleExampleClick('What are the latest developments in artificial intelligence this week?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Latest AI developments</button>
-                  <button onClick={() => handleExampleClick('Find current news about climate change policy updates')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Climate change policy updates</button>
-                  <button onClick={() => handleExampleClick('What is the current stock price of Tesla and recent news about the company?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Tesla stock price and news</button>
-                  
-                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
-                    Mathematical & Computational
-                  </div>
-                  <button onClick={() => handleExampleClick('Calculate the compound interest on $10,000 invested at 7% annual rate for 15 years')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Compound interest calculation</button>
-                  <button onClick={() => handleExampleClick('Generate a multiplication table for numbers 1-12')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Multiplication table</button>
-                  
-                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
-                    Data Analysis & Research
-                  </div>
-                  <button onClick={() => handleExampleClick('Compare the population growth rates of the top 5 most populous countries')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Population growth comparison</button>
-                  <button onClick={() => handleExampleClick('What are the key differences between Python and JavaScript programming languages?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Python vs JavaScript</button>
-                  <button onClick={() => handleExampleClick('Analyze the pros and cons of renewable energy sources')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Renewable energy analysis</button>
-                  
-                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
-                    Transcription & Media
-                  </div>
-                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/hello-test.wav')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Speech: "Hello, this is a test..."</button>
-                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/ml-test.wav')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Speech: "Testing audio transcription..."</button>
-                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/voice-test.wav')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Speech: "Voice recognition technology..."</button>
-                  <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/long-form-ai-speech.mp3')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">🎙️ Long-form (~4min): AI & ML Discussion</button>
-                  <button onClick={() => handleExampleClick('Note: These are TTS-generated speech samples hosted on S3. You can use your own S3, Dropbox, or Google Drive public links. YouTube blocked by bot detection.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-500 italic" disabled>ℹ️ About these samples</button>
-                  
-                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
-                    Web Scraping & Content Extraction
-                  </div>
-                  <button onClick={() => handleExampleClick('Scrape and summarize the main content from https://news.ycombinator.com')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Scrape Hacker News</button>
-                  <button onClick={() => handleExampleClick('Extract and analyze the key points from https://en.wikipedia.org/wiki/Artificial_intelligence')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Extract Wikipedia content</button>
-                  
-                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
-                    📊 Visual Charts & Diagrams
-                  </div>
-                  <button onClick={() => handleExampleClick('Create a flowchart showing the software development lifecycle from planning to deployment')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Flowchart: Software development lifecycle</button>
-                  <button onClick={() => handleExampleClick('Show a sequence diagram for user authentication with OAuth 2.0')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Sequence diagram: OAuth authentication</button>
-                  <button onClick={() => handleExampleClick('Generate a Gantt chart for a 3-month web application project with phases: Planning, Design, Development, Testing, Deployment')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Gantt chart: Project timeline</button>
-                  <button onClick={() => handleExampleClick('Create a class diagram showing relationships between User, Order, and Product entities in an e-commerce system')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Class diagram: E-commerce system</button>
-                  <button onClick={() => handleExampleClick('Show a pie chart of global renewable energy sources distribution: Solar 30%, Wind 35%, Hydro 25%, Geothermal 10%')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Pie chart: Energy distribution</button>
-                  <button onClick={() => handleExampleClick('Create an ER diagram for a blog database with tables: Users, Posts, Comments, and Tags')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">ER diagram: Blog database schema</button>
-                  <button onClick={() => handleExampleClick('Note: Charts auto-render with Mermaid.js. If there are syntax errors, the system automatically fixes them (up to 3 attempts). Fix costs ~$0.000016 per attempt.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-500 italic" disabled>ℹ️ Auto-fix with full cost tracking</button>
-                  
-                  <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mt-2">
-                    📍 Location-Based Services
-                  </div>
-                  <button onClick={() => handleExampleClick('What are the top 5 restaurants near my current location?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find nearby restaurants</button>
-                  <button onClick={() => handleExampleClick('Search for coffee shops within 2 miles of my location that are open now')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find open coffee shops nearby</button>
-                  <button onClick={() => handleExampleClick('What is the weather forecast for my current location for the next 3 days?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Local weather forecast</button>
-                  <button onClick={() => handleExampleClick('Find the nearest hospital or emergency room to my location')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find nearest hospital</button>
-                  <button onClick={() => handleExampleClick('What are some interesting tourist attractions in my area?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">Find local attractions</button>
-                  <button onClick={() => handleExampleClick('Note: Enable location in Settings → Location tab. Your precise coordinates are used for searches but never stored. Location data stays in your browser.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-500 italic" disabled>ℹ️ Enable in Settings (privacy-first)</button>
-                </div>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => setShowPlanningDialog(true)}
+            className="btn-secondary text-sm"
+            title={systemPrompt ? "Edit system prompt and planning" : "Add system prompt and planning"}
+          >
+            {systemPrompt ? '✏️ Edit Plan' : '📋 Make A Plan'}
+          </button>
+          <button 
+            onClick={() => setShowExamplesModal(true)}
+            className="btn-secondary text-sm"
+          >
+            📝 Examples
+          </button>
         </div>
       </div>
 
@@ -3414,24 +3364,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           return null;
                         })}
                         
-                        {/* Cost badge for assistant messages with LLM calls */}
-                        {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
-                          <div className="mb-3 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm">
-                              <span className="text-gray-700 dark:text-gray-300 font-medium">🤖 Assistant Response</span>
-                              <span className="hidden sm:inline text-gray-400">•</span>
-                              <span className="font-semibold text-green-600 dark:text-green-400">
-                                💰 {formatCostDisplay(getMessageCost(msg))}
-                              </span>
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                ({msg.llmApiCalls.length} LLM call{msg.llmApiCalls.length !== 1 ? 's' : ''})
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        
                         {/* Message content - only render if there's actual content */}
-                        {msg.content && <MarkdownRenderer content={getMessageText(msg.content)} />}
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1">
+                            {msg.content && <MarkdownRenderer content={getMessageText(msg.content)} />}
+                          </div>
+                          {/* Read button for completed assistant messages */}
+                          {msg.content && !msg.isStreaming && (
+                            <ReadButton 
+                              text={getMessageText(msg.content)}
+                              variant="icon"
+                              shouldSummarize={getMessageText(msg.content).length > 500}
+                            />
+                          )}
+                        </div>
                         {msg.isStreaming && (
                           <span className="inline-block w-2 h-4 bg-gray-500 animate-pulse ml-1"></span>
                         )}
@@ -3606,8 +3552,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       {searchResults && searchResults.length > 0 ? (
                                         <div className="space-y-3">
                                           {searchResults.map((result: any, rIdx: number) => {
-                                            const pageContent = result.page_content || result.content;
-                                            const hasContent = pageContent && pageContent.length > 0;
+                                            // result.content contains the actual scraped text
+                                            // result.page_content is an object with images, videos, links, etc.
+                                            const pageContent = result.content;
+                                            const hasContent = pageContent && typeof pageContent === 'string' && pageContent.length > 0;
                                             
                                             return (
                                               <div key={rIdx} className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-800">
@@ -3635,7 +3583,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                 {hasContent && (
                                                   <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-700">
                                                     <div className="text-[10px] font-semibold text-purple-700 dark:text-purple-400 mb-1">
-                                                      📄 Page Content ({pageContent.length.toLocaleString()} chars)
+                                                      📄 Scraped Page Content ({pageContent.length.toLocaleString()} chars)
                                                     </div>
                                                     <div className="bg-gray-50 dark:bg-gray-950 p-2 rounded max-h-60 overflow-y-auto">
                                                       <pre className="whitespace-pre-wrap text-[10px] text-gray-700 dark:text-gray-300">
@@ -3841,21 +3789,35 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           Grab
                         </button>
                         {/* Info button with cost prominently displayed */}
-                        {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (
-                          <button
-                            onClick={() => setShowLlmInfo(idx)}
-                            className="text-xs px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex items-center gap-1.5 transition-colors"
-                            title={`View LLM transparency info • ${msg.llmApiCalls.length} API call${msg.llmApiCalls.length !== 1 ? 's' : ''} • ${formatCostDisplay(getMessageCost(msg))}`}
-                          >
-                            <span className="font-semibold text-green-600 dark:text-green-400">
-                              💰 {formatCostDisplay(getMessageCost(msg))}
-                            </span>
-                            <span className="text-gray-600 dark:text-gray-400 hidden sm:inline">
-                              • {msg.llmApiCalls.length} call{msg.llmApiCalls.length !== 1 ? 's' : ''}
-                            </span>
-                            <span className="ml-0.5">ℹ️</span>
-                          </button>
-                        )}
+                        {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (() => {
+                          // Calculate total tokens in and out
+                          let totalIn = 0;
+                          let totalOut = 0;
+                          msg.llmApiCalls.forEach((call: any) => {
+                            totalIn += call.response?.usage?.prompt_tokens || 0;
+                            totalOut += call.response?.usage?.completion_tokens || 0;
+                          });
+                          const totalTokens = totalIn + totalOut;
+                          
+                          return (
+                            <button
+                              onClick={() => setShowLlmInfo(idx)}
+                              className="text-xs px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex items-center gap-1.5 transition-colors"
+                              title={`View LLM transparency info • ${totalTokens.toLocaleString()} tokens (${totalIn.toLocaleString()} in, ${totalOut.toLocaleString()} out) • ${msg.llmApiCalls.length} call${msg.llmApiCalls.length !== 1 ? 's' : ''} • ${formatCostDisplay(getMessageCost(msg))}`}
+                            >
+                              <span className="font-semibold text-green-600 dark:text-green-400">
+                                💰 {formatCostDisplay(getMessageCost(msg))}
+                              </span>
+                              <span className="text-gray-600 dark:text-gray-400 hidden sm:inline">
+                                • {totalTokens.toLocaleString()} token{totalTokens !== 1 ? 's' : ''} ({totalIn.toLocaleString()} in, {totalOut.toLocaleString()} out)
+                              </span>
+                              <span className="text-gray-600 dark:text-gray-400 hidden lg:inline">
+                                • {msg.llmApiCalls.length} call{msg.llmApiCalls.length !== 1 ? 's' : ''}
+                              </span>
+                              <span className="ml-0.5">ℹ️</span>
+                            </button>
+                          );
+                        })()}
                         {/* Error Info button for error messages */}
                         {msg.errorData && getMessageText(msg.content).startsWith('❌ Error:') && (
                           <button
@@ -3952,72 +3914,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           );
         })}
         
-        {/* Total Token Tally - show after final response of a user request */}
-        {(() => {
-          // Find the last user message and the last assistant message
-          let lastUserIndex = -1;
-          let lastAssistantIndex = -1;
-          for (let i = messages.length - 1; i >= 0; i--) {
-            if (lastUserIndex === -1 && messages[i].role === 'user') lastUserIndex = i;
-            if (lastAssistantIndex === -1 && messages[i].role === 'assistant') lastAssistantIndex = i;
-            if (lastUserIndex !== -1 && lastAssistantIndex !== -1) break;
-          }
-          
-          // Only show if we have both and assistant is after user (completed turn)
-          // And not currently loading (so we show it for completed conversations)
-          if (lastUserIndex >= 0 && lastAssistantIndex > lastUserIndex && !isLoading) {
-            // Calculate total tokens from all messages in this conversation turn
-            // Count from the last user message to the end
-            let totalPromptTokens = 0;
-            let totalCompletionTokens = 0;
-            let totalTokens = 0;
-            let hasAnyEstimated = false;
-            
-            for (let i = lastUserIndex; i < messages.length; i++) {
-              const msg = messages[i];
-              
-              // Count tokens from assistant message llmApiCalls
-              if (msg.llmApiCalls && msg.llmApiCalls.length > 0) {
-                msg.llmApiCalls.forEach((call: any) => {
-                  totalPromptTokens += call.response?.usage?.prompt_tokens || 0;
-                  totalCompletionTokens += call.response?.usage?.completion_tokens || 0;
-                  totalTokens += call.response?.usage?.total_tokens || 0;
-                  if (call.response?.usage?.estimated) {
-                    hasAnyEstimated = true;
-                  }
-                });
-              }
-            }
-            
-            // Only show if we have token counts
-            if (totalTokens > 0) {
-              return (
-                <div className="flex justify-center my-4">
-                  <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-700 rounded-lg px-4 py-2 shadow-sm">
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="font-semibold text-purple-700 dark:text-purple-300">
-                        📊 Total Token Usage{hasAnyEstimated && <span title="Includes estimated token counts" className="ml-1">~</span>}:
-                      </span>
-                      <span className="text-gray-700 dark:text-gray-300">
-                        <span className="font-mono">{totalPromptTokens.toLocaleString()}</span>
-                        <span className="text-gray-500 dark:text-gray-400 mx-1">↓ in</span>
-                      </span>
-                      <span className="text-gray-700 dark:text-gray-300">
-                        <span className="font-mono">{totalCompletionTokens.toLocaleString()}</span>
-                        <span className="text-gray-500 dark:text-gray-400 mx-1">↑ out</span>
-                      </span>
-                      <span className="text-purple-700 dark:text-purple-300 font-semibold">
-                        = <span className="font-mono">{totalTokens.toLocaleString()}</span> total
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            }
-          }
-          return null;
-        })()}
-        
         {/* Streaming indicator for current block */}
         {isLoading && currentStreamingBlockIndex !== null && (
           <div className="flex justify-start">
@@ -4040,94 +3936,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           </div>
         )}
         <div ref={messagesEndRef} />
-        
-        {/* Session Summary - sticky footer with costs */}
-        {messages.length > 0 && (() => {
-          const { total, free, paid, responses, calls, totalTokens } = getSessionCost();
-          
-          // Don't show if no assistant messages with LLM calls
-          if (responses === 0) return null;
-          
-          return (
-            <div className="sticky bottom-0 bg-white dark:bg-gray-900 border-t-2 border-blue-500 shadow-lg mt-6">
-              {/* Collapsed View */}
-              <div 
-                className="px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                onClick={() => setSessionSummaryExpanded(!sessionSummaryExpanded)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                    <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                      💰 {formatCostDisplay(total)}
-                    </span>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      {responses} response{responses !== 1 ? 's' : ''} • {calls} LLM call{calls !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <button className="text-gray-500 dark:text-gray-400 flex items-center gap-1 text-sm">
-                    {sessionSummaryExpanded ? '▼' : '▲'} <span className="hidden sm:inline">Session Summary</span>
-                  </button>
-                </div>
-              </div>
-              
-              {/* Expanded View */}
-              {sessionSummaryExpanded && (
-                <div className="px-4 pb-4 space-y-2 border-t border-gray-200 dark:border-gray-700">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                        Cost Breakdown
-                      </h4>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>💵 Paid Models:</span>
-                          <span className="font-semibold">{formatCostDisplay(paid)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🆓 Free Models:</span>
-                          <span className="font-semibold">
-                            $0 
-                            {free > 0 && (
-                              <span className="text-xs text-gray-500 ml-1">
-                                (worth {formatCostDisplay(free)})
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
-                          <span className="font-semibold">Total:</span>
-                          <span className="font-bold text-green-600 dark:text-green-400">
-                            {formatCostDisplay(total)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                        Usage Statistics
-                      </h4>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>📝 Responses:</span>
-                          <span className="font-semibold">{responses}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🔄 LLM Calls:</span>
-                          <span className="font-semibold">{calls}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>📊 Total Tokens:</span>
-                          <span className="font-semibold">{totalTokens.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
       </div>
 
       {/* Input Area */}
@@ -4287,13 +4095,42 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {showLoadDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="card max-w-2xl w-full p-6">
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Chat History</h3>
+            {/* Header with Select All/None buttons */}
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Chat History</h3>
+              {chatHistory.length > 0 && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSelectAllChats}
+                    className="btn-secondary text-xs px-3 py-1"
+                  >
+                    ☑️ Select All
+                  </button>
+                  <button
+                    onClick={handleSelectNoneChats}
+                    className="btn-secondary text-xs px-3 py-1"
+                  >
+                    ☐ Select None
+                  </button>
+                </div>
+              )}
+            </div>
+            
             <div className="space-y-3 max-h-[70vh] overflow-y-auto">
               {chatHistory.map((entry) => {
                 const date = new Date(entry.timestamp).toLocaleString();
+                const isSelected = selectedChatIds.has(entry.id);
                 return (
-                  <div key={entry.id} className="border border-gray-300 dark:border-gray-600 rounded-lg p-3">
-                    <div className="flex justify-between items-start gap-3">
+                  <div key={entry.id} className={`border ${isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600'} rounded-lg p-3`}>
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox */}
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleChatSelection(entry.id)}
+                        className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                      />
+                      
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-900 dark:text-gray-100 font-medium mb-1 truncate">
                           {entry.firstUserPrompt}
@@ -4302,6 +4139,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           {date}
                         </div>
                       </div>
+                      
                       <div className="flex gap-2 flex-shrink-0">
                         <button
                           onClick={() => handleLoadChat(entry)}
@@ -4326,7 +4164,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 </p>
               )}
             </div>
+            
+            {/* Footer with Delete Selected button */}
             <div className="flex gap-2 mt-4">
+              {selectedChatIds.size > 0 && (
+                <button
+                  onClick={handleDeleteSelectedChats}
+                  className="btn-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  🗑️ Delete Selected ({selectedChatIds.size})
+                </button>
+              )}
               {chatHistory.length > 0 && (
                 <button
                   onClick={() => setShowClearHistoryConfirm(true)}
@@ -4675,6 +4523,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         onTranscriptionComplete={handleVoiceTranscription}
         accessToken={accessToken}
         apiEndpoint={'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws'}
+      />
+
+      {/* Examples Modal - Full Screen 3-Column Layout */}
+      <ExamplesModal
+        isOpen={showExamplesModal}
+        onClose={() => setShowExamplesModal(false)}
+        onExampleClick={handleExampleClick}
+        location={location}
+        locationLoading={locationLoading}
+        requestLocation={requestLocation}
+        clearLocation={clearLocation}
       />
     </div>
   );

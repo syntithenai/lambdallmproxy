@@ -1,0 +1,367 @@
+/**
+ * JavaScriptSandbox Unit Tests
+ * 
+ * Tests sandboxing, timeouts, size limits, and security boundaries
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { JavaScriptSandbox } from '../../services/clientTools/JavaScriptSandbox';
+
+describe('JavaScriptSandbox', () => {
+  let sandbox: JavaScriptSandbox;
+
+  beforeEach(() => {
+    sandbox = new JavaScriptSandbox();
+  });
+
+  afterEach(() => {
+    if (sandbox) {
+      sandbox.destroy();
+    }
+  });
+
+  describe('Basic Execution', () => {
+    it('should execute simple JavaScript code', async () => {
+      const result = await sandbox.execute('return 1 + 1');
+      expect(result).toBe(2);
+    });
+
+    it('should execute code with string operations', async () => {
+      const result = await sandbox.execute('return "Hello" + " " + "World"');
+      expect(result).toBe('Hello World');
+    });
+
+    it('should execute code with arrays', async () => {
+      const result = await sandbox.execute('return [1, 2, 3].map(x => x * 2)');
+      expect(result).toEqual([2, 4, 6]);
+    });
+
+    it('should execute code with objects', async () => {
+      const result = await sandbox.execute('return { a: 1, b: 2 }');
+      expect(result).toEqual({ a: 1, b: 2 });
+    });
+  });
+
+  describe('Safe Globals Access', () => {
+    it('should allow console access', async () => {
+      // Note: console.log in worker has its own console context
+      const result = await sandbox.execute('console.log("test"); return true');
+      expect(result).toBe(true);
+    });
+
+    it('should allow Math operations', async () => {
+      const result = await sandbox.execute('return Math.sqrt(16)');
+      expect(result).toBe(4);
+    });
+
+    it('should allow Date operations', async () => {
+      const result = await sandbox.execute('return new Date(2025, 0, 1).getFullYear()');
+      expect(result).toBe(2025);
+    });
+
+    it('should allow JSON operations', async () => {
+      const result = await sandbox.execute('return JSON.parse(\'{"a": 1}\')');
+      expect(result).toEqual({ a: 1 });
+    });
+
+    it('should allow Array operations', async () => {
+      const result = await sandbox.execute('return Array.from([1, 2, 3])');
+      expect(result).toEqual([1, 2, 3]);
+    });
+
+    it('should allow Object operations', async () => {
+      const result = await sandbox.execute('return Object.keys({a: 1, b: 2})');
+      expect(result).toEqual(['a', 'b']);
+    });
+  });
+
+  describe('Security - Blocked Access', () => {
+    it('should block window access', async () => {
+      try {
+        await sandbox.execute('return window');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).toContain('window is not defined');
+      }
+    });
+
+    it('should block document access', async () => {
+      try {
+        await sandbox.execute('return document');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).toContain('document is not defined');
+      }
+    });
+
+    it('should block localStorage access', async () => {
+      try {
+        await sandbox.execute('return localStorage');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).toContain('localStorage is not defined');
+      }
+    });
+
+    it('should block eval access', async () => {
+      try {
+        await sandbox.execute('return eval("1 + 1")');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).toContain('eval is not defined');
+      }
+    });
+  });
+
+  describe('Timeout Protection', () => {
+    it('should timeout on infinite loop', async () => {
+      try {
+        await sandbox.execute('while(true) {}');
+        expect.fail('Should have thrown timeout error');
+      } catch (error: any) {
+        expect(error.message).toContain('timeout');
+      }
+    }, 15000); // Increase test timeout
+
+    it('should timeout on long-running code', async () => {
+      try {
+        await sandbox.execute(`
+          let sum = 0;
+          for (let i = 0; i < 1e10; i++) {
+            sum += i;
+          }
+          return sum;
+        `);
+        expect.fail('Should have thrown timeout error');
+      } catch (error: any) {
+        expect(error.message).toContain('timeout');
+      }
+    }, 15000);
+
+    it('should complete fast operations within timeout', async () => {
+      const result = await sandbox.execute('return Array(1000).fill(0).reduce((a, b) => a + b, 0)');
+      expect(result).toBe(0);
+    });
+  });
+
+  describe('setTimeout Restrictions', () => {
+    it('should allow short setTimeout', async () => {
+      const result = await sandbox.execute(`
+        return new Promise(resolve => {
+          setTimeout(() => resolve('done'), 100);
+        });
+      `);
+      expect(result).toBe('done');
+    });
+
+    it('should block setTimeout over 5 seconds', async () => {
+      try {
+        await sandbox.execute(`
+          return new Promise(resolve => {
+            setTimeout(() => resolve('done'), 6000);
+          });
+        `);
+        expect.fail('Should have thrown error for long setTimeout');
+      } catch (error: any) {
+        expect(error.message).toContain('5 seconds');
+      }
+    });
+  });
+
+  describe('fetch Restrictions', () => {
+    it('should allow GET requests', async () => {
+      // Mock fetch for testing
+      global.fetch = vi.fn().mockResolvedValue({
+        json: () => Promise.resolve({ data: 'test' })
+      });
+
+      const result = await sandbox.execute(`
+        return fetch('https://api.example.com/data')
+          .then(r => r.json());
+      `);
+
+      expect(result).toEqual({ data: 'test' });
+    });
+
+    it('should block POST requests', async () => {
+      try {
+        await sandbox.execute(`
+          return fetch('https://api.example.com/data', { method: 'POST' });
+        `);
+        expect.fail('Should have thrown error for POST request');
+      } catch (error: any) {
+        expect(error.message).toContain('Only GET requests allowed');
+      }
+    });
+
+    it('should block PUT requests', async () => {
+      try {
+        await sandbox.execute(`
+          return fetch('https://api.example.com/data', { method: 'PUT' });
+        `);
+        expect.fail('Should have thrown error for PUT request');
+      } catch (error: any) {
+        expect(error.message).toContain('Only GET requests allowed');
+      }
+    });
+
+    it('should block DELETE requests', async () => {
+      try {
+        await sandbox.execute(`
+          return fetch('https://api.example.com/data', { method: 'DELETE' });
+        `);
+        expect.fail('Should have thrown error for DELETE request');
+      } catch (error: any) {
+        expect(error.message).toContain('Only GET requests allowed');
+      }
+    });
+  });
+
+  describe('Result Size Limits', () => {
+    it('should return small results', async () => {
+      const result = await sandbox.execute('return "small result"');
+      expect(result).toBe('small result');
+    });
+
+    it('should reject results over 10KB', async () => {
+      try {
+        await sandbox.execute(`
+          return 'a'.repeat(15000); // 15KB
+        `);
+        expect.fail('Should have thrown error for large result');
+      } catch (error: any) {
+        expect(error.message).toContain('too large');
+      }
+    });
+
+    it('should allow results just under 10KB', async () => {
+      const result = await sandbox.execute(`
+        return 'a'.repeat(5000); // 5KB
+      `);
+      expect(result.length).toBe(5000);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should catch syntax errors', async () => {
+      try {
+        await sandbox.execute('this is not valid javascript');
+        expect.fail('Should have thrown syntax error');
+      } catch (error: any) {
+        expect(error.message).toBeDefined();
+      }
+    });
+
+    it('should catch runtime errors', async () => {
+      try {
+        await sandbox.execute('throw new Error("Custom error")');
+        expect.fail('Should have thrown custom error');
+      } catch (error: any) {
+        expect(error.message).toContain('Custom error');
+      }
+    });
+
+    it('should catch reference errors', async () => {
+      try {
+        await sandbox.execute('return nonexistentVariable');
+        expect.fail('Should have thrown reference error');
+      } catch (error: any) {
+        expect(error.message).toContain('not defined');
+      }
+    });
+  });
+
+  describe('Async Operations', () => {
+    it('should handle promises', async () => {
+      const result = await sandbox.execute(`
+        return Promise.resolve(42);
+      `);
+      expect(result).toBe(42);
+    });
+
+    it('should handle async/await', async () => {
+      const result = await sandbox.execute(`
+        return (async () => {
+          const a = await Promise.resolve(10);
+          const b = await Promise.resolve(20);
+          return a + b;
+        })();
+      `);
+      expect(result).toBe(30);
+    });
+
+    it('should handle rejected promises', async () => {
+      try {
+        await sandbox.execute(`
+          return Promise.reject(new Error('Promise rejected'));
+        `);
+        expect.fail('Should have thrown promise rejection');
+      } catch (error: any) {
+        expect(error.message).toContain('Promise rejected');
+      }
+    });
+  });
+
+  describe('Worker Lifecycle', () => {
+    it('should create worker on initialization', () => {
+      const newSandbox = new JavaScriptSandbox();
+      expect(newSandbox).toBeDefined();
+      newSandbox.destroy();
+    });
+
+    it('should destroy worker', () => {
+      const newSandbox = new JavaScriptSandbox();
+      newSandbox.destroy();
+      // After destruction, execution should fail
+      expect(async () => {
+        await newSandbox.execute('return 1');
+      }).rejects.toThrow();
+    });
+
+    it('should handle multiple executions', async () => {
+      const result1 = await sandbox.execute('return 1');
+      const result2 = await sandbox.execute('return 2');
+      const result3 = await sandbox.execute('return 3');
+
+      expect(result1).toBe(1);
+      expect(result2).toBe(2);
+      expect(result3).toBe(3);
+    });
+  });
+
+  describe('Complex Scenarios', () => {
+    it('should handle complex calculations', async () => {
+      const result = await sandbox.execute(`
+        const fibonacci = (n) => {
+          if (n <= 1) return n;
+          return fibonacci(n - 1) + fibonacci(n - 2);
+        };
+        return fibonacci(10);
+      `);
+      expect(result).toBe(55);
+    });
+
+    it('should handle array transformations', async () => {
+      const result = await sandbox.execute(`
+        const data = [1, 2, 3, 4, 5];
+        return data
+          .filter(x => x % 2 === 0)
+          .map(x => x * 2)
+          .reduce((a, b) => a + b, 0);
+      `);
+      expect(result).toBe(12); // [2, 4] => [4, 8] => 12
+    });
+
+    it('should handle string processing', async () => {
+      const result = await sandbox.execute(`
+        const text = "Hello World";
+        return text
+          .toLowerCase()
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+      `);
+      expect(result).toBe('Hello World');
+    });
+  });
+});

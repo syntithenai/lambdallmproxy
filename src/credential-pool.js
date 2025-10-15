@@ -86,7 +86,7 @@ function loadEnvironmentProviders() {
 
 /**
  * Build provider pool by merging user providers with environment providers
- * @param {Array<Object>} userProviders - Providers from user's settings
+ * @param {Array<Object>} userProviders - Providers from user's settings (UI-managed, respects enabled/disabled)
  * @param {boolean} isAuthorized - Whether user is authorized (in ALLOWED_EMAILS)
  * @returns {Array<Object>} Combined provider pool
  */
@@ -94,6 +94,7 @@ function buildProviderPool(userProviders = [], isAuthorized = false) {
     const pool = [];
     
     // Add user providers (always included, regardless of authorization)
+    // The UI now properly filters to only send enabled providers (enabled === true)
     if (userProviders && Array.isArray(userProviders) && userProviders.length > 0) {
         const validUserProviders = userProviders.filter(p => {
             // Validate required fields

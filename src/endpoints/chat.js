@@ -15,8 +15,22 @@ const { getOrEstimateUsage, providerReturnsUsage } = require('../utils/token-est
 const { buildProviderPool, hasAvailableProviders } = require('../credential-pool');
 const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
 const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
-const providerCatalog = require('../../PROVIDER_CATALOG.json');
 const { loadGuardrailConfig, validateGuardrailProvider } = require('../guardrails/config');
+
+// Load provider catalog with fallback
+let providerCatalog;
+try {
+    providerCatalog = require('../../PROVIDER_CATALOG.json');
+} catch (error) {
+    try {
+        providerCatalog = require('/var/task/PROVIDER_CATALOG.json');
+    } catch (error2) {
+        const path = require('path');
+        const catalogPath = path.join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
+        const fs = require('fs');
+        providerCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    }
+}
 const { createGuardrailValidator } = require('../guardrails/guardrail-factory');
 
 // NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
@@ -144,9 +158,20 @@ async function evaluateResponseComprehensiveness(messages, finalResponse, model,
                         evaluationMessages.push({ role: 'user', content: textContent });
                     }
                 }
-            } else if (msg.role === 'assistant' && msg.content && msg.content.trim().length > 0) {
-                // Include assistant responses (but not tool_calls)
-                evaluationMessages.push({ role: 'assistant', content: msg.content });
+            } else if (msg.role === 'assistant' && msg.content) {
+                // Extract content as string (handle both string and object formats)
+                let contentStr = '';
+                if (typeof msg.content === 'string') {
+                    contentStr = msg.content;
+                } else if (typeof msg.content === 'object') {
+                    // Handle object format (e.g., Gemini might return {content: "text"})
+                    contentStr = msg.content.content || JSON.stringify(msg.content);
+                }
+                
+                // Include assistant responses if they have content (but not tool_calls)
+                if (contentStr && contentStr.trim().length > 0) {
+                    evaluationMessages.push({ role: 'assistant', content: contentStr });
+                }
             }
             // Skip 'tool' and 'system' messages
         }
@@ -1181,7 +1206,7 @@ async function handler(event, responseStream) {
             } else if (provider.type === 'openai') {
                 return 'https://api.openai.com/v1/chat/completions';
             } else if (provider.type === 'gemini-free' || provider.type === 'gemini') {
-                return 'https://generativelanguage.googleapis.com/v1beta/openai/v1/chat/completions';
+                return 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
             } else if (provider.type === 'together') {
                 return 'https://api.together.xyz/v1/chat/completions';
             } else if (provider.type === 'atlascloud') {
@@ -1373,13 +1398,15 @@ async function handler(event, responseStream) {
             console.log(`📏 Using user-specified max_tokens: ${max_tokens}`);
         }
         
-        // Extract provider-specific API keys from provider pool for image generation
+        // Extract provider-specific API keys from provider pool for image generation and transcription
         const providerApiKeys = {};
         providerPool.forEach(provider => {
             if (provider.apiKey && provider.type) {
                 // Map provider types to standard keys
                 const keyMap = {
                     'openai': 'openaiApiKey',
+                    'groq': 'groqApiKey',
+                    'groq-free': 'groqApiKey', // Both groq and groq-free map to same key
                     'together': 'togetherApiKey',
                     'gemini': 'geminiApiKey',
                     'gemini-free': 'geminiApiKey',
@@ -1652,6 +1679,12 @@ async function handler(event, responseStream) {
             const attemptedModels = new Set([model]);
             const attemptedProviders = new Set([selectedProvider.id]);
             let sameModelRetries = 0;
+            
+            // Calculate complexity for model selection during retries
+            const totalLength = messages.reduce((sum, msg) => 
+                sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0
+            );
+            const isComplex = totalLength > 1000 || messages.length > 5 || (tools && tools.length > 0);
             
             // STEP 12: Track request timing for performance optimization
             let requestStartTime = null;
@@ -2093,14 +2126,21 @@ async function handler(event, responseStream) {
             const validToolCalls = currentToolCalls.filter(tc => tc && tc.function && tc.function.name);
             console.log(`🔧 DEBUG Tool calls: total=${currentToolCalls.length}, valid=${validToolCalls.length}, hasToolCalls=${hasToolCalls}`, JSON.stringify(validToolCalls));
             
+            // Check if we have computational tool calls that should execute even with substantive answers
+            const hasComputationalToolCall = validToolCalls.some(tc => 
+                tc.function.name === 'execute_javascript' || 
+                tc.function.name === 'search_web' ||
+                tc.function.name === 'scrape_web_content'
+            );
+            
             const shouldExecuteTools = hasToolCalls && 
                                       validToolCalls.length > 0 &&  // Use validToolCalls instead
                                       finishReason !== 'stop' &&  // LLM wants to continue
-                                      !hasSubstantiveAnswer &&     // No complete answer yet
+                                      (!hasSubstantiveAnswer || hasComputationalToolCall) && // Allow tools for computational tasks even with text
                                       !hasSuccessfulJsExecution && // No recent successful calculation
                                       !tooManyIterations;          // Safety limit
             
-            console.log(`🔍 Tool execution decision: iteration=${iterationCount}, hasToolCalls=${hasToolCalls}, finishReason=${finishReason}, contentLength=${assistantMessage.content.length}, hasSubstantiveAnswer=${hasSubstantiveAnswer}, hasSuccessfulJsExecution=${hasSuccessfulJsExecution}, tooManyIterations=${tooManyIterations}, shouldExecuteTools=${shouldExecuteTools}`);
+            console.log(`🔍 Tool execution decision: iteration=${iterationCount}, hasToolCalls=${hasToolCalls}, finishReason=${finishReason}, contentLength=${assistantMessage.content.length}, hasSubstantiveAnswer=${hasSubstantiveAnswer}, hasComputationalToolCall=${hasComputationalToolCall}, hasSuccessfulJsExecution=${hasSuccessfulJsExecution}, tooManyIterations=${tooManyIterations}, shouldExecuteTools=${shouldExecuteTools}`);
             
             const containsLegacyToolSyntax = LEGACY_TOOL_CALL_REGEX.test(assistantMessage.content || '');
             const missingStructuredToolCall = hasToolsConfigured && (!hasToolCalls || currentToolCalls.length === 0);
@@ -2448,6 +2488,18 @@ async function handler(event, responseStream) {
             if (!assistantMessageRecorded) {
                 currentMessages.push(assistantMessage);
                 assistantMessageRecorded = true;
+            }
+            
+            // Ensure content is a string (handle Gemini and other providers that might return objects)
+            if (typeof assistantMessage.content !== 'string') {
+                console.warn(`⚠️ assistantMessage.content is not a string (type: ${typeof assistantMessage.content}), converting...`);
+                if (typeof assistantMessage.content === 'object') {
+                    // Handle object format
+                    assistantMessage.content = assistantMessage.content.content || JSON.stringify(assistantMessage.content);
+                } else {
+                    assistantMessage.content = String(assistantMessage.content || '');
+                }
+                console.log(`   Converted to: ${assistantMessage.content.substring(0, 100)}...`);
             }
             
             console.log(`📤 Preparing final response: ${assistantMessage.content.length} chars`);

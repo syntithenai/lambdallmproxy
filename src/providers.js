@@ -27,7 +27,7 @@ const PROVIDERS = {
     },
     gemini: {
         hostname: 'generativelanguage.googleapis.com',
-        path: '/v1beta/openai/v1/chat/completions',
+        path: '/v1beta/openai/chat/completions',
         models: [
             'gemini-2.5-flash',    // 1M context, best for large context
             'gemini-2.5-pro',      // 1M context, highest quality

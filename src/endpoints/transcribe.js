@@ -1,13 +1,14 @@
 /**
  * Transcribe Endpoint
  * 
- * Handles audio transcription using OpenAI Whisper API.
+ * Handles audio transcription using Whisper API.
+ * Prefers Groq (FREE) over OpenAI (PAID).
  * 
  * POST /transcribe
  * Content-Type: multipart/form-data
  * Body: FormData with 'audio' field containing audio file
  * 
- * Returns: { text: string }
+ * Returns: { text: string, provider: 'groq'|'openai', cached: boolean }
  */
 
 const { verifyGoogleToken } = require('../auth');
@@ -101,13 +102,15 @@ function parseMultipartFormData(event) {
 }
 
 /**
- * Call OpenAI Whisper API for transcription using fetch (Node 18+)
+ * Call Whisper API for transcription (Groq or OpenAI)
+ * Prefers Groq (FREE) over OpenAI (PAID)
  * @param {Buffer} audioBuffer - Audio file buffer
  * @param {string} filename - Original filename
- * @param {string} apiKey - OpenAI API key
+ * @param {string} apiKey - API key (Groq or OpenAI)
+ * @param {string} provider - Provider type ('groq' or 'openai')
  * @returns {Promise<string>} Transcribed text
  */
-async function callWhisperAPI(audioBuffer, filename, apiKey) {
+async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai') {
     try {
         const FormData = require('form-data');
         const formData = new FormData();
@@ -116,18 +119,27 @@ async function callWhisperAPI(audioBuffer, filename, apiKey) {
             filename: filename || 'recording.webm',
             contentType: 'audio/webm'
         });
-        formData.append('model', 'whisper-1');
+        
+        // Select model and endpoint based on provider
+        const isGroq = provider === 'groq';
+        const model = isGroq ? 'whisper-large-v3-turbo' : 'whisper-1';
+        const hostname = isGroq ? 'api.groq.com' : 'api.openai.com';
+        const path = isGroq ? '/openai/v1/audio/transcriptions' : '/v1/audio/transcriptions';
+        
+        formData.append('model', model);
 
-        console.log('🎤 Calling Whisper API...');
-        console.log('API Key present:', !!apiKey);
-        console.log('API Key prefix:', apiKey ? apiKey.substring(0, 10) + '...' : 'none');
-        console.log('Audio buffer size:', audioBuffer.length);
-        console.log('Filename:', filename);
+        console.log(`🎤 Calling ${provider.toUpperCase()} Whisper API...`);
+        console.log(`   Model: ${model}`);
+        console.log(`   ${isGroq ? 'FREE' : 'PAID ($0.006/min)'} transcription`);
+        console.log('   API Key present:', !!apiKey);
+        console.log('   API Key prefix:', apiKey ? apiKey.substring(0, 10) + '...' : 'none');
+        console.log('   Audio buffer size:', audioBuffer.length);
+        console.log('   Filename:', filename);
 
         return new Promise((resolve, reject) => {
             const options = {
-                hostname: 'api.openai.com',
-                path: '/v1/audio/transcriptions',
+                hostname: hostname,
+                path: path,
                 method: 'POST',
                 headers: {
                     ...formData.getHeaders(),
@@ -267,19 +279,36 @@ async function handler(event) {
         const audioHash = crypto.createHash('md5').update(audioPart.data).digest('hex');
         console.log(`🔑 Audio hash: ${audioHash}`);
 
-        // Get OpenAI API key from environment providers
+        // Get Whisper API key from environment providers
+        // Priority: Groq (FREE) > OpenAI (PAID)
         const envProviders = loadEnvironmentProviders();
-        const openaiProvider = envProviders.find(p => p.type === 'openai');
-        const openaiApiKey = openaiProvider?.apiKey;
+        let whisperApiKey = null;
+        let whisperProvider = null;
         
-        if (!openaiApiKey) {
+        // Check for Groq providers first (FREE transcription)
+        const groqProvider = envProviders.find(p => p.type === 'groq' || p.type === 'groq-free');
+        if (groqProvider?.apiKey) {
+            whisperApiKey = groqProvider.apiKey;
+            whisperProvider = 'groq';
+            console.log('🎤 Using Groq Whisper (FREE transcription)');
+        } else {
+            // Fallback to OpenAI (PAID transcription)
+            const openaiProvider = envProviders.find(p => p.type === 'openai');
+            if (openaiProvider?.apiKey) {
+                whisperApiKey = openaiProvider.apiKey;
+                whisperProvider = 'openai';
+                console.log('🎤 Using OpenAI Whisper (PAID transcription - $0.006/min)');
+            }
+        }
+        
+        if (!whisperApiKey) {
             return {
                 statusCode: 500,
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    error: 'OpenAI API key not configured. Please add an OpenAI provider with type="openai" in environment variables.'
+                    error: 'Whisper API key not configured. Please add a Groq (groq-free/groq) or OpenAI (openai) provider in environment variables. Groq provides FREE transcription.'
                 })
             };
         }
@@ -304,14 +333,18 @@ async function handler(event) {
         // If not in cache, call Whisper API
         if (!transcribedText) {
             try {
-                transcribedText = await callWhisperAPI(audioPart.data, audioPart.filename, openaiApiKey);
-                console.log(`✅ Transcription successful: ${transcribedText.length} characters`);
+                transcribedText = await callWhisperAPI(audioPart.data, audioPart.filename, whisperApiKey, whisperProvider);
+                console.log(`✅ Transcription successful: ${transcribedText.length} characters (via ${whisperProvider})`);
                 
                 // Save to cache (non-blocking) - TTL 24 hours for transcriptions
                 const cacheKey = getCacheKey('transcriptions', { audioHash });
-                saveToCache('transcriptions', cacheKey, { text: transcribedText, filename: audioPart.filename }, 86400)
+                saveToCache('transcriptions', cacheKey, { 
+                    text: transcribedText, 
+                    filename: audioPart.filename,
+                    provider: whisperProvider 
+                }, 86400)
                     .then(() => {
-                        console.log(`💾 Cached transcription: ${audioHash}`);
+                        console.log(`💾 Cached transcription: ${audioHash} (${whisperProvider})`);
                     })
                     .catch(error => {
                         console.warn(`Cache write error for transcription:`, error.message);
@@ -339,7 +372,8 @@ async function handler(event) {
             body: JSON.stringify({
                 text: transcribedText,
                 cached: fromCache,
-                audioHash: audioHash
+                audioHash: audioHash,
+                provider: whisperProvider // Include provider info in response
             })
         };
 

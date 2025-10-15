@@ -63,8 +63,8 @@
               "tokensPerMinute": 6000,
               "requestsPerMinute": 30
             },
-            "deprecated": false,
-            "available": true
+            "deprecated": true,
+            "available": false
           }
         }
       },
@@ -307,7 +307,7 @@
         },
         "models": {
           "gemini-1.5-flash": {
-            "id": "gemini-1.5-flash",
+            "id": "gemini-2.5-flash",
             "category": "small",
             "contextWindow": 1000000,
             "maxOutput": 8192,
@@ -319,16 +319,39 @@
             },
             "supportsTools": true,
             "supportsVision": true,
-            "supportsStreaming": true,
+            "supportsStreaming": false,
             "rateLimits": {
               "tokensPerMinute": 1000000,
               "requestsPerMinute": 15
             },
             "deprecated": false,
-            "available": true
+            "available": true,
+            "note": "Using gemini-2.5-flash directly (fast, non-reasoning)"
           },
           "gemini-1.5-pro": {
-            "id": "gemini-1.5-pro",
+            "id": "gemini-2.5-flash",
+            "category": "large",
+            "contextWindow": 1000000,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": false,
+            "rateLimits": {
+              "tokensPerMinute": 1000000,
+              "requestsPerMinute": 15
+            },
+            "deprecated": false,
+            "available": true,
+            "note": "Using gemini-2.5-flash (fast, non-reasoning) instead of gemini-pro-latest to avoid thinking token issues"
+          },
+          "gemini-2.5-pro": {
+            "id": "gemini-2.5-pro",
             "category": "large",
             "contextWindow": 2000000,
             "maxOutput": 8192,
@@ -340,7 +363,7 @@
             },
             "supportsTools": true,
             "supportsVision": true,
-            "supportsStreaming": true,
+            "supportsStreaming": false,
             "rateLimits": {
               "tokensPerMinute": 1000000,
               "requestsPerMinute": 15
@@ -928,6 +951,7 @@
             "qualityTier": "standard",
             "contextWindow": 1000,
             "supportedSizes": ["256x256", "512x512", "1024x1024"],
+            "supportedQualities": ["standard"],
             "pricing": {
               "256": 0.016,
               "512": 0.018,
@@ -953,6 +977,7 @@
             "qualityTier": "standard",
             "contextWindow": 77,
             "supportedSizes": ["1024x1024", "768x768", "512x512"],
+            "supportedQualities": ["standard"],
             "pricing": {
               "default": 0.002,
               "unit": "per_image"
@@ -968,6 +993,7 @@
             "qualityTier": "fast",
             "contextWindow": 77,
             "supportedSizes": ["768x768", "512x512"],
+            "supportedQualities": ["standard"],
             "pricing": {
               "default": 0.001,
               "unit": "per_image"
@@ -983,6 +1009,7 @@
             "qualityTier": "high",
             "contextWindow": 77,
             "supportedSizes": ["1024x1024", "768x768"],
+            "supportedQualities": ["standard"],
             "pricing": {
               "default": 0.003,
               "unit": "per_image"
@@ -1006,6 +1033,7 @@
             "qualityTier": "standard",
             "contextWindow": 77,
             "supportedSizes": ["1024x1024", "768x1024", "1024x768"],
+            "supportedQualities": ["standard"],
             "pricing": {
               "default": 0.0025,
               "unit": "per_image"
@@ -1021,6 +1049,7 @@
             "qualityTier": "high",
             "contextWindow": 77,
             "supportedSizes": ["512x512", "768x768"],
+            "supportedQualities": ["standard"],
             "pricing": {
               "default": 0.0018,
               "unit": "per_image"

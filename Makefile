@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer
+.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete
 
 # Default target - Show help
 help:
@@ -20,6 +20,14 @@ help:
 	@echo "  make deploy-puppeteer           - Deploy Puppeteer Lambda code"
 	@echo "  make setup-puppeteer-permissions - Allow main Lambda to invoke Puppeteer"
 	@echo "  make logs-puppeteer             - View Puppeteer Lambda logs"
+	@echo ""
+	@echo "RAG Knowledge Base:"
+	@echo "  make rag-ingest          - Ingest documents into knowledge base"
+	@echo "  make rag-stats           - Show database statistics"
+	@echo "  make rag-list            - List all documents in knowledge base"
+	@echo "  make rag-search QUERY='...'"
+	@echo "                           - Search knowledge base"
+	@echo "  make rag-delete ID='...' - Delete document by snippet ID"
 	@echo ""
 	@echo "UI/Documentation:"
 	@echo "  make build-ui            - Build React UI to docs/"
@@ -87,7 +95,7 @@ setup-puppeteer-permissions:
 # View Puppeteer Lambda logs
 logs-puppeteer:
 	@echo "📋 Viewing Puppeteer Lambda logs..."
-	@aws logs tail /aws/lambda/llmproxy-puppeteer --follow --region us-east-1
+	@AWS_PAGER="" aws logs tail /aws/lambda/llmproxy-puppeteer --since 5m --format short --region us-east-1
 
 # Build React UI to docs/
 build-ui:
@@ -131,12 +139,12 @@ serve:
 # View recent Lambda CloudWatch logs
 logs:
 	@echo "📋 Fetching recent Lambda logs..."
-	@aws logs tail /aws/lambda/llmproxy --since 5m --format short
+	@AWS_PAGER="" aws logs tail /aws/lambda/llmproxy --since 5m --format short
 
 # Tail Lambda CloudWatch logs (live)
 logs-tail:
 	@echo "📋 Tailing Lambda logs (Ctrl+C to stop)..."
-	@aws logs tail /aws/lambda/llmproxy --follow --format short
+	@AWS_PAGER="" aws logs tail /aws/lambda/llmproxy --follow --format short
 
 # Run Lambda function locally on port 3000
 run-lambda-local:
@@ -179,3 +187,65 @@ dev:
 	sleep 2; \
 	cd ui-new && npm run dev & \
 	wait
+
+# ================================================================
+# RAG Knowledge Base Management
+# ================================================================
+
+# Ingest documents into knowledge base
+rag-ingest:
+	@echo "📚 Ingesting documents into RAG knowledge base..."
+	@if [ -z "$(OPENAI_API_KEY)" ]; then \
+		echo "⚠️  Error: OPENAI_API_KEY environment variable not set"; \
+		echo "Set it with: export OPENAI_API_KEY='your-key'"; \
+		exit 1; \
+	fi
+	@if [ ! -d knowledge-base ]; then \
+		echo "⚠️  Error: knowledge-base/ directory not found"; \
+		exit 1; \
+	fi
+	@chmod +x scripts/ingest-documents.js
+	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/ingest-documents.js ./knowledge-base
+
+# Show database statistics
+rag-stats:
+	@echo "📊 RAG Knowledge Base Statistics"
+	@echo ""
+	@chmod +x scripts/db-stats.js
+	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/db-stats.js
+
+# List all documents in knowledge base
+rag-list:
+	@echo "📋 Listing documents in knowledge base..."
+	@echo ""
+	@chmod +x scripts/list-documents.js
+	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/list-documents.js
+
+# Search knowledge base (usage: make rag-search QUERY="your search query")
+rag-search:
+	@if [ -z "$(QUERY)" ]; then \
+		echo "⚠️  Error: QUERY parameter required"; \
+		echo "Usage: make rag-search QUERY='your search query'"; \
+		echo "Example: make rag-search QUERY='How does RAG work?'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(OPENAI_API_KEY)" ]; then \
+		echo "⚠️  Error: OPENAI_API_KEY environment variable not set"; \
+		echo "Set it with: export OPENAI_API_KEY='your-key'"; \
+		exit 1; \
+	fi
+	@chmod +x scripts/search-documents.js
+	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/search-documents.js "$(QUERY)"
+
+# Delete document by snippet ID (usage: make rag-delete ID="snippet-id")
+rag-delete:
+	@if [ -z "$(ID)" ]; then \
+		echo "⚠️  Error: ID parameter required"; \
+		echo "Usage: make rag-delete ID='snippet-id'"; \
+		echo ""; \
+		echo "To see available IDs, run: make rag-list"; \
+		echo "Or use: node scripts/delete-document.js --list"; \
+		exit 1; \
+	fi
+	@chmod +x scripts/delete-document.js
+	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/delete-document.js "$(ID)"

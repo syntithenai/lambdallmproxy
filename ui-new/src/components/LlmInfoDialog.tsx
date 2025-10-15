@@ -2,6 +2,7 @@ import React from 'react';
 import { JsonTree } from './JsonTree';
 import { useDialogClose } from '../hooks/useDialogClose';
 import { formatCost, getCostBreakdown, calculateDualPricing } from '../utils/pricing';
+import { useToast } from './ToastManager';
 
 interface LlmApiCall {
   phase: string;
@@ -33,6 +34,19 @@ interface LlmInfoDialogProps {
 
 export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluations, onClose }) => {
   const dialogRef = useDialogClose(true, onClose);
+  const { showSuccess, showError } = useToast();
+
+  // Copy JSON to clipboard
+  const copyToClipboard = async (data: any, label: string) => {
+    try {
+      const jsonString = JSON.stringify(data, null, 2);
+      await navigator.clipboard.writeText(jsonString);
+      showSuccess(`${label} copied to clipboard!`);
+    } catch (err) {
+      showError(`Failed to copy ${label}`);
+      console.error('Copy failed:', err);
+    }
+  };
 
   // Parse JSON strings in response object recursively
   const parseJsonStrings = (obj: any): any => {
@@ -399,9 +413,21 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
 
                     {/* Full Request Body */}
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        📤 Request Body
-                      </h4>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          📤 Request Body
+                        </h4>
+                        <button
+                          onClick={() => copyToClipboard(call.request, 'Request')}
+                          className="px-2 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
+                          title="Copy request JSON to clipboard"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          Copy
+                        </button>
+                      </div>
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto">
                         <div className="text-xs font-mono">
                           <JsonTree 
@@ -416,9 +442,21 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
                     {/* Response Headers */}
                     {call.response && responseHeaders && (
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                          📋 Response Headers
-                        </h4>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            📋 Response Headers
+                          </h4>
+                          <button
+                            onClick={() => copyToClipboard(responseHeaders, 'Headers')}
+                            className="px-2 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
+                            title="Copy headers JSON to clipboard"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy
+                          </button>
+                        </div>
                         <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded border border-blue-200 dark:border-blue-800 max-h-64 overflow-y-auto">
                           <div className="text-xs font-mono">
                             <JsonTree data={responseHeaders} expanded={false} />
@@ -430,9 +468,21 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
                     {/* Response Details */}
                     {call.response && (
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                          📥 Response
-                        </h4>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            📥 Response
+                          </h4>
+                          <button
+                            onClick={() => copyToClipboard(call.response, 'Response')}
+                            className="px-2 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
+                            title="Copy response JSON to clipboard"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy
+                          </button>
+                        </div>
                         <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded border border-green-200 dark:border-green-800 max-h-96 overflow-y-auto">
                           <div className="text-xs font-mono">
                             <JsonTree 

@@ -4,6 +4,9 @@
 # Use this for rapid iterations during development
 set -e
 
+# Disable AWS CLI pager to prevent console jamming
+export AWS_PAGER=""
+
 # Configuration
 FUNCTION_NAME="llmproxy"
 REGION="us-east-1"
@@ -62,7 +65,7 @@ cp "$OLDPWD"/src/groq-rate-limits.js ./
 cp "$OLDPWD"/src/youtube-api.js ./ 2>/dev/null || true
 
 # Copy modular components
-mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers
+mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers guardrails providers
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
@@ -74,6 +77,8 @@ cp -r "$OLDPWD"/src/routing/* ./routing/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/retry/* ./retry/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/mcp/* ./mcp/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/guardrails/* ./guardrails/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/providers/* ./providers/ 2>/dev/null || true
 
 # Copy PROVIDER_CATALOG.json (required for image generation)
 if cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null; then

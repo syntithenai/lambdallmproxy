@@ -59,18 +59,18 @@ export const MediaSections: React.FC<MediaSectionsProps> = ({
                 return (
                   <div 
                     key={idx}
-                    className="relative group rounded overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400"
+                    className="relative group rounded overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 h-24"
                   >
                     <a 
                       href={img}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block"
+                      className="block w-full h-full"
                     >
                       <img 
                         src={img} 
                         alt={`Image ${idx + 1}`}
-                        className="w-full h-24 object-cover"
+                        className="w-full h-full object-cover"
                         loading="lazy"
                         onError={() => setHiddenImages(prev => new Set(prev).add(idx))}
                       />

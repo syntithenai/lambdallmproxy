@@ -1,4 +1,3 @@
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
@@ -16,8 +15,9 @@ if (urlParams.get('reset') === 'true') {
   window.history.replaceState({}, '', newUrl);
 }
 
+// StrictMode disabled temporarily due to AWS Lambda concurrency limit (10)
+// StrictMode causes effects to run twice in development, doubling API calls
+// Re-enable once AWS concurrency limit is increased to 1000
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+  <App />
 )

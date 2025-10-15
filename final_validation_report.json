@@ -1,0 +1,27 @@
+{
+  "before": {
+    "complete": 24,
+    "incomplete": 8,
+    "totalModels": 32
+  },
+  "after": {
+    "complete": 34,
+    "incomplete": 0,
+    "totalModels": 34
+  },
+  "chat": {
+    "total": 25,
+    "complete": 25,
+    "issues": []
+  },
+  "image": {
+    "total": 7,
+    "complete": 7,
+    "issues": []
+  },
+  "whisper": {
+    "total": 2,
+    "complete": 2,
+    "issues": []
+  }
+}

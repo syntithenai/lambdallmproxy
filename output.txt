@@ -1,47 +1,31 @@
-⚡ Deploying Lambda function (fast)...
-./scripts/deploy-fast.sh
-[0;34m⚡ Fast deploying Lambda function llmproxy...[0m
-[0;32m✅ Using Layer ARN: [0m
-[0;32m✅ Copied PROVIDER_CATALOG.json[0m
--rw-rw-r-- 1 stever stever 28K Oct 12 18:33 PROVIDER_CATALOG.json
-[1;33m📦 Code files to deploy:[0m
-./credential-pool.js
-./search.js
-./utils/stop-signal.js
-./utils/progress-emitter.js
-./utils/cache.js
-./utils/error-handling.js
-./utils/circuit-breaker.js
-./utils/provider-health.js
-./utils/token-estimation.js
-./utils/memory-tracker.js
-./model-selection/rate-limit-tracker.js
-./model-selection/token-calculator.js
-./model-selection/selector.js
-./model-selection/categorizer.js
-./model-selection/request-analyzer.js
-./pricing_scraper.js
-./services/google-sheets-logger.js
-./services/tracking-service.js
-./html-parser.js
-./config/memory.js
-[1;33m📦 JSON files to deploy:[0m
-./PROVIDER_CATALOG.json
-[1;33m🗜️  Creating lightweight package...[0m
-[0;32mPackage size: 249K (much smaller without dependencies!)[0m
-[1;33m☁️  Uploading to S3...[0m
-Completed 248.0 KiB/248.0 KiB (95.1 KiB/s) with 1 file(s) remainingupload: ./function.zip to s3://llmproxy-deployments-15881/functions/llmproxy-20251012-183331.zip
-[1;33m🚀 Updating Lambda function...[0m
-[0;32m✅ Function code deployed successfully[0m
-[1;33m🔗 Ensuring layer is attached...[0m
-[0;32m✅ Layer attached[0m
-[1;33m⏳ Waiting for function to be ready...[0m
-[0;34mStatus: Active	Successful[0m
-[1;33m🔍 Retrieving Lambda Function URL...[0m
-[0;32m✅ Lambda URL: https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws[0m
-[1;33m📝 Updating UI environment configuration...[0m
-[0;32m✅ UI .env updated with Lambda URL[0m
-[0;34m   Rebuild UI with: make build-ui or make deploy-ui[0m
-[0;32m🎉 Fast deployment complete![0m
-[0;34m⚡ Deployment time: ~5-10 seconds vs 2-3 minutes with full deploy[0m
-[1;33m💡 Test at: https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws[0m
+[0;34m🚀 Deploying Lambda function llmproxy...[0m
+[1;33m📝 Loading configuration from .env file...[0m
+[1;33m📦 Installing production dependencies...[0m
+npm warn config production Use `--omit=dev` instead.
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+npm warn deprecated fluent-ffmpeg@2.1.3: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+
+added 59 packages, and audited 60 packages in 10s
+
+12 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+[1;33m📦 Files to be packaged:[0m
+-rw-rw-r-- 1 stever stever   5145 Oct 15 16:18 auth.js
+-rw-rw-r-- 1 stever stever   6011 Oct 15 16:18 credential-pool.js
+-rw-rw-r-- 1 stever stever   3987 Oct 15 16:18 groq-rate-limits.js
+-rw-rw-r-- 1 stever stever  10309 Oct 15 16:18 html-content-extractor.js
+-rw-rw-r-- 1 stever stever  18308 Oct 15 16:18 html-parser.js
+-rw-rw-r-- 1 stever stever  17315 Oct 15 16:18 index.js
+-rw-rw-r-- 1 stever stever  57469 Oct 15 16:18 lambda_search_llm_handler.js
+-rw-rw-r-- 1 stever stever  17611 Oct 15 16:18 llm_tools_adapter.js
+-rw-rw-r-- 1 stever stever   9780 Oct 15 16:18 memory-tracker.js
+-rw-rw-r-- 1 stever stever  13787 Oct 15 16:18 model-selector.js
+-rw-rw-r-- 1 stever stever  10607 Oct 15 16:18 pricing.js
+-rw-rw-r-- 1 stever stever  12584 Oct 15 16:18 pricing_scraper.js
+-rw-rw-r-- 1 stever stever   5129 Oct 15 16:18 providers.js
+-rw-rw-r-- 1 stever stever  75117 Oct 15 16:18 search.js
+-rw-rw-r-- 1 stever stever   5935 Oct 15 16:18 tavily-search.js
+-rw-rw-r-- 1 stever stever 149231 Oct 15 16:18 tools.js
+-rw-rw-r-- 1 stever stever  24898 Oct 15 16:18 youtube-api.js

@@ -93,28 +93,67 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
             complexity_assessment: "medium"
         };
     
-        const planningPrompt = `Analyze this user query and determine the optimal research strategy and expert approach:
+
+                const planningPrompt = `You are an expert research strategist. Analyze this user query and classify it into one of these categories:
+
+1. SIMPLE: Straightforward question that doesn't need extensive planning
+     - Single fact lookup, definition, simple calculation
+     - Example: "What is the capital of France?"
+   
+2. OVERVIEW: User wants a comprehensive understanding of a topic
+     - Broad exploration with multiple angles
+     - Multiple search queries and sub-questions needed
+     - Example: "Tell me about climate change"
+   
+3. LONG_FORM: User wants a detailed document with sections and images
+     - Explicitly asks for "detailed report", "comprehensive guide", "full analysis"
+     - Requires multi-stage document building with snippets
+     - Example: "Create a comprehensive guide to starting a business"
+   
+4. NEEDS_CLARIFICATION: Query is too vague or ambiguous
+     - Missing critical context or details
+     - Multiple interpretations possible
+     - Example: "Tell me about it" (what is "it"?)
 
 Query: "${userQuery}"
 
-Provide a comprehensive analysis that considers:
-1. What specific research questions are needed to gather all necessary facts
-2. What expert persona/role would be most qualified to provide the best answer
-3. Whether the query requires mathematical calculations, data processing, or computational analysis
-4. The complexity level and depth of analysis needed
-5. Any potential challenges or nuances in answering this query
-
-You may provide detailed reasoning if the query is complex or multi-faceted.
-
-Respond with JSON in this exact format:
+Respond with JSON in this format:
 {
-  "research_questions": ["Question 1 phrased as a clear search query?", "Question 2?", "Question 3?"],
-  "optimal_persona": "I am a [specific expert role/title] with expertise in [domain]. I specialize in [specific areas and computational tools when relevant]. I provide direct, concise answers that start with the key result.",
-  "reasoning": "Detailed explanation of why this approach and persona are optimal, including analysis complexity, computational tools needed, potential challenges, and research strategy rationale. Be thorough if the query warrants it.",
-  "complexity_assessment": "low|medium|high - IMPORTANT: This determines response token allocation. LOW=1024 tokens (simple facts), MEDIUM=2048 tokens (standard analysis), HIGH=4096 tokens (comprehensive analysis)"
+    "query_type": "SIMPLE|OVERVIEW|LONG_FORM|NEEDS_CLARIFICATION",
+    "reasoning": "Explain why you classified it this way and your analysis",
+  
+    // For SIMPLE queries
+    "simple_instruction": "Brief note that normal chat flow is sufficient",
+  
+    // For OVERVIEW queries
+    "search_strategies": [
+        {"keywords": ["term 1", "term 2"], "purpose": "Why search this"},
+        {"keywords": ["term 3"], "purpose": "What this will reveal"}
+    ],
+    "research_questions": ["Question 1?", "Question 2?", "Question 3?"],
+    "enhanced_system_prompt": "System prompt additions for broad topic coverage",
+    "enhanced_user_prompt": "User prompt additions/clarifications",
+  
+    // For LONG_FORM queries
+    "document_sections": [
+        {"title": "Introduction", "keywords": ["..."], "questions": ["..."]},
+        {"title": "Section 2", "keywords": ["..."], "questions": ["..."]}
+    ],
+    "snippet_workflow": "Step-by-step workflow for building sections and combining",
+  
+    // For NEEDS_CLARIFICATION
+    "clarification_questions": [
+        "What specific aspect are you interested in?",
+        "What is the context or use case?",
+        "What level of detail do you need?"
+    ],
+  
+    // Common fields
+    "optimal_persona": "Expert role and expertise description",
+    "complexity_assessment": "low|medium|high"
 }
 
-Generate 1-5 specific, targeted research questions based on query complexity. For complex queries, provide more detailed reasoning and additional research questions. Be specific about the expert role and tailor it precisely to the query domain.`;
+IMPORTANT: Only include fields relevant to the query_type. Be decisive in classification.`;
 
     try {
         // Execute planning API call to determine optimal research strategy
@@ -969,7 +1008,128 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
 
 // StreamingResponse class moved to src/streaming/sse-writer.js
 
-// Export only the handler
+/**
+ * Generate planning prompt for research strategy analysis
+ * @param {string} query - The user query to analyze
+ * @returns {string} - Formatted planning prompt
+ */
+function generatePlanningPrompt(query) {
+    return `Analyze this research query and provide a comprehensive planning response.
+
+**Query to analyze:** "${query}"
+
+Please provide your analysis in the following JSON format based on the query type:
+
+**For overview queries:**
+{
+  "queryType": "overview",
+  "complexity": "simple|moderate|complex",
+  "researchApproach": "direct|search-based|comprehensive",
+  "searchQueries": [
+    "primary search term 1", "primary search term 2", "primary search term 3",
+    "alternative phrasing 1", "alternative phrasing 2", "alternative phrasing 3",
+    "technical term 1", "technical term 2", "specific subtopic 1", "specific subtopic 2"
+  ],
+  "researchQuestions": [
+    "What is the fundamental question about X?", "How does Y relate to Z?", "What are the key factors affecting A?",
+    "What are the current trends in B?", "What are the main challenges with C?", "How do experts view D?",
+    "What evidence supports E?", "What are the implications of F?", "How does this compare to G?", "What future developments are expected?"
+  ],
+  "suggestedSources": [
+    {"type": "academic", "examples": ["PubMed", "Google Scholar", "ResearchGate", "JSTOR", "specific academic databases"]},
+    {"type": "government", "examples": ["CDC", "NIH", "FDA", "specific government agencies"]},
+    {"type": "professional", "examples": ["professional associations", "industry organizations", "certification bodies"]},
+    {"type": "news", "examples": ["Reuters", "Associated Press", "BBC", "specialized trade publications"]},
+    {"type": "specialized", "examples": ["domain-specific databases", "specialized websites", "expert blogs", "conference proceedings"]}
+  ],
+  "expertPersona": "You are a [specific expert type] with expertise in [specific area]. You have [specific qualifications/experience].",
+  "enhancedSystemPrompt": "You are a [expert persona]. Your task is to research and analyze [topic] by searching for information about: [list key areas]. Focus on answering: [research questions]. Use a [methodology] approach and aim to find [estimatedSources] high-quality sources from suggested source types.",
+  "enhancedUserPrompt": "Please research [topic] comprehensively. Search for: [searchQueries]. Answer these key questions: [researchQuestions]. Consult these types of sources: [suggestedSources]. Provide detailed analysis based on your findings.",
+  "estimatedSources": 8-15,
+  "methodology": "description of specific research approach and analysis method"
+}
+
+**For long-form queries:**
+{
+  "queryType": "long-form",
+  "complexity": "simple|moderate|complex", 
+  "researchApproach": "comprehensive",
+  "documentSections": [
+    {"title": "Section 1 Title", "keywords": ["keyword1", "keyword2", "keyword3", "related term1", "alternative term1"], "questions": ["Primary question?", "Secondary question?", "Supporting question?"]},
+    {"title": "Section 2 Title", "keywords": ["keyword4", "keyword5", "keyword6", "related term2", "alternative term2"], "questions": ["Primary question?", "Secondary question?", "Supporting question?"]},
+    {"title": "Section 3 Title", "keywords": ["keyword7", "keyword8", "keyword9", "related term3", "alternative term3"], "questions": ["Primary question?", "Secondary question?", "Supporting question?"]}
+  ],
+  "suggestedSources": [
+    {"type": "academic", "examples": ["relevant academic databases", "peer-reviewed journals", "research institutions"]},
+    {"type": "authoritative", "examples": ["government agencies", "official organizations", "expert institutions"]},
+    {"type": "current", "examples": ["recent publications", "industry reports", "current news sources"]},
+    {"type": "specialized", "examples": ["domain-specific resources", "professional publications", "expert interviews"]}
+  ],
+  "expertPersona": "You are a [specific expert type] specializing in [area].",
+  "snippetWorkflow": "1. Research Section 1 using keywords [keywords] from [suggestedSources] and answer [questions]\n2. Research Section 2 using keywords [keywords] from [suggestedSources] and answer [questions]\n3. Research Section 3 using keywords [keywords] from [suggestedSources] and answer [questions]\n4. Synthesize findings into comprehensive document",
+  "enhancedSystemPrompt": "You are a [expert persona]. You will create a comprehensive document about [topic] with sections: [section titles]. For each section, research using the specified keywords from suggested source types and answer the associated questions.",
+  "enhancedUserPrompt": "Create a comprehensive document about [topic]. Follow this workflow: [snippetWorkflow]. Research each section thoroughly using the provided keywords from these source types: [suggestedSources]. Answer all associated questions.",
+  "estimatedSources": 12-25,
+  "methodology": "Section-by-section research and synthesis approach with diverse source consultation"
+}
+
+**For minimal queries:**
+{
+  "queryType": "minimal",
+  "complexity": "simple",
+  "researchApproach": "direct",
+  "simpleInstruction": "Brief, direct answer to the query",
+  "expertPersona": "You are a knowledgeable assistant.",
+  "enhancedSystemPrompt": "Provide a direct, factual answer to the user's question.",
+  "enhancedUserPrompt": "[original query]"
+}
+
+**For clarification queries:**
+{
+  "queryType": "clarification", 
+  "complexity": "unknown",
+  "clarificationQuestions": ["What specifically do you mean by X?", "Are you looking for Y or Z?"],
+  "expertPersona": "You are a helpful research assistant.",
+  "enhancedSystemPrompt": "Ask clarifying questions to better understand the user's research needs.",
+  "enhancedUserPrompt": "I need clarification on your request. [clarificationQuestions]"
+}
+
+**CRITICAL JSON Requirements:**
+- Response MUST be valid JSON only - no additional text before or after
+- All strings must use double quotes, not single quotes
+- No trailing commas in arrays or objects
+- Escape quotes inside strings with backslashes
+- Arrays must be properly closed with ]
+- Objects must be properly closed with }
+
+**Guidelines:**
+- **searchQueries**: Create 8-12 diverse search terms including: primary terms, alternative phrasings, technical terms, related concepts, and specific subtopics
+- **researchQuestions**: Generate 8-15 comprehensive questions covering: fundamental concepts, relationships, current trends, challenges, expert perspectives, evidence, implications, comparisons, and future developments  
+- **suggestedSources**: Provide 4-6 source categories with specific examples of where to find authoritative information
+- **enhancedSystemPrompt**: Build a detailed system prompt that incorporates the expert persona, search queries, research questions, suggested sources, and methodology
+- **enhancedUserPrompt**: Create a detailed user prompt that references the search queries, research questions, suggested sources, and expected analysis
+- **expertPersona**: Define a specific expert role with relevant credentials and specialization
+- **methodology**: Describe the specific research and analysis approach including source diversification
+
+**JSON Validation Checklist:**
+✓ Valid JSON structure with proper opening and closing braces
+✓ All property names in double quotes
+✓ All string values in double quotes with escaped internal quotes
+✓ No trailing commas before closing braces or brackets
+✓ Proper array syntax with square brackets
+✓ Consistent formatting throughout
+
+Determine the optimal research strategy:
+- **minimal**: Simple factual queries needing brief answers
+- **overview**: Broad topics needing comprehensive coverage with multiple sources
+- **long-form**: Complex analysis requiring structured document creation  
+- **clarification**: Ambiguous queries needing clarification
+
+IMPORTANT: The enhancedSystemPrompt and enhancedUserPrompt must incorporate the planning details (searchQueries, researchQuestions, methodology, etc.) to guide the actual research process.`;
+}
+
+// Export the handler and utility functions
 module.exports = {
-    handler: exports.handler
+    handler: exports.handler,
+    generatePlanningPrompt
 };

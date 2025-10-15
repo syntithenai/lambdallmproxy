@@ -9,6 +9,8 @@ import { YouTubeAuthProvider } from './contexts/YouTubeAuthContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
 import { CastProvider } from './contexts/CastContext';
 import { LocationProvider } from './contexts/LocationContext';
+import { TTSProvider } from './contexts/TTSContext';
+import { TTS_FEATURE_ENABLED } from './types/tts';
 import { ToastProvider } from './components/ToastManager';
 import { chatHistoryDB } from './utils/chatHistoryDB';
 import { LoginScreen } from './components/LoginScreen';
@@ -18,6 +20,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
 import { SwagPage } from './components/SwagPage';
 import ProviderSetupGate from './components/ProviderSetupGate';
+import { GlobalTTSStopButton } from './components/ReadButton';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
 // Create a wrapper component that can access auth context
@@ -152,27 +155,29 @@ function AppContent() {
       {/* Header - Only visible when authenticated */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div className="flex justify-between items-center max-w-screen-2xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Research Agent
-          </h1>
+          <img 
+            src={`${import.meta.env.BASE_URL}agent.png`}
+            alt="Research Agent" 
+            className="h-12 w-auto object-contain"
+          />
           <div className="flex items-center gap-3">
             <PlaylistButton />
             
             {/* Usage Badge */}
-            {usage && !usageLoading && (
+            {usage && !usageLoading && typeof usage.totalCost === 'number' && typeof usage.creditLimit === 'number' && (
               <div 
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+                className={`flex items-center gap-1 px-2 py-1.5 rounded-lg ${
                   usage.exceeded 
                     ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' 
                     : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
                 }`}
                 title={`You have used $${usage.totalCost.toFixed(2)} of your $${usage.creditLimit.toFixed(2)} credit`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-sm font-medium">
-                  Usage ${usage.totalCost.toFixed(2)} / Credit ${usage.creditLimit.toFixed(2)}
+                <span className="text-xs font-medium">
+                  ${usage.totalCost.toFixed(2)} / ${usage.creditLimit.toFixed(2)}
                 </span>
               </div>
             )}
@@ -216,6 +221,9 @@ function AppContent() {
         </div>
       </header>
 
+      {/* Global TTS Stop Button */}
+      {TTS_FEATURE_ENABLED && <GlobalTTSStopButton />}
+
       {/* Main Content - Only visible when authenticated */}
       <main className="flex-1 overflow-hidden">
         <div className="h-full max-w-screen-2xl mx-auto">
@@ -256,17 +264,33 @@ function App() {
           <UsageProvider>
             <SettingsProvider>
               <LocationProvider>
-                <CastProvider>
-                  <YouTubeAuthProvider>
-                    <PlaylistProvider>
-                      <SearchResultsProvider>
-                        <SwagProvider>
-                          <AppContent />
-                        </SwagProvider>
-                      </SearchResultsProvider>
-                    </PlaylistProvider>
-                  </YouTubeAuthProvider>
-                </CastProvider>
+                {TTS_FEATURE_ENABLED ? (
+                  <TTSProvider>
+                    <CastProvider>
+                      <YouTubeAuthProvider>
+                        <PlaylistProvider>
+                          <SearchResultsProvider>
+                            <SwagProvider>
+                              <AppContent />
+                            </SwagProvider>
+                          </SearchResultsProvider>
+                        </PlaylistProvider>
+                      </YouTubeAuthProvider>
+                    </CastProvider>
+                  </TTSProvider>
+                ) : (
+                  <CastProvider>
+                    <YouTubeAuthProvider>
+                      <PlaylistProvider>
+                        <SearchResultsProvider>
+                          <SwagProvider>
+                            <AppContent />
+                          </SwagProvider>
+                        </SearchResultsProvider>
+                      </PlaylistProvider>
+                    </YouTubeAuthProvider>
+                  </CastProvider>
+                )}
               </LocationProvider>
             </SettingsProvider>
           </UsageProvider>

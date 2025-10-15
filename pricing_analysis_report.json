@@ -1,0 +1,447 @@
+{
+  "timestamp": "2025-10-15T10:51:53.394Z",
+  "summary": {
+    "totalModels": 32,
+    "complete": 32,
+    "missing": 0,
+    "incomplete": 0,
+    "completionRate": "100%"
+  },
+  "chat": {
+    "totalProviders": 7,
+    "totalModels": 25,
+    "complete": [
+      {
+        "provider": "Groq Free Tier",
+        "type": "groq-free",
+        "model": "llama-3.1-8b-instant",
+        "category": "small",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Groq Free Tier",
+        "type": "groq-free",
+        "model": "llama-3.3-70b-versatile",
+        "category": "large",
+        "contextWindow": 131072,
+        "available": false,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "llama-3.1-8b-instant",
+        "category": "small",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0.05,
+          "output": 0.08,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "category": "large",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0.1,
+          "output": 0.15,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "category": "large",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0.59,
+          "output": 0.79,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "mixtral-8x7b-32768",
+        "category": "large",
+        "contextWindow": 32768,
+        "available": true,
+        "pricing": {
+          "input": 0.24,
+          "output": 0.24,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Groq Paid",
+        "type": "groq",
+        "model": "openai/gpt-oss-120b",
+        "category": "reasoning",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0.5,
+          "output": 0.5,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "gpt-4o-mini",
+        "category": "small",
+        "contextWindow": 128000,
+        "available": true,
+        "pricing": {
+          "input": 0.15,
+          "output": 0.6,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "gpt-4o",
+        "category": "large",
+        "contextWindow": 128000,
+        "available": true,
+        "pricing": {
+          "input": 2.5,
+          "output": 10,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "o1-preview",
+        "category": "reasoning",
+        "contextWindow": 128000,
+        "available": true,
+        "pricing": {
+          "input": 15,
+          "output": 60,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "o1-mini",
+        "category": "reasoning",
+        "contextWindow": 128000,
+        "available": true,
+        "pricing": {
+          "input": 3,
+          "output": 12,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-1.5-flash",
+        "category": "small",
+        "contextWindow": 1000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-1.5-pro",
+        "category": "large",
+        "contextWindow": 1000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-2.5-pro",
+        "category": "large",
+        "contextWindow": 2000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-2.0-flash-exp",
+        "category": "large",
+        "contextWindow": 1000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Google Gemini Free Tier",
+        "type": "gemini-free",
+        "model": "gemini-2.5-flash",
+        "category": "small",
+        "contextWindow": 1000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Google Gemini Paid",
+        "type": "gemini",
+        "model": "gemini-1.5-flash",
+        "category": "small",
+        "contextWindow": 1000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true,
+          "paidInput": 0.075,
+          "paidOutput": 0.3
+        }
+      },
+      {
+        "provider": "Google Gemini Paid",
+        "type": "gemini",
+        "model": "gemini-1.5-pro",
+        "category": "large",
+        "contextWindow": 2000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true,
+          "paidInput": 1.25,
+          "paidOutput": 5
+        }
+      },
+      {
+        "provider": "Google Gemini Paid",
+        "type": "gemini",
+        "model": "gemini-2.0-flash-exp",
+        "category": "large",
+        "contextWindow": 1000000,
+        "available": true,
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_million_tokens",
+          "free": true
+        }
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        "category": "large",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0.88,
+          "output": 0.88,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+        "category": "small",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0.18,
+          "output": 0.18,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "category": "large",
+        "contextWindow": 32768,
+        "available": true,
+        "pricing": {
+          "input": 0.6,
+          "output": 0.6,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Atlas Cloud",
+        "type": "atlascloud",
+        "model": "deepseek-ai/DeepSeek-R1",
+        "category": "reasoning",
+        "contextWindow": 65536,
+        "available": true,
+        "pricing": {
+          "input": 0.55,
+          "output": 2.19,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Atlas Cloud",
+        "type": "atlascloud",
+        "model": "deepseek-ai/DeepSeek-V3",
+        "category": "large",
+        "contextWindow": 65536,
+        "available": true,
+        "pricing": {
+          "input": 0.27,
+          "output": 1.1,
+          "unit": "per_million_tokens"
+        }
+      },
+      {
+        "provider": "Atlas Cloud",
+        "type": "atlascloud",
+        "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "category": "large",
+        "contextWindow": 131072,
+        "available": true,
+        "pricing": {
+          "input": 0.88,
+          "output": 0.88,
+          "unit": "per_million_tokens"
+        }
+      }
+    ],
+    "missing": [],
+    "incomplete": []
+  },
+  "image": {
+    "totalProviders": 3,
+    "totalModels": 7,
+    "complete": [
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "dall-e-3",
+        "category": "unknown",
+        "available": true,
+        "pricing": {
+          "standard_1024": 0.04,
+          "standard_1792": 0.08,
+          "hd_1024": 0.08,
+          "hd_1792": 0.12,
+          "unit": "per_image"
+        }
+      },
+      {
+        "provider": "OpenAI",
+        "type": "openai",
+        "model": "dall-e-2",
+        "category": "unknown",
+        "available": true,
+        "pricing": {
+          "256": 0.016,
+          "512": 0.018,
+          "1024": 0.02,
+          "unit": "per_image"
+        }
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "stable-diffusion-xl",
+        "category": "unknown",
+        "available": true,
+        "pricing": {
+          "default": 0.002,
+          "unit": "per_image"
+        }
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "stable-diffusion-2-1",
+        "category": "unknown",
+        "available": true,
+        "pricing": {
+          "default": 0.001,
+          "unit": "per_image"
+        }
+      },
+      {
+        "provider": "Together AI",
+        "type": "together",
+        "model": "playground-v2-5",
+        "category": "unknown",
+        "available": true,
+        "pricing": {
+          "default": 0.003,
+          "unit": "per_image"
+        }
+      },
+      {
+        "provider": "Replicate",
+        "type": "replicate",
+        "model": "sdxl",
+        "category": "unknown",
+        "available": true,
+        "pricing": {
+          "default": 0.0025,
+          "unit": "per_image"
+        }
+      },
+      {
+        "provider": "Replicate",
+        "type": "replicate",
+        "model": "realistic-vision",
+        "category": "unknown",
+        "available": true,
+        "pricing": {
+          "default": 0.0018,
+          "unit": "per_image"
+        }
+      }
+    ],
+    "missing": [],
+    "incomplete": []
+  }
+}
