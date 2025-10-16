@@ -32,7 +32,8 @@ import { YouTubeVideoResults } from './YouTubeVideoResults';
 import { ExamplesModal } from './ExamplesModal';
 import { 
   saveChatToHistory, 
-  loadChatFromHistory, 
+  loadChatFromHistory,
+  loadChatWithMetadata,
   deleteChatFromHistory, 
   getAllChatHistory,
   clearAllChatHistory,
@@ -86,6 +87,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
   const [showPlanningDialog, setShowPlanningDialog] = useState(false);
   const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  
+  // Planning context state (for persistence)
+  const [originalPlanningQuery, setOriginalPlanningQuery] = useState<string>('');
+  const [generatedSystemPromptFromPlanning, setGeneratedSystemPromptFromPlanning] = useState<string>('');
+  const [generatedUserQueryFromPlanning, setGeneratedUserQueryFromPlanning] = useState<string>('');
   
   const [mcpServers, setMcpServers] = useLocalStorage<Array<{
     id: string;
@@ -763,12 +769,21 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     handleFileSelect(files);
   };
 
-  // Auto-resize textarea helper
-  const calculateRows = (text: string, minRows = 1, maxRows = 10): number => {
-    if (!text || text.trim() === '') return minRows;
-    const lines = text.split('\n').length;
-    return Math.min(Math.max(lines, minRows), maxRows);
+  // Auto-resize textarea to fit content
+  const autoResizeTextarea = (textarea: HTMLTextAreaElement | null) => {
+    if (textarea) {
+      textarea.style.height = 'auto';
+      // Set max height to 300px (about 10 lines)
+      const maxHeight = 300;
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+      textarea.style.height = newHeight + 'px';
+    }
   };
+
+  // Auto-resize input textarea when content changes
+  useEffect(() => {
+    autoResizeTextarea(inputRef.current);
+  }, [input]);
 
   // Handle transfer data from planning tab
   useEffect(() => {
@@ -788,8 +803,23 @@ export const ChatTab: React.FC<ChatTabProps> = ({
           const lastChatId = localStorage.getItem('last_active_chat_id');
           if (lastChatId) {
             console.log('🔄 Attempting to restore last chat:', lastChatId);
-            const loadedMessages = await loadChatFromHistory(lastChatId);
-            if (loadedMessages && loadedMessages.length > 0) {
+            const chatData = await loadChatWithMetadata(lastChatId);
+            if (chatData && chatData.messages && chatData.messages.length > 0) {
+              // Restore planning metadata
+              if (chatData.systemPrompt) {
+                setSystemPrompt(chatData.systemPrompt);
+              }
+              if (chatData.planningQuery) {
+                setOriginalPlanningQuery(chatData.planningQuery);
+              }
+              if (chatData.generatedSystemPrompt) {
+                setGeneratedSystemPromptFromPlanning(chatData.generatedSystemPrompt);
+              }
+              if (chatData.generatedUserQuery) {
+                setGeneratedUserQueryFromPlanning(chatData.generatedUserQuery);
+              }
+              
+              const loadedMessages = chatData.messages;
               // Filter out any corrupted messages and sanitize _attachments
               const cleanMessages = loadedMessages.map(msg => {
                 // Remove _attachments.base64 data to save memory (keep preview only)
@@ -805,7 +835,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
                 return msg;
               }).filter(msg => msg && msg.role); // Filter out any null/invalid messages
               
-              console.log('✅ Restored chat session:', lastChatId, 'with', cleanMessages.length, 'messages');
+              console.log('✅ Restored chat session with planning metadata:', lastChatId, 'with', cleanMessages.length, 'messages');
               setMessages(cleanMessages);
               setCurrentChatId(lastChatId);
             } else {
@@ -829,20 +859,29 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       // Generate ID and save. Otherwise, update existing chat.
       (async () => {
         try {
-          const id = await saveChatToHistory(messages, currentChatId || undefined);
+          const id = await saveChatToHistory(
+            messages, 
+            currentChatId || undefined,
+            {
+              systemPrompt: systemPrompt || undefined,
+              planningQuery: originalPlanningQuery || undefined,
+              generatedSystemPrompt: generatedSystemPromptFromPlanning || undefined,
+              generatedUserQuery: generatedUserQueryFromPlanning || undefined
+            }
+          );
           if (!currentChatId) {
             setCurrentChatId(id);
           }
           // Save as last active chat
           localStorage.setItem('last_active_chat_id', id);
-          console.log('💾 Chat auto-saved:', id);
+          console.log('💾 Chat auto-saved with planning metadata:', id);
         } catch (error) {
           console.error('❌ Failed to auto-save chat:', error);
           // Don't throw - just log the error so the UI continues to work
         }
       })();
     }
-  }, [messages, currentChatId, messagesLoaded]);
+  }, [messages, currentChatId, messagesLoaded, systemPrompt, originalPlanningQuery, generatedSystemPromptFromPlanning, generatedUserQueryFromPlanning]);
 
   // Load chat history list when dialog opens
   useEffect(() => {
@@ -854,43 +893,50 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   }, [showLoadDialog]);
 
+  // Track which messages we've already processed for YouTube results
+  const processedMessagesRef = useRef<Set<string>>(new Set());
+  
+  // Store addTracksToStart in a ref to avoid effect re-running when it changes
+  const addTracksToStartRef = useRef(addTracksToStart);
+  useEffect(() => {
+    addTracksToStartRef.current = addTracksToStart;
+  }, [addTracksToStart]);
+
   // Extract YouTube URLs from messages and add to playlist
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
     if (!lastMessage || lastMessage.role !== 'assistant') return;
 
-    console.log('🎬 Checking for YouTube results in last message:', lastMessage);
+    // Create a unique ID for this message to track if we've processed it
+    // Use message index and content hash to avoid expensive operations
+    const messageId = `${messages.length - 1}-${lastMessage.content ? String(lastMessage.content).substring(0, 50) : ''}-${lastMessage.toolResults?.length || 0}`;
+    
+    // Skip if we've already processed this message (early return to avoid any work)
+    if (processedMessagesRef.current.has(messageId)) {
+      return;
+    }
 
-    // Look for YouTube search results in tool_calls
+    // Look for YouTube search results in toolResults (embedded in assistant message)
     const youtubeResults: any[] = [];
-    if (lastMessage.tool_calls) {
-      console.log('🔧 Found tool_calls:', lastMessage.tool_calls);
-      lastMessage.tool_calls.forEach((toolCall: any) => {
-        console.log('🛠️ Processing tool call:', toolCall.function?.name, toolCall);
-        if (toolCall.function?.name === 'search_youtube' && toolCall.result) {
+    if (lastMessage.toolResults) {
+      lastMessage.toolResults.forEach((toolResult: any) => {
+        if (toolResult.name === 'search_youtube' && toolResult.content) {
           try {
-            const result = typeof toolCall.result === 'string' 
-              ? JSON.parse(toolCall.result) 
-              : toolCall.result;
-            console.log('📦 Parsed YouTube result:', result);
+            const result = typeof toolResult.content === 'string' 
+              ? JSON.parse(toolResult.content) 
+              : toolResult.content;
             if (result.videos && Array.isArray(result.videos)) {
-              console.log(`✅ Found ${result.videos.length} YouTube videos`);
               youtubeResults.push(...result.videos);
-            } else {
-              console.warn('⚠️ No videos array in result:', result);
             }
           } catch (e) {
-            console.error('❌ Failed to parse YouTube results:', e, 'Raw result:', toolCall.result);
+            console.error('Failed to parse YouTube results:', e);
           }
         }
       });
-    } else {
-      console.log('⚠️ No tool_calls in last message');
     }
 
     // Add YouTube videos to playlist (at the start)
     if (youtubeResults.length > 0) {
-      console.log(`🎵 Adding ${youtubeResults.length} videos to playlist`);
       const tracks = youtubeResults.map((video: any) => ({
         videoId: video.videoId,
         url: video.url,
@@ -901,12 +947,20 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         thumbnail: video.thumbnail || ''
       }));
       
-      addTracksToStart(tracks);
+      // Use ref to avoid dependency on addTracksToStart
+      addTracksToStartRef.current(tracks);
       showSuccess(`Added ${tracks.length} video${tracks.length !== 1 ? 's' : ''} to playlist`);
-    } else {
-      console.log('ℹ️ No YouTube videos found to add to playlist');
+      
+      // Mark this message as processed
+      processedMessagesRef.current.add(messageId);
+      
+      // Limit set size to prevent memory growth (keep last 100 messages)
+      if (processedMessagesRef.current.size > 100) {
+        const arr = Array.from(processedMessagesRef.current);
+        processedMessagesRef.current = new Set(arr.slice(-100));
+      }
     }
-  }, [messages, addTracksToStart, showSuccess]);
+  }, [messages, showSuccess]); // Only depend on messages and showSuccess
 
   const handleStop = () => {
     if (abortControllerRef.current) {
@@ -2721,19 +2775,30 @@ Remember: Use the function calling mechanism, not text output. The API will hand
   };
 
   const handleNewChat = () => {
+    // Clear chat messages
     setMessages([]);
     setInput('');
+    
+    // Clear system and planning prompts
     setSystemPrompt('');
+    setOriginalPlanningQuery('');
+    setGeneratedSystemPromptFromPlanning('');
+    setGeneratedUserQueryFromPlanning('');
+    
+    // Clear search and UI state
     clearSearchResults();
-    // Clear expanded tool messages when starting new chat
     setExpandedToolMessages(new Set());
-    // Reset chat ID to start a new session
+    
+    // Start new chat session
     setCurrentChatId(null);
     localStorage.removeItem('last_active_chat_id');
-    // Focus the input field
+    
+    // Focus input
     setTimeout(() => {
       inputRef.current?.focus();
     }, 0);
+    
+    console.log('Started new chat - all prompts cleared');
   };
 
   const handleAddMCPServer = () => {
@@ -4076,8 +4141,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 }
               }}
               placeholder="Type your message... (Shift+Enter for new line, ↑↓ for history)"
-              className="input-field flex-1 resize-none"
-              rows={calculateRows(input, 1, 10)}
+              className="input-field flex-1 resize-none overflow-y-auto"
+              style={{ minHeight: '2.5rem', maxHeight: '300px' }}
             />
             <button
               onClick={isLoading ? handleStop : () => handleSend()}
@@ -4318,10 +4383,25 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           
           try {
             const data = JSON.parse(transferDataJson);
+            
+            // Apply prompts
             setInput(data.prompt);
             if (data.persona) {
               setSystemPrompt(data.persona);
             }
+            
+            // Store planning context
+            if (data.planningQuery) {
+              setOriginalPlanningQuery(data.planningQuery);
+            }
+            if (data.generatedSystemPrompt) {
+              setGeneratedSystemPromptFromPlanning(data.generatedSystemPrompt);
+            }
+            if (data.generatedUserQuery) {
+              setGeneratedUserQueryFromPlanning(data.generatedUserQuery);
+            }
+            
+            console.log('✅ Transferred planning context to chat');
           } catch (e) {
             setInput(transferDataJson);
           }

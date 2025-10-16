@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
 import { useCast } from '../contexts/CastContext';
+import { useTTS } from '../contexts/TTSContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { StorageStats } from './StorageStats';
@@ -40,8 +41,20 @@ export const SwagPage: React.FC = () => {
     sendSnippetScrollPosition,
     isCastingSnippet
   } = useCast();
+  const { state: ttsState, stop: stopTTS } = useTTS();
 
-  const [googleDocs, setGoogleDocs] = useState<GoogleDoc[]>([]);
+  const [googleDocs, setGoogleDocs] = useState<GoogleDoc[]>(() => {
+    // Initialize from localStorage cache
+    try {
+      const cached = localStorage.getItem('swag-google-docs-cache');
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (error) {
+      console.error('Failed to load Google Docs cache:', error);
+    }
+    return [];
+  });
   const [editingSnippet, setEditingSnippet] = useState<ContentSnippet | null>(null);
   const [viewingSnippet, setViewingSnippet] = useState<ContentSnippet | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -55,6 +68,7 @@ export const SwagPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchTags, setSearchTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [docsLoaded, setDocsLoaded] = useState(false);
   
   // Confirmation dialog state for tag deletion
   const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState(false);
@@ -66,15 +80,45 @@ export const SwagPage: React.FC = () => {
 
   useEffect(() => {
     initGoogleAuth().catch(console.error);
-    // Preload Google Docs
-    loadGoogleDocs();
+    // Only load Google Docs from API if we don't have cached data
+    if (googleDocs.length === 0 && !docsLoaded) {
+      loadGoogleDocs();
+    }
   }, []);
 
-  const loadGoogleDocs = async () => {
+  // Auto-cast snippet to Chromecast when viewing if already connected
+  useEffect(() => {
+    if (viewingSnippet && isCastConnected && !isCastingSnippet) {
+      console.log('Auto-casting snippet to Chromecast:', viewingSnippet.title);
+      castSnippet({
+        id: viewingSnippet.id,
+        content: viewingSnippet.content,
+        title: viewingSnippet.title,
+        tags: viewingSnippet.tags,
+        created: new Date(viewingSnippet.timestamp),
+        modified: viewingSnippet.updateDate ? new Date(viewingSnippet.updateDate) : new Date(viewingSnippet.timestamp)
+      });
+    }
+  }, [viewingSnippet, isCastConnected, isCastingSnippet, castSnippet]);
+
+  const loadGoogleDocs = async (force = false) => {
+    // Skip if already loaded and not forcing refresh
+    if (docsLoaded && !force) {
+      return;
+    }
+    
     try {
       setLoading(true);
       const docs = await listGoogleDocs();
       setGoogleDocs(docs);
+      setDocsLoaded(true);
+      
+      // Cache the results in localStorage
+      try {
+        localStorage.setItem('swag-google-docs-cache', JSON.stringify(docs));
+      } catch (error) {
+        console.error('Failed to cache Google Docs:', error);
+      }
     } catch (error) {
       console.error('Failed to load Google Docs:', error);
       showError('Failed to load Google Docs. Please try again.');
@@ -97,7 +141,16 @@ export const SwagPage: React.FC = () => {
     try {
       setLoading(true);
       const doc = await createGoogleDocInFolder(newDocName);
-      setGoogleDocs(prev => [doc, ...prev]);
+      const updatedDocs = [doc, ...googleDocs];
+      setGoogleDocs(updatedDocs);
+      
+      // Update cache immediately when creating a document
+      try {
+        localStorage.setItem('swag-google-docs-cache', JSON.stringify(updatedDocs));
+      } catch (error) {
+        console.error('Failed to update Google Docs cache:', error);
+      }
+      
       setNewDocName('');
       setShowNewDocDialog(false);
       showSuccess(`Document "${doc.name}" created successfully in Research Agent folder!`);
@@ -182,7 +235,16 @@ export const SwagPage: React.FC = () => {
         try {
           setLoading(true);
           const doc = await createGoogleDocInFolder(docName);
-          setGoogleDocs(prev => [doc, ...prev]);
+          const updatedDocs = [doc, ...googleDocs];
+          setGoogleDocs(updatedDocs);
+          
+          // Update cache immediately when creating a document
+          try {
+            localStorage.setItem('swag-google-docs-cache', JSON.stringify(updatedDocs));
+          } catch (error) {
+            console.error('Failed to update Google Docs cache:', error);
+          }
+          
           showSuccess(`Document "${doc.name}" created in Research Agent folder!`);
           // Now append selected snippets
           await handleAppendToDoc(doc.id);
@@ -902,6 +964,19 @@ export const SwagPage: React.FC = () => {
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     {new Date(viewingSnippet.timestamp).toLocaleString()}
                   </span>
+                  {/* TTS Stop Button - Flashing when playing */}
+                  {ttsState.isPlaying && (
+                    <button
+                      onClick={stopTTS}
+                      className="px-3 py-1.5 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors flex items-center gap-2 animate-pulse"
+                      title="Stop reading aloud"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <rect x="6" y="6" width="12" height="12" />
+                      </svg>
+                      Stop Reading
+                    </button>
+                  )}
                 </div>
               </div>
               <button

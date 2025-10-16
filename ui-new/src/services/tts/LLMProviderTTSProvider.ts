@@ -13,6 +13,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
   public name = 'llm';
   private provider: ProviderConfig | null = null;
   private audio: HTMLAudioElement | null = null;
+  private currentOnEnd: (() => void) | null = null;
 
   constructor(provider?: ProviderConfig) {
     this.provider = provider || null;
@@ -115,6 +116,10 @@ export class LLMProviderTTSProvider implements TTSProvider {
     if (!this.provider) {
       throw new Error('No provider configured for TTS');
     }
+
+    // Stop any currently playing audio before starting new speech
+    console.log('LLMProviderTTSProvider: speak() called, stopping any existing audio');
+    this.stop();
 
     let audioBlob: Blob;
 
@@ -222,6 +227,9 @@ export class LLMProviderTTSProvider implements TTSProvider {
     this.audio = new Audio(audioUrl);
     this.audio.volume = options.volume || 1.0;
 
+    // Store the onEnd callback so stop() can trigger it
+    this.currentOnEnd = options.onEnd || null;
+
     return new Promise((resolve, reject) => {
       if (!this.audio) {
         reject(new Error('Audio element not available'));
@@ -233,6 +241,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
         options.onEnd?.();
         URL.revokeObjectURL(audioUrl);
         this.audio = null;
+        this.currentOnEnd = null;
         resolve();
       };
       this.audio.onerror = () => {
@@ -240,6 +249,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
         options.onError?.(error);
         URL.revokeObjectURL(audioUrl);
         this.audio = null;
+        this.currentOnEnd = null;
         reject(error);
       };
 
@@ -248,20 +258,61 @@ export class LLMProviderTTSProvider implements TTSProvider {
         options.onError?.(error);
         URL.revokeObjectURL(audioUrl);
         this.audio = null;
+        this.currentOnEnd = null;
         reject(error);
       });
     });
   }
 
   stop(): void {
+    console.log('LLMProviderTTSProvider: stop() called', { hasAudio: !!this.audio });
+    
     if (this.audio) {
+      console.log('LLMProviderTTSProvider: Stopping audio', {
+        paused: this.audio.paused,
+        currentTime: this.audio.currentTime,
+        duration: this.audio.duration,
+        src: this.audio.src?.substring(0, 50)
+      });
+      
+      // Remove all event listeners first to prevent them from interfering
+      this.audio.onended = null;
+      this.audio.onerror = null;
+      this.audio.oncanplaythrough = null;
+      
+      // Force stop the audio
       this.audio.pause();
       this.audio.currentTime = 0;
-      // Clean up blob URL to prevent memory leaks
-      if (this.audio.src && this.audio.src.startsWith('blob:')) {
-        URL.revokeObjectURL(this.audio.src);
-      }
+      
+      // Store the audio reference before nulling it
+      const audioToCleanup = this.audio;
       this.audio = null;
+      
+      // Clean up blob URL to prevent memory leaks
+      if (audioToCleanup.src && audioToCleanup.src.startsWith('blob:')) {
+        console.log('LLMProviderTTSProvider: Revoking blob URL');
+        URL.revokeObjectURL(audioToCleanup.src);
+        audioToCleanup.src = '';
+      }
+      
+      // Try to completely remove the audio element
+      try {
+        audioToCleanup.remove();
+      } catch (e) {
+        console.warn('Failed to remove audio element:', e);
+      }
+      
+      console.log('LLMProviderTTSProvider: Audio stopped and cleaned up');
+      
+      // Trigger onEnd callback to reset TTS state
+      if (this.currentOnEnd) {
+        console.log('LLMProviderTTSProvider: Triggering onEnd callback');
+        const callback = this.currentOnEnd;
+        this.currentOnEnd = null;
+        callback();
+      }
+    } else {
+      console.log('LLMProviderTTSProvider: No audio to stop');
     }
   }
 

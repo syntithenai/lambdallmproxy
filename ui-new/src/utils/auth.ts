@@ -40,21 +40,26 @@ export const renderGoogleButton = (elementId: string) => {
 };
 
 // Save auth state to localStorage
-export const saveAuthState = (user: GoogleUser, token: string) => {
+export const saveAuthState = (user: GoogleUser, token: string, refreshToken?: string) => {
   localStorage.setItem('google_user', JSON.stringify(user));
   localStorage.setItem('google_access_token', token);
+  if (refreshToken) {
+    localStorage.setItem('google_refresh_token', refreshToken);
+  }
 };
 
 // Load auth state from localStorage
-export const loadAuthState = (): AuthState => {
+export const loadAuthState = (): AuthState & { refreshToken?: string } => {
   const savedUser = localStorage.getItem('google_user');
   const savedToken = localStorage.getItem('google_access_token');
+  const savedRefreshToken = localStorage.getItem('google_refresh_token');
   
   if (savedUser && savedToken) {
     return {
       user: JSON.parse(savedUser),
       accessToken: savedToken,
-      isAuthenticated: true
+      isAuthenticated: true,
+      refreshToken: savedRefreshToken || undefined
     };
   }
   
@@ -159,13 +164,44 @@ export const shouldRefreshToken = (token: string): boolean => {
   }
 };
 
-// Request a new token from Google
-export const refreshGoogleToken = async (): Promise<string | null> => {
+// Request a new token using refresh token via backend OAuth endpoint
+export const refreshGoogleToken = async (currentAccessToken: string): Promise<{accessToken: string, refreshToken?: string} | null> => {
   try {
-    // Use silent sign-in without popup
+    // First, check if we have a refresh token
+    const refreshToken = localStorage.getItem('google_refresh_token');
+    
+    if (refreshToken) {
+      // Use backend OAuth refresh endpoint
+      console.log('🔄 Refreshing token via OAuth refresh endpoint...');
+      
+      const API_BASE = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+      const response = await fetch(`${API_BASE}/oauth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentAccessToken}` // JWT for auth
+        },
+        body: JSON.stringify({ refresh_token: refreshToken })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Token refreshed successfully via OAuth');
+        return {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token || refreshToken // Backend returns new refresh token or keep old one
+        };
+      } else {
+        console.log('OAuth refresh failed:', response.status);
+        // Fall through to silent sign-in attempt
+      }
+    }
+    
+    // Fallback: Try silent sign-in (less reliable, but better than nothing)
+    console.log('🔄 Attempting silent sign-in fallback...');
     return new Promise((resolve) => {
       if (typeof google === 'undefined' || !google.accounts) {
-        console.error('Google API not loaded');
+        console.log('Google API not loaded');
         resolve(null);
         return;
       }
@@ -174,7 +210,7 @@ export const refreshGoogleToken = async (): Promise<string | null> => {
       const timeout = setTimeout(() => {
         if (!hasResolved) {
           hasResolved = true;
-          console.log('Silent token refresh timed out');
+          console.log('Silent sign-in not available');
           resolve(null);
         }
       }, 5000);
@@ -186,21 +222,13 @@ export const refreshGoogleToken = async (): Promise<string | null> => {
           if (!hasResolved && response.credential) {
             hasResolved = true;
             clearTimeout(timeout);
-            console.log('Token silently refreshed');
-            resolve(response.credential);
+            console.log('✅ Silent sign-in successful');
+            resolve({ accessToken: response.credential });
           }
         },
-        // CRITICAL: Enable automatic sign-in for returning users
         auto_select: true,
-        // Don't show UI if auto-select fails
         cancel_on_tap_outside: true
       });
-
-      // Attempt silent sign-in (won't show popup if auto_select works)
-      // DO NOT call prompt() as it can show "Cannot continue with Google" popup
-      // Instead, rely on auto_select in initialize() for silent refresh
-      // If auto_select works, the callback will be triggered automatically
-      // If it fails, we just time out gracefully without showing any UI
     });
   } catch (error) {
     console.error('Token refresh failed:', error);
@@ -224,11 +252,11 @@ export const getValidToken = async (currentToken: string | null): Promise<string
   console.warn('Token expiring soon or expired, attempting refresh...');
   
   // Try to refresh the token
-  const newToken = await refreshGoogleToken();
+  const result = await refreshGoogleToken(currentToken);
   
-  if (newToken) {
+  if (result) {
     // Update stored token
-    const decoded = decodeJWT(newToken);
+    const decoded = decodeJWT(result.accessToken);
     if (decoded) {
       const user: GoogleUser = {
         email: decoded.email,
@@ -236,10 +264,10 @@ export const getValidToken = async (currentToken: string | null): Promise<string
         picture: decoded.picture,
         sub: decoded.sub
       };
-      saveAuthState(user, newToken);
+      saveAuthState(user, result.accessToken, result.refreshToken);
       console.log('Token refreshed and saved');
     }
-    return newToken;
+    return result.accessToken;
   }
   
   // If refresh failed, clear auth state and return null

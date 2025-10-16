@@ -1,0 +1,44 @@
+.react-player-hide-controls video::-webkit-media-controls,
+.react-player-hide-controls video::-webkit-media-controls-panel,
+.react-player-hide-controls video::-webkit-media-controls-enclosure {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-play-button {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-timeline {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-volume-slider {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-mute-button {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-fullscreen-button {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-current-time-display {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-time-remaining-display {
+  display: none !important;
+}
+
+.react-player-hide-controls video::-webkit-media-controls-seek-back-button,
+.react-player-hide-controls video::-webkit-media-controls-seek-forward-button {
+  display: none !important;
+}

@@ -56,6 +56,8 @@ interface PlaylistContextType {
   setPlaybackRate: (rate: number) => void;
   volume: number;
   setVolume: (volume: number) => void;
+  videoQuality: string;
+  setVideoQuality: (quality: string) => void;
 }
 
 const PlaylistContext = createContext<PlaylistContextType | undefined>(undefined);
@@ -85,6 +87,7 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
   const [repeatMode, setRepeatModeState] = useState<'none' | 'all' | 'one'>('none');
   const [playbackRate, setPlaybackRateState] = useState(1);
   const [volume, setVolumeState] = useState(1);
+  const [videoQuality, setVideoQualityState] = useState('auto');
 
   // Load preferences from localStorage
   useEffect(() => {
@@ -102,6 +105,9 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
       
       const savedShuffle = localStorage.getItem('shuffleMode');
       if (savedShuffle) setShuffleMode(savedShuffle === 'true');
+      
+      const savedQuality = localStorage.getItem('videoQuality');
+      if (savedQuality) setVideoQualityState(savedQuality);
     } catch (error) {
       console.error('Failed to load preferences:', error);
     }
@@ -130,26 +136,25 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
   }, []);
 
   // Save playlist to IndexedDB whenever it changes (after initialization)
+  // Debounced to avoid excessive writes
   useEffect(() => {
     if (!isInitialized) return;
     
     const savePlaylist = async () => {
       try {
+        // Only use IndexedDB - localStorage has quota limits
         await playlistDB.saveCurrentPlaylist(playlist, currentTrackIndex);
-        
-        // Also update localStorage for backward compatibility
-        localStorage.setItem('youtube_playlist', JSON.stringify(playlist));
-        if (currentTrackIndex !== null) {
-          localStorage.setItem('youtube_current_track', String(currentTrackIndex));
-        } else {
-          localStorage.removeItem('youtube_current_track');
-        }
       } catch (error) {
         console.error('Failed to save playlist:', error);
       }
     };
     
-    savePlaylist();
+    // Debounce saves by 500ms to avoid excessive writes
+    const timeoutId = setTimeout(() => {
+      savePlaylist();
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
   }, [playlist, currentTrackIndex, isInitialized]);
 
   const addTrack = useCallback((track: Omit<PlaylistTrack, 'id' | 'addedAt'>) => {
@@ -162,26 +167,92 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
   }, []);
 
   const addTracks = useCallback((tracks: Omit<PlaylistTrack, 'id' | 'addedAt'>[]) => {
-    const newTracks: PlaylistTrack[] = tracks.map((track, index) => ({
-      ...track,
-      id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-      addedAt: Date.now()
-    }));
-    setPlaylist(prev => [...prev, ...newTracks]);
+    setPlaylist(prev => {
+      const result: PlaylistTrack[] = [];
+      const existingVideoIds = new Set(prev.map(t => t.videoId));
+      const newVideoIds = new Set<string>();
+      
+      // Process new tracks
+      tracks.forEach((track, index) => {
+        // Skip if already in playlist or already processed in this batch
+        if (existingVideoIds.has(track.videoId) || newVideoIds.has(track.videoId)) {
+          return;
+        }
+        
+        newVideoIds.add(track.videoId);
+        result.push({
+          ...track,
+          id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+          addedAt: Date.now()
+        });
+      });
+      
+      // Add new tracks at top, then existing tracks
+      const combined = [...result, ...prev];
+      
+      // Limit playlist to 400 items to prevent UI lockup
+      return combined.slice(0, 400);
+    });
   }, []);
 
   const addTracksToStart = useCallback((tracks: Omit<PlaylistTrack, 'id' | 'addedAt'>[]) => {
-    const newTracks: PlaylistTrack[] = tracks.map((track, index) => ({
-      ...track,
-      id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-      addedAt: Date.now()
-    }));
-    setPlaylist(prev => [...newTracks, ...prev]);
-    
-    // Adjust current track index if playing (prepending shifts indices)
-    if (currentTrackIndex !== null) {
-      setCurrentTrackIndex(currentTrackIndex + newTracks.length);
-    }
+    setPlaylist(prev => {
+      const movedTracks: PlaylistTrack[] = [];
+      const newTracks: PlaylistTrack[] = [];
+      const remainingTracks: PlaylistTrack[] = [];
+      const processedVideoIds = new Set<string>();
+      
+      // Separate tracks into: existing (to move), new, and remaining
+      tracks.forEach((track, index) => {
+        if (processedVideoIds.has(track.videoId)) {
+          return; // Skip duplicates within the new batch
+        }
+        processedVideoIds.add(track.videoId);
+        
+        const existingIndex = prev.findIndex(t => t.videoId === track.videoId);
+        if (existingIndex !== -1) {
+          // Track exists - move it to top with updated timestamp
+          movedTracks.push({
+            ...prev[existingIndex],
+            addedAt: Date.now() // Update timestamp to show it was re-added
+          });
+        } else {
+          // New track
+          newTracks.push({
+            ...track,
+            id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+            addedAt: Date.now()
+          });
+        }
+      });
+      
+      // Get remaining tracks (not moved to top)
+      prev.forEach(track => {
+        if (!processedVideoIds.has(track.videoId)) {
+          remainingTracks.push(track);
+        }
+      });
+      
+      // Combine: moved tracks (existing ones re-added) + new tracks + remaining
+      const combined = [...movedTracks, ...newTracks, ...remainingTracks];
+      
+      // Limit playlist to 400 items to prevent UI lockup
+      const limited = combined.slice(0, 400);
+      
+      // Adjust current track index if playing
+      if (currentTrackIndex !== null && prev[currentTrackIndex]) {
+        const currentVideoId = prev[currentTrackIndex].videoId;
+        const newIndex = limited.findIndex(t => t.videoId === currentVideoId);
+        if (newIndex !== -1) {
+          setCurrentTrackIndex(newIndex);
+        } else {
+          setCurrentTrackIndex(null);
+          setIsPlaying(false);
+        }
+      }
+      
+      return limited;
+    });
   }, [currentTrackIndex]);
 
   const removeTrack = useCallback((id: string) => {
@@ -408,6 +479,11 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
     localStorage.setItem('volume', String(vol));
   }, []);
 
+  const setVideoQuality = useCallback((quality: string) => {
+    setVideoQualityState(quality);
+    localStorage.setItem('videoQuality', quality);
+  }, []);
+
   const currentTrack = currentTrackIndex !== null && playlist[currentTrackIndex] 
     ? playlist[currentTrackIndex] 
     : null;
@@ -443,7 +519,9 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
         playbackRate,
         setPlaybackRate,
         volume,
-        setVolume
+        setVolume,
+        videoQuality,
+        setVideoQuality
       }}
     >
       {children}

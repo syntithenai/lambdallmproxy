@@ -2355,9 +2355,11 @@ Summary:`;
         const captionsInfo = [];
         const { getYouTubeTranscriptViaInnerTube } = require('./youtube-api');
         
-        // Reuse proxy credentials from above (already set from context or env)
+        // Get proxy credentials from context or environment
+        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
+        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+        console.log(`🔧 YouTube transcript fetch - Proxy: ${proxyUsername && proxyPassword ? 'ENABLED' : 'DISABLED'}`);
         console.log(`🔧 DEBUG: Starting transcript fetch loop for ${videoIds.length} videos`);
-        console.log(`🔧 DEBUG: Proxy credentials - username: ${proxyUsername ? 'SET' : 'NOT SET'}, password: ${proxyPassword ? 'SET' : 'NOT SET'}`);
         
         // Create progress callback to emit YouTube search progress events
         const onProgress = (data) => {
@@ -2527,12 +2529,18 @@ Summary:`;
           const videoId = item.id.videoId;
           const captionInfo = captionsMap[videoId] || {};
           
+          // Safely extract and truncate description to prevent huge payloads
+          let description = item.snippet.description || '';
+          if (description.length > 500) {
+            description = description.substring(0, 500) + '...';
+          }
+          
           const videoData = {
             videoId,
             url: `https://www.youtube.com/watch?v=${videoId}`,
-            title: item.snippet.title,
-            description: item.snippet.description,
-            channel: item.snippet.channelTitle,
+            title: item.snippet.title || 'Untitled',
+            description,
+            channel: item.snippet.channelTitle || 'Unknown',
             thumbnail: item.snippet.thumbnails?.default?.url || item.snippet.thumbnails?.medium?.url || '',
             hasCaptions: captionInfo.hasCaptions || false
           };
@@ -2660,13 +2668,37 @@ Provide a comprehensive summary (3-4 paragraphs) covering main themes, key insig
           }
         }
         
-        return JSON.stringify({
+        // Build result object, only include batchSummary if it exists
+        const resultObj = {
           query,
           count: videos.length,
           order,
-          videos,
-          batchSummary: batchSummary || undefined
-        });
+          videos
+        };
+        
+        if (batchSummary) {
+          resultObj.batchSummary = batchSummary;
+        }
+        
+        // Safely stringify with error handling
+        try {
+          return JSON.stringify(resultObj);
+        } catch (stringifyError) {
+          console.error('JSON.stringify error for YouTube search result:', stringifyError.message);
+          // Return minimal safe result
+          return JSON.stringify({
+            query,
+            count: videos.length,
+            order,
+            error: 'Result too large or contains invalid data',
+            videos: videos.slice(0, 5).map(v => ({
+              videoId: v.videoId,
+              url: v.url,
+              title: v.title,
+              hasCaptions: v.hasCaptions
+            }))
+          });
+        }
         
       } catch (error) {
         console.error('YouTube search error:', error);

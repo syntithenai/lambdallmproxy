@@ -1,9 +1,9 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import ReactPlayer from 'react-player';
 import { usePlaylist } from '../contexts/PlaylistContext';
 import type { PlaylistTrack } from '../contexts/PlaylistContext';
 import { useDialogClose } from '../hooks/useDialogClose';
 import { useCast } from '../contexts/CastContext';
+import { useToast } from './ToastManager';
 
 interface MediaPlayerDialogProps {
   isOpen: boolean;
@@ -31,9 +31,9 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
     savePlaylistAs,
     loadPlaylist,
     deletePlaylist,
+    previousTrack,
     nextTrack,
-    play,
-    pause,
+    togglePlayPause,
     shuffleMode,
     toggleShuffle,
     repeatMode,
@@ -51,6 +51,8 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
     sendVideoCommand,
     isCastingVideo
   } = useCast();
+
+  const { showSuccess, showError } = useToast();
 
   const playerRef = useRef<any>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -72,8 +74,6 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   // Filter playlist by search query
   const filteredPlaylist = useMemo(() => {
     if (!searchQuery.trim()) return playlist;
@@ -90,6 +90,9 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
   const groupedPlaylist = groupByDate(filteredPlaylist);
   
   const matchCount = filteredPlaylist.length;
+
+  // Early return after all hooks to follow Rules of Hooks
+  if (!isOpen) return null;
 
   return (
     <div 
@@ -110,17 +113,45 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
             </span>
           </h2>
           <div className="flex items-center gap-2">
-            {playlist.length > 0 && (
-              <button
-                onClick={() => {
-                  if (confirm('Clear entire playlist? This cannot be undone.')) {
-                    clearPlaylist();
-                  }
-                }}
-                className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-              >
-                Clear All
-              </button>
+            {/* Playback Controls in Header */}
+            {currentTrack && (
+              <>
+                <button
+                  onClick={previousTrack}
+                  className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  title="Previous track"
+                >
+                  <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+                  </svg>
+                </button>
+                
+                <button
+                  onClick={togglePlayPause}
+                  className="p-2 rounded-full bg-blue-600 hover:bg-blue-700 transition-colors"
+                  title={isPlaying ? "Pause" : "Play"}
+                >
+                  {isPlaying ? (
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  )}
+                </button>
+                
+                <button
+                  onClick={nextTrack}
+                  className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  title="Next track"
+                >
+                  <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                  </svg>
+                </button>
+              </>
             )}
             <button
               onClick={onClose}
@@ -134,53 +165,46 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
           </div>
         </div>
 
-        {/* Video Player */}
-        {currentTrack && (
-          <div className="w-full bg-black flex-shrink-0 relative">
-            <div className={`aspect-video w-full ${isCastingVideo ? 'opacity-30' : ''}`}>
-              {React.createElement(ReactPlayer as any, {
-                ref: playerRef,
-                url: currentTrack.url,
-                playing: isPlaying && !isCastingVideo,
-                controls: false,
-                width: '100%',
-                height: '100%',
-                volume: volume,
-                playbackRate: playbackRate,
-                onPlay: () => play(),
-                onPause: () => pause(),
-                onEnded: () => nextTrack(),
-                onError: (error: any) => console.error('Player error:', error)
-              })}
-            </div>
-            
-            {/* Casting Overlay */}
-            {isCastingVideo && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="text-center p-6">
-                  <div className="text-6xl mb-4 animate-pulse">📺</div>
-                  <h3 className="text-white text-xl font-semibold mb-2">Casting to {castDeviceName}</h3>
-                  <p className="text-gray-300 text-sm mb-4">{currentTrack.title}</p>
-                  <div className="flex gap-3 justify-center">
-                    <button
-                      onClick={() => sendVideoCommand(isPlaying ? 'pause' : 'play')}
-                      className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded transition-colors"
-                    >
-                      {isPlaying ? '⏸ Pause' : '▶ Play'}
-                    </button>
-                    <button
-                      onClick={() => sendVideoCommand('stop')}
-                      className="px-4 py-2 bg-red-500/80 hover:bg-red-600/80 text-white rounded transition-colors"
-                    >
-                      ⏹ Stop Casting
-                    </button>
+        {/* Content Area - Scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Video Player Section */}
+          {currentTrack && (
+            <div className="w-2/3 mx-auto flex-shrink-0 mt-4 relative">
+              {/* Video Player Container - BackgroundPlayer renders here when dialog is open */}
+              <div 
+                id="dialog-player-container"
+                className="w-full relative"
+              >
+                {/* BackgroundPlayer will detect this container and physically move itself here */}
+              </div>
+              
+              {/* Casting Overlay */}
+              {isCastingVideo && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm z-10">
+                  <div className="text-center p-6">
+                    <div className="text-6xl mb-4 animate-pulse">📺</div>
+                    <h3 className="text-white text-xl font-semibold mb-2">Casting to {castDeviceName}</h3>
+                    <p className="text-gray-300 text-sm mb-4">{currentTrack.title}</p>
+                    <div className="flex gap-3 justify-center">
+                      <button
+                        onClick={() => sendVideoCommand(isPlaying ? 'pause' : 'play')}
+                        className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded transition-colors"
+                      >
+                        {isPlaying ? '⏸ Pause' : '▶ Play'}
+                      </button>
+                      <button
+                        onClick={() => sendVideoCommand('stop')}
+                        className="px-4 py-2 bg-red-500/80 hover:bg-red-600/80 text-white rounded transition-colors"
+                      >
+                        ⏹ Stop Casting
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-            
-            {/* Video Metadata */}
-            <div className="p-3 sm:p-4 bg-gray-900 text-white">
+              )}
+              
+              {/* Video Metadata */}
+              <div className="p-3 sm:p-4 bg-gray-900 text-white">
               <h3 className="font-semibold text-base sm:text-lg mb-1">{currentTrack.title}</h3>
               <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-300">
                 {currentTrack.channel && (
@@ -208,9 +232,89 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                   {currentTrack.description}
                 </p>
               )}
+              </div>
             </div>
+          )}
+
+          {/* Playlist Items - now scrollable together with video */}
+          <div className="p-3 sm:p-4">
+            {playlist.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+                </svg>
+                <p className="text-lg font-bold text-gray-900 dark:text-gray-100">Playlist is empty</p>
+                <p className="text-sm mt-2">Search for YouTube videos using the chat to add tracks</p>
+              </div>
+            ) : (
+              groupedPlaylist.map(([dateLabel, tracks]) => (
+                <div key={dateLabel} className="mb-6">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                    📅 {dateLabel}
+                    <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                      ({tracks.length} {tracks.length === 1 ? 'video' : 'videos'})
+                    </span>
+                  </h3>
+                  <div className="space-y-2">
+                    {tracks.map((track) => {
+                      const trackIndex = playlist.findIndex(t => t.id === track.id);
+                      const isCurrentTrack = trackIndex === currentTrackIndex;
+                      return (
+                        <div
+                          key={track.id}
+                          className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-all ${
+                            isCurrentTrack
+                              ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500'
+                              : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border-2 border-transparent'
+                          }`}
+                        >
+                          <button
+                            onClick={() => playTrack(trackIndex)}
+                            className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-gray-800 transition-colors"
+                          >
+                            {isCurrentTrack && isPlaying ? (
+                              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                            )}
+                          </button>
+                          {track.thumbnail && (
+                            <img src={track.thumbnail} alt="" className="w-16 h-12 object-cover rounded flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{track.title}</h4>
+                            {track.channel && (
+                              <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{track.channel}</p>
+                            )}
+                          </div>
+                          {track.duration && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">{track.duration}</span>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (confirm(`Remove "${track.title}" from playlist?`)) {
+                                removeTrack(track.id);
+                              }
+                            }}
+                            className="flex-shrink-0 p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        )}
+        </div>
 
         {/* Playlist Controls */}
         {playlist.length > 0 && (
@@ -333,20 +437,32 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
               )}
             </div>
 
-            {/* Save/Load Row */}
+            {/* Save/Load/Clear Row - All on one line */}
             <div className="flex flex-wrap items-center gap-2 mt-3">
               <button
                 className="px-3 py-1.5 text-xs sm:text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
                 onClick={() => setShowSaveDialog(true)}
               >
-                💾 Save Playlist
+                Save
               </button>
               <button
                 className="px-3 py-1.5 text-xs sm:text-sm bg-green-500 hover:bg-green-600 text-white rounded transition-colors"
                 onClick={() => setShowLoadDialog(true)}
               >
-                📂 Load Playlist
+                Load
               </button>
+              {playlist.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (confirm('Clear entire playlist? This cannot be undone.')) {
+                      clearPlaylist();
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs sm:text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+                >
+                  🗑️ Clear All
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -372,9 +488,9 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                         await savePlaylistAs(playlistName);
                         setPlaylistName('');
                         setShowSaveDialog(false);
-                        alert('Playlist saved successfully!');
+                        showSuccess(`Playlist "${playlistName}" saved successfully!`);
                       } catch (error) {
-                        alert('Failed to save playlist: ' + (error as Error).message);
+                        showError('Failed to save playlist: ' + (error as Error).message);
                       }
                     }
                   }}
@@ -423,8 +539,9 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                             try {
                               await loadPlaylist(p.id);
                               setShowLoadDialog(false);
+                              showSuccess(`Playlist "${p.name}" loaded successfully!`);
                             } catch (error) {
-                              alert('Failed to load playlist: ' + (error as Error).message);
+                              showError('Failed to load playlist: ' + (error as Error).message);
                             }
                           }}
                           className="px-3 py-1 text-xs bg-green-500 hover:bg-green-600 text-white rounded"
@@ -436,8 +553,9 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                             if (confirm(`Delete "${p.name}"?`)) {
                               try {
                                 await deletePlaylist(p.id);
+                                showSuccess(`Playlist "${p.name}" deleted successfully!`);
                               } catch (error) {
-                                alert('Failed to delete playlist: ' + (error as Error).message);
+                                showError('Failed to delete playlist: ' + (error as Error).message);
                               }
                             }
                           }}
@@ -459,113 +577,6 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
             </div>
           </div>
         )}
-
-        {/* Playlist Items */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-          {playlist.length === 0 ? (
-            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-              <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
-              </svg>
-              <p className="text-lg font-medium">Playlist is empty</p>
-              <p className="text-sm mt-2">Search for YouTube videos using the chat to add tracks</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {groupedPlaylist.map(([dateLabel, tracks]) => (
-                <div key={dateLabel}>
-                  {/* Date Header */}
-                  <div className="sticky top-0 bg-white dark:bg-gray-800 py-2 mb-2 border-b border-gray-200 dark:border-gray-700">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                      📅 {dateLabel}
-                      <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                        ({tracks.length} {tracks.length === 1 ? 'video' : 'videos'})
-                      </span>
-                    </h3>
-                  </div>
-
-                  {/* Tracks in this date group */}
-                  <div className="space-y-2">
-                    {tracks.map((track) => {
-                      const trackIndex = playlist.findIndex(t => t.id === track.id);
-                      const isCurrentTrack = trackIndex === currentTrackIndex;
-                      
-                      return (
-                        <div
-                          key={track.id}
-                          className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-all ${
-                            isCurrentTrack
-                              ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500 shadow-md'
-                              : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border-2 border-transparent'
-                          }`}
-                        >
-                          {/* Play Button / Track Number */}
-                          <button
-                            onClick={() => playTrack(trackIndex)}
-                            className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-gray-800 transition-colors"
-                            title="Play this track"
-                          >
-                            {isCurrentTrack && isPlaying ? (
-                              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z"/>
-                              </svg>
-                            )}
-                          </button>
-
-                          {/* Thumbnail */}
-                          {track.thumbnail && (
-                            <img
-                              src={track.thumbnail}
-                              alt={track.title}
-                              className="w-16 h-10 sm:w-20 sm:h-12 object-cover rounded flex-shrink-0"
-                              loading="lazy"
-                            />
-                          )}
-
-                          {/* Track Info */}
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-sm sm:text-base text-gray-900 dark:text-gray-100 truncate">
-                              {track.title}
-                            </h4>
-                            <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                              {track.channel && <span className="truncate">{track.channel}</span>}
-                              {track.duration && (
-                                <>
-                                  <span className="hidden sm:inline">•</span>
-                                  <span className="hidden sm:inline">{track.duration}</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Delete Button */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm(`Remove "${track.title}" from playlist?`)) {
-                                removeTrack(track.id);
-                              }
-                            }}
-                            className="flex-shrink-0 p-1.5 sm:p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                            title="Remove from playlist"
-                          >
-                            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

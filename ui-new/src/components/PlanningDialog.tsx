@@ -23,7 +23,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const dialogRef = useDialogClose(isOpen, onClose);
   const { getToken, isAuthenticated } = useAuth();
   const { settings } = useSettings();
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   const [query, setQuery] = useLocalStorage<string>('planning_query', '');
   const [result, setResult] = useLocalStorage<any>('planning_result', null);
   const [isLoading, setIsLoading] = useState(false);
@@ -37,9 +37,11 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   // Refs for auto-resizing textareas
   const queryTextareaRef = useRef<HTMLTextAreaElement>(null);
   const systemPromptTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const userQueryTextareaRef = useRef<HTMLTextAreaElement>(null);
   
-  // System prompt state (synced with chat)
-  const [systemPrompt, setSystemPrompt] = useLocalStorage('chat_system_prompt', '');
+  // Generated prompts (transformed from LLM result)
+  const [generatedSystemPrompt, setGeneratedSystemPrompt] = useLocalStorage('planning_dialog_generated_system_prompt', '');
+  const [generatedUserQuery, setGeneratedUserQuery] = useLocalStorage('planning_dialog_generated_user_query', '');
 
   // Auto-resize function for textareas
   const autoResize = (textarea: HTMLTextAreaElement | null) => {
@@ -54,10 +56,14 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
     autoResize(queryTextareaRef.current);
   }, [query]);
 
-  // Auto-resize system prompt textarea when it changes
+  // Auto-resize generated prompts textareas when they change
   useEffect(() => {
     autoResize(systemPromptTextareaRef.current);
-  }, [systemPrompt]);
+  }, [generatedSystemPrompt]);
+
+  useEffect(() => {
+    autoResize(userQueryTextareaRef.current);
+  }, [generatedUserQuery]);
 
   // Load saved plans when dialog opens
   useEffect(() => {
@@ -108,13 +114,14 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
               
             case 'result':
               setResult(data);
-              // Update system prompt from persona if available
-              const promptToSave = data.persona || undefined;
-              if (data.persona) {
-                setSystemPrompt(data.persona);
+              // Use enhancedSystemPrompt and enhancedUserPrompt directly from LLM (no manipulation)
+              if (data.enhancedSystemPrompt) {
+                setGeneratedSystemPrompt(data.enhancedSystemPrompt);
               }
-              saveCachedPlan(query, data, promptToSave);
-              console.log('Plan auto-saved to cache with system prompt');
+              if (data.enhancedUserPrompt) {
+                setGeneratedUserQuery(data.enhancedUserPrompt);
+              }
+              // Don't auto-save - user must explicitly click "Save Plan"
               break;
               
             case 'llm_response':
@@ -175,35 +182,16 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   };
 
   const handleTransferToChat = () => {
-    if (!result || !onTransferToChat) return;
+    if (!generatedUserQuery || !onTransferToChat) return;
     
-    let chatPrompt = `I need help with the following research task:\n\n`;
-    chatPrompt += `**Original Query:** ${query}\n\n`;
-    
-    if (result.searchKeywords && result.searchKeywords.length > 0) {
-      // Flatten the searchKeywords array (it's an array of arrays)
-      const flatKeywords = result.searchKeywords.flat();
-      
-      chatPrompt += `**Search Keywords:**\n`;
-      chatPrompt += flatKeywords.map((kw: string) => `- ${kw}`).join('\n');
-      chatPrompt += `\n\nPlease search for these keywords to gather comprehensive information.\n\n`;
-    }
-    
-    if (result.questions && result.questions.length > 0) {
-      chatPrompt += `**Be sure to answer the following questions:**\n`;
-      chatPrompt += result.questions.map((q: string, idx: number) => `${idx + 1}. ${q}`).join('\n');
-      chatPrompt += `\n\nPlease research and provide complete answers to all these questions.\n\n`;
-    }
-    
-    if (result.reasoning) {
-      chatPrompt += `**Research Context:**\n${result.reasoning}\n\n`;
-    }
-    
-    chatPrompt += `Please help me research this topic thoroughly using your available tools.`;
-    
+    // Use the generated prompts as-is and include full planning context
     const transferData = {
-      prompt: chatPrompt,
-      persona: systemPrompt || ''
+      prompt: generatedUserQuery,
+      persona: generatedSystemPrompt || '',
+      // NEW: Include planning context
+      planningQuery: query,
+      generatedSystemPrompt: generatedSystemPrompt,
+      generatedUserQuery: generatedUserQuery
     };
     
     onTransferToChat(JSON.stringify(transferData));
@@ -213,9 +201,14 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const handleLoadPlan = (plan: CachedPlan) => {
     setQuery(plan.query);
     setResult(plan.plan);
-    // Restore system prompt if it was saved with the plan
-    if (plan.systemPrompt) {
-      setSystemPrompt(plan.systemPrompt);
+    // Use enhanced prompts directly from cached plan (no manipulation)
+    if (plan.plan && !plan.plan.error) {
+      if (plan.plan.enhancedSystemPrompt) {
+        setGeneratedSystemPrompt(plan.plan.enhancedSystemPrompt);
+      }
+      if (plan.plan.enhancedUserPrompt) {
+        setGeneratedUserQuery(plan.plan.enhancedUserPrompt);
+      }
     }
     setShowLoadDialog(false);
   };
@@ -223,6 +216,37 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const handleDeletePlan = (planId: string) => {
     deleteCachedPlan(planId);
     setSavedPlans(getAllCachedPlans());
+  };
+
+  const handleSavePlan = () => {
+    if (!result || result.error) {
+      showError('Cannot save plan: No valid plan generated');
+      return;
+    }
+    
+    saveCachedPlan(query, result, result.enhancedSystemPrompt || '');
+    showSuccess('Plan saved successfully');
+    console.log('Plan manually saved to cache');
+  };
+
+  const handleClear = () => {
+    // Clear planning input
+    setQuery('');
+    
+    // Clear planning results
+    setResult(null);
+    
+    // Clear generated prompts
+    setGeneratedSystemPrompt('');
+    setGeneratedUserQuery('');
+    
+    // Clear from localStorage
+    localStorage.removeItem('planning_dialog_generated_system_prompt');
+    localStorage.removeItem('planning_dialog_generated_user_query');
+    localStorage.removeItem('planning_query');
+    localStorage.removeItem('planning_result');
+    
+    console.log('Planning dialog cleared completely');
   };
 
   if (!isOpen) return null;
@@ -249,13 +273,48 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
 
           {/* Content */}
           <div className="p-6 space-y-4">
-            {/* Action Buttons */}
+            {/* Action Buttons - All in one row */}
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm">
-                📂 Load Saved Plan
+              <button 
+                onClick={handleSubmit}
+                disabled={isLoading || !query.trim() || !isAuthenticated}
+                className="btn-primary text-sm"
+              >
+                {isLoading ? 'Generating...' : 'Generate Plan'}
               </button>
-              <button onClick={() => { setQuery(''); setResult(null); setSystemPrompt(''); }} className="btn-secondary text-sm">
-                🗑️ Clear
+              
+              <button 
+                onClick={handleSavePlan}
+                disabled={!result || result.error}
+                className="btn-primary text-sm"
+                title="Save the current plan to your saved plans list"
+              >
+                Save Plan
+              </button>
+              
+              {onTransferToChat && (
+                <button
+                  onClick={handleTransferToChat}
+                  disabled={!generatedUserQuery || !generatedUserQuery.trim()}
+                  className="btn-primary text-sm"
+                >
+                  Transfer to Chat
+                </button>
+              )}
+              
+              <button 
+                onClick={() => setShowLoadDialog(true)} 
+                className="btn-secondary text-sm"
+              >
+                Load Saved Plans
+              </button>
+              
+              <button 
+                onClick={handleClear}
+                className="btn-secondary text-sm"
+                title="Clear all planning data and start fresh"
+              >
+                Clear All
               </button>
             </div>
 
@@ -282,86 +341,63 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
               )}
             </div>
 
-            {/* Generate Button */}
-            {isAuthenticated && (
-              <div className="card p-4">
-                <button
-                  onClick={handleSubmit}
-                  disabled={isLoading || !query.trim()}
-                  className="btn-primary w-full"
-                >
-                  {isLoading ? 'Generating Plan...' : 'Generate Research Plan'}
-                </button>
-              </div>
-            )}
-
-            {/* Results */}
-            {result && (
+            {/* Generated Prompts - Three Auto-Resizing Textareas */}
+            {generatedSystemPrompt && (
               <div className="card p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                    Research Plan
+                    Generated Prompts
                   </h3>
-                  <div className="flex gap-2">
-                    {/* LLM Transparency Info Button */}
-                    {!result.error && llmInfo && (
-                      <button
-                        onClick={() => setShowLlmInfo(true)}
-                        className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1"
-                        title="View LLM transparency info (model, tokens, cost)"
-                      >
-                        💰 ${(llmInfo.cost || 0).toFixed(4)} • {llmInfo.calls || 1} call{llmInfo.calls > 1 ? 's' : ''} ℹ️
-                      </button>
-                    )}
-                    {onTransferToChat && (
-                      <button
-                        onClick={handleTransferToChat}
-                        className="btn-primary text-sm"
-                      >
-                        Transfer to Chat →
-                      </button>
-                    )}
+                  {/* LLM Transparency Info Button */}
+                  {llmInfo && (
+                    <button
+                      onClick={() => setShowLlmInfo(true)}
+                      className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1"
+                      title="View LLM transparency info (model, tokens, cost)"
+                    >
+                      💰 ${(llmInfo.cost || 0).toFixed(4)} • {llmInfo.calls || 1} call{llmInfo.calls > 1 ? 's' : ''} ℹ️
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-4">
+                  {/* Generated System Prompt */}
+                  <div>
+                    <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">Generated System Prompt (Editable):</h4>
+                    <textarea
+                      ref={systemPromptTextareaRef}
+                      value={generatedSystemPrompt}
+                      onChange={(e) => setGeneratedSystemPrompt(e.target.value)}
+                      className="input-field resize-none overflow-hidden w-full"
+                      style={{ minHeight: '96px' }}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      This defines the AI's role and behavior. Edit as needed before transferring to chat.
+                    </p>
+                  </div>
+
+                  {/* Generated User Query */}
+                  <div>
+                    <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">Generated User Query (Editable):</h4>
+                    <textarea
+                      ref={userQueryTextareaRef}
+                      value={generatedUserQuery}
+                      onChange={(e) => setGeneratedUserQuery(e.target.value)}
+                      className="input-field resize-none overflow-hidden w-full"
+                      style={{ minHeight: '96px' }}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      This is the message that will be sent to the chat. Edit to refine your query.
+                    </p>
                   </div>
                 </div>
-                {result.error ? (
-                  <div className="text-red-500">
-                    Error: {result.error}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Editable System Prompt */}
-                    {systemPrompt && (
-                      <div className="card p-4">
-                        <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">System Prompt (Editable):</h4>
-                        <textarea
-                          ref={systemPromptTextareaRef}
-                          value={systemPrompt}
-                          onChange={(e) => setSystemPrompt(e.target.value)}
-                          className="input-field resize-none overflow-hidden w-full"
-                          style={{ minHeight: '96px' }}
-                        />
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          This defines the AI's role and behavior. Edit as needed before transferring to chat.
-                        </p>
-                      </div>
-                    )}
+              </div>
+            )}
 
-                    {/* Editable User Message */}
-                    <div className="card p-4">
-                      <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">User Message (Editable):</h4>
-                      <textarea
-                        ref={queryTextareaRef}
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        className="input-field resize-none overflow-hidden w-full"
-                        style={{ minHeight: '96px' }}
-                      />
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                        This is the message that will be sent to the chat. Edit to refine your query.
-                      </p>
-                    </div>
-
-                    {/* SIMPLE Query Display */}
+            {/* Results Display */}
+            {result && !result.error && (
+              <div className="card p-4">
+                <div className="space-y-4">
+                  {/* SIMPLE Query Display */}
                     {result.queryType === 'SIMPLE' && (
                       <div className="card p-4 bg-blue-50 dark:bg-blue-900/20">
                         <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
@@ -625,95 +661,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
                         </div>
                       </div>
                     )}
-
-                    {/* Transfer Preview Section */}
-                    {result && !result.error && (
-                      <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-4 rounded-lg border border-green-200 dark:border-green-700">
-                        <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center">
-                          <span className="mr-2">🚀</span>
-                          Ready to Transfer to Chat
-                        </h3>
-                        
-                        <div className="space-y-3">
-                          {/* System Prompt Preview */}
-                          <div>
-                            <h4 className="text-sm font-medium mb-2 text-green-800 dark:text-green-200">
-                              📋 System Prompt (AI Role):
-                            </h4>
-                            <div className="bg-white dark:bg-gray-800 p-3 rounded border text-xs font-mono">
-                              <div className="text-green-600 dark:text-green-400 mb-1">// This defines how the AI will behave</div>
-                              <div className="text-gray-700 dark:text-gray-300">
-                                {systemPrompt || "No system prompt set"}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* User Query Preview */}
-                          <div>
-                            <h4 className="text-sm font-medium mb-2 text-blue-800 dark:text-blue-200">
-                              💬 User Query (What will be sent):
-                            </h4>
-                            <div className="bg-white dark:bg-gray-800 p-3 rounded border text-xs font-mono max-h-32 overflow-y-auto">
-                              <div className="text-blue-600 dark:text-blue-400 mb-1">// This is the detailed research request</div>
-                              <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                                {(() => {
-                                  let chatPrompt = `I need help with the following research task:\n\n`;
-                                  chatPrompt += `**Original Query:** ${query}\n\n`;
-                                  
-                                  if (result.searchStrategies && result.searchStrategies.length > 0) {
-                                    chatPrompt += `**Search Queries:**\n`;
-                                    chatPrompt += result.searchStrategies.map((kw: string) => `- "${kw}"`).join('\n');
-                                    chatPrompt += `\n\nPlease search for these queries to gather comprehensive information.\n\n`;
-                                  }
-                                  
-                                  if (result.researchQuestions && result.researchQuestions.length > 0) {
-                                    chatPrompt += `**Key Research Questions:**\n`;
-                                    chatPrompt += result.researchQuestions.map((q: string, idx: number) => `${idx + 1}. ${q}`).join('\n');
-                                    chatPrompt += `\n\nPlease research and provide complete answers to all these questions.\n\n`;
-                                  }
-                                  
-                                  if (result.reasoning) {
-                                    chatPrompt += `**Research Context:**\n${result.reasoning}\n\n`;
-                                  }
-                                  
-                                  if (result.methodology) {
-                                    chatPrompt += `**Methodology:**\n${result.methodology}\n\n`;
-                                  }
-                                  
-                                  if (result.researchApproach) {
-                                    chatPrompt += `**Research Approach:** ${result.researchApproach}\n\n`;
-                                  }
-                                  
-                                  if (result.suggestedSources && result.suggestedSources.length > 0) {
-                                    chatPrompt += `**Suggested Source Types:**\n`;
-                                    result.suggestedSources.forEach((source: any) => {
-                                      chatPrompt += `- **${source.type.charAt(0).toUpperCase() + source.type.slice(1)}**: ${source.examples ? source.examples.join(', ') : 'Various relevant sources'}\n`;
-                                    });
-                                    chatPrompt += '\n';
-                                  }
-                                  
-                                  chatPrompt += `Please help me research this topic thoroughly using your available tools and the suggested source types.`;
-                                  
-                                  return chatPrompt;
-                                })()}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* LLM Selection Info */}
-                          {llmInfo && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 p-2 rounded">
-                              <div className="flex items-center justify-between">
-                                <span>🤖 Generated by: {llmInfo.model || 'Unknown model'}</span>
-                                <span>⚡ Tokens: {llmInfo.totalTokens || 0}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                </div>
               </div>
             )}
           </div>

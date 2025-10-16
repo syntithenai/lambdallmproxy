@@ -12,6 +12,7 @@ export class ElevenLabsProvider implements TTSProvider {
   private apiKey: string;
   private audio: HTMLAudioElement | null = null;
   private cachedVoices: Voice[] | null = null;
+  private currentOnEnd: (() => void) | null = null;
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -152,6 +153,9 @@ export class ElevenLabsProvider implements TTSProvider {
     this.audio = new Audio(audioUrl);
     this.audio.volume = options.volume || 1.0;
 
+    // Store the onEnd callback so stop() can trigger it
+    this.currentOnEnd = options.onEnd || null;
+
     return new Promise((resolve, reject) => {
       if (!this.audio) {
         reject(new Error('Audio element not available'));
@@ -163,6 +167,7 @@ export class ElevenLabsProvider implements TTSProvider {
         options.onEnd?.();
         URL.revokeObjectURL(audioUrl);
         this.audio = null;
+        this.currentOnEnd = null;
         resolve();
       };
       this.audio.onerror = () => {
@@ -170,6 +175,7 @@ export class ElevenLabsProvider implements TTSProvider {
         options.onError?.(error);
         URL.revokeObjectURL(audioUrl);
         this.audio = null;
+        this.currentOnEnd = null;
         reject(error);
       };
 
@@ -178,6 +184,7 @@ export class ElevenLabsProvider implements TTSProvider {
         options.onError?.(error);
         URL.revokeObjectURL(audioUrl);
         this.audio = null;
+        this.currentOnEnd = null;
         reject(error);
       });
     });
@@ -192,6 +199,13 @@ export class ElevenLabsProvider implements TTSProvider {
         URL.revokeObjectURL(this.audio.src);
       }
       this.audio = null;
+      
+      // Trigger onEnd callback to reset TTS state
+      if (this.currentOnEnd) {
+        console.log('ElevenLabsProvider: stop() triggering onEnd callback');
+        this.currentOnEnd();
+        this.currentOnEnd = null;
+      }
     }
   }
 

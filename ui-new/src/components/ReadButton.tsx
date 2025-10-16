@@ -211,7 +211,7 @@ export const GlobalTTSStopButton: React.FC = () => {
   return (
     <button
       onClick={stop}
-      className="fixed top-4 right-20 z-50 px-4 py-2 bg-red-600 text-white rounded-lg shadow-lg hover:bg-red-700 transition-colors flex items-center gap-2 animate-pulse"
+      className="fixed top-4 right-20 z-[60] px-4 py-2 bg-red-600 text-white rounded-lg shadow-lg hover:bg-red-700 transition-colors flex items-center gap-2 animate-pulse"
     >
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
         <rect x="6" y="6" width="12" height="12" />

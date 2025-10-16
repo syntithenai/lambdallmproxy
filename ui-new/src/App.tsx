@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-ro
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SearchResultsProvider } from './contexts/SearchResultsContext';
 import { PlaylistProvider } from './contexts/PlaylistContext';
+import { PlayerProvider } from './contexts/PlayerContext';
 import { SwagProvider } from './contexts/SwagContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { YouTubeAuthProvider } from './contexts/YouTubeAuthContext';
@@ -16,6 +17,7 @@ import { chatHistoryDB } from './utils/chatHistoryDB';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { PlaylistButton } from './components/PlaylistButton';
+import { BackgroundPlayer } from './components/BackgroundPlayer';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
 import { SwagPage } from './components/SwagPage';
@@ -224,6 +226,9 @@ function AppContent() {
       {/* Global TTS Stop Button */}
       {TTS_FEATURE_ENABLED && <GlobalTTSStopButton />}
 
+      {/* Background Player - Always mounted for continuous audio */}
+      <BackgroundPlayer />
+
       {/* Main Content - Only visible when authenticated */}
       <main className="flex-1 overflow-hidden">
         <div className="h-full max-w-screen-2xl mx-auto">
@@ -269,11 +274,13 @@ function App() {
                     <CastProvider>
                       <YouTubeAuthProvider>
                         <PlaylistProvider>
-                          <SearchResultsProvider>
-                            <SwagProvider>
-                              <AppContent />
-                            </SwagProvider>
-                          </SearchResultsProvider>
+                          <PlayerProvider>
+                            <SearchResultsProvider>
+                              <SwagProvider>
+                                <AppContent />
+                              </SwagProvider>
+                            </SearchResultsProvider>
+                          </PlayerProvider>
                         </PlaylistProvider>
                       </YouTubeAuthProvider>
                     </CastProvider>
@@ -282,11 +289,13 @@ function App() {
                   <CastProvider>
                     <YouTubeAuthProvider>
                       <PlaylistProvider>
-                        <SearchResultsProvider>
-                          <SwagProvider>
-                            <AppContent />
-                          </SwagProvider>
-                        </SearchResultsProvider>
+                        <PlayerProvider>
+                          <SearchResultsProvider>
+                            <SwagProvider>
+                              <AppContent />
+                            </SwagProvider>
+                          </SearchResultsProvider>
+                        </PlayerProvider>
                       </PlaylistProvider>
                     </YouTubeAuthProvider>
                   </CastProvider>

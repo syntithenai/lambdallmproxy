@@ -6,7 +6,8 @@ import {
   clearAuthState, 
   decodeJWT, 
   isTokenExpiringSoon,
-  shouldRefreshToken
+  shouldRefreshToken,
+  getTokenTimeRemaining
 } from '../utils/auth';
 import type { AuthState, GoogleUser } from '../utils/auth';
 
@@ -70,19 +71,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const refreshToken = useCallback(async (): Promise<boolean> => {
     try {
-      console.log('🔄 Attempting to refresh token...');
-      
       if (!authState.accessToken) {
-        console.warn('No token to refresh');
+        console.log('No token to refresh');
         return false;
       }
 
+      console.log('🔄 Attempting token refresh...');
+      
       // Use the refreshGoogleToken function from auth utils
       const { refreshGoogleToken, decodeJWT, saveAuthState: saveAuthStateUtil } = await import('../utils/auth');
-      const newToken = await refreshGoogleToken();
+      const result = await refreshGoogleToken(authState.accessToken);
       
-      if (newToken) {
-        const decoded = decodeJWT(newToken);
+      if (result) {
+        const decoded = decodeJWT(result.accessToken);
         if (decoded) {
           const user: GoogleUser = {
             email: decoded.email,
@@ -91,10 +92,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             sub: decoded.sub
           };
           
-          saveAuthStateUtil(user, newToken);
+          // Save with the new refresh token if provided
+          saveAuthStateUtil(user, result.accessToken, result.refreshToken);
           setAuthState({
             user,
-            accessToken: newToken,
+            accessToken: result.accessToken,
             isAuthenticated: true
           });
           
@@ -103,10 +105,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
       
-      console.warn('⚠️ Token refresh failed');
+      // Refresh failed - this is normal if refresh token expired or invalid
+      console.log('ℹ️ Token refresh not available (user may need to re-authenticate manually)');
       return false;
     } catch (error) {
-      console.error('❌ Token refresh error:', error);
+      console.log('ℹ️ Token refresh unavailable:', error instanceof Error ? error.message : 'Unknown error');
       return false;
     }
   }, [authState.accessToken]);
@@ -200,16 +203,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Proactively refresh when within 15 minutes of expiry
       if (shouldRefreshToken(currentToken)) {
-        console.log('🔄 Token within 15 minutes of expiry, attempting proactive refresh...');
+        const timeRemaining = getTokenTimeRemaining(currentToken);
+        const minutesRemaining = Math.floor(timeRemaining / 60000);
+        
+        console.log(`ℹ️ Token expires in ${minutesRemaining} minutes, attempting proactive refresh...`);
         
         const success = await refreshToken();
         
         if (!success && isTokenExpiringSoon(currentToken)) {
-          // Only logout if refresh failed AND token is critically close to expiring
-          console.warn('⚠️ Proactive refresh failed and token expiring soon, logging out...');
+          // Only logout if refresh failed AND token is critically close to expiring (< 5 min)
+          console.warn('⚠️ Token expiring soon and refresh unavailable. Please re-authenticate.');
           logout();
         } else if (!success) {
-          console.warn('⚠️ Proactive refresh failed but token still has time');
+          console.log(`ℹ️ Silent refresh not available, but token still valid for ${minutesRemaining} minutes`);
         }
       }
     }, 2 * 60 * 1000); // Check every 2 minutes

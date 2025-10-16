@@ -12,6 +12,11 @@ export interface ChatHistoryEntry {
   messages: any[];
   timestamp: number;
   title?: string;
+  // Planning context fields
+  systemPrompt?: string;           // User-edited system prompt
+  planningQuery?: string;           // Original planning query input
+  generatedSystemPrompt?: string;   // Generated system prompt from planning
+  generatedUserQuery?: string;      // Generated user query from planning
 }
 
 class ChatHistoryDB {
@@ -56,7 +61,17 @@ class ChatHistoryDB {
     return this.initPromise;
   }
 
-  async saveChat(id: string, messages: any[], title?: string): Promise<void> {
+  async saveChat(
+    id: string, 
+    messages: any[], 
+    title?: string,
+    metadata?: {
+      systemPrompt?: string;
+      planningQuery?: string;
+      generatedSystemPrompt?: string;
+      generatedUserQuery?: string;
+    }
+  ): Promise<void> {
     try {
       const db = await this.init();
       const transaction = db.transaction([STORE_NAME], 'readwrite');
@@ -66,7 +81,12 @@ class ChatHistoryDB {
         id,
         messages,
         timestamp: Date.now(),
-        title
+        title,
+        // Include planning metadata if provided
+        ...(metadata?.systemPrompt && { systemPrompt: metadata.systemPrompt }),
+        ...(metadata?.planningQuery && { planningQuery: metadata.planningQuery }),
+        ...(metadata?.generatedSystemPrompt && { generatedSystemPrompt: metadata.generatedSystemPrompt }),
+        ...(metadata?.generatedUserQuery && { generatedUserQuery: metadata.generatedUserQuery })
       };
 
       await new Promise<void>((resolve, reject) => {
@@ -75,7 +95,7 @@ class ChatHistoryDB {
         request.onerror = () => reject(request.error);
       });
 
-      console.log(`Saved chat ${id} to IndexedDB`);
+      console.log(`Saved chat ${id} to IndexedDB with planning metadata`);
     } catch (error) {
       console.error('Error saving chat to IndexedDB:', error);
       throw error;
@@ -98,6 +118,26 @@ class ChatHistoryDB {
       });
     } catch (error) {
       console.error('Error getting chat from IndexedDB:', error);
+      return null;
+    }
+  }
+
+  async getChatWithMetadata(id: string): Promise<ChatHistoryEntry | null> {
+    try {
+      const db = await this.init();
+      const transaction = db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+
+      return new Promise((resolve, reject) => {
+        const request = store.get(id);
+        request.onsuccess = () => {
+          const entry = request.result as ChatHistoryEntry | undefined;
+          resolve(entry || null);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    } catch (error) {
+      console.error('Error getting chat with metadata from IndexedDB:', error);
       return null;
     }
   }
@@ -134,6 +174,25 @@ class ChatHistoryDB {
       console.log(`Deleted chat ${id} from IndexedDB`);
     } catch (error) {
       console.error('Error deleting chat from IndexedDB:', error);
+      throw error;
+    }
+  }
+
+  async clearAllChats(): Promise<void> {
+    try {
+      const db = await this.init();
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+
+      await new Promise<void>((resolve, reject) => {
+        const request = store.clear();
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+
+      console.log('Cleared all chats from IndexedDB');
+    } catch (error) {
+      console.error('Error clearing all chats from IndexedDB:', error);
       throw error;
     }
   }

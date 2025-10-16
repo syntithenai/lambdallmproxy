@@ -37,6 +37,7 @@ export function useProviders(): UseProvidersResult {
       const newProvider: ProviderConfig = {
         ...provider,
         id: crypto.randomUUID(),
+        enabled: true, // Default new providers to enabled
       };
 
       const duplicate = settings.providers.find((p) => isDuplicateProvider(p, newProvider));

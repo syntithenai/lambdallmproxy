@@ -192,9 +192,68 @@
       font-size: 32px;
       font-weight: 300;
     }
+
+    /* Video Player Styles */
+    #video-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: none;
+      z-index: 1000;
+    }
+
+    #video-container.show {
+      display: block;
+    }
+
+    #video-player {
+      width: 100%;
+      height: 100%;
+    }
+
+    #video-metadata {
+      position: absolute;
+      bottom: 60px;
+      left: 40px;
+      right: 40px;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      padding: 30px;
+      opacity: 1;
+      transition: opacity 0.5s ease;
+    }
+
+    #video-metadata.fade-out {
+      opacity: 0;
+    }
+
+    #video-title {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    }
+
+    #video-channel {
+      font-size: 24px;
+      opacity: 0.9;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
   </style>
 </head>
 <body>
+  <!-- Video Container (hidden by default) -->
+  <div id="video-container">
+    <div id="video-player"></div>
+    <div id="video-metadata">
+      <div id="video-title"></div>
+      <div id="video-channel"></div>
+    </div>
+  </div>
+
+  <!-- Chat Container -->
   <div id="container">
     <div id="header">
       <h1>🤖 LLM Proxy Chat</h1>
@@ -221,9 +280,22 @@
     // Custom namespaces
     const NAMESPACE = 'urn:x-cast:com.lambdallmproxy.chat';
     const SNIPPET_NAMESPACE = 'urn:x-cast:com.lambdallmproxy.snippet';
+    const VIDEO_NAMESPACE = 'urn:x-cast:com.lambdallmproxy.video';
     
     // Snippet state
     let currentSnippet = null;
+    
+    // Video state
+    let currentVideo = null;
+    let metadataTimeout = null;
+    
+    // Get elements
+    const videoContainer = document.getElementById('video-container');
+    const videoPlayer = document.getElementById('video-player');
+    const videoMetadata = document.getElementById('video-metadata');
+    const videoTitle = document.getElementById('video-title');
+    const videoChannel = document.getElementById('video-channel');
+    const chatContainer = document.getElementById('container');
 
     // Show status message temporarily
     function showStatus(message) {
@@ -232,6 +304,64 @@
       setTimeout(() => {
         statusDiv.classList.remove('show');
       }, 3000);
+    }
+
+    // Extract YouTube video ID from URL
+    function getYouTubeVideoId(url) {
+      const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+      const match = url.match(regex);
+      return match ? match[1] : null;
+    }
+
+    // Load and play video
+    function loadVideo(data) {
+      const videoId = getYouTubeVideoId(data.url);
+      if (!videoId) {
+        console.error('Invalid YouTube URL:', data.url);
+        return;
+      }
+
+      currentVideo = data;
+      
+      // Show video container, hide chat
+      videoContainer.classList.add('show');
+      chatContainer.style.display = 'none';
+      
+      // Create YouTube iframe
+      const startTime = data.position || 0;
+      videoPlayer.innerHTML = `
+        <iframe 
+          width="100%" 
+          height="100%" 
+          src="https://www.youtube.com/embed/${videoId}?autoplay=1&start=${Math.floor(startTime)}&rel=0&modestbranding=1"
+          frameborder="0" 
+          allow="autoplay; encrypted-media"
+          allowfullscreen>
+        </iframe>
+      `;
+      
+      // Show metadata
+      videoTitle.textContent = data.title || 'Unknown Title';
+      videoChannel.textContent = data.channel || '';
+      videoMetadata.classList.remove('fade-out');
+      
+      // Auto-hide metadata after 5 seconds
+      clearTimeout(metadataTimeout);
+      metadataTimeout = setTimeout(() => {
+        videoMetadata.classList.add('fade-out');
+      }, 5000);
+      
+      showStatus(`Playing: ${data.title || 'Video'}`);
+    }
+
+    // Stop video and return to chat
+    function stopVideo() {
+      currentVideo = null;
+      videoContainer.classList.remove('show');
+      chatContainer.style.display = 'flex';
+      videoPlayer.innerHTML = '';
+      clearTimeout(metadataTimeout);
+      showStatus('Video stopped');
     }
 
     // Render messages to the screen
@@ -401,6 +531,40 @@
           messages = [];
           renderMessages();
           showStatus('Snippet viewing stopped');
+        }
+      }
+    });
+
+    // Handle video messages
+    context.addCustomMessageListener(VIDEO_NAMESPACE, (event) => {
+      console.log('Received video command:', event.data);
+      
+      const data = event.data;
+      
+      if (data.type === 'VIDEO_COMMAND') {
+        const { command, data: videoData } = data;
+        
+        switch (command) {
+          case 'load':
+            loadVideo(videoData);
+            break;
+          case 'play':
+            // Note: YouTube iframe doesn't expose play/pause controls
+            // This would require YouTube IFrame API for more control
+            showStatus('Play command received');
+            break;
+          case 'pause':
+            showStatus('Pause command received');
+            break;
+          case 'seek':
+            // Would need YouTube IFrame API for seek functionality
+            showStatus(`Seek to ${videoData.position}s`);
+            break;
+          case 'stop':
+            stopVideo();
+            break;
+          default:
+            console.warn('Unknown video command:', command);
         }
       }
     });

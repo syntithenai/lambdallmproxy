@@ -10,6 +10,7 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import 'highlight.js/styles/github-dark.css';
 import { MermaidChart } from './MermaidChart';
+import { usePlaylist } from '../contexts/PlaylistContext';
 
 interface MarkdownRendererProps {
   content: string;
@@ -28,6 +29,74 @@ interface MarkdownRendererProps {
 
 interface ImageGalleryProps {
   images: Array<{ src: string; alt: string }>;
+}
+
+// Helper function to extract YouTube video ID from URL
+function extractYouTubeId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    /youtube\.com\/shorts\/([^&\n?#]+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+// Component for YouTube links with play button
+interface YouTubeLinkProps {
+  href: string;
+  children: React.ReactNode;
+}
+
+function YouTubeLink({ href, children }: YouTubeLinkProps) {
+  const { addTracksToStart, playTrackByVideoId } = usePlaylist();
+  const videoId = extractYouTubeId(href);
+  
+  const handlePlay = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (videoId) {
+      // Extract title from children if it's a string
+      const title = typeof children === 'string' ? children : `YouTube Video ${videoId}`;
+      
+      // Add track to playlist (addTracksToStart will generate id and addedAt)
+      addTracksToStart([{
+        videoId,
+        title: title,
+        url: href
+      }]);
+      
+      // Play the track
+      playTrackByVideoId(videoId);
+    }
+  };
+  
+  return (
+    <span className="inline-flex items-center gap-2">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 dark:text-blue-400 hover:underline"
+      >
+        {children}
+      </a>
+      <button
+        onClick={handlePlay}
+        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+        title="Play now"
+      >
+        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        Play
+      </button>
+    </span>
+  );
 }
 
 function ImageGallery({ images }: ImageGalleryProps) {
@@ -206,16 +275,30 @@ export function MarkdownRenderer({ content, className = '', onLlmApiCall }: Mark
           },
           
           // Links
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              {children}
-            </a>
-          ),
+          a: ({ href, children }) => {
+            // Check if this is a YouTube link
+            const isYouTube = href && (
+              href.includes('youtube.com/watch') ||
+              href.includes('youtu.be/') ||
+              href.includes('youtube.com/embed/') ||
+              href.includes('youtube.com/shorts/')
+            );
+            
+            if (isYouTube && href) {
+              return <YouTubeLink href={href}>{children}</YouTubeLink>;
+            }
+            
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                {children}
+              </a>
+            );
+          },
           
           // Blockquotes
           blockquote: ({ children }) => (

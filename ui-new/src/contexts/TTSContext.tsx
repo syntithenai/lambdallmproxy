@@ -5,7 +5,7 @@
  * Integrates with existing settings system
  */
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useSettings } from './SettingsContext';
@@ -30,6 +30,7 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [providerFactory] = useState(() => new TTSProviderFactory());
   const [summaryService] = useState(() => new SpeakableSummaryService());
   const [fallbackTimeoutId, setFallbackTimeoutId] = useState<NodeJS.Timeout | null>(null);
+  const isStoppingIntentionally = useRef(false);
   
   const [state, setState] = useState<TTSState>({
     isEnabled: ttsSettings.isEnabled,
@@ -120,6 +121,11 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error('TTS is disabled');
     }
 
+    // Reset the intentional stop flag when starting new speech
+    // This allows the next onEnd to be processed normally
+    console.log('TTSContext.speak() - Resetting isStoppingIntentionally flag (starting new speech)');
+    isStoppingIntentionally.current = false;
+
     // Prepare text
     let speakableText = extractSpeakableText(text);
     
@@ -178,6 +184,24 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         options.onStart?.();
       },
       onEnd: () => {
+        console.log('TTSContext speak onEnd callback - checking if intentional stop:', isStoppingIntentionally.current);
+        
+        // If this was an intentional stop, don't call the user's onEnd callback
+        // This prevents auto-restart behavior
+        if (isStoppingIntentionally.current) {
+          console.log('TTSContext speak onEnd - INTENTIONAL STOP, skipping onEnd callback and ensuring clean state');
+          
+          // Clear fallback timeout
+          if (fallbackTimeoutId) {
+            clearTimeout(fallbackTimeoutId);
+            setFallbackTimeoutId(null);
+          }
+          
+          // Ensure state is clean (belt and suspenders)
+          setState(prev => ({ ...prev, isPlaying: false, currentText: null }));
+          return;
+        }
+        
         console.log('TTSContext speak onEnd callback - setting isPlaying to false');
         
         // Clear fallback timeout
@@ -232,7 +256,10 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [state, settings.providers, providerFactory, summaryService]);
 
   const stop = useCallback(() => {
-    console.log('TTSContext.stop() called - before:', { isPlaying: state.isPlaying, currentProvider: state.currentProvider });
+    console.log('TTSContext.stop() called - INTENTIONAL STOP');
+    
+    // Set flag to indicate this is an intentional stop (not natural end)
+    isStoppingIntentionally.current = true;
     
     // Clear fallback timeout
     if (fallbackTimeoutId) {
@@ -240,29 +267,72 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setFallbackTimeoutId(null);
     }
     
-    const provider = providerFactory.getProvider(state.currentProvider);
-    if (provider) {
-      provider.stop();
+    // FAIL-SAFE 1: Stop browser's native Speech Synthesis API
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      console.log('TTSContext.stop() - Stopping speechSynthesis');
+      window.speechSynthesis.cancel();
     }
+    
+    // FAIL-SAFE 2: Stop ALL audio elements immediately
+    // This ensures audio stops even if provider reference is lost
+    const allAudioElements = document.querySelectorAll('audio');
+    console.log('TTSContext.stop() - Found', allAudioElements.length, 'audio elements');
+    allAudioElements.forEach((audio) => {
+      if (!audio.paused) {
+        console.log('TTSContext.stop() - Force stopping audio element');
+        audio.pause();
+        audio.currentTime = 0;
+        // Clean up blob URLs
+        if (audio.src && audio.src.startsWith('blob:')) {
+          URL.revokeObjectURL(audio.src);
+          audio.src = '';
+        }
+      }
+    });
+    
+    // FAIL-SAFE 3: Stop via provider (proper cleanup)
     setState(prev => {
-      console.log('TTSContext.stop() - setting isPlaying to false, prev state:', { isPlaying: prev.isPlaying });
+      console.log('TTSContext.stop() - stopping, prev state:', { isPlaying: prev.isPlaying, currentProvider: prev.currentProvider });
+      
+      const provider = providerFactory.getProvider(prev.currentProvider);
+      if (provider) {
+        console.log('TTSContext.stop() - calling provider.stop()');
+        try {
+          provider.stop();
+        } catch (error) {
+          console.error('TTSContext.stop() - Error calling provider.stop():', error);
+        }
+      } else {
+        console.warn('TTSContext.stop() - no provider found for:', prev.currentProvider);
+      }
+      
       return { ...prev, isPlaying: false, currentText: null };
     });
-  }, [state.currentProvider, providerFactory, fallbackTimeoutId]);
+    
+    // NOTE: We do NOT reset isStoppingIntentionally here!
+    // The flag stays true until the next speak() call starts new speech.
+    // This ensures any delayed onEnd callbacks won't restart playback.
+  }, [providerFactory, fallbackTimeoutId]);
 
   const pause = useCallback(() => {
-    const provider = providerFactory.getProvider(state.currentProvider);
-    if (provider && provider.pause) {
-      provider.pause();
-    }
-  }, [state.currentProvider, providerFactory]);
+    setState(prev => {
+      const provider = providerFactory.getProvider(prev.currentProvider);
+      if (provider && provider.pause) {
+        provider.pause();
+      }
+      return prev; // No state change needed
+    });
+  }, [providerFactory]);
 
   const resume = useCallback(() => {
-    const provider = providerFactory.getProvider(state.currentProvider);
-    if (provider && provider.resume) {
-      provider.resume();
-    }
-  }, [state.currentProvider, providerFactory]);
+    setState(prev => {
+      const provider = providerFactory.getProvider(prev.currentProvider);
+      if (provider && provider.resume) {
+        provider.resume();
+      }
+      return prev; // No state change needed
+    });
+  }, [providerFactory]);
 
   const setEnabled = useCallback((enabled: boolean) => {
     setState(prev => ({ ...prev, isEnabled: enabled }));
