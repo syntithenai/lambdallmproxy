@@ -456,6 +456,7 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                   onClick={() => {
                     if (confirm('Clear entire playlist? This cannot be undone.')) {
                       clearPlaylist();
+                      showSuccess('Playlist cleared successfully!');
                     }
                   }}
                   className="px-3 py-1.5 text-xs sm:text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
@@ -553,7 +554,7 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                             if (confirm(`Delete "${p.name}"?`)) {
                               try {
                                 await deletePlaylist(p.id);
-                                showSuccess(`Playlist "${p.name}" deleted successfully!`);
+                                showSuccess(`Playlist "${p.name}" deleted!`);
                               } catch (error) {
                                 showError('Failed to delete playlist: ' + (error as Error).message);
                               }

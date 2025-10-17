@@ -11,6 +11,9 @@ interface Image {
   src: string;
   alt: string;
   source: string;
+  placement?: string;
+  placementScore?: number;
+  relevance?: number;
 }
 
 interface Video {
@@ -25,6 +28,34 @@ interface Media {
   source: string;
 }
 
+interface ExtractionMetadata {
+  summary?: {
+    totalImages: number;
+    uniqueImages: number;
+    prioritizedImages: number;
+    totalLinks: number;
+    uniqueLinks: number;
+    prioritizedLinks: number;
+    youtubeVideos: number;
+    otherVideos: number;
+  };
+  imagePlacement?: Record<string, number>;
+  topImages?: Array<{
+    rank: number;
+    src: string;
+    placement: string;
+    placementScore: number;
+    relevance: number;
+    combinedScore: string;
+    selectionReason: string;
+  }>;
+  linkCategories?: {
+    searchResults: number;
+    scrapedLinks: number;
+    prioritizedFromScraped: number;
+  };
+}
+
 interface ExtractedContentProps {
   extractedContent: {
     prioritizedLinks?: Link[];
@@ -36,6 +67,7 @@ interface ExtractedContentProps {
     allImages?: Image[];
     sources?: Link[];
     images?: Image[];
+    metadata?: ExtractionMetadata;
   };
 }
 
@@ -43,6 +75,17 @@ const ExtractedContent: React.FC<ExtractedContentProps> = ({ extractedContent })
   const [hiddenImages, setHiddenImages] = React.useState<Set<number>>(new Set());
 
   if (!extractedContent) return null;
+  
+  // Debug: Log if metadata exists
+  React.useEffect(() => {
+    console.log('🔍 ExtractedContent received:', {
+      hasMetadata: !!extractedContent.metadata,
+      metadataKeys: extractedContent.metadata ? Object.keys(extractedContent.metadata) : [],
+      hasSummary: !!extractedContent.metadata?.summary,
+      hasPlacement: !!extractedContent.metadata?.imagePlacement,
+      hasTopImages: !!extractedContent.metadata?.topImages
+    });
+  }, [extractedContent]);
 
   const { 
     prioritizedLinks,
@@ -51,10 +94,11 @@ const ExtractedContent: React.FC<ExtractedContentProps> = ({ extractedContent })
     otherVideos,
     media,
     allLinks,
-    allImages
+    allImages,
+    metadata
   } = extractedContent;
 
-  const hasContent = prioritizedLinks || prioritizedImages || youtubeVideos || otherVideos || media || allLinks || allImages;
+  const hasContent = prioritizedLinks || prioritizedImages || youtubeVideos || otherVideos || media || allLinks || allImages || metadata;
 
   if (!hasContent) return null;
 

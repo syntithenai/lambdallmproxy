@@ -167,6 +167,8 @@ export interface ChatMessage {
   }>;
   tool_call_id?: string;
   name?: string;
+  rawResponse?: string;  // NEW: For tool messages - full raw response
+  extractionMetadata?: any;  // NEW: For tool messages - extraction metadata
   isStreaming?: boolean;  // Flag to indicate message is currently being streamed
   _attachments?: Array<{  // UI-only: attached files for display
     name: string;
@@ -191,6 +193,8 @@ export interface ChatMessage {
     tool_call_id: string;
     name: string;
     llmApiCalls?: any[];
+    rawResponse?: string;  // NEW: Full raw response for transparency
+    extractionMetadata?: any;  // NEW: Per-tool extraction metadata
   }>;
   errorData?: any;        // Full error object for error transparency
   extractedContent?: {    // Extracted content from tool calls (search results, images, videos, media)

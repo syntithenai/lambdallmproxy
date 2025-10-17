@@ -92,8 +92,14 @@ try {
     process.exit(1);
   }
   
-  // Delete require cache to allow hot reloading
-  delete require.cache[require.resolve(indexPath)];
+  // Delete ALL require cache to allow hot reloading of all modules
+  console.log('🔄 Clearing require cache for hot reload...');
+  Object.keys(require.cache).forEach(key => {
+    // Only clear cache for files in our src directory
+    if (key.includes('/src/')) {
+      delete require.cache[key];
+    }
+  });
   
   const lambdaModule = require(indexPath);
   handler = lambdaModule.handler;

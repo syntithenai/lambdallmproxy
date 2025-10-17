@@ -531,6 +531,40 @@ export const updateSettingsFile = async (fileId: string, settingsJson: string): 
 };
 
 /**
+ * Check if settings exist in Google Drive (without loading them)
+ * Useful for showing the "Load" button when settings are available
+ */
+export const hasSettingsInDrive = async (): Promise<boolean> => {
+  try {
+    console.log('🔍 Checking if settings exist in Google Drive...');
+    console.log('🔐 Authentication status:', isAuthenticated());
+    
+    if (!isAuthenticated()) {
+      console.log('ℹ️  Not authenticated - assuming settings might exist (will prompt on load)');
+      // Return true to show the Load button even when not authenticated
+      // The loadSettingsFromDrive function will handle authentication
+      return true;
+    }
+    
+    console.log('� Finding Research Agent folder...');
+    const folderId = await findOrCreateResearchAgentFolder();
+    console.log('📁 Folder ID:', folderId);
+    
+    console.log('📄 Searching for settings file...');
+    const fileId = await findSettingsFile(folderId);
+    console.log('📄 File ID:', fileId || 'null');
+    
+    const exists = fileId !== null;
+    console.log(exists ? '✅ Settings file EXISTS in Google Drive' : 'ℹ️  No settings file found in Google Drive');
+    return exists;
+  } catch (error) {
+    console.error('❌ Failed to check for settings in Google Drive:', error);
+    // Return true on error to give users the option to try loading
+    return true;
+  }
+};
+
+/**
  * Load settings from Google Drive
  */
 export const loadSettingsFromDrive = async (): Promise<string | null> => {

@@ -1872,6 +1872,138 @@ function shouldIncludeLayer2(modelId, contextWindow) {
 
 ---
 
+## UI Component Specifications
+
+### JsonTreeViewer Component
+
+**Purpose:** Display JSON data in an interactive, collapsible tree format with syntax highlighting.
+
+**Features:**
+- Syntax highlighting for JSON types (string, number, boolean, null, object, array)
+- Collapsible/expandable nodes
+- Copy to clipboard (entire tree or selected node)
+- Download as JSON file
+- Search within JSON (highlight matching keys/values)
+- Line numbers
+- Deep linking to specific nodes
+- Keyboard navigation
+
+**Example Usage:**
+```tsx
+<JsonTreeViewer
+  data={rawToolResponse}
+  defaultExpanded={false}
+  searchable={true}
+  copyable={true}
+  downloadable={true}
+  maxDepth={3}
+  highlightUpdates={true}
+/>
+```
+
+### ToolUseBlock Component
+
+**Purpose:** Display tool execution with full transparency and expandable sections.
+
+**Structure:**
+```tsx
+<ToolUseBlock
+  toolName="search_web"
+  status="success"
+  executionTime={2.3}
+  query="web scraping best practices"
+>
+  <Section title="Extracted Content (For You)" defaultExpanded={true}>
+    <SummaryStats>
+      <Stat icon="🔍" label="Search Results" value={5} />
+      <Stat icon="🖼️" label="Images" value="12 (3 prioritized)" />
+      <Stat icon="🎬" label="YouTube Videos" value={2} />
+      <Stat icon="🔗" label="Links" value="47 (8 prioritized)" />
+    </SummaryStats>
+    
+    <ImageGallery images={extractedImages} />
+    <VideoList videos={extractedVideos} />
+    <LinkList links={extractedLinks} />
+  </Section>
+  
+  <Section title="LLM Context (Sent to AI)" defaultExpanded={false}>
+    <SummaryStats>
+      <Stat icon="🖼️" label="Images" value="3 with placement" />
+      <Stat icon="📝" label="Content" value="1,247 tokens" />
+      <Stat icon="🔗" label="Links" value="8 prioritized" />
+    </SummaryStats>
+    
+    <CodeBlock language="markdown">
+      {llmContext}
+    </CodeBlock>
+  </Section>
+  
+  <Section title="Raw Tool Response" defaultExpanded={false}>
+    <JsonTreeViewer data={rawResponse} />
+  </Section>
+  
+  <Section title="Extracted Metadata" defaultExpanded={false}>
+    <JsonTreeViewer data={metadata} />
+  </Section>
+  
+  <Section title="Filtering Decisions" defaultExpanded={false}>
+    <FilteringReport
+      imagesRemoved={25}
+      linksRemoved={42}
+      reasons={filteringReasons}
+    />
+    <JsonTreeViewer data={filteringDecisions} />
+  </Section>
+</ToolUseBlock>
+```
+
+### CollapsibleSection Component
+
+**Purpose:** Reusable collapsible section with consistent styling.
+
+**Props:**
+```typescript
+interface CollapsibleSectionProps {
+  title: string;
+  defaultExpanded?: boolean;
+  icon?: React.ReactNode;
+  badge?: string | number;
+  onToggle?: (expanded: boolean) => void;
+  persistKey?: string; // For remembering state
+  children: React.ReactNode;
+}
+```
+
+### FilteringReport Component
+
+**Purpose:** Visual summary of filtering decisions.
+
+**Display:**
+```
+┌─────────────────────────────────────┐
+│ Filtering Summary                    │
+├─────────────────────────────────────┤
+│ 📊 Images                            │
+│   ✅ Kept: 12                        │
+│   ❌ Removed: 25                     │
+│   └─ Reasons:                        │
+│      • Tracking pixels: 8            │
+│      • Icons/logos: 12               │
+│      • Too small: 5                  │
+│                                      │
+│ 📊 Links                             │
+│   ✅ Kept: 47                        │
+│   ❌ Removed: 42                     │
+│   └─ Reasons:                        │
+│      • Navigation: 15                │
+│      • Ads: 8                        │
+│      • Social sharing: 7             │
+│      • Tracking: 12                  │
+└─────────────────────────────────────┘
+```
+
+---
+
 ## Success Metrics
 
 **After Implementation, Track:**
@@ -1895,6 +2027,14 @@ function shouldIncludeLayer2(modelId, contextWindow) {
    - Token usage within expected limits
    - Model-aware optimization effectiveness
 
+5. **Transparency Features (NEW):**
+   - JSON tree viewer usage rate
+   - Most viewed sections (Raw Response, Metadata, Filtering Decisions)
+   - Copy/download feature usage
+   - User feedback on transparency (helpful vs. overwhelming)
+   - Time spent inspecting tool results
+   - Debug capability improvements (developer feedback)
+
 ---
 
 ## Conclusion
@@ -1912,16 +2052,30 @@ This plan focuses on targeted enhancements to an already well-architected system
 - 🔨 Image placement metadata (Phase 2)
 - 🔨 Better content truncation (Phase 3)
 - 🔨 Transcript dual-path delivery (Phase 4)
-- 🔨 UI display improvements (Phase 5)
+- 🔨 **Comprehensive UI transparency** (Phase 5 - NEW)
+  - JSON tree viewers for raw data
+  - Extraction metadata display
+  - Filtering decisions visibility
+  - LLM context vs. full data distinction
+- 🔨 Enhanced media display (Phase 5)
 
 **Expected Outcomes:**
 - Better image selection with placement context
 - Smarter content truncation preserving key information
 - Full transcripts available to users while LLM gets summaries
+- **Complete transparency into tool execution and data extraction**
+- **Users can inspect, debug, and understand all processing decisions**
 - Improved UI display of all extracted media
 
-**Implementation Time:** 16-26 hours total
-**Risk Level:** Low (incremental enhancements to working system)
+**Implementation Time:** 30-43 hours total (22 hours critical path)
+**Risk Level:** Low-Medium (incremental enhancements, transparency adds UI complexity)
+
+**Key Value Proposition:**
+- **Trust through Transparency:** Users see exactly what data was extracted and why
+- **Debug Capability:** Developers and power users can inspect tool execution
+- **Data Access:** Full raw data available for export and analysis
+- **Educational:** Users understand the difference between extracted data and LLM context
+- **Quality Assurance:** Filtering decisions are visible and auditable
 
 ---
 
@@ -1931,7 +2085,17 @@ This plan focuses on targeted enhancements to an already well-architected system
 2. **Phase 2:** Add image placement detection (4-6 hours)
 3. **Phase 3:** Replace substring with extractKeyContent (1-2 hours)
 4. **Phase 4:** Implement transcript dual-path (3-4 hours)
-5. **Phase 5:** Enhance UI display (4-8 hours)
-6. **Phase 6:** Testing and validation (4-6 hours)
+5. **Phase 5:** Implement UI transparency + media display (12-20 hours)
+   - **5.1:** Tool use block structure (2-3 hours)
+   - **5.2:** JSON tree viewer component (4-6 hours)
+   - **5.3:** Metadata collection & formatting (3-4 hours)
+   - **5.4:** Enhanced media display (3-5 hours)
+   - **5.5:** Integration & polish (2-4 hours)
+6. **Phase 6:** Testing and validation (6-10 hours)
 
-**Status:** 📋 Plan Updated - Ready for Implementation
+**Prioritization:**
+- **Must Have (Week 1):** Phases 2, 3, 4 (12 hours)
+- **High Priority (Week 2):** Phase 5.1-5.3 Transparency Core (10 hours)
+- **Nice to Have (Week 3):** Phase 5.4-5.5 + Phase 6 (16 hours)
+
+**Status:** 📋 Plan Updated with Full Transparency Features - Ready for Implementation

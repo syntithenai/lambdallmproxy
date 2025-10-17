@@ -572,6 +572,7 @@ async function callFunction(name, args = {}, context = {}) {
   switch (name) {
     case 'search_web': {
       // DEBUG: Confirm writeEvent is available for search_web
+      console.log('� NODEMON HOT RELOAD WORKING! search_web case entered �');
       console.log('🔧 TOOLS: search_web starting - writeEvent:', typeof context.writeEvent);
       
       // Handle both single query (string) and multiple queries (array)
@@ -698,16 +699,21 @@ async function callFunction(name, args = {}, context = {}) {
           
           // Create progress callback to emit per-result progress
           const progressCallback = (data) => {
+            console.log('🔍 SEARCH PROGRESS CALLBACK CALLED:', data.phase);
             if (context?.writeEvent) {
+              console.log('🔍 Emitting search_progress event:', data.phase);
               context.writeEvent('search_progress', {
                 tool: 'search_web',
                 query: query,
                 ...data,
                 timestamp: new Date().toISOString()
               });
+            } else {
+              console.warn('⚠️ context.writeEvent is undefined, cannot emit progress');
             }
           };
           
+          console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
           
           // Emit content loading event
@@ -812,7 +818,27 @@ async function callFunction(name, args = {}, context = {}) {
       if (generateSummary) {
         try {
           if (model && apiKey) {
-            summary_model = model;
+            // INTELLIGENT MODEL SELECTION: Use 70B for text compression (summaries)
+            // This is a text compression task, so use the faster 70B model
+            const { getOptimalModel } = require('./utils/query-complexity');
+            const originalModel = model;
+            summary_model = getOptimalModel(query, { 
+              isCompression: true, 
+              context: context,
+              provider: model.includes('together:') ? 'together' : 
+                        model.includes('openai:') ? 'openai' : 
+                        model.includes('groq:') ? 'groq' : 'together'
+            });
+            
+            // If model doesn't have provider prefix and we selected a together model, add prefix
+            if (!summary_model.includes(':') && summary_model.includes('meta-llama')) {
+              summary_model = 'together:' + summary_model;
+            }
+            
+            console.log(`📊 Summary generation: ${originalModel} → ${summary_model} (text compression: 70B)`);
+            
+            // Use summary_model for actual API call
+            model = summary_model;
             const { llmResponsesWithTools } = require('./llm_tools_adapter');
             
             if (loadContent) {
@@ -929,9 +955,16 @@ Brief answer with URLs:`;
                 // LOAD BALANCING: Rotate through multiple models to distribute TPM load
                 
                 // Define model pool for summarization (fast, cost-effective models)
-                const provider = model.includes('openai:') ? 'openai' : 'groq';
+                const provider = model.includes('openai:') ? 'openai' : 
+                                model.includes('together:') ? 'together' :
+                                'groq';
                 const modelPool = provider === 'openai' 
                   ? ['openai:gpt-4o-mini', 'openai:gpt-3.5-turbo'] 
+                  : provider === 'together'
+                  ? [
+                      'together:meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',  // Primary: 70B for text compression
+                      'together:meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',   // Fallback: 8B for simple summaries
+                    ]
                   : [
                       'groq:llama-3.3-70b-versatile',      // 64k TPM
                       'groq:llama-3.1-8b-instant',         // 120k TPM
@@ -1094,8 +1127,11 @@ Brief answer with URLs:`;
               
               // Use a different model for synthesis to further distribute TPM load
               // Pick a high-capacity model that wasn't used much in summaries
+              // INTELLIGENT MODEL SELECTION: Use 70B for synthesis (text compression)
               const synthesisModel = provider === 'openai' 
                 ? 'openai:gpt-4o-mini'
+                : provider === 'together'
+                ? 'together:meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo' // Use 70B for text compression
                 : 'groq:llama-3.3-70b-versatile'; // High-capacity model for synthesis
               
               console.log(`🔄 Synthesis using: ${synthesisModel}`);
@@ -1287,12 +1323,12 @@ Brief answer with URLs:`;
           console.log(`  Result ${i}: page_content=${!!r.page_content}, images=${r.page_content?.images?.length || 0}, videos=${r.page_content?.videos?.length || 0}`);
         });
         
-        // More aggressive truncation: fewer results, shorter content
-        // IMPORTANT: Keep ALL results for links section (just remove only 3 for content)
+        // Intelligent truncation: use extractKeyContent for better preservation
+        // IMPORTANT: Keep ALL results for links section (just compress content intelligently)
         const truncatedResults = allResults.map(r => ({
           ...r,
-          description: (r.description || '').substring(0, 150),
-          content: r.content ? r.content.substring(0, 300) : r.content, // Reduced from 500 to 300
+          description: r.description ? extractKeyContent(r.description, r.query) : r.description,
+          content: r.content ? extractKeyContent(r.content, r.query) : r.content, // Smart extraction instead of substring
           images: r.images ? r.images.slice(0, 1) : undefined, // Max 1 image
           links: r.links ? r.links.slice(0, 5) : undefined, // Max 5 links
           youtube: r.youtube ? r.youtube.slice(0, 2) : undefined, // Max 2 YouTube
@@ -2716,6 +2752,52 @@ Provide a comprehensive summary (3-4 paragraphs) covering main themes, key insig
       const includeTimestamps = args.include_timestamps !== false; // Default true
       const language = args.language || 'en';
       
+      // Function to create model-aware transcript summary
+      function summarizeTranscriptForLLM(transcript, model) {
+        const contextWindow = model?.context_window || 32000;
+        const fullText = typeof transcript === 'string' ? transcript : 
+                        (transcript.snippets ? transcript.snippets.map(s => s.text).join(' ') : '');
+        
+        // Extract key content based on model capacity
+        let maxChars;
+        if (contextWindow > 100000) {
+          // Large context: Include substantial detail
+          maxChars = 2000; // ~500 tokens
+        } else if (contextWindow > 16000) {
+          // Medium context: Key segments
+          maxChars = 1000; // ~250 tokens
+        } else {
+          // Small context: Brief summary only
+          maxChars = 400; // ~100 tokens
+        }
+        
+        // Use extractKeyContent to intelligently compress
+        return extractKeyContent(fullText, null, maxChars);
+      }
+      
+      // Function to extract key quotes from transcript
+      function extractKeyQuotes(transcript, count = 5) {
+        const fullText = typeof transcript === 'string' ? transcript : 
+                        (transcript.snippets ? transcript.snippets.map(s => s.text).join(' ') : '');
+        
+        // Split into sentences
+        const sentences = fullText.split(/[.!?]+/).filter(s => s.trim().length > 20);
+        
+        // Simple heuristic: look for sentences with important keywords
+        const importantKeywords = ['important', 'key', 'main', 'critical', 'essential', 'significant', 
+                                  'note', 'remember', 'conclusion', 'summary', 'first', 'finally'];
+        
+        const scoredSentences = sentences.map(s => ({
+          text: s.trim(),
+          score: importantKeywords.filter(k => s.toLowerCase().includes(k)).length
+        }));
+        
+        return scoredSentences
+          .sort((a, b) => b.score - a.score)
+          .slice(0, count)
+          .map(s => s.text);
+      }
+      
       try {
         const { getYouTubeTranscriptViaInnerTube, getYouTubeTranscript, extractYouTubeVideoId } = require('./youtube-api');
         
@@ -2872,43 +2954,43 @@ Summary:`;
             }
           }
           
-          // Check if transcript is very long and needs summarization
-          // Threshold: 200k chars (~50k tokens) - reasonable for most models with load balancing
-          const YOUTUBE_SUMMARY_THRESHOLD = 200000;
+          // Create model-aware LLM summary
+          const llmSummary = summarizeTranscriptForLLM(fullText, context.selectedModel);
+          const keyQuotes = extractKeyQuotes(fullText, 5);
           
-          if (fullText.length > YOUTUBE_SUMMARY_THRESHOLD) {
-            console.log(`⚠️ YouTube transcript is very long (${fullText.length} chars > ${YOUTUBE_SUMMARY_THRESHOLD}), will include note about summarization`);
-            
-            // Return full transcript but include a note about its length
-            // The LLM can decide whether to summarize based on the user's query
-            return JSON.stringify({
-              success: true,
-              url,
-              videoId: result.videoId,
-              text: fullText,
-              snippets: result.snippets,
-              summary: summary || undefined,
-              metadata: {
-                totalCharacters: fullText.length,
-                snippetCount: result.snippets.length,
-                language: result.language,
-                languageCode: result.languageCode,
-                isGenerated: result.isGenerated,
-                source,
-                format: 'timestamped',
-                lengthWarning: `This transcript is very long (${Math.floor(fullText.length / 1000)}k characters, ~${Math.floor(fullText.length / 4 / 1000)}k tokens). Consider focusing on specific sections or asking for a summary of key points.`
-              },
-              note: 'Full transcript with timestamps. Each snippet includes start, duration, and text. Note: This is a very long transcript - you may want to summarize key points or focus on specific sections relevant to the user\'s query.'
-            });
-          }
+          console.log(`📊 Created LLM summary: ${llmSummary.length} chars (model: ${context.selectedModel?.name || 'unknown'})`);
           
-          return JSON.stringify({
+          // Return object with dual-path data
+          const responseData = {
             success: true,
             url,
             videoId: result.videoId,
+            video_id: result.videoId,
+            videoUrl: url,
+            video_url: url,
+            title: result.title || 'YouTube Video',
+            
+            // Full data for UI (via extractedContent)
+            transcript: fullText,
             text: fullText,
+            segments: result.snippets,
             snippets: result.snippets,
+            
+            // Compressed data for LLM
+            llmSummary: llmSummary,
+            keyQuotes: keyQuotes,
+            
+            // Optional generated summary
             summary: summary || undefined,
+            
+            // Metadata
+            duration: result.duration || 0,
+            thumbnail: result.videoId ? `https://img.youtube.com/vi/${result.videoId}/maxresdefault.jpg` : null,
+            language: result.language,
+            languageCode: result.languageCode,
+            isAutoGenerated: result.isGenerated,
+            is_auto_generated: result.isGenerated,
+            
             metadata: {
               totalCharacters: fullText.length,
               snippetCount: result.snippets.length,
@@ -2918,8 +3000,11 @@ Summary:`;
               source,
               format: 'timestamped'
             },
-            note: 'Full transcript with timestamps. Each snippet includes start, duration, and text.'
-          });
+            
+            note: 'Full transcript available in UI. LLM receives compressed summary.'
+          };
+          
+          return JSON.stringify(responseData);
         }
         
         // If result is plain text
@@ -3441,3 +3526,5 @@ module.exports = {
   mergeTools,
   executeMCPTool
 };
+// Test change Fri 17 Oct 2025 12:59:56 AEDT
+// Another test comment

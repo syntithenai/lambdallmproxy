@@ -51,10 +51,6 @@ export const BackgroundPlayer: React.FC = () => {
     }
   }, [currentTrack, isPlaying, setIsLoading]);
 
-  if (!currentTrack) {
-    return null; // No track to play
-  }
-
   // Check if dialog is open
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const lastPositionRef = React.useRef(0);
@@ -83,6 +79,11 @@ export const BackgroundPlayer: React.FC = () => {
     
     return () => observer.disconnect();
   }, [isDialogOpen, isPlaying]);
+
+  // Early return AFTER all hooks to comply with Rules of Hooks
+  if (!currentTrack) {
+    return null; // No track to play
+  }
 
   // Render player in the correct location based on dialog state
   // This avoids moving the DOM element which destroys the YouTube iframe

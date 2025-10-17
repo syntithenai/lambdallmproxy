@@ -149,12 +149,19 @@ logs-tail:
 # Run Lambda function locally on port 3000
 run-lambda-local:
 	@echo "🏃 Starting local Lambda server on port 3000..."
+	@echo "🧹 Killing any existing Lambda server..."
+	@pkill -f "node scripts/run-local-lambda" || true
+	@sleep 1
+	@echo "🔄 Hot reload enabled with nodemon - changes to src/ will auto-restart"
 	@chmod +x scripts/run-local-lambda.js
-	@node scripts/run-local-lambda.js
+	@npx nodemon
 
 # Serve UI locally using Vite dev server (recommended for development)
 serve-ui:
 	@echo "🖥️ Starting Vite dev server..."
+	@echo "🧹 Killing any existing Vite server..."
+	@pkill -f "vite" || true
+	@sleep 1
 	@echo "📍 UI will be available at: http://localhost:8081"
 	@echo "✨ Hot reload enabled - changes auto-refresh"
 	@echo "Press Ctrl+C to stop"
@@ -175,18 +182,19 @@ serve-ui-prod:
 # Run both Lambda (3000) and UI (8081) locally for development
 dev:
 	@echo "🚀 Starting local development environment..."
+	@echo "🧹 Cleaning up any existing servers..."
+	-@pkill -f "node scripts/run-local-lambda" 2>/dev/null || true
+	-@pkill -f "vite" 2>/dev/null || true
+	@sleep 1
 	@echo ""
 	@echo "This will start:"
-	@echo "  📍 Lambda server: http://localhost:3000"
+	@echo "  📍 Lambda server: http://localhost:3000 (hot reload enabled)"
 	@echo "  📍 UI dev server: http://localhost:8081 (with hot reload)"
 	@echo ""
+	@echo "✨ Both servers have hot reload - file changes auto-restart/refresh"
 	@echo "Press Ctrl+C to stop both servers"
 	@echo ""
-	@trap 'kill 0' INT; \
-	node scripts/run-local-lambda.js & \
-	sleep 2; \
-	cd ui-new && npm run dev & \
-	wait
+	@bash -c 'trap "kill 0" INT; npx nodemon & sleep 2; cd ui-new && npm run dev & wait'
 
 # ================================================================
 # RAG Knowledge Base Management

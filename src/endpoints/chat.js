@@ -808,6 +808,51 @@ async function handler(event, responseStream) {
         let { messages, model, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location } = body;
         const tavilyApiKey = body.tavilyApiKey || '';
         
+        // INTELLIGENT MODEL ROUTING: Upgrade Together AI models based on query complexity
+        // If user selected Together AI 8B model, analyze query and upgrade to 70B or 405B if needed
+        if (model && messages && messages.length > 0) {
+            const { getOptimalModel, analyzeQueryComplexity } = require('../utils/query-complexity');
+            
+            // Check if this is a Together AI model that should be routed
+            const isTogether8B = model.includes('Meta-Llama-3.1-8B-Instruct-Turbo');
+            const isTogetherModel = model.includes('together:') || 
+                                   model.includes('meta-llama/') || 
+                                   model.includes('Llama-3');
+            
+            if (isTogether8B || (isTogetherModel && !model.includes('405B') && !model.includes('70B'))) {
+                // Extract user's latest query
+                const userMessages = messages.filter(m => m.role === 'user');
+                const latestQuery = userMessages.length > 0 
+                    ? (typeof userMessages[userMessages.length - 1].content === 'string' 
+                        ? userMessages[userMessages.length - 1].content 
+                        : JSON.stringify(userMessages[userMessages.length - 1].content))
+                    : '';
+                
+                // Analyze complexity and select optimal model
+                const originalModel = model;
+                const optimalModel = getOptimalModel(latestQuery, {
+                    isCompression: false,
+                    context: {
+                        hasTools: tools && tools.length > 0,
+                        conversationLength: messages.length,
+                        requiresMultipleSteps: tools && tools.length > 3
+                    },
+                    provider: 'together'
+                });
+                
+                // Update model if different
+                if (optimalModel && optimalModel !== originalModel && !optimalModel.includes('8B')) {
+                    model = optimalModel;
+                    console.log(`🎯 Intelligent routing: ${originalModel} → ${model}`);
+                    console.log(`📊 Query: "${latestQuery.substring(0, 100)}${latestQuery.length > 100 ? '...' : ''}"`);
+                } else if (isTogether8B) {
+                    // Even if complexity is simple, use 70B instead of 8B for better function calling
+                    model = 'together:meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo';
+                    console.log(`🎯 Upgraded 8B to 70B for better function calling: ${originalModel} → ${model}`);
+                }
+            }
+        }
+        
         // Store location data to be injected into system prompt later
         // (Don't prepend as separate system message - causes duplicate system messages)
         let locationContext = null;
@@ -2209,7 +2254,13 @@ async function handler(event, responseStream) {
             let extractedContent = null;
             const imageGenerations = []; // Collect image generation results
             
+            // NEW: Track extraction metadata per tool (for inline transparency)
+            const toolExtractionMetadata = {}; // Key: tool_call_id, Value: { summary, images, links, etc. }
+            
+            console.log(`🔍 POST-PROCESSING: toolMessages=${toolMessages.length}, assistantContent=${assistantMessage.content?.length || 0} chars`);
+            
             if (toolMessages.length > 0 && assistantMessage.content && assistantMessage.content.length > 0) {
+                console.log(`✅ Processing ${toolMessages.length} tool messages for extraction`);
                 const allUrls = [];
                 const allImages = [];
                 const allVideos = [];
@@ -2358,6 +2409,32 @@ async function handler(event, responseStream) {
                             });
                         }
                         
+                        // Extract from get_youtube_transcript results
+                        if (toolMsg.name === 'get_youtube_transcript') {
+                            console.log(`🎬 Processing get_youtube_transcript tool result`);
+                            // Initialize transcripts array if not exists
+                            if (!extractedContent) {
+                                extractedContent = {};
+                            }
+                            if (!extractedContent.transcripts) {
+                                extractedContent.transcripts = [];
+                            }
+                            
+                            // Add full transcript data for UI
+                            extractedContent.transcripts.push({
+                                videoId: parsed.videoId || parsed.video_id,
+                                videoUrl: parsed.videoUrl || parsed.video_url || (parsed.videoId ? `https://youtube.com/watch?v=${parsed.videoId}` : null),
+                                title: parsed.title || 'YouTube Video',
+                                fullTranscript: parsed.transcript || parsed.text || '',
+                                segments: parsed.segments || [],
+                                duration: parsed.duration || 0,
+                                thumbnail: parsed.thumbnail || (parsed.videoId ? `https://img.youtube.com/vi/${parsed.videoId}/maxresdefault.jpg` : null),
+                                chapters: parsed.chapters || [],
+                                language: parsed.language || 'en',
+                                isAutoGenerated: parsed.isAutoGenerated || parsed.is_auto_generated || false
+                            });
+                        }
+                        
                     } catch (e) {
                         // Not JSON, check if it's compressed markdown format with URL section
                         if (toolMsg.name === 'search_web' && toolMsg.content.includes('🚨 CRITICAL: YOU MUST COPY THESE URLS')) {
@@ -2410,8 +2487,60 @@ async function handler(event, responseStream) {
                     v.src && !(v.src.includes('youtube.com') || v.src.includes('youtu.be'))
                 );
                 
-                // Prioritize top 3 images
-                const prioritizedImages = uniqueImages.slice(0, 3);
+                // Smart image selection: combine placement score and relevance score
+                const prioritizedImages = uniqueImages
+                    .sort((a, b) => {
+                        // Combine placement score (0.3-1.0) and relevance score (0-1.0)
+                        // Weight placement slightly higher for better hero image selection
+                        const scoreA = (a.placementScore || 0.5) * 0.6 + (a.relevance || 0.5) * 0.4;
+                        const scoreB = (b.placementScore || 0.5) * 0.6 + (b.relevance || 0.5) * 0.4;
+                        return scoreB - scoreA;
+                    })
+                    .slice(0, 3)
+                    .map(img => ({
+                        ...img,
+                        // Add placement context for LLM
+                        llmContext: {
+                            placement: img.placement || 'unknown',
+                            suggestedPosition: (img.placement === 'hero' || img.placement === 'above-fold') ? 'top' : 'inline'
+                        }
+                    }));
+                
+                // Calculate image placement distribution for metadata
+                const imagePlacementStats = {};
+                uniqueImages.forEach(img => {
+                    const placement = img.placement || 'unknown';
+                    imagePlacementStats[placement] = (imagePlacementStats[placement] || 0) + 1;
+                });
+                
+                // Build extraction metadata for transparency
+                const extractionMetadata = {
+                    summary: {
+                        totalImages: allImages.length,
+                        uniqueImages: uniqueImages.length,
+                        prioritizedImages: prioritizedImages.length,
+                        totalLinks: allUrls.length,
+                        uniqueLinks: uniqueUrls.length,
+                        prioritizedLinks: prioritizedLinks.length,
+                        youtubeVideos: youtubeVideos.length,
+                        otherVideos: otherVideos.length
+                    },
+                    imagePlacement: imagePlacementStats,
+                    topImages: prioritizedImages.map((img, idx) => ({
+                        rank: idx + 1,
+                        src: img.src,
+                        placement: img.placement || 'unknown',
+                        placementScore: img.placementScore || 0.5,
+                        relevance: img.relevance || 0.5,
+                        combinedScore: ((img.placementScore || 0.5) * 0.6 + (img.relevance || 0.5) * 0.4).toFixed(3),
+                        selectionReason: `Placement: ${img.placement} (${img.placementScore}), Relevance: ${img.relevance}`
+                    })),
+                    linkCategories: {
+                        searchResults: searchResultLinks.length,
+                        scrapedLinks: scrapedLinks.length,
+                        prioritizedFromScraped: Math.min(5, scrapedLinks.length)
+                    }
+                };
                 
                 // Build structured extracted content for UI (not part of LLM context)
                 // The UI will display this in expandable sections below the response
@@ -2431,10 +2560,14 @@ async function handler(event, responseStream) {
                     
                     // Legacy field for backwards compatibility
                     sources: searchResultLinks.length > 0 ? searchResultLinks : null,
-                    images: uniqueImages.length > 0 ? uniqueImages : null
+                    images: uniqueImages.length > 0 ? uniqueImages : null,
+                    
+                    // Phase 5: Transparency metadata for debugging and user visibility
+                    metadata: extractionMetadata
                 };
                 
                 console.log(`✅ Extracted content: ${allLinks.length} total links (${prioritizedLinks.length} prioritized), ${uniqueImages.length} images (${prioritizedImages.length} prioritized), ${youtubeVideos.length} YouTube videos, ${otherVideos.length} other videos, ${uniqueMedia.length} media items`);
+                console.log(`📊 Metadata added to extractedContent:`, JSON.stringify(extractionMetadata, null, 2));
             }
             
             // If LLM provided substantive content, treat as final answer even if tool_calls present
@@ -2771,18 +2904,42 @@ async function handler(event, responseStream) {
             // Add tool results to the message for transparency (embedded in assistant message)
             const toolResultMessages = currentMessages.filter(m => m.role === 'tool');
             if (toolResultMessages.length > 0) {
-                messageCompleteData.toolResults = toolResultMessages.map(tm => ({
-                    role: 'tool',
-                    content: tm.rawResult || tm.content, // Use full result for transparency
-                    tool_call_id: tm.tool_call_id,
-                    name: tm.name,
-                    llmApiCalls: tm.llmApiCalls || [] // Include any nested LLM calls from tools
-                }));
+                console.log(`📦 Adding ${toolResultMessages.length} tool results with transparency data`);
+                messageCompleteData.toolResults = toolResultMessages.map(tm => {
+                    const toolResult = {
+                        role: 'tool',
+                        content: tm.rawResult || tm.content, // Use full result for transparency
+                        tool_call_id: tm.tool_call_id,
+                        name: tm.name,
+                        llmApiCalls: tm.llmApiCalls || [], // Include any nested LLM calls from tools
+                        rawResponse: tm.rawResult || tm.content // NEW: Full raw response for transparency
+                    };
+                    
+                    console.log(`  📄 Tool ${tm.name}: rawResponse length = ${toolResult.rawResponse?.length || 0}`);
+                    
+                    // NEW: Add per-tool extraction metadata for transparency
+                    if (toolExtractionMetadata && toolExtractionMetadata[tm.tool_call_id]) {
+                        toolResult.extractionMetadata = toolExtractionMetadata[tm.tool_call_id];
+                        console.log(`  📊 Added extraction metadata for ${tm.name}`);
+                    }
+                    
+                    return toolResult;
+                });
             }
             
             // Add extracted content if available (sources, images, videos, media)
             if (extractedContent) {
                 messageCompleteData.extractedContent = extractedContent;
+                console.log(`📦 Adding extractedContent to response. Has metadata: ${!!extractedContent.metadata}`);
+                if (extractedContent.metadata) {
+                    console.log(`📊 Metadata summary:`, {
+                        totalImages: extractedContent.metadata.summary?.totalImages,
+                        uniqueImages: extractedContent.metadata.summary?.uniqueImages,
+                        prioritizedImages: extractedContent.metadata.summary?.prioritizedImages
+                    });
+                }
+            } else {
+                console.log(`⚠️ No extractedContent to include in response`);
             }
             
             // Add image generations if available

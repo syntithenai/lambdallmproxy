@@ -5,13 +5,14 @@
  * Shows provider info, masked API keys, and management controls.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ProviderConfig } from '../types/provider';
 import { PROVIDER_INFO } from '../types/provider';
 import { maskApiKey } from '../utils/providerValidation';
 import { useProviders } from '../hooks/useProviders';
 import { useSettings } from '../contexts/SettingsContext';
 import { ProviderForm } from './ProviderForm';
+import { hasSettingsInDrive } from '../utils/googleDocs';
 
 export function ProviderList() {
   const { providers, addProvider, updateProvider, deleteProvider } = useProviders();
@@ -22,6 +23,24 @@ export function ProviderList() {
   const [success, setSuccess] = useState<string | null>(null);
   const [showWarning, setShowWarning] = useState(false);
   const [isLoadingFromDrive, setIsLoadingFromDrive] = useState(false);
+  const [hasSettingsInCloud, setHasSettingsInCloud] = useState(false);
+
+  // Check if settings exist in Google Drive on mount and when providers change
+  useEffect(() => {
+    console.log('🔄 ProviderList: Checking cloud settings... (providers count:', providers.length, ')');
+    const checkCloudSettings = async () => {
+      try {
+        const exists = await hasSettingsInDrive();
+        console.log('📊 ProviderList: Cloud settings check result:', exists);
+        setHasSettingsInCloud(exists);
+      } catch (err) {
+        console.error('❌ ProviderList: Failed to check for cloud settings:', err);
+        setHasSettingsInCloud(false);
+      }
+    };
+
+    checkCloudSettings();
+  }, [providers.length]); // Re-check when providers change
 
   const handleAdd = () => {
     setIsAdding(true);
@@ -128,7 +147,24 @@ export function ProviderList() {
     }
   };
 
-  const showLoadButton = providers.length === 0 || (providers.length === 1 && !providers[0].apiKey);
+  // Show load button if:
+  // 1. No providers configured, OR
+  // 2. Only one provider without API key, OR
+  // 3. Settings exist in Google Drive (from another session/device)
+  const showLoadButton = providers.length === 0 || 
+                         (providers.length === 1 && !providers[0].apiKey) ||
+                         hasSettingsInCloud;
+  
+  console.log('👀 Load button visibility check:', {
+    providersCount: providers.length,
+    hasSettingsInCloud,
+    showLoadButton,
+    conditions: {
+      noProviders: providers.length === 0,
+      oneProviderNoKey: providers.length === 1 && !providers[0]?.apiKey,
+      cloudSettings: hasSettingsInCloud
+    }
+  });
 
   return (
     <div className="space-y-4">

@@ -285,9 +285,48 @@ class SimpleHTMLParser {
     }
 
     /**
-     * Extract all images from HTML with captions and relevance scoring
+     * Classify image placement based on position and parent context
+     * @param {number} position - Image position in HTML
+     * @param {number} width - Image width
+     * @param {number} height - Image height
+     * @returns {Object} Placement classification and score
+     */
+    classifyImagePlacement(position, width, height) {
+        // Get context around image for parent element detection
+        const contextStart = Math.max(0, position - 500);
+        const contextHtml = this.html.substring(contextStart, position);
+        
+        // Hero image detection: large image near top of document
+        const relativePosition = position / this.html.length;
+        if (relativePosition < 0.1 && width > 600 && height > 300) {
+            return { placement: 'hero', score: 1.0 };
+        }
+        
+        // Above-fold: appears in first 20% of document
+        if (relativePosition < 0.2) {
+            return { placement: 'above-fold', score: 0.9 };
+        }
+        
+        // Sidebar detection: check parent classes/ids
+        const parentMatch = contextHtml.match(/<[^>]*(?:class|id)=["'][^"']*(?:sidebar|aside|widget|related|ad)[^"']*["'][^>]*>(?:(?!<\/(div|aside|section)>).)*$/is);
+        if (parentMatch) {
+            return { placement: 'sidebar', score: 0.3 };
+        }
+        
+        // Main content detection: check for article/main/content parent
+        const contentMatch = contextHtml.match(/<[^>]*(?:class|id)=["'][^"']*(?:content|article|main|post|body)[^"']*["'][^>]*>(?:(?!<\/(div|article|main|section)>).)*$/is);
+        if (contentMatch) {
+            return { placement: 'content', score: 0.8 };
+        }
+        
+        // Default: below-fold
+        return { placement: 'below-fold', score: 0.5 };
+    }
+
+    /**
+     * Extract all images from HTML with captions, relevance scoring, and placement metadata
      * @param {number} limit - Maximum number of images to return (default: 3)
-     * @returns {Array} Array of {src, alt, title, caption, context, relevance} objects, limited to most relevant
+     * @returns {Array} Array of {src, alt, title, caption, context, relevance, placement, placementScore} objects, limited to most relevant
      */
     extractImages(limit = 3) {
         const images = [];
@@ -353,6 +392,9 @@ class SimpleHTMLParser {
                 qualityScore -= 0.3; // Penalty for small images (likely icons)
             }
             
+            // Classify image placement
+            const placementInfo = this.classifyImagePlacement(imgStart, width, height);
+            
             images.push({
                 src: absoluteSrc,
                 alt: alt || '',
@@ -361,7 +403,9 @@ class SimpleHTMLParser {
                 context,
                 relevance: Math.max(0, qualityScore),
                 width,
-                height
+                height,
+                placement: placementInfo.placement,
+                placementScore: placementInfo.score
             });
         }
 

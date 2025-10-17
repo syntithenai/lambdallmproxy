@@ -28,6 +28,7 @@ import { ImageGallery } from './ImageGallery';
 import { MediaSections } from './MediaSections';
 import { ToolResultJsonViewer } from './JsonTreeViewer';
 import { ReadButton } from './ReadButton';
+import ToolTransparency from './ToolTransparency';
 import { YouTubeVideoResults } from './YouTubeVideoResults';
 import { ExamplesModal } from './ExamplesModal';
 import { 
@@ -1382,6 +1383,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setIsLoading(true);
     setToolStatus([]);
     setStreamingContent('');
+    setLastRequestCost(0); // Reset cost for new request
     // Clear expanded tool messages so new tool calls start collapsed
     setExpandedToolMessages(new Set());
 
@@ -1791,6 +1793,18 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 } : t
               ));
               
+              // Clear search progress when search_web tool completes
+              if (data.name === 'search_web') {
+                console.log('🔍 Clearing search progress after search_web completion');
+                setSearchProgress(new Map());
+              }
+              
+              // Clear YouTube search progress when search_youtube tool completes
+              if (data.name === 'search_youtube') {
+                console.log('🎬 Clearing YouTube search progress after search_youtube completion');
+                setYoutubeSearchProgress(new Map());
+              }
+              
               // Embed tool result in the assistant message that triggered it
               // This keeps tool results grouped with the response, making the agentic process compact
               setMessages(prev => {
@@ -1881,8 +1895,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   addSearchResult(searchResult);
                   console.log('Search result added to SearchTab:', searchResult);
                 }
-                // Clear search progress now that the tool result is available
-                setSearchProgress(new Map());
+                // DON'T clear search progress here - let it persist until stream ends
+                // Progress will be cleared when a new search starts or on stream complete
               }
               
               // Streaming state already reset in tool_call_start
@@ -1904,6 +1918,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             case 'search_progress':
               // Web search progress events (searching, results_found, fetching_result, result_loaded)
               console.log('🔍 Search progress event:', data);
+              console.log('🔍 Current searchProgress size:', searchProgress.size);
+              console.log('🔍 isLoading:', isLoading);
               if (data.tool === 'search_web') {
                 // If starting a new search, clear old progress
                 if (data.phase === 'searching') {
@@ -1923,6 +1939,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 setSearchProgress(prev => {
                   const newMap = new Map(prev);
                   newMap.set(progressKey, data);
+                  console.log('🔍 Updated searchProgress, new size:', newMap.size, 'key:', progressKey);
                   return newMap;
                 });
                 
@@ -2009,7 +2026,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 setMessages(prev => {
                   const newMessages = [...prev];
                   if (newMessages[currentStreamingBlockIndex]) {
-                    newMessages[currentStreamingBlockIndex] = {
+                    const updatedMessage = {
                       ...newMessages[currentStreamingBlockIndex],
                       content: data.content || newMessages[currentStreamingBlockIndex].content || '',
                       tool_calls: data.tool_calls || newMessages[currentStreamingBlockIndex].tool_calls,
@@ -2019,6 +2036,23 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       evaluations: data.evaluations || newMessages[currentStreamingBlockIndex].evaluations,
                       isStreaming: false
                     };
+                    
+                    // NEW: Update embedded toolResults with rawResponse and extractionMetadata from message_complete
+                    if (data.toolResults && updatedMessage.toolResults) {
+                      updatedMessage.toolResults = updatedMessage.toolResults.map(tr => {
+                        const completeToolResult = data.toolResults.find((dtr: any) => dtr.tool_call_id === tr.tool_call_id);
+                        if (completeToolResult) {
+                          return {
+                            ...tr,
+                            rawResponse: completeToolResult.rawResponse,
+                            extractionMetadata: completeToolResult.extractionMetadata
+                          };
+                        }
+                        return tr;
+                      });
+                    }
+                    
+                    newMessages[currentStreamingBlockIndex] = updatedMessage;
                   }
                   return newMessages;
                 });
@@ -2052,9 +2086,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     // Check if last message is a streaming assistant (created by delta handler)
                     if (lastMessage?.role === 'assistant' && lastMessage.isStreaming) {
                       // Update the existing streaming message instead of creating a new one
-                      console.log('🟡 Updating existing streaming assistant with message_complete data');
+                      console.log('🟡 Updating last assistant message with message_complete data');
                       const newMessages = [...prev];
-                      newMessages[lastMessageIndex] = {
+                      const updatedMessage = {
                         ...lastMessage,
                         content: data.content || lastMessage.content || '',
                         tool_calls: data.tool_calls || lastMessage.tool_calls,
@@ -2064,6 +2098,28 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         evaluations: data.evaluations || lastMessage.evaluations,
                         isStreaming: false
                       };
+                      
+                      // NEW: Update embedded toolResults with rawResponse and extractionMetadata from message_complete
+                      if (data.toolResults && updatedMessage.toolResults) {
+                        updatedMessage.toolResults = updatedMessage.toolResults.map(tr => {
+                          const completeToolResult = data.toolResults.find((dtr: any) => dtr.tool_call_id === tr.tool_call_id);
+                          if (completeToolResult) {
+                            console.log('🟪 Updating embedded toolResult with rawResponse:', {
+                              tool_call_id: tr.tool_call_id,
+                              hasRawResponse: !!completeToolResult.rawResponse,
+                              rawResponseLength: completeToolResult.rawResponse?.length
+                            });
+                            return {
+                              ...tr,
+                              rawResponse: completeToolResult.rawResponse,
+                              extractionMetadata: completeToolResult.extractionMetadata
+                            };
+                          }
+                          return tr;
+                        });
+                      }
+                      
+                      newMessages[lastMessageIndex] = updatedMessage;
                       return newMessages;
                     }
                     
@@ -3299,6 +3355,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 </pre>
                               )}
                               
+                              {/* NEW: Extraction Transparency & Debug Info */}
+                              <ToolTransparency
+                                rawResponse={msg.rawResponse}
+                                extractionMetadata={msg.extractionMetadata}
+                              />
+                              
                               {/* Capture and Info buttons for tool results */}
                               {msg.content && (
                                 <div className="flex gap-2 mt-2 pt-2 border-t border-purple-200 dark:border-purple-700">
@@ -3617,11 +3679,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       {searchResults && searchResults.length > 0 ? (
                                         <div className="space-y-3">
                                           {searchResults.map((result: any, rIdx: number) => {
-                                            // result.content contains the actual scraped text
-                                            // result.page_content is an object with images, videos, links, etc.
-                                            const pageContent = result.content;
-                                            const hasContent = pageContent && typeof pageContent === 'string' && pageContent.length > 0;
-                                            
                                             return (
                                               <div key={rIdx} className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-800">
                                                 <a 
@@ -3643,20 +3700,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                 >
                                                   {result.url}
                                                 </a>
-                                                
-                                                {/* Show loaded page content if available */}
-                                                {hasContent && (
-                                                  <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-700">
-                                                    <div className="text-[10px] font-semibold text-purple-700 dark:text-purple-400 mb-1">
-                                                      📄 Scraped Page Content ({pageContent.length.toLocaleString()} chars)
-                                                    </div>
-                                                    <div className="bg-gray-50 dark:bg-gray-950 p-2 rounded max-h-60 overflow-y-auto">
-                                                      <pre className="whitespace-pre-wrap text-[10px] text-gray-700 dark:text-gray-300">
-                                                        {pageContent.substring(0, 2000)}{pageContent.length > 2000 ? '...' : ''}
-                                                      </pre>
-                                                    </div>
-                                                  </div>
-                                                )}
                                               </div>
                                             );
                                           })}
@@ -3698,6 +3741,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       )}
                                     </div>
                                   )}
+                                  
+                                  {/* NEW: Extraction Transparency & Debug Info for embedded tool results */}
+                                  <ToolTransparency
+                                    rawResponse={toolResult.rawResponse}
+                                    extractionMetadata={toolResult.extractionMetadata}
+                                  />
                                 </div>
                               );
                             })}
@@ -3985,6 +4034,28 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             <div className="text-xs text-gray-500 dark:text-gray-400 ml-2">
               <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-1"></span>
               streaming...
+            </div>
+          </div>
+        )}
+        
+        {/* Active search progress - show while search is running */}
+        {isLoading && searchProgress.size > 0 && (
+          <div className="flex justify-start mb-3">
+            <div className="w-full max-w-3xl space-y-2">
+              {Array.from(searchProgress.values()).map((progress, idx) => (
+                <SearchProgress key={idx} data={progress} />
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Active YouTube search progress - show while search is running */}
+        {isLoading && youtubeSearchProgress.size > 0 && (
+          <div className="flex justify-start mb-3">
+            <div className="w-full max-w-3xl space-y-2">
+              {Array.from(youtubeSearchProgress.values()).map((progress, idx) => (
+                <YouTubeSearchProgress key={idx} data={progress} />
+              ))}
             </div>
           </div>
         )}
