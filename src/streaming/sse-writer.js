@@ -63,6 +63,13 @@ function createSSEStreamAdapter(responseStream) {
             try {
                 const eventText = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
                 responseStream.write(eventText);
+                
+                // Add padding to force Lambda to flush the buffer
+                // Lambda buffers writes until ~8KB, so we add padding to trigger immediate flush
+                // This ensures progress events are sent immediately, not buffered
+                const padding = ': ' + ' '.repeat(8000) + '\n\n';
+                responseStream.write(padding);
+                
                 lastWriteTime = Date.now();
             } catch (error) {
                 console.error('❌ Error writing SSE event:', error);
@@ -79,6 +86,11 @@ function createSSEStreamAdapter(responseStream) {
             
             try {
                 responseStream.write(`data: ${JSON.stringify(data)}\n\n`);
+                
+                // Add padding to force Lambda to flush the buffer
+                const padding = ': ' + ' '.repeat(8000) + '\n\n';
+                responseStream.write(padding);
+                
                 lastWriteTime = Date.now();
             } catch (error) {
                 console.error('❌ Error writing SSE data:', error);

@@ -578,18 +578,43 @@ The function provides detailed error responses:
 
 ## Development
 
-### Local Testing
+### Local Development (Recommended)
+
+**For day-to-day development, work locally to avoid unnecessary Lambda deployments:**
 
 ```bash
-# Test with curl
-curl -X POST http://localhost:8080/test \
-  -H "Content-Type: application/json" \
-  -d '{"query":"test","api_key":"your-key"}'
+# Start local development server
+make dev
 
-# Check logs
+# Backend runs on: http://localhost:3000
+# Frontend runs on: http://localhost:5173
+```
+
+**After making backend code changes:**
+```bash
+# Restart the dev server to apply changes
+make dev
+```
+
+**Local development workflow:**
+1. Edit backend code in `src/`
+2. Run `make dev` to restart server
+3. Test at `http://localhost:3000`
+4. Only deploy to Lambda when production-ready
+
+### Testing
+
+```bash
+# Test with curl (local)
+curl -X POST http://localhost:3000/chat \
+  -H "Content-Type: application/json" \
+  -H "x-user-email: your-email@example.com" \
+  -d '{"messages":[{"role":"user","content":"test"}],"model":"groq:llama-3.3-70b-versatile"}'
+
+# Check Lambda logs (production)
 make logs
 
-# Validate deployment
+# Validate Lambda deployment (production)
 make check
 ```
 

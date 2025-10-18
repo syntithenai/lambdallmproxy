@@ -190,8 +190,8 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
       // Add new tracks at top, then existing tracks
       const combined = [...result, ...prev];
       
-      // Limit playlist to 400 items to prevent UI lockup
-      return combined.slice(0, 400);
+      // Limit playlist to 500 items to prevent UI lockup (remove oldest)
+      return combined.slice(0, 500);
     });
   }, []);
 
@@ -236,8 +236,8 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
       // Combine: moved tracks (existing ones re-added) + new tracks + remaining
       const combined = [...movedTracks, ...newTracks, ...remainingTracks];
       
-      // Limit playlist to 400 items to prevent UI lockup
-      const limited = combined.slice(0, 400);
+      // Limit playlist to 500 items to prevent UI lockup (remove oldest)
+      const limited = combined.slice(0, 500);
       
       // Adjust current track index if playing
       if (currentTrackIndex !== null && prev[currentTrackIndex]) {

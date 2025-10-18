@@ -28,11 +28,11 @@ interface Evaluation {
 
 interface LlmInfoDialogProps {
   apiCalls: LlmApiCall[];
-  evaluations?: Evaluation[];
+  evaluations?: Evaluation[]; // Kept for backwards compatibility but no longer used
   onClose: () => void;
 }
 
-export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluations, onClose }) => {
+export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose }) => {
   const dialogRef = useDialogClose(true, onClose);
   const { showSuccess, showError } = useToast();
 
@@ -499,41 +499,145 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, evaluati
             );
           })}
 
-          {/* Response Evaluation Section */}
-          {evaluations && evaluations.length > 0 && (
-            <div className="border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden bg-purple-50/50 dark:bg-purple-900/10">
-              <div className="px-4 py-3 bg-purple-100 dark:bg-purple-900/30 border-b border-purple-200 dark:border-purple-700">
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <h4 className="font-semibold text-gray-900 dark:text-gray-100">
-                    🔍 Response Evaluation
-                  </h4>
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
-                    ({evaluations.length} attempt{evaluations.length !== 1 ? 's' : ''})
-                  </span>
+          {/* Self-Evaluation Calls - Display as regular API calls */}
+          {apiCalls.filter(call => call.phase === 'self_evaluation').map((call, index) => {
+            const tokensIn = call.response?.usage?.prompt_tokens || 0;
+            const tokensOut = call.response?.usage?.completion_tokens || 0;
+            
+            // Extract evaluation result from response
+            let evaluationResult: any = null;
+            try {
+              if (call.response?.choices?.[0]?.message?.content) {
+                evaluationResult = JSON.parse(call.response.choices[0].message.content);
+              }
+            } catch (e) {
+              // Not JSON
+            }
+            
+            return (
+              <div key={`eval-${index}`} className="border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden">
+                {/* Call header */}
+                <div className="px-4 py-3 bg-purple-100 dark:bg-purple-900/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        🔍 Self-Evaluation
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                      <span className="text-xs text-gray-600 dark:text-gray-400">
+                        {getProviderFromModel(call.model, call.provider)}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
+                      <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-gray-700 dark:text-gray-300">
+                        {getModelDisplay(call.model)}
+                      </code>
+                    </div>
+                  </div>
+                  
+                  {/* Response metadata */}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+                    {call.response && (() => {
+                      const pricing = calculateDualPricing(call.model, tokensIn, tokensOut);
+                      const breakdown = getCostBreakdown(call.model, tokensIn, tokensOut);
+                      
+                      return (
+                        <>
+                          {breakdown.hasPricing && pricing.actualCost !== null && (
+                            <span className="font-semibold text-green-600 dark:text-green-400">
+                              💰 {pricing.formattedActual}
+                            </span>
+                          )}
+                          {(tokensIn > 0 || tokensOut > 0) && (
+                            <span className="opacity-75">
+                              {tokensIn > 0 && `📥 ${tokensIn.toLocaleString()} in`}
+                              {tokensIn > 0 && tokensOut > 0 && ' • '}
+                              {tokensOut > 0 && `📤 ${tokensOut.toLocaleString()} out`}
+                            </span>
+                          )}
+                          {/* Show evaluation result badge */}
+                          {evaluationResult && (
+                            <span className={`px-2 py-0.5 rounded font-medium ${
+                              evaluationResult.comprehensive 
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'
+                            }`}>
+                              {evaluationResult.comprehensive ? '✅ Comprehensive' : '⚠️ Needs Improvement'}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                  
+                  {/* Timestamp */}
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    ⏰ {new Date(call.timestamp).toLocaleString()}
+                  </div>
+                </div>
+
+                {/* Call content */}
+                <div className="p-4 bg-white dark:bg-gray-900 border-t border-purple-200 dark:border-purple-700">
+                  <div className="space-y-4">
+
+                    {/* Full Request Body */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          📤 Request Body
+                        </h4>
+                        <button
+                          onClick={() => copyToClipboard(call.request, 'Self-Evaluation Request')}
+                          className="px-2 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          Copy
+                        </button>
+                      </div>
+                      <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto">
+                        <div className="text-xs font-mono">
+                          <JsonTree 
+                            data={parseJsonStrings(call.request)} 
+                            expanded={false}
+                            expandPaths={['messages']}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Response Details */}
+                    {call.response && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            📥 Response
+                          </h4>
+                          <button
+                            onClick={() => copyToClipboard(call.response, 'Self-Evaluation Response')}
+                            className="px-2 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy
+                          </button>
+                        </div>
+                        <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded border border-green-200 dark:border-green-800 max-h-96 overflow-y-auto">
+                          <div className="text-xs font-mono">
+                            <JsonTree 
+                              data={parseJsonStrings(call.response)} 
+                              expanded={false}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="p-4 space-y-2">
-                {evaluations.map((evaluation, evalIdx) => (
-                  <div 
-                    key={evalIdx}
-                    className={`text-sm px-3 py-2 rounded-lg flex items-start gap-2 ${
-                      evaluation.comprehensive 
-                        ? 'bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 text-green-900 dark:text-green-100'
-                        : 'bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-100'
-                    }`}
-                  >
-                    <span className="font-semibold shrink-0">
-                      {evaluation.comprehensive ? '✅' : '⚠️'} Attempt {evaluation.attempt}:
-                    </span>
-                    <span className="flex-1">{evaluation.reason}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
 
         {/* Dialog Footer */}

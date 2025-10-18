@@ -1136,9 +1136,29 @@ class DuckDuckGoSearcher {
             }
             
             // Use new HTML content extractor to convert to Markdown (preferred) or plain text
-            const extracted = extractContent(rawContent);
+            const extracted = extractContent(rawContent, { baseUrl: result.url });
             
             console.log(`[${index + 1}/${total}] Extracted ${extracted.format} content: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.compressionRatio}x compression)`);
+            
+            // Emit content extraction event with structured data
+            if (progressCallback) {
+                progressCallback({
+                    phase: 'content_extracted',
+                    result_index: index + 1,
+                    result_total: total,
+                    url: result.url,
+                    title: result.title || result.url,
+                    format: extracted.format,
+                    originalLength: extracted.originalLength,
+                    extractedLength: extracted.extractedLength,
+                    compressionRatio: extracted.compressionRatio,
+                    images: result.page_content?.images?.length || 0,
+                    videos: (result.page_content?.videos?.length || 0) + (result.page_content?.media?.filter(m => m.type === 'video')?.length || 0),
+                    links: result.page_content?.links?.length || 0,
+                    warning: extracted.warning,
+                    tool_call_id: this.currentToolCallId // Add tool call ID for association
+                });
+            }
             
             let optimizedContent = extracted.content;
             

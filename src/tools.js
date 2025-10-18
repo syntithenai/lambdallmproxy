@@ -763,8 +763,8 @@ async function callFunction(name, args = {}, context = {}) {
                 try {
                   const parser = new SimpleHTMLParser(r.rawHtml, query, r.url);
                   
-                  // Extract top 3 most relevant images with captions
-                  const images = parser.extractImages(3);
+                  // Extract top 20 most relevant images with captions
+                  const images = parser.extractImages(20);
                   
                   // Extract top 30 most relevant links (reduced from unlimited)
                   const allLinks = parser.extractLinks(30);
@@ -1395,6 +1395,7 @@ Brief answer with URLs:`;
         
         // Extract images and links from raw HTML BEFORE any processing
         let images = [];
+        let allImages = []; // All images for UI display
         let youtube = [];
         let media = [];
         let links = [];
@@ -1428,7 +1429,11 @@ Brief answer with URLs:`;
               const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
               const parser = new SimpleHTMLParser(rawHtml, urlQuery, url);
               
-              images = parser.extractImages(3);
+              // Extract ALL images and prioritized images separately
+              const imageExtraction = parser.extractAllImages(3); // Top 3 for LLM
+              images = imageExtraction.prioritized;
+              allImages = imageExtraction.all; // All images for UI
+              
               const allLinks = parser.extractLinks(25);
               const categorized = parser.categorizeLinks(allLinks);
               
@@ -1436,12 +1441,13 @@ Brief answer with URLs:`;
               media = [...categorized.video, ...categorized.audio, ...categorized.media];
               links = categorized.regular;
               
-              console.log(`🖼️ Extracted ${images.length} images, ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
+              console.log(`🖼️ Extracted ${images.length} prioritized images (${allImages.length} total), ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
             } catch (extractError) {
               console.warn(`⚠️ Could not extract images/links:`, extractError.message);
             }
             
-            const extracted = extractContent(rawHtml);
+            console.log(`🔗 Using baseUrl for link resolution: ${url}`);
+            const extracted = extractContent(rawHtml, { baseUrl: url });
             content = extracted.content;
             format = extracted.format;
             originalLength = extracted.originalLength;
@@ -1450,6 +1456,26 @@ Brief answer with URLs:`;
             warning = extracted.warning;
             extractionError = extracted.error;
             scrapeService = 'duckduckgo_proxy';
+            
+            // Emit content extraction event
+            if (context?.writeEvent) {
+              context.writeEvent('scrape_progress', {
+                tool: 'scrape_web_content',
+                phase: 'content_extracted',
+                url: url,
+                format: format,
+                originalLength: originalLength,
+                extractedLength: extractedLength,
+                compressionRatio: compressionRatio,
+                images: images.length,
+                videos: media.length,
+                youtube: youtube.length,
+                links: links.length,
+                warning: warning,
+                rawHtml: rawHtml, // Include raw HTML for debugging/inspection
+                timestamp: new Date().toISOString()
+              });
+            }
           }
         } else {
           // Use DuckDuckGo fetcher with proxy
@@ -1461,7 +1487,11 @@ Brief answer with URLs:`;
             const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
             const parser = new SimpleHTMLParser(rawHtml, urlQuery, url);
             
-            images = parser.extractImages(3);
+            // Extract ALL images and prioritized images separately
+            const imageExtraction = parser.extractAllImages(3); // Top 3 for LLM
+            images = imageExtraction.prioritized;
+            allImages = imageExtraction.all; // All images for UI
+            
             const allLinks = parser.extractLinks(25);
             const categorized = parser.categorizeLinks(allLinks);
             
@@ -1469,12 +1499,13 @@ Brief answer with URLs:`;
             media = [...categorized.video, ...categorized.audio, ...categorized.media];
             links = categorized.regular;
             
-            console.log(`🖼️ Extracted ${images.length} images, ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
+            console.log(`🖼️ Extracted ${images.length} prioritized images (${allImages.length} total), ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
           } catch (extractError) {
             console.warn(`⚠️ Could not extract images/links:`, extractError.message);
           }
           
-          const extracted = extractContent(rawHtml);
+          console.log(`🔗 Using baseUrl for link resolution: ${url}`);
+          const extracted = extractContent(rawHtml, { baseUrl: url });
           content = extracted.content;
           format = extracted.format;
           originalLength = extracted.originalLength;
@@ -1483,6 +1514,26 @@ Brief answer with URLs:`;
           warning = extracted.warning;
           extractionError = extracted.error;
           scrapeService = 'duckduckgo_proxy';
+          
+          // Emit content extraction event
+          if (context?.writeEvent) {
+            context.writeEvent('scrape_progress', {
+              tool: 'scrape_web_content',
+              phase: 'content_extracted',
+              url: url,
+              format: format,
+              originalLength: originalLength,
+              extractedLength: extractedLength,
+              compressionRatio: compressionRatio,
+              images: images.length,
+              videos: media.length,
+              youtube: youtube.length,
+              links: links.length,
+              warning: warning,
+              rawHtml: rawHtml, // Include raw HTML for debugging/inspection
+              timestamp: new Date().toISOString()
+            });
+          }
         }
         
         console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`)
@@ -1524,10 +1575,12 @@ Brief answer with URLs:`;
           extractedLength,
           compressionRatio,
           wasTruncated: wasTruncated || undefined, // Only include if truncated
-          images: images.length > 0 ? images : undefined, // Include top 3 relevant images
+          images: images.length > 0 ? images : undefined, // Include top 3 prioritized images for LLM
+          allImages: allImages.length > 0 ? allImages : undefined, // Include ALL images for UI display
           youtube: youtube.length > 0 ? youtube : undefined, // Include YouTube links
           media: media.length > 0 ? media : undefined, // Include other media links
-          links: links.length > 0 ? links : undefined      // Include regular links
+          links: links.length > 0 ? links : undefined,      // Include regular links
+          rawHtml: rawHtml || undefined // Include raw HTML for UI inspection
         };
         
         if (warning) {
@@ -1593,15 +1646,20 @@ Brief answer with URLs:`;
             originalLength: result.text.length,
             extractedLength: result.text.length,
             compressionRatio: 1.0,
-            images: result.images.map(img => ({
+            images: result.images && result.images.length > 0 ? result.images.slice(0, 3).map(img => ({
               src: img.url,
               alt: img.alt,
               caption: img.alt
-            })),
-            links: result.links.map(link => ({
-              href: link.url,
+            })) : undefined,
+            allImages: result.images && result.images.length > 0 ? result.images.map(img => ({
+              src: img.url,
+              alt: img.alt,
+              caption: img.alt
+            })) : undefined,
+            links: result.links && result.links.length > 0 ? result.links.map(link => ({
+              url: link.url,
               text: link.text
-            })),
+            })) : undefined,
             meta: result.meta,
             stats: result.stats
           };
@@ -2037,6 +2095,22 @@ Brief answer with URLs:`;
           toolCallId
         });
 
+        // Emit transcript extraction event with metadata
+        if (context?.writeEvent && result.text) {
+          context.writeEvent('transcript_extracted', {
+            tool: 'transcribe_url',
+            phase: 'content_extracted',
+            url,
+            provider,
+            model,
+            language: result.language || args.language || 'unknown',
+            duration: result.duration,
+            textLength: result.text.length,
+            wordCount: result.text.split(/\s+/).length,
+            timestamp: new Date().toISOString()
+          });
+        }
+
         // Generate summary if requested
         const generateSummary = args.generate_summary === true;
         let summary = null;
@@ -2382,188 +2456,35 @@ Summary:`;
         const apiData = JSON.parse(apiResponse);
         const videoIds = (apiData.items || []).map(item => item.id.videoId);
         
-        // Try to fetch transcripts from public videos (no OAuth required)
-        // Use YouTube's timedtext endpoint which works for public videos
-        console.log(`🎬 YouTube search: ${videoIds.length} videos, fetching public transcripts...`);
-        
-        // Fetch captions information and transcripts for all videos
-        // Process sequentially with delays to avoid rate limiting
-        const captionsInfo = [];
-        const { getYouTubeTranscriptViaInnerTube } = require('./youtube-api');
-        
-        // Get proxy credentials from context or environment
-        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
-        console.log(`🔧 YouTube transcript fetch - Proxy: ${proxyUsername && proxyPassword ? 'ENABLED' : 'DISABLED'}`);
-        console.log(`🔧 DEBUG: Starting transcript fetch loop for ${videoIds.length} videos`);
-        
-        // Create progress callback to emit YouTube search progress events
-        const onProgress = (data) => {
-          if (context?.writeEvent) {
-            context.writeEvent('youtube_search_progress', data);
-          }
-        };
-        
-        // Emit streaming event for YouTube search progress
-        if (onProgress) {
-          onProgress({
-            type: 'youtube_search_progress',
-            phase: 'fetching_transcripts',
-            totalVideos: videoIds.length,
-            currentVideo: 0,
-            message: `Found ${videoIds.length} videos, fetching transcripts...`
+        // Emit search start event
+        if (context?.writeEvent) {
+          context.writeEvent('youtube_search_progress', {
+            tool: 'search_youtube',
+            phase: 'searching',
+            query: query,
+            timestamp: new Date().toISOString()
           });
         }
         
-        for (let i = 0; i < videoIds.length; i++) {
-          const videoId = videoIds[i];
-          console.log(`🔧 DEBUG: Processing video ${i+1}/${videoIds.length}: ${videoId}`);
-          
-          // Emit progress for this video
-          if (onProgress) {
-            onProgress({
-              type: 'youtube_search_progress',
-              phase: 'fetching_transcript',
-              totalVideos: videoIds.length,
-              currentVideo: i + 1,
-              videoId,
-              message: `Fetching transcript ${i+1}/${videoIds.length}: ${videoId}`
-            });
-          }
-          
-          try {
-            // Try to fetch public transcript using InnerTube API (best method, works with proxy)
-            try {
-              const transcript = await getYouTubeTranscriptViaInnerTube(videoId, {
-                language: 'en',
-                proxyUsername,
-                proxyPassword,
-                includeTimestamps: false
-              });
-              
-              if (transcript && transcript.length > 0) {
-                // Truncate transcript to first 500 characters for search results
-                const truncatedTranscript = transcript.length > 500 
-                  ? transcript.substring(0, 500) + '...' 
-                  : transcript;
-                
-                console.log(`✅ Fetched InnerTube transcript for ${videoId} (${transcript.length} chars)`);
-                
-                // Emit success event
-                if (onProgress) {
-                  onProgress({
-                    type: 'youtube_search_progress',
-                    phase: 'transcript_fetched',
-                    totalVideos: videoIds.length,
-                    currentVideo: i + 1,
-                    videoId,
-                    transcriptLength: transcript.length,
-                    message: `✅ Fetched transcript (${transcript.length} chars)`
-                  });
-                }
-                
-                captionsInfo.push({ 
-                  videoId, 
-                  hasCaptions: true, 
-                  transcript: truncatedTranscript,
-                  fullTranscriptLength: transcript.length,
-                  language: 'en',
-                  method: 'innertube'
-                });
-                
-                // Add delay between requests to avoid rate limiting (500ms)
-                if (i < videoIds.length - 1) {
-                  await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                continue;
-              }
-            } catch (transcriptError) {
-              console.error(`❌ InnerTube transcript fetch failed for ${videoId}:`, transcriptError.message);
-              
-              // Emit failure event
-              if (onProgress) {
-                onProgress({
-                  type: 'youtube_search_progress',
-                  phase: 'transcript_failed',
-                  totalVideos: videoIds.length,
-                  currentVideo: i + 1,
-                  videoId,
-                  error: transcriptError.message,
-                  message: `⚠️ Transcript unavailable: ${transcriptError.message.substring(0, 50)}`
-                });
-              }
-              
-              // Fall through to caption check
-            }
-            
-            // Fall back to checking caption availability (without fetching content)
-            const captionsUrl = `https://www.googleapis.com/youtube/v3/captions?${querystring.stringify({
-              part: 'snippet',
-              videoId: videoId,
-              key: apiKey
-            })}`;
-            
-            const captionsData = await new Promise((resolve, reject) => {
-              https.get(captionsUrl, {
-                headers: {
-                  'Accept': 'application/json',
-                  'Referer': 'https://lambdallmproxy.pages.dev/'
-                }
-              }, (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => {
-                  if (res.statusCode === 200) {
-                    resolve(JSON.parse(data));
-                  } else {
-                    resolve(null);
-                  }
-                });
-              }).on('error', () => resolve(null));
-            });
-            
-            if (captionsData && captionsData.items && captionsData.items.length > 0) {
-              // Find English caption track
-              const enCaption = captionsData.items.find(c => 
-                c.snippet.language === 'en' || c.snippet.language.startsWith('en')
-              ) || captionsData.items[0];
-              
-              captionsInfo.push({ 
-                videoId, 
-                hasCaptions: true, 
-                captionId: enCaption.id, 
-                language: enCaption.snippet.language,
-                trackKind: enCaption.snippet.trackKind // 'standard' or 'asr'
-              });
-            } else {
-              captionsInfo.push({ videoId, hasCaptions: false, transcript: null });
-            }
-          } catch (err) {
-            captionsInfo.push({ videoId, hasCaptions: false, transcript: null });
-          }
-        }
+        // DISABLED: Transcript fetching to improve performance
+        // Transcripts are expensive and slow down searches significantly
+        // Users can use transcribe_url or get_youtube_transcript for specific videos
+        console.log(`🎬 YouTube search: ${videoIds.length} videos found (transcript fetching disabled)`);
         
-        // Emit completion event
-        const successCount = captionsInfo.filter(c => c.transcript).length;
-        if (onProgress) {
-          onProgress({
-            type: 'youtube_search_progress',
-            phase: 'complete',
+        // Emit results found event
+        if (context?.writeEvent) {
+          context.writeEvent('youtube_search_progress', {
+            tool: 'search_youtube',
+            phase: 'results_found',
+            query: query,
             totalVideos: videoIds.length,
-            successCount,
-            failedCount: videoIds.length - successCount,
-            message: `✅ Transcript fetch complete: ${successCount}/${videoIds.length} successful`
+            timestamp: new Date().toISOString()
           });
         }
         
-        const captionsMap = {};
-        captionsInfo.forEach(info => {
-          captionsMap[info.videoId] = info;
-        });
-        
+        // Skip transcript fetching - just return basic video info
         const videos = (apiData.items || []).map(item => {
           const videoId = item.id.videoId;
-          const captionInfo = captionsMap[videoId] || {};
           
           // Safely extract and truncate description to prevent huge payloads
           let description = item.snippet.description || '';
@@ -2571,137 +2492,25 @@ Summary:`;
             description = description.substring(0, 500) + '...';
           }
           
-          const videoData = {
+          return {
             videoId,
             url: `https://www.youtube.com/watch?v=${videoId}`,
             title: item.snippet.title || 'Untitled',
             description,
             channel: item.snippet.channelTitle || 'Unknown',
             thumbnail: item.snippet.thumbnails?.default?.url || item.snippet.thumbnails?.medium?.url || '',
-            hasCaptions: captionInfo.hasCaptions || false
+            hasCaptions: null, // Not checked to save API calls
+            transcriptNote: 'Use transcribe_url or get_youtube_transcript to fetch transcript for specific videos'
           };
-          
-          // Include transcript if fetched successfully
-          if (captionInfo.transcript) {
-            videoData.transcript = captionInfo.transcript;
-            videoData.transcriptLength = captionInfo.fullTranscriptLength;
-            videoData.transcriptNote = `Full transcript available (${captionInfo.fullTranscriptLength} chars). Showing first 500 characters.`;
-          }
-          // Otherwise include caption availability info
-          else if (captionInfo.hasCaptions) {
-            videoData.captionLanguage = captionInfo.language;
-            videoData.captionType = captionInfo.trackKind === 'asr' ? 'auto-generated' : 'manual';
-            videoData.captionsNote = `${videoData.captionType === 'auto-generated' ? 'Auto-generated' : 'Manual'} captions available in ${captionInfo.language}. Transcript could not be fetched. Use get_youtube_transcript or transcribe_url tool for full content.`;
-          }
-          
-          return videoData;
         });
         
-        // Generate batch summary if requested
+        // Batch summary not supported when transcript fetching is disabled
         const generateSummary = args.generate_summary === true;
         let batchSummary = null;
         
         if (generateSummary) {
-          // Collect all available transcripts
-          const videosWithTranscripts = videos.filter(v => v.transcript);
-          
-          if (videosWithTranscripts.length > 0) {
-            try {
-              console.log(`🔄 Generating batch LLM summary of ${videosWithTranscripts.length} YouTube transcripts...`);
-              
-              // Format transcripts as requested: {content}\nFROM {link}\n\n
-              const formattedTranscripts = videosWithTranscripts.map(v => {
-                return `${v.transcript}\nFROM ${v.url}`;
-              }).join('\n\n');
-              
-              const summaryPrompt = `Summarize and synthesize the key points from these ${videosWithTranscripts.length} YouTube video transcripts about "${query}":
-
-${formattedTranscripts}
-
-Provide a comprehensive summary (3-4 paragraphs) covering main themes, key insights, and notable differences or commonalities across the videos:`;
-
-              const summaryInput = [
-                { role: 'system', content: 'You are a professional content analyst. Synthesize information from multiple sources, identifying key themes, insights, and patterns.' },
-                { role: 'user', content: summaryPrompt }
-              ];
-
-              const summaryRequestBody = {
-                model: context.model || 'groq:llama-3.3-70b-versatile',
-                input: summaryInput,
-                tools: [],
-                options: {
-                  apiKey: context.apiKey,
-                  temperature: 0.3,
-                  max_tokens: 800,
-                  timeoutMs: 45000
-                }
-              };
-
-              // Emit LLM request event
-              if (context?.writeEvent) {
-                context.writeEvent('llm_request', {
-                  phase: 'youtube_batch_summary',
-                  tool: 'search_youtube',
-                  model: context.model || 'groq:llama-3.3-70b-versatile',
-                  query,
-                  videoCount: videosWithTranscripts.length,
-                  request: summaryRequestBody,
-                  timestamp: new Date().toISOString()
-                });
-              }
-
-              const summaryStartTime = Date.now();
-              const summaryResp = await llmResponsesWithTools(summaryRequestBody);
-              const summaryEndTime = Date.now();
-              
-              batchSummary = summaryResp?.text || summaryResp?.finalText || 'Unable to generate batch summary';
-              
-              // Emit LLM response event
-              if (context?.writeEvent) {
-                context.writeEvent('llm_response', {
-                  phase: 'youtube_batch_summary',
-                  tool: 'search_youtube',
-                  model: context.model || 'groq:llama-3.3-70b-versatile',
-                  query,
-                  videoCount: videosWithTranscripts.length,
-                  response: summaryResp,
-                  timestamp: new Date().toISOString()
-                });
-              }
-              
-              // Log to Google Sheets
-              try {
-                const { logToGoogleSheets } = require('./services/google-sheets-logger');
-                const usage = summaryResp?.rawResponse?.usage || {};
-                const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
-                
-                logToGoogleSheets({
-                  userEmail: context?.userEmail || 'anonymous',
-                  provider: summaryProvider,
-                  model: summaryModel || context.model,
-                  promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
-                  completionTokens: usage.completion_tokens || usage.output_tokens || 0,
-                  totalTokens: usage.total_tokens || 0,
-                  durationMs: summaryEndTime - summaryStartTime,
-                  timestamp: new Date().toISOString(),
-                  requestType: 'youtube_batch_summary',
-                  metadata: { query, videoCount: videosWithTranscripts.length }
-                }).catch(err => {
-                  console.error('Failed to log YouTube batch summary to Google Sheets:', err.message);
-                });
-              } catch (err) {
-                console.error('Google Sheets logging error (YouTube batch summary):', err.message);
-              }
-              
-              console.log(`✅ YouTube batch summary generated for ${videosWithTranscripts.length} videos`);
-            } catch (summaryError) {
-              console.error('Failed to generate YouTube batch summary:', summaryError.message);
-              batchSummary = `Error generating batch summary: ${summaryError.message}`;
-            }
-          } else {
-            console.log('⚠️ No transcripts available for batch summary');
-            batchSummary = 'No transcripts were available to summarize. Videos may not have captions enabled.';
-          }
+          console.log(`⚠️ Batch summary requested but transcript fetching is disabled. Use transcribe_url for individual videos.`);
+          batchSummary = 'Batch summary is not available because transcript fetching has been disabled for search_youtube. To get transcripts and summaries, use the transcribe_url or get_youtube_transcript tools on individual video URLs.';
         }
         
         // Build result object, only include batchSummary if it exists
@@ -2714,6 +2523,17 @@ Provide a comprehensive summary (3-4 paragraphs) covering main themes, key insig
         
         if (batchSummary) {
           resultObj.batchSummary = batchSummary;
+        }
+        
+        // Emit completion event
+        if (context?.writeEvent) {
+          context.writeEvent('youtube_search_progress', {
+            tool: 'search_youtube',
+            phase: 'complete',
+            query: query,
+            totalVideos: videos.length,
+            timestamp: new Date().toISOString()
+          });
         }
         
         // Safely stringify with error handling

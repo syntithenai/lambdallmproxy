@@ -77,6 +77,43 @@ describe('HTML Content Extractor', () => {
             expect(result).toContain('&');
             expect(result).toContain('"quotes"');
         });
+
+        it('should resolve relative URLs to absolute URLs', () => {
+            const html = `
+                <a href="/path/to/page">Relative Link</a>
+                <a href="./relative.html">Dot Relative</a>
+                <a href="../parent.html">Parent Relative</a>
+                <a href="https://example.com/absolute">Absolute Link</a>
+            `;
+            const baseUrl = 'https://example.com/current/page.html';
+            const result = htmlToMarkdown(html, baseUrl);
+            
+            expect(result).toContain('[Relative Link](https://example.com/path/to/page)');
+            expect(result).toContain('[Dot Relative](https://example.com/current/relative.html)');
+            expect(result).toContain('[Parent Relative](https://example.com/parent.html)');
+            expect(result).toContain('[Absolute Link](https://example.com/absolute)');
+        });
+
+        it('should handle protocol-relative URLs', () => {
+            const html = '<a href="//cdn.example.com/resource">CDN Link</a>';
+            const baseUrl = 'https://example.com/page';
+            const result = htmlToMarkdown(html, baseUrl);
+            expect(result).toContain('[CDN Link](https://cdn.example.com/resource)');
+        });
+
+        it('should preserve anchor and special links', () => {
+            const html = `
+                <a href="#section">Anchor</a>
+                <a href="javascript:void(0)">JS Link</a>
+                <a href="mailto:test@example.com">Email</a>
+            `;
+            const baseUrl = 'https://example.com/page';
+            const result = htmlToMarkdown(html, baseUrl);
+            
+            expect(result).toContain('[Anchor](#section)');
+            expect(result).toContain('[JS Link](javascript:void(0))');
+            expect(result).toContain('[Email](mailto:test@example.com)');
+        });
     });
 
     describe('htmlToText', () => {

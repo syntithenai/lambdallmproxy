@@ -3,9 +3,12 @@ import mermaid from 'mermaid';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useUsage } from '../contexts/UsageContext';
+import { useSwag } from '../contexts/SwagContext';
+import { useToast } from './ToastManager';
 
 interface MermaidChartProps {
   chart: string;
+  description?: string;
   onLlmApiCall?: (apiCall: {
     model: string;
     provider: string;
@@ -33,16 +36,137 @@ interface FixAttempt {
   };
 }
 
-export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, onLlmApiCall }) => {
+export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, onLlmApiCall }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [fixAttempts, setFixAttempts] = useState<FixAttempt[]>([]);
   const [currentChart, setCurrentChart] = useState(chart);
   const [showFixDetails, setShowFixDetails] = useState(false);
+  const [copiedImage, setCopiedImage] = useState(false);
   const { accessToken } = useAuth();
   const { settings } = useSettings();
   const { addCost } = useUsage();
+  const { addSnippet } = useSwag();
+  const { showSuccess, showError } = useToast();
+
+  // Convert SVG to PNG and copy to clipboard
+  const handleCopyImage = async () => {
+    if (!containerRef.current) return;
+    
+    try {
+      const svgElement = containerRef.current.querySelector('svg');
+      if (!svgElement) {
+        showError('Chart not found');
+        return;
+      }
+
+      // Create canvas and draw SVG
+      const canvas = document.createElement('canvas');
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const img = new Image();
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      img.onload = async () => {
+        canvas.width = svgElement.clientWidth || 800;
+        canvas.height = svgElement.clientHeight || 600;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          
+          canvas.toBlob(async (blob) => {
+            if (blob) {
+              try {
+                await navigator.clipboard.write([
+                  new ClipboardItem({ 'image/png': blob })
+                ]);
+                setCopiedImage(true);
+                setTimeout(() => setCopiedImage(false), 2000);
+                showSuccess('Chart image copied to clipboard!');
+              } catch (clipboardErr) {
+                console.error('Failed to copy to clipboard:', clipboardErr);
+                showError('Failed to copy image to clipboard');
+              }
+            }
+          });
+        }
+        URL.revokeObjectURL(url);
+      };
+
+      img.onerror = () => {
+        showError('Failed to process chart image');
+        URL.revokeObjectURL(url);
+      };
+
+      img.src = url;
+    } catch (err) {
+      console.error('Failed to copy image:', err);
+      showError('Failed to copy chart image');
+    }
+  };
+
+  // Convert SVG to PNG base64 and add to swag as markdown
+  const handleGrabImage = async () => {
+    if (!containerRef.current) return;
+    
+    try {
+      const svgElement = containerRef.current.querySelector('svg');
+      if (!svgElement) {
+        showError('Chart not found');
+        return;
+      }
+
+      const chartDescription = description || 'Chart diagram';
+      
+      // Convert SVG to PNG for better compatibility in Swag page
+      const canvas = document.createElement('canvas');
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const img = new Image();
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      img.onload = () => {
+        try {
+          canvas.width = svgElement.clientWidth || 800;
+          canvas.height = svgElement.clientHeight || 600;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            // White background
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            
+            // Convert to base64 PNG
+            const pngDataUrl = canvas.toDataURL('image/png');
+            
+            // Use HTML img tag instead of markdown for better compatibility with rehypeRaw
+            const htmlContent = `<img src="${pngDataUrl}" alt="${chartDescription}" class="max-w-full h-auto rounded-lg" />`;
+            
+            addSnippet(htmlContent, 'tool', `Chart: ${chartDescription}`);
+            showSuccess('Chart saved to Swag!');
+          }
+          URL.revokeObjectURL(url);
+        } catch (conversionErr) {
+          console.error('Failed to convert to PNG:', conversionErr);
+          showError('Failed to save chart to Swag');
+          URL.revokeObjectURL(url);
+        }
+      };
+
+      img.onerror = () => {
+        showError('Failed to process chart image');
+        URL.revokeObjectURL(url);
+      };
+
+      img.src = url;
+    } catch (err) {
+      console.error('Failed to grab image:', err);
+      showError('Failed to save chart to Swag');
+    }
+  };
 
   // Initialize mermaid
   useEffect(() => {
@@ -213,16 +337,54 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, onLlmApiCall 
   };
 
   return (
-    <div className="my-4 border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden">
-      {/* Chart Container */}
-      <div 
-        ref={containerRef} 
-        className="bg-white dark:bg-gray-900 p-4 flex items-center justify-center min-h-[200px]"
-        style={{ 
-          fontSize: '14px',
-          overflow: 'auto'
-        }}
-      />
+    <div className="my-4 border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden group">
+      {/* Chart Container with Action Buttons */}
+      <div className="relative bg-white dark:bg-gray-900">
+        {/* Action Buttons - subtle and appear on hover */}
+        <div className="absolute top-2 right-2 flex gap-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <button
+            onClick={handleCopyImage}
+            className="p-1.5 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs rounded backdrop-blur-sm transition-all duration-200 shadow-sm hover:shadow flex items-center gap-1"
+            title="Copy chart image to clipboard"
+          >
+            {copiedImage ? (
+              <>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-[10px]">Copied!</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <span className="text-[10px]">Copy</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={handleGrabImage}
+            className="p-1.5 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs rounded backdrop-blur-sm transition-all duration-200 shadow-sm hover:shadow flex items-center gap-1"
+            title="Grab chart as base64 markdown"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+            </svg>
+            <span className="text-[10px]">Grab</span>
+          </button>
+        </div>
+        
+        {/* Chart */}
+        <div 
+          ref={containerRef} 
+          className="p-4 flex items-center justify-center min-h-[200px]"
+          style={{ 
+            fontSize: '14px',
+            overflow: 'auto'
+          }}
+        />
+      </div>
 
       {/* Error Display */}
       {error && !isLoading && (

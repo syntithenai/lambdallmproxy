@@ -15,6 +15,7 @@ import { usePlaylist } from '../contexts/PlaylistContext';
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  chartDescription?: string; // Description to pass to Mermaid charts
   onLlmApiCall?: (apiCall: {
     model: string;
     provider: string;
@@ -151,7 +152,21 @@ function ImageGallery({ images }: ImageGalleryProps) {
   );
 }
 
-export function MarkdownRenderer({ content, className = '', onLlmApiCall }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className = '', chartDescription, onLlmApiCall }: MarkdownRendererProps) {
+  // Special handling for pure HTML img tags with data URLs
+  // This is for chart images saved from the Grab button
+  const isHtmlImage = /^<img\s+[^>]*src="data:image\/[^"]+"/i.test(content.trim());
+  
+  if (isHtmlImage) {
+    // Render HTML directly using dangerouslySetInnerHTML for data URL images
+    return (
+      <div 
+        className={`markdown-content ${className}`}
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    );
+  }
+  
   // Detect and extract image gallery
   const galleryRegex = /<!-- GALLERY_START -->([\s\S]*?)<!-- GALLERY_END -->/g;
   const galleryMatch = galleryRegex.exec(content);
@@ -238,7 +253,10 @@ export function MarkdownRenderer({ content, className = '', onLlmApiCall }: Mark
             
             if (language === 'mermaid' && !isInline) {
               const chartCode = String(children).replace(/\n$/, '');
-              return <MermaidChart chart={chartCode} onLlmApiCall={onLlmApiCall} />;
+              // Extract chart type from the first line
+              const firstLine = chartCode.split('\n')[0].trim();
+              const defaultDescription = chartDescription || `${firstLine} diagram`;
+              return <MermaidChart chart={chartCode} description={defaultDescription} onLlmApiCall={onLlmApiCall} />;
             }
             
             if (isInline) {
@@ -356,15 +374,26 @@ export function MarkdownRenderer({ content, className = '', onLlmApiCall }: Mark
             </em>
           ),
           
-          // Images - render with proper styling
-          img: ({ src, alt }) => (
-            <img
-              src={src}
-              alt={alt || ''}
-              className="max-w-full h-auto rounded-lg my-4 border border-gray-200 dark:border-gray-700"
-              loading="lazy"
-            />
-          ),
+          // Images - render with proper styling, handle data URLs explicitly
+          img: ({ src, alt }) => {
+            // Ensure src is a string and handle data URLs
+            const imgSrc = typeof src === 'string' ? src : '';
+            
+            return (
+              <img
+                src={imgSrc}
+                alt={alt || ''}
+                className="max-w-full h-auto rounded-lg my-4 border border-gray-200 dark:border-gray-700"
+                loading="lazy"
+                onError={(e) => {
+                  // Log error for debugging
+                  console.error('Image failed to load:', { src: imgSrc, alt });
+                  // Optionally add a fallback
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            );
+          },
         }}
       >
         {mainContent}

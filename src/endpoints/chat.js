@@ -312,7 +312,11 @@ A response is NOT comprehensive if:
             usage: evalResponse.rawResponse?.usage || null,
             rawResponse: evalResponse.rawResponse || null,
             httpHeaders: evalResponse.httpHeaders || {},
-            httpStatus: evalResponse.httpStatus
+            httpStatus: evalResponse.httpStatus,
+            messages: [
+                { role: 'system', content: evaluationSystemPrompt },
+                ...evaluationMessages
+            ] // Include the actual messages sent for transparency
         };
         
     } catch (error) {
@@ -331,7 +335,8 @@ A response is NOT comprehensive if:
                 reason: 'Evaluation skipped - API authentication failed',
                 usage: null,
                 error: error.message,
-                skipEvaluation: true // Signal to skip further evaluation attempts
+                skipEvaluation: true, // Signal to skip further evaluation attempts
+                messages: [] // No messages on error
             };
         }
         
@@ -340,7 +345,8 @@ A response is NOT comprehensive if:
             isComprehensive: true,
             reason: 'Evaluation failed - assuming comprehensive',
             usage: null,
-            error: error.message
+            error: error.message,
+            messages: [] // No messages on error
         };
     }
 }
@@ -2262,7 +2268,7 @@ async function handler(event, responseStream) {
             if (toolMessages.length > 0 && assistantMessage.content && assistantMessage.content.length > 0) {
                 console.log(`✅ Processing ${toolMessages.length} tool messages for extraction`);
                 const allUrls = [];
-                const allImages = [];
+                const allImages = []; // ALL images for "All Images" section
                 const allVideos = [];
                 const allMedia = [];
                 
@@ -2385,6 +2391,95 @@ async function handler(event, responseStream) {
                                         source: parsed.url
                                     });
                                 }
+                            }
+                        }
+                        
+                        // Extract from scrape_web_content results
+                        if (toolMsg.name === 'scrape_web_content') {
+                            // Add the scraped URL as a source
+                            if (parsed.url) {
+                                allUrls.push({
+                                    title: parsed.url.split('/')[2] || parsed.url, // Use domain as title
+                                    url: parsed.url,
+                                    snippet: parsed.content?.substring(0, 150),
+                                    source: parsed.url,
+                                    isSearchResult: false
+                                });
+                            }
+                            
+                            // Extract links from scraped content
+                            if (parsed.links) {
+                                for (const link of parsed.links) {
+                                    allUrls.push({
+                                        title: link.text || link.caption || link.href,
+                                        url: link.href,
+                                        snippet: link.caption || null,
+                                        source: parsed.url,
+                                        isSearchResult: false
+                                    });
+                                }
+                            }
+                            
+                            // Extract ALL images (allImages contains everything, prioritization happens later)
+                            if (parsed.allImages) {
+                                for (const img of parsed.allImages) {
+                                    allImages.push({
+                                        src: img.src,
+                                        alt: img.alt || img.title || 'Image',
+                                        source: parsed.url,
+                                        // Preserve relevance and placement scores for smart sorting later
+                                        relevance: img.relevance,
+                                        placementScore: img.placementScore
+                                    });
+                                }
+                            } else if (parsed.images) {
+                                // Fallback to images field if allImages not present (backwards compatibility)
+                                for (const img of parsed.images) {
+                                    allImages.push({
+                                        src: img.src,
+                                        alt: img.alt || img.title || 'Image',
+                                        source: parsed.url,
+                                        relevance: img.relevance,
+                                        placementScore: img.placementScore
+                                    });
+                                }
+                            }
+                            
+                            // Extract YouTube videos
+                            if (parsed.youtube) {
+                                for (const video of parsed.youtube) {
+                                    allVideos.push({
+                                        src: video.href || video.src,
+                                        title: video.text || video.title || 'YouTube Video',
+                                        source: parsed.url
+                                    });
+                                }
+                            }
+                            
+                            // Extract other media
+                            if (parsed.media) {
+                                for (const media of parsed.media) {
+                                    allMedia.push({
+                                        src: media.href || media.src,
+                                        type: media.type || 'unknown',
+                                        source: parsed.url
+                                    });
+                                }
+                            }
+                        }
+                        
+                        // Extract from search_youtube results
+                        if (toolMsg.name === 'search_youtube') {
+                            console.log(`📺 Processing search_youtube tool result`);
+                            if (parsed.videos && Array.isArray(parsed.videos)) {
+                                for (const video of parsed.videos) {
+                                    allVideos.push({
+                                        src: video.url,
+                                        title: video.title || 'YouTube Video',
+                                        source: 'youtube_search'
+                                    });
+                                }
+                                console.log(`✅ Extracted ${parsed.videos.length} YouTube videos from search results`);
                             }
                         }
                         
@@ -2667,7 +2762,8 @@ async function handler(event, responseStream) {
                         provider: provider,
                         request: {
                             purpose: 'evaluate_response_comprehensiveness',
-                            evaluation_attempt: evaluationRetries + 1
+                            evaluation_attempt: evaluationRetries + 1,
+                            messages: evaluation.messages || [] // Include actual messages sent for transparency
                         },
                         response: {
                             usage: evaluation.usage,

@@ -1,5 +1,15 @@
 # GitHub Copilot Instructions 
 
+IMPORTANT: Development is LOCAL-FIRST
+
+Note: This project is developed primarily on localhost. Do NOT deploy to Lambda after every change. For backend code changes, always restart the dev server with:
+
+```bash
+make dev
+```
+
+This short reminder should be the default guidance for any Copilot suggestions.
+
 This document provides comprehensive instructions for GitHub Copilot to effectively assist in the development of the project.
 
 ## 0. Documentation Organization
@@ -44,11 +54,40 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
     - Redact secrets in logs and documentation with `[REDACTED]` or `***`
     - If a secret is accidentally committed, immediately rewrite git history and revoke the exposed credential
 
-### 1.2. Deployment and Build Process
+### 1.2. Local Development Workflow
 
-- **Mandatory**: After completing any code or documentation changes, run the appropriate deployment command before finishing the task (e.g., `make deploy-lambda-fast` for backend updates, `make deploy-ui` for UI changes).
+- **⚠️ CRITICAL: We Are Developing on Localhost**
+  - The project is currently being developed using the **local development server**
+  - **DO NOT deploy to Lambda** after every code change
+  - **DO deploy to Lambda** only when explicitly requested or when changes are production-ready
 
-#### Lambda Function Deployment
+#### Development Cycle
+
+1. **Make Code Changes** to backend files in `src/`
+2. **Restart Dev Server** with:
+   ```bash
+   make dev
+   ```
+3. **Test Locally** at `http://localhost:3000` (backend) and `http://localhost:5173` (frontend)
+4. **Only Deploy to Lambda** when changes are tested and production-ready
+
+#### When to Deploy vs When to Develop Locally
+
+**✅ Develop Locally (Default Workflow)**:
+- Making code changes during active development
+- Testing new features or bug fixes
+- Iterating on implementation
+- Experimenting with changes
+- **Action**: Run `make dev` after backend changes
+
+**✅ Deploy to Lambda (Only When Ready)**:
+- Changes are fully tested locally
+- Feature is complete and production-ready
+- User explicitly requests deployment
+- Preparing for release
+- **Action**: Run `make deploy-lambda-fast`
+
+#### Lambda Function Deployment (Production Only)
 
 - **⚡ Fast Deployment** (RECOMMENDED): After modifying backend code in `src/`:
     1.  **First Time Setup**: Run `make setup-layer` once to create Lambda Layer with dependencies (~2 minutes, one-time)
@@ -92,9 +131,14 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
 #### Quick Reference
 
 ```bash
-# Lambda Function
-make deploy-lambda           # Full deployment with dependencies
-make deploy-lambda-fast      # Fast deployment (code only)
+# Local Development (Primary Workflow)
+make dev                     # Start local dev server (use after backend changes)
+                             # Backend: http://localhost:3000
+                             # Frontend: http://localhost:5173
+
+# Lambda Function (Production Deployment Only)
+make deploy-lambda           # Full deployment with dependencies (when needed)
+make deploy-lambda-fast      # Fast deployment, code only (when production-ready)
 make setup-layer             # Create dependencies layer (run once)
 make deploy-env              # Deploy environment variables from .env to Lambda
 
@@ -107,8 +151,10 @@ make logs                    # View recent CloudWatch logs (last 5 minutes)
 make logs-tail               # Tail CloudWatch logs in real-time
 
 # Combined
-make all                     # Deploy both Lambda and UI
+make all                     # Deploy both Lambda and UI (use sparingly)
 ```
+
+**Remember**: After making backend code changes, use `make dev` to restart the local server, NOT deployment commands.
 - **Testing**: When testing the Lambda function, ensure all required parameters, including the API key, are provided, unless a test specifically requires their omission.
 - **Debugging**: Always check CloudWatch logs using `make logs` after deployment to verify function behavior and catch errors.
 

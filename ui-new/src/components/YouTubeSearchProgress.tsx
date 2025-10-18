@@ -2,7 +2,8 @@ import React from 'react';
 
 interface YouTubeSearchProgressData {
   type: 'youtube_search_progress';
-  phase: 'fetching_transcripts' | 'fetching_transcript' | 'transcript_fetched' | 'transcript_failed' | 'complete';
+  phase: 'searching' | 'results_found' | 'complete' | 'fetching_transcripts' | 'fetching_transcript' | 'transcript_fetched' | 'transcript_failed';
+  query?: string;
   totalVideos?: number;
   currentVideo?: number;
   videoId?: string;
@@ -21,6 +22,44 @@ interface YouTubeSearchProgressProps {
 export const YouTubeSearchProgress: React.FC<YouTubeSearchProgressProps> = ({ data }) => {
   // Render different UI based on phase
   switch (data.phase) {
+    case 'searching':
+      return (
+        <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
+          <div className="flex gap-1">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+          </div>
+          <span className="text-gray-700 dark:text-gray-300">
+            🔍 Searching YouTube for: <span className="font-medium">{data.query}</span>
+          </span>
+        </div>
+      );
+    
+    case 'results_found':
+      return (
+        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded text-sm">
+          <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="text-gray-700 dark:text-gray-300">
+            🎬 Found <span className="font-medium">{data.totalVideos} videos</span> for: {data.query}
+          </span>
+        </div>
+      );
+    
+    case 'complete':
+      return (
+        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded text-sm">
+          <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-gray-700 dark:text-gray-300">
+            ✅ YouTube search complete - <span className="font-medium">{data.totalVideos} videos</span> added to playlist
+          </span>
+        </div>
+      );
+    
     case 'fetching_transcripts':
       return (
         <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded text-sm">
@@ -107,23 +146,6 @@ export const YouTubeSearchProgress: React.FC<YouTubeSearchProgressProps> = ({ da
               </div>
             )}
           </div>
-        </div>
-      );
-      
-    case 'complete':
-      return (
-        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded text-sm">
-          <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span className="text-gray-700 dark:text-gray-300 font-medium">
-            {data.message || `✅ Complete: ${data.successCount}/${data.totalVideos} transcripts fetched`}
-          </span>
-          {data.failedCount && data.failedCount > 0 && (
-            <span className="text-xs text-yellow-600 dark:text-yellow-400">
-              ({data.failedCount} failed)
-            </span>
-          )}
         </div>
       );
       

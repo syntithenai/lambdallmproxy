@@ -18,18 +18,20 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
 import { SearchProgress } from './SearchProgress';
 import { YouTubeSearchProgress, type YouTubeSearchProgressData } from './YouTubeSearchProgress';
+import { ExtractionSummary } from './ExtractionSummary';
 import { LlmInfoDialog } from './LlmInfoDialog';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
 import { VoiceInputDialog } from './VoiceInputDialog';
-import ExtractedContent from './ExtractedContent';
 import { GeneratedImageBlock } from './GeneratedImageBlock';
 import { JsonTree } from './JsonTree';
 import { ImageGallery } from './ImageGallery';
-import { MediaSections } from './MediaSections';
+
 import { ToolResultJsonViewer } from './JsonTreeViewer';
 import { ReadButton } from './ReadButton';
 import ToolTransparency from './ToolTransparency';
+import { GenerateChartDisplay } from './GenerateChartDisplay';
 import { YouTubeVideoResults } from './YouTubeVideoResults';
+import { SearchWebResults } from './SearchWebResults';
 import { ExamplesModal } from './ExamplesModal';
 import { 
   saveChatToHistory, 
@@ -150,10 +152,38 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // YouTube search progress tracking
   const [youtubeSearchProgress, setYoutubeSearchProgress] = useState<Map<string, YouTubeSearchProgressData>>(new Map());
   
+  // Content extraction tracking (for displaying structured data summaries)
+  const [extractionData, setExtractionData] = useState<Map<string, {
+    phase: string;
+    url?: string;
+    title?: string;
+    format?: string;
+    originalLength?: number;
+    extractedLength?: number;
+    compressionRatio?: number;
+    images?: number;
+    videos?: number;
+    youtube?: number;
+    links?: number;
+    language?: string;
+    duration?: number;
+    textLength?: number;
+    wordCount?: number;
+    warning?: string;
+    rawHtml?: string; // Raw HTML from scraping
+    timestamp?: string;
+  }>>(new Map());
+  
   // Search result content viewer dialog
   const [viewingSearchResult, setViewingSearchResult] = useState<{
     result: any;
     index: number;
+  } | null>(null);
+  
+  // Raw HTML viewer dialog for scrape_web_content
+  const [viewingRawHtml, setViewingRawHtml] = useState<{
+    url: string;
+    html: string;
   } | null>(null);
   
   // LLM Info dialog tracking
@@ -161,6 +191,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Error Info dialog tracking
   const [showErrorInfo, setShowErrorInfo] = useState<number | null>(null);
+  
+  // Raw HTML dialog for scrape results
+  const [showRawHtml, setShowRawHtml] = useState<{ html: string; url: string } | null>(null);
   
   // Voice input dialog
   const [showVoiceInput, setShowVoiceInput] = useState(false);
@@ -556,6 +589,20 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     return '';
   };
 
+  // Helper to extract Mermaid code from message content
+  const extractMermaidCode = (content: ChatMessage['content']): string | null => {
+    const text = getMessageText(content);
+    if (!text) return null;
+    
+    // Look for code between ```mermaid and ```
+    const mermaidMatch = text.match(/```mermaid\s*([\s\S]*?)```/);
+    if (mermaidMatch && mermaidMatch[1]) {
+      return mermaidMatch[1].trim();
+    }
+    
+    return null;
+  };
+
   // Helper to extract media from tool results in a message
   const extractMediaFromMessage = (message: any) => {
     const media = {
@@ -894,8 +941,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   }, [showLoadDialog]);
 
-  // Track which messages we've already processed for YouTube results
-  const processedMessagesRef = useRef<Set<string>>(new Set());
+  // Track which tool results we've already processed for YouTube videos
+  // Key: tool_call_id or a stable identifier for each tool result
+  const processedToolResultsRef = useRef<Set<string>>(new Set());
   
   // Store addTracksToStart in a ref to avoid effect re-running when it changes
   const addTracksToStartRef = useRef(addTracksToStart);
@@ -904,41 +952,55 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   }, [addTracksToStart]);
 
   // Extract YouTube URLs from messages and add to playlist
+  // This runs when messages change - extracts videos from search_youtube tool results
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage || lastMessage.role !== 'assistant') return;
-
-    // Create a unique ID for this message to track if we've processed it
-    // Use message index and content hash to avoid expensive operations
-    const messageId = `${messages.length - 1}-${lastMessage.content ? String(lastMessage.content).substring(0, 50) : ''}-${lastMessage.toolResults?.length || 0}`;
+    // Only process completed assistant messages (not streaming)
+    const completedMessages = messages.filter(msg => 
+      msg.role === 'assistant' && !msg.isStreaming && msg.toolResults
+    );
     
-    // Skip if we've already processed this message (early return to avoid any work)
-    if (processedMessagesRef.current.has(messageId)) {
-      return;
-    }
-
-    // Look for YouTube search results in toolResults (embedded in assistant message)
-    const youtubeResults: any[] = [];
-    if (lastMessage.toolResults) {
-      lastMessage.toolResults.forEach((toolResult: any) => {
-        if (toolResult.name === 'search_youtube' && toolResult.content) {
-          try {
-            const result = typeof toolResult.content === 'string' 
-              ? JSON.parse(toolResult.content) 
-              : toolResult.content;
-            if (result.videos && Array.isArray(result.videos)) {
-              youtubeResults.push(...result.videos);
-            }
-          } catch (e) {
-            console.error('Failed to parse YouTube results:', e);
+    if (completedMessages.length === 0) return;
+    
+    const allYoutubeVideos: any[] = [];
+    const videoIdsSeen = new Set<string>();
+    
+    completedMessages.forEach((msg) => {
+      // Look for YouTube search results in toolResults
+      msg.toolResults?.forEach((toolResult: any) => {
+        if (toolResult.name !== 'search_youtube' || !toolResult.content) return;
+        
+        // Create stable ID for this tool result using tool_call_id
+        const toolResultId = toolResult.tool_call_id || `${toolResult.name}-${JSON.stringify(toolResult.content).substring(0, 100)}`;
+        
+        // Skip if already processed
+        if (processedToolResultsRef.current.has(toolResultId)) return;
+        
+        try {
+          const result = typeof toolResult.content === 'string' 
+            ? JSON.parse(toolResult.content) 
+            : toolResult.content;
+          
+          if (result.videos && Array.isArray(result.videos)) {
+            // Add videos, filtering duplicates within this batch
+            result.videos.forEach((video: any) => {
+              if (video.videoId && !videoIdsSeen.has(video.videoId)) {
+                videoIdsSeen.add(video.videoId);
+                allYoutubeVideos.push(video);
+              }
+            });
+            
+            // Mark this tool result as processed
+            processedToolResultsRef.current.add(toolResultId);
           }
+        } catch (e) {
+          console.error('[ChatTab] Failed to parse YouTube results:', e);
         }
       });
-    }
+    });
 
-    // Add YouTube videos to playlist (at the start)
-    if (youtubeResults.length > 0) {
-      const tracks = youtubeResults.map((video: any) => ({
+    // Add YouTube videos to playlist if any found
+    if (allYoutubeVideos.length > 0) {
+      const tracks = allYoutubeVideos.map((video: any) => ({
         videoId: video.videoId,
         url: video.url,
         title: video.title || 'Untitled Video',
@@ -948,18 +1010,28 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         thumbnail: video.thumbnail || ''
       }));
       
+      console.log(`[ChatTab] Adding ${tracks.length} new YouTube videos to playlist (${processedToolResultsRef.current.size} tool results processed total)`);
+      
       // Use ref to avoid dependency on addTracksToStart
       addTracksToStartRef.current(tracks);
-      showSuccess(`Added ${tracks.length} video${tracks.length !== 1 ? 's' : ''} to playlist`);
       
-      // Mark this message as processed
-      processedMessagesRef.current.add(messageId);
-      
-      // Limit set size to prevent memory growth (keep last 100 messages)
-      if (processedMessagesRef.current.size > 100) {
-        const arr = Array.from(processedMessagesRef.current);
-        processedMessagesRef.current = new Set(arr.slice(-100));
+      // Show success message only for new additions (not bulk history loads)
+      // Check if the last message was just added (has YouTube and is not streaming)
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.role === 'assistant' && !lastMessage.isStreaming) {
+        const lastMessageHasNewYouTube = lastMessage.toolResults?.some((tr: any) => 
+          tr.name === 'search_youtube' && !processedToolResultsRef.current.has(tr.tool_call_id || '')
+        );
+        if (lastMessageHasNewYouTube) {
+          showSuccess(`Added ${tracks.length} video${tracks.length !== 1 ? 's' : ''} to playlist`);
+        }
       }
+    }
+    
+    // Limit set size to prevent memory growth (keep last 500 tool result IDs)
+    if (processedToolResultsRef.current.size > 500) {
+      const arr = Array.from(processedToolResultsRef.current);
+      processedToolResultsRef.current = new Set(arr.slice(-500));
     }
   }, [messages, showSuccess]); // Only depend on messages and showSuccess
 
@@ -1386,6 +1458,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setLastRequestCost(0); // Reset cost for new request
     // Clear expanded tool messages so new tool calls start collapsed
     setExpandedToolMessages(new Set());
+    // Clear progress from previous searches
+    setSearchProgress(new Map());
+    setYoutubeSearchProgress(new Map());
+    setTranscriptionProgress(new Map());
+    setExtractionData(new Map());
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
@@ -1794,6 +1871,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               ));
               
               // Clear search progress when search_web tool completes
+              // This prevents progress from showing on the last message after completion
               if (data.name === 'search_web') {
                 console.log('🔍 Clearing search progress after search_web completion');
                 setSearchProgress(new Map());
@@ -1968,23 +2046,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               break;
               
             case 'youtube_search_progress':
-              // YouTube search progress events (fetching_transcripts, fetching_transcript, transcript_fetched, transcript_failed, complete)
+              // YouTube search progress events (searching, results_found, complete)
+              // NOTE: Transcript-related phases (fetching_transcript, etc.) are no longer emitted by backend
               console.log('🎬 YouTube search progress event:', data);
               
               // If starting a new search, clear old progress
-              if (data.phase === 'fetching_transcripts') {
+              if (data.phase === 'searching') {
                 setYoutubeSearchProgress(new Map());
               }
               
-              // Create a unique key for each event based on phase and video
-              let youtubeProgressKey: string;
-              if (data.phase === 'fetching_transcript' || data.phase === 'transcript_fetched' || data.phase === 'transcript_failed') {
-                // For per-video events, use current video number
-                youtubeProgressKey = `youtube_video_${data.currentVideo || 0}`;
-              } else {
-                // For general events, use phase
-                youtubeProgressKey = `youtube_${data.phase}`;
-              }
+              // Create a unique key for each event based on phase
+              const youtubeProgressKey = `youtube_${data.phase}`;
               
               setYoutubeSearchProgress(prev => {
                 const newMap = new Map(prev);
@@ -1992,8 +2064,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 return newMap;
               });
               
+              // Clear progress when complete
+              if (data.phase === 'complete') {
+                setTimeout(() => {
+                  setYoutubeSearchProgress(new Map());
+                }, 1000); // Keep visible for 1 second after completion
+              }
+              
               // Auto-expand the tool section when YouTube search starts
-              if (data.phase === 'fetching_transcripts') {
+              if (data.phase === 'searching') {
                 // Find the most recent assistant message with search_youtube tool
                 setMessages(prev => {
                   for (let i = prev.length - 1; i >= 0; i--) {
@@ -2011,6 +2090,26 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     }
                   }
                   return prev;
+                });
+              }
+              break;
+              
+            case 'scrape_progress':
+            case 'transcript_extracted':
+              // Content extraction events (from scrape_web_content, transcribe_url, or search_web)
+              // Skip transcript_extracted events - they're not useful for user visibility
+              if (eventType === 'transcript_extracted') {
+                console.log('📊 Skipping transcript_extracted event (hidden from UI):', data);
+                break;
+              }
+              
+              console.log('📊 Content extraction event:', data);
+              if (data.phase === 'content_extracted') {
+                setExtractionData(prev => {
+                  const newMap = new Map(prev);
+                  const key = data.url || `extraction_${Date.now()}`;
+                  newMap.set(key, data);
+                  return newMap;
                 });
               }
               break;
@@ -3230,62 +3329,32 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             <span className="font-semibold text-purple-700 dark:text-purple-300">Result:</span>
                             <div className="bg-purple-50 dark:bg-purple-950 p-2 rounded mt-1 max-h-96 overflow-y-auto">
                               {searchResults ? (
-                                <div className="space-y-3">
-                                  {searchResults.map((result: any, ridx: number) => (
-                                    <div key={ridx} className="border-b border-purple-200 dark:border-purple-800 pb-2 last:border-b-0">
-                                      <div className="font-semibold text-purple-900 dark:text-purple-100 mb-1">
-                                        {result.title || 'Result ' + (ridx + 1)}
-                                      </div>
-                                      {result.url && (
-                                        <a 
-                                          href={result.url} 
-                                          target="_blank" 
-                                          rel="noopener noreferrer"
-                                          className="text-blue-600 dark:text-blue-400 hover:underline text-xs break-all block mb-1"
-                                        >
-                                          {result.url}
-                                        </a>
-                                      )}
-                                      {result.description && (
-                                        <p className="text-gray-700 dark:text-gray-300 text-xs mb-1 italic">
-                                          {result.description}
-                                        </p>
-                                      )}
-                                      {result.snippet && (
-                                        <p className="text-gray-700 dark:text-gray-300 text-xs">
-                                          {result.snippet}
-                                        </p>
-                                      )}
-                                      {/* Show button to view loaded page content if available */}
-                                      {result.content && (
-                                        <div className="mt-2">
-                                          <button
-                                            onClick={() => setViewingSearchResult({ result, index: ridx })}
-                                            className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors font-semibold"
-                                          >
-                                            📄 View Full Content ({(result.content.length / 1024).toFixed(1)} KB)
-                                            {result.images?.length > 0 && ` • ${result.images.length} images`}
-                                            {result.links?.length > 0 && ` • ${result.links.length} links`}
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
+                                <SearchWebResults results={searchResults} />
                               ) : scrapeResult ? (
                                 <div className="space-y-2">
-                                  {/* Show URL */}
+                                  {/* Show URL with Raw HTML button */}
                                   {scrapeResult.url && (
-                                    <div>
-                                      <span className="font-semibold text-purple-800 dark:text-purple-200">URL:</span>
-                                      <a 
-                                        href={scrapeResult.url} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 dark:text-blue-400 hover:underline text-xs break-all block mt-1"
-                                      >
-                                        {scrapeResult.url}
-                                      </a>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex-1 min-w-0">
+                                        <span className="font-semibold text-purple-800 dark:text-purple-200">URL:</span>
+                                        <a 
+                                          href={scrapeResult.url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 dark:text-blue-400 hover:underline text-xs break-all block mt-1"
+                                        >
+                                          {scrapeResult.url}
+                                        </a>
+                                      </div>
+                                      {scrapeResult.rawHtml && (
+                                        <button
+                                          onClick={() => setViewingRawHtml({ url: scrapeResult.url, html: scrapeResult.rawHtml })}
+                                          className="flex-shrink-0 px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-700 text-white rounded transition-colors font-medium"
+                                          title="View raw uncompressed HTML"
+                                        >
+                                          📄 Raw HTML
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                   
@@ -3319,6 +3388,140 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       </div>
                                     </div>
                                   )}
+                                  
+                                  {/* Extracted Content: Images, Links, Media */}
+                                  {(scrapeResult.images || scrapeResult.allImages || scrapeResult.youtube || scrapeResult.media || scrapeResult.links) && (
+                                    <div className="mt-4 pt-4 border-t border-purple-200 dark:border-purple-700">
+                                      <div className="text-sm font-semibold text-purple-800 dark:text-purple-200 mb-3">
+                                        📎 Extracted Content
+                                      </div>
+                                      
+                                      <div className="space-y-3">
+                                        {/* Prioritized Images (sent to LLM) */}
+                                        {scrapeResult.images && scrapeResult.images.length > 0 && (
+                                          <div>
+                                            <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                              🖼️ Prioritized Images (sent to LLM): {scrapeResult.images.length}
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                              {scrapeResult.images.map((img: any, idx: number) => (
+                                                <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded p-2">
+                                                  <img 
+                                                    src={img.src} 
+                                                    alt={img.alt || `Image ${idx + 1}`}
+                                                    className="w-full h-24 object-cover rounded mb-1"
+                                                    loading="lazy"
+                                                  />
+                                                  {img.alt && (
+                                                    <p className="text-[10px] text-gray-600 dark:text-gray-400 truncate">
+                                                      {img.alt}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        
+                                        {/* All Images (for UI) */}
+                                        {scrapeResult.allImages && scrapeResult.allImages.length > 0 && (
+                                          <div>
+                                            <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                              🖼️ All Images: {scrapeResult.allImages.length}
+                                            </div>
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                                              {scrapeResult.allImages.slice(0, 24).map((img: any, idx: number) => (
+                                                <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded p-1">
+                                                  <img 
+                                                    src={img.src} 
+                                                    alt={img.alt || `Image ${idx + 1}`}
+                                                    className="w-full h-16 object-cover rounded"
+                                                    loading="lazy"
+                                                  />
+                                                </div>
+                                              ))}
+                                            </div>
+                                            {scrapeResult.allImages.length > 24 && (
+                                              <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                                                ...and {scrapeResult.allImages.length - 24} more
+                                              </p>
+                                            )}
+                                          </div>
+                                        )}
+                                        
+                                        {/* YouTube Videos */}
+                                        {scrapeResult.youtube && scrapeResult.youtube.length > 0 && (
+                                          <div>
+                                            <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                              🎬 YouTube Videos: {scrapeResult.youtube.length}
+                                            </div>
+                                            <div className="space-y-1">
+                                              {scrapeResult.youtube.map((link: any, idx: number) => (
+                                                <a
+                                                  key={idx}
+                                                  href={link.url}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="block text-xs text-blue-600 dark:text-blue-400 hover:underline truncate"
+                                                >
+                                                  {link.text || link.url}
+                                                </a>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        
+                                        {/* Other Media */}
+                                        {scrapeResult.media && scrapeResult.media.length > 0 && (
+                                          <div>
+                                            <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                              🎵 Media (Audio/Video): {scrapeResult.media.length}
+                                            </div>
+                                            <div className="space-y-1">
+                                              {scrapeResult.media.map((link: any, idx: number) => (
+                                                <a
+                                                  key={idx}
+                                                  href={link.url}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="block text-xs text-blue-600 dark:text-blue-400 hover:underline truncate"
+                                                >
+                                                  {link.text || link.url}
+                                                </a>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        
+                                        {/* Regular Links */}
+                                        {scrapeResult.links && scrapeResult.links.length > 0 && (
+                                          <div>
+                                            <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                              🔗 Links: {scrapeResult.links.length}
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                                              {scrapeResult.links.slice(0, 20).map((link: any, idx: number) => (
+                                                <a
+                                                  key={idx}
+                                                  href={link.url}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="block text-xs text-blue-600 dark:text-blue-400 hover:underline truncate"
+                                                >
+                                                  {link.text || link.url}
+                                                </a>
+                                              ))}
+                                            </div>
+                                            {scrapeResult.links.length > 20 && (
+                                              <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                                                ...and {scrapeResult.links.length - 20} more links
+                                              </p>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               ) : jsResult ? (
                                 <div className="space-y-3">
@@ -3333,14 +3536,35 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   {/* Show result if present */}
                                   {jsResult.result !== undefined && (
                                     <div>
-                                      <div className="flex items-center gap-2 mb-2">
+                                      <div className="flex items-center justify-between gap-2 mb-2">
                                         <span className="font-semibold text-purple-800 dark:text-purple-200">✅ Output:</span>
-                                        {toolCall?.executedAt && (
-                                          <span className="text-xs text-gray-600 dark:text-gray-400">
-                                            ({toolCall.runtime || 'N/A'})
-                                          </span>
-                                        )}
+                                        <div className="flex gap-2">
+                                          <button
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(String(jsResult.result));
+                                              showSuccess('Output copied to clipboard!');
+                                            }}
+                                            className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                                            title="Copy output to clipboard"
+                                          >
+                                            Copy
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              handleCaptureContent(String(jsResult.result), 'tool', 'JavaScript Output');
+                                            }}
+                                            className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
+                                            title="Capture output to Swag"
+                                          >
+                                            Grab
+                                          </button>
+                                        </div>
                                       </div>
+                                      {toolCall?.executedAt && (
+                                        <span className="text-xs text-gray-600 dark:text-gray-400 block mb-2">
+                                          ({toolCall.runtime || 'N/A'})
+                                        </span>
+                                      )}
                                       <div className="bg-gray-50 dark:bg-gray-950 p-3 rounded border border-green-300 dark:border-green-700">
                                         <pre className="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
                                           {String(jsResult.result)}
@@ -3349,6 +3573,18 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                     </div>
                                   )}
                                 </div>
+                              ) : msg.name === 'generate_chart' ? (
+                                (() => {
+                                  // Find the previous assistant message to extract chart code
+                                  let chartCode: string | null = null;
+                                  for (let i = idx - 1; i >= 0; i--) {
+                                    if (messages[i].role === 'assistant' && messages[i].content) {
+                                      chartCode = extractMermaidCode(messages[i].content);
+                                      if (chartCode) break;
+                                    }
+                                  }
+                                  return <GenerateChartDisplay content={msg.content} chartCode={chartCode || undefined} />;
+                                })()
                               ) : (
                                 <pre className="whitespace-pre-wrap text-xs text-gray-800 dark:text-gray-200">
                                   {getMessageText(msg.content)}
@@ -3432,8 +3668,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   <>
                     {msg.role === 'assistant' ? (
                       <div>
-                        {/* Show search progress for search_web tool calls */}
-                        {msg.tool_calls && msg.tool_calls.some((tc: any) => tc.function.name === 'search_web') && (
+                        {/* Show search progress ONLY on the last message while it's streaming */}
+                        {idx === messages.length - 1 && searchProgress.size > 0 && (
                           <div className="mb-3 space-y-2">
                             {Array.from(searchProgress.values()).map((progress, idx) => (
                               <SearchProgress key={idx} data={progress} />
@@ -3441,8 +3677,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </div>
                         )}
                         
-                        {/* Show YouTube search progress for search_youtube tool calls */}
-                        {msg.tool_calls && msg.tool_calls.some((tc: any) => tc.function.name === 'search_youtube') && (
+                        {/* Show YouTube search progress ONLY on the last message while it's streaming */}
+                        {idx === messages.length - 1 && youtubeSearchProgress.size > 0 && (
                           <div className="mb-3 space-y-2">
                             {Array.from(youtubeSearchProgress.values()).map((progress, idx) => (
                               <YouTubeSearchProgress key={idx} data={progress} />
@@ -3491,10 +3727,41 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           return null;
                         })}
                         
+                        {/* Waiting indicator for tool execution */}
+                        {msg.tool_calls && !msg.toolResults && !msg.isStreaming && (
+                          <div className="mb-3 flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                            <div className="flex gap-1">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+                            </div>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">
+                              ⚙️ Executing {msg.tool_calls.length} tool{msg.tool_calls.length > 1 ? 's' : ''}...
+                            </span>
+                          </div>
+                        )}
+                        
                         {/* Message content - only render if there's actual content */}
                         <div className="flex items-start gap-2">
                           <div className="flex-1">
-                            {msg.content && <MarkdownRenderer content={getMessageText(msg.content)} />}
+                            {msg.content && (() => {
+                              // Try to extract chart description from toolResults
+                              let chartDescription: string | undefined;
+                              if (msg.toolResults) {
+                                const generateChartResult = msg.toolResults.find((tr: any) => tr.name === 'generate_chart');
+                                if (generateChartResult) {
+                                  try {
+                                    const chartData = typeof generateChartResult.content === 'string' 
+                                      ? JSON.parse(generateChartResult.content) 
+                                      : generateChartResult.content;
+                                    chartDescription = chartData.description || chartData.chart_type;
+                                  } catch (e) {
+                                    // Ignore parse errors
+                                  }
+                                }
+                              }
+                              return <MarkdownRenderer content={getMessageText(msg.content)} chartDescription={chartDescription} />;
+                            })()}
                           </div>
                           {/* Read button for completed assistant messages */}
                           {msg.content && !msg.isStreaming && (
@@ -3552,43 +3819,175 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           return null;
                         })()}
                         
-                        {/* Extracted content from tool calls (sources, images, videos, media) */}
-                        {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
-                        
-                        {/* Show selected images and media sections ONLY on final assistant message with content */}
+                        {/* Extracted content from tool calls - ORGANIZED IN SPECIFIED ORDER */}
                         {(() => {
                           // Check if this is the final assistant message with actual text content
                           const isFinalAssistantMessage = msg.content && !msg.isStreaming && 
                             // Check if there are no subsequent assistant messages with content
                             !messages.slice(idx + 1).some(m => m.role === 'assistant' && m.content);
                           
-                          if (!isFinalAssistantMessage) return null;
+                          if (!isFinalAssistantMessage || !msg.extractedContent) return null;
                           
-                          const media = extractMediaFromMessage(msg);
-                          const hasAnyMedia = media.images.length > 0 || media.links.length > 0 || 
-                                            media.youtubeLinks.length > 0 || media.otherMedia.length > 0;
+                          const ec = msg.extractedContent;
+                          const hasAnyContent = (ec.prioritizedImages && ec.prioritizedImages.length > 0) ||
+                                               (ec.allLinks && ec.allLinks.length > 0) ||
+                                               (ec.allImages && ec.allImages.length > 0) ||
+                                               (ec.youtubeVideos && ec.youtubeVideos.length > 0) ||
+                                               (ec.otherVideos && ec.otherVideos.length > 0) ||
+                                               (ec.media && ec.media.length > 0);
                           
-                          if (!hasAnyMedia) return null;
+                          if (!hasAnyContent) return null;
                           
                           return (
-                            <>
-                              {/* Show first 3 images immediately after response text */}
-                              {media.images.length > 0 && (
+                            <div className="mt-4 space-y-4">
+                              {/* 1. Selected Images (first 3, displayed immediately) */}
+                              {ec.prioritizedImages && ec.prioritizedImages.length > 0 && (
                                 <ImageGallery 
-                                  images={media.images}
+                                  images={ec.prioritizedImages.map(img => img.src)}
                                   maxDisplay={3}
                                   onImageClick={(url) => window.open(url, '_blank')}
                                   onGrabImage={handleGrabImage}
                                 />
                               )}
                               
-                              {/* Expandable media sections at the end */}
-                              <MediaSections {...media} onGrabImage={handleGrabImage} />
-                            </>
+                              {/* 2. All Links (collapsible) */}
+                              {ec.allLinks && ec.allLinks.length > 0 && (
+                                <details className="border border-gray-300 dark:border-gray-700 rounded-lg">
+                                  <summary className="cursor-pointer font-semibold p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-750">
+                                    🔗 All Links ({ec.allLinks.length})
+                                  </summary>
+                                  <div className="p-4 space-y-2">
+                                    {ec.allLinks.map((link: any, idx: number) => (
+                                      <div key={idx} className="border-b border-gray-200 dark:border-gray-700 pb-2 last:border-b-0">
+                                        <div className="flex items-start gap-2">
+                                          <span className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{idx + 1}.</span>
+                                          <div className="flex-1 min-w-0">
+                                            <a 
+                                              href={link.url} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 dark:text-blue-400 hover:underline font-medium break-words"
+                                            >
+                                              {link.title}
+                                            </a>
+                                            {link.snippet && (
+                                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 italic">{link.snippet}</p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
+                              
+                              {/* 3. All Images (collapsible) */}
+                              {ec.allImages && ec.allImages.length > 0 && (
+                                <details className="border border-gray-300 dark:border-gray-700 rounded-lg">
+                                  <summary className="cursor-pointer font-semibold p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-750">
+                                    🖼️ All Images ({ec.allImages.length})
+                                  </summary>
+                                  <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {ec.allImages.map((img: any, idx: number) => (
+                                      <div key={idx} className="relative group">
+                                        <img 
+                                          src={img.src} 
+                                          alt={img.alt || `Image ${idx + 1}`}
+                                          className="w-full h-32 object-cover rounded border border-gray-300 dark:border-gray-700 cursor-pointer hover:opacity-80"
+                                          onClick={() => window.open(img.src, '_blank')}
+                                          loading="lazy"
+                                        />
+                                        <button
+                                          onClick={() => handleGrabImage(img.src)}
+                                          className="absolute top-2 right-2 p-1.5 bg-white dark:bg-gray-800 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                          title="Grab image"
+                                        >
+                                          <svg className="w-4 h-4 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                          </svg>
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
+                              
+                              {/* 4. All YouTube Videos (collapsible) */}
+                              {ec.youtubeVideos && ec.youtubeVideos.length > 0 && (
+                                <details className="border border-gray-300 dark:border-gray-700 rounded-lg">
+                                  <summary className="cursor-pointer font-semibold p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-750">
+                                    📺 YouTube Videos ({ec.youtubeVideos.length})
+                                  </summary>
+                                  <div className="p-4 space-y-2">
+                                    {ec.youtubeVideos.map((video: any, idx: number) => (
+                                      <div key={idx} className="flex items-start gap-2">
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{idx + 1}.</span>
+                                        <a 
+                                          href={video.src} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                                        >
+                                          {video.title}
+                                        </a>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
+                              
+                              {/* 5. Other Videos (collapsible) */}
+                              {ec.otherVideos && ec.otherVideos.length > 0 && (
+                                <details className="border border-gray-300 dark:border-gray-700 rounded-lg">
+                                  <summary className="cursor-pointer font-semibold p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-750">
+                                    🎬 Other Videos ({ec.otherVideos.length})
+                                  </summary>
+                                  <div className="p-4 space-y-2">
+                                    {ec.otherVideos.map((video: any, idx: number) => (
+                                      <div key={idx} className="flex items-start gap-2">
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{idx + 1}.</span>
+                                        <a 
+                                          href={video.src} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                                        >
+                                          {video.title}
+                                        </a>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
+                              
+                              {/* 6. Other Media (collapsible) */}
+                              {ec.media && ec.media.length > 0 && (
+                                <details className="border border-gray-300 dark:border-gray-700 rounded-lg">
+                                  <summary className="cursor-pointer font-semibold p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-750">
+                                    🎵 Audio & Other Media ({ec.media.length})
+                                  </summary>
+                                  <div className="p-4 space-y-2">
+                                    {ec.media.map((item: any, idx: number) => (
+                                      <div key={idx} className="flex items-start gap-2">
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{idx + 1}.</span>
+                                        <a 
+                                          href={item.src} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                                        >
+                                          {item.type || 'Media'}
+                                        </a>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
+                            </div>
                           );
                         })()}
                         
-                        {/* Tool results embedded in this assistant message - render like tool messages */}
+                        {/* 7. Tool results embedded in this assistant message - render like tool messages */}
                         {msg.toolResults && msg.toolResults.length > 0 && (
                           <div className="mt-4 space-y-3">
                             {msg.toolResults.map((toolResult: any, trIdx: number) => {
@@ -3604,6 +4003,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   }
                                 } catch (e) {
                                   // Not JSON or not search results
+                                }
+                              }
+                              
+                              // Try to parse scrape_web_content results for better display
+                              let scrapeResult: any = null;
+                              if (toolResult.name === 'scrape_web_content' && typeof toolResult.content === 'string') {
+                                try {
+                                  const parsed = JSON.parse(toolResult.content);
+                                  if (parsed.content || parsed.url) {
+                                    scrapeResult = parsed;
+                                  }
+                                } catch (e) {
+                                  // Not JSON
                                 }
                               }
                               
@@ -3655,6 +4067,23 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                         }
                                         return null;
                                       })()}
+                                      {/* Show URL and service for scrape_web_content */}
+                                      {toolResult.name === 'scrape_web_content' && (() => {
+                                        try {
+                                          const parsed = typeof toolResult.content === 'string' ? JSON.parse(toolResult.content) : toolResult.content;
+                                          if (parsed.url || parsed.scrapeService) {
+                                            return (
+                                              <span className="font-normal text-purple-600 dark:text-purple-400">
+                                                {parsed.url && <a href={parsed.url} target="_blank" rel="noopener noreferrer" className="hover:underline">- {new URL(parsed.url).hostname}</a>}
+                                                {parsed.scrapeService && <span className="ml-2 text-[10px] bg-purple-200 dark:bg-purple-800 px-1 rounded">via {parsed.scrapeService}</span>}
+                                              </span>
+                                            );
+                                          }
+                                        } catch (e) {
+                                          // Ignore parse errors
+                                        }
+                                        return null;
+                                      })()}
                                     </div>
                                     <button
                                       onClick={() => {
@@ -3675,6 +4104,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   </div>
                                   {isToolExpanded && (
                                     <div className="text-xs space-y-2">
+                                      {/* Show extraction summaries for this tool */}
+                                      {extractionData.size > 0 && Array.from(extractionData.values())
+                                        .filter(() => {
+                                          // Show extraction data relevant to this tool
+                                          if (toolResult.name === 'search_web' || 
+                                              toolResult.name === 'scrape_web_content' || 
+                                              toolResult.name === 'transcribe_url') {
+                                            return true;
+                                          }
+                                          return false;
+                                        })
+                                        .map((extraction, exIdx) => (
+                                          <ExtractionSummary key={exIdx} data={extraction} />
+                                        ))
+                                      }
+                                      
                                       {/* Search results with nice formatting */}
                                       {searchResults && searchResults.length > 0 ? (
                                         <div className="space-y-3">
@@ -3704,12 +4149,114 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                             );
                                           })}
                                         </div>
+                                      ) : scrapeResult ? (
+                                        <div className="space-y-3">
+                                          {/* Warning if present */}
+                                          {scrapeResult.warning && (
+                                            <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded p-2">
+                                              <span className="font-semibold text-yellow-800 dark:text-yellow-200">⚠️ Warning:</span>
+                                              <p className="text-yellow-700 dark:text-yellow-300 text-xs mt-1">{scrapeResult.warning}</p>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Metadata table with Raw HTML button */}
+                                          {(scrapeResult.format || scrapeResult.compressionRatio || scrapeResult.originalLength || scrapeResult.extractedLength) && (
+                                            <div>
+                                              <div className="flex items-center justify-between mb-2">
+                                                <div className="font-semibold text-purple-700 dark:text-purple-300">📊 Metadata:</div>
+                                                {(() => {
+                                                  // Find raw HTML from extractionData
+                                                  const extractionEntry = Array.from(extractionData.values()).find(
+                                                    e => e.url === scrapeResult.url
+                                                  );
+                                                  const rawHtml = extractionEntry?.rawHtml;
+                                                  
+                                                  return rawHtml ? (
+                                                    <button
+                                                      onClick={() => setShowRawHtml({ html: rawHtml, url: scrapeResult.url })}
+                                                      className="text-xs px-2 py-1 bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-300 dark:hover:bg-purple-700"
+                                                    >
+                                                      View Raw HTML
+                                                    </button>
+                                                  ) : null;
+                                                })()}
+                                              </div>
+                                              <table className="w-full text-xs border-collapse">
+                                                <tbody>
+                                                  {scrapeResult.format && (
+                                                    <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">Format:</td>
+                                                      <td className="py-1 font-medium text-gray-900 dark:text-gray-100">
+                                                        {scrapeResult.format === 'markdown' ? '📝 Markdown' : '📄 Plain Text'}
+                                                      </td>
+                                                    </tr>
+                                                  )}
+                                                  {typeof scrapeResult.originalLength === 'number' && typeof scrapeResult.extractedLength === 'number' && (
+                                                    <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">Size:</td>
+                                                      <td className="py-1 font-medium text-gray-900 dark:text-gray-100">
+                                                        {(scrapeResult.originalLength / 1024).toFixed(1)}KB → {(scrapeResult.extractedLength / 1024).toFixed(1)}KB
+                                                      </td>
+                                                    </tr>
+                                                  )}
+                                                  {scrapeResult.compressionRatio && typeof scrapeResult.compressionRatio === 'number' && (
+                                                    <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">Compression:</td>
+                                                      <td className="py-1 font-medium text-gray-900 dark:text-gray-100">
+                                                        {scrapeResult.compressionRatio.toFixed(1)}x
+                                                      </td>
+                                                    </tr>
+                                                  )}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Content with markdown rendering */}
+                                          {scrapeResult.content && (
+                                            <div>
+                                              <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">📄 Content:</div>
+                                              <div className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-800 max-h-96 overflow-y-auto">
+                                                {scrapeResult.format === 'markdown' ? (
+                                                  <MarkdownRenderer content={scrapeResult.content} />
+                                                ) : (
+                                                  <pre className="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 leading-relaxed">
+                                                    {scrapeResult.content}
+                                                  </pre>
+                                                )}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
                                       ) : jsResult ? (
                                         <div className="space-y-3">
                                           {/* Show the code that was executed */}
                                           {jsCode && (
                                             <div>
-                                              <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">💻 Code:</div>
+                                              <div className="flex items-center justify-between gap-2 mb-2">
+                                                <span className="font-semibold text-purple-700 dark:text-purple-300">💻 Code:</span>
+                                                <div className="flex gap-2">
+                                                  <button
+                                                    onClick={() => {
+                                                      navigator.clipboard.writeText(jsCode);
+                                                      showSuccess('Code copied to clipboard!');
+                                                    }}
+                                                    className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                                                    title="Copy code to clipboard"
+                                                  >
+                                                    Copy
+                                                  </button>
+                                                  <button
+                                                    onClick={() => {
+                                                      handleCaptureContent(jsCode, 'tool', 'JavaScript Code');
+                                                    }}
+                                                    className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
+                                                    title="Capture code to Swag"
+                                                  >
+                                                    Grab
+                                                  </button>
+                                                </div>
+                                              </div>
                                               <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
                                                 <pre className="whitespace-pre-wrap leading-relaxed">{jsCode}</pre>
                                               </div>
@@ -3727,7 +4274,30 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           {/* Show result if present */}
                                           {jsResult.result !== undefined && (
                                             <div>
-                                              <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">✅ Output:</div>
+                                              <div className="flex items-center justify-between gap-2 mb-2">
+                                                <span className="font-semibold text-purple-700 dark:text-purple-300">✅ Output:</span>
+                                                <div className="flex gap-2">
+                                                  <button
+                                                    onClick={() => {
+                                                      navigator.clipboard.writeText(String(jsResult.result));
+                                                      showSuccess('Output copied to clipboard!');
+                                                    }}
+                                                    className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                                                    title="Copy output to clipboard"
+                                                  >
+                                                    Copy
+                                                  </button>
+                                                  <button
+                                                    onClick={() => {
+                                                      handleCaptureContent(String(jsResult.result), 'tool', 'JavaScript Output');
+                                                    }}
+                                                    className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
+                                                    title="Capture output to Swag"
+                                                  >
+                                                    Grab
+                                                  </button>
+                                                </div>
+                                              </div>
                                               <div className="bg-gray-50 dark:bg-gray-950 p-3 rounded border border-green-300 dark:border-green-700">
                                                 <pre className="whitespace-pre-wrap text-sm text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
                                                   {String(jsResult.result)}
@@ -3736,6 +4306,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                             </div>
                                           )}
                                         </div>
+                                      ) : toolResult.name === 'generate_chart' ? (
+                                        <GenerateChartDisplay 
+                                          content={toolResult.content} 
+                                          chartCode={extractMermaidCode(msg.content) || undefined} 
+                                        />
                                       ) : (
                                         <ToolResultJsonViewer content={toolResult.content} />
                                       )}
@@ -3750,6 +4325,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+                        
+                        {/* Streaming indicator - shown as separate block after tool results and LLM response */}
+                        {msg.isStreaming && msg.toolResults && msg.toolResults.length > 0 && (
+                          <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg">
+                            <div className="flex items-center gap-3 text-blue-700 dark:text-blue-300">
+                              <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              <div>
+                                <div className="font-semibold text-base">Generating LLM Response...</div>
+                                <div className="text-sm opacity-80">The AI is analyzing the tool results and composing a response</div>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -3785,9 +4376,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             ))}
                           </div>
                         )}
-                        
-                        {/* Extracted content for non-markdown messages too */}
-                        {msg.extractedContent && <ExtractedContent extractedContent={msg.extractedContent} />}
                         
                         {/* Generated Images */}
                         {msg.imageGenerations && msg.imageGenerations.length > 0 && (
@@ -4038,27 +4626,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           </div>
         )}
         
-        {/* Active search progress - show while search is running */}
-        {isLoading && searchProgress.size > 0 && (
-          <div className="flex justify-start mb-3">
-            <div className="w-full max-w-3xl space-y-2">
-              {Array.from(searchProgress.values()).map((progress, idx) => (
-                <SearchProgress key={idx} data={progress} />
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {/* Active YouTube search progress - show while search is running */}
-        {isLoading && youtubeSearchProgress.size > 0 && (
-          <div className="flex justify-start mb-3">
-            <div className="w-full max-w-3xl space-y-2">
-              {Array.from(youtubeSearchProgress.values()).map((progress, idx) => (
-                <YouTubeSearchProgress key={idx} data={progress} />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Search progress is now shown inline with messages (removed duplicate) */}
         
         {isLoading && !streamingContent && toolStatus.length === 0 && (
           <div className="flex justify-start">
@@ -4650,6 +5218,68 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         </div>
       )}
       
+      {/* Raw HTML Viewer Dialog */}
+      {viewingRawHtml && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full h-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-start">
+              <div className="flex-1 pr-4">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  Raw HTML Content
+                </h2>
+                <a
+                  href={viewingRawHtml.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline text-sm break-all"
+                >
+                  {viewingRawHtml.url}
+                </a>
+                <div className="mt-2 flex gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span>📄 {(viewingRawHtml.html.length / 1024).toFixed(1)} KB uncompressed</span>
+                  <span>📝 Raw HTML</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingRawHtml(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-3xl leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300 font-mono">
+                  {viewingRawHtml.html}
+                </pre>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(viewingRawHtml.html);
+                }}
+                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                📋 Copy to Clipboard
+              </button>
+              <button
+                onClick={() => setViewingRawHtml(null)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* LLM Info Dialog */}
       {showLlmInfo !== null && messages[showLlmInfo]?.llmApiCalls && (
         <LlmInfoDialog 
@@ -4686,6 +5316,66 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         requestLocation={requestLocation}
         clearLocation={clearLocation}
       />
+
+      {/* Raw HTML Dialog */}
+      {showRawHtml && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">
+                  Raw HTML
+                </h3>
+                {showRawHtml.url && (
+                  <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-1">
+                    {showRawHtml.url}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setShowRawHtml(null)}
+                className="ml-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(showRawHtml.html);
+                  }}
+                  className="absolute top-2 right-2 px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded"
+                >
+                  Copy
+                </button>
+                <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded border border-gray-200 dark:border-gray-700 overflow-x-auto">
+                  <code className="text-xs text-gray-800 dark:text-gray-200 font-mono whitespace-pre">
+                    {showRawHtml.html}
+                  </code>
+                </pre>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+              <button
+                onClick={() => setShowRawHtml(null)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default ChatTab;

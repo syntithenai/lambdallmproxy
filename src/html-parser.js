@@ -410,9 +410,23 @@ class SimpleHTMLParser {
         }
 
         // Sort by relevance (descending) and return top N
-        return images
-            .sort((a, b) => b.relevance - a.relevance)
-            .slice(0, limit);
+        const sortedImages = images.sort((a, b) => b.relevance - a.relevance);
+        return limit ? sortedImages.slice(0, limit) : sortedImages;
+    }
+    
+    /**
+     * Extract ALL images without limit (for UI display)
+     * Returns { prioritized: [], all: [] }
+     * @param {number} priorityLimit - Number of top images to prioritize
+     * @returns {Object} Object with prioritized and all image arrays
+     */
+    extractAllImages(priorityLimit = 3) {
+        const allImages = this.extractImages(null); // Get all images
+        const prioritized = allImages.slice(0, priorityLimit);
+        return {
+            prioritized,
+            all: allImages
+        };
     }
     
     /**

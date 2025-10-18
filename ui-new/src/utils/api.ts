@@ -3,10 +3,10 @@
 // Constants
 const LOCAL_LAMBDA_URL = import.meta.env.VITE_LOCAL_LAMBDA_URL || 'http://localhost:3000';
 const REMOTE_LAMBDA_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_LAMBDA_URL || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
-const LOCAL_STORAGE_KEY = 'lambdaproxy_use_remote';
 
 // Log configuration for debugging
 console.log('🔧 API Configuration:', {
+  hostname: window.location.hostname,
   remote: REMOTE_LAMBDA_URL,
   local: LOCAL_LAMBDA_URL,
   source: import.meta.env.VITE_API_BASE ? 'env' : 'fallback'
@@ -22,29 +22,6 @@ function isLocalhost(): boolean {
          hostname.startsWith('192.168.') ||
          hostname.startsWith('10.') ||
          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) !== null;
-}
-
-/**
- * Check if we should use remote Lambda (from localStorage marker)
- */
-function shouldUseRemote(): boolean {
-  try {
-    return localStorage.getItem(LOCAL_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Mark that we should use remote Lambda
- */
-function markUseRemote(): void {
-  try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
-    console.log('🌐 Switched to remote Lambda (saved to localStorage)');
-  } catch {
-    // Ignore localStorage errors
-  }
 }
 
 /**
@@ -69,35 +46,32 @@ async function isLocalLambdaAvailable(): Promise<boolean> {
 
 /**
  * Get the appropriate API base URL
- * - If on localhost and local Lambda is available, use it
- * - If on localhost and local Lambda is not available, fall back to remote and remember choice
- * - If not on localhost, always use remote
+ * - If VITE_API_BASE env var is set, always use it (production build)
+ * - If on GitHub Pages (*.github.io), always use remote
+ * - If on localhost/local IP and local Lambda is available, use it
+ * - Otherwise, fall back to remote
  */
 async function getApiBase(): Promise<string> {
-  // If environment variable is set, always use it
+  // If environment variable is set, always use it (production build)
   if (import.meta.env.VITE_API_BASE) {
+    console.log('🌐 Using VITE_API_BASE:', import.meta.env.VITE_API_BASE);
     return import.meta.env.VITE_API_BASE;
   }
   
-  // If not on localhost, always use remote
+  // If on GitHub Pages or other remote host, always use remote
   if (!isLocalhost()) {
+    console.log('🌐 Not localhost, using remote Lambda:', REMOTE_LAMBDA_URL);
     return REMOTE_LAMBDA_URL;
   }
   
-  // On localhost: check if we've already decided to use remote
-  if (shouldUseRemote()) {
-    return REMOTE_LAMBDA_URL;
-  }
-  
-  // Try local Lambda first
+  // On localhost: try local Lambda first
   const localAvailable = await isLocalLambdaAvailable();
   
   if (localAvailable) {
     console.log('🏠 Using local Lambda server at', LOCAL_LAMBDA_URL);
     return LOCAL_LAMBDA_URL;
   } else {
-    console.log('🌐 Local Lambda not available, falling back to remote');
-    markUseRemote();
+    console.log('⚠️ Local Lambda not available, falling back to remote');
     return REMOTE_LAMBDA_URL;
   }
 }
@@ -130,19 +104,13 @@ export async function getCachedApiBase(): Promise<string> {
 export function resetApiBase(): void {
   cachedApiBase = null;
   apiBasePromise = null;
-  try {
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
-    console.log('🔄 API base cache reset');
-  } catch {
-    // Ignore localStorage errors
-  }
+  console.log('🔄 API base cache reset');
 }
 
 /**
  * Force use of remote Lambda (useful for debugging)
  */
 export function forceRemote(): void {
-  markUseRemote();
   cachedApiBase = REMOTE_LAMBDA_URL;
   console.log('🌐 Forced to use remote Lambda');
 }
@@ -198,6 +166,30 @@ export interface ChatMessage {
   }>;
   errorData?: any;        // Full error object for error transparency
   extractedContent?: {    // Extracted content from tool calls (search results, images, videos, media)
+    // Prioritized content (shown inline, not expandable)
+    prioritizedLinks?: Array<{
+      title: string;
+      url: string;
+      snippet?: string;
+    }>;
+    prioritizedImages?: Array<{
+      src: string;
+      alt: string;
+      source: string;
+    }>;
+    // Expandable sections (collapsed by default)
+    allLinks?: Array<{
+      title: string;
+      url: string;
+      snippet?: string;
+      source?: string;
+    }>;
+    allImages?: Array<{
+      src: string;
+      alt: string;
+      source: string;
+    }>;
+    // Legacy fields for backwards compatibility
     sources?: Array<{
       title: string;
       url: string;
@@ -223,6 +215,7 @@ export interface ChatMessage {
       type: string;
       source: string;
     }>;
+    metadata?: any;  // Extraction metadata
   };
   // Retry support
   isRetryable?: boolean;             // Mark message as retryable (error or incomplete response)

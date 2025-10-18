@@ -25,23 +25,29 @@ export const YouTubeVideoResults: React.FC<YouTubeVideoResultsProps> = ({
   videos,
   onOpenPlayer
 }) => {
-  const { playTrack, playlist } = usePlaylist();
+  const { playTrack, addTracksToStart } = usePlaylist();
 
   const handlePlayVideo = (video: YouTubeVideo) => {
-    // Find the video in the playlist
-    const trackIndex = playlist.findIndex(track => track.videoId === video.videoId);
+    // Add the video to the start of the playlist (or move it there if it already exists)
+    addTracksToStart([{
+      videoId: video.videoId,
+      title: video.title,
+      url: video.url,
+      thumbnail: video.thumbnail,
+      channel: video.channel,
+      duration: video.duration
+    }]);
     
-    if (trackIndex !== -1) {
-      // Play the track
-      playTrack(trackIndex);
+    // Play the first track (which is now the video we just added/moved)
+    // Use setTimeout to ensure state update has completed
+    setTimeout(() => {
+      playTrack(0);
       
-      // Optionally open the player dialog (user can also use header button)
+      // Optionally open the player dialog
       if (onOpenPlayer) {
         onOpenPlayer();
       }
-    } else {
-      console.warn('Video not found in playlist:', video.videoId);
-    }
+    }, 0);
   };
 
   if (videos.length === 0) {

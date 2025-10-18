@@ -4,11 +4,51 @@
  */
 
 /**
+ * Resolve a relative URL to an absolute URL
+ * @param {string} url - The URL to resolve (may be relative or absolute)
+ * @param {string} baseUrl - The base URL to resolve against
+ * @returns {string} Absolute URL
+ */
+function resolveUrl(url, baseUrl) {
+    if (!url) return url;
+    
+    // Already absolute URL (has protocol)
+    if (/^https?:\/\//i.test(url)) {
+        return url;
+    }
+    
+    // Protocol-relative URL (starts with //)
+    if (url.startsWith('//')) {
+        const protocol = baseUrl.match(/^https?:/i)?.[0] || 'https:';
+        return protocol + url;
+    }
+    
+    // Anchor or javascript links - return as-is
+    if (url.startsWith('#') || url.startsWith('javascript:') || url.startsWith('mailto:')) {
+        return url;
+    }
+    
+    if (!baseUrl) return url;
+    
+    try {
+        // Use Node.js URL API to resolve
+        const base = new URL(baseUrl);
+        const resolved = new URL(url, base);
+        return resolved.href;
+    } catch (e) {
+        // If URL resolution fails, return original
+        console.warn(`Failed to resolve URL: ${url} against ${baseUrl}`, e.message);
+        return url;
+    }
+}
+
+/**
  * Convert HTML to Markdown-like format
  * @param {string} html - Raw HTML content
+ * @param {string} baseUrl - Base URL for resolving relative links
  * @returns {string} Markdown-formatted text
  */
-function htmlToMarkdown(html) {
+function htmlToMarkdown(html, baseUrl = '') {
     if (!html || typeof html !== 'string') return '';
     
     let text = html;
@@ -38,7 +78,12 @@ function htmlToMarkdown(html) {
     text = text.replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`');
     
     // Convert links to Markdown FIRST (before other conversions that might strip nested tags)
-    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gis, '[$2]($1)');
+    // Also resolve relative URLs to absolute URLs
+    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gis, (match, url, linkText) => {
+        // Resolve relative URLs to absolute
+        const absoluteUrl = resolveUrl(url, baseUrl);
+        return `[${linkText}](${absoluteUrl})`;
+    });
     
     // Convert emphasis
     text = text.replace(/<(strong|b)[^>]*>(.*?)<\/\1>/gi, '**$2**');
@@ -208,6 +253,7 @@ function htmlToText(html) {
  * Tries Markdown first, falls back to plain text
  * @param {string} html - Raw HTML content
  * @param {Object} options - Extraction options
+ * @param {string} options.baseUrl - Base URL for resolving relative links
  * @returns {Object} Extracted content with metadata
  */
 function extractContent(html, options = {}) {
@@ -222,13 +268,14 @@ function extractContent(html, options = {}) {
     }
     
     const originalLength = html.length;
+    const baseUrl = options.baseUrl || '';
     
     try {
         // Step 1: Extract main content area
         const mainContent = extractMainContent(html);
         
         // Step 2: Try Markdown conversion (preferred)
-        const markdown = htmlToMarkdown(mainContent);
+        const markdown = htmlToMarkdown(mainContent, baseUrl);
         
         // Step 3: Validate Markdown output (lowered threshold for tests and short content)
         if (markdown && markdown.length > 10) {
