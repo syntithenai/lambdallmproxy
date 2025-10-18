@@ -104,16 +104,23 @@ async function downloadFromLocalFile(urlOrPath, onProgress) {
     const fs = require('fs').promises;
     const path = require('path');
     
+    console.log(`🏠 downloadFromLocalFile called with: ${urlOrPath}`);
+    
     // Convert file:// URL to path, or handle localhost HTTP URLs
     let filePath;
     if (urlOrPath.startsWith('file://')) {
         filePath = urlOrPath.replace('file://', '');
+        console.log(`   → file:// URL detected, path: ${filePath}`);
     } else if (urlOrPath.includes('localhost:3000/samples/')) {
         // Convert localhost URL to actual file path for local development
         const filename = urlOrPath.split('/samples/').pop();
         filePath = path.join(__dirname, '../../ui-new/public/samples', filename);
+        console.log(`   → localhost URL detected, filename: ${filename}`);
+        console.log(`   → __dirname: ${__dirname}`);
+        console.log(`   → constructed path: ${filePath}`);
     } else {
         filePath = urlOrPath;
+        console.log(`   → using path as-is: ${filePath}`);
     }
     
     console.log(`📁 Reading local file: ${filePath}`);
@@ -166,12 +173,6 @@ async function downloadMedia(url, onProgress) {
 
     console.log(`🌐 Fetching media from: ${url}`);
     
-    // Check if this is a local file path or file:// URL or localhost URL
-    if (url.startsWith('file://') || url.includes('localhost:3000/samples/') || url.includes('127.0.0.1:3000/samples/')) {
-        console.log(`🏠 Detected local file - reading from filesystem`);
-        return await downloadFromLocalFile(url, onProgress);
-    }
-    
     // Check if this is an S3 URL - use direct S3 download (more reliable from Lambda)
     const s3Info = parseS3Url(url);
     if (s3Info) {
@@ -188,15 +189,25 @@ async function downloadMedia(url, onProgress) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), downloadTimeout);
         
+        // Prepare headers - skip Referer for localhost to avoid issues
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'audio/*,video/*,*/*',
+            'Accept-Language': 'en-US,en;q=0.9'
+        };
+        
+        // Only add Referer for non-localhost URLs
+        const urlObj = new URL(url);
+        if (!urlObj.hostname.includes('localhost') && !urlObj.hostname.includes('127.0.0.1')) {
+            headers['Referer'] = urlObj.origin + '/';
+        }
+        
+        console.log(`🔍 Fetch options: headers=${JSON.stringify(headers)}`);
+        
         try {
             response = await fetch(url, {
                 signal: controller.signal,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'audio/*,video/*,*/*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Referer': new URL(url).origin + '/'
-                },
+                headers,
                 redirect: 'follow' // Follow redirects (important for archive.org)
             });
         } finally {

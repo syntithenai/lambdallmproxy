@@ -68,8 +68,31 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
    ```bash
    make dev
    ```
-3. **Test Locally** at `http://localhost:3000` (backend) and `http://localhost:5173` (frontend)
+3. **Test Locally** at `http://localhost:3000` (backend) and `http://localhost:8081` (frontend UI)
 4. **Only Deploy to Lambda** when changes are tested and production-ready
+
+#### Local Development Server Details
+
+**Automatic Backend Selection**:
+- The UI (`ui-new/src/utils/api.ts`) **automatically detects** whether to use local or remote backend
+- When running `make dev`, the UI checks if `http://localhost:3000/health` is available
+- If available → Uses local Lambda server at `localhost:3000`
+- If not available → Falls back to production Lambda URL
+
+**Important**: 
+- Always start backend **BEFORE** opening the UI in browser
+- If backend starts after UI is already open, **hard refresh the browser** (Ctrl+Shift+R / Cmd+Shift+R) to re-detect the local server
+- UI caches the API endpoint decision - refresh clears the cache
+
+**Verifying Local Backend Connection**:
+- Open browser console (F12) and look for: `🏠 Using local Lambda server at http://localhost:3000`
+- Backend logs should show: `[timestamp] POST /chat` when you send messages
+- If you see requests going to `lambda-url.us-east-1.on.aws`, the UI is using production instead of local
+
+**Common Issues**:
+- **UI uses production despite `make dev` running**: Hard refresh browser (Ctrl+Shift+R)
+- **"Connection refused" errors**: Check that backend is actually running on port 3000
+- **Backend not receiving requests**: Verify UI console shows local endpoint, not remote
 
 #### When to Deploy vs When to Develop Locally
 
@@ -86,6 +109,24 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
 - User explicitly requests deployment
 - Preparing for release
 - **Action**: Run `make deploy-lambda-fast`
+
+#### Local Sample File Serving
+
+**For Transcription Testing**:
+- The local Lambda server (`scripts/run-local-lambda.js`) serves sample files via Express static middleware
+- Sample files location: `ui-new/public/samples/`
+- HTTP endpoint: `http://localhost:3000/samples/<filename>`
+- Example: `http://localhost:3000/samples/long-form-ai-speech.mp3`
+
+**Usage**:
+- Sample files can be transcribed using the UI example button: "🏠 Local Dev: AI & ML discussion"
+- The backend fetches from `localhost:3000/samples/` via HTTP (same code path as production S3 URLs)
+- No special filesystem handling needed - uses standard `fetch()` API
+
+**Adding New Samples**:
+1. Place audio/video files in `ui-new/public/samples/`
+2. Files are automatically served at `http://localhost:3000/samples/<filename>`
+3. No restart needed - Express static middleware serves files immediately
 
 #### Lambda Function Deployment (Production Only)
 

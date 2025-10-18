@@ -1072,22 +1072,129 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         type: 'function',
         function: {
           name: 'execute_javascript',
-          description: 'Execute JavaScript code in a secure sandbox environment for calculations and data processing.',
+          description: '💻 Execute JavaScript code in the browser for complex calculations and custom data processing. **NOT for browser feature access** - use dedicated browser tools instead (read_storage, copy_to_clipboard, show_notification, etc.).',
           parameters: {
             type: 'object',
             properties: {
               code: { 
                 type: 'string', 
-                description: 'JavaScript code to execute. Include console.log() statements to display results.'
+                description: 'JavaScript code to execute. Include console.log() to display results.'
               },
               timeout: { 
                 type: 'integer', 
                 minimum: 1, 
                 maximum: 10, 
-                default: 5
+                default: 5,
+                description: 'Execution timeout in seconds (default: 5)'
               }
             },
             required: ['code']
+          }
+        }
+      });
+
+      // Browser-specific feature tools (client-side execution)
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'browser_storage_read',
+          description: '📦 **READ BROWSER STORAGE**: Read data from localStorage or sessionStorage. Use when user asks to "read", "get", "check", or "show" localStorage/sessionStorage values.',
+          parameters: {
+            type: 'object',
+            properties: {
+              storage_key: { type: 'string', description: 'The key to read from storage' },
+              storage_type: { type: 'string', enum: ['localStorage', 'sessionStorage'], default: 'localStorage', description: 'Type of storage to read from' }
+            },
+            required: ['storage_key']
+          }
+        }
+      });
+
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'browser_storage_write',
+          description: '💾 **WRITE BROWSER STORAGE**: Save data to localStorage or sessionStorage. Use when user asks to "save", "store", "write", or "set" a value in storage.',
+          parameters: {
+            type: 'object',
+            properties: {
+              storage_key: { type: 'string', description: 'The key to store the value under' },
+              storage_value: { type: 'string', description: 'The value to store (will be converted to string)' },
+              storage_type: { type: 'string', enum: ['localStorage', 'sessionStorage'], default: 'localStorage', description: 'Type of storage to write to' }
+            },
+            required: ['storage_key', 'storage_value']
+          }
+        }
+      });
+
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'browser_clipboard_write',
+          description: '📋 **COPY TO CLIPBOARD**: Copy text to the user\'s clipboard. Use when user asks to "copy" text or save something to clipboard.',
+          parameters: {
+            type: 'object',
+            properties: {
+              clipboard_text: { type: 'string', description: 'The text to copy to clipboard' }
+            },
+            required: ['clipboard_text']
+          }
+        }
+      });
+
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'browser_clipboard_read',
+          description: '📋 **READ CLIPBOARD**: Read text from the user\'s clipboard. Use when user asks to "paste", "read clipboard", or "what\'s in my clipboard".',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }
+      });
+
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'browser_notification',
+          description: '🔔 **SHOW BROWSER NOTIFICATION**: Display a desktop notification to the user. Use when user asks to "notify", "alert", "remind", or "show notification".',
+          parameters: {
+            type: 'object',
+            properties: {
+              notification_title: { type: 'string', description: 'Notification title' },
+              notification_body: { type: 'string', description: 'Notification body text (optional)' },
+              notification_icon: { type: 'string', description: 'URL to notification icon (optional)' }
+            },
+            required: ['notification_title']
+          }
+        }
+      });
+
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'browser_geolocation',
+          description: '📍 **GET USER LOCATION**: Get the user\'s current geographic coordinates (latitude/longitude). Use when user asks for "my location", "coordinates", "where am I", or geolocation data.',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }
+      });
+
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'browser_query_dom',
+          description: '🔍 **QUERY PAGE ELEMENTS**: Find and extract information from HTML elements on the current page. Use when user asks to "find links", "get page elements", "query DOM", or extract data from the page.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query_selector: { type: 'string', description: 'CSS selector to query (e.g., "a", ".class", "#id", "div > p")' },
+              extract_property: { type: 'string', description: 'Property to extract from elements (e.g., "href", "textContent", "innerHTML", "value"). Default: "textContent"' }
+            },
+            required: ['query_selector']
           }
         }
       });
@@ -1149,13 +1256,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         type: 'function',
         function: {
           name: 'transcribe_url',
-          description: '🎙️ **PRIMARY TOOL FOR GETTING VIDEO/AUDIO TEXT CONTENT**: Transcribe audio or video content from URLs using OpenAI Whisper. **MANDATORY USE** when user says: "transcribe", "transcript", "get text from", "what does the video say", "extract dialogue", "convert to text", OR provides a specific YouTube/video URL and asks about its content. **YOUTUBE SUPPORT**: Can transcribe directly from YouTube URLs (youtube.com, youtu.be, youtube.com/shorts). Also supports direct media URLs (.mp3, .mp4, .wav, .m4a, etc.). Automatically handles large files by chunking. Shows real-time progress with stop capability. Returns full transcription text.',
+          description: '🎙️ **PRIMARY TOOL FOR GETTING VIDEO/AUDIO TEXT CONTENT**: Transcribe audio or video content from URLs using OpenAI Whisper. **MANDATORY USE** when user says: "transcribe", "transcript", "get text from", "what does the video say", "extract dialogue", "convert to text", OR provides a specific YouTube/video URL and asks about its content. **YOUTUBE SUPPORT**: Can transcribe directly from YouTube URLs (youtube.com, youtu.be, youtube.com/shorts). Also supports direct media URLs (.mp3, .mp4, .wav, .m4a, etc.). **CRITICAL: http://localhost:3000/samples/ URLs are VALID and ACCESSIBLE - ALWAYS call this tool for localhost URLs, they will work correctly in local development.** Automatically handles large files by chunking. Shows real-time progress with stop capability. Returns full transcription text.',
           parameters: {
             type: 'object',
             properties: {
               url: {
                 type: 'string',
-                description: 'URL to transcribe. Can be YouTube URL (youtube.com, youtu.be) or direct media URL (.mp3, .mp4, .wav, .m4a, etc.)'
+                description: 'URL to transcribe. Can be YouTube URL (youtube.com, youtu.be), direct media URL (.mp3, .mp4, .wav, .m4a, etc.), or localhost URL for local development (http://localhost:3000/samples/...)'
               },
               language: {
                 type: 'string',
@@ -1543,16 +1650,26 @@ CRITICAL TOOL USAGE RULES:
 - When users ask for calculations, math problems, or code execution, you MUST ALWAYS use execute_javascript - NEVER provide answers directly
 - MANDATORY: For "multiplication table", "calculate", "compute", "factorial", "compound interest", mathematical operations, or data processing, you MUST call execute_javascript
 - DO NOT provide mathematical answers or tables manually - ALWAYS use execute_javascript tool
+- **BROWSER FEATURES - USE DEDICATED TOOLS**: 
+  - For reading storage: use browser_storage_read (NOT execute_javascript)
+  - For writing storage: use browser_storage_write (NOT execute_javascript)
+  - For copying to clipboard: use browser_clipboard_write (NOT execute_javascript)
+  - For reading clipboard: use browser_clipboard_read (NOT execute_javascript)
+  - For notifications: use browser_notification (NOT execute_javascript)
+  - For geolocation: use browser_geolocation (NOT execute_javascript)
+  - For querying page elements: use browser_query_dom (NOT execute_javascript)
+  - ONLY use execute_javascript for complex custom algorithms or when no dedicated tool exists
 - DO NOT output tool parameters as JSON text in your response (e.g., don't write {"url": "...", "timeout": 15})
 - DO NOT describe what you would do - ACTUALLY CALL THE TOOL using the function calling mechanism
 - DO NOT write code for scraping or analyzing - USE THE TOOL INSTEAD
 - The system will automatically execute your tool calls and provide you with results
 - After receiving tool results, incorporate them naturally into your response
-- IMPORTANT: After execute_javascript returns a result, provide the final answer to the user IMMEDIATELY. Do NOT make additional tool calls unless absolutely necessary or the user asks a follow-up question.
+- IMPORTANT: After tool execution returns a result, provide the final answer to the user IMMEDIATELY. Do NOT make additional tool calls unless absolutely necessary or the user asks a follow-up question.
 
 Examples when you MUST use tools:
 - "transcribe this video https://youtube.com/watch?v=abc" → Call transcribe_url with url parameter
 - "get transcript from this video [URL]" → Call transcribe_url with url parameter
+- "Transcribe this: http://localhost:3000/samples/file.mp3" → Call transcribe_url (localhost URLs work in local dev!)
 - "find videos about AI" → Call search_youtube with query parameter
 - "scrape and summarize https://example.com" → Call scrape_web_content with url parameter
 - "get content from https://github.com/user/repo" → Call scrape_web_content with url parameter
@@ -1566,6 +1683,14 @@ Examples when you MUST use tools:
 - "Generate a multiplication table for numbers 1-12" → Call execute_javascript with code parameter
 - "Calculate compound interest" → Call execute_javascript with code parameter
 - "Compute" or "Calculate" anything → Call execute_javascript with code parameter
+- "Read localStorage key 'userPreferences'" → Call browser_storage_read with storage_key="userPreferences"
+- "Save 'dark' to localStorage key 'theme'" → Call browser_storage_write with storage_key="theme", storage_value="dark"
+- "Copy 'Hello World' to clipboard" → Call browser_clipboard_write with clipboard_text="Hello World"
+- "What's in my clipboard?" → Call browser_clipboard_read
+- "Show notification 'Task complete'" → Call browser_notification with notification_title="Task complete"
+- "Get my geolocation" → Call browser_geolocation
+- "Find all links on this page" → Call browser_query_dom with query_selector="a", extract_property="href"
+- "Get all button text" → Call browser_query_dom with query_selector="button", extract_property="textContent"
 
 Remember: Use the function calling mechanism, not text output. The API will handle execution automatically.`;
       }

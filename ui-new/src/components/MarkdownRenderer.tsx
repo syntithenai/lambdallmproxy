@@ -7,7 +7,6 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import rehypeRaw from 'rehype-raw';
 import 'highlight.js/styles/github-dark.css';
 import { MermaidChart } from './MermaidChart';
 import { usePlaylist } from '../contexts/PlaylistContext';
@@ -195,7 +194,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeHighlight]}
+        rehypePlugins={[rehypeHighlight]}
         components={{
           // Headings
           h1: ({ children }) => (
