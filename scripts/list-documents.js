@@ -19,6 +19,9 @@
  *   LIBSQL_AUTH_TOKEN Optional auth token for remote databases
  */
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 const path = require('path');
 
 // Parse command line arguments

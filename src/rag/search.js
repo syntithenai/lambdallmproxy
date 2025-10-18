@@ -73,7 +73,7 @@ async function searchChunksLibSQL(queryEmbedding, options = {}) {
   
   const {
     topK = 5,
-    threshold = 0.7,
+    threshold = 0.3,
     snippetId = null,
     diversityFilter = true,
     recencyBoost = 0.0,
@@ -162,7 +162,7 @@ function cosineSimilarity(vecA, vecB) {
 async function searchChunks(queryEmbedding, options = {}) {
   const {
     topK = 5,
-    threshold = 0.7,
+    threshold = 0.3,
     snippetId = null, // Filter by specific snippet
     diversityFilter = true, // Avoid too many results from same snippet
     recencyBoost = 0.0, // Boost newer content (0.0 = disabled, 0.1 = 10% boost)

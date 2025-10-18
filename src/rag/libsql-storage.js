@@ -135,6 +135,11 @@ function blobToVector(blob) {
   // Handle different blob types
   if (!blob) return new Float32Array(0);
   
+  // If it's an ArrayBuffer (from libSQL client)
+  if (blob instanceof ArrayBuffer) {
+    return new Float32Array(blob);
+  }
+  
   // If it's already a buffer or typed array
   if (Buffer.isBuffer(blob)) {
     return new Float32Array(blob.buffer, blob.byteOffset, blob.length / 4);
@@ -236,9 +241,11 @@ async function saveChunks(client, chunks) {
 async function searchChunks(client, queryEmbedding, options = {}) {
   const {
     topK = 5,
-    threshold = 0.7,
+    threshold = 0.3,
     sourceType = null,
   } = options;
+
+  console.log(`[searchChunks] topK=${topK}, threshold=${threshold}, queryEmbedding type=${queryEmbedding?.constructor?.name}, length=${queryEmbedding?.length}`);
 
   // Get all chunks with embeddings
   let sql = 'SELECT * FROM chunks WHERE embedding_vector IS NOT NULL';
@@ -251,11 +258,17 @@ async function searchChunks(client, queryEmbedding, options = {}) {
 
   const result = await client.execute({ sql, args });
   const chunks = result.rows;
+  
+  console.log(`[searchChunks] Found ${chunks.length} chunks in database`);
 
   // Calculate similarity for each chunk
-  const similarities = chunks.map(chunk => {
+  const similarities = chunks.map((chunk, index) => {
     const chunkVector = blobToVector(chunk.embedding_vector);
     const similarity = cosineSimilarity(queryEmbedding, chunkVector);
+    
+    if (index < 3) {
+      console.log(`[searchChunks] Chunk ${index}: chunkVector length=${chunkVector.length}, similarity=${similarity?.toFixed(4)}`);
+    }
 
     return {
       ...chunk,
@@ -269,6 +282,11 @@ async function searchChunks(client, queryEmbedding, options = {}) {
     .filter(chunk => chunk.similarity >= threshold)
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, topK);
+  
+  console.log(`[searchChunks] After filtering >= ${threshold}: ${filtered.length} results`);
+  if (filtered.length > 0) {
+    console.log(`[searchChunks] Top result similarity: ${filtered[0].similarity?.toFixed(4)}`);
+  }
 
   return filtered;
 }
@@ -485,6 +503,98 @@ async function importDatabase(client, inputPath) {
   console.log(`✅ Database imported from ${inputPath}`);
 }
 
+/**
+ * Check if a snippet has embeddings
+ * @param {string} snippetId - Snippet ID
+ * @param {Object} client - libsql client (optional)
+ * @returns {Promise<boolean>}
+ */
+async function hasEmbedding(snippetId, client = null) {
+  const db = client || createLibsqlClient();
+  
+  try {
+    const result = await db.execute({
+      sql: 'SELECT COUNT(*) as count FROM chunks WHERE snippet_id = ?',
+      args: [snippetId],
+    });
+    
+    return result.rows[0]?.count > 0;
+  } finally {
+    if (!client) {
+      db.close();
+    }
+  }
+}
+
+/**
+ * Get chunks by multiple snippet IDs
+ * @param {string[]} snippetIds - Array of snippet IDs
+ * @param {Object} client - libsql client (optional)
+ * @returns {Promise<Array>}
+ */
+async function getChunksBySnippetIds(snippetIds, client = null) {
+  const db = client || createLibsqlClient();
+  
+  try {
+    const placeholders = snippetIds.map(() => '?').join(',');
+    const result = await db.execute({
+      sql: `SELECT * FROM chunks WHERE snippet_id IN (${placeholders})`,
+      args: snippetIds,
+    });
+    
+    return result.rows;
+  } finally {
+    if (!client) {
+      db.close();
+    }
+  }
+}
+
+/**
+ * List all documents (unique snippet_ids with metadata)
+ * @param {Object} client - libsql client (optional)
+ * @returns {Promise<Array>}
+ */
+async function listDocuments(client = null) {
+  const db = client || createLibsqlClient();
+  
+  try {
+    const result = await db.execute(`
+      SELECT 
+        snippet_id,
+        snippet_name,
+        source_type,
+        source_url,
+        source_file_name,
+        MIN(created_at) as created_at,
+        COUNT(*) as chunk_count,
+        SUM(token_count) as total_tokens,
+        SUM(char_count) as total_chars,
+        GROUP_CONCAT(DISTINCT embedding_model) as models
+      FROM chunks
+      GROUP BY snippet_id
+      ORDER BY created_at DESC
+    `);
+    
+    return result.rows.map(row => ({
+      id: row.snippet_id,
+      name: row.snippet_name,
+      sourceType: row.source_type,
+      sourceUrl: row.source_url,
+      sourceFileName: row.source_file_name,
+      createdAt: row.created_at,
+      chunkCount: row.chunk_count,
+      totalTokens: row.total_tokens,
+      totalChars: row.total_chars,
+      models: row.models ? row.models.split(',') : [],
+    }));
+  } finally {
+    if (!client) {
+      db.close();
+    }
+  }
+}
+
 module.exports = {
   createLibsqlClient,
   initDatabase,
@@ -493,6 +603,7 @@ module.exports = {
   getAllChunks,
   getChunk,
   getChunksBySnippet,
+  getChunksBySnippetIds,
   deleteChunksBySnippet,
   getDatabaseStats,
   exportDatabase,
@@ -500,5 +611,7 @@ module.exports = {
   vectorToBlob,
   blobToVector,
   cosineSimilarity,
+  hasEmbedding,
+  listDocuments,
   SCHEMA_SQL,
 };

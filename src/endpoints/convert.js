@@ -1,0 +1,125 @@
+/**
+ * Document Conversion Endpoint
+ * 
+ * Converts uploaded files (PDF, DOCX, etc.) or URLs to Markdown format.
+ * Endpoint: POST /convert-to-markdown
+ */
+
+const { convertToMarkdown } = require('../rag/file-converters');
+
+/**
+ * Lambda handler for document conversion
+ * @param {object} event - Lambda event
+ * @param {object} responseStream - Response stream for streaming responses
+ * @returns {Promise<void>}
+ */
+exports.handler = async (event, responseStream) => {
+  try {
+    const body = JSON.parse(event.body || '{}');
+    let markdown;
+
+    console.log('📄 Convert-to-markdown endpoint called');
+
+    // Handle file buffer (from multer middleware in local server)
+    if (body.fileBuffer && body.fileName) {
+      console.log(`📄 Converting file: ${body.fileName} (${body.mimeType})`);
+      console.log(`📊 Buffer size: ${body.fileBuffer.length} chars (base64)`);
+
+      const buffer = Buffer.from(body.fileBuffer, 'base64');
+      console.log(`📊 Decoded buffer size: ${buffer.length} bytes`);
+
+      const mimeType = body.mimeType || '';
+
+      // Convert to markdown
+      console.log('🔄 Starting conversion...');
+      const result = await convertToMarkdown(buffer, mimeType, {});
+      console.log(`✅ Conversion complete. Result:`, {
+        hasMarkdown: !!result.markdown,
+        markdownLength: result.markdown?.length || 0,
+        hasImages: !!result.images,
+        imageCount: result.images?.length || 0,
+        markdownPreview: result.markdown ? result.markdown.substring(0, 100) + '...' : '(empty)'
+      });
+
+      markdown = result.markdown;
+
+      if (!markdown || markdown.trim().length === 0) {
+        console.error('❌ Conversion returned empty markdown!');
+        throw new Error('PDF conversion returned no content');
+      }
+
+    } else if (body.url) {
+      // Handle URL fetch and conversion
+      const https = require('https');
+      const http = require('http');
+      const url = body.url;
+
+      console.log(`🌐 Fetching URL: ${url}`);
+
+      // Fetch URL content
+      const fetchPromise = new Promise((resolve, reject) => {
+        const client = url.startsWith('https') ? https : http;
+
+        client.get(url, (res) => {
+          const chunks = [];
+          res.on('data', (chunk) => chunks.push(chunk));
+          res.on('end', () => {
+            const buffer = Buffer.concat(chunks);
+            const contentType = res.headers['content-type'] || '';
+            resolve({ buffer, contentType });
+          });
+        }).on('error', reject);
+      });
+
+      const { buffer, contentType } = await fetchPromise;
+
+      // Convert to markdown
+      const result = await convertToMarkdown(buffer, contentType.split(';')[0], {});
+      markdown = result.markdown;
+    } else {
+      throw new Error('Either file or URL is required');
+    }
+
+    // Validate markdown before sending
+    if (!markdown || markdown.trim().length === 0) {
+      console.error('❌ Final markdown is empty or null!');
+      throw new Error('Conversion produced no content');
+    }
+
+    console.log(`📤 Sending response with markdown length: ${markdown.length}`);
+
+    // Return markdown in Lambda response format
+    const response = {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({ 
+        markdown, 
+        content: markdown 
+      })
+    };
+
+    responseStream.write(JSON.stringify(response));
+    responseStream.end();
+
+  } catch (error) {
+    console.error('❌ Conversion error:', error);
+
+    const errorResponse = {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify({
+        error: error.message || 'Failed to convert document',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      })
+    };
+
+    responseStream.write(JSON.stringify(errorResponse));
+    responseStream.end();
+  }
+};

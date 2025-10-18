@@ -156,14 +156,52 @@ async function convertHTMLToMarkdown(input) {
  */
 async function convertPDFToMarkdown(input) {
   try {
-    // Lazy load pdf-parse
+    console.log('📄 Starting PDF conversion...');
+    
+    // Lazy load pdf-parse (use default CommonJS require for Node.js)
     if (!pdfParse) {
-      const module = await import('pdf-parse/lib/pdf-parse.js');
-      pdfParse = module.default || module;
+      console.log('📦 Loading pdf-parse module...');
+      const pdfParseModule = require('pdf-parse');
+      // pdf-parse v2 exports PDFParse class
+      pdfParse = pdfParseModule.PDFParse;
+      console.log('✅ pdf-parse loaded');
     }
 
     const buffer = Buffer.isBuffer(input) ? input : await fs.readFile(input);
-    const data = await pdfParse(buffer);
+    console.log(`📊 Buffer size: ${buffer.length} bytes`);
+    
+    console.log('🔄 Parsing PDF...');
+    // Create parser instance with buffer data
+    const parser = new pdfParse({ data: buffer });
+    
+    // Extract text using getText() method
+    const result = await parser.getText();
+    
+    // Clean up parser resources
+    await parser.destroy();
+    
+    console.log('✅ PDF parse complete');
+
+    const data = result; // result has { text, numpages, info, metadata }
+    console.log(`📄 PDF parsed successfully:`, {
+      pages: data.numpages,
+      textLength: data.text?.length || 0,
+      hasText: !!data.text,
+      textPreview: data.text ? data.text.substring(0, 100) + '...' : '(no text)'
+    });
+
+    if (!data.text || data.text.trim().length === 0) {
+      console.warn('⚠️ PDF has no extractable text content');
+      return {
+        markdown: '*(This PDF contains no extractable text. It may be an image-based PDF or scanned document.)*',
+        metadata: {
+          pages: data.numpages,
+          source_type: 'file',
+          source_mime_type: 'application/pdf',
+          warning: 'No text content found. PDF may contain only images.',
+        },
+      };
+    }
 
     // Convert text to basic markdown
     // Add page separators
@@ -176,6 +214,12 @@ async function convertPDFToMarkdown(input) {
         markdown += `## Page ${i + 1}\n\n${pageText}\n\n`;
       }
     }
+
+    console.log(`✅ PDF converted to markdown:`, {
+      markdownLength: markdown.length,
+      pageCount: pages.filter(p => p.trim()).length,
+      markdownPreview: markdown.substring(0, 150) + '...'
+    });
 
     return {
       markdown,

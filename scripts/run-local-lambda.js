@@ -16,12 +16,19 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 
 // Load environment variables from .env file
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.LOCAL_LAMBDA_PORT || 3000;
+
+// Configure multer for file uploads (memory storage)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
 
 // Enable CORS for all origins in development
 app.use(cors({
@@ -154,6 +161,53 @@ app.get('/health', (req, res) => {
     service: 'local-lambda-server',
     timestamp: new Date().toISOString()
   });
+});
+
+// File conversion endpoint (uses multer for file uploads)
+app.post('/convert-to-markdown', upload.single('file'), async (req, res) => {
+  try {
+    let body;
+    
+    if (req.file) {
+      // File uploaded via multipart/form-data
+      body = {
+        fileBuffer: req.file.buffer.toString('base64'),
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype
+      };
+    } else {
+      // URL provided via JSON
+      body = req.body;
+    }
+    
+    // Convert to Lambda event format
+    const event = {
+      httpMethod: 'POST',
+      path: '/convert-to-markdown',
+      headers: req.headers,
+      body: JSON.stringify(body),
+      requestContext: {
+        requestId: `local-${Date.now()}`,
+        identity: { sourceIp: req.ip || '127.0.0.1' }
+      }
+    };
+    
+    // Create Lambda context with Express response
+    const context = {
+      requestId: `local-${Date.now()}`,
+      expressResponse: res
+    };
+    
+    // Call handler
+    await handler(event, context);
+    
+  } catch (error) {
+    console.error('Conversion error:', error);
+    res.status(500).json({
+      error: 'Failed to convert document',
+      details: error.message
+    });
+  }
 });
 
 // Convert Express request to Lambda event format

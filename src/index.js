@@ -22,6 +22,8 @@ const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
 const proxyImageEndpoint = require('./endpoints/proxy-image');
+const convertEndpoint = require('./endpoints/convert');
+const ragSyncEndpoint = require('./endpoints/rag-sync');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 const { handleUsageRequest } = require('./endpoints/usage');
 const { resetMemoryTracker } = require('./utils/memory-tracker');
@@ -120,6 +122,18 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'POST' && path === '/chat') {
             console.log('Routing to chat endpoint');
             await chatEndpoint.handler(event, responseStream);
+            return;
+        }
+        
+        if (method === 'POST' && path === '/convert-to-markdown') {
+            console.log('Routing to convert-to-markdown endpoint');
+            await convertEndpoint.handler(event, responseStream);
+            return;
+        }
+        
+        if (method === 'POST' && path === '/rag/sync') {
+            console.log('Routing to rag-sync endpoint');
+            await ragSyncEndpoint.handler(event, responseStream);
             return;
         }
         

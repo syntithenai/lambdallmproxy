@@ -9,6 +9,7 @@ import { StorageStats } from './StorageStats';
 import { TagAutocomplete } from './TagAutocomplete';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ReadButton } from './ReadButton';
+import { FileUploadDialog } from './FileUploadDialog';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
   createGoogleDocInFolder, 
@@ -21,7 +22,8 @@ import type { GoogleDoc } from '../utils/googleDocs';
 export const SwagPage: React.FC = () => {
   const { showSuccess, showError, showWarning } = useToast();
   const { 
-    snippets, 
+    snippets,
+    addSnippet,
     updateSnippet, 
     deleteSnippets, 
     mergeSnippets, 
@@ -32,7 +34,8 @@ export const SwagPage: React.FC = () => {
     getAllTags,
     addTagsToSnippets,
     removeTagsFromSnippets,
-    storageStats
+    storageStats,
+    generateEmbeddings
   } = useSwag();
   const { 
     isAvailable: isCastAvailable, 
@@ -69,6 +72,21 @@ export const SwagPage: React.FC = () => {
   const [searchTags, setSearchTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [docsLoaded, setDocsLoaded] = useState(false);
+  
+  // Embedding state
+  const [isEmbedding, setIsEmbedding] = useState(false);
+  const [embeddingProgress, setEmbeddingProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  
+  // Document upload state
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+    status: string;
+  } | null>(null);
   
   // Confirmation dialog state for tag deletion
   const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState(false);
@@ -205,54 +223,24 @@ export const SwagPage: React.FC = () => {
   };
 
   const handleBulkOperation = async (operation: string) => {
-    console.log('🔧 Bulk operation triggered:', operation);
+    console.log('� handleBulkOperation called with:', operation);
     const selected = getSelectedSnippets();
-    console.log('📋 Selected snippets:', selected.length);
-
-    // Handle append-docId format
+    
+    // Handle Google Docs append operations (formatted as "append-{docId}")
     if (operation.startsWith('append-')) {
-      if (selected.length === 0) {
-        showWarning('No snippets selected');
-        return;
-      }
-      const docId = operation.substring(7); // Remove 'append-' prefix
-      console.log('📎 Appending to document:', docId);
+      const docId = operation.substring(7); // Remove "append-" prefix
       await handleAppendToDoc(docId);
       return;
     }
-
+    
     switch (operation) {
       case 'new-doc':
-        // Create new doc and append selected snippets
-        if (selected.length === 0) {
-          showWarning('No snippets selected');
-          return;
-        }
-        const docName = prompt('Enter document name:', `Snippets ${new Date().toLocaleDateString()}`);
-        if (!docName?.trim()) {
-          return;
-        }
-        try {
-          setLoading(true);
-          const doc = await createGoogleDocInFolder(docName);
-          const updatedDocs = [doc, ...googleDocs];
-          setGoogleDocs(updatedDocs);
-          
-          // Update cache immediately when creating a document
-          try {
-            localStorage.setItem('swag-google-docs-cache', JSON.stringify(updatedDocs));
-          } catch (error) {
-            console.error('Failed to update Google Docs cache:', error);
-          }
-          
-          showSuccess(`Document "${doc.name}" created in Research Agent folder!`);
-          // Now append selected snippets
-          await handleAppendToDoc(doc.id);
-        } catch (error) {
-          console.error('Failed to create document:', error);
-          showError('Failed to create document. Please grant permissions and try again.');
-        } finally {
-          setLoading(false);
+        setShowNewDocDialog(true);
+        break;
+      case 'append':
+        // Load Google Docs if not already loaded
+        if (googleDocs.length === 0) {
+          await loadGoogleDocs(true);
         }
         break;
       case 'merge':
@@ -261,11 +249,12 @@ export const SwagPage: React.FC = () => {
           return;
         }
         if (selected.length < 2) {
-          showWarning('Please select at least 2 snippets to merge');
+          showWarning('Select at least 2 snippets to combine');
           return;
         }
         mergeSnippets(selected.map(s => s.id));
-        showSuccess('Snippets merged successfully');
+        selectNone();
+        showSuccess(`${selected.length} snippets combined`);
         break;
       case 'delete':
         if (selected.length === 0) {
@@ -277,11 +266,9 @@ export const SwagPage: React.FC = () => {
           showSuccess(`${selected.length} snippet(s) deleted`);
         }
         break;
-      case 'append':
-        if (googleDocs.length === 0) {
-          console.log('📂 Loading Google Docs...');
-          await loadGoogleDocs();
-        }
+      case 'generate-embeddings':
+        console.log('🔍 Generate embeddings case triggered');
+        await handleGenerateEmbeddings();
         break;
       case 'tag':
         if (selected.length === 0) {
@@ -324,6 +311,238 @@ export const SwagPage: React.FC = () => {
     }
   };
 
+  const handleGenerateEmbeddings = async () => {
+    const selected = getSelectedSnippets();
+    if (selected.length === 0) {
+      showWarning('No snippets selected');
+      return;
+    }
+
+    try {
+      setIsEmbedding(true);
+      setEmbeddingProgress({ current: 0, total: selected.length });
+
+      const result = await generateEmbeddings(
+        selected.map(s => s.id),
+        (current, total) => {
+          setEmbeddingProgress({ current, total });
+        }
+      );
+
+      selectNone();
+      
+      if (result.embedded > 0 || result.skipped > 0) {
+        showSuccess(
+          `✅ Added to index: ${result.embedded} • ⏭️ Skipped: ${result.skipped}${result.failed > 0 ? ` • ❌ Failed: ${result.failed}` : ''}`
+        );
+      } else {
+        showWarning('No items were added to search index');
+      }
+      
+    } catch (error) {
+      console.error('Embedding error:', error);
+      showError(error instanceof Error ? error.message : 'Failed to add to search index');
+    } finally {
+      setIsEmbedding(false);
+      setEmbeddingProgress(null);
+    }
+  };
+
+  const handleUploadDocuments = async (files: File[], urls: string[]) => {
+    try {
+      setLoading(true);
+      const totalItems = files.length + urls.length;
+      let completed = 0;
+      
+      setUploadProgress({ current: 0, total: totalItems, status: 'Starting...' });
+      
+      // Define size limits
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB hard limit
+      const WARN_FILE_SIZE = 10 * 1024 * 1024; // 10MB warning threshold
+      
+      // Get API URL safely
+      const apiUrl = typeof process !== 'undefined' && process.env?.REACT_APP_LAMBDA_URL 
+        ? process.env.REACT_APP_LAMBDA_URL 
+        : 'http://localhost:3000';
+      
+      // Check for oversized files
+      const oversizedFiles = files.filter(f => f.size > MAX_FILE_SIZE);
+      if (oversizedFiles.length > 0) {
+        const fileList = oversizedFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`).join(', ');
+        showError(`Files too large (max 50MB): ${fileList}`);
+        setLoading(false);
+        setUploadProgress(null);
+        return;
+      }
+      
+      // Warn about large files
+      const largeFiles = files.filter(f => f.size > WARN_FILE_SIZE && f.size <= MAX_FILE_SIZE);
+      if (largeFiles.length > 0) {
+        const fileList = largeFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`).join(', ');
+        showWarning(`Large files detected - processing may be slow: ${fileList}`);
+      }
+      
+      // Process files - convert to markdown then to snippets
+      for (const file of files) {
+        setUploadProgress({ current: completed, total: totalItems, status: `Converting ${file.name}...` });
+        
+        try {
+          let markdownContent: string;
+          const fileExtension = file.name.split('.').pop()?.toLowerCase();
+          
+          // Check if file needs backend conversion (PDF, DOCX, images)
+          if (['pdf', 'docx', 'doc', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'html', 'htm'].includes(fileExtension || '')) {
+            // Send to backend for conversion
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await fetch(`${apiUrl}/convert-to-markdown`, {
+              method: 'POST',
+              body: formData,
+            });
+            
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`Conversion failed for ${file.name}:`, errorText);
+              throw new Error(`Server error (${response.status}): ${errorText.substring(0, 100)}`);
+            }
+            
+            let result = await response.json();
+            console.log(`📥 Received response for ${file.name}:`, {
+              hasBody: !!result.body,
+              bodyType: typeof result.body,
+              hasMarkdown: !!result.markdown,
+              hasContent: !!result.content,
+              resultKeys: Object.keys(result),
+              bodyPreview: typeof result.body === 'string' ? result.body.substring(0, 200) : result.body
+            });
+            
+            // Handle Lambda response format (body is a JSON string)
+            if (result.body && typeof result.body === 'string') {
+              try {
+                console.log(`🔄 Parsing nested body JSON for ${file.name}...`);
+                result = JSON.parse(result.body);
+                console.log(`✅ Parsed body, keys:`, Object.keys(result));
+                console.log(`✅ Parsed body content:`, {
+                  hasMarkdown: !!result.markdown,
+                  hasContent: !!result.content,
+                  markdownType: typeof result.markdown,
+                  contentType: typeof result.content,
+                  markdownValue: result.markdown,
+                  contentValue: result.content
+                });
+              } catch (e) {
+                console.error('Failed to parse response body:', e);
+              }
+            }
+            
+            console.log(`📄 Final result for ${file.name}:`, {
+              hasMarkdown: !!result.markdown,
+              hasContent: !!result.content,
+              markdownLength: result.markdown?.length || 0,
+              contentLength: result.content?.length || 0,
+              markdownPreview: result.markdown ? result.markdown.substring(0, 100) : '(none)',
+              contentPreview: result.content ? result.content.substring(0, 100) : '(none)'
+            });
+            
+            if (!result.markdown && !result.content) {
+              console.error(`❌ No markdown or content in result:`, JSON.stringify(result, null, 2));
+              throw new Error('No content returned from conversion - PDF may be empty or image-based');
+            }
+            
+            markdownContent = result.markdown || result.content;
+            
+            if (!markdownContent || markdownContent.trim().length === 0) {
+              console.error(`❌ Markdown content is empty:`, {
+                markdownContent,
+                type: typeof markdownContent,
+                length: markdownContent?.length
+              });
+              throw new Error('Converted content is empty - PDF may contain only images');
+            }
+          } else {
+            // Plain text files - read directly
+            markdownContent = await file.text();
+          }
+          
+          // Add as snippet (which will auto-embed if enabled)
+          await addSnippet(markdownContent, 'user', file.name);
+          
+        } catch (error) {
+          console.error(`Failed to process ${file.name}:`, error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          showWarning(`Could not process ${file.name}: ${errorMessage}`);
+        }
+        
+        completed++;
+      }
+      
+      // Process URLs - fetch and convert to snippets
+      for (const url of urls) {
+        setUploadProgress({ current: completed, total: totalItems, status: `Fetching ${url}...` });
+        
+        try {
+          // Send URL to backend for conversion
+          const response = await fetch(`${apiUrl}/convert-to-markdown`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url }),
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch ${url}`);
+          }
+          
+          let result = await response.json();
+          
+          // Handle Lambda response format (body is a JSON string)
+          if (result.body && typeof result.body === 'string') {
+            try {
+              result = JSON.parse(result.body);
+            } catch (e) {
+              console.error('Failed to parse response body:', e);
+            }
+          }
+          
+          const markdownContent = result.markdown || result.content;
+          
+          if (!markdownContent || markdownContent.trim().length === 0) {
+            throw new Error('No content extracted from URL');
+          }
+          
+          // Add as snippet (which will auto-embed if enabled)
+          await addSnippet(markdownContent, 'user', url);
+        } catch (error) {
+          console.error(`Failed to fetch ${url}:`, error);
+          showWarning(`Could not fetch ${url}`);
+        }
+        
+        completed++;
+      }
+      
+      setUploadProgress({ current: totalItems, total: totalItems, status: 'Complete!' });
+      showSuccess(`Successfully added ${files.length} file(s) and ${urls.length} URL(s) as snippets`);
+      setShowUploadDialog(false);
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      showError(error instanceof Error ? error.message : 'Upload failed');
+    } finally {
+      setLoading(false);
+      setUploadProgress(null);
+    }
+  };
+
+  const handleSingleUpload = async (fileOrUrl: File | string) => {
+    if (typeof fileOrUrl === 'string') {
+      await handleUploadDocuments([], [fileOrUrl]);
+    } else {
+      await handleUploadDocuments([fileOrUrl], []);
+    }
+  };
+
   const handleTagOperation = () => {
     if (tagDialogMode === 'filter') {
       // Apply tag filters
@@ -358,9 +577,23 @@ export const SwagPage: React.FC = () => {
     setEditTags(snippet.tags || []);
   };
 
-  const handleSaveEdit = () => {
+  const handleCreateNewSnippet = async () => {
+    // Create a blank snippet - addSnippet will handle creation
+    await addSnippet('', 'user', 'New Snippet');
+    
+    // After creation, find and edit the new snippet
+    // It will be the first one since it has the newest timestamp
+    setTimeout(() => {
+      if (snippets.length > 0) {
+        const newestSnippet = snippets[0];
+        handleEditSnippet(newestSnippet);
+      }
+    }, 50); // Small delay to let state update
+  };
+
+  const handleSaveEdit = async () => {
     if (editingSnippet) {
-      updateSnippet(editingSnippet.id, {
+      await updateSnippet(editingSnippet.id, {
         content: editContent,
         title: editTitle.trim() || undefined,
         tags: editTags.length > 0 ? editTags : undefined
@@ -428,16 +661,42 @@ export const SwagPage: React.FC = () => {
             </span>
           </div>
 
-          {/* Storage Stats */}
-          {storageStats && (
-            <div className="w-48">
-              <StorageStats
-                totalSize={storageStats.totalSize}
-                limit={storageStats.limit}
-                percentUsed={storageStats.percentUsed}
-              />
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {/* New Snippet Button */}
+            <button
+              onClick={handleCreateNewSnippet}
+              className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-2"
+              title="Create a new blank snippet"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Snippet
+            </button>
+
+            {/* Upload Documents Button */}
+            <button
+              onClick={() => setShowUploadDialog(true)}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-2"
+              title="Upload documents as snippets (auto-embeds if enabled)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              Upload Documents
+            </button>
+
+            {/* Storage Stats */}
+            {storageStats && (
+              <div className="w-48">
+                <StorageStats
+                  totalSize={storageStats.totalSize}
+                  limit={storageStats.limit}
+                  percentUsed={storageStats.percentUsed}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tag Filter Section - Show active filters above search */}
@@ -547,10 +806,11 @@ export const SwagPage: React.FC = () => {
                 }
               }}
               value=""
-              disabled={getSelectedSnippets().length === 0}
+              disabled={getSelectedSnippets().length === 0 || isEmbedding}
             >
               <option value="">Bulk Operations...</option>
               <optgroup label="With Selected Snippets">
+                <option value="generate-embeddings">🔍 Add To Search Index</option>
                 <option value="tag">Add Tags...</option>
                 <option value="untag">Remove Tags...</option>
                 <option value="tag-all">Tag All Snippets...</option>
@@ -600,6 +860,29 @@ export const SwagPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Embedding Progress Indicator */}
+      {embeddingProgress && (
+        <div className="mx-6 mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              🔍 Adding to Search Index...
+            </span>
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {embeddingProgress.current} / {embeddingProgress.total}
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+            <div
+              className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+              style={{ width: `${(embeddingProgress.current / embeddingProgress.total) * 100}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+            This may take a moment. Embeddings enable semantic search over your snippets.
+          </p>
+        </div>
+      )}
 
       {/* Content Grid */}
       <div className="flex-1 overflow-y-auto p-6">
@@ -701,8 +984,8 @@ export const SwagPage: React.FC = () => {
                         <TagAutocomplete
                           existingTags={getAllTags()}
                           currentTags={snippet.tags || []}
-                          onAddTag={(tag) => {
-                            updateSnippet(snippet.id, {
+                          onAddTag={async (tag) => {
+                            await updateSnippet(snippet.id, {
                               tags: [...(snippet.tags || []), tag]
                             });
                             showSuccess(`Added tag "${tag}"`);
@@ -871,14 +1154,14 @@ export const SwagPage: React.FC = () => {
         confirmLabel="Remove Tag"
         cancelLabel="Cancel"
         variant="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (tagToDelete) {
             // Check if we're editing a snippet (from edit dialog) or a snippet display
             if (snippetToEdit) {
               // From snippet display - update the snippet
               const snippet = snippets.find(s => s.id === snippetToEdit);
               if (snippet) {
-                updateSnippet(snippetToEdit, {
+                await updateSnippet(snippetToEdit, {
                   tags: (snippet.tags || []).filter(t => t !== tagToDelete)
                 });
                 showSuccess(`Removed tag "${tagToDelete}"`);
@@ -1197,6 +1480,35 @@ export const SwagPage: React.FC = () => {
             <p className="mt-4 text-gray-700 dark:text-gray-300">Processing...</p>
           </div>
         </div>
+      )}
+
+      {/* Upload Progress Overlay */}
+      {uploadProgress && (
+        <div className="fixed inset-0 bg-black bg-opacity-25 flex items-center justify-center z-40">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-xl min-w-[300px]">
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300 mb-2">
+                <span>{uploadProgress.status}</span>
+                <span>{uploadProgress.current} / {uploadProgress.total}</span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Upload Dialog */}
+      {showUploadDialog && (
+        <FileUploadDialog
+          isOpen={showUploadDialog}
+          onClose={() => setShowUploadDialog(false)}
+          onUpload={handleSingleUpload}
+        />
       )}
     </div>
   );

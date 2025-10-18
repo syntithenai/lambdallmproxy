@@ -203,17 +203,12 @@ dev:
 # Ingest documents into knowledge base
 rag-ingest:
 	@echo "📚 Ingesting documents into RAG knowledge base..."
-	@if [ -z "$(OPENAI_API_KEY)" ]; then \
-		echo "⚠️  Error: OPENAI_API_KEY environment variable not set"; \
-		echo "Set it with: export OPENAI_API_KEY='your-key'"; \
-		exit 1; \
-	fi
-	@if [ ! -d knowledge-base ]; then \
-		echo "⚠️  Error: knowledge-base/ directory not found"; \
-		exit 1; \
+	@if [ ! -f .env ]; then \
+		echo "⚠️  Warning: .env file not found"; \
+		echo "Create .env with: OPENAI_API_KEY='your-key'"; \
 	fi
 	@chmod +x scripts/ingest-documents.js
-	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/ingest-documents.js ./knowledge-base
+	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/ingest-documents.js $(filter-out rag-ingest,$(MAKECMDGOALS))
 
 # Show database statistics
 rag-stats:
@@ -237,10 +232,9 @@ rag-search:
 		echo "Example: make rag-search QUERY='How does RAG work?'"; \
 		exit 1; \
 	fi
-	@if [ -z "$(OPENAI_API_KEY)" ]; then \
-		echo "⚠️  Error: OPENAI_API_KEY environment variable not set"; \
-		echo "Set it with: export OPENAI_API_KEY='your-key'"; \
-		exit 1; \
+	@if [ ! -f .env ]; then \
+		echo "⚠️  Warning: .env file not found"; \
+		echo "Create .env with: OPENAI_API_KEY='your-key'"; \
 	fi
 	@chmod +x scripts/search-documents.js
 	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/search-documents.js "$(QUERY)"

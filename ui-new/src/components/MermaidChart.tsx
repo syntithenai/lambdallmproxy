@@ -128,7 +128,7 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
       const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
       const url = URL.createObjectURL(svgBlob);
 
-      img.onload = () => {
+      img.onload = async () => {
         try {
           canvas.width = svgElement.clientWidth || 800;
           canvas.height = svgElement.clientHeight || 600;
@@ -145,7 +145,7 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
             // Use HTML img tag instead of markdown for better compatibility with rehypeRaw
             const htmlContent = `<img src="${pngDataUrl}" alt="${chartDescription}" class="max-w-full h-auto rounded-lg" />`;
             
-            addSnippet(htmlContent, 'tool', `Chart: ${chartDescription}`);
+            await addSnippet(htmlContent, 'tool', `Chart: ${chartDescription}`);
             showSuccess('Chart saved to Swag!');
           }
           URL.revokeObjectURL(url);

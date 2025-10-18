@@ -21,6 +21,9 @@
  *   OPENAI_API_KEY     Required for generating query embeddings
  */
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 const path = require('path');
 
 // Parse command line arguments
@@ -29,7 +32,7 @@ function parseArgs() {
   const options = {
     dbPath: process.env.LIBSQL_URL || 'file:///' + path.resolve('./rag-kb.db'),
     topK: 5,
-    threshold: 0.5,
+    threshold: 0.3, // Lowered from 0.5 for more relaxed matching
     type: null,
     format: 'table',
     query: '',
@@ -61,7 +64,7 @@ Usage: node scripts/search-documents.js [options] <query>
 Options:
   --db-path <path>       Path to database file (default: ./rag-kb.db)
   --top-k <n>            Number of results (default: 5)
-  --threshold <n>        Minimum similarity score 0-1 (default: 0.5)
+  --threshold <n>        Minimum similarity score 0-1 (default: 0.3)
   --type <file|url|text> Filter by source type
   --format <table|json>  Output format (default: table)
   --help, -h             Show this help message

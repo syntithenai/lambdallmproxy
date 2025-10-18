@@ -408,13 +408,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       
       // Create HTML with base64 image
       const imageHtml = `<img src="${base64Image}" alt="Grabbed image" style="max-width: 100%; height: auto;" />`;
-      addSnippet(imageHtml, 'assistant', 'Image');
+      await addSnippet(imageHtml, 'assistant', 'Image');
       showSuccess('Image added to Swag!');
     } catch (error) {
       console.error('Failed to grab image:', error);
       // Fallback to original URL if conversion fails
       const imageHtml = `<img src="${imageUrl}" alt="Grabbed image" style="max-width: 100%; height: auto;" />`;
-      addSnippet(imageHtml, 'assistant', 'Image');
+      await addSnippet(imageHtml, 'assistant', 'Image');
       showSuccess('Image added to Swag (without conversion)!');
     }
   };
@@ -465,13 +465,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       const { convertHtmlImagesToBase64 } = await import('../utils/imageUtils');
       const contentWithBase64Images = await convertHtmlImagesToBase64(formattedContent);
       
-      addSnippet(contentWithBase64Images, sourceType, title);
+      await addSnippet(contentWithBase64Images, sourceType, title);
       showSuccess('Content captured to Swag!');
     } catch (error) {
       console.error('Failed to capture content with base64 conversion:', error);
       // Fallback to original behavior
       const fullContent = formatContentWithMedia(content, extractedContent);
-      addSnippet(fullContent, sourceType, title);
+      await addSnippet(fullContent, sourceType, title);
       showSuccess('Content captured to Swag (without image conversion)!');
     }
   };
@@ -1263,8 +1263,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
                 type: 'number',
                 minimum: 0,
                 maximum: 1,
-                default: 0.5,
-                description: 'Minimum similarity score threshold (0-1). Higher values = more strict matching. Default: 0.5'
+                default: 0.3,
+                description: 'Minimum similarity score threshold (0-1). Higher values = more strict matching. Default: 0.3 (relaxed for better recall)'
               },
               source_type: {
                 type: 'string',

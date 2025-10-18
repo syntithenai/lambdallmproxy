@@ -9,6 +9,8 @@ const { google } = require('googleapis');
 
 const SHEET_NAME = 'RAG_Embeddings_v1';
 const METADATA_SHEET = 'RAG_Metadata';
+const SNIPPETS_SHEET = 'RAG_Snippets_v1';
+const SYNC_LOG_SHEET = 'RAG_SyncLog';
 
 // Schema for embeddings sheet
 const EMBEDDINGS_HEADERS = [
@@ -22,14 +24,48 @@ const EMBEDDINGS_HEADERS = [
   'embedding_provider',
   'embedding_dimensions',
   'token_count',
-  'source_type',          // NEW: 'file' | 'url' | 'text'
-  'source_url',           // NEW: Original URL if provided
-  'source_file_path',     // NEW: File path if uploaded
-  'source_file_name',     // NEW: Original filename
-  'source_mime_type',     // NEW: MIME type
+  'source_type',          // 'file' | 'url' | 'text'
+  'source_url',           // Original URL if provided
+  'source_file_path',     // File path if uploaded
+  'source_file_name',     // Original filename
+  'source_mime_type',     // MIME type
+  'user_email',           // NEW: Owner email
+  'device_id',            // NEW: Last device that updated
+  'sync_version',         // NEW: Version for conflict resolution
   'created_at',
   'updated_at',
   'synced_at',
+];
+
+// Schema for snippets sheet
+const SNIPPETS_HEADERS = [
+  'id',
+  'content',
+  'title',
+  'timestamp',
+  'update_date',
+  'source_type',          // 'user' | 'assistant' | 'tool'
+  'tags_json',            // JSON array of tags
+  'has_embedding',        // boolean
+  'user_email',           // Owner email
+  'device_id',            // Last device that updated
+  'sync_version',         // Version counter for conflict resolution
+  'created_at',
+  'updated_at',
+  'synced_at',
+];
+
+// Schema for sync log sheet
+const SYNC_LOG_HEADERS = [
+  'id',
+  'user_email',
+  'device_id',
+  'operation',            // 'push' | 'pull' | 'conflict'
+  'entity_type',          // 'snippet' | 'embedding'
+  'entity_id',
+  'timestamp',
+  'status',               // 'success' | 'failed' | 'conflict'
+  'details',              // JSON with operation details
 ];
 
 // Schema for metadata sheet
@@ -79,6 +115,18 @@ async function createRAGSheets(sheets, spreadsheetId) {
       });
     }
     
+    if (!existingSheets.includes(SNIPPETS_SHEET)) {
+      sheetsToCreate.push({
+        properties: { title: SNIPPETS_SHEET },
+      });
+    }
+    
+    if (!existingSheets.includes(SYNC_LOG_SHEET)) {
+      sheetsToCreate.push({
+        properties: { title: SYNC_LOG_SHEET },
+      });
+    }
+    
     if (sheetsToCreate.length > 0) {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId,
@@ -106,10 +154,10 @@ async function createRAGSheets(sheets, spreadsheetId) {
  */
 async function initializeSheetHeaders(sheets, spreadsheetId) {
   try {
-    // Check if headers already exist
+    // Check if embeddings headers exist
     const embeddingsData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${SHEET_NAME}!A1:M1`,
+      range: `${SHEET_NAME}!A1:Z1`,
     });
     
     if (!embeddingsData.data.values || embeddingsData.data.values.length === 0) {
@@ -138,6 +186,42 @@ async function initializeSheetHeaders(sheets, spreadsheetId) {
         valueInputOption: 'RAW',
         resource: {
           values: [METADATA_HEADERS],
+        },
+      });
+    }
+    
+    // Check snippets headers
+    const snippetsData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SNIPPETS_SHEET}!A1:N1`,
+    });
+    
+    if (!snippetsData.data.values || snippetsData.data.values.length === 0) {
+      // Write snippets headers
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${SNIPPETS_SHEET}!A1`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: [SNIPPETS_HEADERS],
+        },
+      });
+    }
+    
+    // Check sync log headers
+    const syncLogData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SYNC_LOG_SHEET}!A1:I1`,
+    });
+    
+    if (!syncLogData.data.values || syncLogData.data.values.length === 0) {
+      // Write sync log headers
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${SYNC_LOG_SHEET}!A1`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: [SYNC_LOG_HEADERS],
         },
       });
     }
@@ -789,6 +873,440 @@ async function ensureFilesSheet(sheets, spreadsheetId) {
   }
 }
 
+// ============================================================================
+// SNIPPET SYNC FUNCTIONS
+// ============================================================================
+
+/**
+ * Save a snippet to Google Sheets
+ * @param {object} sheets - Sheets API client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {object} snippet - Snippet object
+ * @param {string} userEmail - User email for filtering
+ * @param {string} deviceId - Device ID
+ * @returns {Promise<void>}
+ */
+async function saveSnippetToSheets(sheets, spreadsheetId, snippet, userEmail, deviceId) {
+  try {
+    const now = new Date().toISOString();
+    
+    // Check if snippet already exists
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SNIPPETS_SHEET}!A:A`,
+    });
+    
+    const rows = allData.data.values || [];
+    const existingRowIndex = rows.findIndex((row, index) => 
+      index > 0 && row[0] === snippet.id
+    );
+    
+    const row = [
+      snippet.id,
+      snippet.content || '',
+      snippet.title || '',
+      snippet.timestamp || Date.now(),
+      snippet.updateDate || snippet.timestamp || Date.now(),
+      snippet.sourceType || 'user',
+      JSON.stringify(snippet.tags || []),
+      snippet.hasEmbedding ? 'TRUE' : 'FALSE',
+      userEmail,
+      deviceId,
+      snippet.sync_version || 1,
+      snippet.created_at || now,
+      now, // updated_at
+      now, // synced_at
+    ];
+    
+    if (existingRowIndex > 0) {
+      // Update existing row
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${SNIPPETS_SHEET}!A${existingRowIndex + 1}`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: [row],
+        },
+      });
+      console.log(`Updated snippet ${snippet.id} in Sheets`);
+    } else {
+      // Append new row
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${SNIPPETS_SHEET}!A:N`,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        resource: {
+          values: [row],
+        },
+      });
+      console.log(`Added snippet ${snippet.id} to Sheets`);
+    }
+    
+    // Log sync operation
+    await logSyncOperation(sheets, spreadsheetId, {
+      userEmail,
+      deviceId,
+      operation: 'push',
+      entityType: 'snippet',
+      entityId: snippet.id,
+      status: 'success',
+      details: JSON.stringify({ action: existingRowIndex > 0 ? 'update' : 'create' }),
+    });
+    
+  } catch (error) {
+    console.error('Error saving snippet to Sheets:', error);
+    
+    // Log failed sync
+    await logSyncOperation(sheets, spreadsheetId, {
+      userEmail,
+      deviceId,
+      operation: 'push',
+      entityType: 'snippet',
+      entityId: snippet.id,
+      status: 'failed',
+      details: JSON.stringify({ error: error.message }),
+    }).catch(e => console.error('Failed to log error:', e));
+    
+    throw error;
+  }
+}
+
+/**
+ * Load snippets from Google Sheets for a user
+ * @param {object} sheets - Sheets API client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} userEmail - User email for filtering
+ * @returns {Promise<Array>} Array of snippets
+ */
+async function loadSnippetsFromSheets(sheets, spreadsheetId, userEmail) {
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SNIPPETS_SHEET}!A:N`,
+    });
+    
+    const rows = response.data.values || [];
+    if (rows.length <= 1) {
+      return []; // No data (only headers or empty)
+    }
+    
+    // Parse rows into snippet objects (skip header)
+    const snippets = rows.slice(1)
+      .filter(row => row[8] === userEmail) // Filter by user_email column
+      .map(row => ({
+        id: row[0],
+        content: row[1],
+        title: row[2],
+        timestamp: parseInt(row[3]) || Date.now(),
+        updateDate: parseInt(row[4]) || Date.now(),
+        sourceType: row[5] || 'user',
+        tags: row[6] ? JSON.parse(row[6]) : [],
+        hasEmbedding: row[7] === 'TRUE',
+        user_email: row[8],
+        device_id: row[9],
+        sync_version: parseInt(row[10]) || 1,
+        created_at: row[11],
+        updated_at: row[12],
+        synced_at: row[13],
+      }));
+    
+    console.log(`Loaded ${snippets.length} snippets from Sheets for ${userEmail}`);
+    return snippets;
+    
+  } catch (error) {
+    console.error('Error loading snippets from Sheets:', error);
+    throw error;
+  }
+}
+
+/**
+ * Bulk save snippets to Google Sheets (efficient for initial sync)
+ * @param {object} sheets - Sheets API client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {Array} snippets - Array of snippet objects
+ * @param {string} userEmail - User email
+ * @param {string} deviceId - Device ID
+ * @returns {Promise<number>} Number of snippets saved
+ */
+async function bulkSaveSnippetsToSheets(sheets, spreadsheetId, snippets, userEmail, deviceId) {
+  try {
+    if (!snippets || snippets.length === 0) {
+      return 0;
+    }
+    
+    const now = new Date().toISOString();
+    
+    // Convert all snippets to rows
+    const rows = snippets.map(snippet => [
+      snippet.id,
+      snippet.content || '',
+      snippet.title || '',
+      snippet.timestamp || Date.now(),
+      snippet.updateDate || snippet.timestamp || Date.now(),
+      snippet.sourceType || 'user',
+      JSON.stringify(snippet.tags || []),
+      snippet.hasEmbedding ? 'TRUE' : 'FALSE',
+      userEmail,
+      deviceId,
+      snippet.sync_version || 1,
+      snippet.created_at || now,
+      now, // updated_at
+      now, // synced_at
+    ]);
+    
+    // Batch append
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${SNIPPETS_SHEET}!A:N`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: {
+        values: rows,
+      },
+    });
+    
+    console.log(`Bulk saved ${snippets.length} snippets to Sheets`);
+    
+    // Log sync operation
+    await logSyncOperation(sheets, spreadsheetId, {
+      userEmail,
+      deviceId,
+      operation: 'push',
+      entityType: 'snippet',
+      entityId: 'bulk',
+      status: 'success',
+      details: JSON.stringify({ count: snippets.length }),
+    });
+    
+    return snippets.length;
+    
+  } catch (error) {
+    console.error('Error bulk saving snippets to Sheets:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a snippet from Google Sheets
+ * @param {object} sheets - Sheets API client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} snippetId - Snippet ID to delete
+ * @param {string} userEmail - User email for verification
+ * @returns {Promise<boolean>} True if deleted
+ */
+async function deleteSnippetFromSheets(sheets, spreadsheetId, snippetId, userEmail) {
+  try {
+    // Find the row
+    const allData = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SNIPPETS_SHEET}!A:I`,
+    });
+    
+    const rows = allData.data.values || [];
+    const rowIndex = rows.findIndex((row, index) => 
+      index > 0 && row[0] === snippetId && row[8] === userEmail
+    );
+    
+    if (rowIndex <= 0) {
+      console.log(`Snippet ${snippetId} not found or not owned by ${userEmail}`);
+      return false;
+    }
+    
+    // Get sheet ID
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const snippetsSheet = spreadsheet.data.sheets.find(s => s.properties.title === SNIPPETS_SHEET);
+    
+    if (!snippetsSheet) {
+      throw new Error('Snippets sheet not found');
+    }
+    
+    // Delete the row
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      resource: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId: snippetsSheet.properties.sheetId,
+              dimension: 'ROWS',
+              startIndex: rowIndex,
+              endIndex: rowIndex + 1,
+            },
+          },
+        }],
+      },
+    });
+    
+    console.log(`Deleted snippet ${snippetId} from Sheets`);
+    
+    // Log sync operation
+    await logSyncOperation(sheets, spreadsheetId, {
+      userEmail,
+      deviceId: 'unknown',
+      operation: 'push',
+      entityType: 'snippet',
+      entityId: snippetId,
+      status: 'success',
+      details: JSON.stringify({ action: 'delete' }),
+    });
+    
+    return true;
+    
+  } catch (error) {
+    console.error('Error deleting snippet from Sheets:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get changes since a timestamp
+ * @param {object} sheets - Sheets API client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} userEmail - User email
+ * @param {number} timestamp - Timestamp (ms since epoch)
+ * @param {string} entityType - 'snippet' | 'embedding'
+ * @returns {Promise<Array>} Changed items
+ */
+async function getChangesSince(sheets, spreadsheetId, userEmail, timestamp, entityType = 'snippet') {
+  try {
+    const sheetName = entityType === 'snippet' ? SNIPPETS_SHEET : SHEET_NAME;
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:N`,
+    });
+    
+    const rows = response.data.values || [];
+    if (rows.length <= 1) {
+      return [];
+    }
+    
+    // Filter by user and updated_at timestamp
+    const changes = rows.slice(1)
+      .filter(row => {
+        const rowUserEmail = entityType === 'snippet' ? row[8] : row[15]; // user_email column
+        const rowUpdatedAt = entityType === 'snippet' ? row[12] : row[18]; // updated_at column
+        
+        if (rowUserEmail !== userEmail) return false;
+        
+        const updatedTime = new Date(rowUpdatedAt).getTime();
+        return updatedTime > timestamp;
+      })
+      .map(row => {
+        if (entityType === 'snippet') {
+          return {
+            id: row[0],
+            content: row[1],
+            title: row[2],
+            timestamp: parseInt(row[3]) || Date.now(),
+            updateDate: parseInt(row[4]) || Date.now(),
+            sourceType: row[5] || 'user',
+            tags: row[6] ? JSON.parse(row[6]) : [],
+            hasEmbedding: row[7] === 'TRUE',
+            user_email: row[8],
+            device_id: row[9],
+            sync_version: parseInt(row[10]) || 1,
+            created_at: row[11],
+            updated_at: row[12],
+            synced_at: row[13],
+          };
+        }
+        // Add embedding parsing if needed
+        return null;
+      })
+      .filter(item => item !== null);
+    
+    console.log(`Found ${changes.length} changes since ${new Date(timestamp).toISOString()}`);
+    return changes;
+    
+  } catch (error) {
+    console.error('Error getting changes since timestamp:', error);
+    throw error;
+  }
+}
+
+/**
+ * Log a sync operation
+ * @param {object} sheets - Sheets API client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {object} operation - Operation details
+ * @returns {Promise<void>}
+ */
+async function logSyncOperation(sheets, spreadsheetId, operation) {
+  try {
+    const { userEmail, deviceId, operation: op, entityType, entityId, status, details } = operation;
+    
+    const row = [
+      `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // id
+      userEmail,
+      deviceId,
+      op,
+      entityType,
+      entityId,
+      new Date().toISOString(),
+      status,
+      details || '',
+    ];
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${SYNC_LOG_SHEET}!A:I`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: {
+        values: [row],
+      },
+    });
+    
+  } catch (error) {
+    // Don't throw - logging failures shouldn't break sync
+    console.error('Error logging sync operation:', error);
+  }
+}
+
+/**
+ * Get or set last sync timestamp in metadata
+ */
+async function getLastSyncTimestamp(sheets, spreadsheetId, userEmail, entityType) {
+  try {
+    const key = `last_sync_${userEmail}_${entityType}`;
+    const metadata = await loadMetadataFromSheets(sheets, spreadsheetId);
+    return metadata[key] ? parseInt(metadata[key]) : null;
+  } catch (error) {
+    console.error('Error getting last sync timestamp:', error);
+    return null;
+  }
+}
+
+async function setLastSyncTimestamp(sheets, spreadsheetId, userEmail, entityType, timestamp) {
+  try {
+    const key = `last_sync_${userEmail}_${entityType}`;
+    await saveMetadataToSheets(sheets, spreadsheetId, { [key]: timestamp.toString() });
+  } catch (error) {
+    console.error('Error setting last sync timestamp:', error);
+  }
+}
+
+/**
+ * Resolve conflict between local and remote items (last-write-wins)
+ * @param {object} localItem - Local item
+ * @param {object} remoteItem - Remote item
+ * @returns {object} Winning item
+ */
+function resolveConflict(localItem, remoteItem) {
+  // Last-write-wins strategy based on updateDate/update_date
+  const localTime = localItem.updateDate || localItem.update_date || 0;
+  const remoteTime = remoteItem.updateDate || remoteItem.update_date || 0;
+  
+  if (localTime > remoteTime) {
+    console.log(`Conflict resolved: local wins for ${localItem.id}`);
+    return { ...localItem, sync_version: (localItem.sync_version || 1) + 1 };
+  } else {
+    console.log(`Conflict resolved: remote wins for ${remoteItem.id}`);
+    return { ...remoteItem, sync_version: (remoteItem.sync_version || 1) + 1 };
+  }
+}
+
 module.exports = {
   initSheetsClient,
   createRAGSheets,
@@ -803,4 +1321,14 @@ module.exports = {
   saveFileToSheets,
   loadFileFromSheets,
   deleteFileFromSheets,
+  // Snippet sync functions
+  saveSnippetToSheets,
+  loadSnippetsFromSheets,
+  bulkSaveSnippetsToSheets,
+  deleteSnippetFromSheets,
+  getChangesSince,
+  logSyncOperation,
+  getLastSyncTimestamp,
+  setLastSyncTimestamp,
+  resolveConflict,
 };

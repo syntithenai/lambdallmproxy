@@ -832,6 +832,301 @@ Task: Synthesize the above findings to answer the user's question. Each finding 
 }
 
 /**
+ * Handle file/URL conversion to markdown
+ * @param {object} event - Lambda event
+ * @param {object} responseStream - Response stream
+ * @param {object} context - Lambda context
+ */
+async function handleConvertToMarkdown(event, responseStream, context) {
+    const { convertToMarkdown } = require('./rag/file-converters');
+    
+    try {
+        const body = JSON.parse(event.body || '{}');
+        let markdown;
+        
+        // Handle file buffer (from multer middleware in local server)
+        if (body.fileBuffer && body.fileName) {
+            console.log(`📄 Converting file: ${body.fileName} (${body.mimeType})`);
+            console.log(`📊 Buffer size: ${body.fileBuffer.length} chars (base64)`);
+            
+            const buffer = Buffer.from(body.fileBuffer, 'base64');
+            console.log(`📊 Decoded buffer size: ${buffer.length} bytes`);
+            
+            const mimeType = body.mimeType || '';
+            
+            // Convert to markdown
+            console.log('🔄 Starting conversion...');
+            const result = await convertToMarkdown(buffer, mimeType, {});
+            console.log(`✅ Conversion complete. Result:`, {
+                hasMarkdown: !!result.markdown,
+                markdownLength: result.markdown?.length || 0,
+                hasImages: !!result.images,
+                imageCount: result.images?.length || 0,
+                markdownPreview: result.markdown ? result.markdown.substring(0, 100) + '...' : '(empty)'
+            });
+            
+            markdown = result.markdown;
+            
+            if (!markdown || markdown.trim().length === 0) {
+                console.error('❌ Conversion returned empty markdown!');
+                throw new Error('PDF conversion returned no content');
+            }
+            
+        } else if (body.url) {
+            // Handle URL fetch and conversion
+            const https = require('https');
+            const http = require('http');
+            const url = body.url;
+            
+            // Fetch URL content
+            const fetchPromise = new Promise((resolve, reject) => {
+                const client = url.startsWith('https') ? https : http;
+                
+                client.get(url, (res) => {
+                    const chunks = [];
+                    res.on('data', (chunk) => chunks.push(chunk));
+                    res.on('end', () => {
+                        const buffer = Buffer.concat(chunks);
+                        const contentType = res.headers['content-type'] || '';
+                        resolve({ buffer, contentType });
+                    });
+                }).on('error', reject);
+            });
+            
+            const { buffer, contentType } = await fetchPromise;
+            
+            // Convert to markdown
+            const result = await convertToMarkdown(buffer, contentType.split(';')[0], {});
+            markdown = result.markdown;
+        } else {
+            throw new Error('Either file or URL is required');
+        }
+        
+        // Validate markdown before sending
+        if (!markdown || markdown.trim().length === 0) {
+            console.error('❌ Final markdown is empty or null!');
+            throw new Error('Conversion produced no content');
+        }
+        
+        console.log(`📤 Sending response with markdown length: ${markdown.length}`);
+        
+        // Return markdown
+        responseStream.write(JSON.stringify({
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ markdown, content: markdown })
+        }));
+        
+    } catch (error) {
+        console.error('❌ Conversion error:', error);
+        console.error('Error stack:', error.stack);
+        
+        responseStream.write(JSON.stringify({
+            statusCode: 500,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                error: 'Failed to convert document',
+                details: error.message,
+                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            })
+        }));
+    }
+    
+    responseStream.end();
+}
+
+/**
+ * Handle RAG-specific endpoints
+ * @param {object} event - Lambda event
+ * @param {object} responseStream - Response stream
+ * @param {object} context - Lambda context
+ * @param {function} writeEvent - Function to write SSE events
+ * @param {string} path - Request path
+ * @param {string} httpMethod - HTTP method
+ */
+async function handleRAGEndpoint(event, responseStream, context, writeEvent, path, httpMethod) {
+    const { ingestDocument } = require('./rag');
+    const { searchChunks } = require('./rag/search');
+    const { getChunksBySnippetIds, hasEmbedding } = require('./rag/libsql-storage');
+    
+    try {
+        const body = JSON.parse(event.body || '{}');
+        
+        // POST /rag/ingest - Ingest documents/URLs/text
+        if (path === '/rag/ingest' && httpMethod === 'POST') {
+            const { content, sourceType, title, url } = body;
+            
+            if (!content && !url) {
+                writeEvent('error', { error: 'Either content or url is required' });
+                responseStream.end();
+                return;
+            }
+            
+            writeEvent('log', { message: 'Starting document ingestion...' });
+            
+            try {
+                let result;
+                if (url) {
+                    // Ingest from URL
+                    result = await ingestDocument(url, {
+                        sourceType: 'url',
+                        title: title || url
+                    });
+                } else {
+                    // Ingest text content
+                    result = await ingestDocument(content, {
+                        sourceType: sourceType || 'text',
+                        title: title || 'Untitled Document'
+                    });
+                }
+                
+                writeEvent('success', {
+                    message: 'Document ingested successfully',
+                    chunks: result.chunks.length,
+                    document: result.document
+                });
+                
+            } catch (error) {
+                console.error('Ingestion error:', error);
+                writeEvent('error', {
+                    error: 'Failed to ingest document',
+                    details: error.message
+                });
+            }
+            
+            responseStream.end();
+            return;
+        }
+        
+        // POST /rag/embed-snippets - Generate embeddings for SWAG snippets
+        if (path === '/rag/embed-snippets' && httpMethod === 'POST') {
+            const { snippetIds, snippets } = body;
+            
+            if (!Array.isArray(snippets) || snippets.length === 0) {
+                writeEvent('error', { error: 'snippets array is required' });
+                responseStream.end();
+                return;
+            }
+            
+            writeEvent('log', { message: `Processing ${snippets.length} snippets...` });
+            
+            const results = [];
+            let embedded = 0;
+            let skipped = 0;
+            let failed = 0;
+            
+            for (const snippet of snippets) {
+                try {
+                    // Check if already has embeddings
+                    const exists = await hasEmbedding(snippet.id);
+                    
+                    if (exists) {
+                        results.push({
+                            id: snippet.id,
+                            status: 'skipped',
+                            reason: 'Already has embeddings'
+                        });
+                        skipped++;
+                        writeEvent('progress', {
+                            current: results.length,
+                            total: snippets.length,
+                            skipped,
+                            embedded
+                        });
+                        continue;
+                    }
+                    
+                    // Generate embeddings
+                    const result = await ingestDocument(snippet.content, {
+                        sourceType: 'text',
+                        title: snippet.title || `Snippet ${snippet.id}`,
+                        metadata: {
+                            snippetId: snippet.id,
+                            tags: snippet.tags || [],
+                            timestamp: snippet.timestamp
+                        }
+                    });
+                    
+                    results.push({
+                        id: snippet.id,
+                        status: 'embedded',
+                        chunks: result.chunks.length
+                    });
+                    embedded++;
+                    
+                    writeEvent('progress', {
+                        current: results.length,
+                        total: snippets.length,
+                        skipped,
+                        embedded
+                    });
+                    
+                } catch (error) {
+                    console.error(`Failed to embed snippet ${snippet.id}:`, error);
+                    results.push({
+                        id: snippet.id,
+                        status: 'failed',
+                        error: error.message
+                    });
+                    failed++;
+                }
+            }
+            
+            writeEvent('success', {
+                message: 'Bulk embedding complete',
+                embedded,
+                skipped,
+                failed,
+                results
+            });
+            
+            responseStream.end();
+            return;
+        }
+        
+        // GET /rag/documents - List ingested documents
+        if (path === '/rag/documents' && httpMethod === 'GET') {
+            const { listDocuments } = require('./rag/libsql-storage');
+            
+            try {
+                const documents = await listDocuments();
+                
+                writeEvent('success', {
+                    documents,
+                    count: documents.length
+                });
+                
+            } catch (error) {
+                console.error('Failed to list documents:', error);
+                writeEvent('error', {
+                    error: 'Failed to list documents',
+                    details: error.message
+                });
+            }
+            
+            responseStream.end();
+            return;
+        }
+        
+        // Unknown RAG endpoint
+        writeEvent('error', { error: `Unknown RAG endpoint: ${path}` });
+        responseStream.end();
+        
+    } catch (error) {
+        console.error('RAG endpoint error:', error);
+        writeEvent('error', {
+            error: 'RAG endpoint failed',
+            details: error.message
+        });
+        responseStream.end();
+    }
+}
+
+/**
  * Main Lambda handler function - streaming only
  */
 exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
@@ -890,9 +1185,24 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         
         //writeEvent('log', { message: 'Connected! Processing request...' });
         
-        // Extract parameters from request (POST only)
+        // Extract parameters from request
         const httpMethod = event.httpMethod || event.requestContext?.http?.method || 'GET';
+        const path = event.path || event.rawPath || '/';
         
+        console.log(`🔧 REQUEST: ${httpMethod} ${path}`);
+        
+        // Route document conversion endpoint
+        if (path === '/convert-to-markdown' && httpMethod === 'POST') {
+            return await handleConvertToMarkdown(event, responseStream, context);
+        }
+        
+        // Route different paths
+        if (path.startsWith('/rag/')) {
+            // RAG-specific endpoints - handle in separate handlers
+            return await handleRAGEndpoint(event, responseStream, context, writeEvent, path, httpMethod);
+        }
+        
+        // Default /chat endpoint - require POST
         if (httpMethod !== 'POST') {
             writeEvent('error', { error: 'Method not allowed. Only POST requests are supported.' });
             responseStream.end();

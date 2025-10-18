@@ -20,6 +20,9 @@
  *   --dry-run               Show what would be ingested without actually doing it
  */
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 const fs = require('fs').promises;
 const path = require('path');
 const { createLibsqlClient, initDatabase, saveChunks, getDatabaseStats } = require('../src/rag/libsql-storage');

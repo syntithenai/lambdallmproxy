@@ -541,8 +541,8 @@ const toolFunctions = [
             type: 'number',
             minimum: 0,
             maximum: 1,
-            default: 0.5,
-            description: 'Minimum similarity score threshold (0-1). Higher values = more strict matching. Default: 0.5'
+            default: 0.3,
+            description: 'Minimum similarity score threshold (0-1). Higher values = more strict matching. Default: 0.3 (relaxed for better recall)'
           },
           source_type: {
             type: 'string',
@@ -1715,9 +1715,11 @@ Brief answer with URLs:`;
       if (!query) return JSON.stringify({ error: 'query required' });
       
       const topK = clampInt(args.top_k, 1, 20, 5);
+      // Lower default threshold from 0.5 to 0.3 for more relaxed matching
+      // 0.5 is too strict and filters out semantically similar but differently worded queries
       const threshold = typeof args.threshold === 'number' 
         ? Math.max(0, Math.min(1, args.threshold)) 
-        : 0.5;
+        : 0.3;
       const sourceType = args.source_type || null;
       
       console.log(`📚 RAG Search: query="${query}", topK=${topK}, threshold=${threshold}, sourceType=${sourceType || 'all'}`);
