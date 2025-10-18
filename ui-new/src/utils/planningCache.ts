@@ -8,6 +8,7 @@ export interface CachedPlan {
   query: string;
   plan: any;
   systemPrompt?: string;
+  userPrompt?: string;
   timestamp: number;
 }
 
@@ -40,7 +41,7 @@ export function getAllCachedPlans(): CachedPlan[] {
  * Save a new plan to the cache
  * Avoids duplicates by replacing any existing plan with the same query
  */
-export function saveCachedPlan(query: string, plan: any, systemPrompt?: string): void {
+export function saveCachedPlan(query: string, plan: any, systemPrompt?: string, userPrompt?: string): void {
   try {
     const plans = getAllCachedPlans();
     const normalizedQuery = query.trim().toLowerCase();
@@ -53,6 +54,7 @@ export function saveCachedPlan(query: string, plan: any, systemPrompt?: string):
       query: query.trim(),
       plan,
       systemPrompt,
+      userPrompt,
       timestamp: Date.now()
     };
     
@@ -66,6 +68,17 @@ export function saveCachedPlan(query: string, plan: any, systemPrompt?: string):
     console.log(`Plan saved (${filteredPlans.length > plans.length ? 'new' : 'replaced duplicate'}):`, query.trim());
   } catch (error) {
     console.error('Error saving plan to cache:', error);
+    
+    // Check if it's a quota error and provide helpful message
+    if (error instanceof DOMException && 
+        (error.name === 'QuotaExceededError' || (error as any).code === 22)) {
+      console.error('Storage quota exceeded. Consider:', 
+        '\n1. Deleting old saved plans',
+        '\n2. Clearing browser data',
+        '\n3. Using persistent storage (navigator.storage.persist())');
+      throw new Error('Storage quota exceeded. Please delete some old plans to free up space, or clear your browser cache.');
+    }
+    throw error;
   }
 }
 
@@ -99,4 +112,52 @@ export function clearAllCachedPlans(): void {
   } catch (error) {
     console.error('Error clearing planning cache:', error);
   }
+}
+
+/**
+ * Request persistent storage to prevent automatic eviction
+ * Returns true if persistent storage is granted
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if ('storage' in navigator && 'persist' in navigator.storage) {
+    try {
+      const isPersisted = await navigator.storage.persisted();
+      if (!isPersisted) {
+        const granted = await navigator.storage.persist();
+        console.log('Persistent storage request:', granted ? 'granted' : 'denied');
+        return granted;
+      }
+      console.log('Storage is already persistent');
+      return true;
+    } catch (error) {
+      console.error('Error requesting persistent storage:', error);
+      return false;
+    }
+  }
+  console.warn('Persistent storage API not available');
+  return false;
+}
+
+/**
+ * Check storage usage and estimate
+ */
+export async function getStorageEstimate(): Promise<{ usage: number; quota: number; percentage: number } | null> {
+  if ('storage' in navigator && 'estimate' in navigator.storage) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      const usage = estimate.usage || 0;
+      const quota = estimate.quota || 0;
+      const percentage = quota > 0 ? (usage / quota) * 100 : 0;
+      
+      return {
+        usage,
+        quota,
+        percentage
+      };
+    } catch (error) {
+      console.error('Error getting storage estimate:', error);
+      return null;
+    }
+  }
+  return null;
 }

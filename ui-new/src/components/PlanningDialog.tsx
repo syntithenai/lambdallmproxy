@@ -8,7 +8,9 @@ import { generatePlan } from '../utils/api';
 import { 
   getAllCachedPlans, 
   saveCachedPlan, 
-  deleteCachedPlan 
+  deleteCachedPlan,
+  requestPersistentStorage,
+  getStorageEstimate
 } from '../utils/planningCache';
 import type { CachedPlan } from '../utils/planningCache';
 import { LlmInfoDialog } from './LlmInfoDialog';
@@ -29,6 +31,10 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const [isLoading, setIsLoading] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [savedPlans, setSavedPlans] = useState<CachedPlan[]>([]);
+  
+  // Storage management
+  const [storageInfo, setStorageInfo] = useState<{ usage: number; quota: number; percentage: number } | null>(null);
+  const [isPersistent, setIsPersistent] = useState(false);
   
   // LLM transparency tracking
   const [llmInfo, setLlmInfo] = useState<any>(null);
@@ -69,8 +75,32 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   useEffect(() => {
     if (showLoadDialog) {
       setSavedPlans(getAllCachedPlans());
+      updateStorageInfo();
     }
   }, [showLoadDialog]);
+  
+  // Update storage info
+  const updateStorageInfo = async () => {
+    const estimate = await getStorageEstimate();
+    setStorageInfo(estimate);
+    
+    // Check if storage is persistent
+    if ('storage' in navigator && 'persisted' in navigator.storage) {
+      const persisted = await navigator.storage.persisted();
+      setIsPersistent(persisted);
+    }
+  };
+  
+  // Request persistent storage
+  const handleRequestPersistentStorage = async () => {
+    const granted = await requestPersistentStorage();
+    if (granted) {
+      showSuccess('Persistent storage granted! Your saved plans will be protected from automatic deletion.');
+      setIsPersistent(true);
+    } else {
+      showError('Persistent storage was denied. Plans may be cleared by the browser.');
+    }
+  };
 
   const handleSubmit = async () => {
     if (!query.trim() || isLoading) return;
@@ -210,6 +240,13 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
         setGeneratedUserQuery(plan.plan.enhancedUserPrompt);
       }
     }
+    // Also restore saved prompts if they exist (for backwards compatibility)
+    if (plan.systemPrompt) {
+      setGeneratedSystemPrompt(plan.systemPrompt);
+    }
+    if (plan.userPrompt) {
+      setGeneratedUserQuery(plan.userPrompt);
+    }
     setShowLoadDialog(false);
   };
 
@@ -224,9 +261,19 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
       return;
     }
     
-    saveCachedPlan(query, result, result.enhancedSystemPrompt || '');
-    showSuccess('Plan saved successfully');
-    console.log('Plan manually saved to cache');
+    try {
+      // Save with both system and user prompts
+      saveCachedPlan(
+        query, 
+        result, 
+        result.enhancedSystemPrompt || generatedSystemPrompt || '',
+        result.enhancedUserPrompt || generatedUserQuery || ''
+      );
+      showSuccess('Plan saved successfully');
+      console.log('Plan manually saved to cache with system and user prompts');
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Failed to save plan');
+    }
   };
 
   const handleClear = () => {
@@ -672,7 +719,54 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
       {showLoadDialog && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
           <div className="card p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <h3 className="text-lg font-bold mb-4">Load Saved Plan</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Load Saved Plan</h3>
+              {storageInfo && (
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Storage: {(storageInfo.usage / (1024 * 1024)).toFixed(2)} MB / {(storageInfo.quota / (1024 * 1024)).toFixed(0)} MB ({storageInfo.percentage.toFixed(1)}%)
+                </div>
+              )}
+            </div>
+            
+            {/* Storage warning and persistent storage option */}
+            {storageInfo && storageInfo.percentage > 80 && (
+              <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <div className="text-sm text-yellow-800 dark:text-yellow-200 font-semibold mb-2">
+                  ⚠️ Storage is {storageInfo.percentage.toFixed(1)}% full
+                </div>
+                <div className="text-xs text-yellow-700 dark:text-yellow-300 mb-2">
+                  Consider deleting old plans to free up space.
+                </div>
+                {!isPersistent && (
+                  <button
+                    onClick={handleRequestPersistentStorage}
+                    className="text-xs btn-secondary bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800"
+                  >
+                    🔒 Request Persistent Storage (prevents auto-deletion)
+                  </button>
+                )}
+                {isPersistent && (
+                  <div className="text-xs text-green-700 dark:text-green-300">
+                    ✓ Persistent storage enabled - plans are protected
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {!isPersistent && storageInfo && storageInfo.percentage <= 80 && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div className="text-xs text-blue-700 dark:text-blue-300 mb-2">
+                  💡 Your browser may clear saved plans automatically. Enable persistent storage to prevent this.
+                </div>
+                <button
+                  onClick={handleRequestPersistentStorage}
+                  className="text-xs btn-secondary bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-800"
+                >
+                  🔒 Request Persistent Storage
+                </button>
+              </div>
+            )}
+            
             {savedPlans.length === 0 ? (
               <p className="text-gray-500">No saved plans found</p>
             ) : (

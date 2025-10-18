@@ -6,10 +6,34 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { MermaidChart } from './MermaidChart';
 import { usePlaylist } from '../contexts/PlaylistContext';
+
+// Custom sanitization schema that allows safe HTML elements
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    // Allow common safe attributes
+    '*': ['className', 'style', 'id'],
+    a: ['href', 'title', 'target', 'rel'],
+    img: ['src', 'alt', 'title', 'width', 'height'],
+    table: ['className'],
+    td: ['align', 'colspan', 'rowspan'],
+    th: ['align', 'colspan', 'rowspan'],
+  },
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    // Ensure table elements are allowed
+    'table', 'thead', 'tbody', 'tr', 'th', 'td', 'tfoot',
+    // Allow other common HTML elements
+    'div', 'span', 'br', 'hr',
+  ],
+};
 
 interface MarkdownRendererProps {
   content: string;
@@ -166,11 +190,28 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
     );
   }
   
+  // Pre-process content to convert HTML code blocks containing tables into actual HTML
+  // This handles when LLM wraps HTML tables in ```html code blocks
+  let processedContent = content.replace(/```html\n([\s\S]*?)\n```/g, (match, htmlCode) => {
+    // Only convert if it contains table elements (to avoid rendering arbitrary HTML)
+    if (htmlCode.includes('<table')) {
+      // Add styling classes to table elements
+      const styledHtml = htmlCode
+        .replace(/<table/g, '<table class="min-w-full divide-y divide-gray-300 dark:divide-gray-700 border border-gray-300 dark:border-gray-700 my-4"')
+        .replace(/<th/g, '<th class="px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold text-left border border-gray-300 dark:border-gray-700"')
+        .replace(/<td/g, '<td class="px-4 py-2 border border-gray-300 dark:border-gray-700"');
+      // Return the HTML directly (will be processed by rehypeRaw and rehypeSanitize)
+      return `\n\n${styledHtml}\n\n`;
+    }
+    // If it's not a table, keep it as a code block
+    return match;
+  });
+  
   // Detect and extract image gallery
   const galleryRegex = /<!-- GALLERY_START -->([\s\S]*?)<!-- GALLERY_END -->/g;
-  const galleryMatch = galleryRegex.exec(content);
+  const galleryMatch = galleryRegex.exec(processedContent);
   
-  let mainContent = content;
+  let mainContent = processedContent;
   let galleryImages: Array<{ src: string; alt: string }> = [];
   
   if (galleryMatch) {
@@ -194,7 +235,11 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[
+          rehypeRaw, // Allow HTML in markdown
+          [rehypeSanitize, sanitizeSchema], // Sanitize to prevent XSS attacks
+          rehypeHighlight // Syntax highlighting for code blocks
+        ]}
         components={{
           // Headings
           h1: ({ children }) => (
@@ -257,6 +302,9 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
               const defaultDescription = chartDescription || `${firstLine} diagram`;
               return <MermaidChart chart={chartCode} description={defaultDescription} onLlmApiCall={onLlmApiCall} />;
             }
+            
+            // DON'T render HTML here - let it pass through as code
+            // We'll handle it at the pre-processing stage instead
             
             if (isInline) {
               return (

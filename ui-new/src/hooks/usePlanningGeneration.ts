@@ -106,8 +106,14 @@ export const usePlanningGeneration = ({
           if (event === 'result') {
             const { systemPrompt, userQuery } = transformResultToPrompts(data, query);
             onSuccess(systemPrompt, userQuery, data);
-            saveCachedPlan(query, data);
-            console.log('Plan auto-saved to cache');
+            // Save with both system and user prompts
+            saveCachedPlan(
+              query, 
+              data,
+              data.enhancedSystemPrompt || systemPrompt || '',
+              data.enhancedUserPrompt || userQuery || ''
+            );
+            console.log('Plan auto-saved to cache with prompts');
           } else if (event === 'error') {
             const errorMsg = data.error || 'Unknown error';
             const providerInfo = data.provider && data.model 

@@ -221,24 +221,7 @@ export const ExamplesModal: React.FC<ExamplesModalProps> = ({
                   <button onClick={() => handleExampleClick('How do I configure OpenAI embeddings in this project?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: OpenAI config</button>
                   <button onClick={() => handleExampleClick('What is the RAG implementation in this codebase?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: RAG system</button>
                   <button onClick={() => handleExampleClick('How do I deploy Lambda functions in this project?')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: Lambda deployment</button>
-                  <button onClick={() => handleExampleClick('Show me code examples for browser features in the documentation')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: Browser features</button>
                   <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ Semantic search with RAG</p>
-                </div>
-              </div>
-
-              {/* Browser Features */}
-              <div>
-                <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-                  🔧 Browser Features (Client-Side Tools)
-                </h3>
-                <div className="space-y-1">
-                  <button onClick={() => handleExampleClick('Execute JavaScript to calculate the area of a circle with radius 10')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">JS: Circle area calculation</button>
-                  <button onClick={() => handleExampleClick('Read the value stored in localStorage under the key "userPreferences"')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Storage: Read localStorage</button>
-                  <button onClick={() => handleExampleClick('Copy this text to my clipboard: "Hello from AI!"')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Clipboard: Copy text</button>
-                  <button onClick={() => handleExampleClick('Get my current geolocation coordinates')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Geolocation: Get coordinates</button>
-                  <button onClick={() => handleExampleClick('Query the DOM to find all links on this page')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">DOM: Query page elements</button>
-                  <button onClick={() => handleExampleClick('Show me a browser notification saying "Task complete!"')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Notification: Send alert</button>
-                  <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ Code review dialog for safety</p>
                 </div>
               </div>
 

@@ -51,6 +51,7 @@ interface EnabledTools {
   transcribe: boolean;
   generate_chart: boolean;
   generate_image: boolean;
+  search_knowledge_base: boolean;
 }
 
 interface ChatTabProps {
@@ -1072,7 +1073,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         type: 'function',
         function: {
           name: 'execute_javascript',
-          description: '💻 Execute JavaScript code in the browser for complex calculations and custom data processing. **NOT for browser feature access** - use dedicated browser tools instead (read_storage, copy_to_clipboard, show_notification, etc.).',
+          description: '💻 Execute JavaScript code in a sandbox for: 1) Complex mathematical calculations that require computation (factorial, compound interest, statistics, algorithms), 2) Generating formatted tables/grids (multiplication tables, calendars), 3) Data transformations or array processing, 4) ASCII art or text-based visualizations, 5) Custom algorithms. **DO NOT use for**: simple text output, explanations, or answers you already know. Only use when actual computation adds value.',
           parameters: {
             type: 'object',
             properties: {
@@ -1089,112 +1090,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               }
             },
             required: ['code']
-          }
-        }
-      });
-
-      // Browser-specific feature tools (client-side execution)
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'browser_storage_read',
-          description: '📦 **READ BROWSER STORAGE**: Read data from localStorage or sessionStorage. Use when user asks to "read", "get", "check", or "show" localStorage/sessionStorage values.',
-          parameters: {
-            type: 'object',
-            properties: {
-              storage_key: { type: 'string', description: 'The key to read from storage' },
-              storage_type: { type: 'string', enum: ['localStorage', 'sessionStorage'], default: 'localStorage', description: 'Type of storage to read from' }
-            },
-            required: ['storage_key']
-          }
-        }
-      });
-
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'browser_storage_write',
-          description: '💾 **WRITE BROWSER STORAGE**: Save data to localStorage or sessionStorage. Use when user asks to "save", "store", "write", or "set" a value in storage.',
-          parameters: {
-            type: 'object',
-            properties: {
-              storage_key: { type: 'string', description: 'The key to store the value under' },
-              storage_value: { type: 'string', description: 'The value to store (will be converted to string)' },
-              storage_type: { type: 'string', enum: ['localStorage', 'sessionStorage'], default: 'localStorage', description: 'Type of storage to write to' }
-            },
-            required: ['storage_key', 'storage_value']
-          }
-        }
-      });
-
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'browser_clipboard_write',
-          description: '📋 **COPY TO CLIPBOARD**: Copy text to the user\'s clipboard. Use when user asks to "copy" text or save something to clipboard.',
-          parameters: {
-            type: 'object',
-            properties: {
-              clipboard_text: { type: 'string', description: 'The text to copy to clipboard' }
-            },
-            required: ['clipboard_text']
-          }
-        }
-      });
-
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'browser_clipboard_read',
-          description: '📋 **READ CLIPBOARD**: Read text from the user\'s clipboard. Use when user asks to "paste", "read clipboard", or "what\'s in my clipboard".',
-          parameters: {
-            type: 'object',
-            properties: {}
-          }
-        }
-      });
-
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'browser_notification',
-          description: '🔔 **SHOW BROWSER NOTIFICATION**: Display a desktop notification to the user. Use when user asks to "notify", "alert", "remind", or "show notification".',
-          parameters: {
-            type: 'object',
-            properties: {
-              notification_title: { type: 'string', description: 'Notification title' },
-              notification_body: { type: 'string', description: 'Notification body text (optional)' },
-              notification_icon: { type: 'string', description: 'URL to notification icon (optional)' }
-            },
-            required: ['notification_title']
-          }
-        }
-      });
-
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'browser_geolocation',
-          description: '📍 **GET USER LOCATION**: Get the user\'s current geographic coordinates (latitude/longitude). Use when user asks for "my location", "coordinates", "where am I", or geolocation data.',
-          parameters: {
-            type: 'object',
-            properties: {}
-          }
-        }
-      });
-
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'browser_query_dom',
-          description: '🔍 **QUERY PAGE ELEMENTS**: Find and extract information from HTML elements on the current page. Use when user asks to "find links", "get page elements", "query DOM", or extract data from the page.',
-          parameters: {
-            type: 'object',
-            properties: {
-              query_selector: { type: 'string', description: 'CSS selector to query (e.g., "a", ".class", "#id", "div > p")' },
-              extract_property: { type: 'string', description: 'Property to extract from elements (e.g., "href", "textContent", "innerHTML", "value"). Default: "textContent"' }
-            },
-            required: ['query_selector']
           }
         }
       });
@@ -1339,6 +1234,45 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               }
             },
             required: ['prompt']
+          }
+        }
+      });
+    }
+    
+    if (enabledTools.search_knowledge_base) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'search_knowledge_base',
+          description: '📚 **SEARCH INTERNAL KNOWLEDGE BASE**: Perform vector similarity search against the ingested documentation and knowledge base. **USE THIS when user asks about**: project documentation, API references, implementation guides, architecture, deployment procedures, RAG system, embedding models, or any topics covered in the knowledge base. **EXCELLENT for**: finding specific code examples, configuration details, API endpoints, best practices, and technical documentation. Returns relevant text chunks with source file names and similarity scores. **Always use this BEFORE search_web when the question might be answered by internal documentation.**',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'Natural language search query. Be specific and include key terms. Examples: "How do I configure OpenAI embeddings?", "What is the RAG implementation?", "How to deploy Lambda functions?"'
+              },
+              top_k: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 20,
+                default: 5,
+                description: 'Number of most relevant results to return (default: 5, max: 20)'
+              },
+              threshold: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                default: 0.5,
+                description: 'Minimum similarity score threshold (0-1). Higher values = more strict matching. Default: 0.5'
+              },
+              source_type: {
+                type: 'string',
+                enum: ['file', 'url', 'text'],
+                description: 'Optional: Filter results by source type (file, url, or text)'
+              }
+            },
+            required: ['query']
           }
         }
       });
@@ -1647,18 +1581,17 @@ CRITICAL TOOL USAGE RULES:
 - When users provide ANY URL (http/https) and ask questions about it, you MUST call scrape_web_content with that URL FIRST
 - MANDATORY: If a message contains a URL and asks to extract/analyze/summarize/get key points, you MUST call scrape_web_content - DO NOT provide an answer without first fetching the content
 - When users ask for current information, news, or web content, you MUST use search_web
-- When users ask for calculations, math problems, or code execution, you MUST ALWAYS use execute_javascript - NEVER provide answers directly
-- MANDATORY: For "multiplication table", "calculate", "compute", "factorial", "compound interest", mathematical operations, or data processing, you MUST call execute_javascript
-- DO NOT provide mathematical answers or tables manually - ALWAYS use execute_javascript tool
-- **BROWSER FEATURES - USE DEDICATED TOOLS**: 
-  - For reading storage: use browser_storage_read (NOT execute_javascript)
-  - For writing storage: use browser_storage_write (NOT execute_javascript)
-  - For copying to clipboard: use browser_clipboard_write (NOT execute_javascript)
-  - For reading clipboard: use browser_clipboard_read (NOT execute_javascript)
-  - For notifications: use browser_notification (NOT execute_javascript)
-  - For geolocation: use browser_geolocation (NOT execute_javascript)
-  - For querying page elements: use browser_query_dom (NOT execute_javascript)
-  - ONLY use execute_javascript for complex custom algorithms or when no dedicated tool exists
+- **execute_javascript USAGE RULES**:
+  - ✅ USE for: Complex calculations requiring computation (factorial, fibonacci, statistics, algorithms)
+  - ✅ USE for: Generating formatted tables/grids (multiplication tables, calendars, data matrices)
+  - ✅ USE for: Data transformations, array processing, sorting, filtering large datasets
+  - ✅ USE for: ASCII art, text-based visualizations, formatted output
+  - ✅ USE for: Custom algorithms or mathematical operations you cannot compute mentally
+  - ❌ DO NOT USE for: Simple answers you already know (like "Lambda deployment not supported")
+  - ❌ DO NOT USE for: Just printing text or explanations
+  - ❌ DO NOT USE for: Answers that don't require computation
+  - ❌ DO NOT USE for: Simple arithmetic you can answer directly (like 2+2=4)
+  - Rule: Only use execute_javascript when the computation or formatting adds actual value
 - DO NOT output tool parameters as JSON text in your response (e.g., don't write {"url": "...", "timeout": 15})
 - DO NOT describe what you would do - ACTUALLY CALL THE TOOL using the function calling mechanism
 - DO NOT write code for scraping or analyzing - USE THE TOOL INSTEAD
@@ -1679,18 +1612,12 @@ Examples when you MUST use tools:
 - "Read and analyze https://en.wikipedia.org/wiki/Topic" → Call scrape_web_content with url parameter
 - "Find current news about X" → Call search_web with query parameter
 - "What's the latest on X" → Call search_web with query parameter
-- "calculate 5 factorial" → Call execute_javascript with code parameter
-- "Generate a multiplication table for numbers 1-12" → Call execute_javascript with code parameter
-- "Calculate compound interest" → Call execute_javascript with code parameter
-- "Compute" or "Calculate" anything → Call execute_javascript with code parameter
-- "Read localStorage key 'userPreferences'" → Call browser_storage_read with storage_key="userPreferences"
-- "Save 'dark' to localStorage key 'theme'" → Call browser_storage_write with storage_key="theme", storage_value="dark"
-- "Copy 'Hello World' to clipboard" → Call browser_clipboard_write with clipboard_text="Hello World"
-- "What's in my clipboard?" → Call browser_clipboard_read
-- "Show notification 'Task complete'" → Call browser_notification with notification_title="Task complete"
-- "Get my geolocation" → Call browser_geolocation
-- "Find all links on this page" → Call browser_query_dom with query_selector="a", extract_property="href"
-- "Get all button text" → Call browser_query_dom with query_selector="button", extract_property="textContent"
+- "calculate 5 factorial" → Call execute_javascript (requires computation)
+- "Generate a multiplication table for numbers 1-12" → Call execute_javascript (formatted table)
+- "Calculate compound interest on $10k at 7% for 15 years" → Call execute_javascript (complex calculation)
+- "Sort this array and find median: [45,23,67,12,89]" → Call execute_javascript (data processing)
+- "What is 2+2?" → Answer directly with "4" (DON'T use execute_javascript for trivial math)
+- "How do I deploy a Lambda?" → Answer directly (DON'T use execute_javascript to print explanations)
 
 Remember: Use the function calling mechanism, not text output. The API will handle execution automatically.`;
       }

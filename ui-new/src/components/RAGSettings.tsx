@@ -95,6 +95,18 @@ export const RAGSettings: React.FC = () => {
       // Save to localStorage (will integrate with IndexedDB later)
       localStorage.setItem('rag_config', JSON.stringify(config));
       
+      // Sync search_knowledge_base tool with RAG enabled state
+      try {
+        const toolsConfig = localStorage.getItem('chat_enabled_tools');
+        if (toolsConfig) {
+          const tools = JSON.parse(toolsConfig);
+          tools.search_knowledge_base = config.enabled;
+          localStorage.setItem('chat_enabled_tools', JSON.stringify(tools));
+        }
+      } catch (e) {
+        console.error('Failed to sync search_knowledge_base tool:', e);
+      }
+      
       showSuccess('RAG settings saved successfully');
       setHasChanges(false);
     } catch (error) {

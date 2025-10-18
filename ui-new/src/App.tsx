@@ -46,6 +46,7 @@ function AppContent() {
     transcribe: boolean;
     generate_chart: boolean;
     generate_image: boolean;
+    search_knowledge_base: boolean;
   }>('chat_enabled_tools', {
     web_search: true,
     execute_js: true,
@@ -53,8 +54,26 @@ function AppContent() {
     youtube: true,
     transcribe: true,
     generate_chart: true,
-    generate_image: true
+    generate_image: true,
+    search_knowledge_base: false // Will be automatically enabled when RAG is configured
   });
+  
+  // Automatically enable search_knowledge_base when RAG is enabled
+  useEffect(() => {
+    try {
+      const ragConfig = localStorage.getItem('rag_config');
+      if (ragConfig) {
+        const config = JSON.parse(ragConfig);
+        if (config.enabled && !enabledTools.search_knowledge_base) {
+          setEnabledTools({ ...enabledTools, search_knowledge_base: true });
+        } else if (!config.enabled && enabledTools.search_knowledge_base) {
+          setEnabledTools({ ...enabledTools, search_knowledge_base: false });
+        }
+      }
+    } catch (error) {
+      console.error('Error syncing RAG config with search_knowledge_base tool:', error);
+    }
+  }, []); // Run once on mount
 
   // Migrate chat history from localStorage to IndexedDB on mount
   useEffect(() => {

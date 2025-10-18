@@ -16,6 +16,7 @@ const useLibSQL = isNode && (process.env.LIBSQL_URL || process.env.USE_LIBSQL ==
 
 let storageBackend;
 let libsqlClient = null;
+let initPromise = null;
 
 if (useLibSQL) {
   console.log('RAG Search: Using libSQL storage backend');
@@ -25,9 +26,19 @@ if (useLibSQL) {
     url: process.env.LIBSQL_URL,
     authToken: process.env.LIBSQL_AUTH_TOKEN,
   });
+  
+  // Initialize database schema (create tables if they don't exist)
+  initPromise = storageBackend.initDatabase(libsqlClient).then(() => {
+    console.log('RAG database initialized successfully');
+  }).catch(err => {
+    console.error('Failed to initialize RAG database:', err);
+    throw err;
+  });
 } else {
   console.log('RAG Search: Using IndexedDB storage backend');
   storageBackend = require('./indexeddb-storage');
+  // No initialization needed for IndexedDB (handled in browser)
+  initPromise = Promise.resolve();
 }
 
 /**
@@ -36,6 +47,11 @@ if (useLibSQL) {
  * @returns {Promise<Array>} Array of chunks
  */
 async function getAllChunks(options = {}) {
+  // Wait for database initialization to complete
+  if (initPromise) {
+    await initPromise;
+  }
+  
   if (useLibSQL) {
     return storageBackend.getAllChunks(libsqlClient, options);
   } else {
@@ -50,6 +66,11 @@ async function getAllChunks(options = {}) {
  * @returns {Promise<Array>} Array of results with similarity scores
  */
 async function searchChunksLibSQL(queryEmbedding, options = {}) {
+  // Wait for database initialization to complete
+  if (initPromise) {
+    await initPromise;
+  }
+  
   const {
     topK = 5,
     threshold = 0.7,

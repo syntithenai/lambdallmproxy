@@ -6,7 +6,6 @@ import { useDialogClose } from '../hooks/useDialogClose';
 import { ProviderList } from './ProviderList';
 import { TTSSettings } from './TTSSettings';
 import { RAGSettings } from './RAGSettings';
-import { BrowserFeaturesSettings } from './BrowserFeaturesSettings';
 import { TTS_FEATURE_ENABLED } from '../types/tts';
 
 interface EnabledTools {
@@ -17,6 +16,7 @@ interface EnabledTools {
   transcribe: boolean;
   generate_chart: boolean;
   generate_image: boolean;
+  search_knowledge_base: boolean;
 }
 
 interface SettingsModalProps {
@@ -39,7 +39,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
 
-  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag' | 'browser'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag'>('provider');
   
   // Proxy settings state
   const [proxyUsername, setProxyUsername] = useState('');
@@ -150,16 +150,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             🧠 RAG
-          </button>
-          <button
-            onClick={() => setActiveTab('browser')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === 'browser'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-            }`}
-          >
-            🌐 Browser
           </button>
         </div>
 
@@ -758,11 +748,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* RAG Tab */}
         {activeTab === 'rag' && (
           <RAGSettings />
-        )}
-
-        {/* Browser Features Tab */}
-        {activeTab === 'browser' && (
-          <BrowserFeaturesSettings />
         )}
 
         <div className="flex justify-end gap-3 mt-8">
