@@ -98,6 +98,62 @@ async function downloadFromS3(bucket, key, onProgress) {
 }
 
 /**
+ * Download media from local file path or file:// URL
+ */
+async function downloadFromLocalFile(urlOrPath, onProgress) {
+    const fs = require('fs').promises;
+    const path = require('path');
+    
+    // Convert file:// URL to path, or handle localhost HTTP URLs
+    let filePath;
+    if (urlOrPath.startsWith('file://')) {
+        filePath = urlOrPath.replace('file://', '');
+    } else if (urlOrPath.includes('localhost:3000/samples/')) {
+        // Convert localhost URL to actual file path for local development
+        const filename = urlOrPath.split('/samples/').pop();
+        filePath = path.join(__dirname, '../../ui-new/public/samples', filename);
+    } else {
+        filePath = urlOrPath;
+    }
+    
+    console.log(`📁 Reading local file: ${filePath}`);
+    
+    try {
+        const buffer = await fs.readFile(filePath);
+        console.log(`✅ Read ${(buffer.length / 1024 / 1024).toFixed(2)}MB from local file`);
+        
+        // Determine content type from file extension
+        const ext = path.extname(filePath).toLowerCase();
+        const contentTypeMap = {
+            '.mp3': 'audio/mpeg',
+            '.mp4': 'audio/mp4',
+            '.wav': 'audio/wav',
+            '.m4a': 'audio/m4a',
+            '.webm': 'audio/webm',
+            '.ogg': 'audio/ogg',
+            '.flac': 'audio/flac'
+        };
+        const contentType = contentTypeMap[ext] || 'audio/mpeg';
+        
+        if (onProgress) {
+            onProgress({
+                type: 'download_complete',
+                size: buffer.length
+            });
+        }
+        
+        return {
+            buffer,
+            contentType,
+            size: buffer.length
+        };
+    } catch (error) {
+        console.error(`❌ Failed to read local file: ${error.message}`);
+        throw new Error(`Failed to read local file: ${error.message}`);
+    }
+}
+
+/**
  * Download media from direct URL
  */
 async function downloadMedia(url, onProgress) {
@@ -109,6 +165,12 @@ async function downloadMedia(url, onProgress) {
     }
 
     console.log(`🌐 Fetching media from: ${url}`);
+    
+    // Check if this is a local file path or file:// URL or localhost URL
+    if (url.startsWith('file://') || url.includes('localhost:3000/samples/') || url.includes('127.0.0.1:3000/samples/')) {
+        console.log(`🏠 Detected local file - reading from filesystem`);
+        return await downloadFromLocalFile(url, onProgress);
+    }
     
     // Check if this is an S3 URL - use direct S3 download (more reliable from Lambda)
     const s3Info = parseS3Url(url);

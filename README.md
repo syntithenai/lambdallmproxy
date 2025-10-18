@@ -46,6 +46,60 @@ make help
 
 **The Makefile is your single interface for all operations - it ensures consistent, reliable deployments and builds.**
 
+## 💻 Local Development
+
+**Development is local-first!** Test all changes locally before deploying to production.
+
+### Start Local Development Server
+
+```bash
+# Start both backend (localhost:3000) and frontend (localhost:5173)
+make dev
+```
+
+This command starts:
+- **Backend**: Express server on `http://localhost:3000` (proxies Lambda function)
+- **Frontend**: Vite dev server on `http://localhost:5173` (hot-reload UI)
+
+### Development Workflow
+
+1. **Edit code** in `src/` (backend) or `ui-new/src/` (frontend)
+2. **Run `make dev`** to start local servers
+3. **Test** by visiting `http://localhost:5173`
+4. **Verify changes** work locally
+5. **Deploy to production** only when ready:
+   - Backend: `make deploy-lambda-fast` (10 seconds)
+   - Frontend: `make deploy-ui` (builds docs + pushes to GitHub Pages)
+
+### Local Sample Files
+
+Sample audio files for testing transcription are available at:
+- `ui-new/public/samples/long-form-ai-speech.mp3` (~4 min AI discussion)
+
+The local Lambda server (port 3000) serves these files at: `http://localhost:3000/samples/`
+
+**Example transcription query (LOCAL DEVELOPMENT ONLY):**
+```
+Transcribe this: http://localhost:3000/samples/long-form-ai-speech.mp3
+```
+
+> **⚠️ Important**: Local file transcription only works when running `make dev`. When using the deployed Lambda function (production), you must use publicly accessible URLs (S3, HTTP, HTTPS) because the backend reads the file from the filesystem in local mode, but production Lambda cannot access localhost.
+
+**For production/deployed testing**, use the S3 URL instead:
+```
+Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/long-form-ai-speech.mp3
+```
+
+### When to Deploy vs. Develop Locally
+
+| Scenario | Use | Why |
+|----------|-----|-----|
+| **Making code changes** | `make dev` | Test immediately, fast iteration |
+| **Testing new features** | `make dev` | No Lambda deployment needed |
+| **Debugging issues** | `make dev` | See console logs directly |
+| **Ready for production** | `make deploy-lambda-fast` | Share with others, production use |
+| **UI changes final** | `make deploy-ui` | Publish to GitHub Pages |
+
 ## ⚡ Optimized Deployment Workflow (Lambda Layers)
 
 **NEW: Ultra-fast deployment for rapid development iteration!**

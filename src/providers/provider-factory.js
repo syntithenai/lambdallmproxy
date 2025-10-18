@@ -21,9 +21,9 @@ const PROVIDER_CLASSES = {
   'groq': GroqProvider,
   'groq-free': GroqProvider,
   'openai': OpenAIProvider,
+  'together': OpenAIProvider, // Together AI is OpenAI-compatible
   // 'gemini': GeminiProvider,
   // 'gemini-free': GeminiProvider,
-  // 'together': OpenAICompatibleProvider,
   // 'openai-compatible': OpenAICompatibleProvider
 };
 

@@ -34,6 +34,16 @@ app.use(cors({
 // Parse JSON bodies
 app.use(express.json({ limit: '10mb' }));
 
+// Serve static sample files from ui-new/public/samples
+// This allows local transcription testing with localhost URLs
+const samplesPath = path.join(__dirname, '../ui-new/public/samples');
+if (fs.existsSync(samplesPath)) {
+  app.use('/samples', express.static(samplesPath));
+  console.log(`📁 Serving static samples from: ${samplesPath}`);
+} else {
+  console.log(`⚠️  Samples directory not found at: ${samplesPath}`);
+}
+
 // Log all requests
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -45,14 +55,36 @@ global.awslambda = {
   streamifyResponse: (handler) => {
     // Return a wrapper that calls the handler and handles streaming
     return async (event, context) => {
-      // Create a mock response stream
-      const chunks = [];
+      // Get Express response from context (passed by local server)
+      const expressResponse = context.expressResponse;
+      let headersSent = false;
+      
+      // Create a mock response stream that writes directly to Express response
       const responseStream = {
         write: (data) => {
-          chunks.push(data);
+          if (expressResponse) {
+            // Send headers on first write
+            if (!headersSent && responseStream.metadata) {
+              const metadata = responseStream.metadata;
+              const statusCode = metadata.statusCode || 200;
+              const headers = metadata.headers || {};
+              
+              Object.keys(headers).forEach(key => {
+                expressResponse.setHeader(key, headers[key]);
+              });
+              
+              expressResponse.status(statusCode);
+              headersSent = true;
+            }
+            
+            // Write chunk immediately for true streaming
+            expressResponse.write(data);
+          }
         },
         end: () => {
-          // Stream has ended, chunks contain the response
+          if (expressResponse) {
+            expressResponse.end();
+          }
         },
         setContentType: (type) => {
           responseStream.contentType = type;
@@ -69,9 +101,8 @@ global.awslambda = {
       await handler(event, responseStream, context);
       
       return {
-        chunks,
-        metadata: responseStream.metadata,
-        contentType: responseStream.contentType
+        isStreaming: true,
+        metadata: responseStream.metadata
       };
     };
   },
@@ -193,32 +224,20 @@ const handleRequest = async (req, res) => {
       getRemainingTimeInMillis: () => 300000, // 5 minutes
       done: () => {},
       fail: () => {},
-      succeed: () => {}
+      succeed: () => {},
+      expressResponse: res  // Pass Express response for streaming
     };
     
     // Call the Lambda handler
     const response = await handler(event, context);
     
     // Handle streaming response from streamifyResponse wrapper
-    if (response && response.chunks) {
+    if (response && response.isStreaming) {
+      // Response was streamed directly to Express response
+      // Headers and data were already sent, just log
       const metadata = response.metadata || {};
       const statusCode = metadata.statusCode || 200;
-      const headers = metadata.headers || {};
-      
-      // Set headers
-      Object.keys(headers).forEach(key => {
-        res.setHeader(key, headers[key]);
-      });
-      
-      res.status(statusCode);
-      
-      // Write all chunks
-      for (const chunk of response.chunks) {
-        res.write(chunk);
-      }
-      
-      res.end();
-      console.log(`📤 Response: ${statusCode} (streaming, ${response.chunks.length} chunks)`);
+      console.log(`📤 Response: ${statusCode} (streaming)`);
     }
     // Handle regular Lambda response
     else if (response) {

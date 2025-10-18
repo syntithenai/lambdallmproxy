@@ -103,10 +103,11 @@ export const ExamplesModal: React.FC<ExamplesModalProps> = ({
                   🎙️ Audio/Video Transcription (Whisper AI)
                 </h3>
                 <div className="space-y-1">
+                  <button onClick={() => handleExampleClick('Transcribe this: http://localhost:3000/samples/long-form-ai-speech.mp3')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">🏠 Local Dev: AI & ML discussion (~4min)</button>
                   <button onClick={() => handleExampleClick('Transcribe this: https://llmproxy-media-samples.s3.amazonaws.com/audio/long-form-ai-speech.mp3')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Transcribe: AI & ML discussion (~4min)</button>
                   <button onClick={() => handleExampleClick('Transcribe this YouTube video: https://www.youtube.com/watch?v=dQw4w9WgXcQ')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Transcribe YouTube video</button>
                   <button onClick={() => handleExampleClick('Transcribe this audio file: https://llmproxy-media-samples.s3.amazonaws.com/audio/hello-test.wav and summarize it')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Transcribe + auto-summarize</button>
-                  <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ OpenAI Whisper with progress tracking</p>
+                  <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ OpenAI Whisper with progress tracking<br/>⚠️ Local dev example only works with localhost backend</p>
                 </div>
               </div>
 
