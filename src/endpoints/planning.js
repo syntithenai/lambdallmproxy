@@ -10,8 +10,33 @@
 const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { DEFAULT_REASONING_EFFORT, MAX_TOKENS_PLANNING } = require('../config/tokens');
 const { verifyGoogleToken, getAllowedEmails } = require('../auth');
-const { logToGoogleSheets } = require('../services/google-sheets-logger');
+const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
+const { logToBillingSheet } = require('../services/user-billing-sheet');
 const path = require('path');
+
+/**
+ * Log transaction to both service account sheet and user's personal billing sheet
+ * @param {string} accessToken - User's OAuth access token (can be null)
+ * @param {object} logData - Transaction data
+ */
+async function logToBothSheets(accessToken, logData) {
+    // Always log to service account sheet (admin tracking)
+    try {
+        await logToGoogleSheets(logData);
+    } catch (error) {
+        console.error('⚠️ Failed to log to service account sheet:', error.message);
+    }
+    
+    // Also log to user's personal billing sheet if token available
+    if (accessToken && logData.userEmail && logData.userEmail !== 'unknown') {
+        try {
+            await logToBillingSheet(accessToken, logData);
+        } catch (error) {
+            console.error('⚠️ Failed to log to user billing sheet:', error.message);
+            // Don't fail the request if user billing logging fails
+        }
+    }
+}
 
 // Load provider catalog (try multiple locations)
 let providerCatalog;
@@ -676,8 +701,13 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
  * @param {Object} responseStream - Lambda response stream
  * @returns {Promise<void>} Streams response via responseStream
  */
-async function handler(event, responseStream) {
+async function handler(event, responseStream, context) {
     const startTime = Date.now();
+    
+    // Extract Lambda metrics
+    const memoryLimitMB = context?.memoryLimitInMB || 0;
+    const requestId = context?.requestId || '';
+    const memoryUsedMB = (process.memoryUsage().heapUsed / (1024 * 1024)).toFixed(2);
     
     // Set streaming headers
     // Note: CORS headers are handled by Lambda Function URL configuration
@@ -710,6 +740,9 @@ async function handler(event, responseStream) {
         const token = authHeader.startsWith('Bearer ') 
             ? authHeader.substring(7) 
             : authHeader;
+        
+        // Store googleToken for billing logging
+        const googleToken = token;
         
         let verifiedUser = null;
         
@@ -840,7 +873,8 @@ async function handler(event, responseStream) {
         const durationMs = Date.now() - startTime;
         
         // Log the planning request with actual token counts and selected model
-        logToGoogleSheets({
+        const cost = calculateCost(selectedModel.name, tokenUsage.promptTokens, tokenUsage.completionTokens);
+        logToBothSheets(googleToken, {
             timestamp: new Date().toISOString(),
             userEmail: userEmail,
             provider: selectedModel.providerType,
@@ -848,12 +882,17 @@ async function handler(event, responseStream) {
             promptTokens: tokenUsage.promptTokens,
             completionTokens: tokenUsage.completionTokens,
             totalTokens: tokenUsage.totalTokens,
-            durationMs: durationMs,
+            cost,
+            duration: durationMs / 1000,
+            type: 'planning',
+            memoryLimitMB,
+            memoryUsedMB,
+            requestId,
             queryType: plan.queryType,
             loadBalanced: !requestedModel
         }).catch(err => {
             // Don't fail the request if logging fails
-            console.error('Failed to log planning request to Google Sheets:', err);
+            console.error('Failed to log planning request to sheets:', err);
         });
         
         responseStream.end();

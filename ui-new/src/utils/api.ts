@@ -1,4 +1,5 @@
 // API client for Lambda endpoints
+import { createSSERequest, handleSSEResponse } from './streaming';
 
 // Constants
 const LOCAL_LAMBDA_URL = import.meta.env.VITE_LOCAL_LAMBDA_URL || 'http://localhost:3000';
@@ -334,7 +335,6 @@ export const generatePlan = async (
     reasoningDepth?: number;
   }
 ): Promise<void> => {
-  const { createSSERequest, handleSSEResponse } = await import('./streaming');
   const apiBase = await getCachedApiBase();
   
   // Filter and format providers for backend
@@ -385,7 +385,6 @@ export const performSearch = async (
   onComplete?: () => void,
   onError?: (error: Error) => void
 ): Promise<void> => {
-  const { createSSERequest, handleSSEResponse } = await import('./streaming');
   const apiBase = await getCachedApiBase();
   
   const response = await createSSERequest(
@@ -420,7 +419,6 @@ export const sendChatMessageStreaming = async (
   signal?: AbortSignal,
   youtubeToken?: string | null
 ): Promise<void> => {
-  const { createSSERequest, handleSSEResponse } = await import('./streaming');
   const apiBase = await getCachedApiBase();
   
   const response = await createSSERequest(

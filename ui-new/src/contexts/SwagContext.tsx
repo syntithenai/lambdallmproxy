@@ -642,6 +642,29 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { embedded: 0, skipped: 0, failed: 0 };
     }
 
+    // Filter out snippets that already have embeddings (unless force=true)
+    let snippetsToEmbed = selectedSnippets;
+    let skippedCount = 0;
+    
+    if (!force) {
+      const statusMap = await ragDB.bulkCheckEmbeddings(snippetIds);
+      const alreadyIndexed = snippetIds.filter(id => statusMap[id]);
+      
+      if (alreadyIndexed.length > 0) {
+        console.log(`⏭️ Skipping ${alreadyIndexed.length} already indexed snippets:`, alreadyIndexed);
+        snippetsToEmbed = selectedSnippets.filter(s => !statusMap[s.id]);
+        skippedCount = alreadyIndexed.length;
+        
+        if (snippetsToEmbed.length === 0) {
+          console.log('✅ All selected snippets already have embeddings');
+          showWarning(`✅ All ${selectedSnippets.length} snippets already indexed`);
+          return { embedded: 0, skipped: skippedCount, failed: 0 };
+        }
+        
+        showWarning(`⏭️ Skipping ${skippedCount} already indexed, generating ${snippetsToEmbed.length} new embeddings`);
+      }
+    }
+
     try {
       // Step 1: Request embeddings from backend with retry logic
       let response;
@@ -656,7 +679,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              snippets: selectedSnippets.map(s => ({
+              snippets: snippetsToEmbed.map(s => ({
                 id: s.id,
                 content: s.content,
                 title: s.title,
@@ -803,7 +826,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
               try {
                 const rows = formatChunksForSheets(allChunks);
                 console.log(`📝 Formatted ${rows.length} rows for Google Sheets`);
-                await appendRows(spreadsheetId, 'embeddings!A:K', rows);
+                await appendRows(spreadsheetId, 'RAG_Embeddings_v1!A:K', rows);
                 
                 console.log('✅ Synced to Google Sheets (client-side)');
                 showWarning(`✅ Synced ${allChunks.length} embeddings to Google Sheets`);
@@ -855,7 +878,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       return {
         embedded,
-        skipped: results.length - embedded - failed,
+        skipped: skippedCount + (results.length - embedded - failed),
         failed
       };
       
@@ -888,41 +911,180 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       console.log('✅ Spreadsheet ready:', spreadsheetId);
       
-      // Step 2: Pull remote snippets
+      // Step 2: Pull remote snippets from Google Sheets
       console.log('⬇️ Pulling remote snippets...');
-      const remoteSnippets = await ragSyncService.pullSnippets(user.email);
-      
-      if (remoteSnippets && remoteSnippets.length > 0) {
-        console.log(`📥 Received ${remoteSnippets.length} remote snippets`);
-        setSnippets(prev => {
-          const existingIds = new Set(prev.map(s => s.id));
-          const newSnippets = remoteSnippets.filter(s => !existingIds.has(s.id));
-          
-          const updated = prev.map(local => {
-            const remote = remoteSnippets.find(r => r.id === local.id);
-            if (remote && remote.updateDate > local.updateDate) {
-              return remote;
+      try {
+        const driveToken = localStorage.getItem('google_drive_access_token');
+        if (!driveToken) {
+          console.warn('No Drive token available for pull');
+        } else {
+          const rows = await fetch(
+            `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RAG_Snippets_v1!A2:J10000`,
+            {
+              headers: { Authorization: `Bearer ${driveToken}` }
             }
-            return local;
-          });
+          ).then(r => r.json()).then(data => data.values || []);
           
-          return [...newSnippets, ...updated].sort((a, b) => b.updateDate - a.updateDate);
-        });
-      } else {
-        console.log('📭 No remote snippets found');
+          if (rows.length > 0) {
+            console.log(`📥 Received ${rows.length} rows from Sheets`);
+            
+            // Reassemble chunked snippets
+            const snippetChunks = new Map<string, any[]>();
+            rows.forEach((row: any[]) => {
+              const id = row[0];
+              if (!snippetChunks.has(id)) {
+                snippetChunks.set(id, []);
+              }
+              snippetChunks.get(id)!.push(row);
+            });
+            
+            const remoteSnippets: ContentSnippet[] = [];
+            snippetChunks.forEach((chunks, id) => {
+              // Sort chunks by chunk_index
+              chunks.sort((a, b) => parseInt(a[8] || '1') - parseInt(b[8] || '1'));
+              
+              // Reassemble content from all chunks
+              const firstChunk = chunks[0];
+              const content = chunks.map(chunk => chunk[2] || '').join('');
+              
+              remoteSnippets.push({
+                id,
+                title: firstChunk[1] || '',
+                content,
+                timestamp: parseInt(firstChunk[5]) || Date.now(),
+                updateDate: parseInt(firstChunk[6]) || Date.now(),
+                sourceType: (firstChunk[7] || 'user') as ContentSnippet['sourceType'],
+                tags: firstChunk[4] ? JSON.parse(firstChunk[4]) : [],
+              });
+            });
+            
+            console.log(`📦 Reassembled ${remoteSnippets.length} snippets from ${rows.length} rows`);
+            
+            setSnippets(prev => {
+              const existingIds = new Set(prev.map(s => s.id));
+              const newSnippets = remoteSnippets.filter(s => !existingIds.has(s.id));
+              
+              const updated = prev.map(local => {
+                const remote = remoteSnippets.find(r => r.id === local.id);
+                if (remote && remote.updateDate > local.updateDate) {
+                  return remote;
+                }
+                return local;
+              });
+              
+              return [...newSnippets, ...updated].sort((a, b) => b.updateDate - a.updateDate);
+            });
+          } else {
+            console.log('📭 No remote snippets found');
+          }
+        }
+      } catch (pullError) {
+        console.error('⚠️ Pull failed:', pullError);
+        // Continue to push even if pull fails
       }
       
-      // Step 3: Push local changes
+      // Step 3: Push local snippets to Google Sheets
       console.log('⬆️ Pushing local snippets...');
       if (snippets.length > 0) {
-        await ragSyncService.pushSnippets(snippets, user.email);
-        console.log(`📤 Pushed ${snippets.length} snippets to Google Sheets`);
+        const driveToken = localStorage.getItem('google_drive_access_token');
+        if (!driveToken) {
+          showError('No Drive API access token available');
+          return;
+        }
+        
+        // Format snippets for sheets - split large content into chunks
+        const CELL_MAX_CHARS = 49000; // Stay under 50k limit with safety margin
+        const rows: any[] = [];
+        
+        snippets.forEach(s => {
+          const content = s.content || '';
+          
+          if (content.length <= CELL_MAX_CHARS) {
+            // Single row for small content
+            rows.push([
+              s.id,
+              s.title || '',
+              content,
+              '', // source (deprecated)
+              JSON.stringify(s.tags || []),
+              s.timestamp.toString(),
+              s.updateDate.toString(),
+              s.sourceType,
+              '1', // chunk_index
+              '1', // total_chunks
+            ]);
+          } else {
+            // Split large content into multiple rows
+            const totalChunks = Math.ceil(content.length / CELL_MAX_CHARS);
+            for (let i = 0; i < totalChunks; i++) {
+              const chunkStart = i * CELL_MAX_CHARS;
+              const chunkEnd = Math.min((i + 1) * CELL_MAX_CHARS, content.length);
+              const chunk = content.substring(chunkStart, chunkEnd);
+              
+              rows.push([
+                s.id,
+                i === 0 ? (s.title || '') : '', // Only first row has title
+                chunk,
+                '', // source (deprecated)
+                i === 0 ? JSON.stringify(s.tags || []) : '[]', // Only first row has tags
+                s.timestamp.toString(),
+                s.updateDate.toString(),
+                s.sourceType,
+                (i + 1).toString(), // chunk_index (1-based)
+                totalChunks.toString(), // total_chunks
+              ]);
+            }
+          }
+        });
+        
+        console.log(`📝 Prepared ${rows.length} rows from ${snippets.length} snippets`);
+        
+        // Clear existing data first
+        console.log('🗑️ Clearing existing data...');
+        const clearResponse = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RAG_Snippets_v1!A2:J10000:clear`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${driveToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (!clearResponse.ok) {
+          const errorText = await clearResponse.text();
+          console.error('Clear error:', errorText);
+        }
+        
+        // Update (overwrite) all snippets at once
+        console.log(`📝 Writing ${rows.length} rows...`);
+        const updateResponse = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RAG_Snippets_v1!A2?valueInputOption=RAW`,
+          {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${driveToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ values: rows })
+          }
+        );
+        
+        if (!updateResponse.ok) {
+          const errorText = await updateResponse.text();
+          console.error('❌ Update error:', errorText);
+          throw new Error(`Failed to update sheet: ${updateResponse.status} ${errorText}`);
+        }
+        
+        const updateResult = await updateResponse.json();
+        console.log(`📤 Pushed ${snippets.length} snippets (${rows.length} rows) to Google Sheets`, updateResult);
       } else {
         console.log('📭 No local snippets to push');
       }
       
       console.log('✅ Manual sync complete');
-      showSuccess(`Synced with Google Sheets (${spreadsheetId.substring(0, 10)}...)`);
+      showSuccess(`Synced ${snippets.length} snippets with Google Sheets`);
     } catch (error) {
       console.error('❌ Manual sync failed:', error);
       showError(`Manual sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

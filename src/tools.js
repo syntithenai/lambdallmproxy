@@ -554,6 +554,34 @@ const toolFunctions = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'manage_todos',
+      description: '✅ **MANAGE BACKEND TODO QUEUE**: Add or delete actionable steps for multi-step tasks. The backend maintains a server-side todo queue that tracks progress through complex workflows. When todos exist, they auto-progress after each successful completion (assessor "OK"). **USE THIS when**: user requests a multi-step plan, breaking down complex tasks, tracking implementation progress, or managing sequential workflows. **DO NOT use for simple single-step tasks.** After adding todos, the system will automatically advance through them, appending each next step as it completes. **Keywords**: plan, steps, todo list, break down task, multi-step workflow, implementation phases.',
+      parameters: {
+        type: 'object',
+        properties: {
+          add: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: ["Install dependencies", "Configure environment", "Run tests", "Deploy application"]'
+          },
+          delete: {
+            type: 'array',
+            items: {
+              oneOf: [
+                { type: 'string', description: 'Exact todo description to delete' },
+                { type: 'number', description: 'Todo ID to delete' }
+              ]
+            },
+            description: 'Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue'
+          }
+        },
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -1915,6 +1943,48 @@ Brief answer with URLs:`;
         });
       }
     }
+    
+    case 'manage_todos': {
+      const { TodosManager } = require('./utils/todos-manager');
+      
+      // Initialize TodosManager if not already in context
+      if (!context.__todosManager) {
+        // Create with writeEvent callback from context
+        context.__todosManager = new TodosManager((type, data) => {
+          if (context.writeEvent && typeof context.writeEvent === 'function') {
+            context.writeEvent(type, data);
+          }
+        });
+        console.log('✅ TodosManager initialized in callFunction context');
+      }
+      
+      const mgr = context.__todosManager;
+      let state = mgr.getState();
+      
+      // Process add operations
+      if (Array.isArray(args.add) && args.add.length > 0) {
+        console.log(`📝 manage_todos: Adding ${args.add.length} todos`);
+        state = mgr.add(args.add);
+      }
+      
+      // Process delete operations
+      if (Array.isArray(args.delete) && args.delete.length > 0) {
+        console.log(`🗑️  manage_todos: Deleting ${args.delete.length} todos`);
+        state = mgr.delete(args.delete);
+      }
+      
+      // Emit updated state via writeEvent
+      if (context.writeEvent && typeof context.writeEvent === 'function') {
+        context.writeEvent('todos_updated', state);
+      }
+      
+      return JSON.stringify({
+        success: true,
+        state: state,
+        message: `Todos updated: ${state.total} total, ${state.remaining} remaining${state.current ? `, current: "${state.current.description}"` : ''}`
+      });
+    }
+    
     case 'execute_javascript': {
       const code = String(args.code || '').trim();
       if (!code) return JSON.stringify({ error: 'code required' });

@@ -2,6 +2,13 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { resetApiBase } from './utils/api'
+import { ragDB } from './utils/ragDB'
+
+// Expose ragDB to window for debugging
+if (typeof window !== 'undefined') {
+  (window as any).ragDB = ragDB;
+  console.log('🔧 ragDB exposed to window.ragDB for debugging');
+}
 
 // Check for ?reset=true URL parameter to clear remote Lambda preference
 const urlParams = new URLSearchParams(window.location.search);

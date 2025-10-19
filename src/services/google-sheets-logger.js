@@ -56,7 +56,13 @@ const PRICING = {
     // Note: Pricing varies by provider, these are estimates
     'meta-llama/Llama-3.3-70B-Instruct': { input: 0.88, output: 0.88 },
     'meta-llama/Llama-3.1-405B-Instruct': { input: 3.50, output: 3.50 },
-    'Qwen/Qwen2.5-72B-Instruct': { input: 1.20, output: 1.20 }
+    'Qwen/Qwen2.5-72B-Instruct': { input: 1.20, output: 1.20 },
+    
+    // Embedding models (OpenAI)
+    // Source: https://openai.com/api/pricing/ (Oct 2025)
+    'text-embedding-3-small': { input: 0.02, output: 0 },
+    'text-embedding-3-large': { input: 0.13, output: 0 },
+    'text-embedding-ada-002': { input: 0.10, output: 0 }
 };
 
 /**
@@ -299,25 +305,30 @@ async function logToGoogleSheets(logData) {
         );
         
         // Format duration
-        const durationSeconds = (logData.durationMs / 1000).toFixed(2);
+        const durationMs = logData.duration || logData.durationMs || 0;
+        const durationSeconds = (durationMs / 1000).toFixed(2);
         
-        // Prepare row data: Date, Email, Provider, Model, Tokens In, Tokens Out, Total Tokens, Cost ($), Duration (s), Error Code, Error Message
+        // Prepare row data with Lambda metrics
         const rowData = [
             logData.timestamp || new Date().toISOString(),
             logData.userEmail || 'unknown',
             logData.provider || 'unknown',
             logData.model || 'unknown',
+            logData.type || 'chat',  // Type: chat, embedding, guardrail_input, guardrail_output, planning
             logData.promptTokens || 0,
             logData.completionTokens || 0,
             logData.totalTokens || 0,
             cost.toFixed(4),
             durationSeconds,
+            logData.memoryLimitMB || '',      // Lambda memory limit
+            logData.memoryUsedMB || '',       // Lambda memory used
+            logData.requestId || '',          // Lambda request ID
             logData.errorCode || '',
             logData.errorMessage || ''
         ];
         
-        // Append to sheet
-        await appendToSheet(spreadsheetId, `${sheetName}!A:K`, rowData, accessToken);
+        // Append to sheet (now includes Type + Lambda metrics)
+        await appendToSheet(spreadsheetId, `${sheetName}!A:O`, rowData, accessToken);
         
         console.log(`✅ Logged to Google Sheets: ${logData.model} (${logData.totalTokens} tokens, $${cost.toFixed(4)})`);
     } catch (error) {
@@ -348,22 +359,26 @@ async function initializeSheet() {
         // Ensure the sheet tab exists
         await ensureSheetExists(spreadsheetId, sheetName, accessToken);
         
-        // Add headers
+        // Add headers (including Type, Lambda metrics)
         const headers = [
             'Timestamp',
             'User Email',
             'Provider',
             'Model',
+            'Type',  // chat, embedding, guardrail_input, guardrail_output, planning
             'Tokens In',
             'Tokens Out',
             'Total Tokens',
             'Cost ($)',
             'Duration (s)',
+            'Memory Limit (MB)',  // NEW: Lambda memory configuration
+            'Memory Used (MB)',   // NEW: Lambda memory consumption
+            'Request ID',         // NEW: Lambda request ID for debugging
             'Error Code',
             'Error Message'
         ];
         
-        await appendToSheet(spreadsheetId, `${sheetName}!A1:K1`, headers, accessToken);
+        await appendToSheet(spreadsheetId, `${sheetName}!A1:O1`, headers, accessToken);
         
         console.log('✅ Google Sheets initialized with headers');
     } catch (error) {

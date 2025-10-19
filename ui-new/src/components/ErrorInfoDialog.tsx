@@ -56,12 +56,29 @@ const JsonTree: React.FC<JsonTreeProps> = ({ data, level = 0 }) => {
   );
 };
 
+interface LlmApiCall {
+  phase: string;
+  provider?: string;
+  model: string;
+  request: any;
+  response?: any;
+  httpHeaders?: any;
+  httpStatus?: number;
+  timestamp: string;
+  type?: string;
+  cost?: number;
+  durationMs?: number;
+  metadata?: any;
+  success?: boolean;
+}
+
 interface ErrorInfoDialogProps {
   errorData: any;
+  llmApiCalls?: LlmApiCall[];
   onClose: () => void;
 }
 
-export const ErrorInfoDialog: React.FC<ErrorInfoDialogProps> = ({ errorData, onClose }) => {
+export const ErrorInfoDialog: React.FC<ErrorInfoDialogProps> = ({ errorData, llmApiCalls, onClose }) => {
   const dialogRef = useDialogClose(true, onClose);
   const { showSuccess, showError } = useToast();
 
@@ -213,6 +230,130 @@ export const ErrorInfoDialog: React.FC<ErrorInfoDialogProps> = ({ errorData, onC
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* LLM Request Info */}
+            {llmApiCalls && llmApiCalls.length > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-3 flex items-center gap-2">
+                  <span>🔍 LLM Request Details</span>
+                  <span className="text-xs font-normal text-blue-600 dark:text-blue-400">
+                    ({llmApiCalls.length} call{llmApiCalls.length !== 1 ? 's' : ''})
+                  </span>
+                </h3>
+                <div className="space-y-3">
+                  {llmApiCalls.map((call, index) => {
+                    const tokensIn = call.response?.usage?.prompt_tokens || 0;
+                    const tokensOut = call.response?.usage?.completion_tokens || 0;
+                    const totalTokens = tokensIn + tokensOut;
+                    
+                    return (
+                      <div key={index} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
+                        <div className="space-y-2">
+                          {/* Model and Provider */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                              Model:
+                            </span>
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded font-mono">
+                              {call.model}
+                            </span>
+                            {call.provider && (
+                              <>
+                                <span className="text-gray-400">•</span>
+                                <span className="text-xs text-blue-600 dark:text-blue-400">
+                                  {call.provider}
+                                </span>
+                              </>
+                            )}
+                            {call.phase && (
+                              <>
+                                <span className="text-gray-400">•</span>
+                                <span className="text-xs text-blue-600 dark:text-blue-400">
+                                  {call.phase}
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Token Usage */}
+                          {totalTokens > 0 && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-blue-700 dark:text-blue-300 font-semibold">
+                                Tokens:
+                              </span>
+                              <span className="text-blue-600 dark:text-blue-400 font-mono">
+                                {totalTokens.toLocaleString()} total
+                              </span>
+                              <span className="text-gray-400">({tokensIn.toLocaleString()} in, {tokensOut.toLocaleString()} out)</span>
+                            </div>
+                          )}
+
+                          {/* Cost */}
+                          {call.cost !== undefined && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-blue-700 dark:text-blue-300 font-semibold">
+                                Cost:
+                              </span>
+                              <span className="text-green-600 dark:text-green-400 font-mono">
+                                ${call.cost.toFixed(6)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Timestamp */}
+                          {call.timestamp && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-blue-700 dark:text-blue-300 font-semibold">
+                                Time:
+                              </span>
+                              <span className="text-blue-600 dark:text-blue-400 font-mono">
+                                {new Date(call.timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* HTTP Status */}
+                          {call.httpStatus && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-blue-700 dark:text-blue-300 font-semibold">
+                                HTTP Status:
+                              </span>
+                              <span className={`font-mono ${call.httpStatus >= 400 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                {call.httpStatus}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Request Preview */}
+                          {call.request && (
+                            <details className="mt-2">
+                              <summary className="text-xs text-blue-700 dark:text-blue-300 font-semibold cursor-pointer hover:text-blue-900 dark:hover:text-blue-100">
+                                Request Details ▸
+                              </summary>
+                              <div className="mt-2 bg-gray-50 dark:bg-gray-900 rounded p-2 max-h-48 overflow-auto">
+                                <JsonTree data={call.request} />
+                              </div>
+                            </details>
+                          )}
+
+                          {/* Response Preview */}
+                          {call.response && (
+                            <details className="mt-2">
+                              <summary className="text-xs text-blue-700 dark:text-blue-300 font-semibold cursor-pointer hover:text-blue-900 dark:hover:text-blue-100">
+                                Response Details ▸
+                              </summary>
+                              <div className="mt-2 bg-gray-50 dark:bg-gray-900 rounded p-2 max-h-48 overflow-auto">
+                                <JsonTree data={call.response} />
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

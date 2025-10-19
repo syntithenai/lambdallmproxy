@@ -5,12 +5,44 @@
 
 const { chunker, embeddings } = require('../rag');
 const { generateUUID } = require('../rag/utils');
+const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
+const { logToBillingSheet } = require('../services/user-billing-sheet');
+const { authenticateRequest } = require('../auth');
+
+/**
+ * Log transaction to both service account sheet and user's personal billing sheet
+ * @param {string} accessToken - User's OAuth access token (can be null)
+ * @param {object} logData - Transaction data
+ */
+async function logToBothSheets(accessToken, logData) {
+    // Always log to service account sheet (admin tracking)
+    try {
+        await logToGoogleSheets(logData);
+    } catch (error) {
+        console.error('⚠️ Failed to log to service account sheet:', error.message);
+    }
+    
+    // Also log to user's personal billing sheet if token available
+    if (accessToken && logData.userEmail && logData.userEmail !== 'unknown') {
+        try {
+            await logToBillingSheet(accessToken, logData);
+        } catch (error) {
+            console.error('⚠️ Failed to log to user billing sheet:', error.message);
+            // Don't fail the request if user billing logging fails
+        }
+    }
+}
 
 /**
  * Main RAG endpoint handler
  */
-exports.handler = async (event, responseStream) => {
+exports.handler = async (event, responseStream, context) => {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') ? globalThis.awslambda : require('aws-lambda');
+    
+    // Extract Lambda metrics
+    const memoryLimitMB = context?.memoryLimitInMB || 0;
+    const requestId = context?.requestId || '';
+    const memoryUsedMB = (process.memoryUsage().heapUsed / (1024 * 1024)).toFixed(2);
     
     // Helper to write SSE events
     const writeEvent = (type, data) => {
@@ -30,7 +62,7 @@ exports.handler = async (event, responseStream) => {
 
         // POST /rag/embed-snippets - Generate embeddings for SWAG snippets
         if (path === '/rag/embed-snippets' && method === 'POST') {
-            return await handleEmbedSnippets(body, writeEvent, responseStream);
+            return await handleEmbedSnippets(event, body, writeEvent, responseStream, { memoryLimitMB, memoryUsedMB, requestId });
         }
 
         // POST /rag/embed-query - Generate embedding for search query
@@ -87,10 +119,27 @@ exports.handler = async (event, responseStream) => {
  * Returns JSON response with full chunks and embeddings
  * Client is responsible for saving to IndexedDB and syncing to Google Sheets
  */
-async function handleEmbedSnippets(body, writeEvent, responseStream) {
+async function handleEmbedSnippets(event, body, writeEvent, responseStream, lambdaMetrics) {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') ? globalThis.awslambda : require('aws-lambda');
     
     const { snippets, force = false } = body;
+    
+    // Extract user email for logging
+    let userEmail = 'unknown';
+    let googleToken = null;
+    try {
+        const authHeader = event.headers?.authorization || event.headers?.Authorization;
+        if (authHeader) {
+            const authResult = await authenticateRequest(authHeader);
+            userEmail = authResult.email || 'unknown';
+            // Extract OAuth token
+            if (authHeader.startsWith('Bearer ')) {
+                googleToken = authHeader.substring(7);
+            }
+        }
+    } catch (authError) {
+        console.log('⚠️ Could not authenticate for logging:', authError.message);
+    }
     
     if (!Array.isArray(snippets) || snippets.length === 0) {
         const metadata = {
@@ -110,6 +159,7 @@ async function handleEmbedSnippets(body, writeEvent, responseStream) {
         console.log(`Processing ${snippets.length} snippets...`);
         
         const results = [];
+        const startTime = Date.now();
         
         for (const snippet of snippets) {
             try {
@@ -166,6 +216,36 @@ async function handleEmbedSnippets(body, writeEvent, responseStream) {
                     embeddingLength: embeddingResults[0]?.embedding?.length,
                     embeddingFirst5: embeddingResults[0]?.embedding?.slice?.(0, 5) || Array.from(embeddingResults[0]?.embedding || []).slice(0, 5)
                 });
+                
+                // Log embedding generation to Google Sheets
+                try {
+                    const totalTokens = embeddingResults.reduce((sum, result) => sum + (result.tokens || 0), 0);
+                    const totalCost = calculateCost(embeddingModel, totalTokens, 0); // Embeddings have 0 output tokens
+                    const duration = Date.now() - startTime;
+                    
+                    await logToBothSheets(googleToken, {
+                        userEmail,
+                        provider: embeddingProvider,
+                        model: embeddingModel,
+                        promptTokens: totalTokens,
+                        completionTokens: 0,
+                        totalTokens,
+                        cost: totalCost,
+                        duration: duration / 1000, // Convert ms to seconds
+                        type: 'embedding',
+                        memoryLimitMB: lambdaMetrics.memoryLimitMB,
+                        memoryUsedMB: lambdaMetrics.memoryUsedMB,
+                        requestId: lambdaMetrics.requestId,
+                        error: null,
+                        metadata: {
+                            snippetId: snippet.id,
+                            chunksGenerated: embeddingResults.length
+                        }
+                    });
+                    console.log(`✅ Logged embedding generation: ${embeddingResults.length} chunks, ${totalTokens} tokens, $${totalCost.toFixed(6)}`);
+                } catch (logError) {
+                    console.error('⚠️ Failed to log embedding to sheets:', logError.message);
+                }
                 
                 // Step 3: Combine chunks with embeddings (return to client)
                 const chunksWithEmbeddings = chunks.map((chunk, index) => ({

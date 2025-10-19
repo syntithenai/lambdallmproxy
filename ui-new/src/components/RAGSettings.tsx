@@ -45,7 +45,7 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
   chunkSize: 1000,
   chunkOverlap: 200,
   topK: 5,
-  similarityThreshold: 0.5, // Lowered from 0.7 for better recall (fewer false negatives)
+  similarityThreshold: 0.3, // Lowered from 0.5 for better recall (semantic search can have lower scores for exact matches)
   syncEnabled: true, // Renamed from sheetsBackupEnabled
 };
 
@@ -393,7 +393,7 @@ export const RAGSettings: React.FC = () => {
         <div>
           <label className="block mb-2">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Similarity Threshold: {(config.similarityThreshold || 0.5).toFixed(2)}
+              Similarity Threshold: {(config.similarityThreshold || 0.3).toFixed(2)}
             </span>
           </label>
           <input
@@ -401,7 +401,7 @@ export const RAGSettings: React.FC = () => {
             min="0.3"
             max="0.95"
             step="0.05"
-            value={config.similarityThreshold || 0.5}
+            value={config.similarityThreshold || 0.3}
             onChange={(e) => handleConfigChange('similarityThreshold', parseFloat(e.target.value))}
             disabled={!config.enabled}
             className="w-full disabled:opacity-50"

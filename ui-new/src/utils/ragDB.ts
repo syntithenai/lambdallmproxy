@@ -48,6 +48,43 @@ class RAGDatabase {
   private initPromise: Promise<void> | null = null;
 
   /**
+   * Delete and recreate the database (for debugging/fixing corruption)
+   */
+  async resetDatabase(): Promise<void> {
+    console.log('🗑️ Deleting and recreating RAG database...');
+    
+    // Close existing connection
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+    this.initPromise = null;
+    
+    // Delete the database
+    await new Promise<void>((resolve, reject) => {
+      const deleteRequest = indexedDB.deleteDatabase(RAG_DB_NAME);
+      
+      deleteRequest.onsuccess = () => {
+        console.log('✅ Database deleted successfully');
+        resolve();
+      };
+      
+      deleteRequest.onerror = () => {
+        console.error('❌ Failed to delete database:', deleteRequest.error);
+        reject(deleteRequest.error);
+      };
+      
+      deleteRequest.onblocked = () => {
+        console.warn('⚠️ Database deletion blocked - close all tabs using this database');
+      };
+    });
+    
+    // Reinitialize
+    await this.init();
+    console.log('✅ Database recreated successfully');
+  }
+
+  /**
    * Initialize RAG IndexedDB
    */
   async init(): Promise<void> {
@@ -240,46 +277,119 @@ class RAGDatabase {
       
       // Save chunks
       const chunksStore = transaction.objectStore(CHUNKS_STORE);
+      
+      // Debug: Check the store's keyPath
+      console.log('🔍 IndexedDB Store Info:', {
+        storeName: chunksStore.name,
+        keyPath: chunksStore.keyPath,
+        autoIncrement: chunksStore.autoIncrement,
+        indexNames: Array.from(chunksStore.indexNames)
+      });
+      
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         try {
           // Generate ID if missing (backend doesn't always provide it)
           // Use snippet_id + chunk_index for deterministic IDs
-          const chunkId = chunk.id || `${chunk.snippet_id || metadata?.snippet_id || 'unknown'}_chunk_${chunk.chunk_index ?? i}`;
+          const snippetId = chunk.snippet_id || metadata?.snippet_id || 'unknown';
+          const chunkIndex = chunk.chunk_index ?? i;
+          const chunkId = chunk.id || `${snippetId}_chunk_${chunkIndex}`;
+          
+          // Ensure we have a valid ID
+          if (!chunkId || chunkId === 'undefined_chunk_0' || chunkId === '_chunk_0') {
+            console.error('❌ Invalid chunk ID generated:', {
+              chunkId,
+              snippetId,
+              chunkIndex,
+              chunk
+            });
+            throw new Error(`Invalid chunk ID: ${chunkId}`);
+          }
           
           // Ensure embedding is a plain array, not Float32Array or other typed array
+          const embeddingArray = Array.isArray(chunk.embedding) 
+            ? [...chunk.embedding] // Create a new copy
+            : Array.from(chunk.embedding || []);
+          
+          // Create a completely plain object without TypeScript typing interference
           const normalizedChunk = {
-            ...chunk,
-            id: chunkId, // Ensure id exists
-            embedding: Array.isArray(chunk.embedding) 
-              ? chunk.embedding 
-              : Array.from(chunk.embedding || [])
+            id: chunkId,
+            snippet_id: snippetId,
+            chunk_text: chunk.chunk_text || '',
+            embedding: embeddingArray,
+            chunk_index: chunkIndex,
+            embedding_model: chunk.embedding_model || 'text-embedding-3-small',
+            created_at: chunk.created_at || new Date().toISOString()
           };
           
+          // Verify the object structure before saving
+          if (!normalizedChunk.id) {
+            throw new Error(`Chunk missing id property after normalization: ${JSON.stringify(Object.keys(normalizedChunk))}`);
+          }
+          
+          // Verify id is accessible via property access
+          const testId = normalizedChunk['id'];
+          if (!testId) {
+            throw new Error(`Cannot access id property via bracket notation: ${testId}`);
+          }
+          
+          // Verify the object is truly plain
+          const proto = Object.getPrototypeOf(normalizedChunk);
+          if (proto !== Object.prototype) {
+            throw new Error(`Chunk has non-plain prototype: ${proto?.constructor?.name}`);
+          }
+          
           console.log('🔍 Putting chunk:', {
-            hasId: normalizedChunk.id !== undefined,
-            idValue: normalizedChunk.id,
+            id: normalizedChunk.id,
             snippetId: normalizedChunk.snippet_id,
             chunkIndex: normalizedChunk.chunk_index,
             embeddingLength: normalizedChunk.embedding.length,
             embeddingType: normalizedChunk.embedding.constructor.name,
             allKeys: Object.keys(normalizedChunk),
-            chunkPreview: JSON.stringify(normalizedChunk, (key, value) => {
-              if (key === 'embedding') return `[Array(${value?.length})]`;
-              return value;
-            })
+            idDescriptor: Object.getOwnPropertyDescriptor(normalizedChunk, 'id'),
+            objectType: typeof normalizedChunk,
+            prototypeChainDepth: (() => {
+              let depth = 0;
+              let p = normalizedChunk;
+              while (p && depth < 10) {
+                p = Object.getPrototypeOf(p);
+                depth++;
+              }
+              return depth;
+            })()
           });
           
-          const putRequest = chunksStore.put(normalizedChunk);
+          // Try serializing and deserializing to ensure it's truly plain
+          const serializedTest = JSON.stringify(normalizedChunk);
+          const deserializedTest = JSON.parse(serializedTest);
           
-          putRequest.onerror = () => {
-            console.error('❌ PUT request failed:', {
-              chunk: normalizedChunk,
-              error: putRequest.error,
-              errorName: putRequest.error?.name,
-              errorMessage: putRequest.error?.message
-            });
-          };
+          if (!deserializedTest.id) {
+            throw new Error(`Chunk id lost during JSON serialization! Original: ${normalizedChunk.id}`);
+          }
+          
+          console.log('✅ Chunk survived JSON round-trip with id:', deserializedTest.id);
+          
+          // Await the put operation properly - use the deserialized version
+          await new Promise<void>((resolve, reject) => {
+            const putRequest = chunksStore.put(deserializedTest);
+            
+            putRequest.onsuccess = () => {
+              resolve();
+            };
+            
+            putRequest.onerror = () => {
+              console.error('❌ PUT request failed:', {
+                chunk: normalizedChunk,
+                error: putRequest.error,
+                errorName: putRequest.error?.name,
+                errorMessage: putRequest.error?.message,
+                chunkKeys: Object.keys(normalizedChunk),
+                hasIdProperty: 'id' in normalizedChunk,
+                idValue: normalizedChunk.id
+              });
+              reject(putRequest.error);
+            };
+          });
           
         } catch (putError) {
           console.error('❌ Error putting chunk:', { chunk, error: putError });
@@ -496,12 +606,25 @@ class RAGDatabase {
           score: this.cosineSimilarity(queryEmbedding, chunk.embedding)
         }));
 
+        // Sort all scores to see what we have
+        const sortedScores = [...scores].sort((a, b) => b.score - a.score);
+        
+        // Log top scores for debugging
+        console.log(`🎯 Vector search - Top 10 scores (threshold: ${threshold}):`, 
+          sortedScores.slice(0, 10).map(s => ({
+            score: s.score.toFixed(4),
+            snippet_id: s.snippet_id,
+            chunk_preview: s.chunk_text.substring(0, 100) + '...'
+          }))
+        );
+
         // Filter by threshold and sort by score descending
         const filtered = scores
           .filter(s => s.score >= threshold)
           .sort((a, b) => b.score - a.score)
           .slice(0, topK);
 
+        console.log(`✅ Returning ${filtered.length} results above threshold ${threshold}`);
         resolve(filtered);
       };
 

@@ -16,6 +16,8 @@ const { buildProviderPool, hasAvailableProviders } = require('../credential-pool
 const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
 const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
 const { loadGuardrailConfig, validateGuardrailProvider } = require('../guardrails/config');
+const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
+const { logToBillingSheet } = require('../services/user-billing-sheet');
 
 // Load provider catalog with fallback
 let providerCatalog;
@@ -127,6 +129,30 @@ function buildRuntimeCatalog(baseCatalog, availableProviders) {
     catalog.providers = filteredProviders; // For compatibility with selector
     
     return catalog;
+}
+
+/**
+ * Log transaction to both service account sheet and user's personal billing sheet
+ * @param {string} accessToken - User's OAuth access token (can be null)
+ * @param {object} logData - Transaction data
+ */
+async function logToBothSheets(accessToken, logData) {
+    // Always log to service account sheet (admin tracking)
+    try {
+        await logToGoogleSheets(logData);
+    } catch (error) {
+        console.error('⚠️ Failed to log to service account sheet:', error.message);
+    }
+    
+    // Also log to user's personal billing sheet if token available
+    if (accessToken && logData.userEmail && logData.userEmail !== 'unknown') {
+        try {
+            await logToBillingSheet(accessToken, logData);
+        } catch (error) {
+            console.error('⚠️ Failed to log to user billing sheet:', error.message);
+            // Don't fail the request if user billing logging fails
+        }
+    }
 }
 
 /**
@@ -779,8 +805,14 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
  * @param {Object} responseStream - Lambda response stream
  * @returns {Promise<void>}
  */
-async function handler(event, responseStream) {
+async function handler(event, responseStream, context) {
     const requestStartTime = Date.now(); // Track request start time for logging
+    
+    // Extract Lambda metrics
+    const memoryLimitMB = context?.memoryLimitInMB || 0;
+    const requestId = context?.requestId || '';
+    const memoryUsedMB = (process.memoryUsage().heapUsed / (1024 * 1024)).toFixed(2);
+    
     let sseWriter = null;
     let lastRequestBody = null; // Track last request for error reporting (moved to function scope)
     
@@ -808,6 +840,17 @@ async function handler(event, responseStream) {
         }
         
         sseWriter = createSSEStreamAdapter(responseStream);
+        
+        // Initialize TodosManager for backend-managed multi-step workflows
+        const { TodosManager } = require('../utils/todos-manager');
+        const todosManager = new TodosManager((type, data) => {
+            try {
+                sseWriter.writeEvent(type, data);
+            } catch (err) {
+                console.error(`Failed to emit todos event ${type}:`, err.message);
+            }
+        });
+        console.log('✅ TodosManager initialized for chat session');
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
@@ -1151,6 +1194,37 @@ async function handler(event, responseStream) {
                         if (!body.llmApiCalls) body.llmApiCalls = [];
                         body.llmApiCalls.push(guardrailApiCall);
                         
+                        // Log guardrail input validation to Google Sheets
+                        try {
+                            const promptTokens = inputValidation.tracking.promptTokens || 0;
+                            const completionTokens = inputValidation.tracking.completionTokens || 0;
+                            const totalTokens = promptTokens + completionTokens;
+                            const cost = calculateCost(
+                                inputValidation.tracking.model,
+                                promptTokens,
+                                completionTokens
+                            );
+                            
+                            await logToBothSheets(googleToken, {
+                                userEmail,
+                                provider: inputValidation.tracking.provider,
+                                model: inputValidation.tracking.model,
+                                promptTokens,
+                                completionTokens,
+                                totalTokens,
+                                cost,
+                                duration: inputValidation.tracking.duration || 0,
+                                type: 'guardrail_input',
+                                memoryLimitMB,
+                                memoryUsedMB,
+                                requestId,
+                                error: null
+                            });
+                            console.log(`✅ Logged guardrail input validation: ${inputValidation.tracking.model}, ${totalTokens} tokens, $${cost.toFixed(6)}`);
+                        } catch (logError) {
+                            console.error('⚠️ Failed to log guardrail input to Google Sheets:', logError.message);
+                        }
+                        
                     } catch (error) {
                         console.error('🛡️ Input validation error:', error.message);
                         // Fail safe: if guardrail check fails, block the request
@@ -1485,7 +1559,10 @@ async function handler(event, responseStream) {
             // STEP 11: Pass model context for content optimization
             selectedModel: selectedModel,
             optimization: optimizationPreference,
-            inputTokens: selection?.inputTokens || estimatedInputTokens
+            inputTokens: selection?.inputTokens || estimatedInputTokens,
+            // TodosManager for backend-managed multi-step workflows
+            __todosManager: todosManager,
+            writeEvent: (type, data) => sseWriter.writeEvent(type, data)
         };
         
         const hasToolsConfigured = Array.isArray(tools) && tools.length > 0;
@@ -1502,6 +1579,10 @@ async function handler(event, responseStream) {
         let iterationCount = 0;
         const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 15;
         let jsonToolCallReminderCount = 0;
+        
+        // Todo auto-resubmission tracking
+        let todoAutoIterations = 0;
+        const MAX_TODO_AUTO_ITERATIONS = parseInt(process.env.MAX_TODO_AUTO_ITERATIONS) || 5;
         
         // Track all LLM API calls across iterations
         const allLlmApiCalls = [];
@@ -2952,6 +3033,37 @@ async function handler(event, responseStream) {
                     
                     console.log('🛡️ Output validation PASSED');
                     
+                    // Log guardrail output validation to Google Sheets
+                    try {
+                        const promptTokens = outputValidation.tracking.promptTokens || 0;
+                        const completionTokens = outputValidation.tracking.completionTokens || 0;
+                        const totalTokens = promptTokens + completionTokens;
+                        const cost = calculateCost(
+                            outputValidation.tracking.model,
+                            promptTokens,
+                            completionTokens
+                        );
+                        
+                        await logToBothSheets(googleToken, {
+                            userEmail,
+                            provider: outputValidation.tracking.provider,
+                            model: outputValidation.tracking.model,
+                            promptTokens,
+                            completionTokens,
+                            totalTokens,
+                            cost,
+                            duration: outputValidation.tracking.duration || 0,
+                            type: 'guardrail_output',
+                            memoryLimitMB,
+                            memoryUsedMB,
+                            requestId,
+                            error: null
+                        });
+                        console.log(`✅ Logged guardrail output validation: ${outputValidation.tracking.model}, ${totalTokens} tokens, $${cost.toFixed(6)}`);
+                    } catch (logError) {
+                        console.error('⚠️ Failed to log guardrail output to Google Sheets:', logError.message);
+                    }
+                    
                 } catch (error) {
                     console.error('🛡️ Output validation error:', error.message);
                     // Fail safe: if guardrail check fails, block the output
@@ -3051,7 +3163,56 @@ async function handler(event, responseStream) {
             
             sseWriter.writeEvent('message_complete', messageCompleteData);
             
-            console.log(`✅ Completing request after ${iterationCount} iterations`);
+            // TODOS AUTO-PROGRESSION: Check if we should continue with next todo
+            // Simplified assessor: If we completed successfully (not an error), advance todos
+            const hasError = !assistantMessage.content || assistantMessage.content.includes('I apologize');
+            if (!hasError && todosManager.hasPending() && todoAutoIterations < MAX_TODO_AUTO_ITERATIONS) {
+                const state = todosManager.completeCurrent();
+                console.log(`✅ TodosManager: Completed current todo, ${state.remaining} remaining`);
+                
+                if (state.current && state.remaining > 0) {
+                    todoAutoIterations++;
+                    
+                    // Emit resubmitting event
+                    sseWriter.writeEvent('todos_resubmitting', {
+                        next: state.current.description,
+                        state: state,
+                        iteration: todoAutoIterations,
+                        maxIterations: MAX_TODO_AUTO_ITERATIONS
+                    });
+                    
+                    console.log(`🔄 Auto-resubmitting for next todo (${todoAutoIterations}/${MAX_TODO_AUTO_ITERATIONS}): "${state.current.description}"`);
+                    
+                    // Add a small delay to ensure UI receives the event
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    
+                    // Append synthetic user message for next todo
+                    const syntheticMessage = {
+                        role: 'user',
+                        content: `Continue with the next step: ${state.current.description}`
+                    };
+                    currentMessages.push(syntheticMessage);
+                    
+                    console.log(`📝 Added synthetic user message to continue with next todo`);
+                    console.log(`🔄 Continuing loop for next todo (iteration ${iterationCount + 1})`);
+                    
+                    // Continue the loop - don't break!
+                    continue;
+                }
+            } else if (!hasError && todosManager.hasPending() && todoAutoIterations >= MAX_TODO_AUTO_ITERATIONS) {
+                // Hit the safety limit
+                console.log(`⚠️ Todo auto-iteration limit reached (${MAX_TODO_AUTO_ITERATIONS}). Remaining todos: ${todosManager.getState().remaining}`);
+                sseWriter.writeEvent('todos_limit_reached', {
+                    message: `Auto-progression limit reached (${MAX_TODO_AUTO_ITERATIONS} iterations). Please continue manually.`,
+                    remaining: todosManager.getState().remaining,
+                    current: todosManager.getCurrent()
+                });
+            }
+            
+            console.log(`✅ Completing request after ${iterationCount} iterations (${todoAutoIterations} todo auto-iterations)`);
+            
+            // Exit the loop - all done!
+            break;
             
             // Log to Google Sheets (async, don't block response)
             try {
@@ -3092,18 +3253,24 @@ async function handler(event, responseStream) {
                 }
                 
                 // Log the request (non-blocking)
-                logToGoogleSheets({
+                const cost = calculateCost(model || 'unknown', totalPromptTokens, totalCompletionTokens);
+                logToBothSheets(googleToken, {
                     userEmail: userEmail,
                     provider: provider || 'unknown',
                     model: model || 'unknown',
                     promptTokens: totalPromptTokens,
                     completionTokens: totalCompletionTokens,
                     totalTokens: totalTokens,
-                    durationMs: durationMs,
+                    cost,
+                    duration: durationMs / 1000, // Convert ms to seconds
+                    type: 'chat',
+                    memoryLimitMB,
+                    memoryUsedMB,
+                    requestId,
                     timeToFirstToken: timeToFirstToken || null, // STEP 12: Include TTFT in logs
                     timestamp: new Date().toISOString()
                 }).catch(err => {
-                    console.error('Failed to log to Google Sheets:', err.message);
+                    console.error('Failed to log to sheets:', err.message);
                 });
             } catch (err) {
                 // Don't fail the request if logging fails
@@ -3165,24 +3332,28 @@ async function handler(event, responseStream) {
         
         // Log error to Google Sheets
         try {
-            const { logToGoogleSheets } = require('../services/google-sheets-logger');
             const requestEndTime = Date.now();
             const durationMs = requestStartTime ? (requestEndTime - requestStartTime) : 0;
             
-            logToGoogleSheets({
+            logToBothSheets(googleToken, {
                 userEmail: userEmail,
                 provider: provider || 'unknown',
                 model: model || 'unknown',
                 promptTokens: 0,
                 completionTokens: 0,
                 totalTokens: 0,
-                durationMs: durationMs,
+                cost: 0,
+                duration: durationMs / 1000,
+                type: 'chat',
+                memoryLimitMB,
+                memoryUsedMB,
+                requestId,
                 timestamp: new Date().toISOString(),
                 errorCode: 'MAX_ITERATIONS',
                 errorMessage: `Maximum tool execution iterations reached (${iterationCount})`
-            }).catch(err => console.error('Failed to log error to Google Sheets:', err.message));
+            }).catch(err => console.error('Failed to log error to sheets:', err.message));
         } catch (err) {
-            console.error('Google Sheets error logging failed:', err.message);
+            console.error('Sheets error logging failed:', err.message);
         }
         
         responseStream.end();
@@ -3249,20 +3420,25 @@ async function handler(event, responseStream) {
             // userEmail might not be defined if error occurs before auth
             const logUserEmail = (typeof userEmail !== 'undefined') ? userEmail : 'unknown';
             
-            logToGoogleSheets({
+            logToBothSheets(googleToken, {
                 userEmail: logUserEmail,
                 provider: provider || (lastRequestBody ? lastRequestBody.provider : 'unknown'),
                 model: model || (lastRequestBody ? lastRequestBody.model : 'unknown'),
                 promptTokens: 0,
                 completionTokens: 0,
                 totalTokens: 0,
-                durationMs: durationMs,
+                cost: 0,
+                duration: durationMs / 1000,
+                type: 'chat',
+                memoryLimitMB,
+                memoryUsedMB,
+                requestId,
                 timestamp: new Date().toISOString(),
                 errorCode: error.code || 'ERROR',
                 errorMessage: error.message || 'Internal server error'
-            }).catch(err => console.error('Failed to log error to Google Sheets:', err.message));
+            }).catch(err => console.error('Failed to log error to sheets:', err.message));
         } catch (err) {
-            console.error('Google Sheets error logging failed:', err.message);
+            console.error('Sheets error logging failed:', err.message);
         }
         
         // Only use sseWriter if it was initialized

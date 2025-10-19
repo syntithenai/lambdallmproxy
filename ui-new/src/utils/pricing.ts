@@ -1,7 +1,8 @@
 /**
  * LLM Pricing Information
  * Prices are per million tokens (input and output)
- * Last updated: October 2025
+ * Last updated: October 20, 2025
+ * Source of truth: Must match backend src/services/google-sheets-logger.js PRICING object
  */
 
 export interface ModelPricing {
@@ -36,39 +37,60 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     input: 0.50,
     output: 1.50,
   },
+  'o1-preview': {
+    input: 15.00,
+    output: 60.00,
+  },
+  'o1-mini': {
+    input: 3.00,
+    output: 12.00,
+  },
+  // OpenAI Embedding Models
+  'text-embedding-3-small': {
+    input: 0.02,
+    output: 0.00,  // Embeddings have no output tokens
+  },
+  'text-embedding-3-large': {
+    input: 0.13,
+    output: 0.00,
+  },
+  'text-embedding-ada-002': {
+    input: 0.10,
+    output: 0.00,
+  },
 
-  // Groq Models (Free tier, but using nominal pricing for comparison)
+  // Groq Models (Free tier - $0 per million tokens)
   'llama-3.3-70b-versatile': {
-    input: 0.59,
-    output: 0.79,
+    input: 0.00,
+    output: 0.00,
   },
   'llama-3.1-70b-versatile': {
-    input: 0.59,
-    output: 0.79,
+    input: 0.00,
+    output: 0.00,
   },
   'llama-3.1-8b-instant': {
-    input: 0.05,
-    output: 0.08,
+    input: 0.00,
+    output: 0.00,
   },
   'llama3-70b-8192': {
-    input: 0.59,
-    output: 0.79,
+    input: 0.00,
+    output: 0.00,
   },
   'llama3-8b-8192': {
-    input: 0.05,
-    output: 0.08,
+    input: 0.00,
+    output: 0.00,
   },
   'mixtral-8x7b-32768': {
-    input: 0.24,
-    output: 0.24,
+    input: 0.00,
+    output: 0.00,
   },
   'gemma-7b-it': {
-    input: 0.07,
-    output: 0.07,
+    input: 0.00,
+    output: 0.00,
   },
   'gemma2-9b-it': {
-    input: 0.20,
-    output: 0.20,
+    input: 0.00,
+    output: 0.00,
   },
 
   // Anthropic Models
@@ -95,16 +117,24 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 
   // Together AI Models
   'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8': {
-    input: 0.27,
-    output: 0.85,
+    input: 0.20,
+    output: 0.20,
   },
   'meta-llama/Llama-4-Scout-17B-16E-Instruct': {
-    input: 0.18,
-    output: 0.59,
+    input: 0.20,
+    output: 0.20,
+  },
+  'meta-llama/Llama-3.3-70B-Instruct': {
+    input: 0.88,
+    output: 0.88,
   },
   'meta-llama/Llama-3.3-70B-Instruct-Turbo': {
     input: 0.88,
     output: 0.88,
+  },
+  'meta-llama/Llama-3.1-405B-Instruct': {
+    input: 3.50,
+    output: 3.50,
   },
   'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free': {
     input: 0.00,
@@ -127,28 +157,28 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     output: 0.06,
   },
   'deepseek-ai/DeepSeek-V3.1': {
-    input: 0.60,
-    output: 1.70,
+    input: 0.55,
+    output: 1.10,
   },
   'deepseek-ai/DeepSeek-V3': {
-    input: 1.25,
-    output: 1.25,
+    input: 0.27,
+    output: 1.10,
   },
   'deepseek-ai/DeepSeek-R1': {
-    input: 3.00,
-    output: 7.00,
-  },
-  'deepseek-ai/DeepSeek-R1-0528-tput': {
     input: 0.55,
     output: 2.19,
   },
+  'deepseek-ai/DeepSeek-R1-0528-tput': {
+    input: 0.30,
+    output: 0.60,
+  },
   'deepseek-ai/DeepSeek-R1-Distill-Llama-70B': {
-    input: 2.00,
-    output: 2.00,
+    input: 0.88,
+    output: 0.88,
   },
   'deepseek-ai/DeepSeek-R1-Distill-Qwen-14B': {
-    input: 0.18,
-    output: 0.18,
+    input: 0.20,
+    output: 0.20,
   },
   'openai/gpt-oss-120b': {
     input: 0.15,
@@ -170,6 +200,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     input: 0.65,
     output: 3.00,
   },
+  'Qwen/Qwen2.5-72B-Instruct': {
+    input: 1.20,
+    output: 1.20,
+  },
   'Qwen/Qwen2.5-72B-Instruct-Turbo': {
     input: 1.20,
     output: 1.20,
@@ -179,12 +213,12 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     output: 8.00,
   },
   'Qwen/Qwen2.5-7B-Instruct-Turbo': {
-    input: 0.30,
-    output: 0.30,
+    input: 0.18,
+    output: 0.18,
   },
   'Qwen/Qwen2.5-Coder-32B-Instruct': {
-    input: 0.80,
-    output: 0.80,
+    input: 0.60,
+    output: 0.60,
   },
   'Qwen/QwQ-32B': {
     input: 1.20,
@@ -192,27 +226,27 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   },
   'moonshotai/Kimi-K2-Instruct-0905': {
     input: 1.00,
-    output: 3.00,
+    output: 1.00,
   },
   'moonshotai/Kimi-K2-Instruct': {
     input: 1.00,
-    output: 3.00,
+    output: 1.00,
   },
   'mistralai/Magistral-Small-2506': {
     input: 0.80,
     output: 0.80,
   },
   'mistralai/Mistral-Small-24B-Instruct-2501': {
-    input: 0.80,
-    output: 0.80,
+    input: 0.30,
+    output: 0.30,
   },
   'mistralai/Mixtral-8x7B-v0.1': {
     input: 0.60,
     output: 0.60,
   },
   'zai-org/GLM-4.5-Air-FP8': {
-    input: 0.20,
-    output: 1.10,
+    input: 0.30,
+    output: 0.30,
   },
 
   // Atlas Cloud Models
@@ -231,16 +265,16 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   },
   // Google Gemini via Atlas Cloud
   'gemini-2.5-flash': {
-    input: 0.15,
-    output: 1.25,
+    input: 0.00,  // Free tier (synced with backend)
+    output: 0.00,
   },
   'gemini-2.5-flash-lite': {
     input: 0.05,
     output: 0.20,
   },
   'gemini-2.5-pro': {
-    input: 0.625,
-    output: 5.00,
+    input: 0.00,  // Free tier (synced with backend)
+    output: 0.00,
   },
   // Google Gemini Free API (direct access, not via Atlas Cloud)
   'gemini-2.0-flash': {

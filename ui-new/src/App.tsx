@@ -21,6 +21,7 @@ import { BackgroundPlayer } from './components/BackgroundPlayer';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
 import { SwagPage } from './components/SwagPage';
+import BillingPage from './components/BillingPage';
 import ProviderSetupGate from './components/ProviderSetupGate';
 import { GlobalTTSStopButton } from './components/ReadButton';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -209,6 +210,22 @@ function AppContent() {
               </div>
             )}
             
+            {/* Billing Button */}
+            <button
+              onClick={() => navigate('/billing')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
+                location.pathname === '/billing'
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                  : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+              }`}
+              title="View billing and usage details"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm">Billing</span>
+            </button>
+            
             {location.pathname === '/swag' ? (
               <button
                 onClick={() => navigate('/')}
@@ -270,6 +287,7 @@ function AppContent() {
               } 
             />
             <Route path="/swag" element={<SwagPage />} />
+            <Route path="/billing" element={<BillingPage />} />
           </Routes>
         </div>
       </main>

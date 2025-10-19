@@ -83,6 +83,7 @@ export const SwagPage: React.FC = () => {
   const [searchMode, setSearchMode] = useState<'text' | 'vector'>('text');
   const [vectorSearchResults, setVectorSearchResults] = useState<SearchResult[]>([]);
   const [isVectorSearching, setIsVectorSearching] = useState(false);
+  const [hasRunVectorSearch, setHasRunVectorSearch] = useState(false);
   
   // Embedding state
   const [isEmbedding, setIsEmbedding] = useState(false);
@@ -98,6 +99,10 @@ export const SwagPage: React.FC = () => {
     total: number;
     status: string;
   } | null>(null);
+  
+  // Drag and drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragCounter, setDragCounter] = useState(0);
   
   // Confirmation dialog state for tag deletion
   const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState(false);
@@ -610,6 +615,50 @@ export const SwagPage: React.FC = () => {
     }
   };
 
+  // Drag and drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setDragCounter(prev => prev + 1);
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setDragCounter(prev => {
+      const newCount = prev - 1;
+      if (newCount === 0) {
+        setIsDragging(false);
+      }
+      return newCount;
+    });
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setIsDragging(false);
+    setDragCounter(0);
+    
+    const files = Array.from(e.dataTransfer.files);
+    
+    if (files.length > 0) {
+      console.log(`📦 Dropped ${files.length} file(s)`);
+      await handleUploadDocuments(files, []);
+    }
+  };
+
   const handleTagOperation = () => {
     if (tagDialogMode === 'filter') {
       // Apply tag filters
@@ -720,15 +769,35 @@ export const SwagPage: React.FC = () => {
       }
       
       // Get threshold from settings, default to 0.5 (lowered from 0.6 for better recall)
+      const ragConfig = JSON.parse(localStorage.getItem('rag_config') || '{}');
       const threshold = ragConfig.similarityThreshold ?? 0.5;
-      console.log(`🔍 Vector search with threshold: ${threshold}`);
+      console.log(`🔍 Vector search with threshold: ${threshold}, query: "${vectorSearchQuery}"`);
+      
+      // Check how many embeddings exist in IndexedDB
+      const allChunks = await ragDB.getAllChunks();
+      console.log(`📊 Total chunks in IndexedDB: ${allChunks.length}`);
+      
+      if (allChunks.length === 0) {
+        showWarning('No embeddings found in database. Generate embeddings first using "Add to Search Index".');
+        setVectorSearchResults([]);
+        setHasRunVectorSearch(true);
+        return;
+      }
       
       // Search locally in IndexedDB
       const results = await ragDB.vectorSearch(embedding, 10, threshold);
+      console.log(`🎯 Vector search results:`, {
+        resultsCount: results.length,
+        threshold,
+        scores: results.map(r => r.score.toFixed(3)),
+        snippetIds: results.map(r => r.snippet_id)
+      });
+      
       setVectorSearchResults(results);
+      setHasRunVectorSearch(true); // Mark that we've run a vector search
       
       if (results.length === 0) {
-        showWarning('No similar content found. Try lowering the threshold or generating embeddings first.');
+        showWarning(`No similar content found with threshold ${threshold}. Try lowering the threshold in RAG settings or generate more embeddings.`);
       } else {
         showSuccess(`Found ${results.length} similar chunks (scores: ${results[0].score.toFixed(3)}-${results[results.length-1].score.toFixed(3)})`);
       }
@@ -751,14 +820,42 @@ export const SwagPage: React.FC = () => {
 
   // Filter snippets based on search mode and query
   const displaySnippets = (() => {
-    // Vector search mode - use search results
-    if (searchMode === 'vector' && vectorSearchResults.length > 0) {
+    // Vector search mode
+    if (searchMode === 'vector') {
+      console.log('🔍 Vector search mode active', {
+        hasRunVectorSearch,
+        vectorSearchResultsCount: vectorSearchResults.length,
+        snippetsCount: snippets.length
+      });
+      
+      // If no search has been run yet, show empty results
+      if (!hasRunVectorSearch) {
+        console.log('⏸️ No vector search run yet, showing empty');
+        return [];
+      }
+      
+      // If search has been run, show the results (even if empty)
+      if (vectorSearchResults.length === 0) {
+        console.log('📭 Vector search returned no results');
+        return []; // Search was run but no results found
+      }
+      
       // Deduplicate by snippet_id (multiple chunks may match from same snippet)
       const snippetMap = new Map<string, { snippet: ContentSnippet; score: number }>();
       
+      console.log('🔄 Processing vector search results:', vectorSearchResults.map(r => ({
+        snippet_id: r.snippet_id,
+        score: r.score,
+        chunk_id: r.chunk_id
+      })));
+      
       for (const result of vectorSearchResults) {
         const snippet = snippets.find(s => s.id === result.snippet_id);
-        if (!snippet) continue;
+        
+        if (!snippet) {
+          console.warn('⚠️ Snippet not found for ID:', result.snippet_id, 'Available IDs:', snippets.map(s => s.id).slice(0, 5));
+          continue;
+        }
         
         // Apply tag filters if any
         if (searchTags.length > 0) {
@@ -775,9 +872,12 @@ export const SwagPage: React.FC = () => {
       }
       
       // Convert map back to array with score attached
-      return Array.from(snippetMap.values())
+      const finalResults = Array.from(snippetMap.values())
         .map(({ snippet, score }) => ({ ...snippet, _searchScore: score }))
         .sort((a, b) => b._searchScore - a._searchScore);
+      
+      console.log('✅ Returning vector search results:', finalResults.length, 'snippets');
+      return finalResults;
     }
     
     // Text search mode - use original filtering
@@ -809,7 +909,32 @@ export const SwagPage: React.FC = () => {
   })();
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div 
+      className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drag and Drop Overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 bg-blue-500/20 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 border-4 border-dashed border-blue-500 dark:border-blue-400">
+            <div className="flex flex-col items-center gap-4">
+              <svg className="w-16 h-16 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <div className="text-center">
+                <p className="text-xl font-bold text-gray-900 dark:text-white">Drop Documents Here</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                  Upload files to add them as snippets
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
         <div className="flex items-center justify-between gap-4 mb-2">
@@ -891,7 +1016,10 @@ export const SwagPage: React.FC = () => {
               {/* Search Mode Toggle */}
               <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded p-1 flex-shrink-0">
                 <button
-                  onClick={() => setSearchMode('text')}
+                  onClick={() => {
+                    setSearchMode('text');
+                    // Don't clear vector results - keep them for when user switches back
+                  }}
                   className={`px-3 py-1.5 text-sm rounded transition-colors ${
                     searchMode === 'text'
                       ? 'bg-white dark:bg-gray-800 text-blue-600 font-medium shadow-sm'
@@ -901,7 +1029,10 @@ export const SwagPage: React.FC = () => {
                   Text
                 </button>
                 <button
-                  onClick={() => setSearchMode('vector')}
+                  onClick={() => {
+                    setSearchMode('vector');
+                    // Keep previous vector search results when switching back
+                  }}
                   className={`px-3 py-1.5 text-sm rounded transition-colors ${
                     searchMode === 'vector'
                       ? 'bg-white dark:bg-gray-800 text-blue-600 font-medium shadow-sm'
@@ -945,6 +1076,7 @@ export const SwagPage: React.FC = () => {
                         } else {
                           setVectorSearchQuery('');
                           setVectorSearchResults([]);
+                          setHasRunVectorSearch(false); // Reset the flag when clearing
                         }
                       }}
                       className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
@@ -1013,7 +1145,7 @@ export const SwagPage: React.FC = () => {
             </span>
 
             <select
-              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm min-w-[200px] border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
               onChange={(e) => {
                 const value = e.target.value;
                 console.log('📝 Dropdown changed:', value);
@@ -1048,32 +1180,6 @@ export const SwagPage: React.FC = () => {
                 )}
                 <option value="new-doc">📄 New Google Doc</option>
               </optgroup>
-            </select>
-
-            {/* Google Docs Dropdown */}
-            <select
-              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              onChange={(e) => {
-                const docId = e.target.value;
-                if (docId) {
-                  handleOpenDoc(docId);
-                  e.target.value = ''; // Reset selection
-                }
-              }}
-              value=""
-            >
-              <option value="">Documents</option>
-              {googleDocs.length === 0 ? (
-                <option value="" disabled>
-                  {loading ? 'Loading...' : 'No documents'}
-                </option>
-              ) : (
-                googleDocs.map(doc => (
-                  <option key={doc.id} value={doc.id}>
-                    {doc.name}
-                  </option>
-                ))
-              )}
             </select>
           </div>
         )}
@@ -1140,6 +1246,31 @@ export const SwagPage: React.FC = () => {
                     className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                   />
                 </div>
+
+                {/* Cast Button - Top Right */}
+                {isCastAvailable && (
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={() => {
+                        castSnippet({
+                          id: snippet.id,
+                          content: snippet.content,
+                          title: snippet.title,
+                          tags: snippet.tags,
+                          created: new Date(snippet.timestamp),
+                          modified: snippet.updateDate ? new Date(snippet.updateDate) : new Date(snippet.timestamp)
+                        });
+                        showSuccess(`Casting snippet to ${isCastConnected ? 'TV' : 'Chromecast'}`);
+                      }}
+                      className="p-2 text-sm bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors shadow-md"
+                      title="Cast to TV"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                      </svg>
+                    </button>
+                  </div>
+                )}
 
                 {/* Content */}
                 <div className="p-4 pt-10">
@@ -1282,27 +1413,6 @@ export const SwagPage: React.FC = () => {
                     >
                       Edit
                     </button>
-                    {isCastAvailable && (
-                      <button
-                        onClick={() => {
-                          castSnippet({
-                            id: snippet.id,
-                            content: snippet.content,
-                            title: snippet.title,
-                            tags: snippet.tags,
-                            created: new Date(snippet.timestamp),
-                            modified: snippet.updateDate ? new Date(snippet.updateDate) : new Date(snippet.timestamp)
-                          });
-                          showSuccess(`Casting snippet to ${isCastConnected ? 'TV' : 'Chromecast'}`);
-                        }}
-                        className="p-2 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
-                        title="Cast to TV"
-                      >
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>

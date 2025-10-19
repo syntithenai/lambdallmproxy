@@ -27,6 +27,7 @@ const proxyImageEndpoint = require('./endpoints/proxy-image');
 // Lazy-load rag-sync endpoint (requires googleapis)
 // const ragSyncEndpoint = require('./endpoints/rag-sync');
 const ragEndpoint = require('./endpoints/rag');
+const billingEndpoint = require('./endpoints/billing');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 const { handleUsageRequest } = require('./endpoints/usage');
 const { resetMemoryTracker } = require('./utils/memory-tracker');
@@ -133,19 +134,19 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         
         if (method === 'POST' && path === '/planning') {
             console.log('Routing to planning endpoint');
-            await planningEndpoint.handler(event, responseStream);
+            await planningEndpoint.handler(event, responseStream, context);
             return;
         }
         
         if (method === 'POST' && path === '/search') {
             console.log('Routing to search endpoint');
-            await searchEndpoint.handler(event, responseStream);
+            await searchEndpoint.handler(event, responseStream, context);
             return;
         }
         
         if (method === 'POST' && path === '/chat') {
             console.log('Routing to chat endpoint');
-            await chatEndpoint.handler(event, responseStream);
+            await chatEndpoint.handler(event, responseStream, context);
             return;
         }
         
@@ -168,19 +169,32 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         // RAG endpoints (embed-snippets, embed-query, user-spreadsheet, sync-embeddings, ingest, embedding-status, embedding-details)
         if (method === 'POST' && (path === '/rag/embed-snippets' || path === '/rag/embed-query' || path === '/rag/ingest' || path === '/rag/embedding-details')) {
             console.log(`Routing to rag endpoint: ${path}`);
-            await ragEndpoint.handler(event, responseStream);
+            await ragEndpoint.handler(event, responseStream, context);
             return;
         }
 
         if (method === 'GET' && (path === '/rag/user-spreadsheet' || path.startsWith('/rag/embedding-status/'))) {
             console.log(`Routing to rag endpoint: ${path}`);
-            await ragEndpoint.handler(event, responseStream);
+            await ragEndpoint.handler(event, responseStream, context);
             return;
         }
         
         if (method === 'POST' && path === '/rag/sync-embeddings') {
             console.log(`Routing to rag endpoint: ${path}`);
-            await ragEndpoint.handler(event, responseStream);
+            await ragEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        // Billing endpoints
+        if (method === 'GET' && path === '/billing') {
+            console.log('Routing to billing endpoint: GET /billing');
+            await billingEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        if (method === 'DELETE' && path === '/billing/clear') {
+            console.log('Routing to billing endpoint: DELETE /billing/clear');
+            await billingEndpoint.handler(event, responseStream, context);
             return;
         }
         

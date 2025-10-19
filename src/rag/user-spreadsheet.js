@@ -259,7 +259,7 @@ async function createSpreadsheet(accessToken, title, folderId = null) {
 async function initializeSheetHeaders(accessToken, spreadsheetId) {
     const headers = {
         'RAG_Snippets_v1': [
-            ['id', 'title', 'content', 'source', 'tags', 'created_at', 'updated_at', 'user_email']
+            ['id', 'title', 'content', 'source', 'tags', 'created_at', 'updated_at', 'source_type', 'chunk_index', 'total_chunks']
         ],
         'RAG_Embeddings_v1': [
             ['id', 'snippet_id', 'chunk_index', 'chunk_text', 'embedding', 'embedding_model', 'created_at']

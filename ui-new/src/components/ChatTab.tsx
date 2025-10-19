@@ -234,6 +234,16 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [ragSearching, setRagSearching] = useState(false);
   const [ragThreshold, setRagThreshold] = useState(0.5); // Default to 0.5 (lowered for better recall)
   
+  // Todos state (backend-managed multi-step workflows)
+  const [todosState, setTodosState] = useState<{
+    total: number;
+    remaining: number;
+    current: { id: string | number; description: string; status?: string } | null;
+    items: Array<{ id: string | number; description: string; status: string }>;
+  } | null>(null);
+  const [todosExpanded, setTodosExpanded] = useState(false);
+  const [todosResubmitting, setTodosResubmitting] = useState<string | null>(null);
+  
   // Load RAG threshold from settings
   useEffect(() => {
     const savedConfig = localStorage.getItem('rag_config');
@@ -2677,6 +2687,42 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 return newMessages;
               });
               break;
+            
+            case 'todos_updated':
+              // Full todos state update
+              console.log('✅ Todos updated:', data);
+              setTodosState({
+                total: data.total ?? 0,
+                remaining: data.remaining ?? 0,
+                current: data.current ?? null,
+                items: Array.isArray(data.items) ? data.items : []
+              });
+              break;
+            
+            case 'todos_current':
+              // Lightweight current todo update
+              console.log('✅ Todos current update:', data);
+              setTodosState(prev => ({
+                total: data.total ?? (prev?.total ?? 0),
+                remaining: data.remaining ?? (prev?.remaining ?? 0),
+                current: data.current ?? prev?.current ?? null,
+                items: prev?.items ?? []
+              }));
+              break;
+            
+            case 'todos_resubmitting':
+              // Auto-resubmission notification
+              console.log('🔄 Todos resubmitting:', data);
+              setTodosResubmitting(data?.next || data?.state?.current?.description || null);
+              // Clear after 2 seconds
+              setTimeout(() => setTodosResubmitting(null), 2000);
+              break;
+            
+            case 'todos_limit_reached':
+              // Auto-progression limit reached
+              console.log('⚠️ Todos limit reached:', data);
+              showWarning(data.message || 'Todo auto-progression limit reached. Please continue manually.');
+              break;
           }
         },
         () => {
@@ -3054,6 +3100,42 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               if (data.cost && typeof data.cost === 'number') {
                 addCost(data.cost);
               }
+              break;
+            
+            case 'todos_updated':
+              // Full todos state update
+              console.log('✅ Todos updated:', data);
+              setTodosState({
+                total: data.total ?? 0,
+                remaining: data.remaining ?? 0,
+                current: data.current ?? null,
+                items: Array.isArray(data.items) ? data.items : []
+              });
+              break;
+            
+            case 'todos_current':
+              // Lightweight current todo update
+              console.log('✅ Todos current update:', data);
+              setTodosState(prev => ({
+                total: data.total ?? (prev?.total ?? 0),
+                remaining: data.remaining ?? (prev?.remaining ?? 0),
+                current: data.current ?? prev?.current ?? null,
+                items: prev?.items ?? []
+              }));
+              break;
+            
+            case 'todos_resubmitting':
+              // Auto-resubmission notification
+              console.log('🔄 Todos resubmitting:', data);
+              setTodosResubmitting(data?.next || data?.state?.current?.description || null);
+              // Clear after 2 seconds
+              setTimeout(() => setTodosResubmitting(null), 2000);
+              break;
+            
+            case 'todos_limit_reached':
+              // Auto-progression limit reached
+              console.log('⚠️ Todos limit reached:', data);
+              showWarning(data.message || 'Todo auto-progression limit reached. Please continue manually.');
               break;
               
             // Add other necessary event handlers as needed
@@ -4839,6 +4921,51 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             </div>
           )}
           
+          {/* Todos Panel - Backend-managed multi-step workflows */}
+          {todosState && todosState.total > 0 && (
+            <div className="mb-3 p-3 border border-yellow-200 dark:border-yellow-800 rounded bg-yellow-50 dark:bg-yellow-900/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-yellow-900 dark:text-yellow-200 font-semibold text-sm">
+                  <span>✅ Todos</span>
+                  <span className="text-xs font-normal text-yellow-700 dark:text-yellow-300">
+                    {todosState.total} total • {todosState.remaining} remaining
+                  </span>
+                  {todosResubmitting && (
+                    <span className="ml-2 text-xs italic text-yellow-800 dark:text-yellow-300 animate-pulse">
+                      🔄 Continuing: {todosResubmitting}
+                    </span>
+                  )}
+                </div>
+                <button 
+                  className="text-xs text-yellow-800 dark:text-yellow-300 hover:underline focus:outline-none"
+                  onClick={() => setTodosExpanded(v => !v)}
+                >
+                  {todosExpanded ? '▾ Collapse' : '▸ Expand'}
+                </button>
+              </div>
+              <div className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                <span className="font-medium">Current:</span> {todosState.current?.description || '—'}
+              </div>
+              {todosExpanded && (
+                <ul className="mt-2 max-h-48 overflow-y-auto text-sm divide-y divide-yellow-200 dark:divide-yellow-800 bg-white dark:bg-gray-800 rounded p-2">
+                  {todosState.items.map((item, idx) => (
+                    <li 
+                      key={String(item.id) || idx} 
+                      className="py-1.5 flex items-start gap-2 text-gray-900 dark:text-gray-100"
+                    >
+                      <span className="mt-0.5 text-xs flex-shrink-0">
+                        {item.status === 'done' ? '✔️' : item.status === 'current' ? '🟡' : '⏳'}
+                      </span>
+                      <span className={`flex-1 ${item.status === 'done' ? 'line-through opacity-60' : ''}`}>
+                        {item.description}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          
           {/* Continue Button for Error Recovery */}
           {showContinueButton && continueContext && (
             <div className="flex justify-center py-3">
@@ -5441,6 +5568,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {showErrorInfo !== null && messages[showErrorInfo]?.errorData && (
         <ErrorInfoDialog 
           errorData={messages[showErrorInfo].errorData}
+          llmApiCalls={messages[showErrorInfo].llmApiCalls}
           onClose={() => setShowErrorInfo(null)}
         />
       )}
