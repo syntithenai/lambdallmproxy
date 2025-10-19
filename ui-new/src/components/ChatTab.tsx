@@ -12,6 +12,7 @@ import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
+import { ragDB } from '../utils/ragDB';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
 import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -227,6 +228,26 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // Prompt history for up/down arrow navigation
   const [promptHistory, setPromptHistory] = useLocalStorage<string[]>('chat_prompt_history', []);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  
+  // RAG context integration
+  const [useRagContext, setUseRagContext] = useLocalStorage<boolean>('chat_use_rag', false);
+  const [ragSearching, setRagSearching] = useState(false);
+  const [ragThreshold, setRagThreshold] = useState(0.5); // Default to 0.5 (lowered for better recall)
+  
+  // Load RAG threshold from settings
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('rag_config');
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig);
+        if (config.similarityThreshold !== undefined) {
+          setRagThreshold(config.similarityThreshold);
+        }
+      } catch (error) {
+        console.error('Failed to parse RAG config:', error);
+      }
+    }
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1505,6 +1526,74 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setTranscriptionProgress(new Map());
     setExtractionData(new Map());
 
+    // RAG Context Integration: Search for relevant context if enabled
+    let ragContextMessage: ChatMessage | null = null;
+    if (useRagContext && textToSend.trim()) {
+      setRagSearching(true);
+      try {
+        // Get query embedding from backend
+        const apiUrl = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+        const embedResponse = await fetch(`${apiUrl}/rag/embed-query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: textToSend })
+        });
+        
+        if (embedResponse.ok) {
+          const { embedding } = await embedResponse.json();
+          
+          console.log(`🔍 RAG search with threshold: ${ragThreshold}`);
+          
+          // Search locally in IndexedDB using configured threshold
+          const results = await ragDB.vectorSearch(embedding, 5, ragThreshold);
+          
+          if (results.length > 0) {
+            // Format RAG context as a system message
+            let contextText = '**KNOWLEDGE BASE CONTEXT:**\n\nThe following information from the user\'s knowledge base may be relevant to this query:\n\n';
+            
+            for (let idx = 0; idx < results.length; idx++) {
+              const result = results[idx];
+              contextText += `**[Context ${idx + 1} - Similarity: ${result.score.toFixed(3)}]**\n`;
+              contextText += `${result.chunk_text}\n\n`;
+              
+              // Try to get metadata for this snippet
+              try {
+                const details = await ragDB.getEmbeddingDetails(result.snippet_id);
+                if (details.metadata) {
+                  contextText += `*Source: ${details.metadata.source_type || 'Unknown'}`;
+                  if (details.metadata.title) {
+                    contextText += ` - "${details.metadata.title}"`;
+                  }
+                  contextText += `*\n\n`;
+                }
+              } catch (e) {
+                // Metadata not available, skip
+              }
+              
+              contextText += '---\n\n';
+            }
+            
+            contextText += `**USER QUESTION:** ${textToSend}\n\n`;
+            contextText += `Please answer the user's question using the context provided above. If the context is relevant, reference it in your answer. If the context is not helpful, you may answer based on your general knowledge.`;
+            
+            ragContextMessage = {
+              role: 'system',
+              content: contextText
+            };
+            
+            showSuccess(`🔍 Found ${results.length} relevant chunks from knowledge base`);
+          } else {
+            showWarning('No relevant context found in knowledge base');
+          }
+        }
+      } catch (error) {
+        console.error('RAG context error:', error);
+        showWarning('Failed to retrieve RAG context, continuing without it');
+      } finally {
+        setRagSearching(false);
+      }
+    }
+
     // Create new abort controller
     abortControllerRef.current = new AbortController();
 
@@ -1673,11 +1762,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         console.log(`   Sending ${filteredMessages.length} clean messages + new user message to Lambda`);
       }
       
+      // Build messages array with system prompt, RAG context (if any), history, and user message
       const messagesWithSystem = [
         { role: 'system' as const, content: finalSystemPrompt },
+        ...(ragContextMessage ? [ragContextMessage] : []), // Insert RAG context after system prompt
         ...filteredMessages,
         userMessage
       ];
+      
+      if (ragContextMessage) {
+        console.log('🔍 RAG context included in request');
+      }
       
       // Clean UI-only fields before sending to API
       const cleanedMessages = messagesWithSystem.map(msg => {
@@ -4761,6 +4856,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             </div>
           )}
           
+          {/* RAG Context Toggle */}
           {/* Message Input */}
           <div className="flex gap-2">
             {/* Hidden File Input */}

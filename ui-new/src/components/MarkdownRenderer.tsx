@@ -423,8 +423,13 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
           
           // Images - render with proper styling, handle data URLs explicitly
           img: ({ src, alt }) => {
-            // Ensure src is a string and handle data URLs
-            const imgSrc = typeof src === 'string' ? src : '';
+            // Ensure src is a string and not empty
+            const imgSrc = typeof src === 'string' && src.trim() !== '' ? src : null;
+            
+            // Don't render if no valid src
+            if (!imgSrc) {
+              return null;
+            }
             
             return (
               <img

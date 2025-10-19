@@ -9,9 +9,9 @@
 const chunker = require('./chunker');
 const embeddings = require('./embeddings');
 const storage = require('./indexeddb-storage');
-const search = require('./search');
-const ragIntegration = require('./rag-integration');
-const sheetsStorage = require('./sheets-storage');
+// const search = require('./search'); // Not used in browser-first architecture
+// const ragIntegration = require('./rag-integration'); // Not used - depends on search.js
+// const sheetsStorage = require('./sheets-storage'); // Not used by rag.js endpoints - used directly by rag-sync.js
 
 /**
  * Initialize RAG system
@@ -109,11 +109,10 @@ async function processSnippet(snippet, apiKeys, options = {}) {
 
 /**
  * Search workflow: Query → Embed → Search → Format
- * @param {string} query - Search query
- * @param {object} apiKeys - API keys
- * @param {object} options - Search options
- * @returns {Promise<object>} Search results
+ * NOT USED - Vector search done in browser with ragDB.vectorSearch()
+ * Keeping for reference but commented out
  */
+/*
 async function searchSnippets(query, apiKeys, options = {}) {
   const config = await storage.getRAGConfig();
   
@@ -164,16 +163,17 @@ async function searchSnippets(query, apiKeys, options = {}) {
     ragEnabled: true,
   };
 }
+*/
 
 /**
- * Full sync workflow with Google Sheets
- * @param {object} sheetsClient - Google Sheets API client
- * @param {string} spreadsheetId - Spreadsheet ID
- * @returns {Promise<object>} Sync results
+ * Sync with Google Sheets
+ * NOT USED - Handled by /rag/sync-embeddings endpoint
  */
+/*
 async function syncWithGoogleSheets(sheetsClient, spreadsheetId) {
   return sheetsStorage.bidirectionalSync(sheetsClient, spreadsheetId);
 }
+*/
 
 /**
  * Get comprehensive RAG system status
@@ -229,15 +229,15 @@ module.exports = {
   chunker,
   embeddings,
   storage,
-  search,
-  ragIntegration,
-  sheetsStorage,
+  // search, // Not used in browser-first architecture
+  // ragIntegration, // Not used - depends on search.js
+  // sheetsStorage, // Not used by rag.js endpoints
   
   // High-level workflows
   initializeRAG,
   processSnippet,
-  searchSnippets,
-  syncWithGoogleSheets,
+  // searchSnippets, // Not used - vector search done in browser
+  // syncWithGoogleSheets, // Not used - handled by rag-sync.js endpoint
   getSystemStatus,
   estimateBatchCost,
   
@@ -245,7 +245,12 @@ module.exports = {
   chunkText: chunker.chunkText,
   generateEmbedding: embeddings.generateEmbedding,
   batchGenerateEmbeddings: embeddings.batchGenerateEmbeddings,
-  searchChunks: search.searchChunks,
-  enhanceQueryWithRAG: ragIntegration.enhanceQueryWithRAG,
-  autoEmbedSnippet: ragIntegration.autoEmbedSnippet,
+  // searchChunks: search.searchChunks, // Not used
+  // enhanceQueryWithRAG: ragIntegration.enhanceQueryWithRAG, // Not used
+  // autoEmbedSnippet: ragIntegration.autoEmbedSnippet, // Not used
+  
+  // Import from libsql-storage (for Lambda backend) - NOT USED in browser-first architecture
+  // ingestDocument: require('./ingest').ingestDocument,
+  // hasEmbedding: require('./libsql-storage').hasEmbedding,
+  // getEmbeddingDetails: require('./libsql-storage').getEmbeddingDetails,
 };

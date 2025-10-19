@@ -65,7 +65,7 @@ cp "$OLDPWD"/src/groq-rate-limits.js ./
 cp "$OLDPWD"/src/youtube-api.js ./ 2>/dev/null || true
 
 # Copy modular components
-mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers guardrails providers
+mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers guardrails providers rag
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
@@ -79,6 +79,7 @@ cp -r "$OLDPWD"/src/mcp/* ./mcp/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/guardrails/* ./guardrails/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/providers/* ./providers/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/rag/* ./rag/ 2>/dev/null || true
 
 # Copy PROVIDER_CATALOG.json (required for image generation)
 if cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null; then
@@ -86,6 +87,14 @@ if cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null; then
     ls -lh PROVIDER_CATALOG.json
 else
     echo -e "${RED}❌ Failed to copy PROVIDER_CATALOG.json${NC}"
+fi
+
+# Copy EMBEDDING_MODELS_CATALOG.json (required for RAG)
+if cp "$OLDPWD"/EMBEDDING_MODELS_CATALOG.json ./ 2>/dev/null; then
+    echo -e "${GREEN}✅ Copied EMBEDDING_MODELS_CATALOG.json${NC}"
+    ls -lh EMBEDDING_MODELS_CATALOG.json
+else
+    echo -e "${YELLOW}⚠️  EMBEDDING_MODELS_CATALOG.json not found (RAG embeddings may not work)${NC}"
 fi
 
 # List files

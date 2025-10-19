@@ -22,8 +22,11 @@ const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
 const proxyImageEndpoint = require('./endpoints/proxy-image');
-const convertEndpoint = require('./endpoints/convert');
-const ragSyncEndpoint = require('./endpoints/rag-sync');
+// Lazy-load convert endpoint (requires heavy dependencies like mammoth)
+// const convertEndpoint = require('./endpoints/convert');
+// Lazy-load rag-sync endpoint (requires googleapis)
+// const ragSyncEndpoint = require('./endpoints/rag-sync');
+const ragEndpoint = require('./endpoints/rag');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 const { handleUsageRequest } = require('./endpoints/usage');
 const { resetMemoryTracker } = require('./utils/memory-tracker');
@@ -107,6 +110,27 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         }
         
         // Route to appropriate endpoint with responseStream
+        
+        // Health check endpoint for local development
+        if (method === 'GET' && path === '/health') {
+            console.log('Health check request');
+            const metadata = {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ 
+                status: 'ok', 
+                timestamp: new Date().toISOString(),
+                env: process.env.NODE_ENV || 'development'
+            }));
+            responseStream.end();
+            return;
+        }
+        
         if (method === 'POST' && path === '/planning') {
             console.log('Routing to planning endpoint');
             await planningEndpoint.handler(event, responseStream);
@@ -127,13 +151,36 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         
         if (method === 'POST' && path === '/convert-to-markdown') {
             console.log('Routing to convert-to-markdown endpoint');
+            // Lazy-load convert endpoint
+            const convertEndpoint = require('./endpoints/convert');
             await convertEndpoint.handler(event, responseStream);
             return;
         }
         
         if (method === 'POST' && path === '/rag/sync') {
             console.log('Routing to rag-sync endpoint');
+            // Lazy-load rag-sync endpoint
+            const ragSyncEndpoint = require('./endpoints/rag-sync');
             await ragSyncEndpoint.handler(event, responseStream);
+            return;
+        }
+
+        // RAG endpoints (embed-snippets, embed-query, user-spreadsheet, sync-embeddings, ingest, embedding-status, embedding-details)
+        if (method === 'POST' && (path === '/rag/embed-snippets' || path === '/rag/embed-query' || path === '/rag/ingest' || path === '/rag/embedding-details')) {
+            console.log(`Routing to rag endpoint: ${path}`);
+            await ragEndpoint.handler(event, responseStream);
+            return;
+        }
+
+        if (method === 'GET' && (path === '/rag/user-spreadsheet' || path.startsWith('/rag/embedding-status/'))) {
+            console.log(`Routing to rag endpoint: ${path}`);
+            await ragEndpoint.handler(event, responseStream);
+            return;
+        }
+        
+        if (method === 'POST' && path === '/rag/sync-embeddings') {
+            console.log(`Routing to rag endpoint: ${path}`);
+            await ragEndpoint.handler(event, responseStream);
             return;
         }
         

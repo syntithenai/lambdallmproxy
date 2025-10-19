@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear RAG Database</title>
+</head>
+<body>
+    <h1>Clear RAG IndexedDB</h1>
+    <button onclick="clearDB()">Clear Database</button>
+    <pre id="output"></pre>
+
+    <script>
+        async function clearDB() {
+            const output = document.getElementById('output');
+            output.textContent = 'Clearing database...\n';
+            
+            try {
+                // Close any open connections
+                const dbName = 'rag_embeddings';
+                
+                // Delete the database
+                const deleteRequest = indexedDB.deleteDatabase(dbName);
+                
+                deleteRequest.onsuccess = () => {
+                    output.textContent += '✅ Database deleted successfully!\n';
+                    output.textContent += 'You can now close this page and reload the app.\n';
+                };
+                
+                deleteRequest.onerror = () => {
+                    output.textContent += '❌ Error deleting database: ' + deleteRequest.error + '\n';
+                };
+                
+                deleteRequest.onblocked = () => {
+                    output.textContent += '⚠️ Database deletion blocked. Close all tabs using the app and try again.\n';
+                };
+                
+            } catch (error) {
+                output.textContent += '❌ Error: ' + error.message + '\n';
+            }
+        }
+    </script>
+</body>
+</html>

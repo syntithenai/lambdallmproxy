@@ -5,7 +5,13 @@
  * with automatic retry logic, rate limiting, and cost tracking.
  */
 
-const embeddingCatalog = require('../../EMBEDDING_MODELS_CATALOG.json');
+// Try both paths (local dev vs Lambda deployment)
+let embeddingCatalog;
+try {
+  embeddingCatalog = require('../../EMBEDDING_MODELS_CATALOG.json');
+} catch (e) {
+  embeddingCatalog = require('../EMBEDDING_MODELS_CATALOG.json');
+}
 
 // Provider-specific API endpoints
 const PROVIDER_ENDPOINTS = {

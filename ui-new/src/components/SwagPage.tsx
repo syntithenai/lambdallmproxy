@@ -18,6 +18,8 @@ import {
   initGoogleAuth 
 } from '../utils/googleDocs';
 import type { GoogleDoc } from '../utils/googleDocs';
+import { ragDB } from '../utils/ragDB';
+import type { SearchResult } from '../utils/ragDB';
 
 export const SwagPage: React.FC = () => {
   const { showSuccess, showError, showWarning } = useToast();
@@ -35,6 +37,7 @@ export const SwagPage: React.FC = () => {
     addTagsToSnippets,
     removeTagsFromSnippets,
     storageStats,
+    getEmbeddingDetails,
     generateEmbeddings
   } = useSwag();
   const { 
@@ -68,10 +71,18 @@ export const SwagPage: React.FC = () => {
   const [showTagDialog, setShowTagDialog] = useState(false);
   const [tagDialogMode, setTagDialogMode] = useState<'add' | 'remove' | 'filter'>('add');
   const [selectedTagsForOperation, setSelectedTagsForOperation] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Separate search state for text and vector modes
+  const [textSearchQuery, setTextSearchQuery] = useState('');
+  const [vectorSearchQuery, setVectorSearchQuery] = useState('');
   const [searchTags, setSearchTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [docsLoaded, setDocsLoaded] = useState(false);
+  
+  // Vector search state
+  const [searchMode, setSearchMode] = useState<'text' | 'vector'>('text');
+  const [vectorSearchResults, setVectorSearchResults] = useState<SearchResult[]>([]);
+  const [isVectorSearching, setIsVectorSearching] = useState(false);
   
   // Embedding state
   const [isEmbedding, setIsEmbedding] = useState(false);
@@ -90,8 +101,51 @@ export const SwagPage: React.FC = () => {
   
   // Confirmation dialog state for tag deletion
   const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState(false);
+  
+  // Load RAG config for similarity threshold
+  const [ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
+  
+  useEffect(() => {
+    const loadRagConfig = () => {
+      const savedConfig = localStorage.getItem('rag_config');
+      if (savedConfig) {
+        try {
+          setRagConfig(JSON.parse(savedConfig));
+        } catch (error) {
+          console.error('Failed to parse RAG config:', error);
+        }
+      }
+    };
+
+    // Load on mount
+    loadRagConfig();
+
+    // Listen for storage changes (from other tabs or components)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'rag_config') {
+        loadRagConfig();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for a custom event we can dispatch when settings change
+    const handleConfigChange = () => {
+      loadRagConfig();
+    };
+    window.addEventListener('rag_config_updated', handleConfigChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('rag_config_updated', handleConfigChange);
+    };
+  }, []);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [snippetToEdit, setSnippetToEdit] = useState<string | null>(null);
+  
+  // Embedding status tracking
+  const [embeddingStatusMap, setEmbeddingStatusMap] = useState<Record<string, boolean>>({});
+  const [checkingEmbedding, setCheckingEmbedding] = useState(false);
   
   // Ref for scroll tracking in viewing dialog
   const viewingScrollRef = useRef<HTMLDivElement>(null);
@@ -270,6 +324,10 @@ export const SwagPage: React.FC = () => {
         console.log('🔍 Generate embeddings case triggered');
         await handleGenerateEmbeddings();
         break;
+      case 'force-embeddings':
+        console.log('🔄 Force re-embed case triggered');
+        await handleGenerateEmbeddings(true); // Pass force=true
+        break;
       case 'tag':
         if (selected.length === 0) {
           showWarning('No snippets selected');
@@ -311,7 +369,7 @@ export const SwagPage: React.FC = () => {
     }
   };
 
-  const handleGenerateEmbeddings = async () => {
+  const handleGenerateEmbeddings = async (force: boolean = false) => {
     const selected = getSelectedSnippets();
     if (selected.length === 0) {
       showWarning('No snippets selected');
@@ -326,10 +384,21 @@ export const SwagPage: React.FC = () => {
         selected.map(s => s.id),
         (current, total) => {
           setEmbeddingProgress({ current, total });
-        }
+        },
+        force
       );
 
       selectNone();
+      
+      // Update embedding status map based on which snippets were embedded
+      // The SwagContext already updates snippet.hasEmbedding, so we just need to sync the UI state
+      const updatedStatusMap: Record<string, boolean> = {};
+      for (const snippet of selected) {
+        // Check IndexedDB directly (no Lambda call)
+        const details = await getEmbeddingDetails(snippet.id);
+        updatedStatusMap[snippet.id] = details.hasEmbedding;
+      }
+      setEmbeddingStatusMap(prev => ({ ...prev, ...updatedStatusMap }));
       
       if (result.embedded > 0 || result.skipped > 0) {
         showSuccess(
@@ -361,9 +430,7 @@ export const SwagPage: React.FC = () => {
       const WARN_FILE_SIZE = 10 * 1024 * 1024; // 10MB warning threshold
       
       // Get API URL safely
-      const apiUrl = typeof process !== 'undefined' && process.env?.REACT_APP_LAMBDA_URL 
-        ? process.env.REACT_APP_LAMBDA_URL 
-        : 'http://localhost:3000';
+      const apiUrl = import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000';
       
       // Check for oversized files
       const oversizedFiles = files.filter(f => f.size > MAX_FILE_SIZE);
@@ -578,17 +645,13 @@ export const SwagPage: React.FC = () => {
   };
 
   const handleCreateNewSnippet = async () => {
-    // Create a blank snippet - addSnippet will handle creation
-    await addSnippet('', 'user', 'New Snippet');
+    // Create a blank snippet - addSnippet returns the new snippet
+    const newSnippet = await addSnippet('', 'user', 'New Snippet');
     
-    // After creation, find and edit the new snippet
-    // It will be the first one since it has the newest timestamp
-    setTimeout(() => {
-      if (snippets.length > 0) {
-        const newestSnippet = snippets[0];
-        handleEditSnippet(newestSnippet);
-      }
-    }, 50); // Small delay to let state update
+    // Immediately edit the newly created snippet
+    if (newSnippet) {
+      handleEditSnippet(newSnippet);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -611,6 +674,72 @@ export const SwagPage: React.FC = () => {
     }
   };
 
+  const handleVectorSearch = async () => {
+    if (!vectorSearchQuery.trim() || searchMode !== 'vector') {
+      return;
+    }
+    
+    setIsVectorSearching(true);
+    try {
+      let embedding: number[];
+      
+      // Check cache first
+      const cached = await ragDB.getCachedQueryEmbedding(vectorSearchQuery.trim());
+      if (cached) {
+        console.log('✅ Using cached query embedding');
+        embedding = cached.embedding;
+      } else {
+        console.log('🔄 Fetching new query embedding from backend');
+        // Get query embedding from backend (use localhost for development)
+        // Handle both undefined and empty string cases
+        const envUrl = import.meta.env.VITE_LAMBDA_URL;
+        const apiUrl = (envUrl && envUrl.trim()) ? envUrl : 'http://localhost:3000';
+        console.log('🌐 Using API URL for embed-query:', apiUrl, {
+          VITE_LAMBDA_URL: import.meta.env.VITE_LAMBDA_URL,
+          isDefined: import.meta.env.VITE_LAMBDA_URL !== undefined,
+          isEmpty: import.meta.env.VITE_LAMBDA_URL === '',
+        });
+        const response = await fetch(`${apiUrl}/rag/embed-query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: vectorSearchQuery })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Backend error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        embedding = data.embedding;
+        
+        // Cache the embedding
+        const ragConfig = JSON.parse(localStorage.getItem('rag_config') || '{}');
+        const embeddingModel = ragConfig.embeddingModel || 'text-embedding-3-small';
+        await ragDB.cacheQueryEmbedding(vectorSearchQuery.trim(), embedding, embeddingModel);
+        console.log('💾 Cached query embedding for future use');
+      }
+      
+      // Get threshold from settings, default to 0.5 (lowered from 0.6 for better recall)
+      const threshold = ragConfig.similarityThreshold ?? 0.5;
+      console.log(`🔍 Vector search with threshold: ${threshold}`);
+      
+      // Search locally in IndexedDB
+      const results = await ragDB.vectorSearch(embedding, 10, threshold);
+      setVectorSearchResults(results);
+      
+      if (results.length === 0) {
+        showWarning('No similar content found. Try lowering the threshold or generating embeddings first.');
+      } else {
+        showSuccess(`Found ${results.length} similar chunks (scores: ${results[0].score.toFixed(3)}-${results[results.length-1].score.toFixed(3)})`);
+      }
+    } catch (error) {
+      console.error('Vector search error:', error);
+      showError('Failed to perform vector search. Make sure embeddings are generated.');
+    } finally {
+      setIsVectorSearching(false);
+    }
+  };
+
   const getSourceBadgeColor = (sourceType: string) => {
     switch (sourceType) {
       case 'user': return 'bg-blue-500';
@@ -620,32 +749,64 @@ export const SwagPage: React.FC = () => {
     }
   };
 
-  // Filter snippets based on search query and tags
-  const filteredSnippets = snippets.filter(snippet => {
-    // Text search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      const matchesContent = snippet.content.toLowerCase().includes(query);
-      const matchesTitle = snippet.title?.toLowerCase().includes(query);
-      if (!matchesContent && !matchesTitle) {
-        return false;
+  // Filter snippets based on search mode and query
+  const displaySnippets = (() => {
+    // Vector search mode - use search results
+    if (searchMode === 'vector' && vectorSearchResults.length > 0) {
+      // Deduplicate by snippet_id (multiple chunks may match from same snippet)
+      const snippetMap = new Map<string, { snippet: ContentSnippet; score: number }>();
+      
+      for (const result of vectorSearchResults) {
+        const snippet = snippets.find(s => s.id === result.snippet_id);
+        if (!snippet) continue;
+        
+        // Apply tag filters if any
+        if (searchTags.length > 0) {
+          if (!snippet.tags || snippet.tags.length === 0) continue;
+          const hasAllTags = searchTags.every(tag => snippet.tags?.includes(tag));
+          if (!hasAllTags) continue;
+        }
+        
+        // Keep the highest score for each snippet
+        const existing = snippetMap.get(result.snippet_id);
+        if (!existing || result.score > existing.score) {
+          snippetMap.set(result.snippet_id, { snippet, score: result.score });
+        }
       }
+      
+      // Convert map back to array with score attached
+      return Array.from(snippetMap.values())
+        .map(({ snippet, score }) => ({ ...snippet, _searchScore: score }))
+        .sort((a, b) => b._searchScore - a._searchScore);
     }
-
-    // Tag filter
-    if (searchTags.length > 0) {
-      if (!snippet.tags || snippet.tags.length === 0) {
-        return false;
+    
+    // Text search mode - use original filtering
+    return snippets.filter(snippet => {
+      // Text search filter
+      if (textSearchQuery.trim()) {
+        const query = textSearchQuery.toLowerCase();
+        const matchesContent = snippet.content.toLowerCase().includes(query);
+        const matchesTitle = snippet.title?.toLowerCase().includes(query);
+        if (!matchesContent && !matchesTitle) {
+          return false;
+        }
       }
-      // All selected tags must be present in the snippet
-      const hasAllTags = searchTags.every(tag => snippet.tags?.includes(tag));
-      if (!hasAllTags) {
-        return false;
-      }
-    }
 
-    return true;
-  });
+      // Tag filter
+      if (searchTags.length > 0) {
+        if (!snippet.tags || snippet.tags.length === 0) {
+          return false;
+        }
+        // All selected tags must be present in the snippet
+        const hasAllTags = searchTags.every(tag => snippet.tags?.includes(tag));
+        if (!hasAllTags) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  })();
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -725,48 +886,104 @@ export const SwagPage: React.FC = () => {
               </div>
             )}
 
-            {/* Search Bar with Tag Filter Button */}
-            <div className="flex gap-2 items-center max-w-2xl">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search snippets..."
-                  className="w-full px-3 py-1.5 pl-8 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-                <svg className="w-4 h-4 absolute left-2.5 top-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                {searchQuery && (
+            {/* Search Mode Toggle and Search Bar */}
+            <div className="flex gap-2 items-start max-w-2xl">
+              {/* Search Mode Toggle */}
+              <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded p-1 flex-shrink-0">
+                <button
+                  onClick={() => setSearchMode('text')}
+                  className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                    searchMode === 'text'
+                      ? 'bg-white dark:bg-gray-800 text-blue-600 font-medium shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  }`}
+                >
+                  Text
+                </button>
+                <button
+                  onClick={() => setSearchMode('vector')}
+                  className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                    searchMode === 'vector'
+                      ? 'bg-white dark:bg-gray-800 text-blue-600 font-medium shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  }`}
+                  title="Semantic search using embeddings"
+                >
+                  🔍 Vector
+                </button>
+              </div>
+
+              {/* Search Input Area */}
+              <div className="flex gap-2 items-center flex-1">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={searchMode === 'text' ? textSearchQuery : vectorSearchQuery}
+                    onChange={(e) => {
+                      if (searchMode === 'text') {
+                        setTextSearchQuery(e.target.value);
+                      } else {
+                        setVectorSearchQuery(e.target.value);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && searchMode === 'vector') {
+                        handleVectorSearch();
+                      }
+                    }}
+                    placeholder={searchMode === 'vector' ? 'Semantic search...' : 'Search snippets...'}
+                    className="w-full px-3 py-1.5 pl-8 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                  <svg className="w-4 h-4 absolute left-2.5 top-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  {(searchMode === 'text' ? textSearchQuery : vectorSearchQuery) && (
+                    <button
+                      onClick={() => {
+                        if (searchMode === 'text') {
+                          setTextSearchQuery('');
+                        } else {
+                          setVectorSearchQuery('');
+                          setVectorSearchResults([]);
+                        }
+                      }}
+                      className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Vector Search Button */}
+                {searchMode === 'vector' && (
                   <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    onClick={handleVectorSearch}
+                    disabled={isVectorSearching || !vectorSearchQuery.trim()}
+                    className="px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors flex-shrink-0"
+                  >
+                    {isVectorSearching ? 'Searching...' : 'Search'}
+                  </button>
+                )}
+
+                {/* Tag Filter Button */}
+                {getAllTags().length > 0 && (
+                  <button
+                    onClick={() => {
+                      setShowTagDialog(true);
+                      setTagDialogMode('filter');
+                      setSelectedTagsForOperation([...searchTags]);
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors flex-shrink-0"
+                    title="Filter by tags"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                     </svg>
                   </button>
                 )}
               </div>
-
-              {/* Plus Button for Tag Filter */}
-              {getAllTags().length > 0 && (
-                <button
-                  onClick={() => {
-                    // Show tag picker dialog
-                    setShowTagDialog(true);
-                    setTagDialogMode('filter');
-                    setSelectedTagsForOperation([...searchTags]);
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors flex-shrink-0"
-                  title="Filter by tags"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                  </svg>
-                </button>
-              )}
             </div>
           </div>
         )}
@@ -811,6 +1028,7 @@ export const SwagPage: React.FC = () => {
               <option value="">Bulk Operations...</option>
               <optgroup label="With Selected Snippets">
                 <option value="generate-embeddings">🔍 Add To Search Index</option>
+                <option value="force-embeddings">🔄 Force Re-embed</option>
                 <option value="tag">Add Tags...</option>
                 <option value="untag">Remove Tags...</option>
                 <option value="tag-all">Tag All Snippets...</option>
@@ -894,7 +1112,7 @@ export const SwagPage: React.FC = () => {
             <p className="text-lg">No content snippets yet</p>
             <p className="text-sm mt-2">Use the grab button in chat to save content here</p>
           </div>
-        ) : filteredSnippets.length === 0 ? (
+        ) : displaySnippets.length === 0 ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">
             <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -904,7 +1122,7 @@ export const SwagPage: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...filteredSnippets].sort((a, b) => (b.updateDate || b.timestamp) - (a.updateDate || a.timestamp)).map(snippet => (
+            {[...displaySnippets].sort((a, b) => (b.updateDate || b.timestamp) - (a.updateDate || a.timestamp)).map(snippet => (
               <div
                 key={snippet.id}
                 className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-sm border-2 transition-all ${
@@ -925,14 +1143,19 @@ export const SwagPage: React.FC = () => {
 
                 {/* Content */}
                 <div className="p-4 pt-10">
-                  {/* Source Badge */}
-                  <div className="flex items-center gap-2 mb-2">
+                  {/* Source Badge and Similarity Score */}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className={`px-2 py-1 text-xs rounded-full text-white ${getSourceBadgeColor(snippet.sourceType)}`}>
                       {snippet.sourceType}
                     </span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {new Date(snippet.timestamp).toLocaleString()}
                     </span>
+                    {('_searchScore' in snippet) && (
+                      <span className="px-2 py-1 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 font-medium">
+                        🎯 {(snippet as any)._searchScore.toFixed(3)}
+                      </span>
+                    )}
                   </div>
 
                   {/* Title */}
@@ -1009,6 +1232,50 @@ export const SwagPage: React.FC = () => {
 
                   {/* Action Buttons */}
                   <div className="flex gap-2">
+                    {/* Embedding Status Button */}
+                    <button
+                      onClick={async () => {
+                        setCheckingEmbedding(true);
+                        try {
+                          const details = await getEmbeddingDetails(snippet.id);
+                          setEmbeddingStatusMap(prev => ({
+                            ...prev,
+                            [snippet.id]: details.hasEmbedding
+                          }));
+                          
+                          if (details.hasEmbedding) {
+                            const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
+                            showSuccess(message);
+                          } else {
+                            showWarning('No embeddings found. Use "Add to Search Index" to create them.');
+                          }
+                        } catch (error) {
+                          console.error('Failed to check embedding status:', error);
+                          showError('Failed to check embedding status');
+                        } finally {
+                          setCheckingEmbedding(false);
+                        }
+                      }}
+                      className={`p-2 text-sm rounded transition-colors ${
+                        embeddingStatusMap[snippet.id] === true
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : embeddingStatusMap[snippet.id] === false
+                          ? 'bg-gray-400 text-white hover:bg-gray-500'
+                          : 'bg-blue-500 text-white hover:bg-blue-600'
+                      }`}
+                      title={
+                        embeddingStatusMap[snippet.id] === true
+                          ? 'Has embeddings (click for details)'
+                          : embeddingStatusMap[snippet.id] === false
+                          ? 'No embeddings (click to check)'
+                          : 'Check embedding status'
+                      }
+                      disabled={checkingEmbedding}
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
+                      </svg>
+                    </button>
                     <button
                       onClick={() => handleEditSnippet(snippet)}
                       className="flex-1 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"

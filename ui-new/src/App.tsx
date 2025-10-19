@@ -55,25 +55,12 @@ function AppContent() {
     transcribe: true,
     generate_chart: true,
     generate_image: true,
-    search_knowledge_base: false // Will be automatically enabled when RAG is configured
+    search_knowledge_base: false // Independent server-side knowledge base tool
   });
   
-  // Automatically enable search_knowledge_base when RAG is enabled
-  useEffect(() => {
-    try {
-      const ragConfig = localStorage.getItem('rag_config');
-      if (ragConfig) {
-        const config = JSON.parse(ragConfig);
-        if (config.enabled && !enabledTools.search_knowledge_base) {
-          setEnabledTools({ ...enabledTools, search_knowledge_base: true });
-        } else if (!config.enabled && enabledTools.search_knowledge_base) {
-          setEnabledTools({ ...enabledTools, search_knowledge_base: false });
-        }
-      }
-    } catch (error) {
-      console.error('Error syncing RAG config with search_knowledge_base tool:', error);
-    }
-  }, []); // Run once on mount
+  // NOTE: search_knowledge_base is now independent from the local RAG system
+  // Local RAG uses the "Use Knowledge Base Context" checkbox in chat
+  // search_knowledge_base is a separate server-side tool enabled in Settings > Tools
 
   // Migrate chat history from localStorage to IndexedDB on mount
   useEffect(() => {
@@ -94,6 +81,24 @@ function AppContent() {
     migrateData();
   }, []);
 
+  // Initialize Google Identity Services for client-side Sheets API
+  useEffect(() => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (clientId && (window as any).google) {
+      initGoogleIdentity(clientId);
+    } else if (clientId) {
+      // Wait for GIS script to load
+      const checkGIS = setInterval(() => {
+        if ((window as any).google) {
+          initGoogleIdentity(clientId);
+          clearInterval(checkGIS);
+        }
+      }, 100);
+      // Timeout after 5 seconds
+      setTimeout(() => clearInterval(checkGIS), 5000);
+    }
+  }, []);
+
   // Check authorization status on mount
   useEffect(() => {
     const checkAuthAndProviders = async () => {
@@ -110,7 +115,8 @@ function AppContent() {
         }
 
         // Make a test request to check if user needs provider setup
-        const lambdaUrl = import.meta.env.VITE_LAMBDA_URL || 'https://your-lambda-url.lambda-url.us-east-1.on.aws';
+        const envUrl = import.meta.env.VITE_LAMBDA_URL;
+        const lambdaUrl = (envUrl && envUrl.trim()) ? envUrl : 'http://localhost:3000';
         const response = await fetch(`${lambdaUrl}/chat`, {
           method: 'POST',
           headers: {
@@ -279,6 +285,9 @@ function AppContent() {
     </div>
   );
 }
+
+import './App.css';
+import { initGoogleIdentity } from './services/googleSheetsClient';
 
 function App() {
   return (

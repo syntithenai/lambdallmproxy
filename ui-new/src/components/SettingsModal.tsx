@@ -402,6 +402,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.search_knowledge_base}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, search_knowledge_base: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    📚 Search Knowledge Base (Server-Side)
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Server-side RAG tool for searching project documentation and ingested content
+                  </div>
+                </div>
+              </label>
             </div>
           </div>
 

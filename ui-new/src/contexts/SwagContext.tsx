@@ -2,8 +2,10 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { storage, StorageError } from '../utils/storage';
 import { useToast } from '../components/ToastManager';
 import { ragSyncService } from '../services/ragSyncService';
+import { isGoogleIdentityAvailable, appendRows, formatChunksForSheets } from '../services/googleSheetsClient';
 import type { SyncStatus } from '../services/ragSyncService';
 import { useAuth } from './AuthContext';
+import { ragDB } from '../utils/ragDB';
 
 export interface ContentSnippet {
   id: string;
@@ -19,7 +21,7 @@ export interface ContentSnippet {
 
 interface SwagContextType {
   snippets: ContentSnippet[];
-  addSnippet: (content: string, sourceType: ContentSnippet['sourceType'], title?: string) => Promise<void>;
+  addSnippet: (content: string, sourceType: ContentSnippet['sourceType'], title?: string) => Promise<ContentSnippet | undefined>;
   updateSnippet: (id: string, updates: Partial<ContentSnippet>) => Promise<void>;
   deleteSnippets: (ids: string[]) => void;
   mergeSnippets: (ids: string[]) => void;
@@ -32,10 +34,12 @@ interface SwagContextType {
   removeTagsFromSnippets: (ids: string[], tags: string[]) => void;
   storageStats: { totalSize: number; limit: number; percentUsed: number } | null;
   checkEmbeddingStatus: (id: string) => Promise<boolean>;
+  getEmbeddingDetails: (id: string) => Promise<{ hasEmbedding: boolean; chunkCount: number; chunks: any[]; metadata?: any }>;
   bulkCheckEmbeddingStatus: () => Promise<void>;
-  generateEmbeddings: (snippetIds: string[], onProgress?: (current: number, total: number) => void) => Promise<{ embedded: number; skipped: number; failed: number }>;
+  generateEmbeddings: (snippetIds: string[], onProgress?: (current: number, total: number) => void, force?: boolean) => Promise<{ embedded: number; skipped: number; failed: number }>;
   syncStatus: SyncStatus | null;
   triggerManualSync: () => Promise<void>;
+  getUserRagSpreadsheet: () => Promise<string | null>;
 }
 
 const SwagContext = createContext<SwagContextType | undefined>(undefined);
@@ -53,7 +57,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoaded, setIsLoaded] = useState(false);
   const [storageStats, setStorageStats] = useState<{ totalSize: number; limit: number; percentUsed: number } | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const { showError, showWarning } = useToast();
+  const { showError, showWarning, showSuccess } = useToast();
   const { user } = useAuth();
 
   // Load from storage on mount
@@ -123,7 +127,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [snippets, isLoaded, showError, showWarning]);
 
   // Helper to check if RAG sync is enabled
-  const isSyncEnabled = (): boolean => {
+  const isSyncEnabled = () => {
     try {
       const ragConfig = localStorage.getItem('rag_config');
       if (ragConfig) {
@@ -136,6 +140,121 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false;
   };
 
+  /**
+   * Get or create user's RAG spreadsheet
+   * Stores spreadsheet ID in localStorage for future use
+   */
+  const getUserRagSpreadsheet = async (): Promise<string | null> => {
+    try {
+      // Check if we already have spreadsheet ID cached
+      const cached = localStorage.getItem('rag_spreadsheet_id');
+      if (cached) {
+        console.log('Using cached spreadsheet ID:', cached);
+        return cached;
+      }
+
+      // Request Google Drive API OAuth access token
+      let authToken = localStorage.getItem('google_drive_access_token');
+      
+      // If no token or token might be expired, request a new one
+      if (!authToken) {
+        console.log('🔑 Requesting Google Drive API access token...');
+        
+        try {
+          // Use Google Identity Services OAuth2 token client
+          const tokenClient = (window as any).google?.accounts?.oauth2?.initTokenClient({
+            client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
+            callback: (response: any) => {
+              if (response.access_token) {
+                localStorage.setItem('google_drive_access_token', response.access_token);
+                console.log('✅ Got Drive API access token');
+              }
+            },
+          });
+          
+          if (!tokenClient) {
+            throw new Error('Google Identity Services not available');
+          }
+          
+          // Request access token - this will prompt user if needed
+          await new Promise<void>((resolve, reject) => {
+            tokenClient.callback = (response: any) => {
+              if (response.error) {
+                reject(new Error(response.error));
+                return;
+              }
+              if (response.access_token) {
+                authToken = response.access_token;
+                localStorage.setItem('google_drive_access_token', response.access_token);
+                console.log('✅ Got Drive API access token');
+                resolve();
+              }
+            };
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+          });
+        } catch (error) {
+          console.error('Failed to get Drive API token:', error);
+          showError('Please grant access to Google Drive to enable sync');
+          return null;
+        }
+      }
+      
+      if (!authToken) {
+        console.error('No Drive API access token available');
+        return null;
+      }
+
+      // Call backend to get/create spreadsheet
+      const envUrl = import.meta.env.VITE_LAMBDA_URL;
+      const apiUrl = (envUrl && envUrl.trim()) ? envUrl : 'http://localhost:3000';
+      console.log('🌐 Calling getUserRagSpreadsheet at:', apiUrl);
+      const response = await fetch(`${apiUrl}/rag/user-spreadsheet`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Backend error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        });
+        let errorMessage = `Failed to get spreadsheet: ${response.status}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.error) {
+            errorMessage = errorJson.error;
+          }
+        } catch (e) {
+          // Not JSON, use status
+        }
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+      
+      // Cache the spreadsheet ID
+      localStorage.setItem('rag_spreadsheet_id', result.spreadsheetId);
+      
+      if (result.created) {
+        console.log('✅ Created new RAG spreadsheet:', result.spreadsheetId);
+        showWarning('Created new "Research Agent Swag" spreadsheet in your Google Drive');
+      } else {
+        console.log('✅ Found existing RAG spreadsheet:', result.spreadsheetId);
+      }
+
+      return result.spreadsheetId;
+    } catch (error) {
+      console.error('Failed to get user RAG spreadsheet:', error);
+      showError('Failed to access your Google Drive spreadsheet');
+      return null;
+    }
+  };
+
   // Initialize sync service when user logs in
   useEffect(() => {
     const initSync = async () => {
@@ -144,6 +263,13 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       try {
+        // Step 1: Get or create user's RAG spreadsheet
+        const spreadsheetId = await getUserRagSpreadsheet();
+        if (!spreadsheetId) {
+          console.warn('Could not get user RAG spreadsheet');
+          return;
+        }
+
         // Initialize sync service
         await ragSyncService.initialize({
           enabled: true,
@@ -242,7 +368,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isAutoEmbedEnabled()) return;
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_LAMBDA_URL || 'http://localhost:3000'}/rag/ingest`, {
+      const response = await fetch(`${import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000'}/rag/ingest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -296,14 +422,14 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string) => {
+  const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string): Promise<ContentSnippet | undefined> => {
     // Check if content already exists (prevent duplicates)
     const existingSnippet = snippets.find(s => s.content.trim() === content.trim());
     
     if (existingSnippet) {
       // Update the timestamp to move it to the top
       await updateSnippet(existingSnippet.id, { updateDate: Date.now() });
-      return;
+      return existingSnippet;
     }
     
     const now = Date.now();
@@ -329,6 +455,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Auto-embed if enabled
     await autoEmbedSnippet(newSnippet.id, content, title);
+    
+    return newSnippet;
   };
 
   const updateSnippet = async (id: string, updates: Partial<ContentSnippet>) => {
@@ -451,9 +579,36 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const checkEmbeddingStatus = async (id: string): Promise<boolean> => {
-    // This would check the backend for embedding status
-    // For now, return false (not implemented yet)
-    return false;
+    try {
+      // Check local IndexedDB instead of calling backend
+      const hasEmbedding = await ragDB.hasEmbedding(id);
+      return hasEmbedding;
+    } catch (error) {
+      console.error('Error checking embedding status:', error);
+      return false;
+    }
+  };
+
+  const getEmbeddingDetails = async (id: string) => {
+    try {
+      // Check local IndexedDB for embedding info
+      const details = await ragDB.getEmbeddingDetails(id);
+      if (details.hasEmbedding) {
+        return details;
+      }
+      
+      // If not in IndexedDB, check if snippet has hasEmbedding flag (set after successful embed)
+      const snippet = snippets.find(s => s.id === id);
+      if (snippet?.hasEmbedding) {
+        // Embeddings exist in backend but not synced to IndexedDB yet
+        return { hasEmbedding: true, chunkCount: 1, chunks: [] };
+      }
+      
+      return { hasEmbedding: false, chunkCount: 0, chunks: [] };
+    } catch (error) {
+      console.error('Error getting embedding details:', error);
+      return { hasEmbedding: false, chunkCount: 0, chunks: [] };
+    }
   };
 
   const bulkCheckEmbeddingStatus = async () => {
@@ -462,14 +617,13 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const snippetIds = snippets.map(s => s.id);
       if (snippetIds.length === 0) return;
       
-      // In a real implementation, we'd batch check the backend
-      // For now, we'll just mark all as not having embeddings
-      const statusMap = new Map<string, boolean>();
+      // Batch check using local IndexedDB
+      const statusMap = await ragDB.bulkCheckEmbeddings(snippetIds);
       
       // Update snippets with embedding status
       setSnippets(prev => prev.map(snippet => ({
         ...snippet,
-        hasEmbedding: statusMap.get(snippet.id) || false
+        hasEmbedding: statusMap[snippet.id] || false
       })));
       
     } catch (error) {
@@ -479,7 +633,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const generateEmbeddings = async (
     snippetIds: string[],
-    onProgress?: (current: number, total: number) => void
+    onProgress?: (current: number, total: number) => void,
+    force: boolean = false
   ): Promise<{ embedded: number; skipped: number; failed: number }> => {
     const selectedSnippets = snippets.filter(s => snippetIds.includes(s.id));
     
@@ -488,75 +643,221 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_LAMBDA_URL || 'http://localhost:3000'}/rag/embed-snippets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          snippets: selectedSnippets.map(s => ({
-            id: s.id,
-            content: s.content,
-            title: s.title,
-            tags: s.tags,
-            timestamp: s.timestamp
-          }))
-        }),
-      });
+      // Step 1: Request embeddings from backend with retry logic
+      let response;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          response = await fetch(`${import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000'}/rag/embed-snippets`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              snippets: selectedSnippets.map(s => ({
+                id: s.id,
+                content: s.content,
+                title: s.title,
+                tags: s.tags,
+                timestamp: s.timestamp
+              })),
+              force
+            }),
+          });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate embeddings');
+          // If rate limited (429), retry with exponential backoff
+          if (response.status === 429 && retryCount < maxRetries) {
+            const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+            console.warn(`⏳ Rate limited, retrying in ${waitTime/1000}s... (attempt ${retryCount + 1}/${maxRetries})`);
+            showWarning(`⏳ Rate limited, retrying in ${waitTime/1000}s...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            retryCount++;
+            continue;
+          }
+
+          // Break on success or non-retryable error
+          break;
+
+        } catch (fetchError) {
+          if (retryCount < maxRetries) {
+            const waitTime = Math.pow(2, retryCount) * 1000;
+            console.warn(`⚠️ Fetch error, retrying in ${waitTime/1000}s...`, fetchError);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            retryCount++;
+            continue;
+          }
+          throw fetchError;
+        }
       }
 
-      // Parse SSE response
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+      if (!response || !response.ok) {
+        const errorText = await response?.text() || 'No response';
+        throw new Error(`Failed to generate embeddings: ${response?.status} ${response?.statusText}. ${errorText}`);
+      }
+
+      // Parse JSON response
+      const responseData = await response.json();
+      const firstEmbedding = responseData.results?.[0]?.chunks?.[0]?.embedding;
+      console.log('📦 Backend response:', {
+        success: responseData.success,
+        resultsCount: responseData.results?.length,
+        firstResult: responseData.results?.[0],
+        firstChunk: responseData.results?.[0]?.chunks?.[0],
+        firstChunkKeys: responseData.results?.[0]?.chunks?.[0] ? Object.keys(responseData.results[0].chunks[0]) : [],
+        firstChunkEmbeddingLength: firstEmbedding?.length,
+        firstChunkEmbeddingType: firstEmbedding?.constructor?.name,
+        firstChunkEmbeddingFirst5: Array.isArray(firstEmbedding) ? firstEmbedding.slice(0, 5) : 'NOT_AN_ARRAY'
+      });
       
+      const { success, results, error } = responseData;
+      
+      if (!success) {
+        throw new Error(error || 'Failed to generate embeddings');
+      }
+      
+      // Step 2: Save to IndexedDB
+      const embeddedSnippetIds: string[] = [];
+      let totalChunks = 0;
       let embedded = 0;
-      let skipped = 0;
       let failed = 0;
       
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        
+        if (result.status === 'success' && result.chunks.length > 0) {
+          // Debug: Check if chunks have id field
+          console.log('🔍 Chunk structure check:', {
+            chunkCount: result.chunks.length,
+            firstChunk: result.chunks[0],
+            hasId: result.chunks[0]?.id !== undefined,
+            hasSnippetId: result.chunks[0]?.snippet_id !== undefined
+          });
           
-          const text = decoder.decode(value);
-          const lines = text.split('\n');
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.substring(6));
-              
-              if (data.error) {
-                throw new Error(data.error);
-              }
-              
-              if (data.progress) {
-                onProgress?.(data.progress.current, data.progress.total);
-                embedded = data.progress.embedded || 0;
-                skipped = data.progress.skipped || 0;
-              }
-              
-              if (data.embedded !== undefined) {
-                embedded = data.embedded;
-                skipped = data.skipped || 0;
-                failed = data.failed || 0;
-              }
-            }
+          try {
+            // Save chunks with embeddings to IndexedDB
+            await ragDB.saveChunks(result.chunks, {
+              snippet_id: result.id,
+              created_at: Date.now(),
+              updated_at: Date.now()
+            });
+            
+            embeddedSnippetIds.push(result.id);
+            totalChunks += result.chunks.length;
+            embedded++;
+            
+            console.log(`✅ Saved ${result.chunks.length} chunks for snippet ${result.id}`);
+          } catch (saveError) {
+            failed++;
+            console.error(`❌ Failed to save chunks for snippet ${result.id}:`, saveError);
+            // Continue processing other results
           }
+          
+          // Report progress
+          if (onProgress) {
+            onProgress(i + 1, results.length);
+          }
+        } else if (result.status === 'failed') {
+          failed++;
+          console.error(`Failed to embed snippet ${result.id}:`, result.error);
         }
       }
-
-      // Update snippets with embedding status
-      setSnippets(prev => prev.map(snippet => {
-        if (snippetIds.includes(snippet.id)) {
-          return { ...snippet, hasEmbedding: true };
+      
+      // Step 3: Update snippet flags
+      setSnippets(prev => prev.map(s => 
+        embeddedSnippetIds.includes(s.id)
+          ? { ...s, hasEmbedding: true }
+          : s
+      ));
+      
+      // Step 4: Auto-push to Google Sheets (hybrid approach)
+      const allChunks = results
+        .filter((r: any) => r.status === 'success')
+        .flatMap((r: any) => r.chunks);
+      
+      console.log(`📊 Google Sheets sync check:`, {
+        chunksToSync: allChunks.length,
+        userEmail: user?.email,
+        spreadsheetId: localStorage.getItem('rag_spreadsheet_id'),
+        googleLinked: localStorage.getItem('rag_google_linked'),
+      });
+      
+      if (allChunks.length > 0 && user?.email) {
+        try {
+          const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+          if (!spreadsheetId) {
+            console.warn('⚠️ No spreadsheet ID found. Skipping Google Sheets sync.');
+            console.log('💡 To enable sync: Go to Settings > RAG and configure cloud sync');
+            showWarning('⚠️ Embeddings saved locally. Enable cloud sync in Settings to backup to Google Sheets.');
+          } else {
+            const googleLinked = localStorage.getItem('rag_google_linked') === 'true';
+            const canUseClientSync = googleLinked && isGoogleIdentityAvailable();
+            
+            console.log(`📤 Sync method: ${canUseClientSync ? 'Client-side direct' : 'Backend'}`);
+            
+            if (canUseClientSync) {
+              // Client-side direct sync (no Lambda, no concurrency issues)
+              console.log(`📤 Using direct Google Sheets sync for ${allChunks.length} chunks (client-side)...`);
+              
+              try {
+                const rows = formatChunksForSheets(allChunks);
+                console.log(`📝 Formatted ${rows.length} rows for Google Sheets`);
+                await appendRows(spreadsheetId, 'embeddings!A:K', rows);
+                
+                console.log('✅ Synced to Google Sheets (client-side)');
+                showWarning(`✅ Synced ${allChunks.length} embeddings to Google Sheets`);
+              } catch (clientError) {
+                console.error('❌ Client-side sync failed, falling back to backend:', clientError);
+                showWarning('⚠️ Direct sync failed, using backend fallback...');
+                
+                // Fallback to backend sync with delay
+                setTimeout(async () => {
+                  try {
+                    await ragSyncService.pushEmbeddings(allChunks, (current, total) => {
+                      console.log(`📤 Backend sync: ${current}/${total} chunks`);
+                    });
+                    console.log('✅ Synced to Google Sheets (backend fallback)');
+                    showWarning(`✅ Synced ${allChunks.length} embeddings to Google Sheets (backend)`);
+                  } catch (backendError) {
+                    console.error('Backend sync also failed:', backendError);
+                    showWarning('⚠️ Embeddings saved locally but sync to Google Sheets failed');
+                  }
+                }, 2000);
+              }
+            } else {
+              // Backend sync with delay (original behavior)
+              console.log(`📤 Using backend sync for ${allChunks.length} chunks (with 2s delay)...`);
+              
+              setTimeout(async () => {
+                try {
+                  console.log(`📤 Starting backend Google Sheets sync...`);
+                  await ragSyncService.pushEmbeddings(allChunks, (current, total) => {
+                    console.log(`📤 Syncing: ${current}/${total} chunks`);
+                  });
+                  
+                  console.log('✅ Synced to Google Sheets (backend)');
+                  showWarning(`✅ Synced ${allChunks.length} embeddings to Google Sheets`);
+                } catch (syncError) {
+                  console.error('Failed to sync to Google Sheets:', syncError);
+                  showWarning('⚠️ Embeddings saved locally but sync to Google Sheets failed');
+                }
+              }, 2000);
+            }
+          }
+        } catch (syncError) {
+          console.error('Failed to queue sync:', syncError);
+          // Continue - embeddings are still in IndexedDB
         }
-        return snippet;
-      }));
-
-      return { embedded, skipped, failed };
+      }
+      
+      console.log(`✅ Generated ${totalChunks} embeddings for ${embedded} snippets`);
+      
+      return {
+        embedded,
+        skipped: results.length - embedded - failed,
+        failed
+      };
       
     } catch (error) {
       console.error('Failed to generate embeddings:', error);
@@ -565,16 +866,34 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const triggerManualSync = async () => {
-    if (!user?.email || !isSyncEnabled()) {
-      showWarning('Cloud sync is not enabled');
+    if (!user?.email) {
+      showWarning('Please sign in with Google to sync');
+      return;
+    }
+
+    if (!isSyncEnabled()) {
+      showWarning('Cloud sync is not enabled. Enable it in RAG Settings first.');
       return;
     }
 
     try {
-      console.log('Manual sync triggered');
+      console.log('📤 Manual sync triggered');
+      
+      // Step 1: Ensure spreadsheet exists
+      console.log('📋 Ensuring spreadsheet exists...');
+      const spreadsheetId = await getUserRagSpreadsheet();
+      if (!spreadsheetId) {
+        showError('Failed to create or access Google Sheets spreadsheet');
+        return;
+      }
+      console.log('✅ Spreadsheet ready:', spreadsheetId);
+      
+      // Step 2: Pull remote snippets
+      console.log('⬇️ Pulling remote snippets...');
       const remoteSnippets = await ragSyncService.pullSnippets(user.email);
       
       if (remoteSnippets && remoteSnippets.length > 0) {
+        console.log(`📥 Received ${remoteSnippets.length} remote snippets`);
         setSnippets(prev => {
           const existingIds = new Set(prev.map(s => s.id));
           const newSnippets = remoteSnippets.filter(s => !existingIds.has(s.id));
@@ -589,17 +908,24 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           return [...newSnippets, ...updated].sort((a, b) => b.updateDate - a.updateDate);
         });
+      } else {
+        console.log('📭 No remote snippets found');
       }
       
-      // Push local changes
+      // Step 3: Push local changes
+      console.log('⬆️ Pushing local snippets...');
       if (snippets.length > 0) {
         await ragSyncService.pushSnippets(snippets, user.email);
+        console.log(`📤 Pushed ${snippets.length} snippets to Google Sheets`);
+      } else {
+        console.log('📭 No local snippets to push');
       }
       
-      console.log('Manual sync complete');
+      console.log('✅ Manual sync complete');
+      showSuccess(`Synced with Google Sheets (${spreadsheetId.substring(0, 10)}...)`);
     } catch (error) {
-      console.error('Manual sync failed:', error);
-      showError('Manual sync failed');
+      console.error('❌ Manual sync failed:', error);
+      showError(`Manual sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -619,10 +945,12 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       removeTagsFromSnippets,
       storageStats,
       checkEmbeddingStatus,
+      getEmbeddingDetails,
       bulkCheckEmbeddingStatus,
       generateEmbeddings,
       syncStatus,
-      triggerManualSync
+      triggerManualSync,
+      getUserRagSpreadsheet
     }}>
       {children}
     </SwagContext.Provider>

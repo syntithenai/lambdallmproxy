@@ -527,6 +527,36 @@ async function hasEmbedding(snippetId, client = null) {
 }
 
 /**
+ * Get embedding details for snippet IDs (batch)
+ * @param {string[]} snippetIds - Array of snippet IDs
+ * @param {Object} client - libsql client (optional)
+ * @returns {Promise<Object>} Map of snippetId -> hasEmbedding boolean
+ */
+async function getEmbeddingDetails(snippetIds, client = null) {
+  const db = client || createLibsqlClient();
+  
+  try {
+    const result = {};
+    
+    // For each snippet, check if it has embeddings
+    for (const snippetId of snippetIds) {
+      const chunks = await db.execute({
+        sql: 'SELECT COUNT(*) as count FROM chunks WHERE snippet_id = ?',
+        args: [snippetId],
+      });
+      
+      result[snippetId] = chunks.rows[0]?.count > 0;
+    }
+    
+    return result;
+  } finally {
+    if (!client) {
+      db.close();
+    }
+  }
+}
+
+/**
  * Get chunks by multiple snippet IDs
  * @param {string[]} snippetIds - Array of snippet IDs
  * @param {Object} client - libsql client (optional)
@@ -612,6 +642,7 @@ module.exports = {
   blobToVector,
   cosineSimilarity,
   hasEmbedding,
+  getEmbeddingDetails,
   listDocuments,
   SCHEMA_SQL,
 };

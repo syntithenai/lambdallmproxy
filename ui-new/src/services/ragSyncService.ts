@@ -66,9 +66,7 @@ class RAGSyncService {
 
   constructor() {
     // Get API URL from environment or default to localhost
-    this.apiUrl = typeof process !== 'undefined' && process.env?.REACT_APP_LAMBDA_URL
-      ? process.env.REACT_APP_LAMBDA_URL
-      : 'http://localhost:3000';
+    this.apiUrl = import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000';
     
     // Load device ID or create new one
     this.initializeDeviceId();
@@ -436,6 +434,121 @@ class RAGSyncService {
       }
     } catch (error) {
       console.error('Failed to load sync queue:', error);
+    }
+  }
+
+  /**
+   * Push embeddings to Google Sheets
+   * @param chunks - Array of embedding chunks to upload
+   * @param onProgress - Optional progress callback (current, total)
+   */
+  async pushEmbeddings(
+    chunks: any[],
+    onProgress?: (current: number, total: number) => void
+  ): Promise<void> {
+    if (!this.config || !this.config.enabled) {
+      throw new Error('Sync service not initialized');
+    }
+
+    try {
+      // Get user's spreadsheet ID
+      const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+      if (!spreadsheetId) {
+        throw new Error('No spreadsheet ID found. User may not be logged in.');
+      }
+
+      // Get auth token (try several storage locations for compatibility)
+      let authToken = localStorage.getItem('authToken') || localStorage.getItem('google_access_token');
+      if (!authToken) {
+        throw new Error('Not authenticated');
+      }
+
+      // Batch upload (100 chunks at a time to stay under API limits)
+      const batchSize = 100;
+      const batches = Math.ceil(chunks.length / batchSize);
+      
+      for (let i = 0; i < batches; i++) {
+        const batch = chunks.slice(i * batchSize, (i + 1) * batchSize);
+        
+        // Call progress callback
+        if (onProgress) {
+          onProgress(Math.min((i + 1) * batchSize, chunks.length), chunks.length);
+        }
+        
+        // Send batch to backend
+        const response = await fetch(`${this.apiUrl}/rag/sync-embeddings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            operation: 'push',
+            spreadsheetId,
+            chunks: batch
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to push embeddings: ${response.status}`);
+        }
+      }
+
+      console.log(`✅ Pushed ${chunks.length} chunks to Google Sheets`);
+    } catch (error) {
+      console.error('Failed to push embeddings:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Pull embeddings from Google Sheets
+   * @param snippetIds - Optional array of snippet IDs to pull (pulls all if not provided)
+   * @returns Array of embedding chunks
+   */
+  async pullEmbeddings(snippetIds?: string[]): Promise<any[]> {
+    if (!this.config || !this.config.enabled) {
+      throw new Error('Sync service not initialized');
+    }
+
+    try {
+      // Get user's spreadsheet ID
+      const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+      if (!spreadsheetId) {
+        throw new Error('No spreadsheet ID found. User may not be logged in.');
+      }
+
+      // Get auth token (try several storage locations for compatibility)
+      let authToken = localStorage.getItem('authToken') || localStorage.getItem('google_access_token');
+      if (!authToken) {
+        throw new Error('Not authenticated');
+      }
+
+      // Request chunks from backend
+      const response = await fetch(`${this.apiUrl}/rag/sync-embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          operation: 'pull',
+          spreadsheetId,
+          snippetIds
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to pull embeddings: ${response.status}`);
+      }
+
+      const { chunks } = await response.json();
+      console.log(`✅ Pulled ${chunks?.length || 0} chunks from Google Sheets`);
+      
+      return chunks || [];
+    } catch (error) {
+      console.error('Failed to pull embeddings:', error);
+      throw error;
     }
   }
 

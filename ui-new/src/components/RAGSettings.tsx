@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from './ToastManager';
-import { FileUploadDialog } from './FileUploadDialog';
+// Document management removed from settings - heavy features moved to SWAG page
 import { useSwag } from '../contexts/SwagContext';
 import { useAuth } from '../contexts/AuthContext';
+import { isGoogleIdentityAvailable, getAccessToken, clearAccessToken } from '../services/googleSheetsClient';
 
 interface RAGConfig {
   enabled: boolean;
@@ -44,7 +45,7 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
   chunkSize: 1000,
   chunkOverlap: 200,
   topK: 5,
-  similarityThreshold: 0.7,
+  similarityThreshold: 0.5, // Lowered from 0.7 for better recall (fewer false negatives)
   syncEnabled: true, // Renamed from sheetsBackupEnabled
 };
 
@@ -57,25 +58,21 @@ const EMBEDDING_MODELS = [
 
 export const RAGSettings: React.FC = () => {
   const { showSuccess, showError, showWarning } = useToast();
-  const { syncStatus, triggerManualSync } = useSwag();
+  const { syncStatus, triggerManualSync, getUserRagSpreadsheet } = useSwag();
   const { user } = useAuth();
   const [config, setConfig] = useState<RAGConfig>(DEFAULT_RAG_CONFIG);
-  const [stats, setStats] = useState<RAGStats | null>(null);
-  const [documents, setDocuments] = useState<RAGDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
-  const [showUploadDialog, setShowUploadDialog] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{
-    current: number;
-    total: number;
-    status: string;
-  } | null>(null);
   const [syncInProgress, setSyncInProgress] = useState(false);
+  const [googleLinked, setGoogleLinked] = useState(false);
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
 
   useEffect(() => {
     loadRAGConfig();
-    loadRAGStats();
-    loadDocuments();
+    
+    // Check if user has linked Google account
+    const linked = localStorage.getItem('rag_google_linked') === 'true';
+    setGoogleLinked(linked);
   }, []);
 
   const loadRAGConfig = async () => {
@@ -83,173 +80,24 @@ export const RAGSettings: React.FC = () => {
       // Load from IndexedDB (via RAG system)
       const savedConfig = localStorage.getItem('rag_config');
       if (savedConfig) {
-        setConfig(JSON.parse(savedConfig));
+        const parsed = JSON.parse(savedConfig);
+        // Merge with defaults to ensure all fields are defined
+        setConfig({
+          ...DEFAULT_RAG_CONFIG,
+          ...parsed
+        });
+      } else {
+        // No saved config, use defaults
+        setConfig(DEFAULT_RAG_CONFIG);
       }
     } catch (error) {
       console.error('Failed to load RAG config:', error);
+      // On error, use defaults
+      setConfig(DEFAULT_RAG_CONFIG);
     }
   };
 
-  const loadRAGStats = async () => {
-    try {
-      // This would call the RAG system's getDBStats function
-      // For now, we'll use localStorage as a placeholder
-      const savedStats = localStorage.getItem('rag_stats');
-      if (savedStats) {
-        setStats(JSON.parse(savedStats));
-      } else {
-        setStats({
-          totalChunks: 0,
-          uniqueSnippets: 0,
-          estimatedSizeMB: '0',
-          embeddingModels: 0,
-        });
-      }
-    } catch (error) {
-      console.error('Failed to load RAG stats:', error);
-    }
-  };
-
-  const loadDocuments = async () => {
-    if (!config.enabled) return;
-    
-    try {
-      const response = await fetch(`${process.env.REACT_APP_LAMBDA_URL || 'http://localhost:3000'}/rag/documents`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) throw new Error('Failed to fetch documents');
-      
-      // Parse SSE events
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const text = decoder.decode(value);
-          const lines = text.split('\n');
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.substring(6));
-              if (data.documents) {
-                setDocuments(data.documents);
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load documents:', error);
-    }
-  };
-
-  const handleUploadDocument = async (files: File[], urls: string[]) => {
-    try {
-      setLoading(true);
-      
-      for (const file of files) {
-        // Read file content
-        const content = await file.text();
-        
-        const response = await fetch(`${process.env.REACT_APP_LAMBDA_URL || 'http://localhost:3000'}/rag/ingest`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content,
-            sourceType: 'file',
-            title: file.name,
-          }),
-        });
-        
-        if (!response.ok) throw new Error(`Failed to upload ${file.name}`);
-        
-        // Parse SSE response
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            const text = decoder.decode(value);
-            const lines = text.split('\n');
-            
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = JSON.parse(line.substring(6));
-                if (data.error) {
-                  throw new Error(data.error);
-                }
-                if (data.message) {
-                  console.log(data.message);
-                }
-              }
-            }
-          }
-        }
-      }
-      
-      for (const url of urls) {
-        const response = await fetch(`${process.env.REACT_APP_LAMBDA_URL || 'http://localhost:3000'}/rag/ingest`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            url,
-            title: url,
-          }),
-        });
-        
-        if (!response.ok) throw new Error(`Failed to ingest ${url}`);
-      }
-      
-      showSuccess(`Successfully uploaded ${files.length} files and ${urls.length} URLs`);
-      setShowUploadDialog(false);
-      await loadDocuments();
-      await loadRAGStats();
-      
-    } catch (error) {
-      console.error('Upload error:', error);
-      showError(error instanceof Error ? error.message : 'Upload failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSingleFileUpload = async (fileOrUrl: File | string) => {
-    if (typeof fileOrUrl === 'string') {
-      await handleUploadDocument([], [fileOrUrl]);
-    } else {
-      await handleUploadDocument([fileOrUrl], []);
-    }
-  };
-
-  const handleDeleteDocument = async (docId: string) => {
-    if (!confirm('Delete this document and all its embeddings?')) return;
-    
-    try {
-      setLoading(true);
-      // Call delete endpoint when implemented
-      showSuccess('Document deleted');
-      await loadDocuments();
-      await loadRAGStats();
-    } catch (error) {
-      showError('Failed to delete document');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Document management and database statistics removed from settings UI
 
   const handleConfigChange = (key: keyof RAGConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -262,18 +110,32 @@ export const RAGSettings: React.FC = () => {
       return;
     }
 
-    if (!config.syncEnabled) {
-      showWarning('Cloud sync is not enabled');
+    // Check current component state, not localStorage
+    if (!config.enabled) {
+      showWarning('RAG system is not enabled. Enable it in the settings above.');
       return;
+    }
+
+    if (!config.syncEnabled) {
+      showWarning('Cloud sync is not enabled. Check the "Sync to Google Sheets" box above.');
+      return;
+    }
+
+    // Save config before syncing so triggerManualSync can read it
+    try {
+      localStorage.setItem('rag_config', JSON.stringify(config));
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Failed to save config before sync:', error);
     }
 
     try {
       setSyncInProgress(true);
+      // triggerManualSync() handles its own success/error messages
       await triggerManualSync();
-      showSuccess('Sync completed successfully');
     } catch (error) {
+      // Error already shown by triggerManualSync
       console.error('Manual sync failed:', error);
-      showError('Sync failed');
     } finally {
       setSyncInProgress(false);
     }
@@ -286,19 +148,27 @@ export const RAGSettings: React.FC = () => {
       // Save to localStorage (will integrate with IndexedDB later)
       localStorage.setItem('rag_config', JSON.stringify(config));
       
-      // Sync search_knowledge_base tool with RAG enabled state
-      try {
-        const toolsConfig = localStorage.getItem('chat_enabled_tools');
-        if (toolsConfig) {
-          const tools = JSON.parse(toolsConfig);
-          tools.search_knowledge_base = config.enabled;
-          localStorage.setItem('chat_enabled_tools', JSON.stringify(tools));
+      // Dispatch custom event to notify other components (like SwagPage)
+      window.dispatchEvent(new Event('rag_config_updated'));
+      
+      // If sync is enabled, ensure spreadsheet is created
+      if (config.syncEnabled && user) {
+        console.log('📊 Sync enabled - ensuring spreadsheet exists...');
+        const spreadsheetId = await getUserRagSpreadsheet();
+        if (spreadsheetId) {
+          console.log('✅ Spreadsheet ready:', spreadsheetId);
+          showSuccess('RAG settings saved! Your embeddings will sync to Google Sheets.');
+        } else {
+          console.warn('⚠️ Failed to get spreadsheet ID');
+          showWarning('Settings saved but could not access Google Sheets. Check your authentication.');
         }
-      } catch (e) {
-        console.error('Failed to sync search_knowledge_base tool:', e);
+      } else {
+        showSuccess('RAG settings saved successfully');
       }
       
-      showSuccess('RAG settings saved successfully');
+      // NOTE: search_knowledge_base tool is now independent and managed in Settings > Tools
+      // Local RAG system (this settings page) is separate from server-side knowledge_base tool
+      
       setHasChanges(false);
     } catch (error) {
       console.error('Failed to save RAG config:', error);
@@ -308,42 +178,63 @@ export const RAGSettings: React.FC = () => {
     }
   };
 
-  const handleClearAllChunks = async () => {
-    if (!confirm('Are you sure you want to clear all embeddings? This cannot be undone.')) {
+  const handleToggleSync = async (enabled: boolean) => {
+    handleConfigChange('syncEnabled', enabled);
+
+    // If enabling sync, attempt to create/ensure the spreadsheet immediately
+    if (enabled && user) {
+      try {
+        setSyncInProgress(true);
+        console.log('📊 Sync toggled ON - ensuring spreadsheet exists...');
+        const spreadsheetId = await getUserRagSpreadsheet();
+        if (spreadsheetId) {
+          console.log('✅ Spreadsheet ready:', spreadsheetId);
+          showSuccess('Cloud sync enabled and spreadsheet created/verified.');
+        } else {
+          console.warn('⚠️ Could not obtain spreadsheet ID when enabling sync');
+          showWarning('Cloud sync enabled but failed to access Google Sheets. Check authentication.');
+        }
+      } catch (error) {
+        console.error('Error ensuring spreadsheet on toggle:', error);
+        showError('Failed to prepare Google Sheets for sync. Try linking your Google account.');
+      } finally {
+        setSyncInProgress(false);
+      }
+    }
+  };
+
+  const handleLinkGoogleAccount = async () => {
+    if (!isGoogleIdentityAvailable()) {
+      showError('Google Identity Services not available. Please refresh the page.');
       return;
     }
 
     try {
-      setLoading(true);
+      setLinkingGoogle(true);
+      // Request access token (triggers OAuth consent)
+      await getAccessToken();
       
-      // This would call the RAG system's clearAllChunks function
-      localStorage.removeItem('rag_stats');
+      // Mark as linked
+      localStorage.setItem('rag_google_linked', 'true');
+      setGoogleLinked(true);
       
-      setStats({
-        totalChunks: 0,
-        uniqueSnippets: 0,
-        estimatedSizeMB: '0',
-        embeddingModels: 0,
-      });
-      
-      showSuccess('All embeddings cleared');
+      showSuccess('✅ Google Account linked! Embeddings will sync directly to your Sheets.');
     } catch (error) {
-      console.error('Failed to clear chunks:', error);
-      showError('Failed to clear embeddings');
+      console.error('Failed to link Google account:', error);
+      showError('Failed to link Google account. Please try again.');
     } finally {
-      setLoading(false);
+      setLinkingGoogle(false);
     }
   };
 
-  const estimateReEmbeddingCost = () => {
-    if (!stats) return '$0.00';
-    
-    // Rough estimate: 250 tokens per chunk * $0.02 per 1M tokens
-    const totalTokens = stats.totalChunks * 250;
-    const cost = (totalTokens / 1000000) * 0.02;
-    
-    return `$${cost.toFixed(4)}`;
+  const handleUnlinkGoogleAccount = () => {
+    clearAccessToken();
+    localStorage.removeItem('rag_google_linked');
+    setGoogleLinked(false);
+    showSuccess('Google Account unlinked. Embeddings will sync via backend.');
   };
+
+  // Clearing all chunks not exposed in settings (kept as CLI/admin operation)
 
   return (
     <div className="space-y-6">
@@ -438,7 +329,7 @@ export const RAGSettings: React.FC = () => {
         <div>
           <label className="block mb-2">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Chunk Size: {config.chunkSize} characters (≈{Math.round(config.chunkSize / 4)} tokens)
+              Chunk Size: {config.chunkSize || 1000} characters (≈{Math.round((config.chunkSize || 1000) / 4)} tokens)
             </span>
           </label>
           <input
@@ -446,7 +337,7 @@ export const RAGSettings: React.FC = () => {
             min="500"
             max="2000"
             step="100"
-            value={config.chunkSize}
+            value={config.chunkSize || 1000}
             onChange={(e) => handleConfigChange('chunkSize', parseInt(e.target.value))}
             disabled={!config.enabled}
             className="w-full disabled:opacity-50"
@@ -457,7 +348,7 @@ export const RAGSettings: React.FC = () => {
         <div>
           <label className="block mb-2">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Chunk Overlap: {config.chunkOverlap} characters ({Math.round((config.chunkOverlap / config.chunkSize) * 100)}%)
+              Chunk Overlap: {config.chunkOverlap || 200} characters ({Math.round(((config.chunkOverlap || 200) / (config.chunkSize || 1000)) * 100)}%)
             </span>
           </label>
           <input
@@ -465,7 +356,7 @@ export const RAGSettings: React.FC = () => {
             min="0"
             max="500"
             step="50"
-            value={config.chunkOverlap}
+            value={config.chunkOverlap || 200}
             onChange={(e) => handleConfigChange('chunkOverlap', parseInt(e.target.value))}
             disabled={!config.enabled}
             className="w-full disabled:opacity-50"
@@ -483,7 +374,7 @@ export const RAGSettings: React.FC = () => {
         <div>
           <label className="block mb-2">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Top-K Results: {config.topK}
+              Top-K Results: {config.topK || 5}
             </span>
           </label>
           <input
@@ -491,7 +382,7 @@ export const RAGSettings: React.FC = () => {
             min="1"
             max="20"
             step="1"
-            value={config.topK}
+            value={config.topK || 5}
             onChange={(e) => handleConfigChange('topK', parseInt(e.target.value))}
             disabled={!config.enabled}
             className="w-full disabled:opacity-50"
@@ -502,7 +393,7 @@ export const RAGSettings: React.FC = () => {
         <div>
           <label className="block mb-2">
             <span className="text-sm text-gray-700 dark:text-gray-300">
-              Similarity Threshold: {config.similarityThreshold.toFixed(2)}
+              Similarity Threshold: {(config.similarityThreshold || 0.5).toFixed(2)}
             </span>
           </label>
           <input
@@ -510,7 +401,7 @@ export const RAGSettings: React.FC = () => {
             min="0.3"
             max="0.95"
             step="0.05"
-            value={config.similarityThreshold}
+            value={config.similarityThreshold || 0.5}
             onChange={(e) => handleConfigChange('similarityThreshold', parseFloat(e.target.value))}
             disabled={!config.enabled}
             className="w-full disabled:opacity-50"
@@ -533,7 +424,7 @@ export const RAGSettings: React.FC = () => {
             <input
               type="checkbox"
               checked={config.syncEnabled}
-              onChange={(e) => handleConfigChange('syncEnabled', e.target.checked)}
+              onChange={(e) => handleToggleSync(e.target.checked)}
               disabled={!config.enabled || !user}
               className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
@@ -547,6 +438,43 @@ export const RAGSettings: React.FC = () => {
 
         {config.syncEnabled && user && (
           <div className="mt-4 space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            {/* Google Account Linking */}
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    🔐 Direct Google Sheets Sync
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                    {googleLinked 
+                      ? '✅ Embeddings sync directly from browser to your Google Sheets (faster, no backend)'
+                      : '⚠️ Currently using backend sync (may hit rate limits with large batches)'}
+                  </div>
+                </div>
+                {googleLinked ? (
+                  <button
+                    onClick={handleUnlinkGoogleAccount}
+                    className="px-3 py-1.5 text-sm bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                  >
+                    Unlink
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleLinkGoogleAccount}
+                    disabled={linkingGoogle || !isGoogleIdentityAvailable()}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {linkingGoogle ? '⏳ Linking...' : '🔗 Link Google Account'}
+                  </button>
+                )}
+              </div>
+              {!isGoogleIdentityAvailable() && (
+                <div className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                  ⚠️ Google Identity Services not loaded. Please refresh the page.
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center justify-between">
               <div className="text-sm">
                 <div className="font-medium text-gray-700 dark:text-gray-300">Sync Status</div>
@@ -597,123 +525,6 @@ export const RAGSettings: React.FC = () => {
         )}
       </div>
 
-      {/* Statistics */}
-      {stats && (
-        <div className="card p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
-          <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
-            📊 Database Statistics
-          </h4>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-gray-500 dark:text-gray-400">Total Chunks</div>
-              <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {stats.totalChunks.toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <div className="text-gray-500 dark:text-gray-400">Unique Snippets</div>
-              <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {stats.uniqueSnippets}
-              </div>
-            </div>
-            <div>
-              <div className="text-gray-500 dark:text-gray-400">Storage Size</div>
-              <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {stats.estimatedSizeMB} MB
-              </div>
-            </div>
-            <div>
-              <div className="text-gray-500 dark:text-gray-400">Models Used</div>
-              <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {stats.embeddingModels}
-              </div>
-            </div>
-          </div>
-          
-          {stats.totalChunks > 0 && (
-            <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
-              <div className="text-sm text-gray-600 dark:text-gray-300">
-                Estimated re-embedding cost: <strong>{estimateReEmbeddingCost()}</strong>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Document Upload Section */}
-      {config.enabled && (
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-medium text-gray-900 dark:text-gray-100">
-              📄 Document Management
-            </h4>
-            <button
-              onClick={() => setShowUploadDialog(true)}
-              disabled={loading}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors text-sm"
-            >
-              ➕ Upload Documents
-            </button>
-          </div>
-
-          {/* Document List */}
-          {documents.length > 0 ? (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                      {doc.name}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {doc.sourceType === 'file' ? '📄' : doc.sourceType === 'url' ? '🔗' : '📝'} {doc.sourceType} • {doc.chunkCount} chunks • {(doc.totalChars / 1000).toFixed(1)}K chars
-                    </div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500">
-                      {new Date(doc.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="flex gap-2 ml-4">
-                    <button
-                      onClick={() => handleDeleteDocument(doc.id)}
-                      className="px-3 py-1 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              No documents uploaded yet. Click "Upload Documents" to get started.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Upload Progress */}
-      {uploadProgress && (
-        <div className="card p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-              {uploadProgress.status}
-            </span>
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {uploadProgress.current} / {uploadProgress.total}
-            </span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-            <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-
       {/* Action Buttons */}
       <div className="flex gap-3">
         <button
@@ -723,16 +534,6 @@ export const RAGSettings: React.FC = () => {
         >
           {loading ? 'Saving...' : 'Save Settings'}
         </button>
-        
-        {stats && stats.totalChunks > 0 && (
-          <button
-            onClick={handleClearAllChunks}
-            disabled={loading}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-          >
-            Clear All Embeddings
-          </button>
-        )}
       </div>
 
       {/* Help Text */}
@@ -741,12 +542,7 @@ export const RAGSettings: React.FC = () => {
         <p>📖 <strong>Learn more:</strong> Check src/rag/README.md for detailed documentation</p>
       </div>
 
-      {/* Upload Dialog */}
-      <FileUploadDialog
-        isOpen={showUploadDialog}
-        onClose={() => setShowUploadDialog(false)}
-        onUpload={handleSingleFileUpload}
-      />
+      {/* Upload dialog and document management removed from settings */}
     </div>
   );
 };

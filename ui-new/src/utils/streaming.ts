@@ -141,11 +141,26 @@ export async function createSSERequest(
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
+      console.log(`🌐 SSE Request attempt ${attempt + 1}/${maxRetries}:`, {
+        url,
+        method: 'POST',
+        hasToken: !!token,
+        hasYoutubeToken: !!youtubeToken,
+        bodyKeys: body ? Object.keys(body) : [],
+      });
+      
       const response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
         signal
+      });
+
+      console.log(`✅ SSE Response received:`, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
       });
 
       if (!response.ok) {
@@ -192,13 +207,24 @@ export async function createSSERequest(
     } catch (error) {
       lastError = error as Error;
       
+      console.error(`❌ SSE Request failed (attempt ${attempt + 1}/${maxRetries}):`, {
+        error: error instanceof Error ? error.message : String(error),
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        stack: error instanceof Error ? error.stack : undefined,
+        url,
+        attempt: attempt + 1,
+        maxRetries,
+      });
+      
       // Don't retry on abort signal
       if (signal?.aborted) {
+        console.log('⚠️ Request aborted by user');
         throw new Error('Request aborted by user');
       }
       
       // Don't retry on last attempt
       if (attempt >= maxRetries - 1) {
+        console.error('❌ Max retries reached, giving up');
         break;
       }
       
