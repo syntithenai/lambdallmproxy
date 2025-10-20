@@ -20,6 +20,7 @@ import {
 import type { GoogleDoc } from '../utils/googleDocs';
 import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
+import { getCachedApiBase } from '../utils/api';
 
 export const SwagPage: React.FC = () => {
   const { showSuccess, showError, showWarning } = useToast();
@@ -739,15 +740,9 @@ export const SwagPage: React.FC = () => {
         embedding = cached.embedding;
       } else {
         console.log('🔄 Fetching new query embedding from backend');
-        // Get query embedding from backend (use localhost for development)
-        // Handle both undefined and empty string cases
-        const envUrl = import.meta.env.VITE_LAMBDA_URL;
-        const apiUrl = (envUrl && envUrl.trim()) ? envUrl : 'http://localhost:3000';
-        console.log('🌐 Using API URL for embed-query:', apiUrl, {
-          VITE_LAMBDA_URL: import.meta.env.VITE_LAMBDA_URL,
-          isDefined: import.meta.env.VITE_LAMBDA_URL !== undefined,
-          isEmpty: import.meta.env.VITE_LAMBDA_URL === '',
-        });
+        // Get query embedding from backend (use auto-detected API base)
+        const apiUrl = await getCachedApiBase();
+        console.log('🌐 Using API URL for embed-query:', apiUrl);
         const response = await fetch(`${apiUrl}/rag/embed-query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -768,9 +763,9 @@ export const SwagPage: React.FC = () => {
         console.log('💾 Cached query embedding for future use');
       }
       
-      // Get threshold from settings, default to 0.5 (lowered from 0.6 for better recall)
+      // Get threshold from settings, default to 0.3 (relaxed for better recall)
       const ragConfig = JSON.parse(localStorage.getItem('rag_config') || '{}');
-      const threshold = ragConfig.similarityThreshold ?? 0.5;
+      const threshold = ragConfig.similarityThreshold ?? 0.3;
       console.log(`🔍 Vector search with threshold: ${threshold}, query: "${vectorSearchQuery}"`);
       
       // Check how many embeddings exist in IndexedDB
@@ -1209,7 +1204,7 @@ export const SwagPage: React.FC = () => {
       )}
 
       {/* Content Grid */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 min-h-0">
         {snippets.length === 0 ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">
             <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">

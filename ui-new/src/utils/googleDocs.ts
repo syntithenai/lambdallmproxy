@@ -5,7 +5,8 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 // Minimal scopes for privacy:
 // - documents: Create and edit Google Docs
 // - drive.file: ONLY access files created by this app (not all user files)
-const SCOPES = 'https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/drive.file';
+// - spreadsheets: Access spreadsheets for snippets management and billing logging
+const SCOPES = 'https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets';
 
 export interface GoogleDoc {
   id: string;
@@ -15,6 +16,12 @@ export interface GoogleDoc {
 
 let tokenClient: any = null;
 let accessToken: string | null = null;
+
+// Token storage key - use the same key as CloudSyncSettings for consistency
+const TOKEN_STORAGE_KEY = 'google_access_token';
+
+// Load token from localStorage on module initialization
+accessToken = localStorage.getItem(TOKEN_STORAGE_KEY);
 
 // Initialize Google Identity Services
 export const initGoogleAuth = () => {
@@ -43,7 +50,8 @@ export const initGoogleAuth = () => {
             console.log('🎫 Token callback received:', { hasToken: !!response.access_token, error: response.error });
             if (response.access_token) {
               accessToken = response.access_token;
-              console.log('✅ Access token received:', response.access_token.substring(0, 20) + '...');
+              localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+              console.log('✅ Access token received and stored:', response.access_token.substring(0, 20) + '...');
               resolve(response.access_token);
             } else {
               console.error('❌ No access token in response:', response);
@@ -70,7 +78,8 @@ export const initGoogleAuth = () => {
           console.log('🎫 Token callback received:', { hasToken: !!response.access_token, error: response.error });
           if (response.access_token) {
             accessToken = response.access_token;
-            console.log('✅ Access token received:', response.access_token.substring(0, 20) + '...');
+            localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+            console.log('✅ Access token received and stored:', response.access_token.substring(0, 20) + '...');
             resolve(response.access_token);
           } else {
             console.error('❌ No access token in response:', response);
@@ -137,7 +146,8 @@ export const requestGoogleAuth = async (): Promise<string> => {
         }
         if (response.access_token) {
           accessToken = response.access_token;
-          console.log('✅ New access token received:', response.access_token.substring(0, 20) + '...');
+          localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+          console.log('✅ New access token received and stored:', response.access_token.substring(0, 20) + '...');
           resolve(response.access_token);
         } else {
           console.error('❌ No access token in response');
@@ -354,7 +364,8 @@ export const revokeGoogleAuth = () => {
     // @ts-ignore
     google.accounts.oauth2.revoke(accessToken, () => {
       accessToken = null;
-      console.log('✅ Access token revoked');
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      console.log('✅ Access token revoked and cleared from storage');
     });
   }
 };

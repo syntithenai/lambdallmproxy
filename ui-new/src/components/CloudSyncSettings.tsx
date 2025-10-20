@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import './CloudSyncSettings.css';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface CloudSyncSettingsProps {
   onClose?: () => void;
 }
 
 const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose }) => {
+  const { settings, setSettings } = useSettings();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,15 +28,17 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose }) => {
       setUserEmail(storedEmail);
     }
 
-    // Load sync preferences - default to true if not explicitly set
-    const configPref = localStorage.getItem('cloud_sync_config');
+    // Load sync preferences from SettingsContext and localStorage
+    // Config sync comes from SettingsContext.syncToGoogleDrive
+    setConfigSync(settings.syncToGoogleDrive || false);
+    
+    // Swag and billing sync come from localStorage
     const swagPref = localStorage.getItem('cloud_sync_swag');
     const billingPref = localStorage.getItem('cloud_sync_billing');
     
-    setConfigSync(configPref !== 'false'); // Default true
     setSwagSync(swagPref !== 'false'); // Default true
     setBillingSync(billingPref !== 'false'); // Default true
-  }, []);
+  }, [settings.syncToGoogleDrive]);
 
   const handleGoogleAuth = async () => {
     setIsLoading(true);
@@ -110,9 +114,11 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose }) => {
     // Clear all Google-related data
     localStorage.removeItem('google_drive_access_token');
     localStorage.removeItem('user_email');
-    localStorage.removeItem('cloud_sync_config');
     localStorage.removeItem('cloud_sync_swag');
     localStorage.removeItem('cloud_sync_billing');
+    
+    // Disable config sync in SettingsContext
+    setSettings({ ...settings, syncToGoogleDrive: false });
     
     setIsAuthenticated(false);
     setUserEmail(null);
@@ -127,7 +133,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose }) => {
 
   const handleConfigSyncChange = (enabled: boolean) => {
     setConfigSync(enabled);
-    localStorage.setItem('cloud_sync_config', enabled.toString());
+    // Update SettingsContext which handles the actual sync
+    setSettings({ ...settings, syncToGoogleDrive: enabled });
   };
 
   const handleSwagSyncChange = (enabled: boolean) => {

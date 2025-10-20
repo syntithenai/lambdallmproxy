@@ -81,34 +81,6 @@ export function ProviderList() {
     try {
       setIsLoading(true);
       setError(null);
-      await loadFromGoogleDrive();
-      setSuccess('Settings loaded successfully from Google Drive!');
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load settings from Google Drive');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveToDrive = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await saveToGoogleDrive();
-      setSuccess('Settings saved successfully to Google Drive!');
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to save settings to Google Drive');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const editingProvider = editingId ? providers.find((p) => p.id === editingId) : undefined;
-
-  return (
-    <div className="space-y-4">
       {/* Cloud Sync Notice with Load/Save Buttons */}
       <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
         <div className="flex items-start gap-3">
@@ -164,6 +136,34 @@ export function ProviderList() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      </div>or(null);
+      await saveToGoogleDrive();
+      setSuccess('Settings saved successfully to Google Drive!');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save settings to Google Drive');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const editingProvider = editingId ? providers.find((p) => p.id === editingId) : undefined;
+
+  return (
+    <div className="space-y-4">
+      {/* Cloud Sync Notice */}
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">☁️</span>
+          <div className="flex-1">
+            <div className="font-medium text-blue-900 dark:text-blue-100">
+              Cloud Sync for Provider Credentials
+            </div>
+            <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+              To automatically sync your provider settings and API keys to Google Drive, go to the <strong>Cloud Sync</strong> tab.
             </div>
           </div>
         </div>
@@ -250,7 +250,7 @@ export function ProviderList() {
                         {/* Enable/Disable Toggle */}
                         <button
                           onClick={() => {
-                            const isEnabled = provider.enabled !== false;
+                            const isEnabled = provider.enabled !== false; // Default to true if undefined
                             updateProvider(provider.id, { ...provider, enabled: !isEnabled });
                             setSuccess(isEnabled ? 'Provider disabled' : 'Provider enabled');
                             setTimeout(() => setSuccess(null), 2000);

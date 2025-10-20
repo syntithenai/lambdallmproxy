@@ -2,10 +2,11 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { storage, StorageError } from '../utils/storage';
 import { useToast } from '../components/ToastManager';
 import { ragSyncService } from '../services/ragSyncService';
-import { isGoogleIdentityAvailable, appendRows, formatChunksForSheets } from '../services/googleSheetsClient';
+import { isGoogleIdentityAvailable, appendRows, formatChunksForSheets, getAccessToken } from '../services/googleSheetsClient';
 import type { SyncStatus } from '../services/ragSyncService';
 import { useAuth } from './AuthContext';
 import { ragDB } from '../utils/ragDB';
+import { fetchSnippetById } from '../services/snippetsSync';
 
 export interface ContentSnippet {
   id: string;
@@ -40,6 +41,7 @@ interface SwagContextType {
   syncStatus: SyncStatus | null;
   triggerManualSync: () => Promise<void>;
   getUserRagSpreadsheet: () => Promise<string | null>;
+  syncSnippetFromGoogleSheets: (snippetId: number) => Promise<void>;
 }
 
 const SwagContext = createContext<SwagContextType | undefined>(undefined);
@@ -1108,6 +1110,55 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /**
+   * Sync a specific snippet from Google Sheets by ID
+   * Called when backend emits 'snippet_sync' event after creating a snippet
+   */
+  const syncSnippetFromGoogleSheets = async (snippetId: number): Promise<void> => {
+    try {
+      console.log(`🔄 Syncing snippet #${snippetId} from Google Sheets...`);
+      
+      // Get Drive access token for Google Sheets API
+      const driveToken = await getAccessToken();
+      
+      if (!driveToken) {
+        throw new Error('No Drive access token available');
+      }
+      
+      // Fetch the snippet from Google Sheets
+      const snippet = await fetchSnippetById(snippetId, driveToken);
+      
+      if (!snippet) {
+        console.warn(`⚠️ Snippet #${snippetId} not found in Google Sheets`);
+        return;
+      }
+      
+      // Check if snippet already exists in localStorage (by sheet ID or content)
+      const existingSnippet = snippets.find(s => 
+        s.id === snippet.id || s.content.trim() === snippet.content.trim()
+      );
+      
+      if (existingSnippet) {
+        console.log(`✅ Snippet #${snippetId} already exists in localStorage, updating timestamp`);
+        // Update to move it to the top
+        await updateSnippet(existingSnippet.id, { updateDate: Date.now() });
+        showSuccess(`Snippet "${snippet.title || 'Untitled'}" synced from Google Sheets`);
+        return;
+      }
+      
+      // Add snippet to localStorage
+      setSnippets(prev => [snippet, ...prev]);
+      showSuccess(`Snippet "${snippet.title || 'Untitled'}" synced from Google Sheets`);
+      console.log(`✅ Synced snippet #${snippetId} from Google Sheets:`, snippet.title);
+      
+      // Auto-embed if enabled
+      await autoEmbedSnippet(snippet.id, snippet.content, snippet.title);
+    } catch (error) {
+      console.error(`❌ Failed to sync snippet #${snippetId}:`, error);
+      showError(`Failed to sync snippet: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   return (
     <SwagContext.Provider value={{
       snippets,
@@ -1129,7 +1180,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       generateEmbeddings,
       syncStatus,
       triggerManualSync,
-      getUserRagSpreadsheet
+      getUserRagSpreadsheet,
+      syncSnippetFromGoogleSheets
     }}>
       {children}
     </SwagContext.Provider>

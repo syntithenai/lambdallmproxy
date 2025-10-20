@@ -137,23 +137,40 @@ export async function createSSERequest(
     headers['X-YouTube-Token'] = youtubeToken;
   }
 
-  // Add Google Drive access token if available (for billing sheet logging)
-  const driveAccessToken = localStorage.getItem('google_drive_access_token');
-  const billingSyncEnabled = localStorage.getItem('cloud_sync_billing') === 'true';
+  // Add Google Drive access token if available (for snippets & billing sheet logging)
+  // Try multiple possible token sources (ordered by likelihood)
+  const tokenSources = [
+    'google_access_token',        // Primary: Standard Google auth token
+    'gapi_access_token',           // Secondary: GoogleSheetsClient cached token
+    'google_drive_access_token'    // Tertiary: Legacy token key
+  ];
   
-  console.log('🔐 Billing sync status:', {
+  let driveAccessToken: string | null = null;
+  let tokenSource = 'none';
+  
+  for (const source of tokenSources) {
+    const token = localStorage.getItem(source);
+    if (token) {
+      driveAccessToken = token;
+      tokenSource = source;
+      break;
+    }
+  }
+  
+  console.log('🔐 Drive token check:', {
     hasDriveToken: !!driveAccessToken,
     tokenLength: driveAccessToken?.length || 0,
-    billingSyncEnabled: billingSyncEnabled
+    source: tokenSource,
+    availableKeys: tokenSources.filter(k => !!localStorage.getItem(k))
   });
   
-  if (driveAccessToken && billingSyncEnabled) {
+  // Send Drive token for both billing logging AND snippet management
+  if (driveAccessToken) {
     headers['X-Google-Access-Token'] = driveAccessToken;
-    console.log('✅ Including Drive access token for personal billing sheet logging');
-  } else if (driveAccessToken && !billingSyncEnabled) {
-    console.log('⏭️ Have Drive token but billing sync is disabled - not sending token');
-  } else if (!driveAccessToken && billingSyncEnabled) {
-    console.log('⚠️ Billing sync enabled but no Drive token available');
+    console.log(`✅ Including Drive access token for Google Sheets operations (source: ${tokenSource})`);
+  } else {
+    console.log('⚠️ No Drive access token available - snippet management and billing sync will not work');
+    console.log('   Checked keys:', tokenSources);
   }
 
   let lastError: Error | null = null;

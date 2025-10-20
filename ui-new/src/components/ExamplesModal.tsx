@@ -237,6 +237,34 @@ export const ExamplesModal: React.FC<ExamplesModalProps> = ({
                   <button onClick={() => handleExampleClick('Compare the performance benchmarks of React, Vue, and Angular')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Compare: JS frameworks</button>
                 </div>
               </div>
+
+              {/* Multi-Step Workflows (Todos) */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                  ✅ Multi-Step Workflows (Backend Todos)
+                </h3>
+                <div className="space-y-1">
+                  <button onClick={() => handleExampleClick('Create a complete React blog application with authentication, post creation, and comments. Break this down into steps and implement each one.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Build: React blog app</button>
+                  <button onClick={() => handleExampleClick('Help me set up a full CI/CD pipeline for my Node.js app. Plan out all the steps needed and execute them in order.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Setup: CI/CD pipeline</button>
+                  <button onClick={() => handleExampleClick('Migrate my Express server from JavaScript to TypeScript. Create a step-by-step plan and execute each phase.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Migrate: JS to TypeScript</button>
+                  <button onClick={() => handleExampleClick('Set up a complete AWS deployment for my application including VPC, RDS database, Lambda functions, and API Gateway. Plan and implement this step by step.')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Deploy: AWS infrastructure</button>
+                  <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ Auto-progresses through steps (max 5 iterations)</p>
+                </div>
+              </div>
+
+              {/* Knowledge Snippets */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                  📝 Knowledge Snippets (Google Sheets)
+                </h3>
+                <div className="space-y-1">
+                  <button onClick={() => handleExampleClick('Save this code example to my snippets with tags "javascript" and "async": async function fetchData() { const response = await fetch(url); return response.json(); }')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Save: Code snippet</button>
+                  <button onClick={() => handleExampleClick('Remember this information: TypeScript 5.0 introduced const type parameters for generic functions')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Save: Quick note</button>
+                  <button onClick={() => handleExampleClick('Search my snippets for "react hooks"')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: Saved snippets</button>
+                  <button onClick={() => handleExampleClick('Find all my snippets tagged with "python"')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: By tag</button>
+                  <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ Stored in your personal Google Sheet</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

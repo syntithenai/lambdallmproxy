@@ -10,7 +10,7 @@ import { useCast } from '../contexts/CastContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sendChatMessageStreaming } from '../utils/api';
+import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { ragDB } from '../utils/ragDB';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
@@ -77,7 +77,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracksToStart } = usePlaylist();
-  const { addSnippet } = useSwag();
+  const { addSnippet, snippets: swagSnippets, syncSnippetFromGoogleSheets } = useSwag();
   const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
   const { addCost, usage } = useUsage();
@@ -235,7 +235,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // RAG context integration
   const [useRagContext, setUseRagContext] = useLocalStorage<boolean>('chat_use_rag', false);
   const [ragSearching, setRagSearching] = useState(false);
-  const [ragThreshold, setRagThreshold] = useState(0.5); // Default to 0.5 (lowered for better recall)
+  const [ragThreshold, setRagThreshold] = useState(0.3); // Default to 0.3 (relaxed for better recall)
   
   // Todos state (backend-managed multi-step workflows)
   const [todosState, setTodosState] = useState<{
@@ -908,6 +908,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               if (chatData.generatedUserQuery) {
                 setGeneratedUserQueryFromPlanning(chatData.generatedUserQuery);
               }
+              // Restore selected snippet IDs
+              if (chatData.selectedSnippetIds && Array.isArray(chatData.selectedSnippetIds)) {
+                setSelectedSnippetIds(new Set(chatData.selectedSnippetIds));
+                console.log(`📎 Restored ${chatData.selectedSnippetIds.length} attached snippets`);
+              }
               
               const loadedMessages = chatData.messages;
               // Filter out any corrupted messages and sanitize _attachments
@@ -956,7 +961,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               systemPrompt: systemPrompt || undefined,
               planningQuery: originalPlanningQuery || undefined,
               generatedSystemPrompt: generatedSystemPromptFromPlanning || undefined,
-              generatedUserQuery: generatedUserQueryFromPlanning || undefined
+              generatedUserQuery: generatedUserQueryFromPlanning || undefined,
+              selectedSnippetIds: Array.from(selectedSnippetIds) // Convert Set to Array for storage
             }
           );
           if (!currentChatId) {
@@ -1613,6 +1619,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setInput('');
     setHistoryIndex(-1);
     setAttachedFiles([]); // Clear attachments after sending
+    setSelectedSnippetIds(new Set()); // Clear attached snippets after sending
     setIsLoading(true);
     setToolStatus([]);
     setStreamingContent('');
@@ -1630,16 +1637,36 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     if (useRagContext && textToSend.trim()) {
       setRagSearching(true);
       try {
-        // Get query embedding from backend
-        const apiUrl = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
-        const embedResponse = await fetch(`${apiUrl}/rag/embed-query`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: textToSend })
-        });
+        // Check for cached query embedding first
+        let embedding: number[];
+        const cached = await ragDB.getCachedQueryEmbedding(textToSend.trim());
+        if (cached) {
+          console.log('✅ Using cached query embedding');
+          embedding = cached.embedding;
+        } else {
+          console.log('🔄 Fetching new query embedding from backend');
+          // Get query embedding from backend (use auto-detected API base)
+          const apiUrl = await getCachedApiBase();
+          const embedResponse = await fetch(`${apiUrl}/rag/embed-query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: textToSend })
+          });
+          
+          if (!embedResponse.ok) {
+            throw new Error('Failed to get query embedding');
+          }
+          
+          const embeddingData = await embedResponse.json();
+          embedding = embeddingData.embedding;
+          
+          // Cache the embedding for future use
+          const embeddingModel = embeddingData.model || 'unknown';
+          await ragDB.cacheQueryEmbedding(textToSend.trim(), embedding, embeddingModel);
+          console.log('💾 Cached query embedding for future use');
+        }
         
-        if (embedResponse.ok) {
-          const { embedding } = await embedResponse.json();
+        if (embedding) {
           
           console.log(`🔍 RAG search with threshold: ${ragThreshold}`);
           
@@ -1863,24 +1890,41 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       
       // Manual Snippet Context Integration
       // Get full content of selected snippets to include as context
+      // IMPORTANT: Strip images to avoid sending large base64 data
       const manualContextMessages: ChatMessage[] = [];
       if (selectedSnippetIds.size > 0) {
-        const { snippets: allSnippets } = useSwag.getState ? useSwag.getState() : { snippets: [] };
-        
-        // Get snippets by ID - need to access SwagContext
+        // Get snippets by ID from SwagContext
         const contextSnippets = Array.from(selectedSnippetIds)
-          .map(id => allSnippets.find((s: any) => s.id === id))
-          .filter((s: any) => s !== undefined);
+          .map(id => swagSnippets.find(s => s.id === id))
+          .filter(s => s !== undefined);
         
-        // Create context messages with full snippet content
+        // Helper function to strip images from content
+        const stripImages = (content: string): string => {
+          let cleaned = content;
+          
+          // Remove markdown images: ![alt](url)
+          cleaned = cleaned.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[Image: $1]');
+          
+          // Remove HTML img tags (including base64)
+          cleaned = cleaned.replace(/<img[^>]*src="data:image\/[^"]*"[^>]*>/gi, '[Base64 Image]');
+          cleaned = cleaned.replace(/<img[^>]*>/gi, '[Image]');
+          
+          // Remove standalone base64 image data URLs
+          cleaned = cleaned.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, '[Base64 Image Data]');
+          
+          return cleaned;
+        };
+        
+        // Create context messages with full snippet content (images stripped)
         for (const snippet of contextSnippets) {
+          const cleanContent = stripImages(snippet.content);
           manualContextMessages.push({
             role: 'user' as const,
-            content: `**KNOWLEDGE BASE CONTEXT** (manually attached by user):\n\n**Title:** ${snippet.title || 'Untitled'}\n\n${snippet.content}\n\n---\n`
+            content: `**KNOWLEDGE BASE CONTEXT** (manually attached by user):\n\n**Title:** ${snippet.title || 'Untitled'}\n\n${cleanContent}\n\n---\n`
           });
         }
         
-        console.log(`📎 Attached ${manualContextMessages.length} manual context snippets (full content)`);
+        console.log(`📎 Attached ${manualContextMessages.length} manual context snippets (full content, images stripped)`);
       }
       
       // Build messages array with system prompt, RAG context (if any), manual snippets, history, and user message
@@ -2837,11 +2881,24 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               break;
             
             case 'snippet_inserted':
-              // Snippet was inserted
+              // Snippet was inserted - sync from Google Sheets
               console.log('📝 Snippet inserted:', data);
               // Dispatch custom event for SnippetsPanel
               window.dispatchEvent(new CustomEvent('snippet_inserted', { detail: data }));
               showSuccess(`Saved snippet: ${data.title}`);
+              
+              // Sync the newly created snippet from Google Sheets to localStorage
+              if (data.id) {
+                console.log('🔄 Triggering snippet sync from Google Sheets for ID:', data.id);
+                // Use a small delay to ensure the snippet is written to Google Sheets
+                setTimeout(async () => {
+                  try {
+                    await syncSnippetFromGoogleSheets(data.id);
+                  } catch (error) {
+                    console.error('❌ Failed to sync snippet:', error);
+                  }
+                }, 500);
+              }
               break;
             
             case 'snippet_deleted':
@@ -2983,11 +3040,33 @@ Remember: Use the function calling mechanism, not text output. The API will hand
   };
 
   const handleLoadChat = async (entry: ChatHistoryEntry) => {
-    const loadedMessages = await loadChatFromHistory(entry.id);
-    if (loadedMessages) {
-      setMessages(loadedMessages);
+    const chatData = await loadChatWithMetadata(entry.id);
+    if (chatData && chatData.messages) {
+      setMessages(chatData.messages);
       setCurrentChatId(entry.id);
       localStorage.setItem('last_active_chat_id', entry.id);
+      
+      // Restore metadata
+      if (chatData.systemPrompt) {
+        setSystemPrompt(chatData.systemPrompt);
+      }
+      if (chatData.planningQuery) {
+        setOriginalPlanningQuery(chatData.planningQuery);
+      }
+      if (chatData.generatedSystemPrompt) {
+        setGeneratedSystemPromptFromPlanning(chatData.generatedSystemPrompt);
+      }
+      if (chatData.generatedUserQuery) {
+        setGeneratedUserQueryFromPlanning(chatData.generatedUserQuery);
+      }
+      // Restore selected snippet IDs
+      if (chatData.selectedSnippetIds && Array.isArray(chatData.selectedSnippetIds)) {
+        setSelectedSnippetIds(new Set(chatData.selectedSnippetIds));
+        console.log(`📎 Restored ${chatData.selectedSnippetIds.length} attached snippets`);
+      } else {
+        setSelectedSnippetIds(new Set()); // Clear if no snippets
+      }
+      
       setShowLoadDialog(false);
       showSuccess('Chat loaded successfully');
     } else {
@@ -3302,6 +3381,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     setOriginalPlanningQuery('');
     setGeneratedSystemPromptFromPlanning('');
     setGeneratedUserQueryFromPlanning('');
+    
+    // Clear selected snippets
+    setSelectedSnippetIds(new Set());
     
     // Clear search and UI state
     clearSearchResults();
@@ -5135,7 +5217,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           
           {/* RAG Context Toggle */}
           {/* Message Input */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 relative">
             {/* Hidden File Input */}
             <input
               ref={fileInputRef}
@@ -5170,6 +5252,49 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
               </svg>
             </button>
+            
+            {/* Attached Snippets Indicator */}
+            {selectedSnippetIds.size > 0 && (
+              <div className="absolute -top-12 left-0 right-0 px-4">
+                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                        📎 {selectedSnippetIds.size} {selectedSnippetIds.size === 1 ? 'snippet' : 'snippets'} attached
+                      </span>
+                      <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                        {Array.from(selectedSnippetIds).slice(0, 3).map(id => {
+                          const snippet = swagSnippets.find(s => s.id === id);
+                          return snippet ? (
+                            <span 
+                              key={id}
+                              className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 px-2 py-0.5 rounded truncate max-w-[200px]"
+                              title={snippet.title || 'Untitled'}
+                            >
+                              {snippet.title || 'Untitled'}
+                            </span>
+                          ) : null;
+                        })}
+                        {selectedSnippetIds.size > 3 && (
+                          <span className="text-xs text-blue-600 dark:text-blue-300">
+                            +{selectedSnippetIds.size - 3} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedSnippetIds(new Set())}
+                      className="ml-2 p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
+                      title="Clear all attached snippets"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             
             <textarea
             ref={inputRef}

@@ -587,7 +587,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'manage_snippets',
-      description: '📝 **MANAGE KNOWLEDGE SNIPPETS**: Insert, retrieve, search, or delete knowledge snippets stored in your personal Google Sheet ("Research Agent/Research Agent Swag"). Use this to save important information, code examples, procedures, references, or any content you want to preserve and search later. **USE THIS when**: user wants to save/capture content, create a knowledge base, store code snippets, bookmark important info, or search previous saved content. Each snippet can have a title, content, tags for organization, and source tracking (chat/url/file/manual). **Keywords**: save this, remember this, add to knowledge base, store snippet, save for later, search my snippets, find my notes.',
+      description: '📝 **MANAGE KNOWLEDGE SNIPPETS**: Insert, retrieve, search, or delete knowledge snippets stored in your personal Google Sheet ("Research Agent/Research Agent Swag"). Use this to save important information, code examples, procedures, references, or any content you want to preserve and search later. **USE THIS when**: user wants to save/capture content, create a knowledge base, store code snippets, bookmark important info, or search previous saved content. Each snippet can have a title, content, tags for organization, and source tracking (chat/url/file/manual). **Keywords**: save this, remember this, add to knowledge base, store snippet, save for later, search my snippets, find my notes. **IMPORTANT**: Always provide both "action" and "payload" parameters in the function call.',
       parameters: {
         type: 'object',
         required: ['action'],
@@ -595,32 +595,32 @@ const toolFunctions = [
           action: {
             type: 'string',
             enum: ['insert', 'capture', 'get', 'search', 'delete'],
-            description: 'Operation to perform: "insert" (add new snippet), "capture" (save from chat/url/file), "get" (retrieve by ID/title), "search" (find by query/tags), "delete" (remove by ID/title)'
+            description: 'REQUIRED: Operation to perform. Use "insert" to add new snippet with full details, "capture" for quick save from conversation, "get" to retrieve specific snippet, "search" to find snippets, "delete" to remove snippet.'
           },
           payload: {
             type: 'object',
-            description: 'Action-specific parameters',
+            description: 'Action-specific parameters. For insert/capture: provide title, content, tags. For get/delete: provide id or title. For search: provide query or tags.',
             properties: {
               // Insert/Capture fields
-              title: { type: 'string', description: 'Snippet title (required for insert/capture)' },
-              content: { type: 'string', description: 'Snippet content/body (required for insert)' },
+              title: { type: 'string', description: 'Snippet title (REQUIRED for insert/capture actions)' },
+              content: { type: 'string', description: 'Snippet content/body (REQUIRED for insert action, optional for capture)' },
               tags: { 
                 type: 'array', 
                 items: { type: 'string' },
-                description: 'Array of tags for categorization (optional, e.g., ["javascript", "async", "tutorial"])'
+                description: 'Array of tags for categorization. Example: ["javascript", "async", "tutorial"]'
               },
               source: { 
                 type: 'string',
                 enum: ['chat', 'url', 'file', 'manual'],
-                description: 'Source type (for capture action)'
+                description: 'Source type. Defaults to "chat" for capture, "manual" for insert'
               },
               url: { type: 'string', description: 'Source URL if source="url"' },
               
               // Get/Delete fields
-              id: { type: 'number', description: 'Snippet ID (for get/delete)' },
+              id: { type: 'number', description: 'Snippet ID (for get/delete actions)' },
               
               // Search fields
-              query: { type: 'string', description: 'Text search query (searches title and content)' }
+              query: { type: 'string', description: 'Text search query - searches both title and content' }
             }
           }
         },
@@ -2032,19 +2032,65 @@ Brief answer with URLs:`;
     
     case 'manage_snippets': {
       const snippetsService = require('./services/google-sheets-snippets');
-      const action = args.action;
-      const payload = args.payload || {};
       
-      // Extract user's OAuth token from context
-      const accessToken = context.googleToken || context.accessToken;
+      // Debug: Log incoming arguments
+      console.log('🔍 manage_snippets called with args:', JSON.stringify(args, null, 2));
+      
+      // Handle both nested payload structure and flat structure
+      // Some LLMs might pass { action: "insert", payload: {...} }
+      // Others might pass { action: "insert", title: "...", content: "..." }
+      let action = args.action;
+      let payload = args.payload || {};
+      
+      // If payload is empty but we have other properties, use them as payload
+      if (Object.keys(payload).length === 0 && Object.keys(args).length > 1) {
+        // Extract all args except 'action' as payload
+        const { action: _, ...rest } = args;
+        payload = rest;
+        console.log('🔄 manage_snippets: Converted flat args to nested structure');
+        console.log('   Payload:', JSON.stringify(payload, null, 2));
+      }
+      
+      // Try to infer action from payload if missing
+      if (!action) {
+        if (payload.title && payload.content) {
+          action = 'insert';
+          console.log('💡 manage_snippets: Inferred action "insert" from payload with title and content');
+        } else if (payload.query) {
+          action = 'search';
+          console.log('💡 manage_snippets: Inferred action "search" from payload with query');
+        } else if (payload.id) {
+          action = 'get';
+          console.log('💡 manage_snippets: Inferred action "get" from payload with id');
+        }
+      }
+      
+      // Validate action parameter
+      if (!action) {
+        console.error('❌ manage_snippets: Missing action parameter and could not infer from payload');
+        console.error('   Received args:', JSON.stringify(args, null, 2));
+        return JSON.stringify({
+          success: false,
+          error: 'Missing action parameter',
+          message: 'The "action" parameter is required. Please specify one of: insert, capture, get, search, delete',
+          hint: 'Example: { "action": "insert", "payload": { "title": "...", "content": "..." } }',
+          receivedArgs: args
+        });
+      }
+      
+      // Extract user's Google Sheets OAuth token from context
+      // Note: driveAccessToken is the Google OAuth token with Sheets API permissions
+      // googleToken is the Firebase ID token (not sufficient for Sheets API)
+      const accessToken = context.driveAccessToken || context.googleToken || context.accessToken;
       const userEmail = context.userEmail;
       
       if (!accessToken) {
         console.error('❌ manage_snippets: No OAuth token available');
+        console.error('   Available context keys:', Object.keys(context));
         return JSON.stringify({
           success: false,
           error: 'Authentication required',
-          message: 'Please login with Google to use snippets feature'
+          message: 'Please enable Google Drive sync in Settings to use snippets feature. The snippets tool requires Google Sheets API access.'
         });
       }
       

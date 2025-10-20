@@ -1583,6 +1583,7 @@ async function handler(event, responseStream, context) {
             apiKey,
             ...providerApiKeys, // Add all provider-specific API keys for tools
             googleToken,
+            driveAccessToken, // Pass Google Sheets OAuth token for snippets/billing
             youtubeAccessToken: youtubeToken, // Pass YouTube OAuth token for transcript access
             tavilyApiKey,
             mcpServers, // Pass MCP servers for tool routing
@@ -3242,79 +3243,13 @@ async function handler(event, responseStream, context) {
             
             console.log(`✅ Completing request after ${iterationCount} iterations (${todoAutoIterations} todo auto-iterations)`);
             
-            // Exit the loop - all done!
-            break;
-            
-            // Log to Google Sheets (async, don't block response)
-            try {
-                const { logToGoogleSheets } = require('../services/google-sheets-logger');
-                const requestEndTime = Date.now();
-                const durationMs = requestStartTime ? (requestEndTime - requestStartTime) : 0;
-                
-                // Aggregate token usage across all LLM API calls
-                let totalPromptTokens = 0;
-                let totalCompletionTokens = 0;
-                let totalTokens = 0;
-                
-                for (const apiCall of allLlmApiCalls) {
-                    const usage = apiCall.response?.usage;
-                    if (usage) {
-                        totalPromptTokens += usage.prompt_tokens || 0;
-                        totalCompletionTokens += usage.completion_tokens || 0;
-                        totalTokens += usage.total_tokens || 0;
-                    }
-                }
-                
-                // STEP 5: Track actual token usage in rate limit tracker
-                if (totalTokens > 0) {
-                    const rateLimitTracker = getRateLimitTracker();
-                    rateLimitTracker.trackRequest(provider, model, totalTokens);
-                    console.log(`📊 Tracked ${totalTokens} tokens for ${provider}/${model} in rate limit tracker`);
-                }
-                
-                // STEP 12: Record performance metrics in rate limit tracker
-                if (timeToFirstToken && requestStartTime) {
-                    const rateLimitTracker = getRateLimitTracker();
-                    rateLimitTracker.recordPerformance(provider, model, {
-                        timeToFirstToken,
-                        totalDuration: durationMs,
-                        timestamp: Date.now()
-                    });
-                    console.log(`⏱️ Recorded performance: TTFT=${timeToFirstToken}ms, total=${durationMs}ms for ${provider}/${model}`);
-                }
-                
-                // Log the request (non-blocking)
-                const cost = calculateCost(model || 'unknown', totalPromptTokens, totalCompletionTokens);
-                logToBothSheets(driveAccessToken, {
-                    userEmail: userEmail,
-                    provider: provider || 'unknown',
-                    model: model || 'unknown',
-                    promptTokens: totalPromptTokens,
-                    completionTokens: totalCompletionTokens,
-                    totalTokens: totalTokens,
-                    cost,
-                    duration: durationMs / 1000, // Convert ms to seconds
-                    type: 'chat',
-                    memoryLimitMB,
-                    memoryUsedMB,
-                    requestId,
-                    timeToFirstToken: timeToFirstToken || null, // STEP 12: Include TTFT in logs
-                    timestamp: new Date().toISOString()
-                }).catch(err => {
-                    console.error('Failed to log to sheets:', err.message);
-                });
-            } catch (err) {
-                // Don't fail the request if logging fails
-                console.error('Google Sheets logging error:', err.message);
-            }
-            
             // Add memory tracking snapshot before completing
             memoryTracker.snapshot('chat-complete');
-            const memoryMetadata = memoryTracker.getResponseMetadata();
+            const finalMemoryMetadata = memoryTracker.getResponseMetadata();
             
             // Calculate cost for this request
             const { calculateCost } = require('../services/google-sheets-logger');
-            let requestCost = 0;
+            let finalRequestCost = 0;
             for (const apiCall of allLlmApiCalls) {
                 const usage = apiCall.response?.usage;
                 if (usage && apiCall.model) {
@@ -3323,29 +3258,35 @@ async function handler(event, responseStream, context) {
                         usage.prompt_tokens || 0,
                         usage.completion_tokens || 0
                     );
-                    requestCost += cost;
+                    finalRequestCost += cost;
                 }
             }
             
+            // Send final 'complete' event
             sseWriter.writeEvent('complete', {
                 status: 'success',
                 messages: currentMessages,
                 iterations: iterationCount,
                 extractedContent: extractedContent || undefined,
-                cost: parseFloat(requestCost.toFixed(4)), // Cost for this request
-                ...memoryMetadata
+                cost: parseFloat(finalRequestCost.toFixed(4)), // Cost for this request
+                ...finalMemoryMetadata
             });
             
             // Log memory summary
             console.log('📊 Chat endpoint ' + memoryTracker.getSummary());
             
+            // End the response stream
             responseStream.end();
+            
+            // Exit the function completely
             return;
         }
         
-        // Max iterations reached with tools still being called
-        // Prepare continue context: include full message history with tool results for continuation
-        const continueContext = {
+        // Check if we exited the loop due to hitting max iterations (not via break for completion)
+        if (iterationCount >= maxIterations) {
+            // Max iterations reached with tools still being called
+            // Prepare continue context: include full message history with tool results for continuation
+            const continueContext = {
             messages: currentMessages, // Full context including tool results
             lastUserMessage: messages[messages.length - 1], // Original user message with media
             provider: provider,
@@ -3353,10 +3294,17 @@ async function handler(event, responseStream, context) {
             extractedContent: extractedContent
         };
         
+        console.log(`❌ MAX_ITERATIONS hit - iteration ${iterationCount}/${maxIterations}`);
+        console.log(`   Current messages: ${currentMessages.length}`);
+        console.log(`   Last 3 messages: ${currentMessages.slice(-3).map(m => m.role).join(', ')}`);
+        console.log(`   Todo auto iterations: ${todoAutoIterations}/${MAX_TODO_AUTO_ITERATIONS}`);
+        console.log(`   Todos pending: ${todosManager.hasPending()}`);
+        
         sseWriter.writeEvent('error', {
             error: 'Maximum tool execution iterations reached',
             code: 'MAX_ITERATIONS',
             iterations: iterationCount,
+            maxIterations: maxIterations,
             showContinueButton: true,
             continueContext: continueContext
         });
@@ -3388,6 +3336,7 @@ async function handler(event, responseStream, context) {
         }
         
         responseStream.end();
+        } // End of if (iterationCount >= maxIterations)
         
     } catch (error) {
         console.error('Chat endpoint error:', error);

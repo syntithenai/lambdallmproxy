@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check LocalStorage Tokens</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        pre {
+            background: #252526;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .token {
+            margin: 10px 0;
+            padding: 10px;
+            background: #2d2d30;
+            border-left: 3px solid #007acc;
+        }
+        .key {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+        .value {
+            color: #ce9178;
+            word-break: break-all;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔐 LocalStorage Token Inspector</h1>
+    <button onclick="checkTokens()">🔍 Check Tokens</button>
+    <button onclick="testAPI()">🧪 Test API Call</button>
+    <div id="output"></div>
+
+    <script>
+        function checkTokens() {
+            const tokenKeys = [
+                'google_access_token',
+                'gapi_access_token',
+                'google_drive_access_token',
+                'firebase_token',
+                'access_token'
+            ];
+
+            const output = document.getElementById('output');
+            let html = '<h2>LocalStorage Tokens:</h2>';
+
+            tokenKeys.forEach(key => {
+                const value = localStorage.getItem(key);
+                html += `<div class="token">`;
+                html += `<div class="key">${key}:</div>`;
+                if (value) {
+                    html += `<div class="value">✅ Found (${value.length} chars): ${value.substring(0, 50)}...</div>`;
+                } else {
+                    html += `<div class="value">❌ Not found</div>`;
+                }
+                html += `</div>`;
+            });
+
+            // Show all localStorage keys
+            html += '<h2>All LocalStorage Keys:</h2><pre>';
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                html += `${key}\n`;
+            }
+            html += '</pre>';
+
+            output.innerHTML = html;
+        }
+
+        async function testAPI() {
+            const tokenSources = [
+                'google_access_token',
+                'gapi_access_token',
+                'google_drive_access_token'
+            ];
+
+            let driveAccessToken = null;
+            let tokenSource = 'none';
+
+            for (const source of tokenSources) {
+                const token = localStorage.getItem(source);
+                if (token) {
+                    driveAccessToken = token;
+                    tokenSource = source;
+                    break;
+                }
+            }
+
+            const output = document.getElementById('output');
+            let html = '<h2>API Call Test:</h2>';
+
+            if (!driveAccessToken) {
+                html += '<div class="token">❌ No token found in localStorage</div>';
+                output.innerHTML = html;
+                return;
+            }
+
+            html += `<div class="token">✅ Using token from: <span class="key">${tokenSource}</span></div>`;
+            html += `<div class="token">Token length: ${driveAccessToken.length} chars</div>`;
+            html += `<div class="token">Making test API call to /chat...</div>`;
+
+            try {
+                const response = await fetch('http://localhost:3000/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('firebase_token')}`,
+                        'X-Google-Access-Token': driveAccessToken
+                    },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: 'Test message' }
+                        ],
+                        model: 'gemini-2.0-flash',
+                        stream: false
+                    })
+                });
+
+                html += `<div class="token">Response status: <span class="${response.ok ? 'key' : 'value'}">${response.status}</span></div>`;
+                
+                if (response.ok) {
+                    html += `<div class="token">✅ Token is being sent correctly!</div>`;
+                } else {
+                    const error = await response.text();
+                    html += `<div class="token">❌ Error: ${error}</div>`;
+                }
+            } catch (error) {
+                html += `<div class="token">❌ Fetch error: ${error.message}</div>`;
+            }
+
+            output.innerHTML = html;
+        }
+
+        // Auto-check on load
+        checkTokens();
+    </script>
+</body>
+</html>

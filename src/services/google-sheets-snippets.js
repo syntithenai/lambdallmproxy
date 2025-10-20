@@ -156,6 +156,23 @@ async function initializeSnippetsSheet(spreadsheetId, accessToken) {
   
   sheets.context._options.auth.setCredentials({ access_token: accessToken });
   
+  // Get the actual sheet ID for "Snippets" sheet
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties'
+  });
+  
+  const snippetsSheet = spreadsheet.data.sheets?.find(
+    sheet => sheet.properties?.title === 'Snippets'
+  );
+  
+  if (!snippetsSheet || !snippetsSheet.properties) {
+    throw new Error('Snippets sheet not found');
+  }
+  
+  const sheetId = snippetsSheet.properties.sheetId;
+  console.log(`📊 Snippets: Found sheet with ID ${sheetId}`);
+  
   const headers = [
     'ID',
     'Created At',
@@ -185,7 +202,7 @@ async function initializeSnippetsSheet(spreadsheetId, accessToken) {
         {
           repeatCell: {
             range: {
-              sheetId: 0,
+              sheetId: sheetId, // Use actual sheet ID
               startRowIndex: 0,
               endRowIndex: 1,
               startColumnIndex: 0,
@@ -206,6 +223,65 @@ async function initializeSnippetsSheet(spreadsheetId, accessToken) {
   });
   
   console.log('📊 Snippets: Initialized sheet with headers and formatting');
+}
+
+/**
+ * Ensure "Snippets" sheet exists in spreadsheet, create if missing
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} accessToken - User's OAuth access token
+ */
+async function ensureSnippetsSheetExists(spreadsheetId, accessToken) {
+  const sheets = google.sheets({
+    version: 'v4',
+    auth: new google.auth.OAuth2()
+  });
+  
+  sheets.context._options.auth.setCredentials({ access_token: accessToken });
+  
+  try {
+    // Get spreadsheet metadata to check existing sheets
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties'
+    });
+    
+    // Check if "Snippets" sheet exists
+    const snippetsSheet = spreadsheet.data.sheets?.find(
+      sheet => sheet.properties?.title === 'Snippets'
+    );
+    
+    if (snippetsSheet) {
+      console.log('📊 Snippets: "Snippets" sheet already exists');
+      return;
+    }
+    
+    // Create "Snippets" sheet
+    console.log('📊 Snippets: Creating missing "Snippets" sheet in existing spreadsheet');
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          addSheet: {
+            properties: {
+              title: 'Snippets',
+              gridProperties: {
+                frozenRowCount: 1,
+                columnCount: 8
+              }
+            }
+          }
+        }]
+      }
+    });
+    
+    // Initialize the new sheet with headers and formatting
+    await initializeSnippetsSheet(spreadsheetId, accessToken);
+    
+    console.log('📊 Snippets: Successfully created and initialized "Snippets" sheet');
+  } catch (error) {
+    console.error('❌ Snippets: Error ensuring sheet exists:', error.message);
+    throw error;
+  }
 }
 
 /**
@@ -231,7 +307,11 @@ async function getOrCreateSnippetsSheet(userEmail, accessToken) {
     let spreadsheetId = await findSheetInFolder('Research Agent Swag', folderId, accessToken);
     
     if (!spreadsheetId) {
+      // Create new spreadsheet with Snippets sheet
       spreadsheetId = await createSnippetsSpreadsheet(folderId, accessToken);
+    } else {
+      // Existing spreadsheet found - ensure "Snippets" sheet exists
+      await ensureSnippetsSheetExists(spreadsheetId, accessToken);
     }
     
     const result = {

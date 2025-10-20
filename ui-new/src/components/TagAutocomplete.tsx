@@ -38,6 +38,12 @@ export const TagAutocomplete: React.FC<TagAutocompleteProps> = ({
   // Filter tags based on input (fuzzy matching)
   const filteredSuggestions = React.useMemo(() => {
     const query = inputValue.toLowerCase().trim();
+    
+    // Safety check for undefined existingTags
+    if (!existingTags || !Array.isArray(existingTags)) {
+      return [];
+    }
+    
     if (!query) {
       // Show all available tags when input is empty
       return existingTags

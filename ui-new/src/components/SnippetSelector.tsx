@@ -42,7 +42,7 @@ import { useSwag } from '../contexts/SwagContext';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
-import { TagAutocomplete } from './TagAutocomplete';
+import { getCachedApiBase } from '../utils/api';
 
 interface SnippetSelectorProps {
   /** Currently selected snippet IDs from parent */
@@ -116,8 +116,8 @@ export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
     setHasRunVectorSearch(true);
     
     try {
-      // Get query embedding from backend
-      const apiUrl = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+      // Get query embedding from backend (use auto-detected API base)
+      const apiUrl = await getCachedApiBase();
       const response = await fetch(`${apiUrl}/rag/embed-query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -318,13 +318,33 @@ export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
       {/* Tag filter */}
       {allTags.length > 0 && (
         <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-          <TagAutocomplete
-            availableTags={allTags}
-            selectedTags={selectedTags}
-            onSelectedTagsChange={setSelectedTags}
-            placeholder="Filter by tags..."
-            className="w-full"
-          />
+          <div className="flex flex-wrap gap-1.5">
+            {allTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => {
+                  setSelectedTags(prev =>
+                    prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                  );
+                }}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  selectedTags.includes(tag)
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          {selectedTags.length > 0 && (
+            <button
+              onClick={() => setSelectedTags([])}
+              className="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Clear tag filters
+            </button>
+          )}
         </div>
       )}
       
