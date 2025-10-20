@@ -478,9 +478,111 @@ async function getUserTotalCost(userEmail) {
     }
 }
 
+/**
+ * Get detailed billing data for a specific user from service sheet
+ * 
+ * @param {string} userEmail - User's email address
+ * @param {Object} filters - Optional filters (startDate, endDate, type, provider)
+ * @returns {Promise<Array>} Array of transaction objects
+ */
+async function getUserBillingData(userEmail, filters = {}) {
+    try {
+        // Check if Google Sheets logging is configured
+        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
+        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
+        
+        if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
+            console.log('ℹ️ Google Sheets logging not configured - returning empty array');
+            return [];
+        }
+        
+        // Format private key (handle escaped newlines)
+        const formattedKey = privateKey.replace(/\\n/g, '\n');
+        
+        // Get OAuth access token
+        const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
+        
+        // Read all data from the sheet (columns A-K, skip header row)
+        const range = `${sheetName}!A2:K`;
+        const sheetData = await getSheetData(spreadsheetId, range, accessToken);
+        
+        if (!sheetData.values || sheetData.values.length === 0) {
+            console.log(`ℹ️ No usage data found for ${userEmail}`);
+            return [];
+        }
+        
+        // Parse filters
+        const startDate = filters.startDate ? new Date(filters.startDate) : null;
+        const endDate = filters.endDate ? new Date(filters.endDate) : null;
+        const typeFilter = filters.type?.toLowerCase();
+        const providerFilter = filters.provider?.toLowerCase();
+        
+        // Convert rows to transaction objects and filter
+        const transactions = [];
+        
+        for (const row of sheetData.values) {
+            const rowEmail = row[1]; // Column B (index 1) is User Email
+            
+            // Skip if not this user
+            if (rowEmail !== userEmail) continue;
+            
+            const timestamp = row[0]; // Column A - ISO timestamp
+            const provider = row[2]; // Column C
+            const model = row[3]; // Column D
+            const tokensIn = parseInt(row[4]) || 0; // Column E
+            const tokensOut = parseInt(row[5]) || 0; // Column F
+            const totalTokens = parseInt(row[6]) || 0; // Column G
+            const cost = parseFloat(row[7]) || 0; // Column H
+            const duration = parseFloat(row[8]) || 0; // Column I
+            const errorCode = row[9] || ''; // Column J
+            const errorMessage = row[10] || ''; // Column K
+            
+            // Apply date filters
+            if (startDate || endDate) {
+                const txDate = new Date(timestamp);
+                if (startDate && txDate < startDate) continue;
+                if (endDate && txDate > endDate) continue;
+            }
+            
+            // Apply provider filter
+            if (providerFilter && provider.toLowerCase() !== providerFilter) continue;
+            
+            // Create transaction object
+            const transaction = {
+                timestamp,
+                provider,
+                model,
+                tokensIn,
+                tokensOut,
+                totalTokens,
+                cost,
+                duration,
+                type: 'chat', // Service sheet doesn't distinguish type, default to chat
+                error: errorCode ? { code: errorCode, message: errorMessage } : null
+            };
+            
+            // Apply type filter (service sheet doesn't have type, so only filter if explicitly 'chat')
+            if (typeFilter && typeFilter !== 'chat') continue;
+            
+            transactions.push(transaction);
+        }
+        
+        console.log(`📊 Found ${transactions.length} transactions for ${userEmail} (filtered from ${sheetData.values.length} total)`);
+        
+        return transactions;
+    } catch (error) {
+        console.error('❌ Failed to get user billing data:', error.message);
+        // Return empty array on error to avoid blocking users
+        return [];
+    }
+}
+
 module.exports = {
     logToGoogleSheets,
     initializeSheet,
     calculateCost,
-    getUserTotalCost
+    getUserTotalCost,
+    getUserBillingData
 };

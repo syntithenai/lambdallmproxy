@@ -259,7 +259,7 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
 
         {/* Dialog Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {apiCalls.map((call, index) => {
+          {apiCalls.filter(call => call.phase !== 'self_evaluation').map((call, index) => {
             const tokensIn = call.response?.usage?.prompt_tokens || 0;
             const tokensOut = call.response?.usage?.completion_tokens || 0;
             
@@ -521,7 +521,7 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-700 dark:text-gray-300">
-                        🔍 Self-Evaluation
+                        🔍 self_evaluation
                       </span>
                       <span className="text-xs text-gray-500 dark:text-gray-400">•</span>
                       <span className="text-xs text-gray-600 dark:text-gray-400">

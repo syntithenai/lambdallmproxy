@@ -6,6 +6,7 @@ import { useDialogClose } from '../hooks/useDialogClose';
 import { ProviderList } from './ProviderList';
 import { TTSSettings } from './TTSSettings';
 import { RAGSettings } from './RAGSettings';
+import CloudSyncSettings from './CloudSyncSettings';
 import { TTS_FEATURE_ENABLED } from '../types/tts';
 
 interface EnabledTools {
@@ -17,6 +18,8 @@ interface EnabledTools {
   generate_chart: boolean;
   generate_image: boolean;
   search_knowledge_base: boolean;
+  manage_todos: boolean;
+  manage_snippets: boolean;
 }
 
 interface SettingsModalProps {
@@ -39,7 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
 
-  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag' | 'cloud'>('provider');
   
   // Proxy settings state
   const [proxyUsername, setProxyUsername] = useState('');
@@ -98,6 +101,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             🔌 Provider
+          </button>
+          <button
+            onClick={() => setActiveTab('cloud')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'cloud'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            ☁️ Cloud Sync
           </button>
           <button
             onClick={() => setActiveTab('tools')}
@@ -416,6 +429,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
                     Server-side RAG tool for searching project documentation and ingested content
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.manage_todos}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, manage_todos: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    ✅ Manage Todos (Backend Queue)
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Backend todo queue management with auto-progression for multi-step workflows
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.manage_snippets}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, manage_snippets: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    📝 Manage Snippets (Google Sheets)
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Save and search code snippets and knowledge in your personal Google Sheet
                   </div>
                 </div>
               </label>
@@ -765,6 +812,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* RAG Tab */}
         {activeTab === 'rag' && (
           <RAGSettings />
+        )}
+
+        {/* Cloud Sync Tab */}
+        {activeTab === 'cloud' && (
+          <CloudSyncSettings />
         )}
 
         <div className="flex justify-end gap-3 mt-8">

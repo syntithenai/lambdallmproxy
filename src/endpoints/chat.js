@@ -137,9 +137,17 @@ function buildRuntimeCatalog(baseCatalog, availableProviders) {
  * @param {object} logData - Transaction data
  */
 async function logToBothSheets(accessToken, logData) {
+    console.log('📊 logToBothSheets called:', {
+        hasAccessToken: !!accessToken,
+        tokenLength: accessToken?.length || 0,
+        userEmail: logData.userEmail,
+        type: logData.type
+    });
+    
     // Always log to service account sheet (admin tracking)
     try {
         await logToGoogleSheets(logData);
+        console.log('✅ Logged to service account sheet');
     } catch (error) {
         console.error('⚠️ Failed to log to service account sheet:', error.message);
     }
@@ -147,11 +155,20 @@ async function logToBothSheets(accessToken, logData) {
     // Also log to user's personal billing sheet if token available
     if (accessToken && logData.userEmail && logData.userEmail !== 'unknown') {
         try {
+            console.log('📝 Attempting to log to personal billing sheet...');
             await logToBillingSheet(accessToken, logData);
+            console.log('✅ Successfully logged to personal billing sheet');
         } catch (error) {
             console.error('⚠️ Failed to log to user billing sheet:', error.message);
+            console.error('Stack:', error.stack);
             // Don't fail the request if user billing logging fails
         }
+    } else {
+        console.log('⏭️ Skipping personal billing sheet:', {
+            hasToken: !!accessToken,
+            hasEmail: !!logData.userEmail,
+            emailValid: logData.userEmail !== 'unknown'
+        });
     }
 }
 
@@ -815,6 +832,13 @@ async function handler(event, responseStream, context) {
     
     let sseWriter = null;
     let lastRequestBody = null; // Track last request for error reporting (moved to function scope)
+    let googleToken = null; // Google OAuth token for API calls (moved to function scope)
+    let driveAccessToken = null; // Google Drive access token for billing sheet logging (function scope)
+    let userEmail = 'unknown'; // User email from auth (moved to function scope)
+    let provider = null; // Selected provider (moved to function scope)
+    let model = null; // Selected model (moved to function scope)
+    let extractedContent = null; // Extracted media content (moved to function scope)
+    let currentMessages = []; // Current message history with tool results (moved to function scope)
     
     // Get memory tracker from parent handler
     const { getMemoryTracker } = require('../utils/memory-tracker');
@@ -854,7 +878,8 @@ async function handler(event, responseStream, context) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        let { messages, model, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location } = body;
+        let { messages, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location } = body;
+        model = body.model; // Assign to function-scoped variable
         const tavilyApiKey = body.tavilyApiKey || '';
         
         // INTELLIGENT MODEL ROUTING: Upgrade Together AI models based on query complexity
@@ -1205,7 +1230,7 @@ async function handler(event, responseStream, context) {
                                 completionTokens
                             );
                             
-                            await logToBothSheets(googleToken, {
+                            await logToBothSheets(driveAccessToken, {
                                 userEmail,
                                 provider: inputValidation.tracking.provider,
                                 model: inputValidation.tracking.model,
@@ -1243,7 +1268,7 @@ async function handler(event, responseStream, context) {
         }
         
         // Extract Google OAuth token from Authorization header for API calls
-        let googleToken = null;
+        googleToken = null; // Reset to null first
         if (authHeader && authHeader.startsWith('Bearer ')) {
             googleToken = authHeader.substring(7);
         }
@@ -1254,9 +1279,15 @@ async function handler(event, responseStream, context) {
             console.log('YouTube OAuth token detected for transcript access');
         }
         
+        // Extract Google Drive access token from custom header (for billing sheet logging)
+        driveAccessToken = event.headers['x-google-access-token'] || event.headers['X-Google-Access-Token'] || null;
+        if (driveAccessToken) {
+            console.log('Google Drive access token detected for billing sheet logging');
+        }
+        
         // Set verified user from auth result
         const verifiedUser = authResult.user;
-        const userEmail = verifiedUser?.email || authResult.email || 'unknown';
+        userEmail = verifiedUser?.email || authResult.email || 'unknown';
         
         // Validate required fields
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -1493,7 +1524,7 @@ async function handler(event, responseStream, context) {
             }
         }
         
-        let provider = selectedProvider.type;
+        provider = selectedProvider.type; // Assignment to function-scoped variable
         
         // Log model selection result
         if (requestedModel && requestedModel !== model) {
@@ -1575,7 +1606,7 @@ async function handler(event, responseStream, context) {
             hasTools: tools && tools.length > 0
         });
         
-        let currentMessages = [...messages];
+        currentMessages = [...messages]; // Assignment to function-scoped variable
         let iterationCount = 0;
         const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 15;
         let jsonToolCallReminderCount = 0;
@@ -2338,7 +2369,7 @@ async function handler(event, responseStream, context) {
             // This keeps them out of LLM context while allowing UI to display them
             const toolMessages = currentMessages.filter(m => m.role === 'tool');
             
-            let extractedContent = null;
+            extractedContent = null; // Assignment to function-scoped variable
             const imageGenerations = []; // Collect image generation results
             
             // NEW: Track extraction metadata per tool (for inline transparency)
@@ -3044,7 +3075,7 @@ async function handler(event, responseStream, context) {
                             completionTokens
                         );
                         
-                        await logToBothSheets(googleToken, {
+                        await logToBothSheets(driveAccessToken, {
                             userEmail,
                             provider: outputValidation.tracking.provider,
                             model: outputValidation.tracking.model,
@@ -3254,7 +3285,7 @@ async function handler(event, responseStream, context) {
                 
                 // Log the request (non-blocking)
                 const cost = calculateCost(model || 'unknown', totalPromptTokens, totalCompletionTokens);
-                logToBothSheets(googleToken, {
+                logToBothSheets(driveAccessToken, {
                     userEmail: userEmail,
                     provider: provider || 'unknown',
                     model: model || 'unknown',
@@ -3316,7 +3347,7 @@ async function handler(event, responseStream, context) {
         // Prepare continue context: include full message history with tool results for continuation
         const continueContext = {
             messages: currentMessages, // Full context including tool results
-            lastUserMessage: requestBody.messages[requestBody.messages.length - 1], // Original user message with media
+            lastUserMessage: messages[messages.length - 1], // Original user message with media
             provider: provider,
             model: model,
             extractedContent: extractedContent
@@ -3335,7 +3366,7 @@ async function handler(event, responseStream, context) {
             const requestEndTime = Date.now();
             const durationMs = requestStartTime ? (requestEndTime - requestStartTime) : 0;
             
-            logToBothSheets(googleToken, {
+            logToBothSheets(driveAccessToken, {
                 userEmail: userEmail,
                 provider: provider || 'unknown',
                 model: model || 'unknown',
@@ -3373,7 +3404,7 @@ async function handler(event, responseStream, context) {
         if (typeof currentMessages !== 'undefined' && currentMessages.length > 0) {
             const continueContext = {
                 messages: currentMessages, // Full context including tool results
-                lastUserMessage: requestBody?.messages[requestBody.messages.length - 1], // Original user message with media
+                lastUserMessage: messages?.[messages.length - 1], // Original user message with media
                 provider: provider,
                 model: model
             };
@@ -3420,7 +3451,7 @@ async function handler(event, responseStream, context) {
             // userEmail might not be defined if error occurs before auth
             const logUserEmail = (typeof userEmail !== 'undefined') ? userEmail : 'unknown';
             
-            logToBothSheets(googleToken, {
+            logToBothSheets(driveAccessToken, {
                 userEmail: logUserEmail,
                 provider: provider || (lastRequestBody ? lastRequestBody.provider : 'unknown'),
                 model: model || (lastRequestBody ? lastRequestBody.model : 'unknown'),

@@ -1,6 +1,6 @@
 /**
  * Storage utility with IndexedDB for large data and localStorage fallback
- * Provides much higher capacity than localStorage (50MB+ vs 5-10MB)
+ * Provides much higher capacity than localStorage (250MB+ vs 5MB)
  */
 
 const DB_NAME = 'lambdallmproxy';
@@ -9,7 +9,7 @@ const STORE_NAME = 'app_data';
 
 // Storage size limits (approximate)
 const LOCALSTORAGE_LIMIT = 5 * 1024 * 1024; // 5MB
-const INDEXEDDB_LIMIT = 50 * 1024 * 1024; // 50MB (conservative, actual limit is higher)
+const INDEXEDDB_LIMIT = 250 * 1024 * 1024; // 250MB
 
 export class StorageError extends Error {
   code: 'QUOTA_EXCEEDED' | 'DB_ERROR' | 'NOT_SUPPORTED' | 'UNKNOWN';

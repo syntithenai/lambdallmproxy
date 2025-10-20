@@ -582,6 +582,51 @@ const toolFunctions = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'manage_snippets',
+      description: '📝 **MANAGE KNOWLEDGE SNIPPETS**: Insert, retrieve, search, or delete knowledge snippets stored in your personal Google Sheet ("Research Agent/Research Agent Swag"). Use this to save important information, code examples, procedures, references, or any content you want to preserve and search later. **USE THIS when**: user wants to save/capture content, create a knowledge base, store code snippets, bookmark important info, or search previous saved content. Each snippet can have a title, content, tags for organization, and source tracking (chat/url/file/manual). **Keywords**: save this, remember this, add to knowledge base, store snippet, save for later, search my snippets, find my notes.',
+      parameters: {
+        type: 'object',
+        required: ['action'],
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['insert', 'capture', 'get', 'search', 'delete'],
+            description: 'Operation to perform: "insert" (add new snippet), "capture" (save from chat/url/file), "get" (retrieve by ID/title), "search" (find by query/tags), "delete" (remove by ID/title)'
+          },
+          payload: {
+            type: 'object',
+            description: 'Action-specific parameters',
+            properties: {
+              // Insert/Capture fields
+              title: { type: 'string', description: 'Snippet title (required for insert/capture)' },
+              content: { type: 'string', description: 'Snippet content/body (required for insert)' },
+              tags: { 
+                type: 'array', 
+                items: { type: 'string' },
+                description: 'Array of tags for categorization (optional, e.g., ["javascript", "async", "tutorial"])'
+              },
+              source: { 
+                type: 'string',
+                enum: ['chat', 'url', 'file', 'manual'],
+                description: 'Source type (for capture action)'
+              },
+              url: { type: 'string', description: 'Source URL if source="url"' },
+              
+              // Get/Delete fields
+              id: { type: 'number', description: 'Snippet ID (for get/delete)' },
+              
+              // Search fields
+              query: { type: 'string', description: 'Text search query (searches title and content)' }
+            }
+          }
+        },
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -1983,6 +2028,217 @@ Brief answer with URLs:`;
         state: state,
         message: `Todos updated: ${state.total} total, ${state.remaining} remaining${state.current ? `, current: "${state.current.description}"` : ''}`
       });
+    }
+    
+    case 'manage_snippets': {
+      const snippetsService = require('./services/google-sheets-snippets');
+      const action = args.action;
+      const payload = args.payload || {};
+      
+      // Extract user's OAuth token from context
+      const accessToken = context.googleToken || context.accessToken;
+      const userEmail = context.userEmail;
+      
+      if (!accessToken) {
+        console.error('❌ manage_snippets: No OAuth token available');
+        return JSON.stringify({
+          success: false,
+          error: 'Authentication required',
+          message: 'Please login with Google to use snippets feature'
+        });
+      }
+      
+      if (!userEmail) {
+        console.error('❌ manage_snippets: No user email available');
+        return JSON.stringify({
+          success: false,
+          error: 'User identification required',
+          message: 'Could not identify user'
+        });
+      }
+      
+      try {
+        switch (action) {
+          case 'insert': {
+            if (!payload.title || !payload.content) {
+              return JSON.stringify({
+                success: false,
+                error: 'Missing required fields',
+                message: 'Both title and content are required for insert action'
+              });
+            }
+            
+            const snippet = await snippetsService.insertSnippet(
+              {
+                title: payload.title,
+                content: payload.content,
+                tags: payload.tags || [],
+                source: payload.source || 'manual',
+                url: payload.url || ''
+              },
+              userEmail,
+              accessToken
+            );
+            
+            // Emit SSE event
+            if (context.writeEvent && typeof context.writeEvent === 'function') {
+              context.writeEvent('snippet_inserted', {
+                id: snippet.id,
+                title: snippet.title,
+                tags: snippet.tags
+              });
+            }
+            
+            return JSON.stringify({
+              success: true,
+              action: 'insert',
+              data: snippet,
+              message: `Successfully saved snippet "${snippet.title}" with ID ${snippet.id}`
+            });
+          }
+          
+          case 'capture': {
+            // Capture is like insert but with automatic source tracking
+            if (!payload.title) {
+              return JSON.stringify({
+                success: false,
+                error: 'Missing title',
+                message: 'Title is required for capture action'
+              });
+            }
+            
+            const snippet = await snippetsService.insertSnippet(
+              {
+                title: payload.title,
+                content: payload.content || '',
+                tags: payload.tags || [],
+                source: payload.source || 'chat',
+                url: payload.url || ''
+              },
+              userEmail,
+              accessToken
+            );
+            
+            // Emit SSE event
+            if (context.writeEvent && typeof context.writeEvent === 'function') {
+              context.writeEvent('snippet_inserted', {
+                id: snippet.id,
+                title: snippet.title,
+                tags: snippet.tags
+              });
+            }
+            
+            return JSON.stringify({
+              success: true,
+              action: 'capture',
+              data: snippet,
+              message: `Successfully captured snippet "${snippet.title}" with ID ${snippet.id}`
+            });
+          }
+          
+          case 'get': {
+            if (!payload.id && !payload.title) {
+              return JSON.stringify({
+                success: false,
+                error: 'Missing identifier',
+                message: 'Either id or title is required for get action'
+              });
+            }
+            
+            const snippet = await snippetsService.getSnippet(
+              {
+                id: payload.id,
+                title: payload.title
+              },
+              userEmail,
+              accessToken
+            );
+            
+            if (!snippet) {
+              return JSON.stringify({
+                success: false,
+                error: 'Not found',
+                message: `Snippet not found${payload.id ? ` with ID ${payload.id}` : ` with title "${payload.title}"`}`
+              });
+            }
+            
+            return JSON.stringify({
+              success: true,
+              action: 'get',
+              data: snippet,
+              message: `Retrieved snippet "${snippet.title}"`
+            });
+          }
+          
+          case 'search': {
+            const results = await snippetsService.searchSnippets(
+              {
+                query: payload.query || '',
+                tags: payload.tags || []
+              },
+              userEmail,
+              accessToken
+            );
+            
+            return JSON.stringify({
+              success: true,
+              action: 'search',
+              data: results,
+              count: results.length,
+              message: `Found ${results.length} snippet${results.length !== 1 ? 's' : ''}${payload.query ? ` matching "${payload.query}"` : ''}${payload.tags && payload.tags.length > 0 ? ` with tags [${payload.tags.join(', ')}]` : ''}`
+            });
+          }
+          
+          case 'delete': {
+            if (!payload.id && !payload.title) {
+              return JSON.stringify({
+                success: false,
+                error: 'Missing identifier',
+                message: 'Either id or title is required for delete action'
+              });
+            }
+            
+            const deleted = await snippetsService.removeSnippet(
+              {
+                id: payload.id,
+                title: payload.title
+              },
+              userEmail,
+              accessToken
+            );
+            
+            // Emit SSE event
+            if (context.writeEvent && typeof context.writeEvent === 'function') {
+              context.writeEvent('snippet_deleted', {
+                id: deleted.id,
+                title: deleted.title
+              });
+            }
+            
+            return JSON.stringify({
+              success: true,
+              action: 'delete',
+              data: deleted,
+              message: `Successfully deleted snippet "${deleted.title}" (ID: ${deleted.id})`
+            });
+          }
+          
+          default:
+            return JSON.stringify({
+              success: false,
+              error: 'Invalid action',
+              message: `Unknown action: "${action}". Supported actions: insert, capture, get, search, delete`
+            });
+        }
+      } catch (error) {
+        console.error(`❌ manage_snippets (${action}) error:`, error.message);
+        return JSON.stringify({
+          success: false,
+          error: error.message,
+          action: action,
+          message: `Snippets operation failed: ${error.message}`
+        });
+      }
     }
     
     case 'execute_javascript': {

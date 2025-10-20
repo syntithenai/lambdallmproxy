@@ -303,7 +303,7 @@ if [ $? -eq 0 ]; then
         aws lambda update-function-url-config \
             --function-name "$FUNCTION_NAME" \
             --region "$REGION" \
-            --cors AllowCredentials=true,AllowHeaders=content-type,authorization,origin,accept,cache-control,x-requested-with,accept-encoding,accept-language,connection,host,referer,user-agent,AllowMethods=*,AllowOrigins=*,MaxAge=86400,ExposeHeaders=content-type,content-length,date,x-amzn-requestid \
+            --cors AllowCredentials=true,AllowHeaders=content-type,authorization,origin,accept,cache-control,x-requested-with,accept-encoding,accept-language,connection,host,referer,user-agent,x-google-access-token,x-billing-sync,AllowMethods=*,AllowOrigins=*,MaxAge=86400,ExposeHeaders=content-type,content-length,date,x-amzn-requestid \
             --invoke-mode RESPONSE_STREAM > /dev/null
             
         if [ $? -eq 0 ]; then

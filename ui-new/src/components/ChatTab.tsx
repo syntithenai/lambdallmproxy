@@ -28,6 +28,7 @@ import { JsonTree } from './JsonTree';
 import { ImageGallery } from './ImageGallery';
 
 import { ToolResultJsonViewer } from './JsonTreeViewer';
+import { SnippetSelector } from './SnippetSelector';
 import { ReadButton } from './ReadButton';
 import ToolTransparency from './ToolTransparency';
 import { GenerateChartDisplay } from './GenerateChartDisplay';
@@ -53,6 +54,8 @@ interface EnabledTools {
   generate_chart: boolean;
   generate_image: boolean;
   search_knowledge_base: boolean;
+  manage_todos: boolean;
+  manage_snippets: boolean;
 }
 
 interface ChatTabProps {
@@ -70,7 +73,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   showMCPDialog,
   setShowMCPDialog
 }) => {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracksToStart } = usePlaylist();
@@ -243,6 +246,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   } | null>(null);
   const [todosExpanded, setTodosExpanded] = useState(false);
   const [todosResubmitting, setTodosResubmitting] = useState<string | null>(null);
+  
+  // Snippets panel state
+  const [showSnippetsPanel, setShowSnippetsPanel] = useState(false);
+  
+  // Selected snippets for manual context attachment
+  // These snippets will be included in full as context when sending messages
+  const [selectedSnippetIds, setSelectedSnippetIds] = useState<Set<string>>(new Set());
   
   // Load RAG threshold from settings
   useEffect(() => {
@@ -1309,6 +1319,85 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       });
     }
     
+    if (enabledTools.manage_todos) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'manage_todos',
+          description: '✅ **MANAGE BACKEND TODO QUEUE**: Add or delete actionable steps for multi-step tasks. The backend maintains a server-side todo queue that tracks progress through complex workflows. When todos exist, they auto-progress after each successful completion (assessor "OK"). **USE THIS when**: user requests a multi-step plan, breaking down complex tasks, tracking implementation progress, or managing sequential workflows. **DO NOT use for simple single-step tasks.** After adding todos, the system will automatically advance through them, appending each next step as it completes. **Keywords**: plan, steps, todo list, break down task, multi-step workflow, implementation phases.',
+          parameters: {
+            type: 'object',
+            properties: {
+              add: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: ["Install dependencies", "Configure environment", "Run tests", "Deploy application"]'
+              },
+              delete: {
+                type: 'array',
+                items: {
+                  oneOf: [
+                    { type: 'string', description: 'Exact todo description to delete' },
+                    { type: 'number', description: 'Todo ID to delete' }
+                  ]
+                },
+                description: 'Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue'
+              }
+            },
+            additionalProperties: false
+          }
+        }
+      });
+    }
+    
+    if (enabledTools.manage_snippets) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'manage_snippets',
+          description: '📝 **MANAGE KNOWLEDGE SNIPPETS**: Insert, retrieve, search, or delete knowledge snippets stored in your personal Google Sheet ("Research Agent/Research Agent Swag"). Use this to save important information, code examples, procedures, references, or any content you want to preserve and search later. **USE THIS when**: user wants to save/capture content, create a knowledge base, store code snippets, bookmark important info, or search previous saved content. Each snippet can have a title, content, tags for organization, and source tracking (chat/url/file/manual). **Keywords**: save this, remember this, add to knowledge base, store snippet, save for later, search my snippets, find my notes.',
+          parameters: {
+            type: 'object',
+            required: ['action'],
+            properties: {
+              action: {
+                type: 'string',
+                enum: ['insert', 'capture', 'get', 'search', 'delete'],
+                description: 'Operation to perform: "insert" (add new snippet), "capture" (save from chat/url/file), "get" (retrieve by ID/title), "search" (find by query/tags), "delete" (remove by ID/title)'
+              },
+              payload: {
+                type: 'object',
+                description: 'Action-specific parameters',
+                properties: {
+                  // Insert/Capture fields
+                  title: { type: 'string', description: 'Snippet title (required for insert/capture)' },
+                  content: { type: 'string', description: 'Snippet content/body (required for insert)' },
+                  tags: { 
+                    type: 'array', 
+                    items: { type: 'string' },
+                    description: 'Array of tags for categorization (optional, e.g., ["javascript", "async", "tutorial"])'
+                  },
+                  source: { 
+                    type: 'string',
+                    enum: ['chat', 'url', 'file', 'manual'],
+                    description: 'Source type (for capture action)'
+                  },
+                  url: { type: 'string', description: 'Source URL if source="url"' },
+                  
+                  // Get/Delete fields
+                  id: { type: 'number', description: 'Snippet ID (for get/delete)' },
+                  
+                  // Search fields
+                  query: { type: 'string', description: 'Text search query (searches title and content)' }
+                }
+              }
+            },
+            additionalProperties: false
+          }
+        }
+      });
+    }
+    
     // Add enabled MCP servers (placeholder - would need MCP integration)
     mcpServers.filter(server => server.enabled).forEach(server => {
       // MCP servers would be added here when backend supports them
@@ -1772,16 +1861,39 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         console.log(`   Sending ${filteredMessages.length} clean messages + new user message to Lambda`);
       }
       
-      // Build messages array with system prompt, RAG context (if any), history, and user message
+      // Manual Snippet Context Integration
+      // Get full content of selected snippets to include as context
+      const manualContextMessages: ChatMessage[] = [];
+      if (selectedSnippetIds.size > 0) {
+        const { snippets: allSnippets } = useSwag.getState ? useSwag.getState() : { snippets: [] };
+        
+        // Get snippets by ID - need to access SwagContext
+        const contextSnippets = Array.from(selectedSnippetIds)
+          .map(id => allSnippets.find((s: any) => s.id === id))
+          .filter((s: any) => s !== undefined);
+        
+        // Create context messages with full snippet content
+        for (const snippet of contextSnippets) {
+          manualContextMessages.push({
+            role: 'user' as const,
+            content: `**KNOWLEDGE BASE CONTEXT** (manually attached by user):\n\n**Title:** ${snippet.title || 'Untitled'}\n\n${snippet.content}\n\n---\n`
+          });
+        }
+        
+        console.log(`📎 Attached ${manualContextMessages.length} manual context snippets (full content)`);
+      }
+      
+      // Build messages array with system prompt, RAG context (if any), manual snippets, history, and user message
       const messagesWithSystem = [
         { role: 'system' as const, content: finalSystemPrompt },
-        ...(ragContextMessage ? [ragContextMessage] : []), // Insert RAG context after system prompt
+        ...(ragContextMessage ? [ragContextMessage] : []), // Automatic RAG fragments
+        ...manualContextMessages, // Manual full snippets
         ...filteredMessages,
         userMessage
       ];
       
       if (ragContextMessage) {
-        console.log('🔍 RAG context included in request');
+        console.log('🔍 RAG context included in request (automatic fragments)');
       }
       
       // Clean UI-only fields before sending to API
@@ -2723,6 +2835,28 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               console.log('⚠️ Todos limit reached:', data);
               showWarning(data.message || 'Todo auto-progression limit reached. Please continue manually.');
               break;
+            
+            case 'snippet_inserted':
+              // Snippet was inserted
+              console.log('📝 Snippet inserted:', data);
+              // Dispatch custom event for SnippetsPanel
+              window.dispatchEvent(new CustomEvent('snippet_inserted', { detail: data }));
+              showSuccess(`Saved snippet: ${data.title}`);
+              break;
+            
+            case 'snippet_deleted':
+              // Snippet was deleted
+              console.log('🗑️ Snippet deleted:', data);
+              window.dispatchEvent(new CustomEvent('snippet_deleted', { detail: data }));
+              showSuccess(`Deleted snippet: ${data.title}`);
+              break;
+            
+            case 'snippet_updated':
+              // Snippet was updated
+              console.log('✏️ Snippet updated:', data);
+              window.dispatchEvent(new CustomEvent('snippet_updated', { detail: data }));
+              showSuccess(`Updated snippet: ${data.title}`);
+              break;
           }
         },
         () => {
@@ -3276,6 +3410,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             className="btn-secondary text-sm"
           >
             📝 Examples
+          </button>
+          <button 
+            onClick={() => setShowSnippetsPanel(!showSnippetsPanel)}
+            className={`text-sm px-3 py-1.5 rounded font-medium transition-colors ${
+              showSnippetsPanel 
+                ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                : 'btn-secondary'
+            }`}
+            title="Attach knowledge base snippets as context for this conversation"
+          >
+            � Attach Context
+            {selectedSnippetIds.size > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-white text-blue-600 rounded-full font-bold">
+                {selectedSnippetIds.size}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -5592,6 +5742,35 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         requestLocation={requestLocation}
         clearLocation={clearLocation}
       />
+
+      {/* Snippets Panel - Collapsible */}
+      {showSnippetsPanel && (
+        <div className="fixed bottom-0 left-0 right-0 h-2/3 z-40 bg-white dark:bg-gray-800 shadow-2xl border-t border-gray-300 dark:border-gray-600 overflow-hidden">
+          <div className="h-full flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                � Attach Context Snippets
+              </h2>
+              <button
+                onClick={() => setShowSnippetsPanel(false)}
+                className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                title="Close Snippet Selector"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <SnippetSelector 
+                selectedSnippetIds={selectedSnippetIds}
+                onSelectionChange={setSelectedSnippetIds}
+                userEmail={user?.email}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Raw HTML Dialog */}
       {showRawHtml && (

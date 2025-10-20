@@ -5,27 +5,25 @@ npm warn config production Use `--omit=dev` instead.
 npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
 npm warn deprecated fluent-ffmpeg@2.1.3: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
-added 59 packages, and audited 60 packages in 19s
+added 59 packages in 36s
 
 12 packages are looking for funding
   run `npm fund` for details
-
-found 0 vulnerabilities
 [1;33m📦 Files to be packaged:[0m
--rw-rw-r-- 1 stever stever   5145 Oct 20 04:22 auth.js
--rw-rw-r-- 1 stever stever   6011 Oct 20 04:22 credential-pool.js
--rw-rw-r-- 1 stever stever   3987 Oct 20 04:22 groq-rate-limits.js
--rw-rw-r-- 1 stever stever  11886 Oct 20 04:22 html-content-extractor.js
--rw-rw-r-- 1 stever stever  20931 Oct 20 04:22 html-parser.js
--rw-rw-r-- 1 stever stever  20652 Oct 20 04:22 index.js
--rw-rw-r-- 1 stever stever  69078 Oct 20 04:22 lambda_search_llm_handler.js
--rw-rw-r-- 1 stever stever  17611 Oct 20 04:22 llm_tools_adapter.js
--rw-rw-r-- 1 stever stever   9780 Oct 20 04:22 memory-tracker.js
--rw-rw-r-- 1 stever stever  13787 Oct 20 04:22 model-selector.js
--rw-rw-r-- 1 stever stever  10607 Oct 20 04:22 pricing.js
--rw-rw-r-- 1 stever stever  12584 Oct 20 04:22 pricing_scraper.js
--rw-rw-r-- 1 stever stever   5129 Oct 20 04:22 providers.js
--rw-rw-r-- 1 stever stever  76218 Oct 20 04:22 search.js
--rw-rw-r-- 1 stever stever   5935 Oct 20 04:22 tavily-search.js
--rw-rw-r-- 1 stever stever 148465 Oct 20 04:22 tools.js
--rw-rw-r-- 1 stever stever  24898 Oct 20 04:22 youtube-api.js
+-rw-rw-r-- 1 stever stever   5145 Oct 20 19:10 auth.js
+-rw-rw-r-- 1 stever stever   6011 Oct 20 19:10 credential-pool.js
+-rw-rw-r-- 1 stever stever   3987 Oct 20 19:10 groq-rate-limits.js
+-rw-rw-r-- 1 stever stever  11886 Oct 20 19:10 html-content-extractor.js
+-rw-rw-r-- 1 stever stever  20931 Oct 20 19:10 html-parser.js
+-rw-rw-r-- 1 stever stever  21514 Oct 20 19:10 index.js
+-rw-rw-r-- 1 stever stever  69078 Oct 20 19:10 lambda_search_llm_handler.js
+-rw-rw-r-- 1 stever stever  17611 Oct 20 19:10 llm_tools_adapter.js
+-rw-rw-r-- 1 stever stever   9780 Oct 20 19:10 memory-tracker.js
+-rw-rw-r-- 1 stever stever  13787 Oct 20 19:10 model-selector.js
+-rw-rw-r-- 1 stever stever  10607 Oct 20 19:10 pricing.js
+-rw-rw-r-- 1 stever stever  12584 Oct 20 19:10 pricing_scraper.js
+-rw-rw-r-- 1 stever stever   5129 Oct 20 19:10 providers.js
+-rw-rw-r-- 1 stever stever  76218 Oct 20 19:10 search.js
+-rw-rw-r-- 1 stever stever   5935 Oct 20 19:10 tavily-search.js
+-rw-rw-r-- 1 stever stever 158000 Oct 20 19:10 tools.js
+-rw-rw-r-- 1 stever stever  24898 Oct 20 19:10 youtube-api.js

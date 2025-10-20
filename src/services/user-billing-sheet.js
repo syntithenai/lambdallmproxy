@@ -9,19 +9,48 @@
 const { google } = require('googleapis');
 
 /**
+ * Create a configured OAuth2 client with an access token
+ * @param {string} accessToken - The Google OAuth2 access token
+ * @returns {google.auth.OAuth2} Configured OAuth2 client
+ */
+function createOAuth2Client(accessToken) {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    'postmessage' // Special redirect URI for client-side OAuth
+  );
+  oauth2Client.setCredentials({ access_token: accessToken });
+  return oauth2Client;
+}
+
+
+/**
  * Find or create a folder in user's Google Drive
  * @param {string} folderName - Name of the folder
  * @param {string} accessToken - User's OAuth access token
  * @returns {Promise<string>} Folder ID
  */
 async function findOrCreateFolder(folderName, accessToken) {
+  console.log('🔑🔑🔑 findOrCreateFolder CALLED - folderName:', folderName);
+  console.log('🔑🔑🔑 accessToken type:', typeof accessToken);
+  console.log('🔑🔑🔑 accessToken present:', !!accessToken);
+  console.log('🔑🔑🔑 accessToken length:', accessToken?.length || 0);
+  if (accessToken) {
+    console.log('🔑🔑🔑 accessToken preview:', accessToken.substring(0, 30) + '...');
+  }
+  
+  // Create OAuth2 client with proper credentials
+  console.log('🔑🔑🔑 Creating OAuth2 client with client ID:', process.env.GOOGLE_CLIENT_ID?.substring(0, 20) + '...');
+  const oauth2Client = createOAuth2Client(accessToken);
+  
+  console.log('🔑🔑🔑 OAuth2 credentials set:', JSON.stringify(oauth2Client.credentials));
+  
   const drive = google.drive({
     version: 'v3',
-    auth: new google.auth.OAuth2()
+    auth: oauth2Client
   });
   
-  // Set the access token
-  drive.context._options.auth.setCredentials({ access_token: accessToken });
+  console.log('🔑🔑🔑 Drive client created, about to make API call...');
   
   // Search for existing folder
   const searchResponse = await drive.files.list({
@@ -56,12 +85,12 @@ async function findOrCreateFolder(folderName, accessToken) {
  * @returns {Promise<string|null>} Spreadsheet ID or null if not found
  */
 async function findSheetInFolder(fileName, folderId, accessToken) {
+  const oauth2Client = createOAuth2Client(accessToken);
+  
   const drive = google.drive({
     version: 'v3',
-    auth: new google.auth.OAuth2()
+    auth: oauth2Client
   });
-  
-  drive.context._options.auth.setCredentials({ access_token: accessToken });
   
   const response = await drive.files.list({
     q: `name='${fileName}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
@@ -84,12 +113,12 @@ async function findSheetInFolder(fileName, folderId, accessToken) {
  * @returns {Promise<string>} Spreadsheet ID
  */
 async function createBillingSheet(folderId, accessToken) {
+  const oauth2Client = createOAuth2Client(accessToken);
+  
   const sheets = google.sheets({
     version: 'v4',
-    auth: new google.auth.OAuth2()
+    auth: oauth2Client
   });
-  
-  sheets.context._options.auth.setCredentials({ access_token: accessToken });
   
   // Create spreadsheet
   const createResponse = await sheets.spreadsheets.create({
@@ -111,12 +140,11 @@ async function createBillingSheet(folderId, accessToken) {
   const spreadsheetId = createResponse.data.spreadsheetId;
   console.log(`📊 Created new billing spreadsheet: ${spreadsheetId}`);
   
-  // Move to folder
+  // Move to folder - reuse the same OAuth2 client
   const drive = google.drive({
     version: 'v3',
-    auth: new google.auth.OAuth2()
+    auth: oauth2Client
   });
-  drive.context._options.auth.setCredentials({ access_token: accessToken });
   
   await drive.files.update({
     fileId: spreadsheetId,
@@ -136,12 +164,12 @@ async function createBillingSheet(folderId, accessToken) {
  * @param {string} accessToken - User's OAuth access token
  */
 async function initializeBillingSheet(spreadsheetId, accessToken) {
+  const oauth2Client = createOAuth2Client(accessToken);
+  
   const sheets = google.sheets({
     version: 'v4',
-    auth: new google.auth.OAuth2()
+    auth: oauth2Client
   });
-  
-  sheets.context._options.auth.setCredentials({ access_token: accessToken });
   
   const headers = [
     'Timestamp',
@@ -252,12 +280,12 @@ async function logToBillingSheet(accessToken, logData) {
     // Get user's billing sheet
     const spreadsheetId = await getOrCreateBillingSheet(logData.userEmail, accessToken);
     
+    const oauth2Client = createOAuth2Client(accessToken);
+    
     const sheets = google.sheets({
       version: 'v4',
-      auth: new google.auth.OAuth2()
+      auth: oauth2Client
     });
-    
-    sheets.context._options.auth.setCredentials({ access_token: accessToken });
     
     // Prepare row data
     const rowData = [
@@ -309,12 +337,12 @@ async function readBillingData(accessToken, userEmail, filters = {}) {
   try {
     const spreadsheetId = await getOrCreateBillingSheet(userEmail, accessToken);
     
+    const oauth2Client = createOAuth2Client(accessToken);
+    
     const sheets = google.sheets({
       version: 'v4',
-      auth: new google.auth.OAuth2()
+      auth: oauth2Client
     });
-    
-    sheets.context._options.auth.setCredentials({ access_token: accessToken });
     
     // Read all data (skip header row)
     const response = await sheets.spreadsheets.values.get({
@@ -386,12 +414,12 @@ async function clearBillingData(accessToken, userEmail, options = {}) {
   try {
     const spreadsheetId = await getOrCreateBillingSheet(userEmail, accessToken);
     
+    const oauth2Client = createOAuth2Client(accessToken);
+    
     const sheets = google.sheets({
       version: 'v4',
-      auth: new google.auth.OAuth2()
+      auth: oauth2Client
     });
-    
-    sheets.context._options.auth.setCredentials({ access_token: accessToken });
     
     // Read all current data
     const transactions = await readBillingData(accessToken, userEmail);

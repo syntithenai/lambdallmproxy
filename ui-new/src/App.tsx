@@ -48,6 +48,8 @@ function AppContent() {
     generate_chart: boolean;
     generate_image: boolean;
     search_knowledge_base: boolean;
+    manage_todos: boolean;
+    manage_snippets: boolean;
   }>('chat_enabled_tools', {
     web_search: true,
     execute_js: true,
@@ -56,7 +58,9 @@ function AppContent() {
     transcribe: true,
     generate_chart: true,
     generate_image: true,
-    search_knowledge_base: false // Independent server-side knowledge base tool
+    search_knowledge_base: false, // Independent server-side knowledge base tool
+    manage_todos: true, // Backend todo queue management
+    manage_snippets: true // Google Sheets snippets storage
   });
   
   // NOTE: search_knowledge_base is now independent from the local RAG system
@@ -191,42 +195,53 @@ function AppContent() {
           <div className="flex items-center gap-3">
             <PlaylistButton />
             
-            {/* Usage Badge */}
-            {usage && !usageLoading && typeof usage.totalCost === 'number' && typeof usage.creditLimit === 'number' && (
-              <div 
-                className={`flex items-center gap-1 px-2 py-1.5 rounded-lg ${
-                  usage.exceeded 
-                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' 
-                    : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                }`}
-                title={`You have used $${usage.totalCost.toFixed(2)} of your $${usage.creditLimit.toFixed(2)} credit`}
+            {/* Billing Button with Credit Info - Hide on billing page */}
+            {location.pathname !== '/billing' && (
+              <button
+                onClick={() => navigate('/billing')}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                title={usage ? `You have used $${usage.totalCost.toFixed(2)} of your $${usage.creditLimit.toFixed(2)} credit` : 'View billing and usage details'}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
-                <span className="text-xs font-medium">
-                  ${usage.totalCost.toFixed(2)} / ${usage.creditLimit.toFixed(2)}
-                </span>
-              </div>
+                {usage && !usageLoading && typeof usage.totalCost === 'number' && typeof usage.creditLimit === 'number' && (
+                  <span className={`text-xs font-medium ${
+                    usage.exceeded 
+                      ? 'text-red-600 dark:text-red-400' 
+                      : 'text-green-600 dark:text-green-400'
+                  }`}>
+                    ${usage.totalCost.toFixed(2)} / ${usage.creditLimit.toFixed(2)}
+                  </span>
+                )}
+              </button>
             )}
             
-            {/* Billing Button */}
-            <button
-              onClick={() => navigate('/billing')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
-                location.pathname === '/billing'
-                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
-              }`}
-              title="View billing and usage details"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
-              <span className="text-sm">Billing</span>
-            </button>
-            
-            {location.pathname === '/swag' ? (
+            {location.pathname === '/billing' ? (
+              <>
+                <button
+                  onClick={() => navigate('/')}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium"
+                  title="Back to Chat"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  </svg>
+                  <span className="text-sm">Back to Chat</span>
+                </button>
+                <button
+                  onClick={() => navigate('/swag')}
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm font-medium"
+                  title="Content Swag - Save and manage snippets"
+                >
+                  {/* Sack/bag icon */}
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
+                  </svg>
+                  <span className="text-sm">Swag</span>
+                </button>
+              </>
+            ) : location.pathname === '/swag' ? (
               <button
                 onClick={() => navigate('/')}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium"

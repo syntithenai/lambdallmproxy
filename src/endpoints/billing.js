@@ -6,6 +6,21 @@
 
 const { authenticateRequest } = require('../auth');
 const { readBillingData, clearBillingData } = require('../services/user-billing-sheet');
+const { getUserTotalCost, getUserBillingData } = require('../services/google-sheets-logger');
+
+/**
+ * Get CORS headers for billing endpoint
+ * Includes X-Google-Access-Token for Google Sheets API access
+ * Includes X-Billing-Sync for billing sync preference
+ */
+function getCorsHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Google-Access-Token,X-Billing-Sync',
+        'Access-Control-Allow-Methods': 'GET,DELETE,OPTIONS'
+    };
+}
 
 /**
  * Calculate aggregated totals from transactions
@@ -84,32 +99,12 @@ async function handleGetBilling(event, responseStream) {
         if (!authResult.authenticated) {
             const metadata = {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
+                headers: getCorsHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
                 error: 'Authentication required',
                 code: 'UNAUTHORIZED'
-            }));
-            responseStream.end();
-            return;
-        }
-
-        // Extract OAuth token
-        let accessToken = null;
-        if (authHeader.startsWith('Bearer ')) {
-            accessToken = authHeader.substring(7);
-        }
-
-        if (!accessToken) {
-            const metadata = {
-                statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
-            };
-            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-            responseStream.write(JSON.stringify({
-                error: 'OAuth token required',
-                code: 'TOKEN_REQUIRED'
             }));
             responseStream.end();
             return;
@@ -136,32 +131,124 @@ async function handleGetBilling(event, responseStream) {
 
         console.log(`📊 Reading billing data for user: ${userEmail}`, filters);
 
-        // Read billing data from user's sheet
-        const transactions = await readBillingData(accessToken, userEmail, filters);
+        // Extract Google Drive access token from custom header (for Sheets API access)
+        let accessToken = event.headers?.['X-Google-Access-Token'] || event.headers?.['x-google-access-token'];
+        
+        // Check if billing sync is enabled (cloud_sync_billing preference)
+        const billingSyncEnabled = event.headers?.['X-Billing-Sync'] || event.headers?.['x-billing-sync'];
+        
+        console.log('🔐 Backend: Access token present:', !!accessToken);
+        console.log('🔐 Backend: Token length:', accessToken?.length || 0);
+        console.log('🔐 Backend: Billing sync enabled:', billingSyncEnabled);
+        console.log('🔐 Backend: Headers received:', Object.keys(event.headers || {}).join(', '));
+        
+        // Determine data source: personal sheet (if enabled and token present) or service key sheet (fallback)
+        const usePersonalSheet = billingSyncEnabled === 'true' && accessToken;
+        
+        if (usePersonalSheet) {
+            console.log('📊 Using personal Google Sheet for billing data');
+            
+            try {
+                // Read billing data from user's personal sheet
+                const transactions = await readBillingData(accessToken, userEmail, filters);
 
-        // Calculate aggregated totals
-        const totals = calculateTotals(transactions);
+                // Check if personal sheet is empty (newly enabled)
+                if (transactions.length === 0) {
+                    console.log('📋 Personal sheet is empty, user just enabled billing sync');
+                    
+                    // Get service data as reference
+                    const serviceTransactions = await getUserBillingData(userEmail, filters);
+                    const serviceTotals = calculateTotals(serviceTransactions);
+                    
+                    // Return service data with a message about personal sheet being new
+                    const metadata = {
+                        statusCode: 200,
+                        headers: getCorsHeaders()
+                    };
+                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                    responseStream.write(JSON.stringify({
+                        success: true,
+                        source: 'service',
+                        personalSheetEmpty: true,
+                        transactions: serviceTransactions,
+                        totals: serviceTotals,
+                        count: serviceTransactions.length,
+                        message: 'Personal Billing Sheet is empty. New transactions will be logged to your sheet. Historical data shown from service logs.'
+                    }));
+                    responseStream.end();
+                    return;
+                }
 
-        // Return success response
-        const metadata = {
-            statusCode: 200,
-            headers: { 'Content-Type': 'application/json' }
-        };
-        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-        responseStream.write(JSON.stringify({
-            success: true,
-            transactions,
-            totals,
-            count: transactions.length
-        }));
-        responseStream.end();
+                // Calculate aggregated totals
+                const totals = calculateTotals(transactions);
+
+                // Return success response
+                const metadata = {
+                    statusCode: 200,
+                    headers: getCorsHeaders()
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(JSON.stringify({
+                    success: true,
+                    source: 'personal',
+                    transactions,
+                    totals,
+                    count: transactions.length
+                }));
+                responseStream.end();
+            } catch (personalSheetError) {
+                console.error('❌ Error reading from personal sheet, falling back to service key:', personalSheetError.message);
+                
+                // Fallback to service key sheet if personal sheet fails
+                const transactions = await getUserBillingData(userEmail, filters);
+                const totals = calculateTotals(transactions);
+                
+                const metadata = {
+                    statusCode: 200,
+                    headers: getCorsHeaders()
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(JSON.stringify({
+                    success: true,
+                    source: 'service',
+                    fallback: true,
+                    fallbackReason: 'Personal sheet access failed',
+                    transactions,
+                    totals,
+                    count: transactions.length,
+                    message: 'Displaying data from central service logs (personal sheet unavailable). All usage data is logged to the centralized service.'
+                }));
+                responseStream.end();
+            }
+        } else {
+            console.log('📊 Using service key Google Sheet for billing data (billing sync disabled or no token)');
+            
+            // Use service key sheet - centralized logging
+            const transactions = await getUserBillingData(userEmail, filters);
+            const totals = calculateTotals(transactions);
+            
+            const metadata = {
+                statusCode: 200,
+                headers: getCorsHeaders()
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({
+                success: true,
+                source: 'service',
+                transactions,
+                totals,
+                count: transactions.length,
+                message: 'Displaying data from central service logs. All API usage is automatically logged here. Enable "Personal Billing Sheet" in Cloud Sync settings to also sync to your own Google Sheet for backup and export.'
+            }));
+            responseStream.end();
+        }
 
     } catch (error) {
         console.error('❌ Error reading billing data:', error);
 
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: getCorsHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -191,7 +278,7 @@ async function handleClearBilling(event, responseStream) {
         if (!authResult.authenticated) {
             const metadata = {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
+                headers: getCorsHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -202,27 +289,24 @@ async function handleClearBilling(event, responseStream) {
             return;
         }
 
-        // Extract OAuth token
-        let accessToken = null;
-        if (authHeader.startsWith('Bearer ')) {
-            accessToken = authHeader.substring(7);
-        }
+        const userEmail = authResult.email || 'unknown';
 
+        // Extract Google Drive access token from custom header (for Sheets API access)
+        let accessToken = event.headers?.['X-Google-Access-Token'] || event.headers?.['x-google-access-token'];
+        
         if (!accessToken) {
             const metadata = {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
+                headers: getCorsHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
-                error: 'OAuth token required',
-                code: 'TOKEN_REQUIRED'
+                error: 'Google Drive access token required. Please enable cloud sync in Swag page.',
+                code: 'DRIVE_TOKEN_REQUIRED'
             }));
             responseStream.end();
             return;
         }
-
-        const userEmail = authResult.email || 'unknown';
 
         // Parse query parameters for clear mode
         const params = event.queryStringParameters || {};
@@ -234,7 +318,7 @@ async function handleClearBilling(event, responseStream) {
             if (!params.provider) {
                 const metadata = {
                     statusCode: 400,
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: getCorsHeaders()
                 };
                 responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                 responseStream.write(JSON.stringify({
@@ -249,7 +333,7 @@ async function handleClearBilling(event, responseStream) {
             if (!params.startDate && !params.endDate) {
                 const metadata = {
                     statusCode: 400,
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: getCorsHeaders()
                 };
                 responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                 responseStream.write(JSON.stringify({
@@ -271,7 +355,7 @@ async function handleClearBilling(event, responseStream) {
         // Return success response
         const metadata = {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' }
+            headers: getCorsHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -287,7 +371,7 @@ async function handleClearBilling(event, responseStream) {
 
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: getCorsHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -328,7 +412,7 @@ async function handler(event, responseStream, context) {
 
     const metadata = {
         statusCode: 404,
-        headers: { 'Content-Type': 'application/json' }
+        headers: getCorsHeaders()
     };
     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
     responseStream.write(JSON.stringify({

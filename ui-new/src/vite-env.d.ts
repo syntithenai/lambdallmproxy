@@ -30,9 +30,11 @@ declare global {
               expires_in: number;
               scope: string;
               token_type: string;
+              id_token?: string;
               error?: string;
               error_description?: string;
             }) => void;
+            error_callback?: (error: any) => void;
           }) => {
             requestAccessToken: (options?: { prompt?: string }) => void;
           };

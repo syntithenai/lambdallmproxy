@@ -33,8 +33,8 @@ const upload = multer({
 // Enable CORS for all origins in development
 app.use(cors({
   origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-YouTube-Token', 'X-Billing-Sync'],
   credentials: true
 }));
 

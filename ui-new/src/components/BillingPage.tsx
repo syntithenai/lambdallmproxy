@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './BillingPage.css';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Transaction {
   rowIndex: number;
@@ -22,17 +23,19 @@ interface Transaction {
 interface Totals {
   totalCost: number;
   totalTokens: number;
-  totalRequests: number;
-  byType: Record<string, { cost: number; tokens: number; requests: number }>;
-  byProvider: Record<string, { cost: number; tokens: number; requests: number }>;
-  byModel: Record<string, { 
+  totalRequests?: number;
+  totalTokensIn?: number;
+  totalTokensOut?: number;
+  byType?: Record<string, { cost: number; tokens: number; requests: number }>;
+  byProvider?: Record<string, { cost: number; tokens: number; requests: number }>;
+  byModel?: Record<string, { 
     cost: number; 
     tokens: number; 
     requests: number; 
     provider: string; 
     model: string;
   }>;
-  dateRange: {
+  dateRange?: {
     start: string | null;
     end: string | null;
   };
@@ -43,6 +46,11 @@ interface BillingData {
   transactions: Transaction[];
   totals: Totals;
   count: number;
+  source?: 'personal' | 'service';
+  message?: string;
+  fallback?: boolean;
+  fallbackReason?: string;
+  personalSheetEmpty?: boolean;
 }
 
 interface ClearDataModalProps {
@@ -200,6 +208,7 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
 };
 
 const BillingPage: React.FC = () => {
+  const { accessToken, isAuthenticated } = useAuth();
   const [billingData, setBillingData] = useState<BillingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -215,10 +224,17 @@ const BillingPage: React.FC = () => {
     setError(null);
 
     try {
-      const token = localStorage.getItem('google_jwt');
-      if (!token) {
+      if (!accessToken || !isAuthenticated) {
         throw new Error('Not authenticated. Please sign in.');
       }
+
+      // Get Google Drive access token and billing sync preference
+      const driveAccessToken = localStorage.getItem('google_drive_access_token');
+      const billingSyncEnabled = localStorage.getItem('cloud_sync_billing') === 'true';
+      
+      console.log('🔐 Drive access token present:', !!driveAccessToken);
+      console.log('🔐 Token length:', driveAccessToken?.length || 0);
+      console.log('🔐 Billing sync enabled:', billingSyncEnabled);
 
       // Build query params
       const params = new URLSearchParams();
@@ -230,12 +246,30 @@ const BillingPage: React.FC = () => {
       const apiBase = await getApiBase();
       const url = `${apiBase}/billing${params.toString() ? '?' + params.toString() : ''}`;
 
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Billing-Sync': billingSyncEnabled ? 'true' : 'false'
+      };
+
+      // Only add Drive access token if billing sync is enabled
+      if (billingSyncEnabled && driveAccessToken) {
+        headers['X-Google-Access-Token'] = driveAccessToken;
+        console.log('✅ Sending billing request with personal sheet headers:', {
+          hasBillingSyncHeader: true,
+          hasGoogleTokenHeader: true,
+          tokenLength: driveAccessToken.length
+        });
+      } else {
+        console.log('ℹ️ Sending billing request without personal sheet headers:', {
+          billingSyncEnabled,
+          hasDriveToken: !!driveAccessToken
+        });
+      }
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers
       });
 
       if (!response.ok) {
@@ -244,6 +278,25 @@ const BillingPage: React.FC = () => {
       }
 
       const data: BillingData = await response.json();
+      
+      // Debug: Check breakdown data
+      console.log('📊 Billing data received:', {
+        source: data.source,
+        transactionCount: data.transactions?.length,
+        hasByType: !!data.totals?.byType,
+        hasByProvider: !!data.totals?.byProvider,
+        hasByModel: !!data.totals?.byModel,
+        byTypeKeys: data.totals?.byType ? Object.keys(data.totals.byType) : [],
+        byProviderKeys: data.totals?.byProvider ? Object.keys(data.totals.byProvider) : [],
+        byModelKeys: data.totals?.byModel ? Object.keys(data.totals.byModel) : []
+      });
+      
+      // Show info message if using service key fallback
+      if (data.source === 'service' && data.message) {
+        console.log('ℹ️ Billing data source: Service key sheet');
+        console.log('ℹ️ Message:', data.message);
+      }
+      
       setBillingData(data);
     } catch (err: any) {
       console.error('Error fetching billing data:', err);
@@ -255,9 +308,14 @@ const BillingPage: React.FC = () => {
 
   const handleClearData = async (mode: 'all' | 'provider' | 'dateRange', options: any) => {
     try {
-      const token = localStorage.getItem('google_jwt');
-      if (!token) {
+      if (!accessToken || !isAuthenticated) {
         throw new Error('Not authenticated');
+      }
+
+      // Get Google Drive access token (needed for Sheets API access)
+      const driveAccessToken = localStorage.getItem('google_drive_access_token');
+      if (!driveAccessToken) {
+        throw new Error('Google Drive access not granted. Please enable cloud sync in Swag page first.');
       }
 
       const params = new URLSearchParams({ mode });
@@ -273,7 +331,8 @@ const BillingPage: React.FC = () => {
       const response = await fetch(`${apiBase}/billing/clear?${params.toString()}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${accessToken}`,
+          'X-Google-Access-Token': driveAccessToken,
           'Content-Type': 'application/json'
         }
       });
@@ -365,6 +424,32 @@ const BillingPage: React.FC = () => {
     fetchBillingData();
   }, [startDate, endDate, typeFilter, providerFilter]);
 
+  // Listen for changes to billing sync settings
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Refetch if billing sync preference or Google Drive token changes
+      if (e.key === 'cloud_sync_billing' || e.key === 'google_drive_access_token') {
+        console.log('🔄 Billing sync settings changed, refetching data...');
+        fetchBillingData();
+      }
+    };
+
+    // Listen for storage events from other tabs/windows
+    window.addEventListener('storage', handleStorageChange);
+
+    // Also listen for custom event (for same-tab changes)
+    const handleSettingsChange = () => {
+      console.log('🔄 Settings changed, refetching billing data...');
+      fetchBillingData();
+    };
+    window.addEventListener('billing-settings-changed', handleSettingsChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('billing-settings-changed', handleSettingsChange);
+    };
+  }, [accessToken, isAuthenticated, startDate, endDate, typeFilter, providerFilter]);
+
   if (loading) {
     return (
       <div className="billing-page">
@@ -374,12 +459,31 @@ const BillingPage: React.FC = () => {
   }
 
   if (error) {
+    const needsCloudSync = error.includes('Cloud sync not enabled') || error.includes('Google Drive access');
+    
     return (
       <div className="billing-page">
         <div className="error-message">
-          <h3>Error Loading Billing Data</h3>
+          <h3>⚠️ {needsCloudSync ? 'Cloud Sync Required' : 'Error Loading Billing Data'}</h3>
           <p>{error}</p>
-          <button onClick={fetchBillingData}>Retry</button>
+          
+          {needsCloudSync && (
+            <div className="info-box" style={{ marginTop: '20px', padding: '15px', background: '#e3f2fd', borderRadius: '8px', textAlign: 'left' }}>
+              <h4 style={{ marginTop: 0, color: '#1976d2' }}>📋 How to Enable Cloud Sync:</h4>
+              <ol style={{ marginLeft: '20px', color: '#424242' }}>
+                <li>Go to the <strong>Swag</strong> page (button in top navigation)</li>
+                <li>Look for the "☁️ Enable Cloud Sync" button</li>
+                <li>Click it and authorize Google Drive & Sheets access</li>
+                <li>Come back to this Billing page - it will load automatically</li>
+              </ol>
+              <p style={{ marginTop: '15px', color: '#666', fontSize: '0.9em' }}>
+                💡 Cloud sync stores your billing data in a Google Sheet in your Google Drive (folder: "Research Agent").
+                This allows you to track API costs across devices and export data to other tools.
+              </p>
+            </div>
+          )}
+          
+          <button onClick={fetchBillingData} style={{ marginTop: '15px' }}>🔄 Retry</button>
         </div>
       </div>
     );
@@ -394,42 +498,74 @@ const BillingPage: React.FC = () => {
   ).sort();
 
   return (
-    <div className="billing-page">
-      <div className="billing-header">
-        <div className="billing-title">
-          <h1>💰 Billing Dashboard</h1>
-          <p>Your personal API usage and costs</p>
+    <div className="billing-page-container">
+      <div className="billing-page">
+        <div className="billing-header">
+          <div className="billing-title">
+            <h1>💰 Billing Dashboard</h1>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
+              <p style={{ margin: 0, color: '#666', fontSize: '0.9rem' }}>
+                {billingData.personalSheetEmpty ? (
+                  <>🆕 Data source: <strong>Service (Personal sheet collecting data...)</strong></>
+                ) : billingData.source === 'service' ? (
+                  <>📊 Data source: <strong>Centralized Service</strong></>
+                ) : billingData.fallback ? (
+                  <>⚠️ Data source: <strong>Service (Fallback)</strong></>
+                ) : (
+                  <>📋 Data source: <strong>Personal Sheet</strong></>
+                )}
+              </p>
+              <span style={{ color: '#ddd' }}>•</span>
+              <p style={{ margin: 0, color: '#666', fontSize: '0.85rem' }}>
+                ⚠️ Costs are estimates – verify with provider billing
+              </p>
+              {billingData.personalSheetEmpty && (
+                <>
+                  <span style={{ color: '#ddd' }}>•</span>
+                  <p style={{ margin: 0, color: '#2196F3', fontSize: '0.85rem' }}>
+                    ℹ️ New transactions will log to your personal sheet
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="billing-actions">
+            <button className="btn-secondary" onClick={exportToCSV}>
+              📥 Export CSV
+            </button>
+            {/* Only show Clear Data button if using personal sheet (not centralized service data) */}
+            {billingData.source !== 'service' && (
+              <button className="btn-danger" onClick={() => setIsClearModalOpen(true)}>
+                🗑️ Clear Data
+              </button>
+            )}
+          </div>
         </div>
-        <div className="billing-actions">
-          <button className="btn-secondary" onClick={exportToCSV}>
-            📥 Export CSV
-          </button>
-          <button className="btn-danger" onClick={() => setIsClearModalOpen(true)}>
-            🗑️ Clear Data
-          </button>
-        </div>
-      </div>
 
       <div className="billing-filters">
         <div className="filter-group">
           <label>
-            Start Date:
+            📅 Start Date:
             <input 
               type="date" 
               value={startDate} 
               onChange={(e) => setStartDate(e.target.value)}
+              placeholder="Select start date"
+              max={endDate || undefined}
             />
           </label>
           <label>
-            End Date:
+            📅 End Date:
             <input 
               type="date" 
               value={endDate} 
               onChange={(e) => setEndDate(e.target.value)}
+              placeholder="Select end date"
+              min={startDate || undefined}
             />
           </label>
           <label>
-            Type:
+            🏷️ Type:
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               <option value="">All Types</option>
               <option value="chat">Chat</option>
@@ -440,7 +576,7 @@ const BillingPage: React.FC = () => {
             </select>
           </label>
           <label>
-            Provider:
+            🔌 Provider:
             <select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)}>
               <option value="">All Providers</option>
               {uniqueProviders.map(p => (
@@ -461,6 +597,68 @@ const BillingPage: React.FC = () => {
               Clear Filters
             </button>
           )}
+        </div>
+        
+        {/* Quick Date Range Selectors */}
+        <div style={{ 
+          marginTop: '1rem', 
+          paddingTop: '1rem', 
+          borderTop: '1px solid #e0e0e0',
+          display: 'flex',
+          gap: '0.5rem',
+          flexWrap: 'wrap',
+          alignItems: 'center'
+        }}>
+          <span style={{ fontSize: '0.85rem', color: '#666', fontWeight: 500 }}>Quick ranges:</span>
+          <button 
+            className="btn-clear-filters"
+            style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+            onClick={() => {
+              const today = new Date();
+              setStartDate(today.toISOString().split('T')[0]);
+              setEndDate(today.toISOString().split('T')[0]);
+            }}
+          >
+            Today
+          </button>
+          <button 
+            className="btn-clear-filters"
+            style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+            onClick={() => {
+              const today = new Date();
+              const weekAgo = new Date(today);
+              weekAgo.setDate(today.getDate() - 7);
+              setStartDate(weekAgo.toISOString().split('T')[0]);
+              setEndDate(today.toISOString().split('T')[0]);
+            }}
+          >
+            Last 7 Days
+          </button>
+          <button 
+            className="btn-clear-filters"
+            style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+            onClick={() => {
+              const today = new Date();
+              const monthAgo = new Date(today);
+              monthAgo.setMonth(today.getMonth() - 1);
+              setStartDate(monthAgo.toISOString().split('T')[0]);
+              setEndDate(today.toISOString().split('T')[0]);
+            }}
+          >
+            Last 30 Days
+          </button>
+          <button 
+            className="btn-clear-filters"
+            style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+            onClick={() => {
+              const today = new Date();
+              const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+              setStartDate(firstDay.toISOString().split('T')[0]);
+              setEndDate(today.toISOString().split('T')[0]);
+            }}
+          >
+            This Month
+          </button>
         </div>
       </div>
 
@@ -496,79 +694,85 @@ const BillingPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="breakdown-section">
-            <h3>By Type</h3>
-            <table className="breakdown-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Requests</th>
-                  <th>Tokens</th>
-                  <th>Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(billingData.totals.byType).map(([type, data]) => (
-                  <tr key={type}>
-                    <td>{type}</td>
-                    <td>{data.requests}</td>
-                    <td>{data.tokens.toLocaleString()}</td>
-                    <td>${data.cost.toFixed(4)}</td>
+          {billingData.totals.byType && Object.keys(billingData.totals.byType).length > 0 && (
+            <div className="breakdown-section">
+              <h3>By Type</h3>
+              <table className="breakdown-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Requests</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {Object.entries(billingData.totals.byType).map(([type, data]) => (
+                    <tr key={type}>
+                      <td>{type}</td>
+                      <td>{data.requests}</td>
+                      <td>{data.tokens.toLocaleString()}</td>
+                      <td>${data.cost.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          <div className="breakdown-section">
-            <h3>By Provider</h3>
-            <table className="breakdown-table">
-              <thead>
-                <tr>
-                  <th>Provider</th>
-                  <th>Requests</th>
-                  <th>Tokens</th>
-                  <th>Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(billingData.totals.byProvider).map(([provider, data]) => (
-                  <tr key={provider}>
-                    <td>{provider}</td>
-                    <td>{data.requests}</td>
-                    <td>{data.tokens.toLocaleString()}</td>
-                    <td>${data.cost.toFixed(4)}</td>
+          {billingData.totals.byProvider && Object.keys(billingData.totals.byProvider).length > 0 && (
+            <div className="breakdown-section">
+              <h3>By Provider</h3>
+              <table className="breakdown-table">
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>Requests</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {Object.entries(billingData.totals.byProvider).map(([provider, data]) => (
+                    <tr key={provider}>
+                      <td>{provider}</td>
+                      <td>{data.requests}</td>
+                      <td>{data.tokens.toLocaleString()}</td>
+                      <td>${data.cost.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          <div className="breakdown-section">
-            <h3>By Model</h3>
-            <table className="breakdown-table">
-              <thead>
-                <tr>
-                  <th>Provider</th>
-                  <th>Model</th>
-                  <th>Requests</th>
-                  <th>Tokens</th>
-                  <th>Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(billingData.totals.byModel).map(([key, data]) => (
-                  <tr key={key}>
-                    <td>{data.provider}</td>
-                    <td>{data.model}</td>
-                    <td>{data.requests}</td>
-                    <td>{data.tokens.toLocaleString()}</td>
-                    <td>${data.cost.toFixed(4)}</td>
+          {billingData.totals.byModel && Object.keys(billingData.totals.byModel).length > 0 && (
+            <div className="breakdown-section">
+              <h3>By Model</h3>
+              <table className="breakdown-table">
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>Model</th>
+                    <th>Requests</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {Object.entries(billingData.totals.byModel).map(([key, data]) => (
+                    <tr key={key}>
+                      <td>{data.provider}</td>
+                      <td>{data.model}</td>
+                      <td>{data.requests}</td>
+                      <td>{data.tokens.toLocaleString()}</td>
+                      <td>${data.cost.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -615,6 +819,7 @@ const BillingPage: React.FC = () => {
         onConfirm={handleClearData}
         providers={uniqueProviders}
       />
+      </div>
     </div>
   );
 };

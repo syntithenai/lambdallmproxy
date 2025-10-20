@@ -160,9 +160,17 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!authToken) {
         console.log('🔑 Requesting Google Drive API access token...');
         
+        // Check if Google Identity Services is available
+        if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2) {
+          console.error('❌ Google Identity Services not available. The library may not have loaded yet.');
+          console.log('💡 This usually happens if the page loads before Google GSI library is ready.');
+          console.log('💡 Try: 1) Refresh the page, 2) Check internet connection, 3) Check browser console for script loading errors');
+          throw new Error('Google Identity Services not available - library not loaded');
+        }
+        
         try {
           // Use Google Identity Services OAuth2 token client
-          const tokenClient = (window as any).google?.accounts?.oauth2?.initTokenClient({
+          const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
             client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
             scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
             callback: (response: any) => {
@@ -174,14 +182,15 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
           
           if (!tokenClient) {
-            throw new Error('Google Identity Services not available');
+            throw new Error('Failed to initialize Google token client');
           }
           
           // Request access token - this will prompt user if needed
           await new Promise<void>((resolve, reject) => {
             tokenClient.callback = (response: any) => {
               if (response.error) {
-                reject(new Error(response.error));
+                console.error('OAuth error:', response.error);
+                reject(new Error(`OAuth error: ${response.error}`));
                 return;
               }
               if (response.access_token) {
@@ -189,20 +198,25 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.setItem('google_drive_access_token', response.access_token);
                 console.log('✅ Got Drive API access token');
                 resolve();
+              } else {
+                reject(new Error('No access token received'));
               }
             };
-            tokenClient.requestAccessToken({ prompt: 'consent' });
+            
+            console.log('📋 Requesting Google Drive & Sheets permissions...');
+            tokenClient.requestAccessToken({ prompt: '' }); // Empty prompt = only show if needed
           });
         } catch (error) {
           console.error('Failed to get Drive API token:', error);
-          showError('Please grant access to Google Drive to enable sync');
-          return null;
+          throw new Error('Please grant access to Google Drive and Sheets to enable cloud sync');
         }
+      } else {
+        console.log('✅ Using cached Drive API access token');
       }
       
       if (!authToken) {
         console.error('No Drive API access token available');
-        return null;
+        throw new Error('No Drive API access token - unable to access Google Sheets');
       }
 
       // Call backend to get/create spreadsheet
@@ -250,7 +264,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return result.spreadsheetId;
     } catch (error) {
       console.error('Failed to get user RAG spreadsheet:', error);
-      showError('Failed to access your Google Drive spreadsheet');
+      // Return null and let the caller handle the error display
       return null;
     }
   };
@@ -266,7 +280,9 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Step 1: Get or create user's RAG spreadsheet
         const spreadsheetId = await getUserRagSpreadsheet();
         if (!spreadsheetId) {
-          console.warn('Could not get user RAG spreadsheet');
+          console.warn('Could not get user RAG spreadsheet - sync disabled');
+          // Show helpful message if sync is enabled but spreadsheet couldn't be accessed
+          showWarning('Cloud sync enabled but cannot access Google Sheets. Please check permissions in Settings > RAG.');
           return;
         }
 
@@ -332,10 +348,11 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Start auto-sync
         ragSyncService.startAutoSync();
-        console.log('RAG sync initialized and auto-sync started');
+        console.log('✅ RAG sync initialized and auto-sync started');
       } catch (error) {
         console.error('Failed to initialize sync:', error);
-        showError('Failed to initialize cloud sync');
+        // Show error if sync is enabled but failing
+        showError('Cloud sync failed to initialize. Check Settings > RAG for details.');
       }
     };
 

@@ -1,10 +1,17 @@
 /* Billing Page Styles */
 
+.billing-page-container {
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--bg-primary, #f9fafb);
+}
+
 .billing-page {
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
   color: var(--text-primary, #333);
+  min-height: 100%;
 }
 
 .billing-header {
@@ -14,6 +21,10 @@
   margin-bottom: 2rem;
   flex-wrap: wrap;
   gap: 1rem;
+}
+
+.billing-title {
+  flex: 1;
 }
 
 .billing-title h1 {
@@ -31,6 +42,7 @@
 .billing-actions {
   display: flex;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .btn-secondary, .btn-danger, .btn-clear-filters {
@@ -241,6 +253,8 @@
 
 .transactions-table-container {
   overflow-x: auto;
+  width: 100%;
+  margin-top: 1rem;
 }
 
 .transactions-table {

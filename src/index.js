@@ -186,6 +186,24 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         }
         
         // Billing endpoints
+        if (path === '/billing' || path === '/billing/clear') {
+            if (method === 'OPTIONS') {
+                console.log('Handling CORS preflight for billing endpoint');
+                const metadata = {
+                    statusCode: 200,
+                    headers: {
+                        'Access-Control-Allow-Origin': '*',
+                        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Google-Access-Token,X-Billing-Sync',
+                        'Access-Control-Allow-Methods': 'GET,DELETE,OPTIONS'
+                    }
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(JSON.stringify({ message: 'CORS preflight OK' }));
+                responseStream.end();
+                return;
+            }
+        }
+        
         if (method === 'GET' && path === '/billing') {
             console.log('Routing to billing endpoint: GET /billing');
             await billingEndpoint.handler(event, responseStream, context);
