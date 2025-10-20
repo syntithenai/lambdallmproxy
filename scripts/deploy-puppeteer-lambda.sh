@@ -88,24 +88,35 @@ fi
 ZIP_SIZE=$(du -h function.zip | cut -f1)
 echo -e "${GREEN}✓ Package created: $ZIP_SIZE${NC}"
 
-# Upload to S3 (optional, for versioning)
+# Upload to S3 first (required for large packages to avoid SSL issues)
 S3_BUCKET="llmproxy-deployments"
-if aws s3 ls "s3://$S3_BUCKET" 2>/dev/null; then
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    S3_KEY="puppeteer-lambda/$TIMESTAMP/function.zip"
-    
-    echo -e "${YELLOW}☁️  Uploading to S3...${NC}"
-    aws s3 cp function.zip "s3://$S3_BUCKET/$S3_KEY" --region "$REGION"
-    echo -e "${GREEN}✓ Uploaded to S3: s3://$S3_BUCKET/$S3_KEY${NC}"
-else
-    echo -e "${YELLOW}⚠️  S3 bucket not found, skipping S3 upload${NC}"
+
+# Ensure S3 bucket exists
+if ! aws s3 ls "s3://$S3_BUCKET" 2>/dev/null; then
+    echo -e "${YELLOW}📦 Creating S3 bucket...${NC}"
+    aws s3 mb "s3://$S3_BUCKET" --region "$REGION" 2>/dev/null || true
 fi
 
-# Update Lambda function code
-echo -e "${YELLOW}🚀 Updating Lambda function...${NC}"
+# Always upload to S3 for large packages (avoids SSL timeout issues)
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+S3_KEY="puppeteer-lambda/$TIMESTAMP/function.zip"
+
+echo -e "${YELLOW}☁️  Uploading to S3 (recommended for large packages)...${NC}"
+aws s3 cp function.zip "s3://$S3_BUCKET/$S3_KEY" --region "$REGION"
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Error: Failed to upload to S3${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Uploaded to S3: s3://$S3_BUCKET/$S3_KEY${NC}"
+
+# Update Lambda function code from S3 (more reliable than direct upload)
+echo -e "${YELLOW}🚀 Updating Lambda function from S3...${NC}"
 aws lambda update-function-code \
     --function-name "$FUNCTION_NAME" \
-    --zip-file fileb://function.zip \
+    --s3-bucket "$S3_BUCKET" \
+    --s3-key "$S3_KEY" \
     --region "$REGION" \
     > /dev/null
 
