@@ -29,11 +29,19 @@ async function scrapeTier2(url, options = {}) {
     timeout = 30000,
     waitForDynamic = true,
     waitTime = 2000,
-    userAgent = null
+    userAgent = null,
+    onProgress = null
   } = options;
 
   console.log(`\n🎭 [Tier ${TIER} - Playwright+Stealth] Scraping: ${url}`);
   const startTime = Date.now();
+  
+  // Helper to emit progress
+  const emitProgress = (stage, data = {}) => {
+    if (onProgress && typeof onProgress === 'function') {
+      onProgress({ stage, url, ...data });
+    }
+  };
 
   let browser = null;
   let page = null;
@@ -46,11 +54,15 @@ async function scrapeTier2(url, options = {}) {
 
     console.log(`🚀 [Tier ${TIER}] Launching Chromium with stealth plugins...`);
     
+    emitProgress('initializing', { message: 'Launching Playwright with stealth plugins' });
+    
     // Add stealth plugin
     playwrightExtra.use(StealthPlugin());
 
     // Launch browser with stealth
     const launchStart = Date.now();
+    emitProgress('launching_browser', { message: 'Starting Chromium browser' });
+    
     browser = await playwrightExtra.launch({
       headless: true,
       args: [
@@ -82,6 +94,8 @@ async function scrapeTier2(url, options = {}) {
     console.log(`📄 [Tier ${TIER}] Navigating to: ${url}`);
     const navStart = Date.now();
     
+    emitProgress('loading_page', { message: 'Loading page content' });
+    
     const response = await page.goto(url, {
       timeout,
       waitUntil: 'domcontentloaded'
@@ -93,11 +107,13 @@ async function scrapeTier2(url, options = {}) {
     // Wait for dynamic content if enabled
     if (waitForDynamic && waitTime > 0) {
       console.log(`⏳ [Tier ${TIER}] Waiting ${waitTime}ms for dynamic content...`);
+      emitProgress('waiting', { message: `Waiting ${waitTime}ms for dynamic content` });
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
 
     // Extract content
     console.log(`📖 [Tier ${TIER}] Extracting content...`);
+    emitProgress('extracting', { message: 'Extracting page content' });
     const extractStart = Date.now();
 
     const content = await page.evaluate(() => {
@@ -143,6 +159,14 @@ async function scrapeTier2(url, options = {}) {
 
     const totalTime = Date.now() - startTime;
     console.log(`✅ [Tier ${TIER}] Complete: ${content.text.length} chars, ${content.links.length} links, ${content.images.length} images (${totalTime}ms)`);
+
+    emitProgress('complete', {
+      message: 'Scraping completed successfully',
+      contentLength: content.text.length,
+      linksCount: content.links.length,
+      imagesCount: content.images.length,
+      duration: totalTime
+    });
 
     return {
       url,

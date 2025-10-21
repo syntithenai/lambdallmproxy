@@ -71,11 +71,19 @@ async function scrapeTier3(url, options = {}) {
     timeout = 30000,
     screenshot = false,
     headless = false,  // Default to visible browser for better bypass
-    waitAfterLoad = 2000
+    waitAfterLoad = 2000,
+    onProgress = null
   } = options;
 
   console.log(`🐍 [Tier 3 - Selenium+Undetected] Scraping: ${url}`);
   const startTime = Date.now();
+  
+  // Helper to emit progress
+  const emitProgress = (stage, data = {}) => {
+    if (onProgress && typeof onProgress === 'function') {
+      onProgress({ stage, url, ...data });
+    }
+  };
 
   return new Promise((resolve, reject) => {
     // Path to Python script
@@ -84,6 +92,12 @@ async function scrapeTier3(url, options = {}) {
 
     console.log(`🐍 [Tier 3] Using Python: ${pythonExe}`);
     console.log(`🐍 [Tier 3] Script: ${scriptPath}`);
+
+    // Emit initialization progress
+    emitProgress('initializing', {
+      message: 'Starting Selenium with undetected ChromeDriver',
+      python: pythonExe
+    });
 
     // Spawn Python process
     const python = spawn(pythonExe, [scriptPath], {
@@ -108,6 +122,20 @@ async function scrapeTier3(url, options = {}) {
       stderrData += message;
       // Forward Python logs to console
       process.stderr.write(message);
+      
+      // Emit progress based on Python log messages
+      const msg = message.toLowerCase();
+      if (msg.includes('starting chrome') || msg.includes('launching')) {
+        emitProgress('launching_browser', { message: 'Launching Chrome browser with stealth' });
+      } else if (msg.includes('navigating') || msg.includes('loading')) {
+        emitProgress('loading_page', { message: 'Loading page content' });
+      } else if (msg.includes('waiting') || msg.includes('sleep')) {
+        emitProgress('waiting', { message: 'Waiting for page to settle' });
+      } else if (msg.includes('extract')) {
+        emitProgress('extracting', { message: 'Extracting page content' });
+      } else if (msg.includes('screenshot')) {
+        emitProgress('capturing', { message: 'Capturing screenshot' });
+      }
     });
 
     // Handle process completion
@@ -142,6 +170,16 @@ async function scrapeTier3(url, options = {}) {
             };
 
             console.log(`✅ [Tier 3] Complete: ${result.text.length} chars, ${result.links.length} links, ${result.images.length} images (${totalTime}ms)`);
+            
+            // Emit completion progress
+            emitProgress('complete', {
+              message: 'Scraping completed successfully',
+              contentLength: result.text.length,
+              linksCount: result.links.length,
+              imagesCount: result.images.length,
+              duration: totalTime
+            });
+            
             resolve(result);
           } else {
             // Python script returned error

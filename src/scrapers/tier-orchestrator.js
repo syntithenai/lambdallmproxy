@@ -355,11 +355,19 @@ async function scrapeWithTierFallback(url, options = {}) {
     maxTier: userMaxTier = null,
     enableInteractive = false,
     useSiteConfig = true,
+    onProgress = null,
     ...scraperOptions
   } = options;
 
   const { IS_LAMBDA, MAX_TIER } = getEnvironmentConstraints();
   const effectiveMaxTier = userMaxTier !== null ? Math.min(userMaxTier, MAX_TIER) : MAX_TIER;
+  
+  // Helper to emit progress events
+  const emitProgress = (stage, data = {}) => {
+    if (onProgress && typeof onProgress === 'function') {
+      onProgress({ stage, url, ...data });
+    }
+  };
   
   // Check for site-specific configuration
   let startTier = userStartTier !== null ? userStartTier : 0;
@@ -383,6 +391,15 @@ async function scrapeWithTierFallback(url, options = {}) {
   console.log(`🎯 Tier range: ${startTier} → ${effectiveMaxTier}`);
   console.log(`${'='.repeat(70)}\n`);
 
+  // Emit initial progress
+  emitProgress('initializing', {
+    tier: startTier,
+    tierName: getTierName(startTier),
+    maxTier: effectiveMaxTier,
+    environment: IS_LAMBDA ? 'lambda' : 'local',
+    siteConfigReason
+  });
+
   const errors = [];
   let currentTier = startTier;
 
@@ -397,6 +414,13 @@ async function scrapeWithTierFallback(url, options = {}) {
     const tierName = getTierName(currentTier);
     console.log(`\n📍 [Orchestrator] Attempting Tier ${currentTier}: ${tierName}`);
 
+    // Emit tier attempt progress
+    emitProgress('tier_attempt', {
+      tier: currentTier,
+      tierName,
+      attempt: errors.length + 1
+    });
+
     try {
       // Validate tier availability
       validateTierAvailability(currentTier);
@@ -408,8 +432,29 @@ async function scrapeWithTierFallback(url, options = {}) {
         throw new Error(`Scraper for Tier ${currentTier} not available`);
       }
 
-      // Execute scraping
-      const result = await scraper(url, scraperOptions);
+      // Emit scraping start progress
+      emitProgress('scraping', {
+        tier: currentTier,
+        tierName,
+        message: `Scraping with ${tierName}...`
+      });
+
+      // Execute scraping - pass onProgress through to tier scraper if it supports it
+      const tierScraperOptions = { ...scraperOptions };
+      
+      // For tiers that support onProgress (Tier 1, 2, 3), pass it through
+      // but wrap it to add tier context
+      if (currentTier >= 1 && currentTier <= 3 && onProgress) {
+        tierScraperOptions.onProgress = (progressData) => {
+          emitProgress('tier_progress', {
+            tier: currentTier,
+            tierName,
+            ...progressData
+          });
+        };
+      }
+      
+      const result = await scraper(url, tierScraperOptions);
 
       // If the page looks like a bot-protection / gate, escalate to next tier
       if (detectBotProtection(result)) {
@@ -431,10 +476,28 @@ async function scrapeWithTierFallback(url, options = {}) {
       console.log(`📊 Stats: ${result.text?.length || 0} chars, ${result.links?.length || 0} links`);
       console.log(`${'='.repeat(70)}\n`);
       
+      // Emit success progress
+      emitProgress('success', {
+        tier: currentTier,
+        tierName,
+        contentLength: result.text?.length || result.content?.length || 0,
+        linksCount: result.links?.length || 0,
+        imagesCount: result.images?.length || 0
+      });
+      
       return result;
 
     } catch (error) {
       console.error(`❌ [Orchestrator] Tier ${currentTier} failed:`, error.message);
+      
+      // Emit error progress
+      emitProgress('tier_error', {
+        tier: currentTier,
+        tierName,
+        error: error.message,
+        code: error.code
+      });
+      
       errors.push({
         tier: currentTier,
         tierName,
@@ -446,6 +509,16 @@ async function scrapeWithTierFallback(url, options = {}) {
       // Check if we should escalate to next tier
       if (shouldEscalate(error, currentTier)) {
         console.log(`⬆️  [Orchestrator] Escalating to Tier ${currentTier + 1}`);
+        
+        // Emit escalation progress
+        emitProgress('escalating', {
+          fromTier: currentTier,
+          toTier: currentTier + 1,
+          fromTierName: tierName,
+          toTierName: getTierName(currentTier + 1),
+          reason: error.message
+        });
+        
         currentTier++;
       } else {
         // Don't escalate - error is not tier-related or we've hit limit

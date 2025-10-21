@@ -9,6 +9,8 @@ const { extractContent } = require('./html-content-extractor');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
 const { transcribeUrl } = require('./tools/transcribe');
 const { tavilySearch, tavilyExtract } = require('./tavily-search');
+const { scrapeWithTierFallback } = require('./scrapers/tier-orchestrator');
+console.log('🚀 [tools.js] Module loaded - scrapeWithTierFallback imported:', typeof scrapeWithTierFallback);
 const vm = require('vm');
 
 // AWS Lambda client for invoking Puppeteer Lambda
@@ -696,6 +698,8 @@ function clampInt(v, min, max, def) {
 async function callFunction(name, args = {}, context = {}) {
   // Extract model and apiKey from context for consistent LLM usage
   const { model, apiKey } = context;
+  
+  console.log(`🎯🎯🎯 [callFunction] CALLED with name='${name}', args=`, JSON.stringify(args).substring(0, 200));
   
   // DEBUG: Log context.writeEvent availability
   console.log(`🔧 TOOLS: callFunction('${name}') - context.writeEvent exists:`, typeof context.writeEvent === 'function');
@@ -1483,6 +1487,7 @@ Brief answer with URLs:`;
       return responseStr;
     }
     case 'scrape_web_content': {
+      console.log(`🎯 [scrape_web_content] Tool called with URL: ${args.url}`);
       const url = String(args.url || '').trim();
       if (!url) return JSON.stringify({ error: 'url required' });
       const timeout = clampInt(args.timeout, 1, 60, 15);
@@ -1503,468 +1508,68 @@ Brief answer with URLs:`;
         console.warn(`Cache read error for scrape:`, error.message);
       }
       
-      console.log(`🔍 Cache MISS for scrape: ${url} - fetching content`);
-      
-      // SCRAPING STRATEGY:
-      // - In development mode (NODE_ENV=development): Prefer Puppeteer for better visibility and progress
-      // - In production: Try direct scraping first, fall back to Puppeteer if it fails
-      // This keeps memory usage low on main Lambda but uses Puppeteer for dev visibility
-      
-      const isDevelopment = process.env.NODE_ENV === 'development';
-      const puppeteerLambdaArn = process.env.PUPPETEER_LAMBDA_ARN;
-      const usePuppeteer = process.env.USE_PUPPETEER !== 'false';
-      const puppeteerAvailable = usePuppeteer && (isDevelopment || puppeteerLambdaArn);
-      
-      let directScrapingFailed = false;
-      let directScrapingError = null;
-      
-      // In development, prefer Puppeteer for progress visibility
-      if (isDevelopment && puppeteerAvailable) {
-        console.log(`🎭 [Development Mode] Using Puppeteer for scraping (progress enabled)`);
-        
-        try {
-          // Create progress callback that emits scraping events
-          const onProgress = context?.onProgress ? (progress) => {
-            // Map internal progress stages to user-friendly event types
-            const stageMap = {
-              'launching': { type: 'scrape_launching', message: 'Launching browser...' },
-              'launched': { type: 'scrape_launched', message: 'Browser ready' },
-              'navigating': { type: 'scrape_navigating', message: `Loading ${url}...` },
-              'page_loaded': { type: 'scrape_page_loaded', message: 'Page loaded' },
-              'waiting_selector': { type: 'scrape_waiting_selector', message: 'Waiting for content...' },
-              'extracting': { type: 'scrape_extracting', message: 'Extracting content...' },
-              'extracted': { type: 'scrape_extracted', message: `Found ${progress.textLength || 0} chars, ${progress.linkCount || 0} links, ${progress.imageCount || 0} images` },
-              'screenshot': { type: 'scrape_screenshot', message: 'Taking screenshot...' },
-              'complete': { type: 'scrape_complete', message: `Completed in ${progress.totalTime || 0}ms` },
-              'error': { type: 'scrape_error', message: progress.error || 'Scraping failed' },
-              'invoking_lambda': { type: 'scrape_launching', message: 'Invoking Puppeteer Lambda...' }
-            };
-            
-            const mapped = stageMap[progress.stage] || { type: progress.stage, message: progress.stage };
-            context.onProgress({
-              type: mapped.type,
-              message: mapped.message,
-              stage: progress.stage,
-              url: progress.url || url,
-              ...progress
-            });
-          } : null;
-          
-          const result = await invokePuppeteerLambda(url, {
-            timeout: timeout * 1000,
-            waitForNetworkIdle: true,
-            extractLinks: true,
-            extractImages: true,
-            onProgress
-          });
-          
-          // Format response similar to direct scraping
-          const proxyUsed = result.proxyUsed || false;
-          const response = {
-            scrapeService: isDevelopment ? 'puppeteer_local' : 'puppeteer_lambda',
-            proxyUsed,
-            url: result.url,
-            title: result.title,
-            content: result.text,
-            format: 'text',
-            originalLength: result.text.length,
-            extractedLength: result.text.length,
-            compressionRatio: 1.0,
-            images: result.images && result.images.length > 0 ? result.images.slice(0, 3).map(img => ({
-              src: img.url,
-              alt: img.alt,
-              caption: img.alt
-            })) : undefined,
-            allImages: result.images && result.images.length > 0 ? result.images.map(img => ({
-              src: img.url,
-              alt: img.alt,
-              caption: img.alt
-            })) : undefined,
-            links: result.links && result.links.length > 0 ? result.links.map(link => ({
-              url: link.url,
-              text: link.text
-            })) : undefined,
-            meta: result.meta,
-            stats: result.stats
-          };
-          
-          console.log(`✅ [Puppeteer] Scraping complete: ${response.content.length} chars (proxy: ${proxyUsed ? 'yes' : 'no'})`);
-          
-          // Save to cache
-          try {
-            const cacheKey = getCacheKey('scrapes', { url });
-            saveToCache('scrapes', cacheKey, response, 3600).catch(err => 
-              console.warn(`Cache write error:`, err.message)
-            );
-          } catch (error) {
-            console.warn(`Cache error:`, error.message);
-          }
-          
-          return JSON.stringify(response);
-        } catch (puppeteerError) {
-          console.error(`❌ [Puppeteer] Failed:`, puppeteerError.message);
-          console.log(`⚠️ Falling back to direct scraping`);
-          // Continue to direct scraping fallback below
-        }
-      }
-      
-      // Try direct scraping (production default or development fallback)
-      const tavilyApiKey = context.tavilyApiKey;
-      const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
-      const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-      const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
-      
-      console.log(`📄 [Direct Scraping] Trying ${url} using: ${useTavily ? 'Tavily API' : 'DuckDuckGo with proxy'}`);
+      console.log(`🔍 Cache MISS for scrape: ${url} - fetching content with tier orchestrator`);
       
       try {
-        let content, format, originalLength, extractedLength, compressionRatio, warning, extractionError;
-        let scrapeService = 'duckduckgo'; // Track which service was actually used
-        let rawHtml = ''; // Store raw HTML for image/link extraction
-        
-        // Extract images and links from raw HTML BEFORE any processing
-        let images = [];
-        let allImages = []; // All images for UI display
-        let youtube = [];
-        let media = [];
-        let links = [];
-        
-        if (useTavily) {
-          // Use Tavily Extract API
-          try {
-            const tavilyResult = await tavilyExtract(url, tavilyApiKey);
-            
-            if (tavilyResult.error) {
-              throw new Error(tavilyResult.error);
-            }
-            
-            content = tavilyResult.raw_content;
-            format = 'text';
-            originalLength = content.length;
-            extractedLength = content.length;
-            compressionRatio = 1.0;
-            scrapeService = 'tavily';
-            
-            console.log(`✅ [Tavily] Extract completed: ${extractedLength} chars`);
-            console.log(`📝 Tavily doesn't provide raw HTML - images/links unavailable for ${url}`);
-          } catch (tavilyError) {
-            console.error('[Tavily] Extract failed, trying DuckDuckGo with proxy:', tavilyError.message);
-            // Fall back to DuckDuckGo with proxy
-            const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
-            rawHtml = await searcher.fetchUrl(url, timeout * 1000);
-            
-            // Extract images and links BEFORE content extraction
-            try {
-              const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
-              const parser = new SimpleHTMLParser(rawHtml, urlQuery, url);
-              
-              // Extract ALL images and prioritized images separately
-              const imageExtraction = parser.extractAllImages(3); // Top 3 for LLM
-              images = imageExtraction.prioritized;
-              allImages = imageExtraction.all; // All images for UI
-              
-              const allLinks = parser.extractLinks(25);
-              const categorized = parser.categorizeLinks(allLinks);
-              
-              youtube = categorized.youtube;
-              media = [...categorized.video, ...categorized.audio, ...categorized.media];
-              links = categorized.regular;
-              
-              console.log(`🖼️ Extracted ${images.length} prioritized images (${allImages.length} total), ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
-            } catch (extractError) {
-              console.warn(`⚠️ Could not extract images/links:`, extractError.message);
-            }
-            
-            console.log(`🔗 Using baseUrl for link resolution: ${url}`);
-            const extracted = extractContent(rawHtml, { baseUrl: url });
-            content = extracted.content;
-            format = extracted.format;
-            originalLength = extracted.originalLength;
-            extractedLength = extracted.extractedLength;
-            compressionRatio = extracted.compressionRatio;
-            warning = extracted.warning;
-            extractionError = extracted.error;
-            scrapeService = 'duckduckgo_proxy';
-            
-            // Emit content extraction event
-            if (context?.writeEvent) {
-              context.writeEvent('scrape_progress', {
-                tool: 'scrape_web_content',
-                phase: 'content_extracted',
+        // Use the tier orchestrator which handles:
+        // - Site-specific tier selection (e.g., Quora starts at Tier 3)
+        // - Automatic tier escalation on bot detection
+        // - Environment-aware tier constraints (Lambda vs local)
+        const result = await scrapeWithTierFallback(url, {
+          timeout: timeout * 1000,
+          useSiteConfig: true,  // Enable site-specific configuration
+          onProgress: context?.onProgress ? (progress) => {
+            // Map tier orchestrator progress to tool progress events
+            if (context.onProgress) {
+              context.onProgress({
+                type: 'scrape_progress',
+                phase: progress.phase || progress.tier,
+                tier: progress.tier,
                 url: url,
-                format: format,
-                originalLength: originalLength,
-                extractedLength: extractedLength,
-                compressionRatio: compressionRatio,
-                images: images.length,
-                videos: media.length,
-                youtube: youtube.length,
-                links: links.length,
-                warning: warning,
-                rawHtml: rawHtml, // Include raw HTML for debugging/inspection
-                timestamp: new Date().toISOString()
+                message: progress.message,
+                ...progress
               });
             }
-          }
-        } else {
-          // Use DuckDuckGo fetcher with proxy
-          const searcher = new DuckDuckGoSearcher(proxyUsername, proxyPassword);
-          rawHtml = await searcher.fetchUrl(url, timeout * 1000);
-          
-          // Extract images and links BEFORE content extraction
-          try {
-            const urlQuery = url.split('/').pop()?.replace(/[-_]/g, ' ') || '';
-            const parser = new SimpleHTMLParser(rawHtml, urlQuery, url);
-            
-            // Extract ALL images and prioritized images separately
-            const imageExtraction = parser.extractAllImages(3); // Top 3 for LLM
-            images = imageExtraction.prioritized;
-            allImages = imageExtraction.all; // All images for UI
-            
-            const allLinks = parser.extractLinks(25);
-            const categorized = parser.categorizeLinks(allLinks);
-            
-            youtube = categorized.youtube;
-            media = [...categorized.video, ...categorized.audio, ...categorized.media];
-            links = categorized.regular;
-            
-            console.log(`🖼️ Extracted ${images.length} prioritized images (${allImages.length} total), ${youtube.length} YouTube, ${media.length} media, ${links.length} links from ${url}`);
-          } catch (extractError) {
-            console.warn(`⚠️ Could not extract images/links:`, extractError.message);
-          }
-          
-          console.log(`🔗 Using baseUrl for link resolution: ${url}`);
-          const extracted = extractContent(rawHtml, { baseUrl: url });
-          content = extracted.content;
-          format = extracted.format;
-          originalLength = extracted.originalLength;
-          extractedLength = extracted.extractedLength;
-          compressionRatio = extracted.compressionRatio;
-          warning = extracted.warning;
-          extractionError = extracted.error;
-          scrapeService = 'duckduckgo_proxy';
-          
-          // Emit content extraction event
-          if (context?.writeEvent) {
-            context.writeEvent('scrape_progress', {
-              tool: 'scrape_web_content',
-              phase: 'content_extracted',
-              url: url,
-              format: format,
-              originalLength: originalLength,
-              extractedLength: extractedLength,
-              compressionRatio: compressionRatio,
-              images: images.length,
-              videos: media.length,
-              youtube: youtube.length,
-              links: links.length,
-              warning: warning,
-              rawHtml: rawHtml, // Include raw HTML for debugging/inspection
-              timestamp: new Date().toISOString()
-            });
-          }
-        }
+          } : undefined
+        });
         
-        console.log(`🌐 Scraped ${url}: ${originalLength} → ${extractedLength} chars (${format} format, ${compressionRatio}x compression)`)
-        
-        // Token-aware truncation to prevent context overflow
-        // With load balancing system, we can be more generous with content
-        // Limit scraped content to ~100k tokens (~400k chars) to provide comprehensive information
-        const MAX_SCRAPE_CHARS = 400000;
-        const MAX_SCRAPE_TOKENS = 100000;
-        let truncatedContent = content;
-        let wasTruncated = false;
-        
-        if (content.length > MAX_SCRAPE_CHARS) {
-          wasTruncated = true;
-          const estimatedTokens = Math.ceil(content.length / 4);
-          
-          // Truncate at sentence boundaries when possible
-          truncatedContent = content.substring(0, MAX_SCRAPE_CHARS);
-          const lastPeriod = truncatedContent.lastIndexOf('.');
-          const lastNewline = truncatedContent.lastIndexOf('\n');
-          const breakPoint = Math.max(lastPeriod, lastNewline);
-          
-          if (breakPoint > MAX_SCRAPE_CHARS * 0.8) {
-            // Use sentence/paragraph boundary if within 80% of limit
-            truncatedContent = truncatedContent.substring(0, breakPoint + 1);
-          }
-          
-          truncatedContent += `\n\n[Content truncated: ${content.length} → ${truncatedContent.length} chars (~${estimatedTokens} → ~${Math.ceil(truncatedContent.length / 4)} tokens) to fit model limits. Original had ${originalLength} chars before markdown conversion.]`;
-          
-          console.log(`✂️ Truncated scrape content: ${content.length} → ${truncatedContent.length} chars (~${estimatedTokens} → ~${Math.ceil(truncatedContent.length / 4)} tokens)`);
-        }
-        
+        // Format response for consistency with cache format
         const response = {
-          scrapeService: scrapeService, // Indicate which service was used: 'tavily' or 'duckduckgo'
-          proxyUsed: scrapeService === 'duckduckgo_proxy' && !!(proxyUsername && proxyPassword),
-          url,
-          content: truncatedContent,
-          format,
-          originalLength,
-          extractedLength,
-          compressionRatio,
-          wasTruncated: wasTruncated || undefined, // Only include if truncated
-          images: images.length > 0 ? images : undefined, // Include top 3 prioritized images for LLM
-          allImages: allImages.length > 0 ? allImages : undefined, // Include ALL images for UI display
-          youtube: youtube.length > 0 ? youtube : undefined, // Include YouTube links
-          media: media.length > 0 ? media : undefined, // Include other media links
-          links: links.length > 0 ? links : undefined,      // Include regular links
-          rawHtml: rawHtml || undefined // Include raw HTML for UI inspection
+          scrapeService: result.tier || 'tier_orchestrator',
+          tier: result.tier,
+          url: result.url || url,
+          title: result.title,
+          content: result.content || result.text,
+          format: 'text',
+          originalLength: (result.content || result.text || '').length,
+          extractedLength: (result.content || result.text || '').length,
+          compressionRatio: 1.0,
+          images: result.images && result.images.length > 0 ? result.images.slice(0, 3) : undefined,
+          allImages: result.images,
+          links: result.links,
+          meta: result.meta,
+          stats: result.stats
         };
         
-        if (warning) {
-          response.warning = warning;
-        }
+        console.log(`✅ [Tier ${result.tier}] Scraping complete: ${response.content.length} chars`);
         
-        if (extractionError) {
-          response.extractionError = extractionError;
-        }
-        
-        console.log(`✅ [Direct Scraping] Success: ${truncatedContent.length} chars, ${images.length} images, ${links.length} links`);
-        
-        // Save to cache (non-blocking) - TTL 1 hour for scrapes
+        // Save to cache
         try {
           const cacheKey = getCacheKey('scrapes', { url });
-          saveToCache('scrapes', cacheKey, response, 3600).then(() => {
-            console.log(`💾 Cached scrape: ${url}`);
-          }).catch(error => {
-            console.warn(`Cache write error for scrape:`, error.message);
-          });
+          saveToCache('scrapes', cacheKey, response, 3600).catch(err => 
+            console.warn(`Cache write error:`, err.message)
+          );
         } catch (error) {
-          console.warn(`Cache error for scrape:`, error.message);
+          console.warn(`Cache error:`, error.message);
         }
         
         return JSON.stringify(response);
-        
-      } catch (directScrapingError) {
-        // Direct scraping failed - try Puppeteer Lambda as fallback
-        console.error(`❌ [Direct Scraping] Failed:`, directScrapingError.message);
-        
-        // Check if Puppeteer Lambda is configured
-        const puppeteerLambdaArn = process.env.PUPPETEER_LAMBDA_ARN;
-        const usePuppeteer = process.env.USE_PUPPETEER !== 'false'; // Enabled by default
-        
-        if (!usePuppeteer) {
-          console.log(`⚠️ [Puppeteer] Disabled by USE_PUPPETEER=false`);
-          return JSON.stringify({ url, error: String(directScrapingError?.message || directScrapingError) });
-        }
-        
-        if (!puppeteerLambdaArn) {
-          console.log(`⚠️ [Puppeteer] Not configured (PUPPETEER_LAMBDA_ARN not set)`);
-          return JSON.stringify({ url, error: String(directScrapingError?.message || directScrapingError) });
-        }
-        
-        // Try Puppeteer Lambda as fallback
-        try {
-          console.log(`🤖 [Puppeteer] Falling back to Puppeteer Lambda for: ${url}`);
-          
-          // Create progress callback that emits scraping events
-          const onProgress = context?.onProgress ? (progress) => {
-            // Map internal progress stages to user-friendly event types
-            const stageMap = {
-              'launching': { type: 'scrape_launching', message: 'Launching browser...' },
-              'launched': { type: 'scrape_launched', message: 'Browser ready' },
-              'navigating': { type: 'scrape_navigating', message: `Loading ${url}...` },
-              'page_loaded': { type: 'scrape_page_loaded', message: 'Page loaded' },
-              'waiting_selector': { type: 'scrape_waiting_selector', message: 'Waiting for content...' },
-              'extracting': { type: 'scrape_extracting', message: 'Extracting content...' },
-              'extracted': { type: 'scrape_extracted', message: `Found ${progress.textLength || 0} chars, ${progress.linkCount || 0} links, ${progress.imageCount || 0} images` },
-              'screenshot': { type: 'scrape_screenshot', message: 'Taking screenshot...' },
-              'complete': { type: 'scrape_complete', message: `Completed in ${progress.totalTime || 0}ms` },
-              'error': { type: 'scrape_error', message: progress.error || 'Scraping failed' },
-              'invoking_lambda': { type: 'scrape_launching', message: 'Invoking Puppeteer Lambda...' }
-            };
-            
-            const mapped = stageMap[progress.stage] || { type: progress.stage, message: progress.stage };
-            context.onProgress({
-              type: mapped.type,
-              message: mapped.message,
-              stage: progress.stage,
-              url: progress.url || url,
-              ...progress
-            });
-          } : null;
-          
-          const result = await invokePuppeteerLambda(url, {
-            timeout: timeout * 1000,
-            waitForNetworkIdle: true,
-            extractLinks: true,
-            extractImages: true,
-            onProgress
-          });
-          
-          // Format response similar to direct scraping
-          const response = {
-            scrapeService: 'puppeteer_lambda',
-            url: result.url,
-            title: result.title,
-            content: result.text,
-            format: 'text',
-            originalLength: result.text.length,
-            extractedLength: result.text.length,
-            compressionRatio: 1.0,
-            images: result.images && result.images.length > 0 ? result.images.slice(0, 3).map(img => ({
-              src: img.url,
-              alt: img.alt,
-              caption: img.alt
-            })) : undefined,
-            allImages: result.images && result.images.length > 0 ? result.images.map(img => ({
-              src: img.url,
-              alt: img.alt,
-              caption: img.alt
-            })) : undefined,
-            links: result.links && result.links.length > 0 ? result.links.map(link => ({
-              url: link.url,
-              text: link.text
-            })) : undefined,
-            meta: result.meta,
-            stats: result.stats
-          };
-          
-          // Token-aware truncation
-          const MAX_SCRAPE_CHARS = 400000;
-          if (response.content.length > MAX_SCRAPE_CHARS) {
-            const originalLength = response.content.length;
-            response.content = response.content.substring(0, MAX_SCRAPE_CHARS);
-            
-            // Try to break at sentence/paragraph boundary
-            const lastPeriod = response.content.lastIndexOf('.');
-            const lastNewline = response.content.lastIndexOf('\n');
-            const breakPoint = Math.max(lastPeriod, lastNewline);
-            
-            if (breakPoint > MAX_SCRAPE_CHARS * 0.8) {
-              response.content = response.content.substring(0, breakPoint + 1);
-            }
-            
-            response.content += `\n\n[Content truncated: ${originalLength} → ${response.content.length} chars to fit model limits.]`;
-            response.wasTruncated = true;
-            
-            console.log(`✂️ Truncated Puppeteer content: ${originalLength} → ${response.content.length} chars`);
-          }
-          
-          console.log(`✅ [Puppeteer] Scraping complete: ${response.content.length} chars, ${response.links?.length || 0} links, ${response.images?.length || 0} images`);
-          
-          // Save to cache (non-blocking) - TTL 1 hour for scrapes
-          try {
-            const cacheKey = getCacheKey('scrapes', { url });
-            saveToCache('scrapes', cacheKey, response, 3600).then(() => {
-              console.log(`💾 Cached Puppeteer scrape: ${url}`);
-            }).catch(error => {
-              console.warn(`Cache write error for Puppeteer scrape:`, error.message);
-            });
-          } catch (error) {
-            console.warn(`Cache error for Puppeteer scrape:`, error.message);
-          }
-          
-          return JSON.stringify(response);
-          
-        } catch (puppeteerError) {
-          console.error(`❌ [Puppeteer] Fallback also failed:`, puppeteerError.message);
-          return JSON.stringify({ 
-            url, 
-            error: `Both direct scraping and Puppeteer failed. Direct: ${directScrapingError.message}. Puppeteer: ${puppeteerError.message}` 
-          });
-        }
+      } catch (tierError) {
+        console.error(`❌ [Tier Orchestrator] Failed:`, tierError.message);
+        return JSON.stringify({ 
+          error: `Scraping failed: ${tierError.message}`,
+          url: url 
+        });
       }
     }
     case 'search_knowledge_base': {
