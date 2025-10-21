@@ -2371,7 +2371,8 @@ async function handler(event, responseStream, context) {
             const toolMessages = currentMessages.filter(m => m.role === 'tool');
             
             extractedContent = null; // Assignment to function-scoped variable
-            const imageGenerations = []; // Collect image generation results
+            const imageGenerations = []; // Collect image generation results (legacy UI confirmation flow)
+            const generatedImages = []; // Collect auto-generated images for markdown injection
             
             // NEW: Track extraction metadata per tool (for inline transparency)
             const toolExtractionMetadata = {}; // Key: tool_call_id, Value: { summary, images, links, etc. }
@@ -2599,22 +2600,44 @@ async function handler(event, responseStream, context) {
                         // Extract from generate_image results
                         if (toolMsg.name === 'generate_image') {
                             console.log(`🎨 Processing generate_image tool result`);
-                            imageGenerations.push({
-                                id: toolMsg.tool_call_id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                                provider: parsed.provider || 'unknown',
-                                model: parsed.model || parsed.modelKey || 'unknown',
-                                modelKey: parsed.modelKey || parsed.model,
-                                cost: parsed.cost || 0,
-                                prompt: parsed.prompt || '',
-                                size: parsed.size || '1024x1024',
-                                style: parsed.style || 'natural',
-                                qualityTier: parsed.qualityTier || 'standard',
-                                constraints: parsed.constraints || {},
-                                availableAlternatives: parsed.availableAlternatives || [],
-                                status: 'pending', // Will be 'pending' until user clicks button
-                                ready: parsed.ready || false,
-                                message: parsed.message || ''
-                            });
+                            
+                            // Check if image was actually generated (new behavior)
+                            if (parsed.generated && (parsed.url || parsed.base64)) {
+                                console.log(`✅ Image was generated directly by tool - will inject as markdown`);
+                                
+                                // Collect for markdown injection
+                                generatedImages.push({
+                                    url: parsed.url,
+                                    base64: parsed.base64,
+                                    prompt: parsed.prompt || 'Generated image',
+                                    provider: parsed.provider,
+                                    model: parsed.model,
+                                    size: parsed.size,
+                                    cost: parsed.cost
+                                });
+                                
+                                console.log(`   Added to generatedImages array (total: ${generatedImages.length})`);
+                                // Don't add to imageGenerations array (no UI button needed)
+                            } else {
+                                // Old behavior: image not yet generated, needs UI confirmation
+                                console.log(`⚠️ Image not generated - adding to imageGenerations for UI button`);
+                                imageGenerations.push({
+                                    id: toolMsg.tool_call_id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                    provider: parsed.provider || 'unknown',
+                                    model: parsed.model || parsed.modelKey || 'unknown',
+                                    modelKey: parsed.modelKey || parsed.model,
+                                    cost: parsed.cost || 0,
+                                    prompt: parsed.prompt || '',
+                                    size: parsed.size || '1024x1024',
+                                    style: parsed.style || 'natural',
+                                    qualityTier: parsed.qualityTier || 'standard',
+                                    constraints: parsed.constraints || {},
+                                    availableAlternatives: parsed.availableAlternatives || [],
+                                    status: 'pending',
+                                    ready: parsed.ready || false,
+                                    message: parsed.message || ''
+                                });
+                            }
                         }
                         
                         // Extract from get_youtube_transcript results
@@ -2776,6 +2799,26 @@ async function handler(event, responseStream, context) {
                 
                 console.log(`✅ Extracted content: ${allLinks.length} total links (${prioritizedLinks.length} prioritized), ${uniqueImages.length} images (${prioritizedImages.length} prioritized), ${youtubeVideos.length} YouTube videos, ${otherVideos.length} other videos, ${uniqueMedia.length} media items`);
                 console.log(`📊 Metadata added to extractedContent:`, JSON.stringify(extractionMetadata, null, 2));
+            }
+            
+            // Inject generated images as markdown into assistant's response
+            if (generatedImages.length > 0) {
+                console.log(`🖼️ Injecting ${generatedImages.length} generated image(s) as markdown`);
+                
+                // Build markdown for each generated image
+                const imageMarkdowns = generatedImages.map((img, idx) => {
+                    const imageUrl = img.url || (img.base64 ? `data:image/png;base64,${img.base64}` : '');
+                    const altText = img.prompt || `Generated image ${idx + 1}`;
+                    
+                    // Create markdown with newlines for proper spacing
+                    return `\n\n![${altText}](${imageUrl})\n`;
+                }).join('');
+                
+                // Append to assistant's content
+                assistantMessage.content += imageMarkdowns;
+                
+                console.log(`✅ Injected ${generatedImages.length} images into assistant response`);
+                console.log(`   New content length: ${assistantMessage.content.length} chars`);
             }
             
             // If LLM provided substantive content, treat as final answer even if tool_calls present

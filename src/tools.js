@@ -465,7 +465,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: '🎨 Generate images using AI. Analyzes quality requirements from prompt, checks provider availability, selects best model, and estimates cost. Returns button data for user to confirm and generate. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback.',
+      description: '🎨 Generate images using AI and return them directly. Automatically selects the best provider and model based on quality requirements, generates the image immediately, and returns the URL. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback. Images are injected directly into the conversation.',
       parameters: {
         type: 'object',
         properties: {
@@ -2596,6 +2596,10 @@ Summary:`;
       if (!prompt) return JSON.stringify({ error: 'prompt required' });
       
       try {
+        // Import image generation handler directly
+        const generateImageModule = require('./endpoints/generate-image');
+        const { generateImageDirect } = generateImageModule;
+        
         // Load PROVIDER_CATALOG and provider health module
         const fs = require('fs');
         const path = require('path');
@@ -2731,32 +2735,47 @@ Summary:`;
           console.log(`⚠️ Size ${size} not supported by ${selectedModel.model}, using ${finalSize}`);
         }
         
-        // 9. Build response with model selection and alternatives
-        const alternatives = availableModels.slice(1, 4).map(m => ({
-          provider: m.provider,
-          model: m.model,
-          cost: m.pricing?.default || qualityTiers[qualityTier]?.typicalCost || 0,
-          capabilities: m.capabilities
-        }));
+        // 9. Actually generate the image immediately (no UI confirmation needed)
+        console.log(`🎨 Generating image using ${selectedModel.provider} ${selectedModel.model}...`);
         
-        return JSON.stringify({
+        // Call the image generation function directly
+        const imageResult = await generateImageDirect({
+          prompt,
           provider: selectedModel.provider,
           model: selectedModel.model,
           modelKey: selectedModel.modelKey,
+          size: finalSize,
+          quality: qualityTier,
+          style: args.style || 'natural',
+          context // Pass context for auth if needed
+        });
+        
+        if (!imageResult.success) {
+          return JSON.stringify({
+            error: imageResult.error || 'Image generation failed',
+            provider: selectedModel.provider,
+            model: selectedModel.model,
+            prompt: prompt.substring(0, 100)
+          });
+        }
+        
+        console.log(`✅ Image generated successfully: ${imageResult.url || 'base64 data'}`);
+        
+        // Return the generated image information
+        // The chat endpoint will inject this as markdown
+        return JSON.stringify({
+          success: true,
+          url: imageResult.url,
+          base64: imageResult.base64,
+          provider: selectedModel.provider,
+          model: selectedModel.model,
           qualityTier,
           prompt,
           size: finalSize,
           style: args.style || 'natural',
           cost: estimatedCost,
-          capabilities: selectedModel.capabilities,
-          ready: false, // User must click button to generate
-          availableAlternatives: alternatives,
-          constraints: {
-            maxSize: selectedModel.supportedSizes[selectedModel.supportedSizes.length - 1],
-            supportedSizes: selectedModel.supportedSizes,
-            supportsStyle: selectedModel.provider === 'openai' && selectedModel.modelKey === 'dall-e-3'
-          },
-          message: `Image ready to generate using ${selectedModel.provider} ${selectedModel.model} for $${estimatedCost.toFixed(3)}. Click button to confirm.`
+          revisedPrompt: imageResult.revisedPrompt || prompt,
+          generated: true // Flag to indicate image was actually generated
         });
         
       } catch (error) {

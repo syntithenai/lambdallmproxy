@@ -375,6 +375,134 @@ function getCorsHeaders(event) {
   };
 }
 
+/**
+ * Generate image directly (for tool use - no HTTP wrapper)
+ * @param {Object} params - Generation parameters
+ * @returns {Promise<Object>} Generation result
+ */
+async function generateImageDirect(params) {
+  const { 
+    prompt, 
+    provider, 
+    model, 
+    modelKey,
+    size = '1024x1024', 
+    quality = 'standard',
+    style = 'natural',
+    context 
+  } = params;
+  
+  try {
+    // Get API key for provider
+    const apiKey = getApiKeyForProvider(provider);
+    if (!apiKey) {
+      return {
+        success: false,
+        error: `No API key configured for provider: ${provider}`
+      };
+    }
+    
+    console.log(`🔍 [Direct] Generating image: provider=${provider}, model=${model}, size=${size}`);
+    
+    // Check provider availability
+    const availability = await checkProviderAvailability(provider);
+    let selectedProvider = provider;
+    let selectedModel = model;
+    let fallbackUsed = false;
+    
+    if (!availability.available) {
+      console.log(`⚠️ Primary provider ${provider} unavailable: ${availability.reason}`);
+      
+      // Attempt fallback
+      const fallbackResult = await findFallbackProvider(quality, provider);
+      
+      if (!fallbackResult.available) {
+        return {
+          success: false,
+          error: 'No available providers for image generation',
+          primaryProvider: provider,
+          primaryReason: availability.reason
+        };
+      }
+      
+      selectedProvider = fallbackResult.provider;
+      selectedModel = fallbackResult.model;
+      fallbackUsed = true;
+      console.log(`✅ Using fallback: ${selectedProvider} ${selectedModel}`);
+    }
+    
+    // Get provider handler
+    const providerHandler = PROVIDERS[selectedProvider];
+    if (!providerHandler) {
+      return {
+        success: false,
+        error: `Unsupported provider: ${selectedProvider}`
+      };
+    }
+    
+    // Generate image
+    const startTime = Date.now();
+    const result = await providerHandler.generateImage({
+      prompt,
+      model: selectedModel,
+      size,
+      style,
+      apiKey: getApiKeyForProvider(selectedProvider)
+    });
+    
+    const totalDuration = Date.now() - startTime;
+    
+    // Log to Google Sheets (async, don't block response)
+    try {
+      const { logToGoogleSheets } = require('../services/google-sheets-logger');
+      const userEmail = context?.email || 'tool-generated';
+      
+      logToGoogleSheets({
+        userEmail,
+        provider: selectedProvider,
+        model: selectedModel,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cost: result.cost || 0,
+        durationMs: totalDuration,
+        timestamp: new Date().toISOString(),
+        requestType: 'image_generation',
+        metadata: {
+          size,
+          quality,
+          prompt: prompt.substring(0, 50) + (prompt.length > 50 ? '...' : ''),
+          fallbackUsed,
+          generatedVia: 'tool'
+        }
+      }).catch(err => {
+        console.error('Failed to log image generation to Google Sheets:', err.message);
+      });
+    } catch (err) {
+      console.error('Google Sheets logging error (image generation):', err.message);
+    }
+    
+    return {
+      success: true,
+      url: result.imageUrl,
+      base64: result.base64Data,
+      provider: selectedProvider,
+      model: selectedModel,
+      cost: result.cost || 0,
+      revisedPrompt: result.revisedPrompt,
+      fallbackUsed
+    };
+    
+  } catch (error) {
+    console.error(`❌ [Direct] Image generation failed:`, error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 module.exports = {
-  handleGenerateImage
+  handleGenerateImage,
+  generateImageDirect
 };
