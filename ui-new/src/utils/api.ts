@@ -49,8 +49,7 @@ async function isLocalLambdaAvailable(): Promise<boolean> {
  * Get the appropriate API base URL
  * - If VITE_API_BASE env var is set, always use it (production build)
  * - If on GitHub Pages (*.github.io), always use remote
- * - If on localhost/local IP and local Lambda is available, use it
- * - Otherwise, fall back to remote
+ * - If on localhost/local IP, require local Lambda to be running (no fallback)
  */
 async function getApiBase(): Promise<string> {
   // If environment variable is set, always use it (production build)
@@ -65,15 +64,15 @@ async function getApiBase(): Promise<string> {
     return REMOTE_LAMBDA_URL;
   }
   
-  // On localhost: try local Lambda first
+  // On localhost: REQUIRE local Lambda to be running (no fallback to remote)
   const localAvailable = await isLocalLambdaAvailable();
   
   if (localAvailable) {
     console.log('🏠 Using local Lambda server at', LOCAL_LAMBDA_URL);
     return LOCAL_LAMBDA_URL;
   } else {
-    console.log('⚠️ Local Lambda not available, falling back to remote');
-    return REMOTE_LAMBDA_URL;
+    console.error('❌ Local Lambda not available at', LOCAL_LAMBDA_URL);
+    throw new Error('⚠️ Dev server not running. Please start your dev server with `make dev` or `npm run dev`');
   }
 }
 

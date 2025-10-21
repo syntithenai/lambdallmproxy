@@ -743,9 +743,14 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
                 }
             };
             
-            // Set up progress emitter for transcription tool
-            if (name === 'transcribe_url' && sseWriter.writeEvent) {
-                toolContext.onProgress = createProgressEmitter(sseWriter.writeEvent, id, 'transcribe_url');
+            // Set up progress emitter for tools that support it
+            if (sseWriter.writeEvent) {
+                if (name === 'transcribe_url') {
+                    toolContext.onProgress = createProgressEmitter(sseWriter.writeEvent, id, 'transcribe_url');
+                } else if (name === 'scrape_web_content') {
+                    // Add progress support for Puppeteer scraping
+                    toolContext.onProgress = createProgressEmitter(sseWriter.writeEvent, id, 'scrape_web_content');
+                }
             }
             
             // Execute tool

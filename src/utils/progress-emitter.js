@@ -7,6 +7,7 @@
  * Progress event types
  */
 const EventTypes = {
+    // Transcription events
     YOUTUBE_DOWNLOAD_START: 'youtube_download_start',
     YOUTUBE_DOWNLOAD_PROGRESS: 'youtube_download_progress',
     YOUTUBE_DOWNLOAD_COMPLETE: 'youtube_download_complete',
@@ -20,6 +21,20 @@ const EventTypes = {
     TRANSCRIBE_CHUNK_COMPLETE: 'transcribe_chunk_complete',
     TRANSCRIBE_COMPLETE: 'transcribe_complete',
     TRANSCRIPTION_STOPPED: 'transcription_stopped',
+    
+    // Scraping events
+    SCRAPE_LAUNCHING: 'scrape_launching',
+    SCRAPE_LAUNCHED: 'scrape_launched',
+    SCRAPE_NAVIGATING: 'scrape_navigating',
+    SCRAPE_PAGE_LOADED: 'scrape_page_loaded',
+    SCRAPE_WAITING_SELECTOR: 'scrape_waiting_selector',
+    SCRAPE_EXTRACTING: 'scrape_extracting',
+    SCRAPE_EXTRACTED: 'scrape_extracted',
+    SCRAPE_SCREENSHOT: 'scrape_screenshot',
+    SCRAPE_COMPLETE: 'scrape_complete',
+    SCRAPE_ERROR: 'scrape_error',
+    
+    // Generic
     ERROR: 'error'
 };
 

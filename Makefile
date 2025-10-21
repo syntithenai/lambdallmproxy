@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete
+.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python
 
 # Default target - Show help
 help:
@@ -28,6 +28,16 @@ help:
 	@echo "  make rag-search QUERY='...'"
 	@echo "                           - Search knowledge base"
 	@echo "  make rag-delete ID='...' - Delete document by snippet ID"
+	@echo ""
+	@echo "Advanced Scraping (Multi-Tier):"
+	@echo "  make setup-scraping      - Setup scraping environment (npm + Python packages)"
+	@echo "  make test-scraping       - Test multi-tier scraping system"
+	@echo "  make test-tiers          - Test all available tiers"
+	@echo "  make test-tier-0         - Test Tier 0 (Direct HTTP)"
+	@echo "  make test-tier-1         - Test Tier 1 (Puppeteer + stealth)"
+	@echo "  make test-tier-2         - Test Tier 2 (Playwright + stealth)"
+	@echo "  make test-tier-3         - Test Tier 3 (Selenium + undetected-chromedriver)"
+	@echo "  make test-tier-4         - Test Tier 4 (Interactive mode)"
 	@echo ""
 	@echo "UI/Documentation:"
 	@echo "  make build-ui            - Build React UI to docs/"
@@ -153,8 +163,9 @@ run-lambda-local:
 	@pkill -f "node scripts/run-local-lambda" || true
 	@sleep 1
 	@echo "🔄 Hot reload enabled with nodemon - changes to src/ will auto-restart"
+	@echo "🎭 Puppeteer: Running locally in headless mode"
 	@chmod +x scripts/run-local-lambda.js
-	@npx nodemon
+	NODE_ENV=development HEADLESS=false @npx nodemon
 
 # Serve UI locally using Vite dev server (recommended for development)
 serve-ui:
@@ -190,11 +201,12 @@ dev:
 	@echo "This will start:"
 	@echo "  📍 Lambda server: http://localhost:3000 (hot reload enabled)"
 	@echo "  📍 UI dev server: http://localhost:8081 (with hot reload)"
+	@echo "  🎭 Puppeteer: Local mode with visible browser (HEADLESS=false)"
 	@echo ""
 	@echo "✨ Both servers have hot reload - file changes auto-restart/refresh"
 	@echo "Press Ctrl+C to stop both servers"
 	@echo ""
-	@bash -c 'trap "kill 0" INT; npx nodemon & sleep 2; cd ui-new && npm run dev & wait'
+	@bash -c 'trap "kill 0" INT; NODE_ENV=development HEADLESS=false npx nodemon & sleep 2; cd ui-new && npm run dev & wait'
 
 # ================================================================
 # RAG Knowledge Base Management
@@ -238,9 +250,169 @@ rag-search:
 	fi
 	@chmod +x scripts/search-documents.js
 	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/search-documents.js "$(QUERY)"
+	fi
+	@chmod +x scripts/delete-document.js
+	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/delete-document.js "$(ID)"
 
-# Delete document by snippet ID (usage: make rag-delete ID="snippet-id")
-rag-delete:
+# Advanced Scraping Setup and Testing
+
+# Setup scraping environment (production + development dependencies)
+setup-scraping:
+	@echo "🔧 Setting up advanced scraping environment..."
+	@echo ""
+	@echo "📦 Installing production dependencies..."
+	npm install
+	@echo ""
+	@echo "📦 Installing development dependencies (local-only scrapers)..."
+	npm install --save-dev playwright playwright-extra puppeteer-extra-plugin-stealth
+	npm install --save-dev selenium-webdriver chromedriver
+	@echo ""
+	@if command -v python3 > /dev/null 2>&1; then \
+		echo "🐍 Setting up Python environment..."; \
+		python3 -m venv .venv; \
+		. .venv/bin/activate && pip install --upgrade pip; \
+		. .venv/bin/activate && pip install undetected-chromedriver selenium; \
+		echo "✅ Python environment ready"; \
+	else \
+		echo "⚠️  Python3 not found. Skipping Tier 3 (Selenium) setup."; \
+		echo "   Install Python 3.8+ to use undetected-chromedriver."; \
+	fi
+	@echo ""
+	@echo "🌐 Installing Playwright browsers..."
+	npx playwright install chromium firefox
+	@echo ""
+	@if [ ! -f .env ]; then \
+		echo "📝 Creating .env file..."; \
+		echo "# Development mode (enables local-only tiers)" > .env; \
+		echo "NODE_ENV=development" >> .env; \
+		echo "" >> .env; \
+		echo "# Scraping settings" >> .env; \
+		echo "HEADLESS=true" >> .env; \
+		echo "USE_PUPPETEER=true" >> .env; \
+		echo "" >> .env; \
+		echo "# Tier control (1 for Lambda, 4 for local)" >> .env; \
+		echo "SCRAPING_MAX_TIER=4" >> .env; \
+		echo "SCRAPING_ENABLE_INTERACTIVE=true" >> .env; \
+		echo "" >> .env; \
+		echo "# Python environment (for Tier 3 - Selenium)" >> .env; \
+		echo "PYTHON_VENV_PATH=./.venv" >> .env; \
+		echo "✅ .env file created"; \
+	fi
+	@echo ""
+	@echo "✅ Scraping environment setup complete!"
+	@echo ""
+	@echo "Available tiers:"
+	@echo "  Tier 0: Direct HTTP (production + local)"
+	@echo "  Tier 1: Puppeteer + stealth (production + local)"
+	@echo "  Tier 2: Playwright + stealth (local only)"
+	@echo "  Tier 3: Selenium + undetected-chromedriver (local only)"
+	@echo "  Tier 4: Interactive mode (local only)"
+
+# Install Playwright browsers
+install-playwright:
+	@echo "🌐 Installing Playwright browsers..."
+	npx playwright install chromium firefox
+
+# Setup Python environment for Tier 3
+install-python:
+	@echo "🐍 Setting up Python environment for Tier 3..."
+	@if command -v python3 > /dev/null 2>&1; then \
+		python3 -m venv .venv; \
+		. .venv/bin/activate && pip install --upgrade pip; \
+		. .venv/bin/activate && pip install undetected-chromedriver selenium; \
+		echo "✅ Python environment ready"; \
+	else \
+		echo "❌ Python3 not found. Please install Python 3.8+"; \
+		exit 1; \
+	fi
+
+# Test multi-tier scraping system
+test-scraping:
+	@echo "🧪 Testing multi-tier scraping system..."
+	@if [ -f tests/test-tier-orchestrator.js ]; then \
+		NODE_ENV=development node tests/test-tier-orchestrator.js; \
+	else \
+		echo "❌ Test file not found: tests/test-tier-orchestrator.js"; \
+		exit 1; \
+	fi
+
+# Test all available tiers
+test-tiers:
+	@echo "🧪 Testing all available tiers..."
+	@echo ""
+	@echo "Tier 0: Direct HTTP..."
+	@make test-tier-0 || true
+	@echo ""
+	@echo "Tier 1: Puppeteer + stealth..."
+	@make test-tier-1 || true
+	@echo ""
+	@echo "Tier 2: Playwright + stealth..."
+	@make test-tier-2 || true
+	@echo ""
+	@echo "Tier 3: Selenium + undetected-chromedriver..."
+	@make test-tier-3 || true
+	@echo ""
+	@echo "Tier 4: Interactive mode..."
+	@make test-tier-4 || true
+
+# Test individual tiers
+test-tier-0:
+	@echo "🧪 Testing Tier 0 (Direct HTTP)..."
+	@NODE_ENV=development node -e "const Tier0 = require('./src/scrapers/tier-0-direct.js'); \
+		const scraper = new Tier0(); \
+		scraper.scrape('https://example.com').then(result => { \
+			console.log('Result:', result.success ? '✅ SUCCESS' : '❌ FAILED'); \
+			console.log('Tier:', result.tierName); \
+			console.log('Duration:', result.metadata.duration + 'ms'); \
+		}).catch(err => { \
+			console.error('Error:', err.message); \
+			process.exit(1); \
+		});"
+
+test-tier-1:
+	@echo "🧪 Testing Tier 1 (Puppeteer + stealth)..."
+	@NODE_ENV=development node -e "const Tier1 = require('./src/scrapers/tier-1-puppeteer.js'); \
+		(async () => { \
+			const result = await Tier1.scrape('https://example.com'); \
+			console.log('Result:', result.success ? '✅ SUCCESS' : '❌ FAILED'); \
+			console.log('Tier:', result.tierName); \
+			console.log('Duration:', result.metadata.duration + 'ms'); \
+		})().catch(err => { \
+			console.error('Error:', err.message); \
+			process.exit(1); \
+		});"
+
+test-tier-2:
+	@echo "🧪 Testing Tier 2 (Playwright + stealth)..."
+	@NODE_ENV=development node -e "const Tier2 = require('./src/scrapers/tier-2-playwright.js'); \
+		(async () => { \
+			const scraper = new Tier2(); \
+			const result = await scraper.scrape('https://example.com'); \
+			await scraper.cleanup(); \
+			console.log('Result:', result.success ? '✅ SUCCESS' : '❌ FAILED'); \
+			console.log('Tier:', result.tierName); \
+			console.log('Duration:', result.metadata.duration + 'ms'); \
+		})().catch(err => { \
+			console.error('Error:', err.message); \
+			process.exit(1); \
+		});"
+
+test-tier-3:
+	@echo "🧪 Testing Tier 3 (Selenium + undetected-chromedriver)..."
+	@NODE_ENV=development node -e "const Tier3 = require('./src/scrapers/tier-3-selenium.js'); \
+		(async () => { \
+			const result = await Tier3.scrape('https://example.com'); \
+			console.log('Result:', result.success ? '✅ SUCCESS' : '❌ FAILED'); \
+			console.log('Tier:', result.tierName); \
+			console.log('Duration:', result.metadata.duration + 'ms'); \
+		})().catch(err => { \
+			console.error('Error:', err.message); \
+			process.exit(1); \
+		});"
+
+test-tier-4:
+	@echo "🧪 Testing Tier 4 (Interactive mode)..."
+	@echo "⚠️  Tier 4 requires manual interaction - use test-scraping instead"
 	@if [ -z "$(ID)" ]; then \
 		echo "⚠️  Error: ID parameter required"; \
 		echo "Usage: make rag-delete ID='snippet-id'"; \

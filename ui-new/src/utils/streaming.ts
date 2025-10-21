@@ -272,6 +272,15 @@ export async function createSSERequest(
     }
   }
 
-  // All retries exhausted
+  // All retries exhausted - provide helpful error message
+  const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');
+  const errorMessage = lastError?.message || 'Unknown error';
+  
+  if (isLocalhost && (errorMessage.includes('fetch') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('NetworkError'))) {
+    throw new Error('⚠️ Dev server not running. Please start your dev server with `make dev` or `npm run dev`');
+  } else if (errorMessage.includes('fetch') || errorMessage.includes('NetworkError')) {
+    throw new Error('❌ Lambda API error: Cannot connect to server. Please check your internet connection or try again later.');
+  }
+  
   throw lastError || new Error(`Request failed after ${maxRetries} attempts`);
 }

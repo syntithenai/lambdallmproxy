@@ -17,6 +17,7 @@ import { extractAndSaveSearchResult } from '../utils/searchCache';
 import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgress';
+import { ScrapingProgress } from './ScrapingProgress';
 import { SearchProgress } from './SearchProgress';
 import { YouTubeSearchProgress, type YouTubeSearchProgressData } from './YouTubeSearchProgress';
 import { ExtractionSummary } from './ExtractionSummary';
@@ -130,6 +131,15 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Transcription progress tracking
   const [transcriptionProgress, setTranscriptionProgress] = useState<Map<string, Array<{
+    tool_call_id: string;
+    tool_name: string;
+    progress_type: string;
+    data?: Record<string, unknown>;
+    timestamp?: string;
+  }>>>(new Map());
+  
+  // Scraping progress tracking
+  const [scrapingProgress, setScrapingProgress] = useState<Map<string, Array<{
     tool_call_id: string;
     tool_name: string;
     progress_type: string;
@@ -603,6 +613,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setStreamingContent('');
     setCurrentStreamingBlockIndex(null);
     setTranscriptionProgress(new Map());
+    setScrapingProgress(new Map());
     setSearchProgress(new Map());
     setYoutubeSearchProgress(new Map());
     setViewingSearchResult(null);
@@ -1630,6 +1641,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setSearchProgress(new Map());
     setYoutubeSearchProgress(new Map());
     setTranscriptionProgress(new Map());
+    setScrapingProgress(new Map());
     setExtractionData(new Map());
 
     // RAG Context Integration: Search for relevant context if enabled
@@ -2294,15 +2306,26 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               break;
               
             case 'tool_progress':
-              // Transcription progress events (download, chunking, transcription)
+              // Tool progress events (transcription, scraping, etc.)
               console.log('📊 Tool progress event:', data);
               if (data.tool_call_id) {
-                setTranscriptionProgress(prev => {
-                  const newMap = new Map(prev);
-                  const events = newMap.get(data.tool_call_id) || [];
-                  newMap.set(data.tool_call_id, [...events, data]);
-                  return newMap;
-                });
+                // Route to appropriate progress state based on tool_name
+                if (data.tool_name === 'scrape_web_content') {
+                  setScrapingProgress(prev => {
+                    const newMap = new Map(prev);
+                    const events = newMap.get(data.tool_call_id) || [];
+                    newMap.set(data.tool_call_id, [...events, data]);
+                    return newMap;
+                  });
+                } else {
+                  // Default to transcription progress (for transcribe_url and others)
+                  setTranscriptionProgress(prev => {
+                    const newMap = new Map(prev);
+                    const events = newMap.get(data.tool_call_id) || [];
+                    newMap.set(data.tool_call_id, [...events, data]);
+                    return newMap;
+                  });
+                }
               }
               break;
               
@@ -4149,6 +4172,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         
                         {/* Show transcription progress for tool calls in progress (NOT complete) */}
                         {msg.tool_calls && msg.tool_calls.map((tc: any, tcIdx: number) => {
+                          // Transcription progress
                           if (tc.function.name === 'transcribe_url' && transcriptionProgress.has(tc.id)) {
                             console.log(`    Rendering TranscriptionProgress for tool_call ${tcIdx}: ${tc.id}`);
                             const events = transcriptionProgress.get(tc.id);
@@ -4185,6 +4209,42 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                               </div>
                             );
                           }
+                          
+                          // Scraping progress
+                          if (tc.function.name === 'scrape_web_content' && scrapingProgress.has(tc.id)) {
+                            console.log(`    Rendering ScrapingProgress for tool_call ${tcIdx}: ${tc.id}`);
+                            const events = scrapingProgress.get(tc.id);
+                            if (!events || events.length === 0) {
+                              console.log(`      No events for ${tc.id}, skipping`);
+                              return null;
+                            }
+                            
+                            // Check if scraping is complete
+                            const lastEvent = events[events.length - 1];
+                            const lastType = lastEvent.progress_type || lastEvent.data?.type || '';
+                            const isComplete = lastType === 'scrape_complete' || lastType === 'scrape_error';
+                            
+                            console.log(`      Last event type: ${lastType}, isComplete: ${isComplete}`);
+                            
+                            // Only show progress if NOT complete
+                            if (isComplete) {
+                              console.log(`      Scraping complete, skipping progress render`);
+                              return null;
+                            }
+                            
+                            console.log(`      ✅ Rendering scraping progress component for ${tc.id}`);
+                            const args = JSON.parse(tc.function.arguments || '{}');
+                            return (
+                              <div key={tc.id} className="mb-3">
+                                <ScrapingProgress
+                                  toolCallId={tc.id}
+                                  url={args.url || ''}
+                                  events={events as ProgressEvent[] || []}
+                                />
+                              </div>
+                            );
+                          }
+                          
                           return null;
                         })}
                         
@@ -4532,11 +4592,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       {toolResult.name === 'scrape_web_content' && (() => {
                                         try {
                                           const parsed = typeof toolResult.content === 'string' ? JSON.parse(toolResult.content) : toolResult.content;
-                                          if (parsed.url || parsed.scrapeService) {
+                                          if (parsed.url || parsed.scrapeService || parsed.proxyUsed !== undefined) {
                                             return (
-                                              <span className="font-normal text-purple-600 dark:text-purple-400">
+                                              <span className="font-normal text-purple-600 dark:text-purple-400 flex items-center gap-1">
                                                 {parsed.url && <a href={parsed.url} target="_blank" rel="noopener noreferrer" className="hover:underline">- {new URL(parsed.url).hostname}</a>}
-                                                {parsed.scrapeService && <span className="ml-2 text-[10px] bg-purple-200 dark:bg-purple-800 px-1 rounded">via {parsed.scrapeService}</span>}
+                                                {parsed.scrapeService && (
+                                                  <span className="text-[10px] bg-purple-200 dark:bg-purple-800 px-1.5 py-0.5 rounded">
+                                                    {parsed.scrapeService}
+                                                  </span>
+                                                )}
+                                                {parsed.proxyUsed && (
+                                                  <span className="text-[10px] bg-green-200 dark:bg-green-800 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded" title="Using proxy for enhanced privacy and bot detection evasion">
+                                                    🔒 proxy
+                                                  </span>
+                                                )}
                                               </span>
                                             );
                                           }
@@ -4612,6 +4681,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                         </div>
                                       ) : scrapeResult ? (
                                         <div className="space-y-3">
+                                          {/* Error if present */}
+                                          {scrapeResult.error && (
+                                            <div className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded p-3">
+                                              <span className="font-semibold text-red-800 dark:text-red-200">❌ Scraping Error:</span>
+                                              <p className="text-red-700 dark:text-red-300 text-xs mt-1 font-mono whitespace-pre-wrap">{scrapeResult.error}</p>
+                                            </div>
+                                          )}
+                                          
                                           {/* Warning if present */}
                                           {scrapeResult.warning && (
                                             <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded p-2">

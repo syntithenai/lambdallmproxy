@@ -4,23 +4,33 @@
   "description": "Lambda LLM Proxy Functions",
   "main": "src/index.js",
   "scripts": {
+    "setup": "./scripts/setup-dev.sh",
     "deploy": "./scripts/deploy.sh > output.txt 2>&1 && cat output.txt",
     "deploy-docs": "./scripts/deploy-docs.sh > output.txt 2>&1 && cat output.txt",
+    "deploy:production": "./scripts/deploy-production.sh",
     "build-docs": "./scripts/build-docs.sh > output.txt 2>&1 && cat output.txt",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:integration": "jest tests/integration",
     "test:unit": "jest tests/unit",
+    "test:tiers": "jest tests/tier",
+    "test:scraping": "node tests/test-tier-orchestrator.js",
     "lambda-test": "./scripts/test-lambda.sh > output.txt 2>&1 && cat output.txt",
     "dev": "./scripts/deploy.sh > output.txt 2>&1 && cat output.txt",
     "full-deploy": "npm run build-docs && npm run deploy && npm run deploy-docs",
-    "watch": "nodemon --watch src --ext js --exec 'npm run dev'"
+    "watch": "nodemon --watch src --ext js --exec 'npm run dev'",
+    "install:playwright": "npx playwright install chromium firefox",
+    "install:python": "python3 -m venv .venv && source .venv/bin/activate && pip install undetected-chromedriver selenium"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
+    "chromedriver": "^120.0.1",
     "jest": "^29.7.0",
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.10",
+    "playwright": "^1.40.0",
+    "playwright-extra": "^4.3.6",
+    "selenium-webdriver": "^4.16.0"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -32,6 +42,7 @@
     "@langchain/textsplitters": "^0.1.0",
     "@libsql/client": "^0.15.15",
     "@sparticuz/chromium": "^131.0.0",
+    "axios": "^1.6.2",
     "better-sqlite3": "^12.4.1",
     "cheerio": "^1.1.2",
     "cors": "^2.8.5",
@@ -48,7 +59,9 @@
     "mammoth": "^1.11.0",
     "multer": "^2.0.2",
     "pdf-parse": "^2.3.10",
-    "puppeteer-core": "^23.11.1",
+    "puppeteer": "^23.11.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "turndown": "^7.2.1"
   }
 }

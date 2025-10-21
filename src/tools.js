@@ -71,24 +71,78 @@ async function cachedSearch(query, service, maxResults, searchFunction) {
   return { results, fromCache: false };
 }
 
-// Puppeteer Lambda invocation helper
+// Puppeteer invocation helper with local development support
 async function invokePuppeteerLambda(url, options = {}) {
   const puppeteerLambdaArn = process.env.PUPPETEER_LAMBDA_ARN;
+  const isLocalDev = process.env.NODE_ENV === 'development' || !puppeteerLambdaArn;
   
-  if (!puppeteerLambdaArn) {
-    throw new Error('PUPPETEER_LAMBDA_ARN environment variable not set');
+  // Get proxy configuration from environment
+  const proxyUsername = process.env.WEBSHARE_PROXY_USERNAME;
+  const proxyPassword = process.env.WEBSHARE_PROXY_PASSWORD;
+  const proxyEnabled = proxyUsername && proxyPassword;
+  
+  // LOCAL DEVELOPMENT: Use local Puppeteer scraper
+  if (isLocalDev) {
+    console.log('🏠 [Puppeteer Local] Running locally (development mode)');
+    console.log(`   URL: ${url}`);
+    console.log(`   Proxy: ${proxyEnabled ? 'enabled' : 'disabled'}`);
+    console.log(`   Options:`, JSON.stringify(options, null, 2));
+    
+    try {
+      const localScraper = require('./scrapers/puppeteer-local');
+      
+      // Configure proxy if available
+      let proxyServer = null;
+      if (proxyEnabled) {
+        // Use HTTP proxy format for Puppeteer
+        proxyServer = 'http://p.webshare.io:80';
+      }
+      
+      // Pass through progress callback if provided
+      const result = await localScraper.scrapePage(url, {
+        ...options,
+        onProgress: options.onProgress || null,
+        proxyServer,
+        proxyUsername,
+        proxyPassword
+      });
+      
+      // Add proxy info to result
+      if (result) {
+        result.proxyUsed = proxyEnabled;
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('❌ [Puppeteer Local] Failed:', error.message);
+      
+      // If local Puppeteer fails and we have Lambda ARN, fall back to Lambda
+      if (puppeteerLambdaArn) {
+        console.log('⚠️ [Puppeteer] Falling back to Lambda after local failure');
+      } else {
+        throw error;
+      }
+    }
   }
   
+  // PRODUCTION: Invoke remote Lambda function
   const payload = {
     url,
     timeout: options.timeout || 30000,
     waitForNetworkIdle: options.waitForNetworkIdle !== false,
     extractLinks: options.extractLinks !== false,
     extractImages: options.extractImages !== false,
-    screenshot: options.screenshot || false
+    screenshot: options.screenshot || false,
+    proxyEnabled  // Pass proxy status to Lambda
   };
   
   console.log(`🚀 [Puppeteer Lambda] Invoking function: ${puppeteerLambdaArn}`);
+  console.log(`   Proxy: ${proxyEnabled ? 'enabled' : 'disabled'}`);
+  
+  // Report progress if callback provided
+  if (options.onProgress) {
+    options.onProgress({ stage: 'invoking_lambda', url });
+  }
   
   const command = new InvokeCommand({
     FunctionName: puppeteerLambdaArn,
@@ -108,6 +162,10 @@ async function invokePuppeteerLambda(url, options = {}) {
   
   if (!body.success) {
     throw new Error(body.error || 'Puppeteer Lambda returned failure');
+  }
+  
+  if (options.onProgress) {
+    options.onProgress({ stage: 'complete', result: body.data });
   }
   
   return body.data;
@@ -1447,13 +1505,110 @@ Brief answer with URLs:`;
       
       console.log(`🔍 Cache MISS for scrape: ${url} - fetching content`);
       
-      // NEW FALLBACK STRATEGY: Try direct scraping first, then Puppeteer as fallback
-      // This keeps memory usage low on main Lambda and only uses Puppeteer when needed
+      // SCRAPING STRATEGY:
+      // - In development mode (NODE_ENV=development): Prefer Puppeteer for better visibility and progress
+      // - In production: Try direct scraping first, fall back to Puppeteer if it fails
+      // This keeps memory usage low on main Lambda but uses Puppeteer for dev visibility
+      
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      const puppeteerLambdaArn = process.env.PUPPETEER_LAMBDA_ARN;
+      const usePuppeteer = process.env.USE_PUPPETEER !== 'false';
+      const puppeteerAvailable = usePuppeteer && (isDevelopment || puppeteerLambdaArn);
       
       let directScrapingFailed = false;
       let directScrapingError = null;
       
-      // Try direct scraping first (with proxy support)
+      // In development, prefer Puppeteer for progress visibility
+      if (isDevelopment && puppeteerAvailable) {
+        console.log(`🎭 [Development Mode] Using Puppeteer for scraping (progress enabled)`);
+        
+        try {
+          // Create progress callback that emits scraping events
+          const onProgress = context?.onProgress ? (progress) => {
+            // Map internal progress stages to user-friendly event types
+            const stageMap = {
+              'launching': { type: 'scrape_launching', message: 'Launching browser...' },
+              'launched': { type: 'scrape_launched', message: 'Browser ready' },
+              'navigating': { type: 'scrape_navigating', message: `Loading ${url}...` },
+              'page_loaded': { type: 'scrape_page_loaded', message: 'Page loaded' },
+              'waiting_selector': { type: 'scrape_waiting_selector', message: 'Waiting for content...' },
+              'extracting': { type: 'scrape_extracting', message: 'Extracting content...' },
+              'extracted': { type: 'scrape_extracted', message: `Found ${progress.textLength || 0} chars, ${progress.linkCount || 0} links, ${progress.imageCount || 0} images` },
+              'screenshot': { type: 'scrape_screenshot', message: 'Taking screenshot...' },
+              'complete': { type: 'scrape_complete', message: `Completed in ${progress.totalTime || 0}ms` },
+              'error': { type: 'scrape_error', message: progress.error || 'Scraping failed' },
+              'invoking_lambda': { type: 'scrape_launching', message: 'Invoking Puppeteer Lambda...' }
+            };
+            
+            const mapped = stageMap[progress.stage] || { type: progress.stage, message: progress.stage };
+            context.onProgress({
+              type: mapped.type,
+              message: mapped.message,
+              stage: progress.stage,
+              url: progress.url || url,
+              ...progress
+            });
+          } : null;
+          
+          const result = await invokePuppeteerLambda(url, {
+            timeout: timeout * 1000,
+            waitForNetworkIdle: true,
+            extractLinks: true,
+            extractImages: true,
+            onProgress
+          });
+          
+          // Format response similar to direct scraping
+          const proxyUsed = result.proxyUsed || false;
+          const response = {
+            scrapeService: isDevelopment ? 'puppeteer_local' : 'puppeteer_lambda',
+            proxyUsed,
+            url: result.url,
+            title: result.title,
+            content: result.text,
+            format: 'text',
+            originalLength: result.text.length,
+            extractedLength: result.text.length,
+            compressionRatio: 1.0,
+            images: result.images && result.images.length > 0 ? result.images.slice(0, 3).map(img => ({
+              src: img.url,
+              alt: img.alt,
+              caption: img.alt
+            })) : undefined,
+            allImages: result.images && result.images.length > 0 ? result.images.map(img => ({
+              src: img.url,
+              alt: img.alt,
+              caption: img.alt
+            })) : undefined,
+            links: result.links && result.links.length > 0 ? result.links.map(link => ({
+              url: link.url,
+              text: link.text
+            })) : undefined,
+            meta: result.meta,
+            stats: result.stats
+          };
+          
+          console.log(`✅ [Puppeteer] Scraping complete: ${response.content.length} chars (proxy: ${proxyUsed ? 'yes' : 'no'})`);
+          
+          // Save to cache
+          try {
+            const cacheKey = getCacheKey('scrapes', { url });
+            saveToCache('scrapes', cacheKey, response, 3600).catch(err => 
+              console.warn(`Cache write error:`, err.message)
+            );
+          } catch (error) {
+            console.warn(`Cache error:`, error.message);
+          }
+          
+          return JSON.stringify(response);
+        } catch (puppeteerError) {
+          console.error(`❌ [Puppeteer] Failed:`, puppeteerError.message);
+          console.log(`⚠️ Falling back to direct scraping`);
+          // Continue to direct scraping fallback below
+        }
+      }
+      
+      // Try direct scraping (production default or development fallback)
       const tavilyApiKey = context.tavilyApiKey;
       const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
       const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
@@ -1641,6 +1796,7 @@ Brief answer with URLs:`;
         
         const response = {
           scrapeService: scrapeService, // Indicate which service was used: 'tavily' or 'duckduckgo'
+          proxyUsed: scrapeService === 'duckduckgo_proxy' && !!(proxyUsername && proxyPassword),
           url,
           content: truncatedContent,
           format,
@@ -1702,11 +1858,39 @@ Brief answer with URLs:`;
         try {
           console.log(`🤖 [Puppeteer] Falling back to Puppeteer Lambda for: ${url}`);
           
+          // Create progress callback that emits scraping events
+          const onProgress = context?.onProgress ? (progress) => {
+            // Map internal progress stages to user-friendly event types
+            const stageMap = {
+              'launching': { type: 'scrape_launching', message: 'Launching browser...' },
+              'launched': { type: 'scrape_launched', message: 'Browser ready' },
+              'navigating': { type: 'scrape_navigating', message: `Loading ${url}...` },
+              'page_loaded': { type: 'scrape_page_loaded', message: 'Page loaded' },
+              'waiting_selector': { type: 'scrape_waiting_selector', message: 'Waiting for content...' },
+              'extracting': { type: 'scrape_extracting', message: 'Extracting content...' },
+              'extracted': { type: 'scrape_extracted', message: `Found ${progress.textLength || 0} chars, ${progress.linkCount || 0} links, ${progress.imageCount || 0} images` },
+              'screenshot': { type: 'scrape_screenshot', message: 'Taking screenshot...' },
+              'complete': { type: 'scrape_complete', message: `Completed in ${progress.totalTime || 0}ms` },
+              'error': { type: 'scrape_error', message: progress.error || 'Scraping failed' },
+              'invoking_lambda': { type: 'scrape_launching', message: 'Invoking Puppeteer Lambda...' }
+            };
+            
+            const mapped = stageMap[progress.stage] || { type: progress.stage, message: progress.stage };
+            context.onProgress({
+              type: mapped.type,
+              message: mapped.message,
+              stage: progress.stage,
+              url: progress.url || url,
+              ...progress
+            });
+          } : null;
+          
           const result = await invokePuppeteerLambda(url, {
             timeout: timeout * 1000,
             waitForNetworkIdle: true,
             extractLinks: true,
-            extractImages: true
+            extractImages: true,
+            onProgress
           });
           
           // Format response similar to direct scraping
