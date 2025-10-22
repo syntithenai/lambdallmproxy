@@ -17,6 +17,7 @@ interface ImageGenerationData {
     supportsStyle?: boolean;
   };
   imageUrl?: string;
+  base64?: string; // Base64 encoded image data for storage
   llmApiCall?: any;
   status: 'pending' | 'generating' | 'complete' | 'error';
   error?: string;
@@ -34,6 +35,12 @@ interface ImageGenerationData {
 interface GeneratedImageBlockProps {
   data: ImageGenerationData;
   accessToken: string | null;
+  providerApiKeys?: {
+    openaiApiKey?: string;
+    togetherApiKey?: string;
+    geminiApiKey?: string;
+    replicateApiKey?: string;
+  };
   onCopy?: (text: string) => void;
   onGrab?: (markdown: string) => void;
   onLlmInfo?: (llmApiCall: any) => void;
@@ -48,6 +55,7 @@ interface GeneratedImageBlockProps {
 export const GeneratedImageBlock: React.FC<GeneratedImageBlockProps> = ({
   data,
   accessToken,
+  providerApiKeys,
   onCopy,
   onGrab,
   onLlmInfo,
@@ -110,11 +118,20 @@ export const GeneratedImageBlock: React.FC<GeneratedImageBlockProps> = ({
         data.size || '',
         data.qualityTier || '',
         data.style || '',
-        accessToken
+        accessToken,
+        providerApiKeys
       );
 
       if (result.success && result.imageUrl) {
-        onStatusChange?.(data.id, 'complete', result.imageUrl, result.llmApiCall);
+        // Prefer base64 data URL for storage, fallback to regular URL
+        let imageUrl = result.imageUrl;
+        if (result.base64 && !result.base64.startsWith('data:')) {
+          imageUrl = `data:image/png;base64,${result.base64}`;
+        } else if (result.base64) {
+          imageUrl = result.base64;
+        }
+        
+        onStatusChange?.(data.id, 'complete', imageUrl, result.llmApiCall);
       } else {
         const errorMsg = result.error || 'Image generation failed';
         setError(errorMsg);

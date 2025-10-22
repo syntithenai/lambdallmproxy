@@ -7,8 +7,28 @@ const { createProvider } = require('../providers/provider-factory');
 const { getInputFilterPrompt, getOutputFilterPrompt } = require('./prompts');
 
 /**
- * Get API key for a provider from context or environment
- * Supports both new indexed format and legacy environment variables
+ * Llama Guard safety category labels
+ */
+const SAFETY_CATEGORIES = {
+  'S1': 'Violent Crimes',
+  'S2': 'Non-Violent Crimes',
+  'S3': 'Sex Crimes',
+  'S4': 'Child Exploitation',
+  'S5': 'Defamation',
+  'S6': 'Specialized Advice',
+  'S7': 'Privacy',
+  'S8': 'Intellectual Property',
+  'S9': 'Indiscriminate Weapons',
+  'S10': 'Hate',
+  'S11': 'Self-Harm',
+  'S12': 'Sexual Content',
+  'S13': 'Elections',
+  'S14': 'Code Interpreter Abuse'
+};
+
+/**
+ * Get API key for a provider from context or indexed environment variables
+ * Only supports indexed format (LLAMDA_LLM_PROXY_PROVIDER_*) for guardrails
  * @param {string} provider - Provider name
  * @param {Object} context - Request context
  * @returns {string|null} API key or null if not found
@@ -35,7 +55,7 @@ function getProviderApiKey(provider, context = {}) {
     return context[contextKey];
   }
   
-  // Check new indexed format (LLAMDA_LLM_PROXY_PROVIDER_*)
+  // Check indexed format (LLAMDA_LLM_PROXY_PROVIDER_*) - ONLY source for guardrails
   let index = 0;
   while (true) {
     const typeVar = `LLAMDA_LLM_PROXY_PROVIDER_TYPE_${index}`;
@@ -51,24 +71,6 @@ function getProviderApiKey(provider, context = {}) {
     }
     
     index++;
-  }
-  
-  // Fallback to legacy environment variables
-  const envVarMap = {
-    'openai': 'OPENAI_API_KEY',
-    'anthropic': 'ANTHROPIC_API_KEY',
-    'groq': 'GROQ_API_KEY',
-    'groq-free': 'GROQ_API_KEY',
-    'gemini': 'GEMINI_API_KEY',
-    'gemini-free': 'GEMINI_API_KEY',
-    'together': 'TOGETHER_API_KEY',
-    'replicate': 'REPLICATE_API_TOKEN',
-    'atlascloud': 'ATLASCLOUD_API_KEY'
-  };
-  
-  const envVar = envVarMap[providerLower];
-  if (envVar) {
-    return process.env[envVar] || null;
   }
   
   return null;
@@ -114,16 +116,15 @@ function createGuardrailValidator(config, context = {}) {
      */
     async validateInput(input) {
       const startTime = Date.now();
-      const prompt = getInputFilterPrompt(input);
+      const prompt = getInputFilterPrompt(input, config.inputModel);
       
       console.log(`🛡️ Validating input (${input.length} chars) with ${config.inputModel}...`);
       
       try {
-        const response = await provider.createChatCompletion({
+        const response = await provider.makeRequest([
+          { role: 'user', content: prompt }
+        ], {
           model: config.inputModel,
-          messages: [
-            { role: 'user', content: prompt }
-          ],
           temperature: 0,
           max_tokens: 500
         });
@@ -131,19 +132,60 @@ function createGuardrailValidator(config, context = {}) {
         const endTime = Date.now();
         const duration = (endTime - startTime) / 1000;
         
-        // Parse JSON response
+        // Parse response - handle both Llama Guard format and JSON format
         const content = response.choices[0].message.content.trim();
+        let result;
         
-        // Try to extract JSON if wrapped in markdown code blocks
-        let jsonContent = content;
-        if (content.startsWith('```')) {
-          const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-          if (jsonMatch) {
-            jsonContent = jsonMatch[1];
+        // Check if using Llama Guard model (native format)
+        if (config.inputModel.includes('llama-guard')) {
+          // Llama Guard returns: "safe" or "unsafe\nS1,S3"
+          const lines = content.split('\n');
+          const isSafe = lines[0].toLowerCase() === 'safe';
+          const violations = [];
+          
+          if (!isSafe && lines.length > 1) {
+            // Parse violation categories (S1, S2, etc.)
+            const categories = lines[1].split(',').map(v => v.trim());
+            violations.push(...categories);
           }
+          
+          // Convert violation codes to human-readable labels
+          const violationLabels = violations.map(code => SAFETY_CATEGORIES[code] || code);
+          
+          result = {
+            safe: isSafe,
+            violations: violations,
+            reason: isSafe ? '' : `Flagged: ${violationLabels.join(', ')}`,
+            suggested_revision: null
+          };
+        } else if (config.inputModel.includes('virtueguard')) {
+          // VirtueGuard returns JSON: {"is_safe": true/false, "violation_categories": [...], "safety_score": 0.95}
+          let jsonContent = content;
+          if (content.startsWith('```')) {
+            const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+            if (jsonMatch) {
+              jsonContent = jsonMatch[1];
+            }
+          }
+          const virtueResult = JSON.parse(jsonContent);
+          
+          result = {
+            safe: virtueResult.is_safe !== false,
+            violations: virtueResult.violation_categories || [],
+            reason: virtueResult.is_safe ? '' : `Flagged: ${(virtueResult.violation_categories || []).join(', ')}`,
+            suggested_revision: null
+          };
+        } else {
+          // Standard JSON format for other models
+          let jsonContent = content;
+          if (content.startsWith('```')) {
+            const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+            if (jsonMatch) {
+              jsonContent = jsonMatch[1];
+            }
+          }
+          result = JSON.parse(jsonContent);
         }
-        
-        const result = JSON.parse(jsonContent);
         
         // Track cost
         const promptTokens = response.usage?.prompt_tokens || 0;
@@ -174,7 +216,7 @@ function createGuardrailValidator(config, context = {}) {
         return {
           safe: false,
           violations: ['system_error'],
-          reason: `Content moderation system error: ${error.message}`,
+          reason: `Moderation error: ${error.message}`,
           suggestedRevision: null,
           tracking: {
             type: 'guardrail_input',
@@ -194,16 +236,15 @@ function createGuardrailValidator(config, context = {}) {
      */
     async validateOutput(output) {
       const startTime = Date.now();
-      const prompt = getOutputFilterPrompt(output);
+      const prompt = getOutputFilterPrompt(output, config.outputModel);
       
       console.log(`🛡️ Validating output (${output.length} chars) with ${config.outputModel}...`);
       
       try {
-        const response = await provider.createChatCompletion({
+        const response = await provider.makeRequest([
+          { role: 'user', content: prompt }
+        ], {
           model: config.outputModel,
-          messages: [
-            { role: 'user', content: prompt }
-          ],
           temperature: 0,
           max_tokens: 300
         });
@@ -211,19 +252,58 @@ function createGuardrailValidator(config, context = {}) {
         const endTime = Date.now();
         const duration = (endTime - startTime) / 1000;
         
-        // Parse JSON response
+        // Parse response - handle both Llama Guard format and JSON format
         const content = response.choices[0].message.content.trim();
+        let result;
         
-        // Try to extract JSON if wrapped in markdown code blocks
-        let jsonContent = content;
-        if (content.startsWith('```')) {
-          const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-          if (jsonMatch) {
-            jsonContent = jsonMatch[1];
+        // Check if using Llama Guard model (native format)
+        if (config.outputModel.includes('llama-guard')) {
+          // Llama Guard returns: "safe" or "unsafe\nS1,S3"
+          const lines = content.split('\n');
+          const isSafe = lines[0].toLowerCase() === 'safe';
+          const violations = [];
+          
+          if (!isSafe && lines.length > 1) {
+            // Parse violation categories (S1, S2, etc.)
+            const categories = lines[1].split(',').map(v => v.trim());
+            violations.push(...categories);
           }
+          
+          // Convert violation codes to human-readable labels
+          const violationLabels = violations.map(code => SAFETY_CATEGORIES[code] || code);
+          
+          result = {
+            safe: isSafe,
+            violations: violations,
+            reason: isSafe ? '' : `Flagged: ${violationLabels.join(', ')}`
+          };
+        } else if (config.outputModel.includes('virtueguard')) {
+          // VirtueGuard returns JSON: {"is_safe": true/false, "violation_categories": [...], "safety_score": 0.95}
+          let jsonContent = content;
+          if (content.startsWith('```')) {
+            const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+            if (jsonMatch) {
+              jsonContent = jsonMatch[1];
+            }
+          }
+          const virtueResult = JSON.parse(jsonContent);
+          
+          result = {
+            safe: virtueResult.is_safe !== false,
+            violations: virtueResult.violation_categories || [],
+            reason: virtueResult.is_safe ? '' : `Flagged: ${(virtueResult.violation_categories || []).join(', ')}`
+          };
+        } else {
+          // Standard JSON format for other models
+          let jsonContent = content;
+          if (content.startsWith('```')) {
+            const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+            if (jsonMatch) {
+              jsonContent = jsonMatch[1];
+            }
+          }
+          result = JSON.parse(jsonContent);
         }
-        
-        const result = JSON.parse(jsonContent);
         
         // Track cost
         const promptTokens = response.usage?.prompt_tokens || 0;
@@ -253,7 +333,7 @@ function createGuardrailValidator(config, context = {}) {
         return {
           safe: false,
           violations: ['system_error'],
-          reason: `Content moderation system error: ${error.message}`,
+          reason: `Moderation error: ${error.message}`,
           tracking: {
             type: 'guardrail_output',
             model: config.outputModel,

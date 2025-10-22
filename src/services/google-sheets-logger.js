@@ -25,20 +25,27 @@ const PRICING = {
     'o1-preview': { input: 15.00, output: 60.00 },
     'o1-mini': { input: 3.00, output: 12.00 },
     
-    // Groq models (free tier)
+    // Groq models
+    // Free tier
     'llama-3.1-8b-instant': { input: 0, output: 0 },
     'llama-3.3-70b-versatile': { input: 0, output: 0 },
     'llama-3.1-70b-versatile': { input: 0, output: 0 },
+    'llama-3.2-3b-preview': { input: 0, output: 0 },
     'mixtral-8x7b-32768': { input: 0, output: 0 },
+    // Paid tier
+    'meta-llama/llama-guard-4-12b': { input: 0.20, output: 0.20 },
     
     // Together AI models (paid service)
     // Source: https://www.together.ai/pricing (Oct 2025)
     'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8': { input: 0.20, output: 0.20 },
     'meta-llama/Llama-4-Scout-17B-16E-Instruct': { input: 0.20, output: 0.20 },
     'meta-llama/Llama-3.3-70B-Instruct-Turbo': { input: 0.88, output: 0.88 },
+    'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free': { input: 0.88, output: 0.88 }, // Uses trial credits
     'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo': { input: 3.50, output: 3.50 },
     'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo': { input: 0.88, output: 0.88 },
     'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': { input: 0.18, output: 0.18 },
+    'meta-llama/Llama-3.2-3B-Instruct-Turbo': { input: 0.06, output: 0.06 },
+    'virtueguard-text-lite': { input: 0.10, output: 0.10 },
     'deepseek-ai/DeepSeek-V3.1': { input: 0.55, output: 1.10 },
     'deepseek-ai/DeepSeek-V3': { input: 0.27, output: 1.10 },
     'deepseek-ai/DeepSeek-R1': { input: 0.55, output: 2.19 },

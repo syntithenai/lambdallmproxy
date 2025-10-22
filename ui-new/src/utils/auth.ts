@@ -40,11 +40,29 @@ export const renderGoogleButton = (elementId: string) => {
 };
 
 // Save auth state to localStorage
-export const saveAuthState = (user: GoogleUser, token: string, refreshToken?: string) => {
+export const saveAuthState = (user: GoogleUser, token: string, refreshToken?: string, expiresIn?: number) => {
   localStorage.setItem('google_user', JSON.stringify(user));
   localStorage.setItem('google_access_token', token);
   if (refreshToken) {
     localStorage.setItem('google_refresh_token', refreshToken);
+  }
+  
+  // Store expiration time if provided (for access tokens)
+  if (expiresIn) {
+    const expirationTime = Date.now() + (expiresIn * 1000);
+    localStorage.setItem('google_token_expiration', expirationTime.toString());
+  } else {
+    // Try to extract from JWT (for ID tokens)
+    try {
+      const decoded = decodeJWT(token);
+      if (decoded?.exp) {
+        localStorage.setItem('google_token_expiration', (decoded.exp * 1000).toString());
+      }
+    } catch (e) {
+      // If we can't decode, set a default expiration (1 hour)
+      const defaultExpiration = Date.now() + (60 * 60 * 1000);
+      localStorage.setItem('google_token_expiration', defaultExpiration.toString());
+    }
   }
 };
 
@@ -75,13 +93,25 @@ export const clearAuthState = () => {
   localStorage.removeItem('google_user');
   localStorage.removeItem('google_access_token');
   localStorage.removeItem('google_refresh_token');
+  localStorage.removeItem('google_token_expiration');
   localStorage.removeItem('last_token_refresh');
 };
 
 // Decode JWT token (for displaying user info)
+// NOTE: This only works for JWT tokens (like Google ID tokens), not opaque access tokens
 export const decodeJWT = (token: string): any => {
   try {
+    // Check if token looks like a JWT (has 3 parts separated by dots)
+    if (!token || typeof token !== 'string' || token.split('.').length !== 3) {
+      console.warn('Token is not a valid JWT format');
+      return null;
+    }
+    
     const base64Url = token.split('.')[1];
+    if (!base64Url) {
+      return null;
+    }
+    
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     const jsonPayload = decodeURIComponent(
       atob(base64)
@@ -91,7 +121,7 @@ export const decodeJWT = (token: string): any => {
     );
     return JSON.parse(jsonPayload);
   } catch (e) {
-    console.error('Failed to decode JWT:', e);
+    console.warn('Failed to decode JWT (token may be an access token, not an ID token):', e);
     return null;
   }
 };
@@ -99,6 +129,15 @@ export const decodeJWT = (token: string): any => {
 // Get time until token expires (in milliseconds)
 export const getTokenTimeRemaining = (token: string): number => {
   try {
+    // First check if we have stored expiration time (works for both JWT and access tokens)
+    const storedExpiration = localStorage.getItem('google_token_expiration');
+    if (storedExpiration) {
+      const expirationTime = parseInt(storedExpiration, 10);
+      const remaining = expirationTime - Date.now();
+      return Math.max(0, remaining);
+    }
+    
+    // Fallback: try to decode as JWT
     const decoded = decodeJWT(token);
     if (!decoded || !decoded.exp) {
       return 0;
@@ -118,9 +157,23 @@ export const getTokenTimeRemaining = (token: string): number => {
 // Check if token is expired or will expire soon (within 5 minutes)
 export const isTokenExpiringSoon = (token: string): boolean => {
   try {
+    // First check if we have stored expiration time (works for both JWT and access tokens)
+    const storedExpiration = localStorage.getItem('google_token_expiration');
+    if (storedExpiration) {
+      const expirationTime = parseInt(storedExpiration, 10);
+      const currentTime = Date.now();
+      const fiveMinutes = 5 * 60 * 1000;
+      const remaining = expirationTime - currentTime;
+      return remaining < fiveMinutes;
+    }
+    
+    // Fallback: try to decode as JWT
     const decoded = decodeJWT(token);
     if (!decoded || !decoded.exp) {
-      return true;
+      // If we can't determine expiration, assume token is still valid
+      // This prevents spurious logouts for access tokens
+      console.warn('Cannot determine token expiration, assuming valid');
+      return false;
     }
     
     const expirationTime = decoded.exp * 1000; // Convert to milliseconds
@@ -145,9 +198,23 @@ export const isTokenExpiringSoon = (token: string): boolean => {
 // Check if token should be proactively refreshed (within 15 minutes of expiry)
 export const shouldRefreshToken = (token: string): boolean => {
   try {
+    // First check if we have stored expiration time (works for both JWT and access tokens)
+    const storedExpiration = localStorage.getItem('google_token_expiration');
+    if (storedExpiration) {
+      const expirationTime = parseInt(storedExpiration, 10);
+      const currentTime = Date.now();
+      const fifteenMinutes = 15 * 60 * 1000;
+      const remaining = expirationTime - currentTime;
+      return remaining < fifteenMinutes;
+    }
+    
+    // Fallback: try to decode as JWT
     const decoded = decodeJWT(token);
     if (!decoded || !decoded.exp) {
-      return true;
+      // If we can't determine expiration, don't trigger a refresh
+      // This prevents spurious refresh attempts for access tokens
+      console.warn('Cannot determine token expiration for refresh check, assuming no refresh needed');
+      return false;
     }
     
     const expirationTime = decoded.exp * 1000; // Convert to milliseconds
@@ -160,7 +227,7 @@ export const shouldRefreshToken = (token: string): boolean => {
     return remaining < fifteenMinutes;
   } catch (e) {
     console.error('Failed to check if token should refresh:', e);
-    return true;
+    return false; // Changed from true to false - don't trigger refresh on error
   }
 };
 

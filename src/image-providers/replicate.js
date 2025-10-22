@@ -13,10 +13,11 @@ const { recordSuccess, recordFailure } = require('../utils/circuit-breaker');
  * @param {string} params.prompt - Image description
  * @param {string} params.model - Model version (e.g., stability-ai/sdxl:latest)
  * @param {string} params.size - Image size (512x512, 1024x1024, etc.)
+ * @param {Array<string>} params.referenceImages - Optional: Reference images for img2img
  * @param {string} params.apiKey - Replicate API token
  * @returns {Promise<Object>} {imageUrl, model, provider, cost, metadata}
  */
-async function generateImage({ prompt, model, size = '1024x1024', apiKey }) {
+async function generateImage({ prompt, model, size = '1024x1024', referenceImages, apiKey }) {
   const provider = 'replicate';
   
   // Validate inputs
@@ -56,6 +57,7 @@ async function generateImage({ prompt, model, size = '1024x1024', apiKey }) {
       prompt,
       width,
       height,
+      referenceImages,
       apiKey
     });
     
@@ -100,6 +102,7 @@ async function generateImage({ prompt, model, size = '1024x1024', apiKey }) {
         width,
         height,
         prompt,
+        referenceImageUsed: !!(referenceImages && referenceImages.length > 0),
         duration,
         predictionId: prediction.id,
         timestamp: new Date().toISOString()
@@ -123,15 +126,36 @@ async function generateImage({ prompt, model, size = '1024x1024', apiKey }) {
  * Create a prediction on Replicate
  * @private
  */
-async function createPrediction({ model, prompt, width, height, apiKey }) {
+async function createPrediction({ model, prompt, width, height, referenceImages, apiKey }) {
+  const inputParams = {
+    prompt,
+    width,
+    height,
+    num_outputs: 1
+  };
+  
+  // Add reference image if provided (img2img mode)
+  if (referenceImages && referenceImages.length > 0) {
+    console.log(`📎 [Replicate] Using reference image for img2img`);
+    
+    // Extract base64 data if it's a data URL
+    let imageData = referenceImages[0];
+    if (imageData.startsWith('data:image')) {
+      // Replicate accepts data URLs directly
+      inputParams.image = imageData;
+    } else {
+      // If it's just base64, wrap it in data URL
+      inputParams.image = `data:image/png;base64,${imageData}`;
+    }
+    
+    // Strength parameter (0-1, how much to transform the reference image)
+    inputParams.prompt_strength = 0.8; // Higher = more faithful to prompt
+    inputParams.num_inference_steps = 50; // More steps for better quality
+  }
+  
   const payload = {
     version: model.includes(':') ? model.split(':')[1] : model,
-    input: {
-      prompt,
-      width,
-      height,
-      num_outputs: 1
-    }
+    input: inputParams
   };
   
   const requestBody = JSON.stringify(payload);

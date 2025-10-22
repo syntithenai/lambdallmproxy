@@ -47,10 +47,21 @@ export const initGoogleAuth = () => {
           client_id: GOOGLE_CLIENT_ID,
           scope: SCOPES,
           callback: (response: any) => {
-            console.log('🎫 Token callback received:', { hasToken: !!response.access_token, error: response.error });
+            console.log('🎫 Token callback received:', { 
+              hasToken: !!response.access_token, 
+              expiresIn: response.expires_in,
+              error: response.error 
+            });
             if (response.access_token) {
               accessToken = response.access_token;
               localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+              
+              // Store expiration time if provided
+              if (response.expires_in) {
+                const expirationTime = Date.now() + (response.expires_in * 1000);
+                localStorage.setItem('google_token_expiration', expirationTime.toString());
+              }
+              
               console.log('✅ Access token received and stored:', response.access_token.substring(0, 20) + '...');
               resolve(response.access_token);
             } else {
@@ -75,10 +86,21 @@ export const initGoogleAuth = () => {
         client_id: GOOGLE_CLIENT_ID,
         scope: SCOPES,
         callback: (response: any) => {
-          console.log('🎫 Token callback received:', { hasToken: !!response.access_token, error: response.error });
+          console.log('🎫 Token callback received:', { 
+            hasToken: !!response.access_token, 
+            expiresIn: response.expires_in,
+            error: response.error 
+          });
           if (response.access_token) {
             accessToken = response.access_token;
             localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+            
+            // Store expiration time if provided
+            if (response.expires_in) {
+              const expirationTime = Date.now() + (response.expires_in * 1000);
+              localStorage.setItem('google_token_expiration', expirationTime.toString());
+            }
+            
             console.log('✅ Access token received and stored:', response.access_token.substring(0, 20) + '...');
             resolve(response.access_token);
           } else {

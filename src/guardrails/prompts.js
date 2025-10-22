@@ -6,79 +6,121 @@
 /**
  * Generate prompt for input filtering
  * @param {string} userInput - User's input to check
+ * @param {string} modelId - Model ID to generate appropriate prompt format
  * @returns {string} Filtering prompt
  */
-function getInputFilterPrompt(userInput) {
-  return `You are a content moderation assistant. Analyze the following user input and determine if it violates content policies.
+function getInputFilterPrompt(userInput, modelId = '') {
+  // Use Llama Guard's native format for Llama Guard models
+  if (modelId.includes('llama-guard')) {
+    return `<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
-Check for:
-- Hate speech or discriminatory content
-- Violence or threats
-- Sexual or explicit content
-- Self-harm or dangerous activities
-- Illegal activities
-- Spam or malicious content
+Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy with the below categories.
+
+<BEGIN UNSAFE CONTENT CATEGORIES>
+S1: Violent Crimes
+S2: Non-Violent Crimes
+S3: Sex Crimes
+S4: Child Exploitation
+S5: Defamation
+S6: Specialized Advice
+S7: Privacy
+S8: Intellectual Property
+S9: Indiscriminate Weapons
+S10: Hate
+S11: Self-Harm
+S12: Sexual Content
+S13: Elections
+S14: Code Interpreter Abuse
+<END UNSAFE CONTENT CATEGORIES>
+
+<BEGIN CONVERSATION>
+
+User: ${userInput}
+
+<END CONVERSATION>
+
+Provide your safety assessment for 'User' in the above conversation:
+- First line must be 'safe' or 'unsafe'.
+- If unsafe, second line must be a comma-separated list of violated categories. (e.g. 'S1,S3')<|eot_id|><|start_header_id|>assistant<|end_header_id|>`;
+  }
+  
+  // VirtueGuard uses simple direct prompting
+  if (modelId.includes('virtueguard')) {
+    return userInput;
+  }
+  
+  // JSON format for other models (Gemini, OpenAI, etc.)
+  return `Analyze this user input for content policy violations.
 
 User Input:
 """
 ${userInput}
 """
 
-Respond ONLY with a JSON object in this exact format:
-{
-  "safe": true,
-  "violations": [],
-  "reason": "",
-  "suggested_revision": ""
-}
+Respond with JSON only:
+{"safe": true/false, "violations": ["category"], "reason": "explanation"}
 
-OR if unsafe:
-{
-  "safe": false,
-  "violations": ["category1", "category2"],
-  "reason": "brief explanation of what violates policy",
-  "suggested_revision": "safer version of the input that complies with policies"
-}
-
-Important: Your response must be ONLY the JSON object, nothing else.`;
+Violation categories: Hate, Violence, Sexual Content, Self-Harm, Illegal Activities, Harassment`;
 }
 
 /**
  * Generate prompt for output filtering
  * @param {string} llmOutput - LLM's output to check
+ * @param {string} modelId - Model ID to generate appropriate prompt format
  * @returns {string} Filtering prompt
  */
-function getOutputFilterPrompt(llmOutput) {
-  return `You are a content moderation assistant. Analyze the following AI-generated response and determine if it violates content policies.
+function getOutputFilterPrompt(llmOutput, modelId = '') {
+  // Use Llama Guard's native format for Llama Guard models
+  if (modelId.includes('llama-guard')) {
+    return `<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
-Check for:
-- Hate speech or discriminatory content
-- Violence or graphic descriptions
-- Sexual or explicit content
-- Instructions for harmful/illegal activities
-- Misinformation or dangerous advice
-- Personal attacks or harassment
+Task: Check if there is unsafe content in 'Agent' messages in conversations according our safety policy with the below categories.
+
+<BEGIN UNSAFE CONTENT CATEGORIES>
+S1: Violent Crimes
+S2: Non-Violent Crimes
+S3: Sex Crimes
+S4: Child Exploitation
+S5: Defamation
+S6: Specialized Advice
+S7: Privacy
+S8: Intellectual Property
+S9: Indiscriminate Weapons
+S10: Hate
+S11: Self-Harm
+S12: Sexual Content
+S13: Elections
+S14: Code Interpreter Abuse
+<END UNSAFE CONTENT CATEGORIES>
+
+<BEGIN CONVERSATION>
+
+Agent: ${llmOutput}
+
+<END CONVERSATION>
+
+Provide your safety assessment for 'Agent' in the above conversation:
+- First line must be 'safe' or 'unsafe'.
+- If unsafe, second line must be a comma-separated list of violated categories. (e.g. 'S1,S3')<|eot_id|><|start_header_id|>assistant<|end_header_id|>`;
+  }
+  
+  // VirtueGuard uses simple direct prompting
+  if (modelId.includes('virtueguard')) {
+    return llmOutput;
+  }
+  
+  // JSON format for other models (Gemini, OpenAI, etc.)
+  return `Analyze this AI response for content policy violations.
 
 AI Response:
 """
 ${llmOutput}
 """
 
-Respond ONLY with a JSON object in this exact format:
-{
-  "safe": true,
-  "violations": [],
-  "reason": ""
-}
+Respond with JSON only:
+{"safe": true/false, "violations": ["category"], "reason": "explanation"}
 
-OR if unsafe:
-{
-  "safe": false,
-  "violations": ["category1", "category2"],
-  "reason": "brief explanation of what violates policy"
-}
-
-Important: Your response must be ONLY the JSON object, nothing else.`;
+Violation categories: Hate, Violence, Sexual Content, Harmful Instructions, Misinformation, Harassment`;
 }
 
 module.exports = {

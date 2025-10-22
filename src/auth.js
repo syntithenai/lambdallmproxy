@@ -89,6 +89,87 @@ async function verifyGoogleToken(token) {
 }
 
 /**
+ * Verify Google OAuth2 access token by calling Google's tokeninfo endpoint
+ * This works for access tokens (ya29.*) unlike verifyIdToken which only works for JWTs
+ * @param {string} accessToken - Google OAuth2 access token
+ * @returns {Promise<Object|null>} - User information or null if invalid
+ */
+async function verifyGoogleOAuthToken(accessToken) {
+    try {
+        console.log(`🔒 Verifying Google OAuth2 access token (length: ${accessToken?.length})`);
+        
+        const https = require('https');
+        
+        return new Promise((resolve, reject) => {
+            const options = {
+                hostname: 'oauth2.googleapis.com',
+                path: `/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+                method: 'GET'
+            };
+            
+            const req = https.request(options, (res) => {
+                let data = '';
+                
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    try {
+                        const tokenInfo = JSON.parse(data);
+                        
+                        // Check if token is valid
+                        if (res.statusCode !== 200 || tokenInfo.error) {
+                            console.error('❌ OAuth token validation failed:', tokenInfo.error || 'Invalid token');
+                            resolve(null);
+                            return;
+                        }
+                        
+                        // Check expiration
+                        if (tokenInfo.expires_in && tokenInfo.expires_in <= 0) {
+                            console.error('❌ OAuth token expired');
+                            resolve(null);
+                            return;
+                        }
+                        
+                        // Check if email is in whitelist
+                        const allowed = getAllowedEmails();
+                        console.log(`🔍 Checking email against whitelist: [${allowed.join(', ')}]`);
+                        if (!allowed.includes(tokenInfo.email)) {
+                            console.log(`❌ Email not in whitelist: ${tokenInfo.email}`);
+                            resolve(null);
+                            return;
+                        }
+                        
+                        console.log(`✅ OAuth token verified for: ${tokenInfo.email}`);
+                        resolve({
+                            email: tokenInfo.email,
+                            name: tokenInfo.email, // OAuth tokeninfo doesn't include name
+                            picture: null,
+                            email_verified: tokenInfo.verified_email || true,
+                            sub: tokenInfo.user_id || tokenInfo.sub
+                        });
+                    } catch (parseError) {
+                        console.error('❌ Failed to parse tokeninfo response:', parseError.message);
+                        resolve(null);
+                    }
+                });
+            });
+            
+            req.on('error', (error) => {
+                console.error('❌ OAuth token verification request failed:', error.message);
+                resolve(null);
+            });
+            
+            req.end();
+        });
+    } catch (error) {
+        console.error('❌ OAuth token verification failed:', error.message);
+        return null;
+    }
+}
+
+/**
  * Authenticate and authorize a request
  * Returns authentication status, authorization status, and user info
  * @param {string} authHeader - Authorization header (Bearer token)
@@ -110,8 +191,14 @@ async function authenticateRequest(authHeader) {
         ? authHeader.substring(7) 
         : authHeader;
     
-    // Verify token with Google OAuth
-    const user = await verifyGoogleToken(token);
+    // Try to verify as JWT ID token first
+    let user = await verifyGoogleToken(token);
+    
+    // If JWT verification failed, try OAuth2 access token verification
+    if (!user && token.startsWith('ya29.')) {
+        console.log('🔄 JWT verification failed, trying OAuth2 access token verification...');
+        user = await verifyGoogleOAuthToken(token);
+    }
     
     if (!user) {
         // Invalid token or expired
@@ -124,7 +211,7 @@ async function authenticateRequest(authHeader) {
     }
     
     // Token is valid and verified
-    // Check if user is in whitelist (already done in verifyGoogleToken)
+    // Check if user is in whitelist (already done in verify functions)
     const allowedEmails = getAllowedEmails();
     const isAuthorized = allowedEmails.includes(user.email);
     
@@ -141,5 +228,6 @@ async function authenticateRequest(authHeader) {
 module.exports = {
     getAllowedEmails,
     verifyGoogleToken,
+    verifyGoogleOAuthToken,
     authenticateRequest
 };

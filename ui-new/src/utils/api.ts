@@ -440,13 +440,17 @@ export const generateImage = async (
   size: string,
   quality: string,
   style: string,
-  token: string
+  token: string | null,
+  providerApiKeys?: {
+    openaiApiKey?: string;
+    togetherApiKey?: string;
+    geminiApiKey?: string;
+    replicateApiKey?: string;
+  }
 ): Promise<{
   success: boolean;
   imageUrl?: string;
-  provider?: string;
-  model?: string;
-  cost?: number;
+  base64?: string;
   fallbackUsed?: boolean;
   originalProvider?: string;
   llmApiCall?: any;
@@ -463,7 +467,9 @@ export const generateImage = async (
     size,
     quality,
     style,
-    accessToken: token
+    accessToken: token,
+    // Include provider API keys from settings
+    ...(providerApiKeys || {})
   };
   
   try {

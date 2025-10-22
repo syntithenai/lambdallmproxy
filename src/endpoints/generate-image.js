@@ -40,7 +40,12 @@ async function handleGenerateImage(event) {
       size = '1024x1024', 
       quality = 'standard',
       style = 'natural',
-      accessToken 
+      accessToken,
+      // Provider API keys from UI settings
+      openaiApiKey,
+      togetherApiKey,
+      geminiApiKey,
+      replicateApiKey
     } = body;
     
     // Validate required fields
@@ -87,15 +92,22 @@ async function handleGenerateImage(event) {
       console.log('⚠️ No access token provided, proceeding without authentication');
     }
     
-    // Get API key for provider
-    const apiKey = getApiKeyForProvider(provider);
+    // Get API key for provider (from context/UI settings first, then environment)
+    const contextKeys = {
+      openaiApiKey,
+      togetherApiKey,
+      geminiApiKey,
+      replicateApiKey
+    };
+    const apiKey = getApiKeyForProvider(provider, contextKeys);
     if (!apiKey) {
       return {
         statusCode: 500,
         headers: { 'Content-Type': 'application/json', ...getCorsHeaders(event) },
         body: JSON.stringify({ 
           error: `No API key configured for provider: ${provider}`,
-          provider
+          provider,
+          hint: 'Please configure the API key in Settings > Providers'
         })
       };
     }
@@ -155,7 +167,7 @@ async function handleGenerateImage(event) {
         model: selectedModel,
         size,
         style,
-        apiKey: getApiKeyForProvider(selectedProvider)
+        apiKey: getApiKeyForProvider(selectedProvider, contextKeys)
       });
     } catch (genError) {
       console.error(`❌ Image generation failed:`, genError.message);
@@ -176,7 +188,7 @@ async function handleGenerateImage(event) {
             model: selectedModel,
             size,
             style,
-            apiKey: getApiKeyForProvider(selectedProvider)
+            apiKey: getApiKeyForProvider(selectedProvider, contextKeys)
           });
         } else {
           throw genError; // No fallback available
@@ -219,13 +231,13 @@ async function handleGenerateImage(event) {
         userEmail: userEmail || 'anonymous',
         provider: selectedProvider,
         model: selectedModel,
+        type: 'image_generation', // Type field for filtering in billing
         promptTokens: 0, // Image generation doesn't use tokens
         completionTokens: 0,
         totalTokens: 0,
         cost: result.cost || 0,
         durationMs: totalDuration,
         timestamp: new Date().toISOString(),
-        requestType: 'image_generation', // Custom field to distinguish from text generation
         metadata: {
           size,
           quality,
@@ -246,6 +258,7 @@ async function handleGenerateImage(event) {
       body: JSON.stringify({
         success: true,
         imageUrl: result.imageUrl,
+        base64: result.base64Data, // Include base64 for storage
         provider: selectedProvider,
         model: selectedModel,
         cost: result.cost,
@@ -346,10 +359,24 @@ async function findFallbackProvider(qualityTier, excludeProvider) {
 }
 
 /**
- * Get API key for provider from environment
+ * Get API key for provider from context or environment
  * @private
  */
-function getApiKeyForProvider(provider) {
+function getApiKeyForProvider(provider, contextKeys = {}) {
+  // First check context (user settings from UI)
+  const contextKeyMap = {
+    'openai': contextKeys.openaiApiKey,
+    'together': contextKeys.togetherApiKey,
+    'gemini': contextKeys.geminiApiKey,
+    'replicate': contextKeys.replicateApiKey
+  };
+  
+  const contextKey = contextKeyMap[provider.toLowerCase()];
+  if (contextKey) {
+    return contextKey;
+  }
+  
+  // Fallback to environment variables
   const envVarMap = {
     'openai': 'OPENAI_API_KEY',
     'together': 'TOGETHER_API_KEY',
@@ -389,20 +416,33 @@ async function generateImageDirect(params) {
     size = '1024x1024', 
     quality = 'standard',
     style = 'natural',
+    referenceImages,
     context 
   } = params;
   
   try {
-    // Get API key for provider
-    const apiKey = getApiKeyForProvider(provider);
+    // Extract provider API keys from context
+    const contextKeys = context ? {
+      openaiApiKey: context.openaiApiKey,
+      togetherApiKey: context.togetherApiKey,
+      geminiApiKey: context.geminiApiKey,
+      replicateApiKey: context.replicateApiKey
+    } : {};
+    
+    // Get API key for provider (from context first, then environment)
+    const apiKey = getApiKeyForProvider(provider, contextKeys);
     if (!apiKey) {
       return {
         success: false,
-        error: `No API key configured for provider: ${provider}`
+        error: `No API key configured for provider: ${provider}`,
+        hint: 'Check provider configuration in Settings or environment variables'
       };
     }
     
     console.log(`🔍 [Direct] Generating image: provider=${provider}, model=${model}, size=${size}`);
+    if (referenceImages && referenceImages.length > 0) {
+      console.log(`📎 [Direct] Using ${referenceImages.length} reference image(s)`);
+    }
     
     // Check provider availability
     const availability = await checkProviderAvailability(provider);
@@ -447,10 +487,34 @@ async function generateImageDirect(params) {
       model: selectedModel,
       size,
       style,
-      apiKey: getApiKeyForProvider(selectedProvider)
+      referenceImages,
+      apiKey: getApiKeyForProvider(selectedProvider, contextKeys)
     });
     
     const totalDuration = Date.now() - startTime;
+    
+    // Record LLM API call for tracking
+    const llmApiCall = {
+      id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+      type: 'image_generation',
+      provider: selectedProvider,
+      model: selectedModel,
+      modelKey: modelKey || selectedModel,
+      cost: result.cost || 0,
+      duration: totalDuration,
+      success: true,
+      fallbackUsed,
+      originalProvider: fallbackUsed ? provider : selectedProvider,
+      metadata: {
+        size,
+        quality,
+        style,
+        prompt: prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''),
+        generatedVia: 'tool',
+        ...result.metadata
+      }
+    };
     
     // Log to Google Sheets (async, don't block response)
     try {
@@ -461,13 +525,13 @@ async function generateImageDirect(params) {
         userEmail,
         provider: selectedProvider,
         model: selectedModel,
+        type: 'image_generation', // Type field for filtering in billing
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
         cost: result.cost || 0,
         durationMs: totalDuration,
         timestamp: new Date().toISOString(),
-        requestType: 'image_generation',
         metadata: {
           size,
           quality,
@@ -490,7 +554,8 @@ async function generateImageDirect(params) {
       model: selectedModel,
       cost: result.cost || 0,
       revisedPrompt: result.revisedPrompt,
-      fallbackUsed
+      fallbackUsed,
+      llmApiCall // Include for LLM transparency tracking
     };
     
   } catch (error) {

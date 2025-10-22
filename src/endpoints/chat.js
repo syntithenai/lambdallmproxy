@@ -15,7 +15,7 @@ const { getOrEstimateUsage, providerReturnsUsage } = require('../utils/token-est
 const { buildProviderPool, hasAvailableProviders } = require('../credential-pool');
 const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
 const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
-const { loadGuardrailConfig, validateGuardrailProvider } = require('../guardrails/config');
+const { loadGuardrailConfig } = require('../guardrails/config');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const { logToBillingSheet } = require('../services/user-billing-sheet');
 
@@ -750,6 +750,14 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
                 } else if (name === 'scrape_web_content') {
                     // Add progress support for Puppeteer scraping
                     toolContext.onProgress = createProgressEmitter(sseWriter.writeEvent, id, 'scrape_web_content');
+                } else if (name === 'generate_image') {
+                    // Emit progress event for image generation
+                    sseWriter.writeEvent('image_generation_progress', {
+                        id,
+                        status: 'generating',
+                        prompt: parsedArgs.prompt,
+                        timestamp: new Date().toISOString()
+                    });
                 }
             }
             
@@ -1125,18 +1133,15 @@ async function handler(event, responseStream, context) {
         // Initialize guardrails if enabled
         let guardrailValidator = null;
         try {
-            const guardrailConfig = loadGuardrailConfig();
+            // Build context with API keys for guardrail provider
+            const guardrailContext = {
+                ...body, // Include all request context (may have API keys)
+                authorized: authResult.authorized
+            };
+            
+            const guardrailConfig = loadGuardrailConfig(guardrailContext);
             if (guardrailConfig) {
-                // Build context with API keys for guardrail provider
-                const guardrailContext = {
-                    ...body, // Include all request context (may have API keys)
-                    authorized: authResult.authorized
-                };
-                
-                // Validate provider availability
-                validateGuardrailProvider(guardrailConfig.provider, guardrailContext);
-                
-                // Create validator
+                // Create validator (provider already validated during config load)
                 guardrailValidator = createGuardrailValidator(guardrailConfig, guardrailContext);
                 console.log('🛡️ Guardrails initialized for content filtering');
             }
@@ -2608,21 +2613,44 @@ async function handler(event, responseStream, context) {
                             
                             // Check if image was actually generated (new behavior)
                             if (parsed.generated && (parsed.url || parsed.base64)) {
-                                console.log(`✅ Image was generated directly by tool - will inject as markdown`);
+                                console.log(`✅ Image was generated directly by tool - adding to imageGenerations as complete`);
                                 
-                                // Collect for markdown injection
-                                generatedImages.push({
-                                    url: parsed.url,
-                                    base64: parsed.base64,
-                                    prompt: parsed.prompt || 'Generated image',
-                                    provider: parsed.provider,
-                                    model: parsed.model,
-                                    size: parsed.size,
-                                    cost: parsed.cost
+                                // Determine the image URL (prefer base64 data URL over external URL)
+                                let imageUrl = parsed.url;
+                                if (parsed.base64 && !parsed.base64.startsWith('data:')) {
+                                    imageUrl = `data:image/png;base64,${parsed.base64}`;
+                                } else if (parsed.base64) {
+                                    imageUrl = parsed.base64;
+                                }
+                                
+                                // Add to imageGenerations with status 'complete' so it shows in GeneratedImageBlock
+                                const imgGenId = toolMsg.tool_call_id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                                imageGenerations.push({
+                                    id: imgGenId,
+                                    provider: parsed.provider || 'unknown',
+                                    model: parsed.model || 'unknown',
+                                    modelKey: parsed.modelKey || parsed.model,
+                                    cost: parsed.cost || 0,
+                                    prompt: parsed.prompt || '',
+                                    size: parsed.size || '1024x1024',
+                                    style: parsed.style || 'natural',
+                                    qualityTier: parsed.qualityTier || 'standard',
+                                    status: 'complete',
+                                    imageUrl: imageUrl,
+                                    ready: true,
+                                    llmApiCall: parsed.llmApiCall // Include llmApiCall for transparency tracking
                                 });
                                 
-                                console.log(`   Added to generatedImages array (total: ${generatedImages.length})`);
-                                // Don't add to imageGenerations array (no UI button needed)
+                                // Add llmApiCall to the tracking array for LLM transparency dialog
+                                if (parsed.llmApiCall) {
+                                    if (!llmApiCalls) {
+                                        llmApiCalls = [];
+                                    }
+                                    llmApiCalls.push(parsed.llmApiCall);
+                                    console.log(`   Added image generation llmApiCall to tracking (total: ${llmApiCalls.length})`);
+                                }
+                                
+                                console.log(`   Added to imageGenerations array as complete (total: ${imageGenerations.length})`);
                             } else {
                                 // Old behavior: image not yet generated, needs UI confirmation
                                 console.log(`⚠️ Image not generated - adding to imageGenerations for UI button`);
@@ -2807,23 +2835,10 @@ async function handler(event, responseStream, context) {
             }
             
             // Inject generated images as markdown into assistant's response
+            // Note: Generated images are now handled via imageGenerations array
+            // and displayed using GeneratedImageBlock component, not as markdown injection
             if (generatedImages.length > 0) {
-                console.log(`🖼️ Injecting ${generatedImages.length} generated image(s) as markdown`);
-                
-                // Build markdown for each generated image
-                const imageMarkdowns = generatedImages.map((img, idx) => {
-                    const imageUrl = img.url || (img.base64 ? `data:image/png;base64,${img.base64}` : '');
-                    const altText = img.prompt || `Generated image ${idx + 1}`;
-                    
-                    // Create markdown with newlines for proper spacing
-                    return `\n\n![${altText}](${imageUrl})\n`;
-                }).join('');
-                
-                // Append to assistant's content
-                assistantMessage.content += imageMarkdowns;
-                
-                console.log(`✅ Injected ${generatedImages.length} images into assistant response`);
-                console.log(`   New content length: ${assistantMessage.content.length} chars`);
+                console.log(`🖼️ Skipping markdown injection for ${generatedImages.length} generated image(s) - using GeneratedImageBlock instead`);
             }
             
             // If LLM provided substantive content, treat as final answer even if tool_calls present

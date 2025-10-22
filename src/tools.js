@@ -525,7 +525,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: '🎨 Generate images using AI and return them directly. Automatically selects the best provider and model based on quality requirements, generates the image immediately, and returns the URL. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback. Images are injected directly into the conversation.',
+      description: '🎨 Generate images using AI and return them directly. Automatically selects the best provider and model based on quality requirements, generates the image immediately, and returns the URL. **Defaults to fast/draft quality (<$0.001) for cost efficiency** - only uses higher quality when explicitly requested. **Supports reference images** - can use images from user messages as context/reference for style transfer or compositional guidance. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001 - DEFAULT). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback. Images are injected directly into the conversation.',
       parameters: {
         type: 'object',
         properties: {
@@ -536,7 +536,7 @@ const toolFunctions = [
           quality: {
             type: 'string',
             enum: ['ultra', 'high', 'standard', 'fast'],
-            description: 'Quality tier: ultra (photorealistic, 4k, professional), high (detailed, artistic), standard (normal, illustration), fast (quick, draft, sketch). If not specified, analyzes prompt for quality keywords.'
+            description: 'Quality tier: ultra (photorealistic, 4k, professional), high (detailed, artistic), standard (normal, illustration), fast (quick, draft, sketch - DEFAULT). Defaults to fast unless explicitly specified or detected from prompt keywords like "photorealistic", "high quality", "detailed".'
           },
           size: {
             type: 'string',
@@ -547,6 +547,13 @@ const toolFunctions = [
             type: 'string',
             enum: ['natural', 'vivid'],
             description: 'DALL-E 3 only: natural (more realistic) or vivid (hyper-real, dramatic). Default: natural'
+          },
+          reference_images: {
+            type: 'array',
+            items: {
+              type: 'string'
+            },
+            description: 'Optional: Array of base64-encoded images or data URLs to use as reference/context. Extract from user messages with image attachments. Format: ["data:image/png;base64,iVBORw0KG...", "data:image/jpeg;base64,/9j/4AAQ..."]. Used for image-to-image, style transfer, or compositional reference.'
           }
         },
         required: ['prompt'],
@@ -2385,6 +2392,37 @@ Summary:`;
       if (!prompt) return JSON.stringify({ error: 'prompt required' });
       
       try {
+        // Extract reference images from args or conversation context
+        let referenceImages = args.reference_images || [];
+        
+        // If no reference images provided in args, check conversation context for images
+        if (referenceImages.length === 0 && messages && Array.isArray(messages)) {
+          console.log('🔍 Scanning conversation for reference images...');
+          for (const msg of messages) {
+            if (msg.role === 'user' && Array.isArray(msg.content)) {
+              // Extract image parts from multimodal content
+              const imageParts = msg.content.filter(part => 
+                part.type === 'image_url' || part.type === 'image'
+              );
+              
+              for (const imagePart of imageParts) {
+                if (imagePart.image_url?.url) {
+                  referenceImages.push(imagePart.image_url.url);
+                } else if (imagePart.url) {
+                  referenceImages.push(imagePart.url);
+                } else if (imagePart.data) {
+                  // Handle base64 data directly
+                  referenceImages.push(imagePart.data);
+                }
+              }
+            }
+          }
+          
+          if (referenceImages.length > 0) {
+            console.log(`✅ Found ${referenceImages.length} reference image(s) in conversation context`);
+          }
+        }
+        
         // Import image generation handler directly
         const generateImageModule = require('./endpoints/generate-image');
         const { generateImageDirect } = generateImageModule;
@@ -2421,15 +2459,20 @@ Summary:`;
         // 1. Determine quality tier from args or analyze prompt
         let qualityTier = args.quality;
         if (!qualityTier) {
-          // Analyze prompt for quality keywords
+          // Analyze prompt for quality keywords - only upgrade from fast if explicitly mentioned
           const promptLower = prompt.toLowerCase();
-          for (const [tier, config] of Object.entries(qualityTiers)) {
-            if (config.keywords.some(keyword => promptLower.includes(keyword.toLowerCase()))) {
-              qualityTier = tier;
-              break;
-            }
+          
+          // Check for high-quality indicators first (most expensive)
+          if (qualityTiers.ultra && qualityTiers.ultra.keywords.some(keyword => promptLower.includes(keyword.toLowerCase()))) {
+            qualityTier = 'ultra';
+          } else if (qualityTiers.high && qualityTiers.high.keywords.some(keyword => promptLower.includes(keyword.toLowerCase()))) {
+            qualityTier = 'high';
+          } else if (qualityTiers.standard && qualityTiers.standard.keywords.some(keyword => promptLower.includes(keyword.toLowerCase()))) {
+            qualityTier = 'standard';
+          } else {
+            // Default to fast (cheapest) unless explicitly requested otherwise
+            qualityTier = 'fast';
           }
-          qualityTier = qualityTier || 'standard'; // Default to standard
         }
         
         console.log(`🎨 Image generation: quality=${qualityTier}, prompt="${prompt.substring(0, 50)}..."`);
@@ -2526,6 +2569,9 @@ Summary:`;
         
         // 9. Actually generate the image immediately (no UI confirmation needed)
         console.log(`🎨 Generating image using ${selectedModel.provider} ${selectedModel.model}...`);
+        if (referenceImages.length > 0) {
+          console.log(`📎 Using ${referenceImages.length} reference image(s)`);
+        }
         
         // Call the image generation function directly
         const imageResult = await generateImageDirect({
@@ -2536,6 +2582,7 @@ Summary:`;
           size: finalSize,
           quality: qualityTier,
           style: args.style || 'natural',
+          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
           context // Pass context for auth if needed
         });
         
@@ -2550,8 +2597,7 @@ Summary:`;
         
         console.log(`✅ Image generated successfully: ${imageResult.url || 'base64 data'}`);
         
-        // Return the generated image information
-        // The chat endpoint will inject this as markdown
+        // Return the generated image information with LLM API call for transparency
         return JSON.stringify({
           success: true,
           url: imageResult.url,
@@ -2564,7 +2610,8 @@ Summary:`;
           style: args.style || 'natural',
           cost: estimatedCost,
           revisedPrompt: imageResult.revisedPrompt || prompt,
-          generated: true // Flag to indicate image was actually generated
+          generated: true, // Flag to indicate image was actually generated
+          llmApiCall: imageResult.llmApiCall // Include for LLM transparency tracking
         });
         
       } catch (error) {

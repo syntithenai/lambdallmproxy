@@ -39,6 +39,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = useCallback((credential: string) => {
     try {
       const decoded = decodeJWT(credential);
+      if (!decoded || !decoded.email) {
+        console.error('Login failed: Invalid token or missing user info');
+        return;
+      }
+      
       const user: GoogleUser = {
         email: decoded.email,
         name: decoded.name,

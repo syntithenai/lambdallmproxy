@@ -24,6 +24,29 @@
           "prefix": "x-ratelimit-"
         },
         "models": {
+          "meta-llama/llama-guard-4-12b": {
+            "id": "meta-llama/llama-guard-4-12b",
+            "category": "guardrail",
+            "contextWindow": 131072,
+            "maxOutput": 1024,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 30000,
+              "requestsPerMinute": 100
+            },
+            "deprecated": false,
+            "available": true,
+            "guardrailModel": true,
+            "description": "Meta Llama Guard 4 12B - Specialized content moderation model"
+          },
           "llama-3.1-8b-instant": {
             "id": "llama-3.1-8b-instant",
             "category": "small",
@@ -82,6 +105,28 @@
           "prefix": "x-ratelimit-"
         },
         "models": {
+          "meta-llama/llama-guard-4-12b": {
+            "id": "meta-llama/llama-guard-4-12b",
+            "category": "guardrail",
+            "contextWindow": 131072,
+            "maxOutput": 1024,
+            "pricing": {
+              "input": 0.20,
+              "output": 0.20,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 30000,
+              "requestsPerMinute": 100
+            },
+            "deprecated": false,
+            "available": true,
+            "guardrailModel": true,
+            "description": "Meta Llama Guard 4 12B - Specialized content moderation model"
+          },
           "llama-3.1-8b-instant": {
             "id": "llama-3.1-8b-instant",
             "category": "small",
@@ -506,9 +551,9 @@
         "supportsStreaming": true,
         "supportsTools": true,
         "freeTier": {
-          "available": true,
+          "available": false,
           "limits": {
-            "note": "$25 free trial credits available"
+            "note": "No free tier - $25 trial credits for new users, then pay-as-you-go"
           }
         },
         "rateLimitHeaders": {
@@ -516,6 +561,71 @@
           "prefix": "x-ratelimit-"
         },
         "models": {
+          "virtueguard-text-lite": {
+            "id": "virtueguard-text-lite",
+            "category": "guardrail",
+            "contextWindow": 8192,
+            "maxOutput": 512,
+            "pricing": {
+              "input": 0.10,
+              "output": 0.10,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true,
+            "guardrailModel": true,
+            "description": "VirtueGuard Text Lite - Specialized content moderation model"
+          },
+          "meta-llama/Llama-3.3-70B-Instruct-Turbo": {
+            "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 32768,
+            "pricing": {
+              "input": 0.88,
+              "output": 0.88,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free": {
+            "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 32768,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": false,
+              "note": "Uses trial credits - not truly free"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 10
+            },
+            "deprecated": false,
+            "available": true,
+            "note": "Reduced rate limits, uses trial credits"
+          },
           "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo": {
             "id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
             "category": "large",
@@ -556,14 +666,114 @@
             "deprecated": false,
             "available": true
           },
+          "meta-llama/Llama-3.2-3B-Instruct-Turbo": {
+            "id": "meta-llama/Llama-3.2-3B-Instruct-Turbo",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.06,
+              "output": 0.06,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "Qwen/Qwen2.5-72B-Instruct-Turbo": {
+            "id": "Qwen/Qwen2.5-72B-Instruct-Turbo",
+            "category": "large",
+            "contextWindow": 32768,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 1.20,
+              "output": 1.20,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "Qwen/Qwen2.5-7B-Instruct-Turbo": {
+            "id": "Qwen/Qwen2.5-7B-Instruct-Turbo",
+            "category": "small",
+            "contextWindow": 32768,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.30,
+              "output": 0.30,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "deepseek-ai/DeepSeek-R1": {
+            "id": "deepseek-ai/DeepSeek-R1",
+            "category": "reasoning",
+            "contextWindow": 163839,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.55,
+              "output": 2.19,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "deepseek-ai/DeepSeek-V3": {
+            "id": "deepseek-ai/DeepSeek-V3",
+            "category": "large",
+            "contextWindow": 163839,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.27,
+              "output": 1.10,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 100000,
+              "requestsPerMinute": 600
+            },
+            "deprecated": false,
+            "available": true
+          },
           "mistralai/Mixtral-8x7B-Instruct-v0.1": {
             "id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
             "category": "large",
             "contextWindow": 32768,
             "maxOutput": 8192,
             "pricing": {
-              "input": 0.6,
-              "output": 0.6,
+              "input": 0.60,
+              "output": 0.60,
               "unit": "per_million_tokens"
             },
             "supportsTools": true,
@@ -971,6 +1181,64 @@
         "apiBase": "https://api.together.xyz/v1",
         "supportsStyles": true,
         "models": {
+          "flux-schnell-free": {
+            "id": "black-forest-labs/FLUX.1-schnell-Free",
+            "type": "image",
+            "qualityTier": "fast",
+            "contextWindow": 77,
+            "supportedSizes": ["1024x1024", "768x768", "512x512"],
+            "supportedQualities": ["standard"],
+            "pricing": {
+              "perMegapixel": 0.0,
+              "default1024": 0.0,
+              "unit": "per_megapixel",
+              "free": true,
+              "defaultSteps": 4
+            },
+            "capabilities": ["artistic", "very-fast", "free"],
+            "fallbackPriority": 1,
+            "available": true,
+            "deprecated": false,
+            "note": "Free tier with rate limit of 10 img/min. Cost = MP × $0.00"
+          },
+          "flux-schnell": {
+            "id": "black-forest-labs/FLUX.1-schnell",
+            "type": "image",
+            "qualityTier": "standard",
+            "contextWindow": 77,
+            "supportedSizes": ["1024x1024", "768x768", "512x512"],
+            "supportedQualities": ["standard"],
+            "pricing": {
+              "perMegapixel": 0.003,
+              "default1024": 0.003,
+              "unit": "per_megapixel",
+              "defaultSteps": 4
+            },
+            "capabilities": ["artistic", "fast", "quality"],
+            "fallbackPriority": 2,
+            "available": true,
+            "deprecated": false,
+            "note": "Turbo version, 4 default steps. Cost = MP × $0.003 × (steps ÷ 4) if steps > 4"
+          },
+          "flux-dev": {
+            "id": "black-forest-labs/FLUX.1-dev",
+            "type": "image",
+            "qualityTier": "high",
+            "contextWindow": 77,
+            "supportedSizes": ["1024x1024", "768x1024", "1024x768"],
+            "supportedQualities": ["standard"],
+            "pricing": {
+              "perMegapixel": 0.025,
+              "default1024": 0.025,
+              "unit": "per_megapixel",
+              "defaultSteps": 28
+            },
+            "capabilities": ["artistic", "detailed", "high-quality"],
+            "fallbackPriority": 3,
+            "available": true,
+            "deprecated": false,
+            "note": "Dev version, 28 default steps. Cost = MP × $0.025 × (steps ÷ 28) if steps > 28"
+          },
           "stable-diffusion-xl": {
             "id": "stabilityai/stable-diffusion-xl-base-1.0",
             "type": "image",
@@ -983,9 +1251,10 @@
               "unit": "per_image"
             },
             "capabilities": ["artistic", "fast", "stylized"],
-            "fallbackPriority": 1,
-            "available": true,
-            "deprecated": false
+            "fallbackPriority": 99,
+            "available": false,
+            "deprecated": true,
+            "note": "Requires dedicated endpoint, not available on serverless"
           },
           "stable-diffusion-2-1": {
             "id": "stabilityai/stable-diffusion-2-1",
@@ -999,9 +1268,10 @@
               "unit": "per_image"
             },
             "capabilities": ["artistic", "very-fast"],
-            "fallbackPriority": 2,
-            "available": true,
-            "deprecated": false
+            "fallbackPriority": 99,
+            "available": false,
+            "deprecated": true,
+            "note": "Requires dedicated endpoint, not available on serverless"
           },
           "playground-v2-5": {
             "id": "playgroundai/playground-v2.5-1024px-aesthetic",
@@ -1015,9 +1285,10 @@
               "unit": "per_image"
             },
             "capabilities": ["artistic", "aesthetic", "detailed"],
-            "fallbackPriority": 3,
-            "available": true,
-            "deprecated": false
+            "fallbackPriority": 99,
+            "available": false,
+            "deprecated": true,
+            "note": "Requires dedicated endpoint, not available on serverless"
           }
         }
       },
@@ -1072,20 +1343,20 @@
       "high": {
         "description": "High quality, detailed artistic or realistic images",
         "keywords": ["high quality", "detailed", "artistic", "realistic"],
-        "recommendedModels": ["openai:dall-e-3", "together:playground-v2-5"],
+        "recommendedModels": ["openai:dall-e-3", "together:flux-dev"],
         "typicalCost": 0.04
       },
       "standard": {
         "description": "Good quality, balanced cost/performance",
         "keywords": ["standard", "normal", "regular", "illustration"],
-        "recommendedModels": ["together:stable-diffusion-xl", "openai:dall-e-2", "replicate:sdxl"],
-        "typicalCost": 0.002
+        "recommendedModels": ["together:flux-schnell", "openai:dall-e-2", "replicate:sdxl"],
+        "typicalCost": 0.003
       },
       "fast": {
         "description": "Fast generation, lower cost",
         "keywords": ["fast", "quick", "draft", "sketch", "simple"],
-        "recommendedModels": ["together:stable-diffusion-2-1"],
-        "typicalCost": 0.001
+        "recommendedModels": ["together:flux-schnell-free", "together:flux-schnell", "openai:dall-e-2"],
+        "typicalCost": 0.0
       }
     }
   }

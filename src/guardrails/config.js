@@ -1,78 +1,46 @@
 /**
  * Content Guardrails Configuration
- * Loads and validates environment variables for guardrail filtering
+ * Auto-detects available providers and models at runtime
  */
 
+const path = require('path');
+
 /**
- * Load guardrail configuration from environment variables
- * @returns {Object|null} Configuration object or null if disabled
- * @throws {Error} If enabled but misconfigured
+ * Load provider catalog
+ * @returns {Object|null} Provider catalog or null if not found
  */
-function loadGuardrailConfig() {
-  const enabled = process.env.ENABLE_GUARDRAILS === 'true';
-  
-  if (!enabled) {
-    console.log('🛡️ Content guardrails: DISABLED');
+function loadProviderCatalog() {
+  try {
+    // Try multiple locations
+    let catalog;
+    try {
+      catalog = require('../../PROVIDER_CATALOG.json');
+    } catch (e) {
+      try {
+        catalog = require('/var/task/PROVIDER_CATALOG.json');
+      } catch (e2) {
+        const catalogPath = path.join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
+        catalog = require(catalogPath);
+      }
+    }
+    return catalog;
+  } catch (error) {
+    console.warn('⚠️ Could not load PROVIDER_CATALOG.json:', error.message);
     return null;
   }
-  
-  const provider = process.env.GUARDRAIL_PROVIDER;
-  const inputModel = process.env.GUARDRAIL_INPUT_MODEL;
-  const outputModel = process.env.GUARDRAIL_OUTPUT_MODEL;
-  
-  // Validation
-  const errors = [];
-  if (!provider) errors.push('GUARDRAIL_PROVIDER not set');
-  if (!inputModel) errors.push('GUARDRAIL_INPUT_MODEL not set');
-  if (!outputModel) errors.push('GUARDRAIL_OUTPUT_MODEL not set');
-  
-  if (errors.length > 0) {
-    throw new Error(
-      `Content guardrails configuration invalid: ${errors.join(', ')}. ` +
-      `Either set ENABLE_GUARDRAILS=false or provide all required variables.`
-    );
-  }
-  
-  const config = {
-    enabled: true,
-    provider,
-    inputModel,
-    outputModel,
-    strictness: process.env.GUARDRAIL_STRICTNESS || 'moderate'
-  };
-  
-  console.log('🛡️ Content guardrails: ENABLED', {
-    provider: config.provider,
-    inputModel: config.inputModel,
-    outputModel: config.outputModel
-  });
-  
-  return config;
 }
 
 /**
- * Validate that guardrail provider has required API key
- * Supports any provider configured in the system (OpenAI, Anthropic, Groq, Gemini, etc.)
- * @param {string} provider - Provider name
- * @param {Object} context - Request context with API keys from UI or env
- * @returns {boolean} True if provider available
- * @throws {Error} If provider not available
+ * Check if a provider has an available API key
+ * Only checks indexed provider format (LLAMDA_LLM_PROXY_PROVIDER_*)
+ * @param {string} providerType - Provider type (e.g., 'groq-free', 'gemini-free')
+ * @param {Object} context - Request context with API keys
+ * @returns {boolean} True if API key available
  */
-function validateGuardrailProvider(provider, context = {}) {
-  // Map of provider names to their environment variable names
-  const envVarMap = {
-    'openai': 'OPENAI_API_KEY',
-    'anthropic': 'ANTHROPIC_API_KEY',
-    'groq': 'GROQ_API_KEY',
-    'groq-free': 'GROQ_API_KEY',
-    'gemini': 'GEMINI_API_KEY',
-    'gemini-free': 'GEMINI_API_KEY',
-    'together': 'TOGETHER_API_KEY',
-    'replicate': 'REPLICATE_API_TOKEN',
-    'atlascloud': 'ATLASCLOUD_API_KEY'
-  };
+function hasProviderApiKey(providerType, context = {}) {
+  const providerLower = providerType.toLowerCase();
   
-  // Map of provider names to their context key names
+  // Map provider types to context keys
   const contextKeyMap = {
     'openai': 'openaiApiKey',
     'anthropic': 'anthropicApiKey',
@@ -85,17 +53,13 @@ function validateGuardrailProvider(provider, context = {}) {
     'atlascloud': 'atlascloudApiKey'
   };
   
-  const providerLower = provider.toLowerCase();
-  
-  // Check context first (from UI)
+  // Check context (from UI)
   const contextKey = contextKeyMap[providerLower];
   if (contextKey && context[contextKey]) {
-    console.log(`🛡️ Guardrail provider "${provider}" available from context`);
     return true;
   }
   
-  // Check new indexed format (LLAMDA_LLM_PROXY_PROVIDER_*)
-  // Look through all indexed providers
+  // Check indexed providers (LLAMDA_LLM_PROXY_PROVIDER_TYPE_*)
   let index = 0;
   while (true) {
     const typeVar = `LLAMDA_LLM_PROXY_PROVIDER_TYPE_${index}`;
@@ -104,36 +68,148 @@ function validateGuardrailProvider(provider, context = {}) {
     const providerType = process.env[typeVar];
     const providerKey = process.env[keyVar];
     
-    if (!providerType) break; // No more providers
+    if (!providerType) break;
     
-    // Check if this indexed provider matches our guardrail provider
     if (providerType.toLowerCase() === providerLower && providerKey && providerKey.trim().length > 0) {
-      console.log(`🛡️ Guardrail provider "${provider}" available from indexed provider ${index}`);
       return true;
     }
     
     index++;
   }
   
-  // Fallback to environment variables (legacy format)
-  const envVar = envVarMap[providerLower];
-  if (envVar) {
-    const apiKey = process.env[envVar];
-    if (apiKey && apiKey.trim().length > 0) {
-      console.log(`🛡️ Guardrail provider "${provider}" available from env var ${envVar}`);
-      return true;
+  return false;
+}
+
+/**
+ * Auto-detect best available provider and model for guardrails
+ * Preference order: groq-free > gemini-free > groq > other free tiers > paid tiers
+ * @param {Object} context - Request context with API keys
+ * @returns {Object|null} {provider, model} or null if none available
+ */
+function autoDetectGuardrailProvider(context = {}) {
+  const catalog = loadProviderCatalog();
+  if (!catalog || !catalog.chat || !catalog.chat.providers) {
+    console.warn('⚠️ Provider catalog not available for guardrail auto-detection');
+    return null;
+  }
+  
+  // Priority order for providers
+  const preferredProviders = [
+    'groq-free',      // #1 priority: Groq free (fast, free, good quality)
+    'gemini-free',    // #2: Gemini free (fast, free)
+    'groq',           // #3: Groq paid (fast, cheap)
+    'together',       // #4: Together (various models)
+    'gemini',         // #5: Gemini paid
+    'openai',         // #6: OpenAI (expensive but reliable)
+    'anthropic',      // #7: Anthropic (expensive)
+  ];
+  
+  for (const providerType of preferredProviders) {
+    const providerInfo = catalog.chat.providers[providerType];
+    
+    if (!providerInfo) continue;
+    
+    // Check if we have API key for this provider
+    if (!hasProviderApiKey(providerType, context)) {
+      continue;
+    }
+    
+    // Find a suitable guardrail model
+    const models = providerInfo.models || {};
+    
+    // First, look for dedicated guardrail models (Llama Guard, etc.)
+    for (const [modelId, modelInfo] of Object.entries(models)) {
+      if (modelInfo.guardrailModel === true && modelInfo.available !== false) {
+        console.log(`🛡️ Selected dedicated guardrail model: ${modelId}`);
+        return {
+          provider: providerType,
+          inputModel: modelId,
+          outputModel: modelId
+        };
+      }
+    }
+    
+    // Fallback: Look for small, fast general models
+    const fallbackModelPriority = [
+      'llama-3.1-8b-instant',           // Groq 8B (fast)
+      'llama-3.2-3b-preview',           // Groq 3B
+      'gemini-1.5-flash',               // Gemini flash
+      'gemini-1.5-flash-8b',            // Gemini 8B
+      'virtueguard-text-lite',          // Together AI VirtueGuard
+      'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',  // Together AI 8B
+      'gpt-4o-mini',                    // OpenAI mini
+      'claude-3-haiku-20240307',        // Anthropic haiku
+    ];
+    
+    // Try fallback models
+    for (const modelId of fallbackModelPriority) {
+      if (models[modelId] && models[modelId].available !== false) {
+        console.log(`⚠️ No dedicated guardrail model found, using fallback: ${modelId}`);
+        return {
+          provider: providerType,
+          inputModel: modelId,
+          outputModel: modelId
+        };
+      }
+    }
+    
+    // Last resort: use first available small/medium model
+    for (const [modelId, modelInfo] of Object.entries(models)) {
+      if (modelInfo.available !== false && 
+          (modelInfo.category === 'small' || modelInfo.category === 'medium' || modelInfo.category === 'guardrail')) {
+        console.log(`⚠️ Using first available model for guardrails: ${modelId}`);
+        return {
+          provider: providerType,
+          inputModel: modelId,
+          outputModel: modelId
+        };
+      }
     }
   }
   
-  // Provider not available
-  throw new Error(
-    `Content moderation is required for this application but is currently unavailable. ` +
-    `The configured guardrail provider "${provider}" does not have an API key configured. ` +
-    `Please contact the administrator to configure content filtering.`
-  );
+  return null;
 }
 
+/**
+ * Load guardrail configuration from environment variables
+ * Auto-detects provider and models if ENABLE_GUARDRAILS=true
+ * @param {Object} context - Request context with API keys
+ * @returns {Object|null} Configuration object or null if disabled
+ */
+function loadGuardrailConfig(context = {}) {
+  const enabled = process.env.ENABLE_GUARDRAILS === 'true';
+  
+  if (!enabled) {
+    console.log('🛡️ Content guardrails: DISABLED');
+    return null;
+  }
+  
+  // Auto-detect best available provider and model
+  const detected = autoDetectGuardrailProvider(context);
+  
+  if (!detected) {
+    console.warn('⚠️ Content guardrails: ENABLED but no suitable provider available');
+    console.warn('   Continuing without guardrails. Provide API keys for groq-free, gemini-free, or other providers.');
+    return null;
+  }
+  
+  const config = {
+    enabled: true,
+    provider: detected.provider,
+    inputModel: detected.inputModel,
+    outputModel: detected.outputModel,
+    strictness: 'moderate' // Always moderate for now
+  };
+  
+  console.log('🛡️ Content guardrails: ENABLED (auto-detected)', {
+    provider: config.provider,
+    model: config.inputModel
+  });
+  
+  return config;
+}
+
+
 module.exports = {
-  loadGuardrailConfig,
-  validateGuardrailProvider
+  loadGuardrailConfig
 };

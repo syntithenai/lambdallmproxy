@@ -14,10 +14,11 @@ const { recordSuccess, recordFailure } = require('../utils/circuit-breaker');
  * @param {string} params.prompt - Image description
  * @param {string} params.model - Model name (e.g., imagen-2, imagen-3)
  * @param {string} params.size - Image size
+ * @param {Array<string>} params.referenceImages - Optional: Reference images (for future use)
  * @param {string} params.apiKey - Gemini API key
  * @returns {Promise<Object>} {imageUrl, model, provider, cost, metadata}
  */
-async function generateImage({ prompt, model, size = '1024x1024', apiKey }) {
+async function generateImage({ prompt, model, size = '1024x1024', referenceImages, apiKey }) {
   const provider = 'gemini';
   
   // Validate inputs

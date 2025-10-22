@@ -216,6 +216,16 @@ The project is organized for maintainability and scalability:
 - **Iterative Research Loop**: Up to 3 search cycles with aggressive continuation bias
 - **Comprehensive Coverage**: System biases toward thoroughness over efficiency
 
+### 🛡️ Content Guardrails (Optional)
+- **Automatic Content Moderation**: Optional input/output filtering using fast LLM models
+- **Groq Integration**: Ultra-fast content checking (<100ms) with free tier support
+- **Policy Enforcement**: Blocks hate speech, violence, illegal activities, and other harmful content
+- **Cost Tracking**: Separate billing for guardrail operations
+- **Fail-Safe Design**: System blocks content if guardrails encounter errors
+
+📖 **[Complete Guardrails Setup Guide →](GUARDRAILS_GROQ_SETUP.md)**  
+📋 **[Quick Configuration Examples →](guardrails.env.example)**
+
 ### 🧠 Advanced LLM Integration
 - **Multiple Model Support**: OpenAI GPT-4, GPT-4o, Groq models (Llama 3.1)
 - **Intelligent Decision Making**: AI determines whether to search or respond directly

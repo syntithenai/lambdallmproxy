@@ -279,6 +279,38 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   }, []);
 
+  // Extract provider API keys from settings for image generation
+  const providerApiKeys = React.useMemo(() => {
+    const keys: {
+      openaiApiKey?: string;
+      togetherApiKey?: string;
+      geminiApiKey?: string;
+      replicateApiKey?: string;
+    } = {};
+    
+    settings.providers.forEach(provider => {
+      if (provider.enabled && provider.apiKey) {
+        switch (provider.type) {
+          case 'openai':
+            if (!keys.openaiApiKey) keys.openaiApiKey = provider.apiKey;
+            break;
+          case 'together':
+            if (!keys.togetherApiKey) keys.togetherApiKey = provider.apiKey;
+            break;
+          case 'gemini':
+          case 'gemini-free':
+            if (!keys.geminiApiKey) keys.geminiApiKey = provider.apiKey;
+            break;
+          case 'replicate':
+            if (!keys.replicateApiKey) keys.replicateApiKey = provider.apiKey;
+            break;
+        }
+      }
+    });
+    
+    return keys;
+  }, [settings.providers]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -2185,6 +2217,39 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               ));
               break;
               
+            case 'image_generation_progress':
+              // Image generation in progress - add to imageGenerations with 'generating' status
+              console.log('🎨 Image generation progress event:', data);
+              setMessages(prev => {
+                const newMessages = [...prev];
+                // Find the last assistant message
+                for (let i = newMessages.length - 1; i >= 0; i--) {
+                  if (newMessages[i].role === 'assistant') {
+                    // Check if we already have this image generation
+                    const existingImgGen = newMessages[i].imageGenerations?.find((ig: any) => ig.id === data.id);
+                    if (!existingImgGen) {
+                      // Add new image generation with 'generating' status
+                      if (!newMessages[i].imageGenerations) {
+                        newMessages[i].imageGenerations = [];
+                      }
+                      newMessages[i].imageGenerations.push({
+                        id: data.id,
+                        provider: 'unknown', // Will be updated when complete
+                        model: 'unknown',
+                        cost: 0,
+                        prompt: data.prompt || '',
+                        size: '1024x1024',
+                        status: 'generating' as const
+                      });
+                      console.log('✅ Added generating image to imageGenerations');
+                    }
+                    break;
+                  }
+                }
+                return newMessages;
+              });
+              break;
+              
             case 'tool_call_result':
               // Tool execution complete
               setToolStatus(prev => prev.map(t =>
@@ -2461,12 +2526,28 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 setMessages(prev => {
                   const newMessages = [...prev];
                   if (newMessages[currentStreamingBlockIndex]) {
+                    // Merge imageGenerations: update existing 'generating' entries with completed data
+                    let mergedImageGenerations = newMessages[currentStreamingBlockIndex].imageGenerations || [];
+                    if (data.imageGenerations && data.imageGenerations.length > 0) {
+                      mergedImageGenerations = [...mergedImageGenerations];
+                      data.imageGenerations.forEach((newImg: any) => {
+                        const existingIndex = mergedImageGenerations.findIndex((img: any) => img.id === newImg.id);
+                        if (existingIndex >= 0) {
+                          // Update existing entry
+                          mergedImageGenerations[existingIndex] = { ...mergedImageGenerations[existingIndex], ...newImg };
+                        } else {
+                          // Add new entry
+                          mergedImageGenerations.push(newImg);
+                        }
+                      });
+                    }
+                    
                     const updatedMessage = {
                       ...newMessages[currentStreamingBlockIndex],
                       content: data.content || newMessages[currentStreamingBlockIndex].content || '',
                       tool_calls: data.tool_calls || newMessages[currentStreamingBlockIndex].tool_calls,
                       extractedContent: data.extractedContent || newMessages[currentStreamingBlockIndex].extractedContent,
-                      imageGenerations: data.imageGenerations || newMessages[currentStreamingBlockIndex].imageGenerations,
+                      imageGenerations: mergedImageGenerations,
                       llmApiCalls: data.llmApiCalls || newMessages[currentStreamingBlockIndex].llmApiCalls,
                       evaluations: data.evaluations || newMessages[currentStreamingBlockIndex].evaluations,
                       isStreaming: false
@@ -4923,6 +5004,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 key={imgGen.id}
                                 data={imgGen}
                                 accessToken={accessToken}
+                                providerApiKeys={providerApiKeys}
                                 onCopy={(text) => {
                                   navigator.clipboard.writeText(text).then(() => {
                                     showSuccess('Image URL copied to clipboard!');
