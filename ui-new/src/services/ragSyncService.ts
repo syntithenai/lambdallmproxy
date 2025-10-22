@@ -6,6 +6,7 @@
  */
 
 import type { ContentSnippet } from '../contexts/SwagContext';
+import { getCachedApiBase } from '../utils/api';
 
 export interface SyncConfig {
   enabled: boolean;
@@ -53,7 +54,7 @@ class RAGSyncService {
   };
   private syncQueue: SyncOperation[] = [];
   private syncInterval: NodeJS.Timeout | null = null;
-  private apiUrl: string;
+  private apiUrl: string | null = null; // Will be set asynchronously
   private eventCallbacks: {
     onStart: SyncEventCallback[];
     onComplete: SyncEventCallback[];
@@ -65,14 +66,32 @@ class RAGSyncService {
   };
 
   constructor() {
-    // Get API URL from environment or default to localhost
-    this.apiUrl = import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000';
+    // Initialize API URL asynchronously
+    this.initializeApiUrl();
     
     // Load device ID or create new one
     this.initializeDeviceId();
     
     // Load queued operations from localStorage
     this.loadQueueFromStorage();
+  }
+
+  /**
+   * Initialize API URL from API detection
+   */
+  private async initializeApiUrl(): Promise<void> {
+    this.apiUrl = await getCachedApiBase();
+  }
+
+  /**
+   * Get API URL (wait for initialization if needed)
+   */
+  private async getApiUrl(): Promise<string> {
+    if (this.apiUrl) {
+      return this.apiUrl;
+    }
+    await this.initializeApiUrl();
+    return this.apiUrl!;
   }
 
   /**
@@ -131,7 +150,8 @@ class RAGSyncService {
     try {
       console.log(`📤 Pushing ${snippets.length} snippets to Sheets...`);
       
-      const response = await fetch(`${this.apiUrl}/rag/sync`, {
+      const apiUrl = await this.getApiUrl();
+      const response = await fetch(`${apiUrl}/rag/sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -169,7 +189,8 @@ class RAGSyncService {
     try {
       console.log('📥 Pulling snippets from Sheets...');
       
-      const response = await fetch(`${this.apiUrl}/rag/sync`, {
+      const apiUrl = await this.getApiUrl();
+      const response = await fetch(`${apiUrl}/rag/sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -476,7 +497,8 @@ class RAGSyncService {
         }
         
         // Send batch to backend
-        const response = await fetch(`${this.apiUrl}/rag/sync-embeddings`, {
+        const apiUrl = await this.getApiUrl();
+        const response = await fetch(`${apiUrl}/rag/sync-embeddings`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -525,7 +547,8 @@ class RAGSyncService {
       }
 
       // Request chunks from backend
-      const response = await fetch(`${this.apiUrl}/rag/sync-embeddings`, {
+      const apiUrl = await this.getApiUrl();
+      const response = await fetch(`${apiUrl}/rag/sync-embeddings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

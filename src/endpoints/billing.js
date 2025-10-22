@@ -35,6 +35,11 @@ function calculateTotals(transactions) {
         byType: {},
         byProvider: {},
         byModel: {},
+        lambdaInvocations: {
+            totalCost: 0,
+            totalRequests: 0,
+            byEndpoint: {}
+        },
         dateRange: {
             start: transactions.length > 0 ? transactions[0].timestamp : null,
             end: transactions.length > 0 ? transactions[transactions.length - 1].timestamp : null
@@ -45,6 +50,29 @@ function calculateTotals(transactions) {
     for (const t of transactions) {
         totals.totalCost += t.cost || 0;
         totals.totalTokens += t.totalTokens || 0;
+
+        // Track Lambda invocations separately
+        if (t.type === 'lambda_invocation') {
+            totals.lambdaInvocations.totalCost += t.cost || 0;
+            totals.lambdaInvocations.totalRequests++;
+            
+            // Group by endpoint (stored in model field)
+            const endpoint = t.model || 'unknown';
+            if (!totals.lambdaInvocations.byEndpoint[endpoint]) {
+                totals.lambdaInvocations.byEndpoint[endpoint] = {
+                    cost: 0,
+                    requests: 0,
+                    avgDurationMs: 0,
+                    totalDurationMs: 0
+                };
+            }
+            totals.lambdaInvocations.byEndpoint[endpoint].cost += t.cost || 0;
+            totals.lambdaInvocations.byEndpoint[endpoint].requests++;
+            totals.lambdaInvocations.byEndpoint[endpoint].totalDurationMs += t.durationMs || 0;
+            totals.lambdaInvocations.byEndpoint[endpoint].avgDurationMs = 
+                totals.lambdaInvocations.byEndpoint[endpoint].totalDurationMs / 
+                totals.lambdaInvocations.byEndpoint[endpoint].requests;
+        }
 
         // Group by type
         if (!totals.byType[t.type]) {

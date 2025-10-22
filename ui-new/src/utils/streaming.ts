@@ -124,13 +124,20 @@ export async function createSSERequest(
   signal?: AbortSignal,
   youtubeToken?: string | null,
   maxRetries: number = 3,
-  initialRetryDelay: number = 1000
+  initialRetryDelay: number = 1000,
+  requestId?: string | null  // Optional request ID for grouping logs
 ): Promise<Response> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
     'Accept': 'text/event-stream'
   };
+
+  // Add request ID if provided (for grouping logs, e.g., voice transcription + chat)
+  if (requestId) {
+    headers['X-Request-Id'] = requestId;
+    console.log('🔗 Using request ID for log grouping:', requestId);
+  }
 
   // Add YouTube OAuth token if available
   if (youtubeToken) {

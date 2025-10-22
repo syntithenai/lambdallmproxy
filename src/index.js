@@ -74,6 +74,17 @@ function handleCORS(event) {
  * @returns {Promise<void>} Streams response via responseStream
  */
 exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+    // Generate consistent request ID for grouping all logs from this request
+    const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Store requestId in context for endpoint handlers to use
+    if (context) {
+        context.requestId = requestId;
+        context.awsRequestId = requestId;
+    }
+    
+    console.log('🆔 Lambda Invocation Request ID:', requestId);
+    
     // Initialize cache on first invocation (non-blocking)
     ensureCacheInitialized().catch(err => {
         console.warn('Cache initialization failed in background:', err.message);
@@ -233,7 +244,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'POST' && path === '/proxy') {
             console.log('Routing to proxy endpoint (buffered)');
             // Note: Proxy endpoint returns standard response, not streaming
-            const proxyResponse = await proxyEndpoint.handler(event);
+            const proxyResponse = await proxyEndpoint.handler(event, context);
             responseStream.write(JSON.stringify(proxyResponse));
             responseStream.end();
             return;
@@ -242,7 +253,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'POST' && path === '/stop-transcription') {
             console.log('Routing to stop-transcription endpoint');
             // Note: Stop endpoint returns standard response, not streaming
-            const stopResponse = await stopTranscriptionEndpoint.handler(event);
+            const stopResponse = await stopTranscriptionEndpoint.handler(event, context);
             const metadata = {
                 statusCode: stopResponse.statusCode,
                 headers: stopResponse.headers
@@ -260,7 +271,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             console.log('Is base64:', event.isBase64Encoded);
             
             // Note: Transcribe endpoint returns standard response, not streaming  
-            const transcribeResponse = await transcribeEndpoint.handler(event);
+            const transcribeResponse = await transcribeEndpoint.handler(event, context);
             console.log('Transcribe response status:', transcribeResponse.statusCode);
             console.log('Transcribe response headers:', transcribeResponse.headers);
             
@@ -332,7 +343,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         // Fix Mermaid chart endpoint (buffered response)
         if (method === 'POST' && path === '/fix-mermaid-chart') {
             console.log('Routing to fix-mermaid-chart endpoint');
-            const fixResponse = await fixMermaidChartEndpoint.handler(event);
+            const fixResponse = await fixMermaidChartEndpoint.handler(event, context);
             const metadata = {
                 statusCode: fixResponse.statusCode,
                 headers: fixResponse.headers
@@ -346,7 +357,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         // Proxy image endpoint (buffered response)
         if (method === 'POST' && path === '/proxy-image') {
             console.log('Routing to proxy-image endpoint');
-            const imageResponse = await proxyImageEndpoint.handler(event);
+            const imageResponse = await proxyImageEndpoint.handler(event, context);
             const metadata = {
                 statusCode: imageResponse.statusCode,
                 headers: imageResponse.headers
@@ -444,7 +455,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         // Default: serve static files (non-streaming)
         if (method === 'GET') {
             console.log('Routing to static file server');
-            const staticResponse = await staticEndpoint.handler(event);
+            const staticResponse = await staticEndpoint.handler(event, context);
             responseStream.write(JSON.stringify(staticResponse));
             responseStream.end();
             return;
@@ -492,6 +503,51 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         // Log detailed breakdown for analysis
         const stats = memoryTracker.getStatistics();
         console.log('Memory recommendation:', stats.recommendation);
+        
+        // Log Lambda invocation to Google Sheets for billing
+        try {
+            const { logLambdaInvocation } = require('./services/google-sheets-logger');
+            const { verifyGoogleToken } = require('./auth');
+            
+            // Extract user email from auth token if present
+            let userEmail = 'unknown';
+            try {
+                const authHeader = event.headers?.authorization || event.headers?.Authorization;
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    const token = authHeader.substring(7);
+                    const decoded = await verifyGoogleToken(token);
+                    if (decoded && decoded.email) {
+                        userEmail = decoded.email;
+                    }
+                }
+            } catch (authError) {
+                // Ignore auth errors for logging purposes
+            }
+            
+            // Get path from event
+            const path = event.path || event.rawPath || '/';
+            
+            // Get Lambda context info
+            const memoryLimitMB = context.memoryLimitInMB || 
+                                 parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 
+                                 256;
+            const memoryUsedMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+            // Use the same requestId that was generated at the start
+            // (already stored in context at handler start)
+            
+            // Log the Lambda invocation
+            await logLambdaInvocation({
+                userEmail,
+                endpoint: path,
+                memoryLimitMB,
+                memoryUsedMB,
+                durationMs: stats.durationMs,
+                requestId,
+                timestamp: new Date().toISOString()
+            });
+        } catch (logError) {
+            console.error('Failed to log Lambda invocation:', logError.message);
+        }
     }
 });
 

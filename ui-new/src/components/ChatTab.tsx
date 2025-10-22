@@ -21,7 +21,7 @@ import { ScrapingProgress } from './ScrapingProgress';
 import { SearchProgress } from './SearchProgress';
 import { YouTubeSearchProgress, type YouTubeSearchProgressData } from './YouTubeSearchProgress';
 import { ExtractionSummary } from './ExtractionSummary';
-import { LlmInfoDialog } from './LlmInfoDialog';
+import { LlmInfoDialog as LlmInfoDialogNew } from './LlmInfoDialogNew';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
 import { VoiceInputDialog } from './VoiceInputDialog';
 import { GeneratedImageBlock } from './GeneratedImageBlock';
@@ -212,6 +212,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Voice input dialog
   const [showVoiceInput, setShowVoiceInput] = useState(false);
+  
+  // API endpoint for voice input (auto-detected)
+  const [apiEndpoint, setApiEndpoint] = useState<string>('');
   
   // Continue button for error recovery
   const [showContinueButton, setShowContinueButton] = useState(false);
@@ -559,18 +562,35 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   };
 
+  // Store request ID and llmApiCall from voice transcription
+  const voiceRequestIdRef = useRef<string | null>(null);
+  const voiceLlmApiCallRef = useRef<any | null>(null);
+
   // Handle voice transcription completion
-  const handleVoiceTranscription = (text: string) => {
-    setInput(text);
-    // Auto-submit
+  const handleVoiceTranscription = (text: string, requestId: string, llmApiCall?: any) => {
+    console.log('🎙️ Voice transcription received:', { text, requestId, textLength: text.length, hasLlmApiCall: !!llmApiCall });
+    setInput(text); // Update input for display
+    voiceRequestIdRef.current = requestId; // Store for use in handleSend
+    voiceLlmApiCallRef.current = llmApiCall || null; // Store llmApiCall for transparency
+    console.log('🎙️ Voice transcription complete, stored request ID:', requestId);
+    // Auto-submit - pass text directly to avoid stale closure
     setTimeout(() => {
-      handleSend();
-    }, 100);
+      console.log('🎙️ Auto-submitting with transcribed text:', text.substring(0, 50));
+      handleSend(text); // Pass text directly instead of relying on state
+    }, 150);
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Set API endpoint on mount (auto-detect local vs remote)
+  useEffect(() => {
+    getCachedApiBase().then(url => {
+      setApiEndpoint(url);
+      console.log('🔗 API endpoint for voice input:', url);
+    });
+  }, []);
 
   // Sync messages to Chromecast when connected
   useEffect(() => {
@@ -1637,6 +1657,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       userMessage = { role: 'user', content: textToSend };
     }
     
+    // Add voice transcription llmApiCall if available
+    if (voiceLlmApiCallRef.current) {
+      userMessage.llmApiCalls = [voiceLlmApiCallRef.current];
+      console.log('🎙️ Added voice transcription llmApiCall to user message');
+      voiceLlmApiCallRef.current = null; // Clear after use
+    }
+    
     console.log('🔵 Adding user message:', typeof userMessage.content === 'string' ? userMessage.content.substring(0, 50) : `${attachedFiles.length} attachments`);
     
     // Track the index where the user message will be added (for retry functionality)
@@ -2084,6 +2111,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       // Get YouTube OAuth token if available
       const youtubeToken = await getYouTubeToken();
       
+      // Get request ID from voice transcription if available, then clear it
+      const chatRequestId = voiceRequestIdRef.current;
+      if (chatRequestId) {
+        console.log('🔗 Using request ID from voice transcription:', chatRequestId);
+        voiceRequestIdRef.current = null; // Clear after use
+      }
+      
       // Use streaming API
       await sendChatMessageStreaming(
         requestPayload,
@@ -2520,6 +2554,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               if (data.tool_calls && data.tool_calls.length > 0) {
                 console.log('📦 message_complete with tool_calls:', data.tool_calls.map((tc: any) => ({ id: tc.id, name: tc.function.name })));
               }
+              
+              // DEBUG: Log imageGenerations in message_complete
+              console.log('🖼️ message_complete imageGenerations:', data.imageGenerations?.length || 0, 
+                'imageGenerations:', data.imageGenerations);
               
               if (currentStreamingBlockIndex !== null) {
                 // Finalize the existing streaming block
@@ -3039,7 +3077,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           abortControllerRef.current = null;
         },
         abortControllerRef.current.signal,
-        youtubeToken // Pass YouTube OAuth token if available
+        youtubeToken, // Pass YouTube OAuth token if available
+        chatRequestId // Pass request ID from voice transcription for log grouping
       );
     } catch (error) {
       console.error('Chat error:', error);
@@ -4930,6 +4969,87 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           content={toolResult.content} 
                                           chartCode={extractMermaidCode(msg.content) || undefined} 
                                         />
+                                      ) : toolResult.name === 'generate_image' ? (
+                                        (() => {
+                                          // Parse generate_image tool result to extract base64 image
+                                          console.log('🎨 generate_image tool result:', {
+                                            contentType: typeof toolResult.content,
+                                            contentPreview: typeof toolResult.content === 'string' 
+                                              ? toolResult.content.substring(0, 200) 
+                                              : JSON.stringify(toolResult.content).substring(0, 200),
+                                            hasBase64: toolResult.content && (
+                                              typeof toolResult.content === 'string' 
+                                                ? toolResult.content.includes('base64') 
+                                                : toolResult.content.base64
+                                            )
+                                          });
+                                          
+                                          try {
+                                            const imageResult = typeof toolResult.content === 'string' 
+                                              ? JSON.parse(toolResult.content) 
+                                              : toolResult.content;
+                                            
+                                            console.log('🎨 Parsed imageResult:', {
+                                              hasBase64: !!imageResult.base64,
+                                              hasUrl: !!imageResult.url,
+                                              base64Length: imageResult.base64?.length,
+                                              keys: Object.keys(imageResult)
+                                            });
+                                            
+                                            // Check if we have a base64 image
+                                            if (imageResult && imageResult.base64) {
+                                              console.log('✅ Rendering base64 image from generate_image tool result');
+                                              return (
+                                                <div className="space-y-2">
+                                                  <div className="font-semibold text-purple-700 dark:text-purple-300 text-sm">
+                                                    🎨 Generated Image:
+                                                  </div>
+                                                  <img 
+                                                    src={`data:image/png;base64,${imageResult.base64}`}
+                                                    alt={imageResult.prompt || 'Generated image'}
+                                                    className="max-w-full rounded border border-purple-300 dark:border-purple-700"
+                                                    style={{ maxHeight: '512px', objectFit: 'contain' }}
+                                                  />
+                                                  {imageResult.prompt && (
+                                                    <div className="text-xs text-gray-600 dark:text-gray-400 italic">
+                                                      Prompt: {imageResult.prompt}
+                                                    </div>
+                                                  )}
+                                                  {imageResult.model && (
+                                                    <div className="text-xs text-gray-500 dark:text-gray-500">
+                                                      Model: {imageResult.model}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            } else if (imageResult && imageResult.url) {
+                                              // Fallback: if we have a URL instead of base64
+                                              return (
+                                                <div className="space-y-2">
+                                                  <div className="font-semibold text-purple-700 dark:text-purple-300 text-sm">
+                                                    🎨 Generated Image:
+                                                  </div>
+                                                  <img 
+                                                    src={imageResult.url}
+                                                    alt={imageResult.prompt || 'Generated image'}
+                                                    className="max-w-full rounded border border-purple-300 dark:border-purple-700"
+                                                    style={{ maxHeight: '512px', objectFit: 'contain' }}
+                                                  />
+                                                  {imageResult.prompt && (
+                                                    <div className="text-xs text-gray-600 dark:text-gray-400 italic">
+                                                      Prompt: {imageResult.prompt}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            }
+                                            // If no base64 or URL, fallback to JSON viewer
+                                            return <ToolResultJsonViewer content={toolResult.content} />;
+                                          } catch (e) {
+                                            console.error('Error parsing generate_image result:', e);
+                                            return <ToolResultJsonViewer content={toolResult.content} />;
+                                          }
+                                        })()
                                       ) : (
                                         <ToolResultJsonViewer content={toolResult.content} />
                                       )}
@@ -5991,7 +6111,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       
       {/* LLM Info Dialog */}
       {showLlmInfo !== null && messages[showLlmInfo]?.llmApiCalls && (
-        <LlmInfoDialog 
+        <LlmInfoDialogNew 
           apiCalls={messages[showLlmInfo].llmApiCalls}
           evaluations={(messages[showLlmInfo] as any).evaluations}
           onClose={() => setShowLlmInfo(null)}
@@ -6013,7 +6133,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         onClose={() => setShowVoiceInput(false)}
         onTranscriptionComplete={handleVoiceTranscription}
         accessToken={accessToken}
-        apiEndpoint={'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws'}
+        apiEndpoint={apiEndpoint}
       />
 
       {/* Examples Modal - Full Screen 3-Column Layout */}

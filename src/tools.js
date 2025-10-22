@@ -1066,19 +1066,29 @@ Brief answer with URLs:`;
                 // Log to Google Sheets
                 try {
                   const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                  const os = require('os');
                   const usage = directSynthesisResp?.rawResponse?.usage || {};
                   const [provider, modelName] = model.split(':');
+                  
+                  // Extract request ID and Lambda metrics from context
+                  const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                  const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                  const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                   
                   logToGoogleSheets({
                     userEmail: context?.userEmail || 'anonymous',
                     provider,
                     model: modelName || model,
+                    type: 'search_summary',
                     promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
                     completionTokens: usage.completion_tokens || usage.output_tokens || 0,
                     totalTokens: usage.total_tokens || 0,
                     durationMs: synthesisEndTime - synthesisStartTime,
                     timestamp: new Date().toISOString(),
-                    requestType: 'search_summary',
+                    requestId,
+                    memoryLimitMB,
+                    memoryUsedMB,
+                    hostname: os.hostname(),
                     metadata: { query, phase: 'direct_synthesis' }
                   }).catch(err => {
                     console.error('Failed to log search summary to Google Sheets:', err.message);
@@ -1210,19 +1220,29 @@ ${result.content.substring(0, maxContentChars)}
                   // Log page summary to Google Sheets
                   try {
                     const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                    const os = require('os');
                     const usage = pageResp?.rawResponse?.usage || {};
                     const [provider, modelName] = summaryModel.split(':');
+                    
+                    // Extract request ID and Lambda metrics from context
+                    const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                    const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                     
                     logToGoogleSheets({
                       userEmail: context?.userEmail || 'anonymous',
                       provider,
                       model: modelName || summaryModel,
+                      type: 'search_page_summary',
                       promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
                       completionTokens: usage.completion_tokens || usage.output_tokens || 0,
                       totalTokens: usage.total_tokens || 0,
                       durationMs: pageEndTime - pageStartTime,
                       timestamp: new Date().toISOString(),
-                      requestType: 'search_page_summary',
+                      requestId,
+                      memoryLimitMB,
+                      memoryUsedMB,
+                      hostname: os.hostname(),
                       metadata: { query, url: result.url, page_index: i }
                     }).catch(err => {
                       console.error('Failed to log page summary to Google Sheets:', err.message);
@@ -1322,19 +1342,29 @@ Brief answer with URLs:`;
               // Log final synthesis to Google Sheets
               try {
                 const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                const os = require('os');
                 const usage = synthesisResp?.rawResponse?.usage || {};
                 const [provider, modelName] = synthesisModel.split(':');
+                
+                // Extract request ID and Lambda metrics from context
+                const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                 
                 logToGoogleSheets({
                   userEmail: context?.userEmail || 'anonymous',
                   provider,
                   model: modelName || synthesisModel,
+                  type: 'search_final_synthesis',
                   promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
                   completionTokens: usage.completion_tokens || usage.output_tokens || 0,
                   totalTokens: usage.total_tokens || 0,
                   durationMs: finalSynthesisEndTime - finalSynthesisStartTime,
                   timestamp: new Date().toISOString(),
-                  requestType: 'search_final_synthesis',
+                  requestId,
+                  memoryLimitMB,
+                  memoryUsedMB,
+                  hostname: os.hostname(),
                   metadata: { query, page_count: pageSummaries.length }
                 }).catch(err => {
                   console.error('Failed to log final synthesis to Google Sheets:', err.message);
@@ -1622,6 +1652,17 @@ Brief answer with URLs:`;
             error: 'OpenAI API key required for knowledge base search',
             message: 'Set OPENAI_API_KEY environment variable or provide API key in context'
           });
+        }
+        
+        // Check if OpenAI provider has embedding capability enabled
+        if (context.providers && Array.isArray(context.providers)) {
+          const openaiProvider = context.providers.find(p => p.type === 'openai');
+          if (openaiProvider && openaiProvider.capabilities && openaiProvider.capabilities.embedding === false) {
+            return JSON.stringify({
+              error: 'OpenAI provider has embedding capability disabled. Please enable embedding capability in Settings to use knowledge base search.',
+              hint: 'Go to Settings → Providers → Edit OpenAI → Enable "🔗 Embeddings" capability.'
+            });
+          }
         }
         
         // Use cache for query results (includes both embedding and search)
@@ -2205,30 +2246,51 @@ Brief answer with URLs:`;
 
         // Determine provider and API key with preference for Groq (free > paid) over OpenAI
         // Priority: groq-free (FREE) > groq (paid) > openai (paid)
+        // ALSO check voice capability if providers array is available
         let provider = null;
         let apiKey = null;
         
-        // Check for Groq keys first (they start with gsk_)
+        // Helper function to check if provider has voice capability enabled
+        const hasVoiceCapability = (providerType) => {
+          if (!context.providers || !Array.isArray(context.providers)) return true; // No providers array = assume enabled
+          const providerConfig = context.providers.find(p => p.type === providerType || p.type === `${providerType}-free`);
+          if (!providerConfig) return true; // Provider not in config = assume enabled
+          if (!providerConfig.capabilities) return true; // No capabilities = assume all enabled
+          return providerConfig.capabilities.voice !== false; // Check voice capability
+        };
+        
+        // Check for Groq keys first (they start with gsk_) - prioritize if voice capability enabled
         if (context.apiKey?.startsWith('gsk_')) {
-          // Main API key is Groq
-          provider = 'groq';
-          apiKey = context.apiKey;
-          console.log('🎤 Using Groq Whisper (main API key) - FREE transcription');
-        } else if (context.groqApiKey) {
-          // Groq key available in context
+          const providerType = 'groq';
+          if (hasVoiceCapability(providerType)) {
+            provider = providerType;
+            apiKey = context.apiKey;
+            console.log('🎤 Using Groq Whisper (main API key) - FREE transcription');
+          } else {
+            console.log('⚠️ Groq provider has voice capability disabled, checking alternatives...');
+          }
+        } else if (context.groqApiKey && hasVoiceCapability('groq')) {
+          // Groq key available in context and voice enabled
           provider = 'groq';
           apiKey = context.groqApiKey;
           console.log('🎤 Using Groq Whisper (groqApiKey) - FREE transcription');
-        } else if (context.openaiApiKey) {
-          // OpenAI key available
+        } else if (context.groqApiKey && !hasVoiceCapability('groq')) {
+          console.log('⚠️ Groq provider has voice capability disabled, checking alternatives...');
+        }
+        
+        // Fallback to OpenAI if Groq not available or voice disabled
+        if (!provider && context.openaiApiKey && hasVoiceCapability('openai')) {
+          // OpenAI key available and voice enabled
           provider = 'openai';
           apiKey = context.openaiApiKey;
           console.log('🎤 Using OpenAI Whisper (openaiApiKey) - PAID transcription');
-        } else if (context.apiKey?.startsWith('sk-')) {
-          // Main API key is OpenAI
+        } else if (!provider && context.apiKey?.startsWith('sk-') && hasVoiceCapability('openai')) {
+          // Main API key is OpenAI and voice enabled
           provider = 'openai';
           apiKey = context.apiKey;
           console.log('🎤 Using OpenAI Whisper (main API key) - PAID transcription');
+        } else if (!provider && context.openaiApiKey && !hasVoiceCapability('openai')) {
+          console.log('⚠️ OpenAI provider has voice capability disabled');
         }
 
         // Check if the API key is actually a Gemini key (which doesn't support Whisper)
@@ -2243,6 +2305,22 @@ Brief answer with URLs:`;
 
         // Validate that we have a suitable API key
         if (!apiKey) {
+          // Check if providers exist but have voice capability disabled
+          const hasProviders = context.providers && Array.isArray(context.providers) && context.providers.length > 0;
+          const hasVoiceDisabledProviders = hasProviders && context.providers.some(p => 
+            (p.type === 'groq' || p.type === 'groq-free' || p.type === 'openai') && 
+            p.capabilities && p.capabilities.voice === false
+          );
+          
+          if (hasVoiceDisabledProviders) {
+            return JSON.stringify({
+              error: 'No providers are enabled for voice transcription. All Whisper-compatible providers (OpenAI, Groq) have voice capability disabled. Please enable voice capability for at least one provider in Settings.',
+              url,
+              source: 'whisper',
+              hint: 'Go to Settings → Providers → Edit a provider → Enable "🎤 Voice / Transcription" capability.'
+            });
+          }
+          
           return JSON.stringify({
             error: 'No Whisper-compatible API key found. Audio transcription requires OpenAI or Groq credentials.',
             url,
@@ -2345,19 +2423,29 @@ Summary:`;
             // Log to Google Sheets
             try {
               const { logToGoogleSheets } = require('./services/google-sheets-logger');
+              const os = require('os');
               const usage = summaryResp?.rawResponse?.usage || {};
               const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
+              
+              // Extract request ID and Lambda metrics from context
+              const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+              const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
               
               logToGoogleSheets({
                 userEmail: context?.userEmail || 'anonymous',
                 provider: summaryProvider,
                 model: summaryModel || context.model,
+                type: 'transcript_summary',
                 promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
                 completionTokens: usage.completion_tokens || usage.output_tokens || 0,
                 totalTokens: usage.total_tokens || 0,
                 durationMs: summaryEndTime - summaryStartTime,
                 timestamp: new Date().toISOString(),
-                requestType: 'transcript_summary',
+                requestId,
+                memoryLimitMB,
+                memoryUsedMB,
+                hostname: os.hostname(),
                 metadata: { url, transcriptLength: result.text.length }
               }).catch(err => {
                 console.error('Failed to log transcript summary to Google Sheets:', err.message);
@@ -2396,9 +2484,9 @@ Summary:`;
         let referenceImages = args.reference_images || [];
         
         // If no reference images provided in args, check conversation context for images
-        if (referenceImages.length === 0 && messages && Array.isArray(messages)) {
+        if (referenceImages.length === 0 && context.messages && Array.isArray(context.messages)) {
           console.log('🔍 Scanning conversation for reference images...');
-          for (const msg of messages) {
+          for (const msg of context.messages) {
             if (msg.role === 'user' && Array.isArray(msg.content)) {
               // Extract image parts from multimodal content
               const imageParts = msg.content.filter(part => 
@@ -2511,10 +2599,27 @@ Summary:`;
         
         console.log('🔍 Provider availability:', JSON.stringify(availabilityResults, null, 2));
         
-        // 4. Filter to only available providers
+        // 4. Filter to only available providers AND check image capability
         const availableModels = matchingModels.filter(m => {
           const availability = availabilityResults[m.provider];
-          return availability && availability.available;
+          if (!availability || !availability.available) return false;
+          
+          // Check if this provider has image generation capability enabled
+          // If context has provider configs, check capabilities
+          if (context && context.providers) {
+            const providerConfig = context.providers.find(p => p.type === m.provider);
+            if (providerConfig) {
+              // If capabilities not defined, assume enabled (backward compatibility)
+              if (!providerConfig.capabilities) return true;
+              // Check if image capability is explicitly enabled
+              if (providerConfig.capabilities.image === false) {
+                console.log(`⚠️ Provider ${m.provider} has image capability disabled`);
+                return false;
+              }
+            }
+          }
+          
+          return true;
         });
         
         if (availableModels.length === 0) {
@@ -2975,19 +3080,29 @@ Summary:`;
               // Log to Google Sheets
               try {
                 const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                const os = require('os');
                 const usage = summaryResp?.rawResponse?.usage || {};
                 const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
+                
+                // Extract request ID and Lambda metrics from context
+                const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                 
                 logToGoogleSheets({
                   userEmail: context?.userEmail || 'anonymous',
                   provider: summaryProvider,
                   model: summaryModel || context.model,
+                  type: 'youtube_transcript_summary',
                   promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
                   completionTokens: usage.completion_tokens || usage.output_tokens || 0,
                   totalTokens: usage.total_tokens || 0,
                   durationMs: summaryEndTime - summaryStartTime,
                   timestamp: new Date().toISOString(),
-                  requestType: 'youtube_transcript_summary',
+                  requestId,
+                  memoryLimitMB,
+                  memoryUsedMB,
+                  hostname: os.hostname(),
                   metadata: { url, transcriptLength: fullText.length }
                 }).catch(err => {
                   console.error('Failed to log YouTube transcript summary to Google Sheets:', err.message);
@@ -3124,19 +3239,29 @@ Summary:`;
               // Log to Google Sheets
               try {
                 const { logToGoogleSheets } = require('./services/google-sheets-logger');
+                const os = require('os');
                 const usage = summaryResp?.rawResponse?.usage || {};
                 const [summaryProvider, summaryModel] = (context.model || 'groq:llama-3.3-70b-versatile').split(':');
+                
+                // Extract request ID and Lambda metrics from context
+                const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                 
                 logToGoogleSheets({
                   userEmail: context?.userEmail || 'anonymous',
                   provider: summaryProvider,
                   model: summaryModel || context.model,
+                  type: 'youtube_transcript_summary',
                   promptTokens: usage.prompt_tokens || usage.input_tokens || 0,
                   completionTokens: usage.completion_tokens || usage.output_tokens || 0,
                   totalTokens: usage.total_tokens || 0,
                   durationMs: summaryEndTime - summaryStartTime,
                   timestamp: new Date().toISOString(),
-                  requestType: 'youtube_transcript_summary',
+                  requestId,
+                  memoryLimitMB,
+                  memoryUsedMB,
+                  hostname: os.hostname(),
                   metadata: { url, transcriptLength: result.length }
                 }).catch(err => {
                   console.error('Failed to log YouTube transcript summary to Google Sheets:', err.message);

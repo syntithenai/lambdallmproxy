@@ -74,12 +74,21 @@ const PRICING = {
 
 /**
  * Calculate cost based on token usage or fixed cost (for image generation)
+ * Returns 0 if running in local development mode
  * @param {string} model - Model name
  * @param {number} promptTokens - Input tokens (0 for image generation)
  * @param {number} completionTokens - Output tokens (0 for image generation)
  * @param {number} fixedCost - Fixed cost for non-token-based requests (image generation)
  */
 function calculateCost(model, promptTokens, completionTokens, fixedCost = null) {
+    // Return 0 cost if running locally
+    const isLocal = process.env.LOCAL_LAMBDA === 'true' || 
+                   process.env.NODE_ENV === 'development' ||
+                   process.env.AWS_EXECUTION_ENV === undefined;
+    if (isLocal) {
+        return 0;
+    }
+    
     // If fixed cost provided (e.g., image generation), use that
     if (fixedCost !== null && fixedCost !== undefined) {
         return fixedCost;
@@ -93,10 +102,39 @@ function calculateCost(model, promptTokens, completionTokens, fixedCost = null) 
 }
 
 /**
+ * Calculate AWS Lambda invocation cost
+ * Pricing (us-east-1, x86_64, October 2025):
+ * - Compute: $0.0000166667 per GB-second
+ * - Requests: $0.20 per 1M requests ($0.0000002 per request)
+ * 
+ * @param {number} memoryMB - Memory allocated in MB
+ * @param {number} durationMs - Execution duration in milliseconds
+ * @returns {number} Total cost in dollars
+ */
+function calculateLambdaCost(memoryMB, durationMs) {
+    // Convert memory to GB and duration to seconds
+    const memoryGB = memoryMB / 1024;
+    const durationSeconds = durationMs / 1000;
+    
+    // Calculate compute cost (GB-seconds)
+    const computeCost = memoryGB * durationSeconds * 0.0000166667;
+    
+    // Calculate request cost
+    const requestCost = 0.0000002;
+    
+    // Total cost
+    return computeCost + requestCost;
+}
+
+/**
  * Get OAuth2 access token using Service Account JWT
  */
 async function getAccessToken(serviceAccountEmail, privateKey) {
     const jwt = require('jsonwebtoken');
+    
+    console.log('🔑 Building JWT token...');
+    console.log('   Service account:', serviceAccountEmail);
+    console.log('   Private key length:', privateKey.length);
     
     const now = Math.floor(Date.now() / 1000);
     const claim = {
@@ -107,8 +145,16 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
         iat: now
     };
     
-    const token = jwt.sign(claim, privateKey, { algorithm: 'RS256' });
+    let token;
+    try {
+        token = jwt.sign(claim, privateKey, { algorithm: 'RS256' });
+        console.log('✅ JWT token signed');
+    } catch (jwtError) {
+        console.error('❌ JWT signing failed:', jwtError.message);
+        throw new Error(`JWT signing failed: ${jwtError.message}`);
+    }
     
+    console.log('🌐 Requesting OAuth token from Google...');
     return new Promise((resolve, reject) => {
         const postData = new URLSearchParams({
             grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -129,16 +175,29 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
+                console.log('📥 OAuth response status:', res.statusCode);
                 if (res.statusCode === 200) {
-                    const response = JSON.parse(data);
-                    resolve(response.access_token);
+                    try {
+                        const response = JSON.parse(data);
+                        console.log('✅ OAuth token received');
+                        resolve(response.access_token);
+                    } catch (parseError) {
+                        console.error('❌ Failed to parse OAuth response:', parseError.message);
+                        console.error('   Response data:', data);
+                        reject(new Error(`Failed to parse OAuth response: ${parseError.message}`));
+                    }
                 } else {
+                    console.error('❌ OAuth request failed:', res.statusCode);
+                    console.error('   Response:', data);
                     reject(new Error(`OAuth failed: ${res.statusCode} - ${data}`));
                 }
             });
         });
         
-        req.on('error', reject);
+        req.on('error', (error) => {
+            console.error('❌ OAuth request error:', error.message);
+            reject(error);
+        });
         req.write(postData);
         req.end();
     });
@@ -226,7 +285,143 @@ async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
 }
 
 /**
- * Append row to Google Sheet
+ * Check if sheet has any data (including headers)
+ */
+async function isSheetEmpty(spreadsheetId, sheetName, accessToken) {
+    return new Promise((resolve, reject) => {
+        const encodedRange = encodeURIComponent(`${sheetName}!A1:P1000`);
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    const result = JSON.parse(data);
+                    const isEmpty = !result.values || result.values.length === 0;
+                    resolve(isEmpty);
+                } else if (res.statusCode === 404) {
+                    // Sheet range doesn't exist, so it's empty
+                    resolve(true);
+                } else {
+                    reject(new Error(`Failed to check if sheet is empty: ${res.statusCode} - ${data}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/**
+ * Add header row to sheet
+ */
+async function addHeaderRow(spreadsheetId, sheetName, accessToken) {
+    const headers = [
+        'Timestamp',
+        'User Email',
+        'Provider',
+        'Model',
+        'Type',
+        'Tokens In',
+        'Tokens Out',
+        'Total Tokens',
+        'Cost',
+        'Duration (s)',
+        'Memory Limit (MB)',
+        'Memory Used (MB)',
+        'Request ID',
+        'Error Code',
+        'Error Message',
+        'Hostname'
+    ];
+    
+    return new Promise((resolve, reject) => {
+        const payload = {
+            values: [headers]
+        };
+        
+        const postData = JSON.stringify(payload);
+        const encodedRange = encodeURIComponent(`${sheetName}!A1:P1`);
+        
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?valueInputOption=USER_ENTERED`,
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    console.log('✅ Added header row to sheet');
+                    resolve(JSON.parse(data));
+                } else {
+                    console.error(`❌ Failed to add headers: ${res.statusCode} - ${data}`);
+                    reject(new Error(`Failed to add headers: ${res.statusCode} - ${data}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.write(postData);
+        req.end();
+    });
+}
+
+/**
+ * Clear all data from sheet
+ */
+async function clearSheet(spreadsheetId, sheetName, accessToken) {
+    return new Promise((resolve, reject) => {
+        const encodedRange = encodeURIComponent(`${sheetName}!A:Z`);
+        
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}:clear`,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'Content-Length': '0'
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    console.log('✅ Sheet cleared successfully');
+                    resolve(JSON.parse(data));
+                } else {
+                    console.error(`❌ Failed to clear sheet: ${res.statusCode} - ${data}`);
+                    reject(new Error(`Failed to clear sheet: ${res.statusCode} - ${data}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/**
+ * Append data to a Google Sheet
  */
 async function appendToSheet(spreadsheetId, range, values, accessToken) {
     return new Promise((resolve, reject) => {
@@ -252,15 +447,26 @@ async function appendToSheet(spreadsheetId, range, values, accessToken) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
+                console.log(`📊 appendToSheet response: ${res.statusCode}`);
                 if (res.statusCode === 200) {
-                    resolve(JSON.parse(data));
+                    const result = JSON.parse(data);
+                    const updatedRange = result.updates?.updatedRange || 'unknown';
+                    const updatedRows = result.updates?.updatedRows || 0;
+                    console.log(`✅ appendToSheet SUCCESS: ${updatedRows} rows added to ${range}`);
+                    console.log(`   Updated range: ${updatedRange}`);
+                    console.log(`   Full response:`, JSON.stringify(result.updates, null, 2));
+                    resolve(result);
                 } else {
+                    console.error(`❌ appendToSheet FAILED: ${res.statusCode} - ${data}`);
                     reject(new Error(`Sheets API error: ${res.statusCode} - ${data}`));
                 }
             });
         });
         
-        req.on('error', reject);
+        req.on('error', (error) => {
+            console.error(`❌ appendToSheet network error:`, error.message);
+            reject(error);
+        });
         req.write(postData);
         req.end();
     });
@@ -289,19 +495,65 @@ async function logToGoogleSheets(logData) {
         const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
         const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
         
+        console.log('🔍 Google Sheets config check:', {
+            hasSpreadsheetId: !!spreadsheetId,
+            hasServiceAccountEmail: !!serviceAccountEmail,
+            hasPrivateKey: !!privateKey,
+            sheetName,
+            logDataType: logData.type,
+            logDataModel: logData.model
+        });
+        
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
-            console.log('ℹ️ Google Sheets logging not configured (skipping)');
+            console.log('❌ Google Sheets logging not configured (skipping)', {
+                spreadsheetId: spreadsheetId ? 'SET' : 'MISSING',
+                serviceAccountEmail: serviceAccountEmail ? 'SET' : 'MISSING',
+                privateKey: privateKey ? 'SET' : 'MISSING'
+            });
             return;
         }
         
         // Format private key (handle escaped newlines)
+        console.log('🔐 Formatting private key...');
         const formattedKey = privateKey.replace(/\\n/g, '\n');
+        console.log('🔐 Private key formatted, length:', formattedKey.length);
         
         // Get OAuth access token
-        const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
+        console.log('🔑 Getting OAuth access token...');
+        let accessToken;
+        try {
+            accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
+            console.log('✅ Got OAuth access token');
+        } catch (authError) {
+            console.error('❌ OAuth token error:', authError.message);
+            console.error('   Stack:', authError.stack);
+            throw authError;
+        }
         
         // Ensure the sheet tab exists (creates it if needed)
-        await ensureSheetExists(spreadsheetId, sheetName, accessToken);
+        console.log('📋 Ensuring sheet exists:', sheetName);
+        try {
+            await ensureSheetExists(spreadsheetId, sheetName, accessToken);
+            console.log('✅ Sheet exists or created');
+        } catch (sheetError) {
+            console.error('❌ Sheet creation/check error:', sheetError.message);
+            console.error('   Stack:', sheetError.stack);
+            throw sheetError;
+        }
+        
+        // Check if sheet is empty and add headers if needed
+        console.log('🔍 Checking if sheet is empty...');
+        try {
+            const isEmpty = await isSheetEmpty(spreadsheetId, sheetName, accessToken);
+            if (isEmpty) {
+                console.log('📝 Sheet is empty, adding header row...');
+                await addHeaderRow(spreadsheetId, sheetName, accessToken);
+            } else {
+                console.log('✅ Sheet has data, skipping headers');
+            }
+        } catch (headerError) {
+            console.warn('⚠️ Could not check/add headers (continuing anyway):', headerError.message);
+        }
         
         // Calculate cost (use provided cost for image generation, or calculate from tokens)
         const cost = calculateCost(
@@ -310,10 +562,15 @@ async function logToGoogleSheets(logData) {
             logData.completionTokens || 0,
             logData.cost  // Pass through fixed cost if provided (e.g., for image generation)
         );
+        console.log('💰 Calculated cost:', cost);
         
         // Format duration
         const durationMs = logData.duration || logData.durationMs || 0;
         const durationSeconds = (durationMs / 1000).toFixed(2);
+        
+        // Get hostname (os.hostname() or 'lambda' if in AWS)
+        const os = require('os');
+        const hostname = logData.hostname || process.env.AWS_LAMBDA_FUNCTION_NAME || os.hostname() || 'unknown';
         
         // Prepare row data with Lambda metrics
         const rowData = [
@@ -321,7 +578,7 @@ async function logToGoogleSheets(logData) {
             logData.userEmail || 'unknown',
             logData.provider || 'unknown',
             logData.model || 'unknown',
-            logData.type || 'chat',  // Type: chat, embedding, guardrail_input, guardrail_output, planning
+            logData.type || 'chat',  // Type: chat, embedding, guardrail_input, guardrail_output, planning, lambda_invocation
             logData.promptTokens || 0,
             logData.completionTokens || 0,
             logData.totalTokens || 0,
@@ -331,16 +588,35 @@ async function logToGoogleSheets(logData) {
             logData.memoryUsedMB || '',       // Lambda memory used
             logData.requestId || '',          // Lambda request ID
             logData.errorCode || '',
-            logData.errorMessage || ''
+            logData.errorMessage || '',
+            hostname                          // Server hostname
         ];
         
-        // Append to sheet (now includes Type + Lambda metrics)
-        await appendToSheet(spreadsheetId, `${sheetName}!A:O`, rowData, accessToken);
+        console.log('📤 Appending row to sheet...');
+        console.log('   Range:', `${sheetName}!A:P`);
+        console.log('   Data preview:', {
+            timestamp: rowData[0],
+            email: rowData[1],
+            provider: rowData[2],
+            model: rowData[3],
+            type: rowData[4],
+            cost: rowData[8]
+        });
         
-        console.log(`✅ Logged to Google Sheets: ${logData.model} (${logData.totalTokens} tokens, $${cost.toFixed(4)})`);
+        // Append to sheet (now includes Type + Lambda metrics + Hostname)
+        try {
+            await appendToSheet(spreadsheetId, `${sheetName}!A:P`, rowData, accessToken);
+            console.log(`✅ Logged to Google Sheets: ${logData.model} (${logData.totalTokens} tokens, $${cost.toFixed(4)})`);
+        } catch (appendError) {
+            console.error('❌ Append to sheet error:', appendError.message);
+            console.error('   Stack:', appendError.stack);
+            throw appendError;
+        }
     } catch (error) {
         // Log error but don't fail the request
         console.error('❌ Failed to log to Google Sheets:', error.message);
+        console.error('   Full error:', error);
+        console.error('   Stack trace:', error.stack);
     }
 }
 
@@ -372,20 +648,21 @@ async function initializeSheet() {
             'User Email',
             'Provider',
             'Model',
-            'Type',  // chat, embedding, guardrail_input, guardrail_output, planning
+            'Type',  // chat, embedding, guardrail_input, guardrail_output, planning, lambda_invocation
             'Tokens In',
             'Tokens Out',
             'Total Tokens',
             'Cost ($)',
             'Duration (s)',
-            'Memory Limit (MB)',  // NEW: Lambda memory configuration
-            'Memory Used (MB)',   // NEW: Lambda memory consumption
-            'Request ID',         // NEW: Lambda request ID for debugging
+            'Memory Limit (MB)',  // Lambda memory configuration
+            'Memory Used (MB)',   // Lambda memory consumption
+            'Request ID',         // Lambda request ID for debugging
             'Error Code',
-            'Error Message'
+            'Error Message',
+            'Hostname'            // Server hostname (lambda function name or local hostname)
         ];
         
-        await appendToSheet(spreadsheetId, `${sheetName}!A1:O1`, headers, accessToken);
+        await appendToSheet(spreadsheetId, `${sheetName}!A1:P1`, headers, accessToken);
         
         console.log('✅ Google Sheets initialized with headers');
     } catch (error) {
@@ -451,8 +728,9 @@ async function getUserTotalCost(userEmail) {
         // Get OAuth access token
         const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
         
-        // Read all data from the sheet (columns A-K, skip header row)
-        const range = `${sheetName}!A2:K`;
+        // Read all data from the sheet (columns A-P, skip header row)
+        // Schema: Timestamp, User Email, Provider, Model, Type, Tokens In, Tokens Out, Total Tokens, Cost, Duration, Memory Limit, Memory Used, Request ID, Error Code, Error Message, Hostname
+        const range = `${sheetName}!A2:P`;
         const sheetData = await getSheetData(spreadsheetId, range, accessToken);
         
         if (!sheetData.values || sheetData.values.length === 0) {
@@ -461,21 +739,39 @@ async function getUserTotalCost(userEmail) {
         }
         
         // Aggregate cost for the user
-        // Column indexes: 0=Timestamp, 1=Email, 2=Provider, 3=Model, 4=TokensIn, 5=TokensOut, 6=TotalTokens, 7=Cost, 8=Duration, 9=ErrorCode, 10=ErrorMessage
+        // Column indexes (updated schema): 0=Timestamp, 1=Email, 2=Provider, 3=Model, 4=Type, 5=TokensIn, 6=TokensOut, 7=TotalTokens, 8=Cost, 9=Duration, 10=MemoryLimit, 11=MemoryUsed, 12=RequestID, 13=ErrorCode, 14=ErrorMessage, 15=Hostname
         let totalCost = 0;
         let recordCount = 0;
+        let debugSample = [];
         
         for (const row of sheetData.values) {
             const rowEmail = row[1]; // Column B (index 1) is User Email
-            const rowCost = parseFloat(row[7]) || 0; // Column H (index 7) is Cost ($)
+            const rowCost = parseFloat(row[8]) || 0; // Column I (index 8) is Cost ($) in new schema
+            
+            // Skip rows with suspiciously high costs (likely schema misalignment from old logs)
+            // Typical costs are $0.0001 to $0.50 per request. Anything over $1 is suspicious.
+            if (rowCost > 1.0) {
+                console.log(`⚠️ Skipping suspicious cost row: ${rowCost} (likely old schema misalignment)`);
+                continue;
+            }
             
             if (rowEmail === userEmail) {
                 totalCost += rowCost;
                 recordCount++;
+                // Collect sample for debugging (first 3 and last 3)
+                if (debugSample.length < 3 || recordCount > sheetData.values.length - 3) {
+                    debugSample.push({
+                        timestamp: row[0],
+                        model: row[3],
+                        type: row[4],
+                        cost: rowCost
+                    });
+                }
             }
         }
         
         console.log(`📊 Found ${recordCount} records for ${userEmail}, total cost: $${totalCost.toFixed(4)}`);
+        console.log(`🔍 Sample records:`, JSON.stringify(debugSample, null, 2));
         
         return totalCost;
     } catch (error) {
@@ -511,8 +807,9 @@ async function getUserBillingData(userEmail, filters = {}) {
         // Get OAuth access token
         const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
         
-        // Read all data from the sheet (columns A-K, skip header row)
-        const range = `${sheetName}!A2:K`;
+        // Read all data from the sheet (columns A-P, skip header row)
+        // Schema: Timestamp, User Email, Provider, Model, Type, Tokens In, Tokens Out, Total Tokens, Cost, Duration, Memory Limit, Memory Used, Request ID, Error Code, Error Message, Hostname
+        const range = `${sheetName}!A2:P`;
         const sheetData = await getSheetData(spreadsheetId, range, accessToken);
         
         if (!sheetData.values || sheetData.values.length === 0) {
@@ -538,13 +835,18 @@ async function getUserBillingData(userEmail, filters = {}) {
             const timestamp = row[0]; // Column A - ISO timestamp
             const provider = row[2]; // Column C
             const model = row[3]; // Column D
-            const tokensIn = parseInt(row[4]) || 0; // Column E
-            const tokensOut = parseInt(row[5]) || 0; // Column F
-            const totalTokens = parseInt(row[6]) || 0; // Column G
-            const cost = parseFloat(row[7]) || 0; // Column H
-            const duration = parseFloat(row[8]) || 0; // Column I
-            const errorCode = row[9] || ''; // Column J
-            const errorMessage = row[10] || ''; // Column K
+            const type = row[4] || 'chat'; // Column E - Type (default to 'chat' for old entries)
+            const tokensIn = parseInt(row[5]) || 0; // Column F
+            const tokensOut = parseInt(row[6]) || 0; // Column G
+            const totalTokens = parseInt(row[7]) || 0; // Column H
+            const cost = parseFloat(row[8]) || 0; // Column I
+            const duration = parseFloat(row[9]) || 0; // Column J
+            const memoryLimit = parseInt(row[10]) || 0; // Column K
+            const memoryUsed = parseInt(row[11]) || 0; // Column L
+            const requestId = row[12] || ''; // Column M
+            const errorCode = row[13] || ''; // Column N
+            const errorMessage = row[14] || ''; // Column O
+            const hostname = row[15] || 'unknown'; // Column P
             
             // Apply date filters
             if (startDate || endDate) {
@@ -552,6 +854,9 @@ async function getUserBillingData(userEmail, filters = {}) {
                 if (startDate && txDate < startDate) continue;
                 if (endDate && txDate > endDate) continue;
             }
+            
+            // Apply type filter
+            if (typeFilter && type.toLowerCase() !== typeFilter) continue;
             
             // Apply provider filter
             if (providerFilter && provider.toLowerCase() !== providerFilter) continue;
@@ -561,17 +866,19 @@ async function getUserBillingData(userEmail, filters = {}) {
                 timestamp,
                 provider,
                 model,
+                type,
                 tokensIn,
                 tokensOut,
                 totalTokens,
                 cost,
-                duration,
-                type: 'chat', // Service sheet doesn't distinguish type, default to chat
-                error: errorCode ? { code: errorCode, message: errorMessage } : null
+                durationMs: duration * 1000, // Convert seconds to milliseconds for consistency with UI
+                memoryLimitMB: memoryLimit,
+                memoryUsedMB: memoryUsed,
+                requestId,
+                hostname,
+                status: errorCode ? 'error' : 'success',
+                error: errorCode || errorMessage || ''
             };
-            
-            // Apply type filter (service sheet doesn't have type, so only filter if explicitly 'chat')
-            if (typeFilter && typeFilter !== 'chat') continue;
             
             transactions.push(transaction);
         }
@@ -586,10 +893,139 @@ async function getUserBillingData(userEmail, filters = {}) {
     }
 }
 
+/**
+ * Log AWS Lambda invocation to Google Sheets
+ * 
+ * @param {Object} logData - Lambda invocation data
+ * @param {string} logData.userEmail - User's email address
+ * @param {string} logData.endpoint - Endpoint path (e.g., /chat, /search, /transcribe)
+ * @param {number} logData.memoryLimitMB - Lambda memory limit in MB
+ * @param {number} logData.memoryUsedMB - Lambda memory used in MB
+ * @param {number} logData.durationMs - Request duration in milliseconds
+ * @param {string} logData.requestId - Lambda request ID
+ * @param {string} logData.timestamp - ISO timestamp
+ * @param {string} logData.errorCode - Error code if request failed (optional)
+ * @param {string} logData.errorMessage - Error message if request failed (optional)
+ */
+async function logLambdaInvocation(logData) {
+    try {
+        // Check if Google Sheets logging is configured
+        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
+        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
+        
+        if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
+            console.log('ℹ️ Google Sheets logging not configured (skipping Lambda invocation log)');
+            return;
+        }
+        
+        // Format private key (handle escaped newlines)
+        console.log('🔐 [Lambda Log] Formatting private key...');
+        const formattedKey = privateKey.replace(/\\n/g, '\n');
+        
+        // Get OAuth access token
+        console.log('🔑 [Lambda Log] Getting OAuth access token...');
+        let accessToken;
+        try {
+            accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
+            console.log('✅ [Lambda Log] Got OAuth access token');
+        } catch (authError) {
+            console.error('❌ [Lambda Log] OAuth token error:', authError.message);
+            throw authError;
+        }
+        
+        // Ensure the sheet tab exists (creates it if needed)
+        console.log('📋 [Lambda Log] Ensuring sheet exists:', sheetName);
+        try {
+            await ensureSheetExists(spreadsheetId, sheetName, accessToken);
+            console.log('✅ [Lambda Log] Sheet exists or created');
+        } catch (sheetError) {
+            console.error('❌ [Lambda Log] Sheet creation/check error:', sheetError.message);
+            throw sheetError;
+        }
+        
+        // Check if sheet is empty and add headers if needed
+        console.log('🔍 [Lambda Log] Checking if sheet is empty...');
+        try {
+            const isEmpty = await isSheetEmpty(spreadsheetId, sheetName, accessToken);
+            if (isEmpty) {
+                console.log('📝 [Lambda Log] Sheet is empty, adding header row...');
+                await addHeaderRow(spreadsheetId, sheetName, accessToken);
+            } else {
+                console.log('✅ [Lambda Log] Sheet has data, skipping headers');
+            }
+        } catch (headerError) {
+            console.warn('⚠️ [Lambda Log] Could not check/add headers (continuing anyway):', headerError.message);
+        }
+        
+        // Calculate Lambda cost
+        const lambdaCost = calculateLambdaCost(logData.memoryLimitMB, logData.durationMs);
+        console.log('💰 [Lambda Log] Calculated cost:', lambdaCost);
+        
+        // Format duration in seconds
+        const durationSeconds = (logData.durationMs / 1000).toFixed(2);
+        
+        // Get hostname
+        const os = require('os');
+        const hostname = logData.hostname || process.env.AWS_LAMBDA_FUNCTION_NAME || os.hostname() || 'unknown';
+        
+        // Prepare row data - use same schema as LLM logs but with lambda_invocation type
+        const rowData = [
+            logData.timestamp || new Date().toISOString(),
+            logData.userEmail || 'unknown',
+            'aws-lambda',                      // Provider = 'aws-lambda' for Lambda invocations
+            logData.endpoint || 'unknown',     // Model = endpoint path
+            'lambda_invocation',               // Type = 'lambda_invocation'
+            0,                                 // Tokens In (N/A for Lambda)
+            0,                                 // Tokens Out (N/A for Lambda)
+            0,                                 // Total Tokens (N/A for Lambda)
+            lambdaCost.toFixed(8),            // Cost (8 decimals for precision)
+            durationSeconds,                   // Duration in seconds
+            logData.memoryLimitMB || '',       // Lambda memory limit
+            logData.memoryUsedMB || '',        // Lambda memory used
+            logData.requestId || '',           // Lambda request ID
+            logData.errorCode || '',           // Error code
+            logData.errorMessage || '',        // Error message
+            hostname                           // Server hostname
+        ];
+        
+        console.log('📤 [Lambda Log] Appending row to sheet...');
+        console.log('   Range:', `${sheetName}!A:P`);
+        console.log('   Data preview:', {
+            timestamp: rowData[0],
+            email: rowData[1],
+            provider: rowData[2],
+            endpoint: rowData[3],
+            type: rowData[4],
+            cost: rowData[8],
+            duration: rowData[9],
+            memoryUsed: rowData[11]
+        });
+        
+        // Append to sheet
+        try {
+            await appendToSheet(spreadsheetId, `${sheetName}!A:P`, rowData, accessToken);
+            console.log(`✅ Logged Lambda invocation: ${logData.endpoint} (${logData.durationMs}ms, ${logData.memoryUsedMB}MB, $${lambdaCost.toFixed(8)})`);
+        } catch (appendError) {
+            console.error('❌ [Lambda Log] Append to sheet error:', appendError.message);
+            console.error('   Stack:', appendError.stack);
+            throw appendError;
+        }
+    } catch (error) {
+        // Log error but don't fail the request
+        console.error('❌ Failed to log Lambda invocation to Google Sheets:', error.message);
+    }
+}
+
 module.exports = {
     logToGoogleSheets,
+    logLambdaInvocation,
     initializeSheet,
     calculateCost,
+    calculateLambdaCost,
     getUserTotalCost,
-    getUserBillingData
+    getUserBillingData,
+    clearSheet,
+    addHeaderRow
 };

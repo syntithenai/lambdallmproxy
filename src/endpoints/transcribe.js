@@ -190,9 +190,10 @@ async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai'
  * Handle transcription request
  * 
  * @param {Object} event - AWS Lambda event
+ * @param {Object} context - AWS Lambda context (optional)
  * @returns {Object} Response object
  */
-async function handler(event) {
+async function handler(event, context) {
     try {
         console.log('📝 Transcription request received');
         console.log('Request headers:', JSON.stringify(event.headers, null, 2));
@@ -233,6 +234,11 @@ async function handler(event) {
         }
 
         console.log(`✅ Authenticated user: ${decodedToken.email}`);
+        const userEmail = decodedToken.email;
+        
+        // Extract custom request ID from headers if provided (for grouping with chat logs)
+        const customRequestId = event.headers['x-request-id'] || event.headers['X-Request-Id'] || null;
+        console.log('Custom request ID:', customRequestId || 'none (will generate new)');
 
         // Parse multipart form data
         let parts;
@@ -279,25 +285,37 @@ async function handler(event) {
         const audioHash = crypto.createHash('md5').update(audioPart.data).digest('hex');
         console.log(`🔑 Audio hash: ${audioHash}`);
 
-        // Get Whisper API key from environment providers
-        // Priority: Groq (FREE) > OpenAI (PAID)
-        const envProviders = loadEnvironmentProviders();
+        // Check for user-provided API key in form data first
+        const userApiKeyPart = parts.find(p => p.name === 'apiKey');
+        const userProviderPart = parts.find(p => p.name === 'provider');
+        
         let whisperApiKey = null;
         let whisperProvider = null;
         
-        // Check for Groq providers first (FREE transcription)
-        const groqProvider = envProviders.find(p => p.type === 'groq' || p.type === 'groq-free');
-        if (groqProvider?.apiKey) {
-            whisperApiKey = groqProvider.apiKey;
-            whisperProvider = 'groq';
-            console.log('🎤 Using Groq Whisper (FREE transcription)');
+        if (userApiKeyPart && userProviderPart) {
+            // User provided their own API key
+            whisperApiKey = userApiKeyPart.data.toString('utf-8');
+            whisperProvider = userProviderPart.data.toString('utf-8');
+            console.log(`🎤 Using user-provided ${whisperProvider} API key for transcription`);
         } else {
-            // Fallback to OpenAI (PAID transcription)
-            const openaiProvider = envProviders.find(p => p.type === 'openai');
-            if (openaiProvider?.apiKey) {
-                whisperApiKey = openaiProvider.apiKey;
-                whisperProvider = 'openai';
-                console.log('🎤 Using OpenAI Whisper (PAID transcription - $0.006/min)');
+            // Fallback to environment providers
+            // Priority: Groq (FREE) > OpenAI (PAID)
+            const envProviders = loadEnvironmentProviders();
+            
+            // Check for Groq providers first (FREE transcription)
+            const groqProvider = envProviders.find(p => p.type === 'groq' || p.type === 'groq-free');
+            if (groqProvider?.apiKey) {
+                whisperApiKey = groqProvider.apiKey;
+                whisperProvider = 'groq';
+                console.log('🎤 Using Groq Whisper from environment (FREE transcription)');
+            } else {
+                // Fallback to OpenAI (PAID transcription)
+                const openaiProvider = envProviders.find(p => p.type === 'openai');
+                if (openaiProvider?.apiKey) {
+                    whisperApiKey = openaiProvider.apiKey;
+                    whisperProvider = 'openai';
+                    console.log('🎤 Using OpenAI Whisper from environment (PAID transcription - $0.006/min)');
+                }
             }
         }
         
@@ -308,7 +326,7 @@ async function handler(event) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    error: 'Whisper API key not configured. Please add a Groq (groq-free/groq) or OpenAI (openai) provider in environment variables. Groq provides FREE transcription.'
+                    error: 'Whisper API key not configured. Please add a Groq or OpenAI API key in the Providers page (Settings → Providers). Groq provides FREE transcription.'
                 })
             };
         }
@@ -331,10 +349,85 @@ async function handler(event) {
         }
 
         // If not in cache, call Whisper API
+        let llmApiCall = null; // Track API call for transparency
         if (!transcribedText) {
             try {
+                const startTime = Date.now();
                 transcribedText = await callWhisperAPI(audioPart.data, audioPart.filename, whisperApiKey, whisperProvider);
+                const durationMs = Date.now() - startTime;
                 console.log(`✅ Transcription successful: ${transcribedText.length} characters (via ${whisperProvider})`);
+                
+                // Calculate cost - Groq is FREE, OpenAI is $0.006/minute
+                // Estimate duration from audio size: ~1MB = ~1 minute (rough estimate)
+                // Local development is also FREE
+                const isLocal = process.env.LOCAL_LAMBDA === 'true' || 
+                               process.env.NODE_ENV === 'development' ||
+                               process.env.AWS_EXECUTION_ENV === undefined;
+                const estimatedMinutes = audioPart.data.length / (1024 * 1024);
+                const cost = (isLocal || whisperProvider === 'groq') ? 0 : estimatedMinutes * 0.006;
+                
+                // Create LLM API call record for transparency
+                llmApiCall = {
+                    phase: 'transcription',
+                    provider: whisperProvider,
+                    model: whisperProvider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1',
+                    type: 'transcription',
+                    timestamp: new Date().toISOString(),
+                    durationMs: durationMs,
+                    cost: cost,
+                    success: true,
+                    request: {
+                        filename: audioPart.filename,
+                        audioSize: audioPart.data.length,
+                        estimatedMinutes: estimatedMinutes.toFixed(2)
+                    },
+                    response: {
+                        text: transcribedText,
+                        textLength: transcribedText.length
+                    },
+                    metadata: {
+                        audioHash: audioHash,
+                        cached: false
+                    }
+                };
+                
+                // Log to Google Sheets
+                try {
+                    const { logToGoogleSheets } = require('../services/google-sheets-logger');
+                    const os = require('os');
+                    
+                    // Use custom request ID if provided, otherwise generate from context
+                    const requestId = customRequestId || context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                    const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
+                    
+                    logToGoogleSheets({
+                        userEmail: userEmail || 'anonymous',
+                        provider: whisperProvider,
+                        model: whisperProvider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1',
+                        type: 'transcription',
+                        promptTokens: 0, // Audio transcription doesn't use tokens
+                        completionTokens: 0,
+                        totalTokens: 0,
+                        cost: cost,
+                        durationMs: durationMs,
+                        timestamp: new Date().toISOString(),
+                        requestId,
+                        memoryLimitMB,
+                        memoryUsedMB,
+                        hostname: os.hostname(),
+                        metadata: {
+                            filename: audioPart.filename,
+                            audioSize: audioPart.data.length,
+                            transcriptionLength: transcribedText.length,
+                            estimatedMinutes: estimatedMinutes.toFixed(2)
+                        }
+                    }).catch(err => {
+                        console.error('Failed to log transcription to Google Sheets:', err.message);
+                    });
+                } catch (err) {
+                    console.error('Google Sheets logging error (transcription):', err.message);
+                }
                 
                 // Save to cache (non-blocking) - TTL 24 hours for transcriptions
                 const cacheKey = getCacheKey('transcriptions', { audioHash });
@@ -373,7 +466,8 @@ async function handler(event) {
                 text: transcribedText,
                 cached: fromCache,
                 audioHash: audioHash,
-                provider: whisperProvider // Include provider info in response
+                provider: whisperProvider, // Include provider info in response
+                llmApiCall: llmApiCall // Include for LLM transparency tracking
             })
         };
 

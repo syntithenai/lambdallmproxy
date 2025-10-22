@@ -14,6 +14,7 @@ import { TTSProvider } from './contexts/TTSContext';
 import { TTS_FEATURE_ENABLED } from './types/tts';
 import { ToastProvider } from './components/ToastManager';
 import { chatHistoryDB } from './utils/chatHistoryDB';
+import { getCachedApiBase } from './utils/api';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { PlaylistButton } from './components/PlaylistButton';
@@ -120,8 +121,7 @@ function AppContent() {
         }
 
         // Make a test request to check if user needs provider setup
-        const envUrl = import.meta.env.VITE_LAMBDA_URL;
-        const lambdaUrl = (envUrl && envUrl.trim()) ? envUrl : 'http://localhost:3000';
+        const lambdaUrl = await getCachedApiBase();
         const response = await fetch(`${lambdaUrl}/chat`, {
           method: 'POST',
           headers: {

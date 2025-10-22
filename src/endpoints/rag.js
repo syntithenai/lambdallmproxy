@@ -520,12 +520,40 @@ async function handleEmbedQuery(body, responseStream) {
         }
         
         // Generate embedding for query
+        const startTime = Date.now();
         const result = await embeddings.generateEmbedding(
             query,
             'text-embedding-3-small',
             'openai',
             process.env.OPENAI_API_KEY
         );
+        const duration = Date.now() - startTime;
+        
+        // Create llmApiCall object for transparency
+        const llmApiCall = {
+            phase: 'embedding',
+            provider: 'openai',
+            model: 'text-embedding-3-small',
+            type: 'embedding',
+            timestamp: new Date().toISOString(),
+            durationMs: duration,
+            cost: result.cost || 0,
+            success: true,
+            request: {
+                query: query,
+                queryLength: query.length
+            },
+            response: {
+                usage: {
+                    prompt_tokens: result.tokens || 0,
+                    total_tokens: result.tokens || 0
+                },
+                embeddingDimensions: result.embedding?.length || 0
+            },
+            metadata: {
+                cached: false
+            }
+        };
         
         const metadata = {
             statusCode: 200,
@@ -538,7 +566,8 @@ async function handleEmbedQuery(body, responseStream) {
             model: 'text-embedding-3-small',
             cached: false,
             cost: result.cost,
-            tokens: result.tokens
+            tokens: result.tokens,
+            llmApiCall: llmApiCall
         }));
         responseStream.end();
     } catch (error) {

@@ -4,62 +4,61 @@ import { createSSERequest, handleSSEResponse } from './streaming';
 // Constants
 const REMOTE_LAMBDA_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_LAMBDA_URL || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
 
+console.log('🚀 API Module Loading - Version: 2024-10-22-DYNAMIC-HOSTNAME');
+
 /**
  * Get the local Lambda URL based on current hostname
  * This allows accessing from localhost, LAN IP, or domain name
+ * Lambda dev server matches UI protocol (HTTP or HTTPS)
  */
 function getLocalLambdaUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  const protocol = window.location.protocol; // 'http:' or 'https:'
   const hostname = window.location.hostname;
   const port = '3000';
+  
+  console.log('🔍 getLocalLambdaUrl() called:', { protocol, hostname, port });
   
   // If VITE_LOCAL_LAMBDA_URL is explicitly set, use it
   if (import.meta.env.VITE_LOCAL_LAMBDA_URL) {
     return import.meta.env.VITE_LOCAL_LAMBDA_URL;
   }
   
+  // Lambda dev server runs on same protocol as UI to avoid mixed content issues
   // Build URL based on current hostname (works for localhost, LAN IP, or domain)
-  return `${protocol}//${hostname}:${port}`;
+  const url = `${protocol}//${hostname}:${port}`;
+  console.log('🔍 getLocalLambdaUrl() returning:', url);
+  return url;
 }
 
-const LOCAL_LAMBDA_URL = getLocalLambdaUrl();
-
-// Log configuration for debugging
+// Log configuration for debugging (use function to get current value)
 console.log('🔧 API Configuration:', {
   hostname: window.location.hostname,
   remote: REMOTE_LAMBDA_URL,
-  local: LOCAL_LAMBDA_URL,
+  local: getLocalLambdaUrl(),
   source: import.meta.env.VITE_API_BASE ? 'env' : 'fallback'
 });
-
-/**
- * Determine if we're running on localhost
- */
-function isLocalhost(): boolean {
-  const hostname = window.location.hostname;
-  return hostname === 'localhost' || 
-         hostname === '127.0.0.1' ||
-         hostname.startsWith('192.168.') ||
-         hostname.startsWith('10.') ||
-         hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) !== null;
-}
 
 /**
  * Check if local Lambda is available
  */
 async function isLocalLambdaAvailable(): Promise<boolean> {
+  const localUrl = getLocalLambdaUrl();
   try {
+    console.log(`🔍 Checking if local Lambda is available at: ${localUrl}/health`);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
     
-    const response = await fetch(`${LOCAL_LAMBDA_URL}/health`, {
+    const response = await fetch(`${localUrl}/health`, {
       method: 'GET',
       signal: controller.signal
     });
     
     clearTimeout(timeoutId);
-    return response.ok;
-  } catch {
+    const available = response.ok;
+    console.log(`${available ? '✅' : '❌'} Local Lambda ${available ? 'available' : 'not available'} at ${localUrl}`);
+    return available;
+  } catch (error) {
+    console.log(`❌ Local Lambda not available at ${localUrl}:`, error instanceof Error ? error.message : 'Unknown error');
     return false;
   }
 }
@@ -67,8 +66,8 @@ async function isLocalLambdaAvailable(): Promise<boolean> {
 /**
  * Get the appropriate API base URL
  * - If VITE_API_BASE env var is set, always use it (production build)
- * - If on GitHub Pages (*.github.io), always use remote
- * - If on localhost/local IP, require local Lambda to be running (no fallback)
+ * - Otherwise, check if local Lambda is available at :3000 on current hostname
+ * - Fall back to remote Lambda if local is not available
  */
 async function getApiBase(): Promise<string> {
   // If environment variable is set, always use it (production build)
@@ -77,37 +76,43 @@ async function getApiBase(): Promise<string> {
     return import.meta.env.VITE_API_BASE;
   }
   
-  // If on GitHub Pages or other remote host, always use remote
-  if (!isLocalhost()) {
-    console.log('🌐 Not localhost, using remote Lambda:', REMOTE_LAMBDA_URL);
-    return REMOTE_LAMBDA_URL;
-  }
-  
-  // On localhost: REQUIRE local Lambda to be running (no fallback to remote)
+  // Check if local Lambda is available (on any hostname: localhost, LAN IP, or domain)
   const localAvailable = await isLocalLambdaAvailable();
   
   if (localAvailable) {
-    console.log('🏠 Using local Lambda server at', LOCAL_LAMBDA_URL);
-    return LOCAL_LAMBDA_URL;
-  } else {
-    console.error('❌ Local Lambda not available at', LOCAL_LAMBDA_URL);
-    throw new Error('⚠️ Dev server not running. Please start your dev server with `make dev` or `npm run dev`');
+    const localUrl = getLocalLambdaUrl();
+    console.log('🏠 Using local Lambda server at', localUrl);
+    return localUrl;
   }
+  
+  // Fall back to remote Lambda
+  console.log('🌐 Local Lambda not available, using remote:', REMOTE_LAMBDA_URL);
+  return REMOTE_LAMBDA_URL;
 }
 
 // Cache the API base to avoid checking on every request
 let cachedApiBase: string | null = null;
 let apiBasePromise: Promise<string> | null = null;
+let cachedHostname: string | null = null; // Track which hostname the cache is for
 
 /**
  * Get cached API base or determine it
  */
 export async function getCachedApiBase(): Promise<string> {
+  // If hostname changed, clear cache
+  if (cachedHostname && cachedHostname !== window.location.hostname) {
+    console.log(`🔄 Hostname changed from ${cachedHostname} to ${window.location.hostname}, clearing API cache`);
+    cachedApiBase = null;
+    apiBasePromise = null;
+    cachedHostname = null;
+  }
+  
   if (cachedApiBase) {
     return cachedApiBase;
   }
   
   if (!apiBasePromise) {
+    cachedHostname = window.location.hostname;
     apiBasePromise = getApiBase().then(base => {
       cachedApiBase = base;
       return base;
@@ -435,7 +440,8 @@ export const sendChatMessageStreaming = async (
   onComplete?: () => void,
   onError?: (error: Error) => void,
   signal?: AbortSignal,
-  youtubeToken?: string | null
+  youtubeToken?: string | null,
+  requestId?: string | null  // Optional request ID for grouping logs (e.g., from voice transcription)
 ): Promise<void> => {
   const apiBase = await getCachedApiBase();
   
@@ -444,7 +450,10 @@ export const sendChatMessageStreaming = async (
     request,
     token,
     signal,
-    youtubeToken
+    youtubeToken,
+    3, // maxRetries
+    1000, // initialRetryDelay
+    requestId // Pass request ID to headers
   );
   
   await handleSSEResponse(response, onEvent, onComplete, onError);

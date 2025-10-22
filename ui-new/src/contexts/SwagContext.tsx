@@ -7,6 +7,7 @@ import type { SyncStatus } from '../services/ragSyncService';
 import { useAuth } from './AuthContext';
 import { ragDB } from '../utils/ragDB';
 import { fetchSnippetById } from '../services/snippetsSync';
+import { getCachedApiBase } from '../utils/api';
 
 export interface ContentSnippet {
   id: string;
@@ -222,8 +223,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Call backend to get/create spreadsheet
-      const envUrl = import.meta.env.VITE_LAMBDA_URL;
-      const apiUrl = (envUrl && envUrl.trim()) ? envUrl : 'http://localhost:3000';
+      const apiUrl = await getCachedApiBase();
       console.log('🌐 Calling getUserRagSpreadsheet at:', apiUrl);
       const response = await fetch(`${apiUrl}/rag/user-spreadsheet`, {
         method: 'GET',
@@ -387,7 +387,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isAutoEmbedEnabled()) return;
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000'}/rag/ingest`, {
+      const apiUrl = await getCachedApiBase();
+      const response = await fetch(`${apiUrl}/rag/ingest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -692,7 +693,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       while (retryCount <= maxRetries) {
         try {
-          response = await fetch(`${import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000'}/rag/embed-snippets`, {
+          const apiUrl = await getCachedApiBase();
+          response = await fetch(`${apiUrl}/rag/embed-snippets`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

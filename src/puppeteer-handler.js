@@ -215,7 +215,8 @@ async function scrapePage(url, options = {}) {
  *   screenshot: boolean (optional, default false)
  * }
  */
-exports.handler = async (event) => {
+exports.handler = async (event, context) => {
+  const startTime = Date.now();
   console.log('📥 [Puppeteer Lambda] Received request:', JSON.stringify(event, null, 2));
 
   try {
@@ -264,5 +265,26 @@ exports.handler = async (event) => {
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       })
     };
+  } finally {
+    // Log Lambda invocation for billing
+    try {
+      const { logLambdaInvocation } = require('./services/google-sheets-logger');
+      const durationMs = Date.now() - startTime;
+      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 1024;
+      const memoryUsedMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+      const requestId = context?.requestId || context?.awsRequestId || 'local-' + Date.now();
+      
+      await logLambdaInvocation({
+        userEmail: event.userEmail || 'unknown',
+        endpoint: '/puppeteer-scrape',
+        memoryLimitMB,
+        memoryUsedMB,
+        durationMs,
+        requestId,
+        timestamp: new Date().toISOString()
+      });
+    } catch (logError) {
+      console.error('Failed to log Puppeteer Lambda invocation:', logError.message);
+    }
   }
 };

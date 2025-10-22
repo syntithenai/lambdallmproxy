@@ -49,6 +49,21 @@ const MAX_JSON_TOOL_REMINDERS = 2;
 // Global singleton rate limit tracker (persists across Lambda warm starts)
 let globalRateLimitTracker = null;
 
+// Detect if running in local development mode
+const isLocalDevelopment = () => {
+    return process.env.LOCAL_LAMBDA === 'true' || 
+           process.env.NODE_ENV === 'development' ||
+           process.env.AWS_EXECUTION_ENV === undefined;
+};
+
+// Calculate cost, but return 0 if running locally
+const calculateCostSafe = (model, promptTokens, completionTokens) => {
+    if (isLocalDevelopment()) {
+        return 0;
+    }
+    return calculateCost(model, promptTokens, completionTokens);
+};
+
 /**
  * Get or create the global rate limit tracker
  * Singleton pattern ensures state persists across requests in same Lambda instance
@@ -283,6 +298,8 @@ A response is NOT comprehensive if:
         }
         
         console.log(`🔍 Evaluation response: ${evalText.substring(0, 200)}`);
+        console.log(`🔍 Evaluation rawResponse:`, evalResponse.rawResponse ? 'present' : 'MISSING');
+        console.log(`🔍 Evaluation usage:`, evalResponse.rawResponse?.usage ? JSON.stringify(evalResponse.rawResponse.usage) : 'MISSING');
         
         // Try to parse JSON from response
         let evalResult = { comprehensive: true, reason: 'Evaluation failed - assuming comprehensive' };
@@ -840,7 +857,23 @@ async function handler(event, responseStream, context) {
     
     // Extract Lambda metrics
     const memoryLimitMB = context?.memoryLimitInMB || 0;
-    const requestId = context?.requestId || '';
+    
+    // Check for custom request ID from headers (e.g., from voice transcription)
+    const customRequestId = event.headers?.['x-request-id'] || event.headers?.['X-Request-Id'] || null;
+    
+    // Use request ID for grouping all logs from this request
+    // Priority: custom header > context (set by index.js) > generated
+    // Note: context.requestId was already set by index.js Lambda handler
+    const requestId = customRequestId || context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    if (customRequestId) {
+        console.log('🔗 Using custom request ID from header:', customRequestId);
+    } else if (context?.requestId) {
+        console.log('🔗 Using Lambda invocation request ID from context:', context.requestId);
+    } else {
+        console.log('🔗 Generated new request ID:', requestId);
+    }
+    
     const memoryUsedMB = (process.memoryUsage().heapUsed / (1024 * 1024)).toFixed(2);
     
     let sseWriter = null;
@@ -1234,7 +1267,7 @@ async function handler(event, responseStream, context) {
                             const promptTokens = inputValidation.tracking.promptTokens || 0;
                             const completionTokens = inputValidation.tracking.completionTokens || 0;
                             const totalTokens = promptTokens + completionTokens;
-                            const cost = calculateCost(
+                            const cost = calculateCostSafe(
                                 inputValidation.tracking.model,
                                 promptTokens,
                                 completionTokens
@@ -1455,8 +1488,27 @@ async function handler(event, responseStream, context) {
         // Get rate limit tracker
         const rateLimitTracker = getRateLimitTracker();
         
-        // Build runtime catalog with only available providers
-        const runtimeCatalog = buildRuntimeCatalog(providerCatalog, providerPool);
+        // Filter providers by chat capability (default to enabled if undefined)
+        const chatEnabledProviders = providerPool.filter(p => {
+            // If capabilities not defined, assume chat is enabled (backward compatibility)
+            if (!p.capabilities) return true;
+            // Check if chat capability is explicitly enabled
+            return p.capabilities.chat !== false;
+        });
+        
+        console.log(`💬 Chat capability: ${chatEnabledProviders.length}/${providerPool.length} providers enabled for chat`);
+        if (chatEnabledProviders.length === 0) {
+            console.error('❌ No providers enabled for chat capability');
+            sseWriter.writeEvent('error', {
+                error: 'No providers are enabled for chat. Please enable chat capability for at least one provider in Settings.',
+                code: 'NO_CHAT_PROVIDERS'
+            });
+            responseStream.end();
+            return;
+        }
+        
+        // Build runtime catalog with only chat-enabled providers
+        const runtimeCatalog = buildRuntimeCatalog(providerCatalog, chatEnabledProviders);
         
         // Use sophisticated model selection
         let selection;
@@ -1525,8 +1577,8 @@ async function handler(event, responseStream, context) {
         if (selectedModel) {
             model = selectedModel.name || selectedModel.id;
             
-            // Find provider that matches selected model
-            const matchingProvider = providerPool.find(p => p.type === selectedModel.providerType);
+            // Find provider that matches selected model (use chat-enabled providers)
+            const matchingProvider = chatEnabledProviders.find(p => p.type === selectedModel.providerType);
             if (matchingProvider) {
                 selectedProvider = matchingProvider;
                 apiKey = selectedProvider.apiKey;
@@ -1604,7 +1656,9 @@ async function handler(event, responseStream, context) {
             inputTokens: selection?.inputTokens || estimatedInputTokens,
             // TodosManager for backend-managed multi-step workflows
             __todosManager: todosManager,
-            writeEvent: (type, data) => sseWriter.writeEvent(type, data)
+            writeEvent: (type, data) => sseWriter.writeEvent(type, data),
+            // Pass conversation messages for tools that need context (e.g., generate_image reference images)
+            messages: messages || []
         };
         
         const hasToolsConfigured = Array.isArray(tools) && tools.length > 0;
@@ -1984,18 +2038,29 @@ async function handler(event, responseStream, context) {
                         console.log(`⚠️ All models exhausted on provider ${provider}`);
                         
                         // Prioritize switching to a DIFFERENT provider type when rate limited
-                        // This helps when Groq is rate limited but OpenAI/Gemini are still available
+                        // Priority order: free providers (gemini-free) > paid providers > same type
                         const currentProviderType = selectedProvider.type;
-                        let nextProvider = providerPool.find(p => 
+                        
+                        // First priority: Try free providers that are chat-enabled
+                        let nextProvider = chatEnabledProviders.find(p => 
                             !attemptedProviders.has(p.id) && 
                             p.type !== currentProviderType && 
-                            p.type !== 'groq-free' && 
-                            p.type !== 'groq'
+                            (p.type === 'gemini-free')
                         );
                         
-                        // If no different provider type, try any unattempted provider
+                        // Second priority: Try other provider types (excluding groq variants to avoid bouncing)
                         if (!nextProvider) {
-                            nextProvider = providerPool.find(p => !attemptedProviders.has(p.id));
+                            nextProvider = chatEnabledProviders.find(p => 
+                                !attemptedProviders.has(p.id) && 
+                                p.type !== currentProviderType && 
+                                p.type !== 'groq-free' && 
+                                p.type !== 'groq'
+                            );
+                        }
+                        
+                        // Last resort: Try any unattempted provider
+                        if (!nextProvider) {
+                            nextProvider = chatEnabledProviders.find(p => !attemptedProviders.has(p.id));
                         }
                         
                         if (nextProvider) {
@@ -2364,6 +2429,9 @@ async function handler(event, responseStream, context) {
                     assistantMessageRecorded = true;
                     currentMessages.push(assistantMessage);
                     
+                    // Update toolContext with current messages for tools that need conversation context
+                    toolContext.messages = currentMessages;
+                    
                     // Execute tools
                     const toolResults = await executeToolCalls(validToolCalls, toolContext, sseWriter);
                     
@@ -2397,14 +2465,20 @@ async function handler(event, responseStream, context) {
                 const allMedia = [];
                 
                 // Process each tool result to extract content
+                console.log(`📋 Processing ${toolMessages.length} tool messages`);
                 for (const toolMsg of toolMessages) {
+                    console.log(`   Tool: ${toolMsg.name}, has rawResult: ${!!toolMsg.rawResult}, has content: ${!!toolMsg.content}`);
                     // Use rawResult if available (contains unformatted JSON), otherwise fall back to content
                     const contentToProcess = toolMsg.rawResult || toolMsg.content;
-                    if (!contentToProcess) continue;
+                    if (!contentToProcess) {
+                        console.log(`   ⚠️ Skipping ${toolMsg.name} - no content`);
+                        continue;
+                    }
                     
                     try {
                         // Try to parse as JSON first (for structured tool results)
                         const parsed = JSON.parse(contentToProcess);
+                        console.log(`   ✅ Parsed JSON for ${toolMsg.name}`);
                         
                         // Extract from search_web results
                         if (toolMsg.name === 'search_web' && parsed.results) {
@@ -2610,6 +2684,8 @@ async function handler(event, responseStream, context) {
                         // Extract from generate_image results
                         if (toolMsg.name === 'generate_image') {
                             console.log(`🎨 Processing generate_image tool result`);
+                            console.log(`   Tool result keys: ${Object.keys(parsed).join(', ')}`);
+                            console.log(`   parsed.generated: ${parsed.generated}, parsed.url: ${parsed.url ? 'YES' : 'NO'}, parsed.base64: ${parsed.base64 ? 'YES' : 'NO'}`);
                             
                             // Check if image was actually generated (new behavior)
                             if (parsed.generated && (parsed.url || parsed.base64)) {
@@ -2929,29 +3005,44 @@ async function handler(event, responseStream, context) {
                 );
                 
                 // Track evaluation call in LLM transparency
+                console.log(`🔍 Checking evaluation tracking:`, {
+                    hasUsage: !!evaluation.usage,
+                    hasRawResponse: !!evaluation.rawResponse,
+                    evaluationKeys: Object.keys(evaluation)
+                });
+                
                 if (evaluation.usage || evaluation.rawResponse) {
                     const evalLlmCall = {
-                        phase: 'self_evaluation', // UI looks for 'phase' property
-                        type: 'self_evaluation',
+                        phase: 'assessment', // Changed from 'self_evaluation' to match UI
+                        type: 'assessment',
                         iteration: evaluationRetries + 1,
                         model: model,
                         provider: provider,
                         request: {
+                            messages: evaluation.messages || [], // Include actual messages sent for transparency
                             purpose: 'evaluate_response_comprehensiveness',
                             evaluation_attempt: evaluationRetries + 1,
-                            messages: evaluation.messages || [] // Include actual messages sent for transparency
+                            temperature: 0.1,
+                            max_tokens: 200
                         },
                         response: {
                             usage: evaluation.usage,
                             comprehensive: evaluation.isComprehensive,
-                            reason: evaluation.reason
+                            reason: evaluation.reason,
+                            text: evaluation.rawResponse?.text || evaluation.rawResponse?.content || ''
                         },
                         httpHeaders: evaluation.httpHeaders || {},
-                        httpStatus: evaluation.httpStatus,
-                        timestamp: new Date().toISOString()
+                        httpStatus: evaluation.httpStatus || 200,
+                        timestamp: new Date().toISOString(),
+                        cost: evaluation.usage ? calculateCostSafe(model, evaluation.usage.prompt_tokens || 0, evaluation.usage.completion_tokens || 0) : 0,
+                        durationMs: evaluation.rawResponse?.durationMs || 0
                     };
                     allLlmApiCalls.push(evalLlmCall);
-                    console.log(`📊 Tracked self-evaluation LLM call #${evaluationRetries + 1}`);
+                    console.log(`📊 Tracked self-evaluation LLM call #${evaluationRetries + 1}`, {
+                        type: evalLlmCall.type,
+                        phase: evalLlmCall.phase,
+                        comprehensive: evaluation.isComprehensive
+                    });
                 }
                 
                 evaluationResults.push({
@@ -3133,7 +3224,7 @@ async function handler(event, responseStream, context) {
                         const promptTokens = outputValidation.tracking.promptTokens || 0;
                         const completionTokens = outputValidation.tracking.completionTokens || 0;
                         const totalTokens = promptTokens + completionTokens;
-                        const cost = calculateCost(
+                        const cost = calculateCostSafe(
                             outputValidation.tracking.model,
                             promptTokens,
                             completionTokens
@@ -3316,12 +3407,46 @@ async function handler(event, responseStream, context) {
             for (const apiCall of allLlmApiCalls) {
                 const usage = apiCall.response?.usage;
                 if (usage && apiCall.model) {
-                    const cost = calculateCost(
+                    const cost = calculateCostSafe(
                         apiCall.model,
                         usage.prompt_tokens || 0,
                         usage.completion_tokens || 0
                     );
                     finalRequestCost += cost;
+                }
+            }
+            
+            // Log all LLM API calls to Google Sheets
+            console.log(`📊 Logging ${allLlmApiCalls.length} LLM API calls to Google Sheets...`);
+            for (const apiCall of allLlmApiCalls) {
+                const usage = apiCall.response?.usage;
+                if (usage && apiCall.model) {
+                    const cost = calculateCostSafe(
+                        apiCall.model,
+                        usage.prompt_tokens || 0,
+                        usage.completion_tokens || 0
+                    );
+                    
+                    try {
+                        await logToBothSheets(driveAccessToken, {
+                            userEmail,
+                            provider: apiCall.provider || 'unknown',
+                            model: apiCall.model,
+                            promptTokens: usage.prompt_tokens || 0,
+                            completionTokens: usage.completion_tokens || 0,
+                            totalTokens: usage.total_tokens || 0,
+                            cost,
+                            duration: usage.total_time || 0,
+                            type: apiCall.phase || 'chat',
+                            memoryLimitMB,
+                            memoryUsedMB,
+                            requestId,
+                            timestamp: apiCall.timestamp || new Date().toISOString()
+                        });
+                        console.log(`✅ Logged LLM call: ${apiCall.model} (${usage.total_tokens} tokens, $${cost.toFixed(6)})`);
+                    } catch (logError) {
+                        console.error('⚠️ Failed to log LLM call to Google Sheets:', logError.message);
+                    }
                 }
             }
             
@@ -3416,7 +3541,7 @@ async function handler(event, responseStream, context) {
         if (typeof currentMessages !== 'undefined' && currentMessages.length > 0) {
             const continueContext = {
                 messages: currentMessages, // Full context including tool results
-                lastUserMessage: messages?.[messages.length - 1], // Original user message with media
+                lastUserMessage: currentMessages.find(m => m.role === 'user'), // Find last user message
                 provider: provider,
                 model: model
             };

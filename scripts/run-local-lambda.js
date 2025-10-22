@@ -17,6 +17,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const https = require('https');
 
 // Load environment variables from .env file
 require('dotenv').config();
@@ -34,7 +35,7 @@ const upload = multer({
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-YouTube-Token', 'X-Billing-Sync'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id'],
   credentials: true
 }));
 
@@ -161,6 +162,120 @@ app.get('/health', (req, res) => {
     service: 'local-lambda-server',
     timestamp: new Date().toISOString()
   });
+});
+
+// Transcription endpoint (uses multer for audio uploads)
+app.post('/transcribe', upload.fields([
+  { name: 'audio', maxCount: 1 },
+  { name: 'apiKey', maxCount: 1 },
+  { name: 'provider', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    console.log('Routing to transcribe endpoint');
+    
+    // Build multipart body for Lambda transcribe endpoint
+    const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+    let body = '';
+    
+    // Add audio file
+    if (req.files && req.files.audio && req.files.audio[0]) {
+      const audioFile = req.files.audio[0];
+      body += `--${boundary}\r\n`;
+      body += `Content-Disposition: form-data; name="audio"; filename="${audioFile.originalname}"\r\n`;
+      body += `Content-Type: ${audioFile.mimetype}\r\n\r\n`;
+      body += audioFile.buffer.toString('binary');
+      body += '\r\n';
+    }
+    
+    // Add API key if provided
+    if (req.body.apiKey || (req.files && req.files.apiKey)) {
+      const apiKey = req.body.apiKey || (req.files.apiKey && req.files.apiKey[0] ? req.files.apiKey[0].buffer.toString('utf-8') : null);
+      if (apiKey) {
+        body += `--${boundary}\r\n`;
+        body += `Content-Disposition: form-data; name="apiKey"\r\n\r\n`;
+        body += apiKey;
+        body += '\r\n';
+      }
+    }
+    
+    // Add provider if provided
+    if (req.body.provider || (req.files && req.files.provider)) {
+      const provider = req.body.provider || (req.files.provider && req.files.provider[0] ? req.files.provider[0].buffer.toString('utf-8') : null);
+      if (provider) {
+        body += `--${boundary}\r\n`;
+        body += `Content-Disposition: form-data; name="provider"\r\n\r\n`;
+        body += provider;
+        body += '\r\n';
+      }
+    }
+    
+    body += `--${boundary}--\r\n`;
+    
+    // Convert to Lambda event format with raw body as base64
+    const event = {
+      httpMethod: 'POST',
+      path: '/transcribe',
+      rawPath: '/transcribe',
+      queryStringParameters: null,
+      headers: {
+        ...req.headers,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        'content-length': Buffer.byteLength(body).toString()
+      },
+      body: Buffer.from(body, 'binary').toString('base64'),
+      isBase64Encoded: true,
+      requestContext: {
+        http: {
+          method: 'POST',
+          path: '/transcribe'
+        },
+        requestId: `local-${Date.now()}`,
+        identity: {
+          sourceIp: req.ip || '127.0.0.1'
+        }
+      }
+    };
+    
+    console.log('Request body type:', typeof body);
+    console.log('Request body length:', body.length);
+    console.log('Is base64:', event.isBase64Encoded);
+    
+    // Create Lambda context
+    const context = {
+      requestId: event.requestContext.requestId,
+      functionName: 'llmproxy-local-transcribe',
+      functionVersion: '$LATEST',
+      invokedFunctionArn: 'arn:aws:lambda:local:000000000000:function:llmproxy-local-transcribe',
+      memoryLimitInMB: '512',
+      awsRequestId: event.requestContext.requestId,
+      getRemainingTimeInMillis: () => 300000
+    };
+    
+    // Call transcribe endpoint directly (bypass streaming wrapper)
+    const transcribeEndpoint = require('../src/endpoints/transcribe');
+    const response = await transcribeEndpoint.handler(event, context);  // Pass context for logging
+    
+    // Send response
+    console.log('Transcribe response status:', response.statusCode);
+    console.log('Transcribe response body preview:', response.body ? response.body.substring(0, 200) : 'empty');
+    
+    const statusCode = response?.statusCode || 200;
+    const headers = response?.headers || { 'Content-Type': 'application/json' };
+    const responseBody = response?.body || JSON.stringify({ error: 'No response from handler' });
+    
+    res.status(statusCode);
+    Object.keys(headers).forEach(key => {
+      res.setHeader(key, headers[key]);
+    });
+    res.send(responseBody);
+    
+  } catch (error) {
+    console.error('Transcription error:', error);
+    res.status(500).json({
+      error: 'Failed to process transcription',
+      details: error.message
+    });
+  }
 });
 
 // File conversion endpoint (uses multer for file uploads)
@@ -315,13 +430,37 @@ const handleRequest = async (req, res) => {
 // Handle all HTTP methods for all routes
 app.all('*', handleRequest);
 
-// Start server
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log('\n🚀 Local Lambda Development Server');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`📍 Listening on: http://localhost:${PORT}`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-});
+// Start server (with optional HTTPS support)
+let server;
+const USE_HTTPS = process.env.USE_HTTPS === 'true';
+
+if (USE_HTTPS) {
+  // Use basic self-signed certificate for HTTPS
+  // Generate a simple self-signed cert using selfsigned package
+  const selfsigned = require('selfsigned');
+  const attrs = [{ name: 'commonName', value: 'localhost' }];
+  const pems = selfsigned.generate(attrs, { days: 365 });
+  
+  const httpsOptions = {
+    key: pems.private,
+    cert: pems.cert
+  };
+  
+  server = https.createServer(httpsOptions, app).listen(PORT, '0.0.0.0', () => {
+    console.log('\n🚀 Local Lambda Development Server');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`📍 Listening on: https://localhost:${PORT}`);
+    console.log(`🏥 Health check: https://localhost:${PORT}/health`);
+    console.log('⚠️  Using self-signed certificate - you may need to accept browser warning');
+  });
+} else {
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log('\n🚀 Local Lambda Development Server');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`📍 Listening on: http://localhost:${PORT}`);
+    console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+  });
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {

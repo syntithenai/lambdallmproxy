@@ -44,6 +44,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag' | 'cloud'>('provider');
   
+  // Track if a provider is being edited
+  const [isEditingProvider, setIsEditingProvider] = useState(false);
+  
   // Proxy settings state
   const [proxyUsername, setProxyUsername] = useState('');
   const [proxyPassword, setProxyPassword] = useState('');
@@ -179,9 +182,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
           
           {/* Provider List Component */}
-          <ProviderList />
+          <ProviderList onEditingChange={setIsEditingProvider} />
           
-          {/* Model Selection Optimization */}
+          {/* Model Selection Optimization - Hidden when editing a provider */}
+          {!isEditingProvider && (
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
               🎯 Model Selection Strategy
@@ -268,6 +272,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </label>
             </div>
           </div>
+          )}
         </div>
         )}
 

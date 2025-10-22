@@ -24,6 +24,13 @@ export function ProviderForm({ initialProvider, onSave, onCancel }: ProviderForm
   const [rateLimitTPM, setRateLimitTPM] = useState<string>(
     initialProvider?.rateLimitTPM?.toString() || ''
   );
+  const [capabilities, setCapabilities] = useState({
+    chat: initialProvider?.capabilities?.chat !== false,
+    image: initialProvider?.capabilities?.image !== false,
+    embedding: initialProvider?.capabilities?.embedding !== false,
+    voice: initialProvider?.capabilities?.voice !== false,
+    tts: initialProvider?.capabilities?.tts !== false,
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Auto-fill endpoint when provider type changes
@@ -47,6 +54,7 @@ export function ProviderForm({ initialProvider, onSave, onCancel }: ProviderForm
       type: providerType,
       apiKey,
       apiEndpoint,
+      capabilities, // Include capabilities
     };
 
     // Add optional fields for openai-compatible
@@ -193,6 +201,63 @@ export function ProviderForm({ initialProvider, onSave, onCancel }: ProviderForm
         />
         <p className="mt-1 text-xs text-gray-500">ⓘ Your API key for this provider</p>
         {errors.apiKey && <p className="mt-1 text-sm text-red-500">{errors.apiKey}</p>}
+      </div>
+
+      {/* Capabilities */}
+      <div className="p-4 bg-gray-800 border border-gray-700 rounded-lg">
+        <label className="block text-sm font-medium text-gray-200 mb-3">
+          Service Capabilities
+        </label>
+        <p className="text-xs text-gray-500 mb-3">
+          Select which services this provider can be used for. By default, all are enabled.
+        </p>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={capabilities.chat}
+              onChange={(e) => setCapabilities({ ...capabilities, chat: e.target.checked })}
+              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-300">💬 Chat / Text Completion</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={capabilities.image}
+              onChange={(e) => setCapabilities({ ...capabilities, image: e.target.checked })}
+              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-300">🎨 Image Generation</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={capabilities.embedding}
+              onChange={(e) => setCapabilities({ ...capabilities, embedding: e.target.checked })}
+              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-300">🔗 Embeddings</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={capabilities.voice}
+              onChange={(e) => setCapabilities({ ...capabilities, voice: e.target.checked })}
+              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-300">🎤 Voice / Transcription</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={capabilities.tts}
+              onChange={(e) => setCapabilities({ ...capabilities, tts: e.target.checked })}
+              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-300">🔊 Text-to-Speech</span>
+          </label>
+        </div>
       </div>
 
       {/* Actions */}

@@ -12,8 +12,13 @@ import { maskApiKey } from '../utils/providerValidation';
 import { useProviders } from '../hooks/useProviders';
 import { ProviderForm } from './ProviderForm';
 import { useSettings } from '../contexts/SettingsContext';
+import { useEffect } from 'react';
 
-export function ProviderList() {
+interface ProviderListProps {
+  onEditingChange?: (isEditing: boolean) => void;
+}
+
+export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
   // ...existing code...
   // DEBUG: Log providers and enabled state
   // This must be placed after providers is defined, just before return
@@ -21,6 +26,13 @@ export function ProviderList() {
   const { settings, loadFromGoogleDrive, saveToGoogleDrive } = useSettings();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  // Notify parent when editing state changes
+  useEffect(() => {
+    if (onEditingChange) {
+      onEditingChange(isAdding || editingId !== null);
+    }
+  }, [isAdding, editingId, onEditingChange]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);

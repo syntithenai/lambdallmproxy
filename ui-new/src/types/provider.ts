@@ -27,6 +27,14 @@ export interface ProviderConfig {
   modelName?: string;      // ONLY for openai-compatible - preserved through to upstream
   rateLimitTPM?: number;   // ONLY for openai-compatible - explicit rate limit or undefined
   enabled?: boolean;       // Whether this provider should be used (defaults to true if undefined)
+  // Capability flags - control which services this provider can be used for
+  capabilities?: {
+    chat?: boolean;        // Enable for chat/text completion (default: true)
+    image?: boolean;       // Enable for image generation (default: true)
+    embedding?: boolean;   // Enable for embeddings (default: true)
+    voice?: boolean;       // Enable for voice/transcription (default: true)
+    tts?: boolean;         // Enable for text-to-speech (default: true)
+  };
 }
 
 export type OptimizationPreference = 'cheap' | 'balanced' | 'powerful' | 'fastest';

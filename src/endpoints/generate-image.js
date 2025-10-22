@@ -225,6 +225,12 @@ async function handleGenerateImage(event) {
     // Log to Google Sheets (async, don't block response)
     try {
       const { logToGoogleSheets } = require('../services/google-sheets-logger');
+      const os = require('os');
+      
+      // Extract request ID and Lambda metrics from context
+      const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+      const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
       
       // Log image generation request
       logToGoogleSheets({
@@ -238,6 +244,10 @@ async function handleGenerateImage(event) {
         cost: result.cost || 0,
         durationMs: totalDuration,
         timestamp: new Date().toISOString(),
+        requestId,
+        memoryLimitMB,
+        memoryUsedMB,
+        hostname: os.hostname(),
         metadata: {
           size,
           quality,
@@ -519,7 +529,13 @@ async function generateImageDirect(params) {
     // Log to Google Sheets (async, don't block response)
     try {
       const { logToGoogleSheets } = require('../services/google-sheets-logger');
+      const os = require('os');
       const userEmail = context?.email || 'tool-generated';
+      
+      // Extract request ID and Lambda metrics from context
+      const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+      const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
       
       logToGoogleSheets({
         userEmail,
@@ -532,6 +548,10 @@ async function generateImageDirect(params) {
         cost: result.cost || 0,
         durationMs: totalDuration,
         timestamp: new Date().toISOString(),
+        requestId,
+        memoryLimitMB,
+        memoryUsedMB,
+        hostname: os.hostname(),
         metadata: {
           size,
           quality,

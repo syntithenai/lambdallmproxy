@@ -30,7 +30,8 @@
     "nodemon": "^3.1.10",
     "playwright": "^1.40.0",
     "playwright-extra": "^4.3.6",
-    "selenium-webdriver": "^4.16.0"
+    "selenium-webdriver": "^4.16.0",
+    "selfsigned": "^3.0.1"
   },
   "engines": {
     "node": ">=18.0.0"

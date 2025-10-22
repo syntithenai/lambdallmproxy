@@ -73,8 +73,11 @@ async function generateEmbedding(text, model, provider, apiKey, options = {}) {
         config.timeoutMs
       );
       
-      // Calculate cost
-      const cost = (result.tokens / 1000000) * modelInfo.pricePerMillionTokens;
+      // Calculate cost (0 if running locally)
+      const isLocal = process.env.LOCAL_LAMBDA === 'true' || 
+                     process.env.NODE_ENV === 'development' ||
+                     process.env.AWS_EXECUTION_ENV === undefined;
+      const cost = isLocal ? 0 : (result.tokens / 1000000) * modelInfo.pricePerMillionTokens;
       
       return {
         embedding: new Float32Array(result.embedding),

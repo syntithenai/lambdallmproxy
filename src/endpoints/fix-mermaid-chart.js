@@ -160,6 +160,34 @@ Return ONLY the corrected Mermaid chart code (no markdown, no explanations, just
         console.log(`📊 Token usage: ${usage.prompt_tokens} prompt + ${usage.completion_tokens} completion = ${usage.total_tokens} total`);
         console.log(`💰 Cost: $${usage.cost?.toFixed(6) || '0.000000'}`);
 
+        // Create llmApiCall object for transparency
+        const llmApiCall = {
+            phase: 'mermaid_fix',
+            provider: selectedProvider.type,
+            model: result.model || 'unknown',
+            type: 'mermaid_fix',
+            timestamp: new Date().toISOString(),
+            durationMs: duration,
+            cost: usage.cost || 0,
+            success: true,
+            request: {
+                chartLength: chart.length,
+                errorMessage: error.substring(0, 200)
+            },
+            response: {
+                usage: {
+                    prompt_tokens: usage.prompt_tokens,
+                    completion_tokens: usage.completion_tokens,
+                    total_tokens: usage.total_tokens
+                },
+                fixedChartLength: fixedChart.length
+            },
+            metadata: {
+                temperature: 0.1,
+                max_tokens: 2000
+            }
+        };
+
         // Return fixed chart and usage info
         return {
             statusCode: 200,
@@ -180,7 +208,8 @@ Return ONLY the corrected Mermaid chart code (no markdown, no explanations, just
                     model: result.model || 'unknown',
                     duration_ms: duration
                 },
-                original_error: error
+                original_error: error,
+                llmApiCall: llmApiCall
             })
         };
 

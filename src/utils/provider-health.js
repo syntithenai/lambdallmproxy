@@ -20,13 +20,6 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
  * @param {Object} context - Request context with API keys from UI
  */
 function hasApiKey(provider, context = {}) {
-  const envVarMap = {
-    'openai': 'OPENAI_API_KEY',
-    'together': 'TOGETHER_API_KEY',
-    'gemini': 'GEMINI_API_KEY',
-    'replicate': 'REPLICATE_API_TOKEN'
-  };
-  
   const contextKeyMap = {
     'openai': 'openaiApiKey',
     'together': 'togetherApiKey',
@@ -34,18 +27,15 @@ function hasApiKey(provider, context = {}) {
     'replicate': 'replicateApiKey'
   };
   
-  // Check context first (from UI)
+  // ONLY check context (from UI providers)
+  // Do NOT fallback to environment variables - those are for server-side RAG indexing only
   const contextKey = contextKeyMap[provider.toLowerCase()];
   if (contextKey && context[contextKey]) {
     return true;
   }
   
-  // Fallback to environment variables
-  const envVar = envVarMap[provider.toLowerCase()];
-  if (!envVar) return false;
-  
-  const apiKey = process.env[envVar];
-  return apiKey && apiKey.trim().length > 0;
+  // No key found in user's configured providers
+  return false;
 }
 
 /**
@@ -57,9 +47,9 @@ function isEnabled(provider, context = {}) {
   const envVar = `ENABLE_IMAGE_GENERATION_${provider.toUpperCase()}`;
   const value = process.env[envVar];
   
-  // If not explicitly set, default to true if API key exists
+  // If not explicitly set, default to true (let hasApiKey check handle availability)
   if (value === undefined || value === '') {
-    return hasApiKey(provider, context);
+    return true;
   }
   
   return value === 'true' || value === '1';

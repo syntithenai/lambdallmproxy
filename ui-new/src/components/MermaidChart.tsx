@@ -5,6 +5,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useUsage } from '../contexts/UsageContext';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
+import { LlmInfoDialog as LlmInfoDialogNew } from './LlmInfoDialogNew';
 
 interface MermaidChartProps {
   chart: string;
@@ -34,6 +35,7 @@ interface FixAttempt {
     model: string;
     duration_ms: number;
   };
+  llmApiCall?: any; // Full llmApiCall object for transparency
 }
 
 export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, onLlmApiCall }) => {
@@ -43,6 +45,7 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
   const [fixAttempts, setFixAttempts] = useState<FixAttempt[]>([]);
   const [currentChart, setCurrentChart] = useState(chart);
   const [showFixDetails, setShowFixDetails] = useState(false);
+  const [showLlmInfo, setShowLlmInfo] = useState(false); // NEW: Show LLM transparency dialog
   const [copiedImage, setCopiedImage] = useState(false);
   const { accessToken } = useAuth();
   const { settings } = useSettings();
@@ -251,7 +254,11 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
     console.log(`🔧 Attempting to fix chart (attempt ${attemptNumber}/3)`);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // Import the API utility to get the correct base URL
+      // Force fresh check to ensure we get the right backend URL
+      const { getCachedApiBase, resetApiBase } = await import('../utils/api');
+      resetApiBase(); // Clear cache to re-detect backend
+      const apiUrl = await getCachedApiBase();
       
       const response = await fetch(`${apiUrl}/fix-mermaid-chart`, {
         method: 'POST',
@@ -280,7 +287,8 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
         attemptNumber,
         error: errorMessage,
         fixedChart: data.fixedChart,
-        usage: data.usage
+        usage: data.usage,
+        llmApiCall: data.llmApiCall // Store full llmApiCall for transparency
       };
 
       setFixAttempts(prev => [...prev, newAttempt]);
@@ -342,6 +350,19 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
       <div className="relative bg-white dark:bg-gray-900">
         {/* Action Buttons - subtle and appear on hover */}
         <div className="absolute top-2 right-2 flex gap-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          {/* LLM Info Button - Show if there are fix attempts with llmApiCall */}
+          {fixAttempts.some(attempt => attempt.llmApiCall) && (
+            <button
+              onClick={() => setShowLlmInfo(true)}
+              className="p-1.5 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 text-blue-600 dark:text-blue-400 text-xs rounded backdrop-blur-sm transition-all duration-200 shadow-sm hover:shadow flex items-center gap-1"
+              title="View LLM transparency info for chart fixes"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-[10px]">LLM</span>
+            </button>
+          )}
           <button
             onClick={handleCopyImage}
             className="p-1.5 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs rounded backdrop-blur-sm transition-all duration-200 shadow-sm hover:shadow flex items-center gap-1"
@@ -520,6 +541,14 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
             </div>
           )}
         </div>
+      )}
+
+      {/* LLM Transparency Dialog */}
+      {showLlmInfo && (
+        <LlmInfoDialogNew
+          apiCalls={fixAttempts.filter(a => a.llmApiCall).map(a => a.llmApiCall)}
+          onClose={() => setShowLlmInfo(false)}
+        />
       )}
     </div>
   );

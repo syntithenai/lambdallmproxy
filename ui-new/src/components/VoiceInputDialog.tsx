@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDialogClose } from '../hooks/useDialogClose';
+import { useProviders } from '../hooks/useProviders';
 
 interface VoiceInputDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onTranscriptionComplete: (text: string) => void;
+  onTranscriptionComplete: (text: string, requestId: string, llmApiCall?: any) => void;
   accessToken: string | null;
   apiEndpoint: string;
 }
@@ -17,6 +18,7 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
   apiEndpoint
 }) => {
   const dialogRef = useDialogClose(isOpen, onClose, false); // Don't close on click outside while recording
+  const { providers } = useProviders(); // Get user providers for API keys
   
   const [isRecording, setIsRecording] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -164,9 +166,27 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
     
     setIsProcessing(true);
     
+    // Generate request ID for grouping transcription with subsequent chat request
+    const requestId = `web-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    console.log('🎙️ Generated request ID for voice transcription:', requestId);
+    
+    // Find Groq or OpenAI API key from user providers (prefer Groq for free transcription)
+    const groqProvider = providers.find(p => p.type === 'groq' || p.type === 'groq-free');
+    const openaiProvider = providers.find(p => p.type === 'openai');
+    const whisperApiKey = groqProvider?.apiKey || openaiProvider?.apiKey || null;
+    const whisperProvider = groqProvider ? 'groq' : (openaiProvider ? 'openai' : null);
+    
+    console.log('🎤 Transcription provider:', whisperProvider, 'hasKey:', !!whisperApiKey);
+    
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
+      
+      // Add API key to form data if available
+      if (whisperApiKey && whisperProvider) {
+        formData.append('apiKey', whisperApiKey);
+        formData.append('provider', whisperProvider);
+      }
       
       // Use apiEndpoint, removing /openai/v1 suffix if present
       const baseUrl = apiEndpoint.replace('/openai/v1', '');
@@ -176,13 +196,17 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
         url: transcribeUrl,
         blobSize: audioBlob.size,
         blobType: audioBlob.type,
-        hasToken: !!accessToken
+        hasToken: !!accessToken,
+        requestId,
+        provider: whisperProvider,
+        hasApiKey: !!whisperApiKey
       });
       
       const response = await fetch(transcribeUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${accessToken}`,
+          'X-Request-Id': requestId  // Pass request ID for log grouping
         },
         body: formData
       });
@@ -204,12 +228,13 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
       }
       
       const text = data.text || data.transcription || '';
+      const llmApiCall = data.llmApiCall || null;
       
       setTranscription(text);
       
-      // Auto-submit after a short delay
+      // Auto-submit after a short delay, passing request ID and llmApiCall to parent
       setTimeout(() => {
-        onTranscriptionComplete(text);
+        onTranscriptionComplete(text, requestId, llmApiCall);
         onClose();
       }, 500);
       
@@ -243,10 +268,17 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
     return cleanup;
   }, [isOpen, cleanup]);
 
-  // Auto-start recording when dialog opens
+  // Reset state and auto-start recording when dialog opens
   useEffect(() => {
-    if (isOpen && !isRecording && !isProcessing) {
-      startRecording();
+    if (isOpen) {
+      // Clear previous transcription and errors
+      setTranscription('');
+      setError(null);
+      
+      // Auto-start recording
+      if (!isRecording && !isProcessing) {
+        startRecording();
+      }
     }
   }, [isOpen]);
 

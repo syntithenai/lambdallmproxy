@@ -195,45 +195,7 @@ export const TTSSettings: React.FC = () => {
             </div>
           </div>
 
-          {/* Troubleshooting Section */}
-          <div className="card bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-400 p-6">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0">
-                <svg className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-2">
-                  🔧 TTS Troubleshooting
-                </h4>
-                <div className="text-sm text-amber-700 dark:text-amber-300 space-y-2">
-                  <p><strong>Stop Button Stuck Red?</strong></p>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li>The system uses multiple detection methods to reset the button automatically</li>
-                    <li>If stuck, refresh the page or try a different browser</li>
-                    <li>Chrome and Firefox have the most reliable speech synthesis support</li>
-                    <li>Safari may have inconsistent behavior with browser TTS</li>
-                  </ul>
-                  
-                  <p className="mt-3"><strong>Provider Recommendations:</strong></p>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li><strong>Best Quality:</strong> ElevenLabs or LLM providers (OpenAI, Groq)</li>
-                    <li><strong>Most Reliable:</strong> Browser Speech API (built-in voices)</li>
-                    <li><strong>Offline Backup:</strong> speak.js (basic quality)</li>
-                  </ul>
 
-                  <p className="mt-3"><strong>Common Issues:</strong></p>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li>API providers require valid keys and sufficient credits</li>
-                    <li>Browser TTS may be interrupted by other audio or navigation</li>
-                    <li>Long text is automatically summarized for better speech experience</li>
-                    <li>Check browser console (F12) for detailed error messages</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* Voice Selection */}
           <div className="card bg-white dark:bg-gray-800 p-6">
@@ -422,66 +384,6 @@ export const TTSSettings: React.FC = () => {
               )}
             </div>
           )}
-
-          {/* Advanced Debugging Section */}
-          <div className="card bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-6">
-            <details className="group">
-              <summary className="cursor-pointer flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100">
-                <span className="flex items-center gap-2">
-                  🔧 Advanced Debugging & Diagnostics
-                </span>
-                <svg className="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </summary>
-              
-              <div className="mt-4 space-y-4 text-sm text-gray-600 dark:text-gray-400">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-white dark:bg-gray-800 p-3 rounded border">
-                    <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Current State</h5>
-                    <ul className="space-y-1 text-xs">
-                      <li><strong>Provider:</strong> {state.currentProvider}</li>
-                      <li><strong>Voice:</strong> {state.currentVoice || 'Default'}</li>
-                      <li><strong>Status:</strong> {state.isPlaying ? '🔴 Playing' : '⚫ Stopped'}</li>
-                      <li><strong>Auto-Summarize:</strong> {state.autoSummarize ? 'ON' : 'OFF'}</li>
-                    </ul>
-                  </div>
-                  
-                  <div className="bg-white dark:bg-gray-800 p-3 rounded border">
-                    <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Browser Support</h5>
-                    <ul className="space-y-1 text-xs">
-                      <li><strong>Speech Synthesis:</strong> {'speechSynthesis' in window ? '✅ Available' : '❌ Not Available'}</li>
-                      <li><strong>User Agent:</strong> {navigator.userAgent.includes('Chrome') ? 'Chrome' : navigator.userAgent.includes('Firefox') ? 'Firefox' : navigator.userAgent.includes('Safari') ? 'Safari' : 'Other'}</li>
-                      <li><strong>Voices Loaded:</strong> {voices.length} available</li>
-                    </ul>
-                  </div>
-                </div>
-                
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded">
-                  <h5 className="font-medium text-yellow-800 dark:text-yellow-200 mb-2">🚨 If TTS Button Gets Stuck:</h5>
-                  <ol className="list-decimal list-inside space-y-1 text-xs text-yellow-700 dark:text-yellow-300">
-                    <li>Wait 30 seconds (automatic timeout will reset it)</li>
-                    <li>Try clicking the stop button again</li>
-                    <li>Refresh the page (Ctrl+F5 or Cmd+R)</li>
-                    <li>Switch to a different browser (Chrome recommended)</li>
-                    <li>Check browser console (F12) for error messages</li>
-                    <li>Try switching to a different TTS provider above</li>
-                  </ol>
-                </div>
-                
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 rounded">
-                  <h5 className="font-medium text-green-800 dark:text-green-200 mb-2">💡 Performance Tips:</h5>
-                  <ul className="list-disc list-inside space-y-1 text-xs text-green-700 dark:text-green-300">
-                    <li>Enable auto-summarize for long content to improve speech quality</li>
-                    <li>LLM providers (OpenAI, Groq) offer the highest quality voices</li>
-                    <li>Browser TTS is most reliable but has limited voice options</li>
-                    <li>ElevenLabs provides premium voices but requires credits</li>
-                    <li>The system automatically falls back to working providers</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-          </div>
         </>
       )}
     </div>
