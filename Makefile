@@ -3,11 +3,18 @@
 
 SHELL := /bin/bash
 
-.PHONY: help deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python
+.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python
 
 # Default target - Show help
 help:
 	@echo "🚀 Lambda LLM Proxy - Deployment Commands"
+	@echo ""
+	@echo "📦 Installation & Setup:"
+	@echo "  make check-node          - Check Node.js version (requires 20+)"
+	@echo "  make setup               - Complete first-time setup (checks Node, installs deps)"
+	@echo "  make install             - Install all dependencies (backend + UI)"
+	@echo "  make install-backend     - Install backend dependencies only"
+	@echo "  make install-ui          - Install UI dependencies only"
 	@echo ""
 	@echo "Main Lambda Function:"
 	@echo "  make deploy-lambda       - Deploy main Lambda function (full with dependencies)"
@@ -58,6 +65,127 @@ help:
 	@echo "  make update-catalog      - Update PROVIDER_CATALOG.json with latest data"
 	@echo "  make clean               - Clean temporary files"
 	@echo "  make serve               - Serve UI locally on port 8081"
+
+# ================================================================
+# Installation & Setup
+# ================================================================
+
+# Check Node.js version (requires 20+)
+check-node:
+	@echo "🔍 Checking Node.js version..."
+	@NODE_VERSION=$$(node --version 2>/dev/null | sed 's/v//'); \
+	if [ -z "$$NODE_VERSION" ]; then \
+		echo "❌ Node.js is not installed"; \
+		echo ""; \
+		echo "📥 Please install Node.js 20+ using one of these methods:"; \
+		echo ""; \
+		echo "Option 1: Using nvm (recommended):"; \
+		echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash"; \
+		echo "  source ~/.bashrc"; \
+		echo "  nvm install 20"; \
+		echo "  nvm use 20"; \
+		echo "  nvm alias default 20"; \
+		echo ""; \
+		echo "Option 2: Using system package manager (Ubuntu/Debian):"; \
+		echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"; \
+		echo "  sudo apt-get install -y nodejs"; \
+		echo ""; \
+		exit 1; \
+	fi; \
+	NODE_MAJOR=$$(echo $$NODE_VERSION | cut -d. -f1); \
+	if [ $$NODE_MAJOR -lt 20 ]; then \
+		echo "❌ Node.js version $$NODE_VERSION is too old"; \
+		echo "⚠️  This project requires Node.js 20+ (you have v$$NODE_VERSION)"; \
+		echo ""; \
+		echo "📥 Please upgrade Node.js using one of these methods:"; \
+		echo ""; \
+		echo "Option 1: Using nvm (recommended):"; \
+		echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash"; \
+		echo "  source ~/.bashrc"; \
+		echo "  nvm install 20"; \
+		echo "  nvm use 20"; \
+		echo "  nvm alias default 20"; \
+		echo ""; \
+		echo "Option 2: Using system package manager (Ubuntu/Debian):"; \
+		echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"; \
+		echo "  sudo apt-get install -y nodejs"; \
+		echo ""; \
+		exit 1; \
+	fi; \
+	echo "✅ Node.js version: v$$NODE_VERSION (compatible)"; \
+	echo "✅ npm version: $$(npm --version)"
+
+# Install backend dependencies only
+install-backend:
+	@echo "📦 Installing backend dependencies..."
+	@if [ ! -f package.json ]; then \
+		echo "❌ package.json not found in current directory"; \
+		exit 1; \
+	fi
+	@echo "🧹 Cleaning old dependencies..."
+	@rm -rf node_modules package-lock.json
+	@echo "📥 Installing packages (this may take a few minutes)..."
+	@npm install --legacy-peer-deps
+	@echo "✅ Backend dependencies installed successfully"
+
+# Install UI dependencies only
+install-ui:
+	@echo "📦 Installing UI dependencies..."
+	@if [ ! -d ui-new ]; then \
+		echo "❌ ui-new directory not found"; \
+		exit 1; \
+	fi
+	@echo "🧹 Cleaning old dependencies..."
+	@rm -rf ui-new/node_modules ui-new/package-lock.json
+	@echo "📥 Installing packages (this may take a few minutes)..."
+	@cd ui-new && npm install
+	@echo "✅ UI dependencies installed successfully"
+
+# Install all dependencies (backend + UI)
+install: check-node
+	@echo "📦 Installing all dependencies..."
+	@echo ""
+	@$(MAKE) install-backend
+	@echo ""
+	@$(MAKE) install-ui
+	@echo ""
+	@echo "✅ All dependencies installed successfully!"
+	@echo ""
+	@echo "📍 Next steps:"
+	@echo "  1. Copy .env.example to .env and configure your API keys"
+	@echo "  2. Run 'make dev' to start local development servers"
+	@echo "  3. Open http://localhost:8081 in your browser"
+
+# Complete first-time setup
+setup: check-node
+	@echo "🚀 Running complete first-time setup..."
+	@echo ""
+	@if [ ! -f .env ]; then \
+		echo "📝 Creating .env file from .env.example..."; \
+		if [ -f .env.example ]; then \
+			cp .env.example .env; \
+			echo "✅ .env file created"; \
+			echo "⚠️  Please edit .env and add your API keys"; \
+		else \
+			echo "⚠️  .env.example not found, skipping .env creation"; \
+		fi; \
+		echo ""; \
+	else \
+		echo "✅ .env file already exists"; \
+		echo ""; \
+	fi
+	@$(MAKE) install
+	@echo ""
+	@echo "🎉 Setup complete! You're ready to start developing."
+	@echo ""
+	@echo "📍 Quick start:"
+	@echo "  make dev          # Start local development (backend + UI)"
+	@echo "  make logs         # View Lambda logs"
+	@echo "  make help         # Show all available commands"
+
+# ================================================================
+# Lambda Deployment
+# ================================================================
 
 # Deploy Lambda function (full with dependencies)
 deploy-lambda:

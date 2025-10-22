@@ -316,21 +316,11 @@ const handleRequest = async (req, res) => {
 app.all('*', handleRequest);
 
 // Start server
-const server = app.listen(PORT, '127.0.0.1', () => {
-  console.log('');
-  console.log('🚀 Local Lambda Development Server');
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log('\n🚀 Local Lambda Development Server');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`📍 Listening on: http://localhost:${PORT}`);
   console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-  console.log('');
-  console.log('Available endpoints:');
-  console.log(`  POST http://localhost:${PORT}/chat`);
-  console.log(`  POST http://localhost:${PORT}/providers`);
-  console.log(`  GET  http://localhost:${PORT}/health`);
-  console.log('');
-  console.log('Press Ctrl+C to stop');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
 });
 
 // Graceful shutdown

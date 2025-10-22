@@ -20,28 +20,50 @@ The proxy features a **sophisticated model selection system** that automatically
 
 📖 **[Read the complete Model Selection Documentation →](MODEL_SELECTION.md)**
 
-## Quick Start - Use the Makefile!
+## Quick Start - Installation
 
-**⚡ For all deployments and builds, use the Makefile commands:**
+**⚡ First-time setup (one command):**
 
 ```bash
-# 🔥 RECOMMENDED FOR AI AGENTS - Quick deploy after code changes
+# Clone the repository
+git clone https://github.com/syntithenai/lambdallmproxy.git
+cd lambdallmproxy
+
+# Complete automated setup (checks Node.js 20+, installs dependencies, creates .env)
+make setup
+
+# Edit your API keys
+nano .env
+
+# Start local development
 make dev
+```
 
-# Deploy the Lambda function (legacy)
-make deploy
+**📖 For detailed installation instructions, see [INSTALLATION.md](INSTALLATION.md)**
 
-# Deploy everything (Lambda + docs)
-make full-deploy
+### Common Commands
 
-# Build and deploy UI (build docs + push to git)
-make deploy_ui
+```bash
+# Installation & Setup
+make setup               # Complete first-time setup
+make install             # Install all dependencies
+make check-node          # Verify Node.js version (requires 20+)
 
-# Test the Lambda function
-make test
+# Local Development (Primary Workflow)
+make dev                 # Start backend + UI with hot reload
+make run-lambda-local    # Start backend only on port 3000
+make serve-ui            # Start UI only on port 8081
 
-# View all available commands (with AI agent recommendations)
-make help
+# Production Deployment (Only When Ready)
+make deploy-lambda-fast  # Deploy backend code (~10 sec)
+make deploy-lambda       # Full backend deploy with dependencies
+make deploy-ui           # Build and deploy UI to GitHub Pages
+make deploy-env          # Sync .env variables to Lambda
+
+# Utilities
+make logs                # View recent Lambda logs
+make logs-tail           # Tail Lambda logs in real-time
+make help                # Show all available commands
 ```
 
 **The Makefile is your single interface for all operations - it ensures consistent, reliable deployments and builds.**

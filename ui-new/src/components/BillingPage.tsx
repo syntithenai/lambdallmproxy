@@ -497,6 +497,11 @@ const BillingPage: React.FC = () => {
     new Set(billingData.transactions.map(t => t.provider))
   ).sort();
 
+  // Dynamically get all unique types from transactions
+  const uniqueTypes: string[] = Array.from(
+    new Set(billingData.transactions.map(t => String(t.type)))
+  );
+
   return (
     <div className="billing-page-container">
       <div className="billing-page">
@@ -568,11 +573,19 @@ const BillingPage: React.FC = () => {
             🏷️ Type:
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               <option value="">All Types</option>
-              <option value="chat">Chat</option>
-              <option value="embedding">Embedding</option>
-              <option value="guardrail_input">Guardrail Input</option>
-              <option value="guardrail_output">Guardrail Output</option>
-              <option value="planning">Planning</option>
+              {uniqueTypes.map((type: string) => (
+                <option key={type} value={type}>
+                  {type === 'chat' ? 'Chat'
+                    : type === 'embedding' ? 'Embedding'
+                    : type === 'guardrail_input' ? 'Guardrail Input'
+                    : type === 'guardrail_output' ? 'Guardrail Output'
+                    : type === 'planning' ? 'Planning'
+                    : type === 'image_generation' ? 'Image Generation'
+                    : typeof type === 'string'
+                      ? type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                      : String(type)}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -794,9 +807,27 @@ const BillingPage: React.FC = () => {
               </thead>
               <tbody>
                 {billingData.transactions.map((tx, idx) => (
-                  <tr key={idx}>
+                  <tr key={idx}
+                    style={
+                      String(tx.type) === 'guardrail_input' || String(tx.type) === 'guardrail_output'
+                        ? { background: '#fffde7' }
+                        : String(tx.type) === 'image_generation'
+                          ? { background: '#e3f2fd' }
+                          : {}
+                    }
+                  >
                     <td>{new Date(tx.timestamp).toLocaleString()}</td>
-                    <td>{tx.type}</td>
+                    <td>
+                      {String(tx.type) === 'guardrail_input' ? '🛡️ Guardrail Input'
+                        : String(tx.type) === 'guardrail_output' ? '🛡️ Guardrail Output'
+                        : String(tx.type) === 'image_generation' ? '🖼️ Image Generation'
+                        : String(tx.type) === 'chat' ? 'Chat'
+                        : String(tx.type) === 'embedding' ? 'Embedding'
+                        : String(tx.type) === 'planning' ? 'Planning'
+                        : typeof tx.type === 'string'
+                          ? String(tx.type).replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                          : String(tx.type)}
+                    </td>
                     <td>{tx.provider}</td>
                     <td>{tx.model}</td>
                     <td>{tx.totalTokens.toLocaleString()}</td>

@@ -2,8 +2,27 @@
 import { createSSERequest, handleSSEResponse } from './streaming';
 
 // Constants
-const LOCAL_LAMBDA_URL = import.meta.env.VITE_LOCAL_LAMBDA_URL || 'http://localhost:3000';
 const REMOTE_LAMBDA_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_LAMBDA_URL || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+
+/**
+ * Get the local Lambda URL based on current hostname
+ * This allows accessing from localhost, LAN IP, or domain name
+ */
+function getLocalLambdaUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  const hostname = window.location.hostname;
+  const port = '3000';
+  
+  // If VITE_LOCAL_LAMBDA_URL is explicitly set, use it
+  if (import.meta.env.VITE_LOCAL_LAMBDA_URL) {
+    return import.meta.env.VITE_LOCAL_LAMBDA_URL;
+  }
+  
+  // Build URL based on current hostname (works for localhost, LAN IP, or domain)
+  return `${protocol}//${hostname}:${port}`;
+}
+
+const LOCAL_LAMBDA_URL = getLocalLambdaUrl();
 
 // Log configuration for debugging
 console.log('🔧 API Configuration:', {

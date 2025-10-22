@@ -14,6 +14,9 @@ import { ProviderForm } from './ProviderForm';
 import { useSettings } from '../contexts/SettingsContext';
 
 export function ProviderList() {
+  // ...existing code...
+  // DEBUG: Log providers and enabled state
+  // This must be placed after providers is defined, just before return
   const { providers, addProvider, updateProvider, deleteProvider } = useProviders();
   const { settings, loadFromGoogleDrive, saveToGoogleDrive } = useSettings();
   const [isAdding, setIsAdding] = useState(false);
@@ -21,6 +24,9 @@ export function ProviderList() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // DEBUG: Log providers and enabled state
+  // Place this after all hooks and state, before return
 
   const handleAdd = () => {
     setIsAdding(true);
@@ -184,8 +190,8 @@ export function ProviderList() {
 
       {/* Success/Error Messages */}
       {success && (
-        <div className="p-3 bg-green-900/30 border border-green-700 rounded-lg">
-          <p className="text-sm text-green-400">✓ {success}</p>
+        <div className="p-3 bg-green-700 border border-green-400 rounded-lg">
+          <p className="text-sm text-white font-bold">✓ {success}</p>
         </div>
       )}
       {error && (
@@ -222,27 +228,25 @@ export function ProviderList() {
             <div className="space-y-3">
               {providers.map((provider) => {
                 const info = PROVIDER_INFO[provider.type];
+                // Default enabled to true if undefined, except for TogetherAI
+                const isTogether = provider.type === 'together';
+                const enabled = typeof provider.enabled === 'boolean' ? provider.enabled : (!isTogether ? true : false);
                 return (
                   <div
                     key={provider.id}
                     className={`p-4 rounded-lg border transition-colors ${
-                      provider.enabled !== false
+                      enabled
                         ? 'bg-gray-800 border-gray-700 hover:border-gray-600'
-                        : 'bg-gray-900 border-gray-800 hover:border-gray-700 opacity-60'
+                        : 'bg-gray-900 border-gray-800 hover:border-gray-700 opacity-80 grayscale'
                     }`}
                   >
                     {/* Provider Header with Actions */}
                     <div className="flex justify-between items-center mb-3">
                       <div className="flex items-center gap-2">
                         <span className="text-xl">{info.icon}</span>
-                        <span className={`font-medium ${provider.enabled !== false ? 'text-white' : 'text-gray-500'}`}>
+                        <span className={`font-medium ${enabled ? 'text-white' : 'text-gray-500'}`}>
                           {info.name}
                         </span>
-                        {provider.enabled === false && (
-                          <span className="px-2 py-0.5 text-xs bg-gray-700 text-gray-400 rounded">
-                            Disabled
-                          </span>
-                        )}
                       </div>
 
                       {/* Action Buttons - Now on top */}
@@ -250,21 +254,19 @@ export function ProviderList() {
                         {/* Enable/Disable Toggle */}
                         <button
                           onClick={() => {
-                            const isEnabled = provider.enabled !== false;
-                            updateProvider(provider.id, { ...provider, enabled: !isEnabled });
-                            setSuccess(isEnabled ? 'Provider disabled' : 'Provider enabled');
+                            updateProvider(provider.id, { enabled: !enabled });
+                            setSuccess(enabled ? `${info.name} disabled` : `${info.name} enabled`);
                             setTimeout(() => setSuccess(null), 2000);
                           }}
-                          className={`px-3 py-1 rounded transition-colors text-sm font-medium ${
-                            provider.enabled !== false 
+                          className={`px-3 py-1 rounded transition-colors text-sm font-bold ${
+                            enabled 
                               ? 'bg-green-600 hover:bg-green-700 text-white' 
-                              : 'bg-gray-600 hover:bg-gray-500 text-gray-300'
+                              : 'bg-red-700 hover:bg-red-800 text-red-100 border border-red-400'
                           }`}
-                          title={provider.enabled !== false ? 'Click to disable' : 'Click to enable'}
+                          title={enabled ? 'Click to disable' : 'Click to enable'}
                         >
-                          {provider.enabled !== false ? '✓' : '✗'}
+                          {enabled ? 'Enabled' : 'Disabled'}
                         </button>
-                        
                         <button
                           onClick={() => handleEdit(provider.id)}
                           className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors text-sm"

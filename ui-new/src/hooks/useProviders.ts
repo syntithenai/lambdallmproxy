@@ -71,28 +71,32 @@ export function useProviders(): UseProvidersResult {
 
       const updatedProvider = { ...existingProvider, ...updates };
 
-      // Validate updated provider
-      const validation = validateProvider(updatedProvider);
-      if (!validation.valid) {
-        const firstError = Object.values(validation.errors)[0];
-        return { success: false, error: firstError };
-      }
+      // Validate updated provider (skip validation for enabled toggle)
+      if (!('enabled' in updates && Object.keys(updates).length === 1)) {
+        const validation = validateProvider(updatedProvider);
+        if (!validation.valid) {
+          const firstError = Object.values(validation.errors)[0];
+          return { success: false, error: firstError };
+        }
 
-      // Check for duplicates (excluding the current provider)
-      const duplicate = settings.providers.find(
-        (p) => p.id !== id && isDuplicateProvider(p, updatedProvider)
-      );
-      if (duplicate) {
-        return {
-          success: false,
-          error: 'A provider with this type and API key already exists',
-        };
+        // Check for duplicates (excluding the current provider)
+        const duplicate = settings.providers.find(
+          (p) => p.id !== id && isDuplicateProvider(p, updatedProvider)
+        );
+        if (duplicate) {
+          return {
+            success: false,
+            error: 'A provider with this type and API key already exists',
+          };
+        }
       }
 
       // Update provider
+      const newProviders = settings.providers.map((p) => (p.id === id ? updatedProvider : p));
+      
       setSettings({
         ...settings,
-        providers: settings.providers.map((p) => (p.id === id ? updatedProvider : p)),
+        providers: newProviders,
       });
 
       return { success: true };
