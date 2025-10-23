@@ -162,6 +162,9 @@ export interface ChatMessage {
   rawResponse?: string;  // NEW: For tool messages - full raw response
   extractionMetadata?: any;  // NEW: For tool messages - extraction metadata
   isStreaming?: boolean;  // Flag to indicate message is currently being streamed
+  guardrailFailed?: boolean;  // Flag to indicate content was filtered by guardrails
+  guardrailReason?: string;   // Reason for guardrail filtering
+  guardrailViolations?: any;  // Detailed violation data
   _attachments?: Array<{  // UI-only: attached files for display
     name: string;
     type: string;

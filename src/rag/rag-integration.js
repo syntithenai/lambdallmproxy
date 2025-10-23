@@ -208,7 +208,18 @@ async function autoEmbedSnippet(snippet, apiKeys = {}) {
   // Generate embeddings for chunks
   const { batchGenerateEmbeddings, calculateTotalCost, calculateTotalTokens } = require('./embeddings');
   
-  const chunkTexts = chunks.map(c => c.chunk_text);
+  // Prepend title and tags to each chunk for embedding
+  // This allows vector search to match on title and tag keywords
+  const metadataPrefix = [];
+  if (snippet.title || snippet.name) {
+    metadataPrefix.push(`Title: ${snippet.title || snippet.name}`);
+  }
+  if (snippet.tags && snippet.tags.length > 0) {
+    metadataPrefix.push(`Tags: ${snippet.tags.join(', ')}`);
+  }
+  const metadataText = metadataPrefix.length > 0 ? metadataPrefix.join('\n') + '\n\n' : '';
+  
+  const chunkTexts = chunks.map(c => metadataText + c.chunk_text);
   const embeddings = await batchGenerateEmbeddings(
     chunkTexts,
     config.embeddingModel,

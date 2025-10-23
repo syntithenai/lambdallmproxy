@@ -530,7 +530,7 @@ async function generateImageDirect(params) {
     try {
       const { logToGoogleSheets } = require('../services/google-sheets-logger');
       const os = require('os');
-      const userEmail = context?.email || 'tool-generated';
+      const userEmail = context?.userEmail || context?.email || context?.user || 'tool-generated';
       
       // Extract request ID and Lambda metrics from context
       const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

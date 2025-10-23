@@ -471,9 +471,35 @@ async function scrapeWithTierFallback(url, options = {}) {
         await handleLoginRequired(url, options);
       }
 
+      // Apply smart content extraction to remove headers, footers, navigation, etc.
+      // This provides clean, article-focused content instead of raw innerText
+      if (!result.content && (result.html || result.text)) {
+        console.log(`🧹 [Orchestrator] Applying smart content extraction...`);
+        const { extractContent } = require('../html-content-extractor');
+        
+        const extractionInput = result.html || result.text;
+        const extracted = extractContent(extractionInput, { baseUrl: url });
+        
+        // Preserve raw text for reference
+        result.rawText = result.text;
+        
+        // Add extracted content to result
+        result.content = extracted.content;
+        result.contentFormat = extracted.format;
+        result.originalLength = extracted.originalLength;
+        result.extractedLength = extracted.extractedLength;
+        result.compressionRatio = extracted.compressionRatio;
+        result.extractionWarning = extracted.warning;
+        
+        console.log(`✨ [Orchestrator] Smart extraction: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.compressionRatio.toFixed(2)}x compression, format: ${extracted.format})`);
+        if (extracted.warning) {
+          console.log(`⚠️  [Orchestrator] Extraction warning: ${extracted.warning}`);
+        }
+      }
+
       // Success!
       console.log(`✅ [Orchestrator] Success at Tier ${currentTier}: ${tierName}`);
-      console.log(`📊 Stats: ${result.text?.length || 0} chars, ${result.links?.length || 0} links`);
+      console.log(`📊 Stats: ${result.content?.length || result.text?.length || 0} chars (content), ${result.links?.length || 0} links`);
       console.log(`${'='.repeat(70)}\n`);
       
       // Emit success progress

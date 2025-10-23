@@ -62,6 +62,13 @@ export class BrowserSpeechProvider implements TTSProvider {
   }
 
   async speak(text: string, options: SpeakOptions = {}): Promise<void> {
+    // Validate text input
+    if (!text || text.trim().length === 0) {
+      const error = new Error('Cannot speak empty text');
+      options.onError?.(error);
+      throw error;
+    }
+
     // Cancel any ongoing speech
     this.stop();
     
@@ -69,7 +76,18 @@ export class BrowserSpeechProvider implements TTSProvider {
     this.isStoppedIntentionally = false;
     this.currentOnEndCallback = null;
 
-    this.utterance = new SpeechSynthesisUtterance(text);
+    // Trim and limit text length to avoid browser limitations
+    const trimmedText = text.trim();
+    const maxLength = 32000; // Most browsers have limits around 32KB
+    const finalText = trimmedText.length > maxLength 
+      ? trimmedText.substring(0, maxLength) + '...' 
+      : trimmedText;
+
+    if (trimmedText.length > maxLength) {
+      console.warn(`BrowserSpeechProvider: Text truncated from ${trimmedText.length} to ${maxLength} characters`);
+    }
+
+    this.utterance = new SpeechSynthesisUtterance(finalText);
     this.utterance.rate = options.rate || 1.0;
     this.utterance.pitch = options.pitch || 1.0;
     this.utterance.volume = options.volume || 1.0;
@@ -100,6 +118,13 @@ export class BrowserSpeechProvider implements TTSProvider {
       };
       
       this.utterance.onerror = (event) => {
+        console.error('BrowserSpeechProvider: Speech synthesis error:', {
+          error: event.error,
+          utterance: event.utterance,
+          isStoppedIntentionally: this.isStoppedIntentionally,
+          text: text.substring(0, 100) + (text.length > 100 ? '...' : '')
+        });
+        
         // Don't treat "interrupted" as an error if we stopped intentionally
         if (this.isStoppedIntentionally && event.error === 'interrupted') {
           options.onEnd?.();
@@ -107,6 +132,11 @@ export class BrowserSpeechProvider implements TTSProvider {
           this.utterance = null;
           resolve();
           return;
+        }
+        
+        // Handle synthesis-failed gracefully
+        if (event.error === 'synthesis-failed') {
+          console.warn('BrowserSpeechProvider: synthesis-failed - possibly empty text, too long text, or browser limitation');
         }
         
         const error = new Error(`Speech synthesis error: ${event.error}`);
@@ -124,16 +154,28 @@ export class BrowserSpeechProvider implements TTSProvider {
         };
       }
 
-      try {
-        this.synth.speak(this.utterance);
-        
-        // Start polling to detect when speech actually stops
-        this.startPolling();
-      } catch (error) {
-        const err = new Error(`Failed to start speech: ${error}`);
-        options.onError?.(err);
-        this.utterance = null;
-        reject(err);
+      const startSpeaking = () => {
+        try {
+          this.synth.speak(this.utterance!);
+          
+          // Start polling to detect when speech actually stops
+          this.startPolling();
+        } catch (error) {
+          const err = new Error(`Failed to start speech: ${error}`);
+          options.onError?.(err);
+          this.utterance = null;
+          reject(err);
+        }
+      };
+
+      // Reset speech synthesis if it's in a bad state
+      if (this.synth.speaking || this.synth.pending) {
+        console.warn('BrowserSpeechProvider: Speech synthesis in bad state, resetting...');
+        this.synth.cancel();
+        // Wait a bit for the cancel to complete before speaking
+        setTimeout(startSpeaking, 100);
+      } else {
+        startSpeaking();
       }
     });
   }

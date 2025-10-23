@@ -1090,14 +1090,40 @@ class DuckDuckGoSearcher {
                 const scrapeResult = await scrapeWithTierFallback(result.url, orchOptions);
 
                 // Map orchestrator output into result fields
-                result.scrapeService = scrapeResult.tier || 'tier_orchestrator';
-                result.tier = scrapeResult.tier;
+                result.tier = scrapeResult.tier; // Tier number (0-4)
+                result.scrapeService = scrapeResult.method || `tier_${scrapeResult.tier}`; // e.g., "puppeteer-stealth"
+                result.scrapeMethod = getTierName(scrapeResult.tier); // e.g., "Puppeteer"
                 result.meta = scrapeResult.meta;
                 result.stats = scrapeResult.stats;
+                result.responseTime = scrapeResult.responseTime; // Scrape time in ms
+                result.timings = scrapeResult.timings; // Detailed timing breakdown
+                
+                // Preserve ALL versions of content for transparency
+                result.rawHtml = scrapeResult.html; // Complete HTML (massive)
+                result.rawText = scrapeResult.rawText || scrapeResult.text; // Raw innerText (before smart extraction)
+                result.structuredData = {
+                    title: scrapeResult.title,
+                    description: scrapeResult.description,
+                    links: scrapeResult.links,
+                    images: scrapeResult.images
+                };
+                
+                // Helper to get tier name
+                function getTierName(tier) {
+                    const names = {
+                        0: 'Direct HTTP',
+                        1: 'Puppeteer',
+                        2: 'Playwright',
+                        3: 'Selenium',
+                        4: 'Interactive'
+                    };
+                    return names[tier] || `Tier ${tier}`;
+                }
 
                 // Prefer extracted content from orchestrator when available
                 if (scrapeResult.content && scrapeResult.content.length > 0) {
                     rawContent = scrapeResult.content;
+                    result.smartExtracted = scrapeResult.content; // After smart extraction
                     result.content = scrapeResult.content;
                     result.originalLength = scrapeResult.originalLength || (scrapeResult.content.length);
                     result.extractedLength = scrapeResult.extractedLength || (scrapeResult.content.length);
@@ -1107,9 +1133,6 @@ class DuckDuckGoSearcher {
                     result.originalLength = (rawContent || '').length;
                     result.compressionRatio = scrapeResult.compressionRatio || 1.0;
                 }
-
-                // Preserve raw HTML for downstream parsing
-                result.rawHtml = scrapeResult.rawHtml || scrapeResult.html || scrapeResult.text || rawContent;
             } catch (orchErr) {
                 console.warn(`Tier orchestrator failed for ${result.url}: ${orchErr.message}. Falling back to direct fetch.`);
                 try {
@@ -1184,10 +1207,41 @@ class DuckDuckGoSearcher {
                 result.page_content = { images: [], videos: [], media: [] };
             }
             
-            // Use new HTML content extractor to convert to Markdown (preferred) or plain text
-            const extracted = extractContent(rawContent, { baseUrl: result.url });
+            // Use new HTML content extractor ONLY if orchestrator didn't already provide clean content
+            let optimizedContent;
+            let extracted;
             
-            console.log(`[${index + 1}/${total}] Extracted ${extracted.format} content: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.compressionRatio}x compression)`);
+            if (result.content && result.content.length > 200) {
+                // Orchestrator already provided good content, use it
+                console.log(`[${index + 1}/${total}] Using orchestrator content: ${result.content.length} chars`);
+                optimizedContent = result.content;
+                
+                // This is AFTER smart extraction (headers/footers removed)
+                result.afterSmartExtraction = result.content;
+                
+                extracted = {
+                    format: result.contentFormat || 'text',
+                    originalLength: result.originalLength || result.content.length,
+                    extractedLength: result.extractedLength || result.content.length,
+                    compressionRatio: result.compressionRatio || 1.0,
+                    content: result.content,
+                    warning: null
+                };
+            } else {
+                // Run extraction on raw HTML
+                extracted = extractContent(rawContent, { baseUrl: result.url });
+                optimizedContent = extracted.content;
+                
+                // This is AFTER smart extraction
+                result.afterSmartExtraction = optimizedContent;
+                
+                console.log(`[${index + 1}/${total}] Extracted ${extracted.format} content: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.compressionRatio}x compression)`);
+                
+                // Store extraction metadata
+                result.contentFormat = extracted.format;
+                result.originalContentLength = extracted.originalLength;
+                result.compressionRatio = extracted.compressionRatio;
+            }
             
             // Emit content extraction event with structured data
             if (progressCallback) {
@@ -1209,13 +1263,6 @@ class DuckDuckGoSearcher {
                 });
             }
             
-            let optimizedContent = extracted.content;
-            
-            // Store extraction metadata
-            result.contentFormat = extracted.format;
-            result.originalContentLength = extracted.originalLength;
-            result.compressionRatio = extracted.compressionRatio;
-            
             if (extracted.warning) {
                 console.log(`[${index + 1}/${total}] Warning: ${extracted.warning}`);
             }
@@ -1235,7 +1282,11 @@ class DuckDuckGoSearcher {
             // Apply content summarization for very long content (increased threshold for 32K)
             if (optimizedContent.length > 5000 && index < 5) { // Increased length threshold and more results
                 console.log(`[${index + 1}/${total}] Content is long (${optimizedContent.length} chars), applying summarization...`);
+                result.beforeSummarization = optimizedContent; // Store before summarization
                 optimizedContent = await this.summarizeContent(optimizedContent, result.title || result.url);
+                result.afterSummarization = optimizedContent; // Store after summarization
+            } else {
+                result.afterSummarization = optimizedContent; // No summarization applied
             }
             
             // Apply token-aware content management
@@ -1250,6 +1301,7 @@ class DuckDuckGoSearcher {
                 const availableBytes = this.memoryTracker.maxAllowedSize - this.memoryTracker.totalContentSize;
                 const maxContentLength = Math.max(500, Math.floor(availableBytes / 2));
                 
+                result.beforeFinalTruncation = finalContent; // Store before truncation
                 result.content = finalContent.substring(0, maxContentLength) + '\n\n[Content optimized for token efficiency]';
                 result.contentLength = result.content.length;
                 result.truncated = true;
@@ -1261,6 +1313,9 @@ class DuckDuckGoSearcher {
                 this.memoryTracker.addContentSize(contentSize);
                 console.log(`[${index + 1}/${total}] Content loaded: ${Math.round(contentSize / 1024)}KB (${result.contentFormat} format). ${this.memoryTracker.getMemorySummary()}`);
             }
+            
+            // Store the FINAL content that will be sent to LLM in the tool result
+            result.sentToLLM = result.content;
             
             result.fetchTimeMs = Date.now() - startTime;
             

@@ -445,7 +445,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'search_web',
-      description: 'Search the web for articles, news, current events, and text-based content. Use for general information, research, news, facts, and documentation. **DO NOT USE for YouTube or video searches** - use search_youtube instead. Can accept either a single query string or an array of queries. Automatically fetches and extracts full page content from all search results, including images and links. Returns comprehensive search result fields including title, url, description, score, content, images, and links. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL) to cite sources and enable verification.**',
+      description: '🌐 **AUTOMATICALLY USE FOR**: (1) Current events, news, recent information, or anything after your knowledge cutoff, (2) Facts that need verification or citations, (3) Up-to-date statistics, prices, or data, (4) Recent developments in any field, (5) Any query mentioning "search", "look up", "find", "research", or "current". **MANDATORY**: Always provide references and cite sources with URLs in your response using markdown links [Title](URL). Use for general information, research, news, facts, and documentation. **DO NOT USE for YouTube or video searches** - use search_youtube instead. Can accept either a single query string or an array of queries. Automatically fetches and extracts full page content from all search results, including images and links. Returns comprehensive search result fields including title, url, description, score, content, images, and links.',
       parameters: {
         type: 'object',
         properties: {
@@ -900,7 +900,20 @@ async function callFunction(name, args = {}, context = {}) {
               fetchTimeMs: r.fetchTimeMs || 0,
               content: null,
               // CRITICAL: Preserve page_content from search.js extraction
-              page_content: r.page_content
+              page_content: r.page_content,
+              // CRITICAL: Preserve content processing pipeline tracking fields
+              rawHtml: r.rawHtml,
+              rawText: r.rawText,
+              afterSmartExtraction: r.afterSmartExtraction,
+              beforeSummarization: r.beforeSummarization,
+              afterSummarization: r.afterSummarization,
+              beforeFinalTruncation: r.beforeFinalTruncation,
+              sentToLLM: r.sentToLLM,
+              // Preserve tier scraping metadata
+              tier: r.tier,
+              scrapeService: r.scrapeService,
+              scrapeMethod: r.scrapeMethod,
+              responseTime: r.responseTime
             };
             
             // Process loaded content

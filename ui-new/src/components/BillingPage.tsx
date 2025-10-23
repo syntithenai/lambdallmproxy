@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 interface Transaction {
   rowIndex: number;
   timestamp: string;
-  type: 'chat' | 'embedding' | 'guardrail_input' | 'guardrail_output' | 'planning';
+  type: 'chat' | 'embedding' | 'guardrail_input' | 'guardrail_output' | 'planning' | 'image_generation' | 'tts' | 'assessment' | 'chat_iteration';
   provider: string;
   model: string;
   tokensIn: number;
@@ -238,15 +238,9 @@ const BillingPage: React.FC = () => {
       console.log('🔐 Token length:', driveAccessToken?.length || 0);
       console.log('🔐 Billing sync enabled:', billingSyncEnabled);
 
-      // Build query params
-      const params = new URLSearchParams();
-      if (startDate) params.append('startDate', startDate);
-      if (endDate) params.append('endDate', endDate);
-      if (typeFilter) params.append('type', typeFilter);
-      if (providerFilter) params.append('provider', providerFilter);
-
+      // Fetch ALL data without filters - filtering will be done locally
       const apiBase = await getApiBase();
-      const url = `${apiBase}/billing${params.toString() ? '?' + params.toString() : ''}`;
+      const url = `${apiBase}/billing`;
 
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${accessToken}`,
@@ -292,6 +286,13 @@ const BillingPage: React.FC = () => {
         byProviderKeys: data.totals?.byProvider ? Object.keys(data.totals.byProvider) : [],
         byModelKeys: data.totals?.byModel ? Object.keys(data.totals.byModel) : []
       });
+      
+      // Debug: Check transaction types in raw data
+      if (data.transactions && data.transactions.length > 0) {
+        const uniqueTypes = [...new Set(data.transactions.map(t => t.type))];
+        console.log('📊 Unique transaction types in data:', uniqueTypes);
+        console.log('📊 Sample transactions:', data.transactions.slice(0, 3));
+      }
       
       // Show info message if using service key fallback
       if (data.source === 'service' && data.message) {
@@ -356,7 +357,7 @@ const BillingPage: React.FC = () => {
   };
 
   const exportToCSV = () => {
-    if (!billingData || billingData.transactions.length === 0) {
+    if (!billingData || filteredTransactions.length === 0) {
       alert('No data to export');
       return;
     }
@@ -369,7 +370,7 @@ const BillingPage: React.FC = () => {
       'Request ID', 'Status', 'Error'
     ];
 
-    const rows = billingData.transactions.map(t => [
+    const rows = filteredTransactions.map(t => [
       t.timestamp,
       t.type,
       t.provider,
@@ -423,8 +424,12 @@ const BillingPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchBillingData();
-  }, [startDate, endDate, typeFilter, providerFilter]);
+    // Only fetch if authenticated - wait for auth state to be ready
+    // Filters are applied locally, so no need to refetch on filter changes
+    if (isAuthenticated && accessToken) {
+      fetchBillingData();
+    }
+  }, [isAuthenticated, accessToken]);
 
   // Listen for changes to billing sync settings
   useEffect(() => {
@@ -495,6 +500,58 @@ const BillingPage: React.FC = () => {
     return null;
   }
 
+  // Apply local filtering
+  const filteredTransactions = billingData.transactions.filter(tx => {
+    // Date filter
+    if (startDate || endDate) {
+      const txDate = new Date(tx.timestamp);
+      if (startDate && txDate < new Date(startDate)) return false;
+      if (endDate && txDate > new Date(endDate)) return false;
+    }
+    
+    // Type filter
+    if (typeFilter && String(tx.type).toLowerCase() !== typeFilter.toLowerCase()) return false;
+    
+    // Provider filter
+    if (providerFilter && tx.provider.toLowerCase() !== providerFilter.toLowerCase()) return false;
+    
+    return true;
+  });
+
+  // Calculate totals from filtered data
+  const calculateFilteredTotals = (transactions: Transaction[]) => {
+    const byType: Record<string, { cost: number; count: number }> = {};
+    const byProvider: Record<string, { cost: number; count: number }> = {};
+    const byModel: Record<string, { cost: number; count: number }> = {};
+    let totalCost = 0;
+    let totalTokens = 0;
+
+    transactions.forEach(tx => {
+      totalCost += tx.cost;
+      totalTokens += tx.totalTokens;
+
+      // By type
+      const type = String(tx.type);
+      if (!byType[type]) byType[type] = { cost: 0, count: 0 };
+      byType[type].cost += tx.cost;
+      byType[type].count += 1;
+
+      // By provider
+      if (!byProvider[tx.provider]) byProvider[tx.provider] = { cost: 0, count: 0 };
+      byProvider[tx.provider].cost += tx.cost;
+      byProvider[tx.provider].count += 1;
+
+      // By model
+      if (!byModel[tx.model]) byModel[tx.model] = { cost: 0, count: 0 };
+      byModel[tx.model].cost += tx.cost;
+      byModel[tx.model].count += 1;
+    });
+
+    return { totalCost, totalTokens, byType, byProvider, byModel };
+  };
+
+  const filteredTotals = calculateFilteredTotals(filteredTransactions);
+
   const uniqueProviders = Array.from(
     new Set(billingData.transactions.map(t => t.provider))
   ).sort();
@@ -504,7 +561,7 @@ const BillingPage: React.FC = () => {
     new Set(billingData.transactions.map(t => String(t.type)))
   );
 
-  // Group transactions by request ID
+  // Group transactions by request ID with proper sorting
   const groupTransactionsByRequest = (transactions: Transaction[]) => {
     const grouped = new Map<string, Transaction[]>();
     const ungrouped: Transaction[] = [];
@@ -519,10 +576,25 @@ const BillingPage: React.FC = () => {
       }
     });
 
-    return { grouped, ungrouped };
+    // Sort transactions within each group by timestamp ascending (earliest first)
+    grouped.forEach((txs) => {
+      txs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    });
+
+    // Sort ungrouped transactions by timestamp descending (latest first)
+    ungrouped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // Convert grouped map to array and sort by earliest transaction in group (descending)
+    const sortedGroupedArray = Array.from(grouped.entries()).sort(([, txsA], [, txsB]) => {
+      const earliestA = txsA[0].timestamp;
+      const earliestB = txsB[0].timestamp;
+      return new Date(earliestB).getTime() - new Date(earliestA).getTime();
+    });
+
+    return { grouped: new Map(sortedGroupedArray), ungrouped };
   };
 
-  const { grouped, ungrouped } = groupTransactionsByRequest(billingData.transactions);
+  const { grouped, ungrouped } = groupTransactionsByRequest(filteredTransactions);
 
   const toggleRequestGroup = (requestId: string) => {
     setExpandedRequests(prev => {
@@ -614,7 +686,10 @@ const BillingPage: React.FC = () => {
                     : type === 'guardrail_input' ? 'Guardrail Input'
                     : type === 'guardrail_output' ? 'Guardrail Output'
                     : type === 'planning' ? 'Planning'
+                    : type === 'assessment' ? 'Assessment'
                     : type === 'image_generation' ? 'Image Generation'
+                    : type === 'tts' ? 'Text-to-Speech'
+                    : type === 'chat_iteration' ? 'Chat Iteration'
                     : typeof type === 'string'
                       ? type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
                       : String(type)}
@@ -720,7 +795,7 @@ const BillingPage: React.FC = () => {
           className={activeTab === 'transactions' ? 'active' : ''} 
           onClick={() => setActiveTab('transactions')}
         >
-          Transactions ({billingData.count})
+          Transactions ({filteredTransactions.length})
         </button>
       </div>
 
@@ -729,19 +804,19 @@ const BillingPage: React.FC = () => {
           <div className="summary-cards">
             <div className="summary-card">
               <div className="summary-label">Total Cost</div>
-              <div className="summary-value">${billingData.totals.totalCost.toFixed(4)}</div>
+              <div className="summary-value">${filteredTotals.totalCost.toFixed(4)}</div>
             </div>
             <div className="summary-card">
               <div className="summary-label">Total Tokens</div>
-              <div className="summary-value">{billingData.totals.totalTokens.toLocaleString()}</div>
+              <div className="summary-value">{filteredTotals.totalTokens.toLocaleString()}</div>
             </div>
             <div className="summary-card">
               <div className="summary-label">Total Requests</div>
-              <div className="summary-value">{billingData.totals.totalRequests}</div>
+              <div className="summary-value">{filteredTransactions.length}</div>
             </div>
           </div>
 
-          {billingData.totals.byType && Object.keys(billingData.totals.byType).length > 0 && (
+          {filteredTotals.byType && Object.keys(filteredTotals.byType).length > 0 && (
             <div className="breakdown-section">
               <h3>By Type</h3>
               <table className="breakdown-table">
@@ -749,16 +824,14 @@ const BillingPage: React.FC = () => {
                   <tr>
                     <th>Type</th>
                     <th>Requests</th>
-                    <th>Tokens</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(billingData.totals.byType).map(([type, data]) => (
+                  {Object.entries(filteredTotals.byType).map(([type, data]) => (
                     <tr key={type}>
                       <td>{type}</td>
-                      <td>{data.requests}</td>
-                      <td>{data.tokens.toLocaleString()}</td>
+                      <td>{data.count}</td>
                       <td>${data.cost.toFixed(4)}</td>
                     </tr>
                   ))}
@@ -767,7 +840,7 @@ const BillingPage: React.FC = () => {
             </div>
           )}
 
-          {billingData.totals.byProvider && Object.keys(billingData.totals.byProvider).length > 0 && (
+          {filteredTotals.byProvider && Object.keys(filteredTotals.byProvider).length > 0 && (
             <div className="breakdown-section">
               <h3>By Provider</h3>
               <table className="breakdown-table">
@@ -775,16 +848,14 @@ const BillingPage: React.FC = () => {
                   <tr>
                     <th>Provider</th>
                     <th>Requests</th>
-                    <th>Tokens</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(billingData.totals.byProvider).map(([provider, data]) => (
+                  {Object.entries(filteredTotals.byProvider).map(([provider, data]) => (
                     <tr key={provider}>
                       <td>{provider}</td>
-                      <td>{data.requests}</td>
-                      <td>{data.tokens.toLocaleString()}</td>
+                      <td>{data.count}</td>
                       <td>${data.cost.toFixed(4)}</td>
                     </tr>
                   ))}
@@ -793,26 +864,22 @@ const BillingPage: React.FC = () => {
             </div>
           )}
 
-          {billingData.totals.byModel && Object.keys(billingData.totals.byModel).length > 0 && (
+          {filteredTotals.byModel && Object.keys(filteredTotals.byModel).length > 0 && (
             <div className="breakdown-section">
               <h3>By Model</h3>
               <table className="breakdown-table">
                 <thead>
                   <tr>
-                    <th>Provider</th>
                     <th>Model</th>
                     <th>Requests</th>
-                    <th>Tokens</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(billingData.totals.byModel).map(([key, data]) => (
-                    <tr key={key}>
-                      <td>{data.provider}</td>
-                      <td>{data.model}</td>
-                      <td>{data.requests}</td>
-                      <td>{data.tokens.toLocaleString()}</td>
+                  {Object.entries(filteredTotals.byModel).map(([model, data]) => (
+                    <tr key={model}>
+                      <td>{model}</td>
+                      <td>{data.count}</td>
                       <td>${data.cost.toFixed(4)}</td>
                     </tr>
                   ))}

@@ -1138,14 +1138,14 @@ async function handler(event, responseStream, context) {
                 // No system message exists, prepend one with location context
                 messages.unshift({
                     role: 'system',
-                    content: 'You are a helpful AI assistant with access to powerful tools. For calculations, math problems, or data processing, use the execute_javascript tool. For current information or research, use search_web. **CRITICAL: For ANY diagrams, charts, flowcharts, or visualizations, you MUST use the generate_chart tool - NEVER use execute_javascript for charts.** Always use tools when they can provide better answers than your training data.' + locationContext
+                    content: 'You are a helpful AI assistant with access to powerful tools. **MANDATORY TOOL USE**: (1) For calculations, math problems, or data processing, use execute_javascript. (2) For current events, news, recent information after your knowledge cutoff, facts needing citations, or any research query, use search_web. (3) For ANY diagrams, charts, flowcharts, or visualizations, use generate_chart - NEVER use execute_javascript for charts. **CRITICAL**: Always cite sources with URLs when using search_web. Use tools proactively - they provide better answers than relying solely on training data.' + locationContext
                 });
                 console.log('📍 Location context added as new system message');
             } else {
                 // No system message at all, add default with tool guidance
                 messages.unshift({
                     role: 'system',
-                    content: 'You are a helpful AI assistant with access to powerful tools. For calculations, math problems, or data processing, use the execute_javascript tool. For current information or research, use search_web. **CRITICAL: For ANY diagrams, charts, flowcharts, or visualizations, you MUST use the generate_chart tool - NEVER use execute_javascript for charts.** Always use tools when they can provide better answers than your training data.'
+                    content: 'You are a helpful AI assistant with access to powerful tools. **MANDATORY TOOL USE**: (1) For calculations, math problems, or data processing, use execute_javascript. (2) For current events, news, recent information after your knowledge cutoff, facts needing citations, or any research query, use search_web. (3) For ANY diagrams, charts, flowcharts, or visualizations, use generate_chart - NEVER use execute_javascript for charts. **CRITICAL**: Always cite sources with URLs when using search_web. Use tools proactively - they provide better answers than relying solely on training data.'
                 });
                 console.log('✨ Added default system message with tool guidance');
             }
@@ -3246,6 +3246,7 @@ async function handler(event, responseStream, context) {
                     console.warn(`⚠️ Assessment attempt ${evaluationRetries + 1} returned no usage data (provider: ${provider}, model: ${model})`);
                     
                     // Log the failed assessment to Google Sheets for tracking
+                    // Note: Using 'assessment' type with error details (consolidated with successful assessments)
                     try {
                         await logToBothSheets(driveAccessToken, {
                             userEmail,
@@ -3256,7 +3257,7 @@ async function handler(event, responseStream, context) {
                             totalTokens: 0,
                             cost: 0,
                             duration: 0,
-                            type: 'assessment_failed',
+                            type: 'assessment', // Consolidated: same type as successful assessments
                             memoryLimitMB,
                             memoryUsedMB,
                             requestId,

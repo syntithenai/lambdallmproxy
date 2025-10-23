@@ -3258,15 +3258,29 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               if (data.type === 'output_moderation_error') {
                 console.warn('🛡️ Output moderation error:', data.reason);
                 
-                // Create error message
-                const moderationMsg = `❌ **Content Moderation Alert**\n\n${errorMsg}\n\n**Reason**: ${data.reason}\n\nThis response cannot be displayed due to content policy violations. Please try rephrasing your question.`;
+                // Replace the last assistant message content with guardrail error
+                const moderationMsg = `❌ **Content Moderation Alert**\n\nThe generated response was flagged by our content moderation system and cannot be displayed.\n\n**Reason**: ${data.reason}\n\nPlease try rephrasing your question.`;
                 
-                const moderationError: ChatMessage = {
-                  role: 'assistant',
-                  content: moderationMsg,
-                  llmApiCalls: data.llmApiCalls || []
-                };
-                setMessages(prev => [...prev, moderationError]);
+                setMessages(prev => {
+                  const updated = [...prev];
+                  // Find the last assistant message and replace its content
+                  for (let i = updated.length - 1; i >= 0; i--) {
+                    if (updated[i].role === 'assistant') {
+                      updated[i] = {
+                        ...updated[i],
+                        content: moderationMsg,
+                        guardrailFailed: true,  // Mark as guardrail failure
+                        guardrailReason: data.reason,
+                        guardrailViolations: data.violations,
+                        llmApiCalls: data.llmApiCalls || updated[i].llmApiCalls || [],
+                        isStreaming: false
+                      };
+                      console.log(`🛡️ Replaced assistant message content at index ${i} with guardrail error`);
+                      break;
+                    }
+                  }
+                  return updated;
+                });
                 
                 break;
               }
@@ -3296,9 +3310,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 // The AuthContext will handle logout via useAuth
               }
               
-              // Check if continue button should be shown
-              if (data.showContinueButton && data.continueContext) {
-                console.log('🔄 Continue button enabled for error:', errorMsg);
+              // Check if continue button should be shown (only for MAX_ITERATIONS)
+              if (data.code === 'MAX_ITERATIONS' && data.showContinueButton && data.continueContext) {
+                console.log('🔄 Continue button enabled for MAX_ITERATIONS error:', errorMsg);
                 setShowContinueButton(true);
                 setContinueContext(data.continueContext);
               }
@@ -4940,12 +4954,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         
                         {/* Extracted content from tool calls - ORGANIZED IN SPECIFIED ORDER */}
                         {(() => {
-                          // Check if this is the final assistant message with actual text content
-                          const isFinalAssistantMessage = msg.content && !msg.isStreaming && 
-                            // Check if there are no subsequent assistant messages with content
-                            !messages.slice(idx + 1).some(m => m.role === 'assistant' && m.content);
-                          
-                          if (!isFinalAssistantMessage || !msg.extractedContent) return null;
+                          // Show extracted content whenever it exists (not just for final message)
+                          if (!msg.extractedContent) return null;
                           
                           const ec = msg.extractedContent;
                           const hasAnyContent = (ec.prioritizedImages && ec.prioritizedImages.length > 0) ||
@@ -5373,17 +5383,37 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         <div className="col-span-2">
                                                           <span className="text-gray-500 dark:text-gray-400">Scrape Method:</span>{' '}
                                                           <span className="font-semibold text-purple-600 dark:text-purple-400">
-                                                            Direct HTTP Fetch
+                                                            {result.tier !== undefined ? (
+                                                              <>Tier {result.tier} - {result.scrapeMethod || result.scrapeService}</>
+                                                            ) : (
+                                                              'Direct HTTP Fetch'
+                                                            )}
                                                           </span>
-                                                          <span className="text-gray-500 dark:text-gray-400 text-[9px] block mt-0.5">
-                                                            (Search results use simple HTTP GET - no browser automation)
-                                                          </span>
+                                                          {result.tier !== undefined && (
+                                                            <span className="text-gray-500 dark:text-gray-400 text-[9px] block mt-0.5">
+                                                              {result.tier === 0 && '(Simple HTTP GET - fast, no browser)'}
+                                                              {result.tier === 1 && '(Puppeteer - browser automation with stealth)'}
+                                                              {result.tier === 2 && '(Playwright - advanced browser automation)'}
+                                                              {result.tier === 3 && '(Selenium - complex interactions)'}
+                                                              {result.tier === 4 && '(Interactive - manual CAPTCHA/login)'}
+                                                            </span>
+                                                          )}
                                                         </div>
                                                         
-                                                        {/* Load Time */}
+                                                        {/* Scrape Time (from tier orchestrator) */}
+                                                        {result.responseTime !== undefined && (
+                                                          <div>
+                                                            <span className="text-gray-500 dark:text-gray-400">Scrape Time:</span>{' '}
+                                                            <span className="font-mono text-gray-700 dark:text-gray-300">
+                                                              {result.responseTime}ms
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                        
+                                                        {/* Total Processing Time */}
                                                         {result.fetchTimeMs !== undefined && (
                                                           <div>
-                                                            <span className="text-gray-500 dark:text-gray-400">Load Time:</span>{' '}
+                                                            <span className="text-gray-500 dark:text-gray-400">Total Time:</span>{' '}
                                                             <span className="font-mono text-gray-700 dark:text-gray-300">
                                                               {result.fetchTimeMs}ms
                                                             </span>
@@ -5453,15 +5483,145 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                       </div>
                                                     </div>
                                                     
-                                                    {/* Scraped content preview */}
-                                                    <div className="p-3">
-                                                      <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-2">
-                                                        📄 Content Sent to LLM:
-                                                      </div>
-                                                      <div className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-700 max-h-96 overflow-y-auto">
-                                                        <pre className="whitespace-pre-wrap text-[11px] text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
-                                                          {actualContent}
-                                                        </pre>
+                                                    {/* Content at different processing stages */}
+                                                    <div className="p-3 space-y-3">
+                                                      {/* Stage 1: Raw HTML (massive - show in dialog) */}
+                                                      {result.rawHtml && (
+                                                        <div>
+                                                          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1 flex items-center justify-between">
+                                                            <span>🌐 Stage 1: Raw HTML from Scraper</span>
+                                                            <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">
+                                                              {result.rawHtml.length.toLocaleString()} chars
+                                                            </span>
+                                                          </div>
+                                                          <button
+                                                            onClick={() => {
+                                                              const modal = document.createElement('div');
+                                                              modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50';
+                                                              modal.innerHTML = `
+                                                                <div class="bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col">
+                                                                  <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Raw HTML (${result.rawHtml.length.toLocaleString()} chars)</h3>
+                                                                    <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" onclick="this.closest('.fixed').remove()">
+                                                                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                                      </svg>
+                                                                    </button>
+                                                                  </div>
+                                                                  <div class="flex-1 overflow-auto p-4">
+                                                                    <pre class="text-xs text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap">${result.rawHtml.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                                                                  </div>
+                                                                </div>
+                                                              `;
+                                                              document.body.appendChild(modal);
+                                                            }}
+                                                            className="px-3 py-1 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-800"
+                                                          >
+                                                            Show Full HTML
+                                                          </button>
+                                                        </div>
+                                                      )}
+                                                      
+                                                      {/* Stage 2: Raw Text (innerText - large) */}
+                                                      {result.rawText && (
+                                                        <div>
+                                                          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1 flex items-center justify-between">
+                                                            <span>📄 Stage 2: Raw Text (innerText)</span>
+                                                            <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">
+                                                              {result.rawText.length.toLocaleString()} chars
+                                                            </span>
+                                                          </div>
+                                                          <button
+                                                            onClick={() => {
+                                                              const modal = document.createElement('div');
+                                                              modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50';
+                                                              modal.innerHTML = `
+                                                                <div class="bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col">
+                                                                  <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Raw Text (${result.rawText.length.toLocaleString()} chars)</h3>
+                                                                    <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" onclick="this.closest('.fixed').remove()">
+                                                                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                                      </svg>
+                                                                    </button>
+                                                                  </div>
+                                                                  <div class="flex-1 overflow-auto p-4">
+                                                                    <pre class="text-xs text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap">${result.rawText}</pre>
+                                                                  </div>
+                                                                </div>
+                                                              `;
+                                                              document.body.appendChild(modal);
+                                                            }}
+                                                            className="px-3 py-1 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-800"
+                                                          >
+                                                            Show Full Text
+                                                          </button>
+                                                        </div>
+                                                      )}
+                                                      
+                                                      {/* Stage 3: After Smart Extraction */}
+                                                      {result.afterSmartExtraction && (
+                                                        <div>
+                                                          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-2 flex items-center justify-between">
+                                                            <span>✨ Stage 3: After Smart Extraction (Headers/Nav/Footers Removed)</span>
+                                                            <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">
+                                                              {result.afterSmartExtraction.length.toLocaleString()} chars
+                                                            </span>
+                                                          </div>
+                                                          <div className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-700 max-h-48 overflow-y-auto">
+                                                            <pre className="whitespace-pre-wrap text-[11px] text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
+                                                              {result.afterSmartExtraction}
+                                                            </pre>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                      
+                                                      {/* Stage 4: After Summarization (if applied) */}
+                                                      {result.afterSummarization && result.beforeSummarization && result.afterSummarization !== result.beforeSummarization && (
+                                                        <div>
+                                                          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-2 flex items-center justify-between">
+                                                            <span>🔍 Stage 4: After AI Summarization</span>
+                                                            <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">
+                                                              {result.afterSummarization.length.toLocaleString()} chars
+                                                            </span>
+                                                          </div>
+                                                          <div className="bg-white dark:bg-gray-900 p-3 rounded border border-amber-200 dark:border-amber-700 max-h-48 overflow-y-auto">
+                                                            <pre className="whitespace-pre-wrap text-[11px] text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
+                                                              {result.afterSummarization}
+                                                            </pre>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                      
+                                                      {/* Stage 5: Sent to LLM (FINAL) */}
+                                                      {result.sentToLLM && (
+                                                        <div>
+                                                          <div className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2 flex items-center justify-between">
+                                                            <span>🎯 Stage 5: SENT TO LLM (Tool Result)</span>
+                                                            <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">
+                                                              {result.sentToLLM.length.toLocaleString()} chars
+                                                            </span>
+                                                          </div>
+                                                          <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded border-2 border-green-500 dark:border-green-600 max-h-64 overflow-y-auto">
+                                                            <pre className="whitespace-pre-wrap text-[11px] text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
+                                                              {result.sentToLLM}
+                                                            </pre>
+                                                          </div>
+                                                        </div>
+                                                      )}
+                                                      
+                                                      {/* Processing Summary */}
+                                                      <div className="pt-2 border-t border-purple-200 dark:border-purple-800">
+                                                        <div className="text-[10px] text-gray-600 dark:text-gray-400 space-y-1">
+                                                          <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Content Processing Pipeline:</div>
+                                                          {result.rawHtml && <div>• Raw HTML: {result.rawHtml.length.toLocaleString()} chars</div>}
+                                                          {result.rawText && <div>• Raw Text: {result.rawText.length.toLocaleString()} chars</div>}
+                                                          {result.afterSmartExtraction && <div>• Smart Extraction: {result.afterSmartExtraction.length.toLocaleString()} chars</div>}
+                                                          {result.afterSummarization && result.beforeSummarization && result.afterSummarization !== result.beforeSummarization && (
+                                                            <div>• After Summarization: {result.afterSummarization.length.toLocaleString()} chars</div>
+                                                          )}
+                                                          {result.sentToLLM && <div className="font-semibold text-green-600 dark:text-green-400">→ Sent to LLM: {result.sentToLLM.length.toLocaleString()} chars</div>}
+                                                        </div>
                                                       </div>
                                                     </div>
                                                   </div>
@@ -6094,8 +6254,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             </button>
                           );
                         })()}
-                        {/* Error Info button for error messages */}
-                        {msg.errorData && getMessageText(msg.content).startsWith('❌ Error:') && (
+                        {/* Error Info button for error messages (but NOT for guardrail failures) */}
+                        {msg.errorData && getMessageText(msg.content).startsWith('❌ Error:') && !msg.guardrailFailed && (
                           <button
                             onClick={() => setShowErrorInfo(idx)}
                             className="text-xs text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-100 flex items-center gap-1"
@@ -6311,14 +6471,40 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             </div>
           )}
           
-          {/* Continue Button for Error Recovery */}
+          {/* Continue Button for MAX_ITERATIONS Error */}
           {showContinueButton && continueContext && (
-            <div className="flex justify-center py-3">
+            <div className="flex flex-col items-center gap-3 py-3 px-4">
+              {/* Warning Message */}
+              <div className="bg-orange-50 dark:bg-orange-900/20 border-2 border-orange-400 dark:border-orange-600 rounded-lg p-4 max-w-2xl w-full">
+                <div className="flex items-start gap-3">
+                  <svg className="w-6 h-6 text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">
+                      ⚠️ Maximum Iteration Limit Reached
+                    </h3>
+                    <p className="text-sm text-orange-800 dark:text-orange-200 mb-2">
+                      The conversation has reached the maximum number of tool execution iterations ({continueContext?.maxIterations || '?'} iterations). 
+                      This limit prevents infinite loops and excessive API usage.
+                    </p>
+                    <p className="text-sm text-orange-800 dark:text-orange-200 font-medium">
+                      Would you like to continue processing from where it stopped?
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Continue Button */}
               <button
-                onClick={handleContinue}
+                onClick={() => {
+                  if (confirm('⚠️ Continue processing?\n\nThis will resume tool execution and may incur additional API costs. The iteration limit helps prevent runaway processes.\n\nClick OK to continue or Cancel to stop here.')) {
+                    handleContinue();
+                  }
+                }}
                 disabled={isLoading}
                 className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold text-base transition-all transform hover:scale-105 shadow-lg flex items-center gap-2"
-                title="Continue from where the error occurred"
+                title="Continue from where the iteration limit was reached"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
@@ -7070,5 +7256,3 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     </div>
   );
 };
-
-export default ChatTab;

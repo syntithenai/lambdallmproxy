@@ -143,7 +143,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
     }
     
     // Get auth token from localStorage
-    const authToken = localStorage.getItem('google_id_token');
+    const authToken = localStorage.getItem('google_access_token');
     if (!authToken) {
       throw new Error('Authentication required. Please sign in.');
     }
