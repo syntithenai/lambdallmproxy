@@ -8,6 +8,7 @@ const { URL } = require('url');
 const { TokenAwareMemoryTracker } = require('./memory-tracker');
 const { SimpleHTMLParser } = require('./html-parser');
 const { extractContent } = require('./html-content-extractor');
+const { scrapeWithTierFallback } = require('./scrapers/tier-orchestrator');
 
 /**
  * Integrated DuckDuckGo scraper for search functionality
@@ -1068,10 +1069,58 @@ class DuckDuckGoSearcher {
                 });
             }
             
-            const rawContent = await this.fetchUrl(result.url, timeout * 1000);
-            
-            // Store raw HTML for image and link extraction
-            result.rawHtml = rawContent;
+            // Use tiered scraper orchestrator to fetch content (better for JS-heavy sites)
+            let rawContent = '';
+            try {
+                const orchOptions = {
+                    timeout: timeout * 1000,
+                    useSiteConfig: true,
+                    onProgress: progressCallback ? (progress) => {
+                        // Map orchestrator progress phases to search progress
+                        progressCallback({
+                            phase: progress.phase || progress.tier || 'scraping',
+                            tier: progress.tier,
+                            url: result.url,
+                            message: progress.message,
+                            ...progress
+                        });
+                    } : undefined
+                };
+
+                const scrapeResult = await scrapeWithTierFallback(result.url, orchOptions);
+
+                // Map orchestrator output into result fields
+                result.scrapeService = scrapeResult.tier || 'tier_orchestrator';
+                result.tier = scrapeResult.tier;
+                result.meta = scrapeResult.meta;
+                result.stats = scrapeResult.stats;
+
+                // Prefer extracted content from orchestrator when available
+                if (scrapeResult.content && scrapeResult.content.length > 0) {
+                    rawContent = scrapeResult.content;
+                    result.content = scrapeResult.content;
+                    result.originalLength = scrapeResult.originalLength || (scrapeResult.content.length);
+                    result.extractedLength = scrapeResult.extractedLength || (scrapeResult.content.length);
+                    result.compressionRatio = scrapeResult.compressionRatio || 1.0;
+                } else if (scrapeResult.text || scrapeResult.html) {
+                    rawContent = scrapeResult.text || scrapeResult.html;
+                    result.originalLength = (rawContent || '').length;
+                    result.compressionRatio = scrapeResult.compressionRatio || 1.0;
+                }
+
+                // Preserve raw HTML for downstream parsing
+                result.rawHtml = scrapeResult.rawHtml || scrapeResult.html || scrapeResult.text || rawContent;
+            } catch (orchErr) {
+                console.warn(`Tier orchestrator failed for ${result.url}: ${orchErr.message}. Falling back to direct fetch.`);
+                try {
+                    rawContent = await this.fetchUrl(result.url, timeout * 1000);
+                    result.rawHtml = rawContent;
+                } catch (fetchErr) {
+                    console.error(`Failed to fetch ${result.url}:`, fetchErr.message);
+                    result.contentError = fetchErr.message;
+                    return;
+                }
+            }
             
             // Extract images, videos, and media from HTML
             try {
@@ -1121,12 +1170,12 @@ class DuckDuckGoSearcher {
                 }));
                 
                 // Store in page_content for UI extraction
-                result.page_content = {
-                    images: formattedImages,
-                    videos: [...formattedYouTube, ...formattedVideos],
-                    media: formattedMedia,
-                    links: formattedLinks // Add all regular links
-                };
+                    result.page_content = {
+                        images: formattedImages,
+                        videos: [...formattedYouTube, ...formattedVideos],
+                        media: formattedMedia,
+                        links: formattedLinks // Add all regular links
+                    };
                 
                 console.log(`[${index + 1}/${total}] Extracted ${formattedImages.length} images, ${formattedYouTube.length} YouTube + ${formattedVideos.length} videos, ${formattedMedia.length} media, ${formattedLinks.length} links`);
                 console.log(`[${index + 1}/${total}] DEBUG: result.page_content set:`, JSON.stringify(result.page_content).substring(0, 200));

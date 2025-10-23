@@ -119,7 +119,14 @@ class BaseProvider {
     standardError.originalError = error;
     
     // Check for rate limit errors
-    if (error.statusCode === 429 || error.message?.includes('rate limit')) {
+    // Covers multiple variations: "rate limit", "Request too large", "tokens per minute (TPM)"
+    const isRateLimitError = error.statusCode === 429 || 
+                             error.message?.toLowerCase().includes('rate limit') ||
+                             error.message?.includes('Request too large') ||
+                             error.message?.includes('tokens per minute') ||
+                             error.message?.includes('TPM');
+    
+    if (isRateLimitError) {
       standardError.code = 'RATE_LIMIT_EXCEEDED';
       standardError.retryable = true;
     }

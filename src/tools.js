@@ -226,14 +226,31 @@ function compressSearchResultsForLLM(query, results) {
   }
   
   // Collect all media from all results for gallery at bottom
+  // CRITICAL: Use page_content for complete media (not truncated like result.images)
   const allImages = [];
   const allYoutube = [];
   const allMedia = [];
   
   for (const result of results) {
-    if (result.images) allImages.push(...result.images);
-    if (result.youtube) allYoutube.push(...result.youtube);
-    if (result.media) allMedia.push(...result.media);
+    // Prefer page_content (untruncated) over result.images (truncated to 1)
+    if (result.page_content?.images) {
+      allImages.push(...result.page_content.images);
+    } else if (result.images) {
+      allImages.push(...result.images);
+    }
+    
+    // Same for videos and media
+    if (result.page_content?.videos) {
+      allYoutube.push(...result.page_content.videos);
+    } else if (result.youtube) {
+      allYoutube.push(...result.youtube);
+    }
+    
+    if (result.page_content?.media) {
+      allMedia.push(...result.page_content.media);
+    } else if (result.media) {
+      allMedia.push(...result.media);
+    }
   }
   
   // Add CRITICAL URLS section at the top (before media) - THIS IS MANDATORY FOR LLM TO SEE
@@ -468,13 +485,13 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'execute_javascript',
-      description: '🧮 **PRIMARY TOOL FOR ALL CALCULATIONS AND MATH**: Execute JavaScript code in a secure sandbox environment. **MANDATORY USE** when user asks for: calculations, math problems, compound interest, percentages, conversions, data processing, algorithms, or any numerical computation. Also use for demonstrations and code examples. **ALWAYS call this tool for math instead of trying to calculate in your response.** Returns the console output and execution result. Use console.log() to display results. Example: For compound interest, use: "const principal = 10000; const rate = 0.07; const time = 15; const amount = principal * Math.pow(1 + rate, time); console.log(`Final amount: $${amount.toFixed(2)}`);". Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically.',
+      description: '🧮 **PRIMARY TOOL FOR ALL CALCULATIONS AND MATH**: Execute JavaScript code in a secure sandbox environment with async/await support. **MANDATORY USE** when user asks for: calculations, math problems, compound interest, percentages, conversions, data processing, algorithms, or any numerical computation. Also use for demonstrations and code examples. **ALWAYS call this tool for math instead of trying to calculate in your response.** Returns the console output and execution result. Use console.log() to display results. **SUPPORTS**: async/await, Promises, setTimeout/clearTimeout. Example: For compound interest, use: "const principal = 10000; const rate = 0.07; const time = 15; const amount = principal * Math.pow(1 + rate, time); console.log(`Final amount: $${amount.toFixed(2)}`);". Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically.',
       parameters: {
         type: 'object',
         properties: {
           code: { 
             type: 'string', 
-            description: 'JavaScript code to execute. Include console.log() statements to display results. Example: "const area = Math.PI * 5 * 5; console.log(`Area: ${area}`);". DO NOT include any result or execution metadata - only provide the code string.'
+            description: 'JavaScript code to execute. Can use async/await, Promises, and setTimeout. Include console.log() statements to display results. Example: "const area = Math.PI * 5 * 5; console.log(`Area: ${area}`);". Async example: "await new Promise(resolve => setTimeout(resolve, 1000)); console.log(\'Done\');". DO NOT include any result or execution metadata - only provide the code string.'
           },
           timeout: { 
             type: 'integer', 
@@ -525,7 +542,7 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: '🎨 Generate images using AI and return them directly. Automatically selects the best provider and model based on quality requirements, generates the image immediately, and returns the URL. **Defaults to fast/draft quality (<$0.001) for cost efficiency** - only uses higher quality when explicitly requested. **Supports reference images** - can use images from user messages as context/reference for style transfer or compositional guidance. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001 - DEFAULT). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback. Images are injected directly into the conversation.',
+      description: '🎨 Generate images using AI and display them IMMEDIATELY in the UI. **IMPORTANT: ONLY call this tool ONCE per image request - the image will appear automatically in the conversation, DO NOT call it multiple times for the same request.** Automatically selects the best provider and model, generates the image, and injects it directly into the UI. **Defaults to fast/draft quality (<$0.001) for cost efficiency** - only uses higher quality when explicitly requested. **Supports reference images** - can use images from user messages as context/reference for style transfer or compositional guidance. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001 - DEFAULT). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback.',
       parameters: {
         type: 'object',
         properties: {
@@ -2129,9 +2146,20 @@ Brief answer with URLs:`;
       if (!code) return JSON.stringify({ error: 'code required' });
       const timeout = clampInt(args.timeout, 1, 10, 5) * 1000; // Convert to milliseconds
       
+      // ENHANCEMENT: Emit initial progress event
+      if (context.writeEvent) {
+        context.writeEvent('javascript_execution_progress', {
+          tool: 'execute_javascript',
+          phase: 'starting',
+          code_length: code.length,
+          timeout_ms: timeout,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
       try {
         // Create a secure context with limited built-in objects
-        const context = {
+        const vmContext = {
           Math, 
           Date, 
           JSON, 
@@ -2144,41 +2172,103 @@ Brief answer with URLs:`;
           parseFloat, 
           isNaN, 
           isFinite,
+          Promise, // Enable Promise support for async/await
+          setTimeout: (fn, delay) => { // Add setTimeout support
+            return setTimeout(fn, delay);
+          },
+          clearTimeout: (id) => { // Add clearTimeout support
+            return clearTimeout(id);
+          },
           console: {
             log: (...args) => { 
               const line = args.map(arg => 
                 typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
               ).join(' ');
-              // Accumulate all console.log outputs instead of overwriting
-              if (context._outputs.length > 0) {
-                context._outputs.push(line);
-              } else {
-                context._outputs = [line];
+              
+              // NEW: Stream each console.log in real-time (limit to prevent flooding)
+              if (context.writeEvent && vmContext._outputs.length < 100) {
+                context.writeEvent('javascript_execution_progress', {
+                  tool: 'execute_javascript',
+                  phase: 'console_output',
+                  output: line,
+                  output_number: vmContext._outputs.length + 1,
+                  timestamp: new Date().toISOString()
+                });
               }
+              
+              // Accumulate all console.log outputs
+              vmContext._outputs.push(line);
             }
           },
           _outputs: []
         };
         
-        // Create VM context
-        const vmContext = vm.createContext(context);
+        // NEW: Emit execution phase
+        if (context.writeEvent) {
+          context.writeEvent('javascript_execution_progress', {
+            tool: 'execute_javascript',
+            phase: 'executing',
+            timestamp: new Date().toISOString()
+          });
+        }
         
-        // Execute code with timeout
-        const result = vm.runInContext(code, vmContext, { 
+        // Create VM context
+        const vmContextSecure = vm.createContext(vmContext);
+        
+        // Wrap code in async function to support await
+        const wrappedCode = `(async () => { ${code} })()`;
+        
+        // Execute code with timeout - use runInNewContext for better async support
+        let result;
+        const scriptResult = vm.runInContext(wrappedCode, vmContextSecure, { 
           timeout,
           displayErrors: true 
         });
         
+        // Handle Promise results (from async execution)
+        if (scriptResult && typeof scriptResult.then === 'function') {
+          // Wait for promise to resolve (with additional timeout protection)
+          result = await Promise.race([
+            scriptResult,
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error(`Async execution timeout after ${timeout}ms`)), timeout + 1000)
+            )
+          ]);
+        } else {
+          result = scriptResult;
+        }
+        
         // Return console output if available (all lines joined), otherwise the result
-        const output = context._outputs.length > 0 
-          ? context._outputs.join('\n') 
+        const output = vmContext._outputs.length > 0 
+          ? vmContext._outputs.join('\n') 
           : result;
+        
+        // NEW: Emit completion phase
+        if (context.writeEvent) {
+          context.writeEvent('javascript_execution_progress', {
+            tool: 'execute_javascript',
+            phase: 'completed',
+            output_lines: vmContext._outputs.length,
+            has_result: result !== undefined,
+            timestamp: new Date().toISOString()
+          });
+        }
         
         // Return clean result without metadata that might confuse LLM
         return JSON.stringify({ 
           result: output
         });
       } catch (e) {
+        // NEW: Emit error phase
+        if (context.writeEvent) {
+          context.writeEvent('javascript_execution_progress', {
+            tool: 'execute_javascript',
+            phase: 'error',
+            error: String(e?.message || e),
+            timestamp: new Date().toISOString()
+          });
+        }
+        
         return JSON.stringify({ 
           error: String(e?.message || e)
         });
@@ -2480,6 +2570,15 @@ Summary:`;
       if (!prompt) return JSON.stringify({ error: 'prompt required' });
       
       try {
+        // Emit starting phase
+        if (context.writeEvent) {
+          context.writeEvent('image_generation_progress', {
+            tool: 'generate_image',
+            phase: 'analyzing_prompt',
+            prompt: prompt.substring(0, 100)
+          });
+        }
+        
         // Extract reference images from args or conversation context
         let referenceImages = args.reference_images || [];
         
@@ -2564,6 +2663,16 @@ Summary:`;
         }
         
         console.log(`🎨 Image generation: quality=${qualityTier}, prompt="${prompt.substring(0, 50)}..."`);
+        
+        // Emit quality selected phase
+        if (context.writeEvent) {
+          context.writeEvent('image_generation_progress', {
+            tool: 'generate_image',
+            phase: 'quality_selected',
+            quality: qualityTier,
+            prompt: prompt.substring(0, 100)
+          });
+        }
         
         // 2. Find all models matching the quality tier
         const matchingModels = [];
@@ -2678,20 +2787,99 @@ Summary:`;
           console.log(`📎 Using ${referenceImages.length} reference image(s)`);
         }
         
+        // Emit provider selected phase
+        if (context.writeEvent) {
+          context.writeEvent('image_generation_progress', {
+            tool: 'generate_image',
+            phase: 'selecting_provider',
+            provider: selectedModel.provider,
+            model: selectedModel.model,
+            quality: qualityTier,
+            size: finalSize,
+            estimated_cost: estimatedCost
+          });
+        }
+        
+        // Helper function to estimate generation time based on provider and quality
+        const getEstimatedGenerationTime = (provider, quality) => {
+          const estimates = {
+            'openai': { fast: 8, standard: 15, high: 25, ultra: 40 },
+            'replicate': { fast: 12, standard: 20, high: 35, ultra: 60 },
+            'together': { fast: 10, standard: 18, high: 30, ultra: 50 },
+            'default': { fast: 10, standard: 20, high: 30, ultra: 45 }
+          };
+          const providerEstimates = estimates[provider] || estimates.default;
+          return providerEstimates[quality] || 15;
+        };
+        
+        const estimatedSeconds = getEstimatedGenerationTime(selectedModel.provider, qualityTier);
+        
+        // Emit generating phase with countdown
+        if (context.writeEvent) {
+          context.writeEvent('image_generation_progress', {
+            tool: 'generate_image',
+            phase: 'generating',
+            provider: selectedModel.provider,
+            model: selectedModel.model,
+            quality: qualityTier,
+            size: finalSize,
+            estimated_seconds: estimatedSeconds,
+            prompt: prompt.substring(0, 100)
+          });
+        }
+        
         // Call the image generation function directly
-        const imageResult = await generateImageDirect({
-          prompt,
-          provider: selectedModel.provider,
-          model: selectedModel.model,
-          modelKey: selectedModel.modelKey,
-          size: finalSize,
-          quality: qualityTier,
-          style: args.style || 'natural',
-          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-          context // Pass context for auth if needed
-        });
+        console.log(`🎨 Calling generateImageDirect with quality=${qualityTier}, provider=${selectedModel.provider}, model=${selectedModel.model}`);
+        let imageResult;
+        try {
+          imageResult = await generateImageDirect({
+            prompt,
+            provider: selectedModel.provider,
+            model: selectedModel.model,
+            modelKey: selectedModel.modelKey,
+            size: finalSize,
+            quality: qualityTier,
+            style: args.style || 'natural',
+            referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+            context // Pass context for auth if needed
+          });
+          console.log(`🎨 generateImageDirect completed: success=${imageResult.success}, hasBase64=${!!imageResult.base64}, hasUrl=${!!imageResult.url}`);
+        } catch (genError) {
+          console.error(`❌ generateImageDirect threw error:`, genError);
+          // Emit error phase
+          if (context.writeEvent) {
+            context.writeEvent('image_generation_progress', {
+              tool: 'generate_image',
+              phase: 'error',
+              error: genError.message || 'Image generation threw exception',
+              provider: selectedModel.provider,
+              model: selectedModel.model,
+              stack: genError.stack
+            });
+          }
+          
+          return JSON.stringify({
+            error: genError.message || 'Image generation threw exception',
+            provider: selectedModel.provider,
+            model: selectedModel.model,
+            prompt: prompt.substring(0, 100),
+            stack: genError.stack
+          });
+        }
         
         if (!imageResult.success) {
+          console.log(`❌ Image generation failed: ${imageResult.error}`);
+          // Emit error phase
+          if (context.writeEvent) {
+            context.writeEvent('image_generation_progress', {
+              tool: 'generate_image',
+              phase: 'error',
+              error: imageResult.error || 'Image generation failed',
+              provider: selectedModel.provider,
+              model: selectedModel.model
+            });
+          }
+          
           return JSON.stringify({
             error: imageResult.error || 'Image generation failed',
             provider: selectedModel.provider,
@@ -2702,11 +2890,51 @@ Summary:`;
         
         console.log(`✅ Image generated successfully: ${imageResult.url || 'base64 data'}`);
         
-        // Return the generated image information with LLM API call for transparency
+        // Emit completed phase with actual image data for UI display
+        // The base64 data is sent HERE via event stream, NOT in tool response
+        if (context.writeEvent) {
+          // Send completion event with metadata only
+          context.writeEvent('image_generation_progress', {
+            tool: 'generate_image',
+            phase: 'completed',
+            provider: selectedModel.provider,
+            model: selectedModel.model,
+            quality: qualityTier,
+            size: finalSize,
+            cost: estimatedCost,
+            url: imageResult.url ? 'generated' : 'base64'
+          });
+          
+          // Send separate event with IMAGE URL ONLY for UI rendering
+          // UI will download and convert to base64 client-side to avoid Lambda timeout
+          // This is streamed directly to UI and NOT added to messages array
+          context.writeEvent('image_complete', {
+            id: context.tool_call_id, // Use tool call ID for matching with message_complete
+            tool: 'generate_image',
+            provider: selectedModel.provider,
+            model: selectedModel.model,
+            qualityTier,
+            prompt,
+            size: finalSize,
+            style: args.style || 'natural',
+            cost: estimatedCost,
+            url: imageResult.url, // ✅ URL only - UI will download and convert to base64
+            // base64: imageResult.base64, // ❌ REMOVED - causes Lambda timeout for high-quality images
+            revisedPrompt: imageResult.revisedPrompt || prompt,
+            llmApiCall: imageResult.llmApiCall
+          });
+        }
+        
+        // Return the generated image information with URL only
+        // IMPORTANT: Do NOT include base64 data in tool response for two reasons:
+        // 1. Gets added to messages and sent to LLM, causing massive token usage (70K+ tokens)
+        // 2. High-quality image generation takes 30+ seconds, causing Lambda timeout
+        // The UI will download the image from URL and convert to base64 client-side.
         return JSON.stringify({
           success: true,
-          url: imageResult.url,
-          base64: imageResult.base64,
+          message: 'Image generated successfully and will be displayed to the user automatically. DO NOT call generate_image again.',
+          url: imageResult.url, // ✅ URL only - UI will fetch and convert to base64
+          // base64: imageResult.base64, // ❌ REMOVED - causes Lambda timeout + token bloat
           provider: selectedModel.provider,
           model: selectedModel.model,
           qualityTier,
@@ -2721,6 +2949,17 @@ Summary:`;
         
       } catch (error) {
         console.error('Generate image tool error:', error);
+        
+        // Emit error phase
+        if (context.writeEvent) {
+          context.writeEvent('image_generation_progress', {
+            tool: 'generate_image',
+            phase: 'error',
+            error: error.message,
+            stack: error.stack
+          });
+        }
+        
         return JSON.stringify({ 
           error: `Image generation setup failed: ${error.message}`,
           ready: false,
@@ -3346,6 +3585,26 @@ Summary:`;
       const description = args.description || '';
       
       console.log(`📊 Chart generation requested: ${chart_type} - ${description}`);
+      
+      // Emit chart generation progress
+      if (context.writeEvent) {
+        context.writeEvent('chart_generation_progress', {
+          tool: 'generate_chart',
+          phase: 'preparing',
+          chart_type,
+          description: description.substring(0, 100)
+        });
+      }
+      
+      // Emit completion
+      if (context.writeEvent) {
+        context.writeEvent('chart_generation_progress', {
+          tool: 'generate_chart',
+          phase: 'completed',
+          chart_type,
+          description: description.substring(0, 100)
+        });
+      }
       
       // Return instructions for the LLM to follow
       return JSON.stringify({

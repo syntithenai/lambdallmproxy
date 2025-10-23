@@ -39,13 +39,16 @@
             "supportsVision": false,
             "supportsStreaming": true,
             "rateLimits": {
-              "tokensPerMinute": 30000,
-              "requestsPerMinute": 100
+              "tokensPerMinute": 15000,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 14400
             },
             "deprecated": false,
-            "available": true,
+            "available": false,
             "guardrailModel": true,
-            "description": "Meta Llama Guard 4 12B - Specialized content moderation model"
+            "excludeFromChat": true,
+            "description": "Meta Llama Guard 4 12B - Specialized content moderation model (NOT for chat)"
           },
           "llama-3.1-8b-instant": {
             "id": "llama-3.1-8b-instant",
@@ -63,10 +66,13 @@
             "supportsStreaming": true,
             "rateLimits": {
               "tokensPerMinute": 6000,
-              "requestsPerMinute": 30
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 14400
             },
             "deprecated": false,
-            "available": true
+            "available": true,
+            "description": "Meta Llama 3.1 8B - Fast and efficient, 560 tps"
           },
           "llama-3.3-70b-versatile": {
             "id": "llama-3.3-70b-versatile",
@@ -83,11 +89,206 @@
             "supportsVision": false,
             "supportsStreaming": true,
             "rateLimits": {
-              "tokensPerMinute": 6000,
-              "requestsPerMinute": 30
+              "tokensPerMinute": 12000,
+              "tokensPerDay": 100000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 1000
             },
-            "deprecated": true,
-            "available": false
+            "deprecated": false,
+            "available": true,
+            "description": "Meta Llama 3.3 70B - Powerful and versatile, 280 tps"
+          },
+          "meta-llama/llama-4-maverick-17b-128e-instruct": {
+            "id": "meta-llama/llama-4-maverick-17b-128e-instruct",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 6000,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Meta Llama 4 Maverick 17B - Multimodal vision model with 128K context, 600 tps"
+          },
+          "meta-llama/llama-4-scout-17b-16e-instruct": {
+            "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 30000,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Meta Llama 4 Scout 17B - Multimodal vision model with 128K context, 750 tps"
+          },
+          "moonshotai/kimi-k2-instruct": {
+            "id": "moonshotai/kimi-k2-instruct",
+            "category": "large",
+            "contextWindow": 262144,
+            "maxOutput": 16384,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 10000,
+              "tokensPerDay": 300000,
+              "requestsPerMinute": 60,
+              "requestsPerDay": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Moonshot AI Kimi K2 - Ultra long context (262K tokens), 200 tps"
+          },
+          "moonshotai/kimi-k2-instruct-0905": {
+            "id": "moonshotai/kimi-k2-instruct-0905",
+            "category": "large",
+            "contextWindow": 262144,
+            "maxOutput": 16384,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 10000,
+              "tokensPerDay": 300000,
+              "requestsPerMinute": 60,
+              "requestsPerDay": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Moonshot AI Kimi K2 (0905) - Ultra long context (262K tokens), 200 tps"
+          },
+          "openai/gpt-oss-20b": {
+            "id": "openai/gpt-oss-20b",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 65536,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 8000,
+              "tokensPerDay": 200000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "OpenAI GPT OSS 20B - Open source model, 1000 tps"
+          },
+          "openai/gpt-oss-120b": {
+            "id": "openai/gpt-oss-120b",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 65536,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 8000,
+              "tokensPerDay": 200000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "OpenAI GPT OSS 120B - Large open source model with reasoning, 500 tps"
+          },
+          "qwen/qwen3-32b": {
+            "id": "qwen/qwen3-32b",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 40960,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 6000,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 60,
+              "requestsPerDay": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Qwen 3 32B - Alibaba's latest model, 400 tps"
+          },
+          "allam-2-7b": {
+            "id": "allam-2-7b",
+            "category": "small",
+            "contextWindow": 4096,
+            "maxOutput": 4096,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 6000,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 7000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "SDAIA Allam 2 7B - Arabic-focused model"
           }
         }
       },
@@ -119,13 +320,16 @@
             "supportsVision": false,
             "supportsStreaming": true,
             "rateLimits": {
-              "tokensPerMinute": 30000,
-              "requestsPerMinute": 100
+              "tokensPerMinute": 15000,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 14400
             },
             "deprecated": false,
-            "available": true,
+            "available": false,
             "guardrailModel": true,
-            "description": "Meta Llama Guard 4 12B - Specialized content moderation model"
+            "excludeFromChat": true,
+            "description": "Meta Llama Guard 4 12B - Specialized content moderation model (NOT for chat)"
           },
           "llama-3.1-8b-instant": {
             "id": "llama-3.1-8b-instant",
@@ -135,26 +339,6 @@
             "pricing": {
               "input": 0.05,
               "output": 0.08,
-              "unit": "per_million_tokens"
-            },
-            "supportsTools": true,
-            "supportsVision": false,
-            "supportsStreaming": true,
-            "rateLimits": {
-              "tokensPerMinute": 30000,
-              "requestsPerMinute": 7000
-            },
-            "deprecated": false,
-            "available": true
-          },
-          "meta-llama/llama-4-scout-17b-16e-instruct": {
-            "id": "meta-llama/llama-4-scout-17b-16e-instruct",
-            "category": "large",
-            "contextWindow": 131072,
-            "maxOutput": 32768,
-            "pricing": {
-              "input": 0.1,
-              "output": 0.15,
               "unit": "per_million_tokens"
             },
             "supportsTools": true,
@@ -187,6 +371,174 @@
             "deprecated": false,
             "available": true
           },
+          "meta-llama/llama-4-maverick-17b-128e-instruct": {
+            "id": "meta-llama/llama-4-maverick-17b-128e-instruct",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.20,
+              "output": 0.60,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 300000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Meta Llama 4 Maverick 17B - Multimodal vision model with 128K context, 600 tps"
+          },
+          "meta-llama/llama-4-scout-17b-16e-instruct": {
+            "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.11,
+              "output": 0.34,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 300000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Meta Llama 4 Scout 17B - Multimodal vision model with 128K context, 750 tps"
+          },
+          "moonshotai/kimi-k2-instruct": {
+            "id": "moonshotai/kimi-k2-instruct",
+            "category": "large",
+            "contextWindow": 262144,
+            "maxOutput": 16384,
+            "pricing": {
+              "input": 1.00,
+              "output": 3.00,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 250000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Moonshot AI Kimi K2 - Ultra long context (262K tokens), 200 tps"
+          },
+          "moonshotai/kimi-k2-instruct-0905": {
+            "id": "moonshotai/kimi-k2-instruct-0905",
+            "category": "large",
+            "contextWindow": 262144,
+            "maxOutput": 16384,
+            "pricing": {
+              "input": 1.00,
+              "output": 3.00,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 250000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Moonshot AI Kimi K2 (0905) - Ultra long context (262K tokens), 200 tps"
+          },
+          "openai/gpt-oss-20b": {
+            "id": "openai/gpt-oss-20b",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 65536,
+            "pricing": {
+              "input": 0.075,
+              "output": 0.30,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 250000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "OpenAI GPT OSS 20B - Open source model, 1000 tps"
+          },
+          "openai/gpt-oss-120b": {
+            "id": "openai/gpt-oss-120b",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 65536,
+            "pricing": {
+              "input": 0.15,
+              "output": 0.60,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 250000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "OpenAI GPT OSS 120B - Large open source model with reasoning, 500 tps"
+          },
+          "qwen/qwen3-32b": {
+            "id": "qwen/qwen3-32b",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 40960,
+            "pricing": {
+              "input": 0.29,
+              "output": 0.59,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 300000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Qwen 3 32B - Alibaba's latest model, 400 tps"
+          },
+          "allam-2-7b": {
+            "id": "allam-2-7b",
+            "category": "small",
+            "contextWindow": 4096,
+            "maxOutput": 4096,
+            "pricing": {
+              "input": 0.05,
+              "output": 0.08,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 30000,
+              "requestsPerMinute": 7000
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "SDAIA Allam 2 7B - Arabic-focused model"
+          },
           "mixtral-8x7b-32768": {
             "id": "mixtral-8x7b-32768",
             "category": "large",
@@ -202,26 +554,6 @@
             "supportsStreaming": true,
             "rateLimits": {
               "tokensPerMinute": 5000,
-              "requestsPerMinute": 30
-            },
-            "deprecated": false,
-            "available": true
-          },
-          "openai/gpt-oss-120b": {
-            "id": "openai/gpt-oss-120b",
-            "category": "reasoning",
-            "contextWindow": 131072,
-            "maxOutput": 65536,
-            "pricing": {
-              "input": 0.5,
-              "output": 0.5,
-              "unit": "per_million_tokens"
-            },
-            "supportsTools": true,
-            "supportsVision": false,
-            "supportsStreaming": true,
-            "rateLimits": {
-              "tokensPerMinute": 7000,
               "requestsPerMinute": 30
             },
             "deprecated": false,

@@ -449,6 +449,10 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 export const useTTS = () => {
   const context = useContext(TTSContext);
   if (!context) {
+    // During hot reload or if TTS is disabled, return a safe fallback
+    if (import.meta.env.DEV) {
+      console.warn('useTTS called outside TTSProvider - this may happen during hot reload');
+    }
     throw new Error('useTTS must be used within a TTSProvider');
   }
   return context;

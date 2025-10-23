@@ -28,6 +28,7 @@ const proxyImageEndpoint = require('./endpoints/proxy-image');
 // const ragSyncEndpoint = require('./endpoints/rag-sync');
 const ragEndpoint = require('./endpoints/rag');
 const billingEndpoint = require('./endpoints/billing');
+const ttsEndpoint = require('./endpoints/tts');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 const { handleUsageRequest } = require('./endpoints/usage');
 const { resetMemoryTracker } = require('./utils/memory-tracker');
@@ -224,6 +225,29 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'DELETE' && path === '/billing/clear') {
             console.log('Routing to billing endpoint: DELETE /billing/clear');
             await billingEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        // TTS endpoint
+        if (method === 'POST' && path === '/tts') {
+            console.log('Routing to TTS endpoint');
+            await ttsEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        if (method === 'OPTIONS' && path === '/tts') {
+            console.log('Handling CORS preflight for TTS endpoint');
+            const metadata = {
+                statusCode: 200,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                    'Access-Control-Allow-Methods': 'POST,OPTIONS'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ message: 'CORS preflight OK' }));
+            responseStream.end();
             return;
         }
         

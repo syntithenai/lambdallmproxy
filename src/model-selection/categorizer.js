@@ -112,6 +112,11 @@ function getModelsByCategory(providerCatalog, category) {
       : Object.values(providerInfo.models);
 
     for (const model of models) {
+      // Skip guardrail models (llama-guard, llama-prompt-guard, etc.)
+      if (model.guardrailModel || model.excludeFromChat || model.category === 'guardrail') {
+        continue;
+      }
+      
       // Use catalog's category if available, otherwise categorize by name
       const modelCategory = model.category || categorizeModel(model.name || model.id);
       if (modelCategory === category) {
@@ -180,7 +185,13 @@ function supportsContextWindow(model, requiredTokens) {
   if (!contextWindow) {
     return false;
   }
-  return contextWindow >= requiredTokens;
+  
+  // SAFETY MARGIN: Require 20% buffer to account for token estimation errors
+  // This prevents choosing models that are at their limit when actual usage may exceed estimates
+  const safetyFactor = 1.2;
+  const requiredWithBuffer = requiredTokens * safetyFactor;
+  
+  return contextWindow >= requiredWithBuffer;
 }
 
 /**

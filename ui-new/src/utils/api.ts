@@ -290,6 +290,7 @@ export interface ProxyRequest {
   temperature?: number;
   max_tokens?: number;
   stream?: boolean;
+  providers?: Record<string, { apiKey: string; [key: string]: any }>; // All enabled providers for fallback
 }
 
 export interface PlanningRequest {

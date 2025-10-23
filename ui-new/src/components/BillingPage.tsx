@@ -218,6 +218,8 @@ const BillingPage: React.FC = () => {
   const [providerFilter, setProviderFilter] = useState('');
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions'>('overview');
+  const [groupByRequest, setGroupByRequest] = useState(true); // Group transactions by request ID
+  const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set()); // Track expanded request groups
 
   const fetchBillingData = async () => {
     setLoading(true);
@@ -501,6 +503,38 @@ const BillingPage: React.FC = () => {
   const uniqueTypes: string[] = Array.from(
     new Set(billingData.transactions.map(t => String(t.type)))
   );
+
+  // Group transactions by request ID
+  const groupTransactionsByRequest = (transactions: Transaction[]) => {
+    const grouped = new Map<string, Transaction[]>();
+    const ungrouped: Transaction[] = [];
+
+    transactions.forEach(tx => {
+      if (tx.requestId && tx.requestId !== '') {
+        const existing = grouped.get(tx.requestId) || [];
+        existing.push(tx);
+        grouped.set(tx.requestId, existing);
+      } else {
+        ungrouped.push(tx);
+      }
+    });
+
+    return { grouped, ungrouped };
+  };
+
+  const { grouped, ungrouped } = groupTransactionsByRequest(billingData.transactions);
+
+  const toggleRequestGroup = (requestId: string) => {
+    setExpandedRequests(prev => {
+      const next = new Set(prev);
+      if (next.has(requestId)) {
+        next.delete(requestId);
+      } else {
+        next.add(requestId);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="billing-page-container">
@@ -791,10 +825,40 @@ const BillingPage: React.FC = () => {
 
       {activeTab === 'transactions' && (
         <div className="billing-transactions">
+          {/* Grouping toggle */}
+          <div style={{ 
+            marginBottom: '1rem', 
+            padding: '0.75rem', 
+            background: '#f5f5f5', 
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={groupByRequest} 
+                onChange={(e) => setGroupByRequest(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                📦 Group by Request ID
+              </span>
+            </label>
+            <span style={{ fontSize: '0.85rem', color: '#666', marginLeft: 'auto' }}>
+              {groupByRequest 
+                ? `${grouped.size} request groups, ${ungrouped.length} ungrouped`
+                : `${billingData.transactions.length} total transactions`
+              }
+            </span>
+          </div>
+
           <div className="transactions-table-container">
             <table className="transactions-table">
               <thead>
                 <tr>
+                  {groupByRequest && <th style={{ width: '40px' }}>▶</th>}
                   <th>Timestamp</th>
                   <th>Type</th>
                   <th>Provider</th>
@@ -806,38 +870,174 @@ const BillingPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {billingData.transactions.map((tx, idx) => (
-                  <tr key={idx}
-                    style={
-                      String(tx.type) === 'guardrail_input' || String(tx.type) === 'guardrail_output'
-                        ? { background: '#fffde7' }
-                        : String(tx.type) === 'image_generation'
-                          ? { background: '#e3f2fd' }
-                          : {}
-                    }
-                  >
-                    <td>{new Date(tx.timestamp).toLocaleString()}</td>
-                    <td>
-                      {String(tx.type) === 'guardrail_input' ? '🛡️ Guardrail Input'
-                        : String(tx.type) === 'guardrail_output' ? '🛡️ Guardrail Output'
-                        : String(tx.type) === 'image_generation' ? '🖼️ Image Generation'
-                        : String(tx.type) === 'chat' ? 'Chat'
-                        : String(tx.type) === 'embedding' ? 'Embedding'
-                        : String(tx.type) === 'planning' ? 'Planning'
-                        : typeof tx.type === 'string'
-                          ? String(tx.type).replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
-                          : String(tx.type)}
-                    </td>
-                    <td>{tx.provider}</td>
-                    <td>{tx.model}</td>
-                    <td>{tx.totalTokens.toLocaleString()}</td>
-                    <td>${tx.cost.toFixed(6)}</td>
-                    <td>{tx.durationMs}ms</td>
-                    <td className={tx.status === 'success' ? 'status-success' : 'status-error'}>
-                      {tx.status}
-                    </td>
-                  </tr>
-                ))}
+                {!groupByRequest ? (
+                  // Flat list view (original)
+                  billingData.transactions.map((tx, idx) => (
+                    <tr key={idx}
+                      style={
+                        String(tx.type) === 'guardrail_input' || String(tx.type) === 'guardrail_output'
+                          ? { background: '#fffde7' }
+                          : String(tx.type) === 'image_generation'
+                            ? { background: '#e3f2fd' }
+                            : String(tx.type) === 'tts'
+                              ? { background: '#f3e5f5' }
+                              : {}
+                      }
+                    >
+                      <td>{new Date(tx.timestamp).toLocaleString()}</td>
+                      <td>
+                        {String(tx.type) === 'guardrail_input' ? '🛡️ Guardrail Input'
+                          : String(tx.type) === 'guardrail_output' ? '🛡️ Guardrail Output'
+                          : String(tx.type) === 'image_generation' ? '🖼️ Image Generation'
+                          : String(tx.type) === 'tts' ? '🎙️ Text-to-Speech'
+                          : String(tx.type) === 'chat' ? 'Chat'
+                          : String(tx.type) === 'embedding' ? 'Embedding'
+                          : String(tx.type) === 'planning' ? 'Planning'
+                          : typeof tx.type === 'string'
+                            ? String(tx.type).replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                            : String(tx.type)}
+                      </td>
+                      <td>{tx.provider}</td>
+                      <td>{tx.model}</td>
+                      <td>{tx.totalTokens.toLocaleString()}</td>
+                      <td>${tx.cost.toFixed(6)}</td>
+                      <td>{tx.durationMs}ms</td>
+                      <td className={tx.status === 'success' ? 'status-success' : 'status-error'}>
+                        {tx.status}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  // Grouped view
+                  <>
+                    {Array.from(grouped.entries()).map(([requestId, txs]) => {
+                      const isExpanded = expandedRequests.has(requestId);
+                      const groupCost = txs.reduce((sum, tx) => sum + tx.cost, 0);
+                      const groupTokens = txs.reduce((sum, tx) => sum + tx.totalTokens, 0);
+                      const groupDuration = txs.reduce((sum, tx) => sum + tx.durationMs, 0);
+                      const firstTx = txs[0];
+
+                      return (
+                        <React.Fragment key={requestId}>
+                          {/* Group header row */}
+                          <tr 
+                            onClick={() => toggleRequestGroup(requestId)}
+                            style={{ 
+                              background: '#f0f0f0', 
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                              userSelect: 'none'
+                            }}
+                          >
+                            <td style={{ textAlign: 'center' }}>
+                              {isExpanded ? '▼' : '▶'}
+                            </td>
+                            <td>{new Date(firstTx.timestamp).toLocaleString()}</td>
+                            <td colSpan={3}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span>🔗 Request Group ({txs.length} transactions)</span>
+                                <code style={{ 
+                                  fontSize: '0.75rem', 
+                                  background: '#fff', 
+                                  padding: '2px 6px', 
+                                  borderRadius: '4px',
+                                  color: '#666'
+                                }}>
+                                  {requestId.substring(0, 12)}...
+                                </code>
+                              </div>
+                            </td>
+                            <td>{groupTokens.toLocaleString()}</td>
+                            <td><strong>${groupCost.toFixed(6)}</strong></td>
+                            <td>{groupDuration}ms</td>
+                            <td className={txs.every(tx => tx.status === 'success') ? 'status-success' : 'status-error'}>
+                              {txs.every(tx => tx.status === 'success') ? 'success' : 'partial'}
+                            </td>
+                          </tr>
+
+                          {/* Individual transactions (when expanded) */}
+                          {isExpanded && txs.map((tx, idx) => (
+                            <tr key={`${requestId}-${idx}`}
+                              style={{
+                                ...(String(tx.type) === 'guardrail_input' || String(tx.type) === 'guardrail_output'
+                                  ? { background: '#fffde7' }
+                                  : String(tx.type) === 'image_generation'
+                                    ? { background: '#e3f2fd' }
+                                    : String(tx.type) === 'tts'
+                                      ? { background: '#f3e5f5' }
+                                      : { background: '#fafafa' }),
+                                borderLeft: '3px solid #ddd'
+                              }}
+                            >
+                              <td style={{ textAlign: 'center', color: '#ccc' }}>└</td>
+                              <td style={{ paddingLeft: '2rem', fontSize: '0.9rem' }}>
+                                {new Date(tx.timestamp).toLocaleString()}
+                              </td>
+                              <td>
+                                {String(tx.type) === 'guardrail_input' ? '🛡️ Guardrail Input'
+                                  : String(tx.type) === 'guardrail_output' ? '🛡️ Guardrail Output'
+                                  : String(tx.type) === 'image_generation' ? '🖼️ Image Generation'
+                                  : String(tx.type) === 'tts' ? '🎙️ Text-to-Speech'
+                                  : String(tx.type) === 'chat' ? 'Chat'
+                                  : String(tx.type) === 'embedding' ? 'Embedding'
+                                  : String(tx.type) === 'planning' ? 'Planning'
+                                  : typeof tx.type === 'string'
+                                    ? String(tx.type).replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                                    : String(tx.type)}
+                              </td>
+                              <td>{tx.provider}</td>
+                              <td>{tx.model}</td>
+                              <td>{tx.totalTokens.toLocaleString()}</td>
+                              <td>${tx.cost.toFixed(6)}</td>
+                              <td>{tx.durationMs}ms</td>
+                              <td className={tx.status === 'success' ? 'status-success' : 'status-error'}>
+                                {tx.status}
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {/* Ungrouped transactions */}
+                    {ungrouped.map((tx, idx) => (
+                      <tr key={`ungrouped-${idx}`}
+                        style={
+                          String(tx.type) === 'guardrail_input' || String(tx.type) === 'guardrail_output'
+                            ? { background: '#fffde7' }
+                            : String(tx.type) === 'image_generation'
+                              ? { background: '#e3f2fd' }
+                              : String(tx.type) === 'tts'
+                                ? { background: '#f3e5f5' }
+                                : {}
+                        }
+                      >
+                        <td style={{ textAlign: 'center', color: '#ccc' }}>—</td>
+                        <td>{new Date(tx.timestamp).toLocaleString()}</td>
+                        <td>
+                          {String(tx.type) === 'guardrail_input' ? '🛡️ Guardrail Input'
+                            : String(tx.type) === 'guardrail_output' ? '🛡️ Guardrail Output'
+                            : String(tx.type) === 'image_generation' ? '🖼️ Image Generation'
+                            : String(tx.type) === 'tts' ? '🎙️ Text-to-Speech'
+                            : String(tx.type) === 'chat' ? 'Chat'
+                            : String(tx.type) === 'embedding' ? 'Embedding'
+                            : String(tx.type) === 'planning' ? 'Planning'
+                            : typeof tx.type === 'string'
+                              ? String(tx.type).replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
+                              : String(tx.type)}
+                        </td>
+                        <td>{tx.provider}</td>
+                        <td>{tx.model}</td>
+                        <td>{tx.totalTokens.toLocaleString()}</td>
+                        <td>${tx.cost.toFixed(6)}</td>
+                        <td>{tx.durationMs}ms</td>
+                        <td className={tx.status === 'success' ? 'status-success' : 'status-error'}>
+                          {tx.status}
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                )}
               </tbody>
             </table>
           </div>

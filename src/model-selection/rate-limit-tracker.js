@@ -67,6 +67,13 @@ class ModelRateLimit {
       return false;
     }
 
+    // CRITICAL: Check if single request size exceeds per-minute limit
+    // This prevents "Request too large" pre-flight errors from providers like Groq
+    if (tokens > 0 && tokens > this.tokensPerMinute) {
+      return false;
+    }
+
+    // Check if accumulated usage + new request exceeds limit
     if (tokens > 0 && this.tokensUsed + tokens > this.tokensPerMinute) {
       return false;
     }

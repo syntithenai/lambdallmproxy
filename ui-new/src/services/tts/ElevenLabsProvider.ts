@@ -117,35 +117,74 @@ export class ElevenLabsProvider implements TTSProvider {
     }
 
     try {
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'xi-api-key': this.apiKey
-        },
-        body: JSON.stringify({
-          text,
-          model_id: 'eleven_monolingual_v2',
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.0,
-            use_speaker_boost: true
-          }
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`ElevenLabs API error: ${response.status} - ${errorData.detail || response.statusText}`);
-      }
-
-      const audioBlob = await response.blob();
+      // Use proxy endpoint for comprehensive logging
+      const audioBlob = await this.speakViaProxy(text, voiceId, options);
       return this.playAudio(audioBlob, options);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       throw new Error(`ElevenLabs TTS failed: ${errorMessage}`);
     }
+  }
+
+  /**
+   * Speak via Lambda proxy endpoint for comprehensive logging
+   */
+  private async speakViaProxy(text: string, voiceId: string, options: SpeakOptions): Promise<Blob> {
+    // Get API base URL (local or remote)
+    const apiBase = await this.getApiBase();
+    
+    // Get auth token from localStorage
+    const authToken = localStorage.getItem('google_id_token');
+    if (!authToken) {
+      throw new Error('Authentication required. Please sign in.');
+    }
+
+    const response = await fetch(`${apiBase}/tts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider: 'elevenlabs',
+        text,
+        voice: voiceId,
+        rate: options.rate || 1.0,
+        apiKey: this.apiKey // Pass API key for backend to use
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`TTS Proxy API error: ${response.status} - ${errorText}`);
+    }
+
+    return await response.blob();
+  }
+
+  /**
+   * Get API base URL (check for local dev server first)
+   */
+  private async getApiBase(): Promise<string> {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      const localUrl = 'http://localhost:3000';
+      try {
+        const response = await fetch(`${localUrl}/health`, { 
+          method: 'GET',
+          signal: AbortSignal.timeout(1000)
+        });
+        if (response.ok) {
+          console.log('🏠 Using local Lambda server for TTS');
+          return localUrl;
+        }
+      } catch (err) {
+        // Local Lambda not available, fall through to remote
+      }
+    }
+    // Use remote Lambda
+    return import.meta.env.VITE_API_BASE || 
+           'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
   }
 
   private async playAudio(audioBlob: Blob, options: SpeakOptions): Promise<void> {

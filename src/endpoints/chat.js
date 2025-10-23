@@ -33,6 +33,73 @@ try {
         providerCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
     }
 }
+
+// Enrich catalog with rate limit information from provider-specific modules
+const { GROQ_RATE_LIMITS } = require('../groq-rate-limits');
+const { GEMINI_RATE_LIMITS } = require('../gemini-rate-limits');
+
+// Helper function to enrich catalog with rate limits
+function enrichCatalogWithRateLimits(catalog) {
+    if (!catalog || !catalog.chat || !catalog.chat.providers) {
+        return catalog;
+    }
+    
+    // Groq models
+    if (catalog.chat.providers['groq'] && catalog.chat.providers['groq'].models) {
+        for (const [modelId, modelInfo] of Object.entries(catalog.chat.providers['groq'].models)) {
+            const limits = GROQ_RATE_LIMITS[modelId];
+            if (limits) {
+                modelInfo.rateLimits = {
+                    rpm: limits.rpm,
+                    tpm: limits.tpm,
+                    rpd: limits.rpd,
+                    tpd: limits.tpd
+                };
+                modelInfo.tpm = limits.tpm; // Also add at top level for easy access
+                modelInfo.rpm = limits.rpm;
+            }
+        }
+    }
+    
+    // Groq-free models (same limits as groq)
+    if (catalog.chat.providers['groq-free'] && catalog.chat.providers['groq-free'].models) {
+        for (const [modelId, modelInfo] of Object.entries(catalog.chat.providers['groq-free'].models)) {
+            const limits = GROQ_RATE_LIMITS[modelId];
+            if (limits) {
+                modelInfo.rateLimits = {
+                    rpm: limits.rpm,
+                    tpm: limits.tpm,
+                    rpd: limits.rpd,
+                    tpd: limits.tpd
+                };
+                modelInfo.tpm = limits.tpm;
+                modelInfo.rpm = limits.rpm;
+            }
+        }
+    }
+    
+    // Gemini models
+    if (catalog.chat.providers['gemini'] && catalog.chat.providers['gemini'].models) {
+        for (const [modelId, modelInfo] of Object.entries(catalog.chat.providers['gemini'].models)) {
+            const limits = GEMINI_RATE_LIMITS[modelId];
+            if (limits) {
+                modelInfo.rateLimits = {
+                    rpm: limits.rpm,
+                    tpm: limits.tpm
+                };
+                modelInfo.tpm = limits.tpm;
+                modelInfo.rpm = limits.rpm;
+            }
+        }
+    }
+    
+    return catalog;
+}
+
+// Enrich the catalog immediately after loading
+providerCatalog = enrichCatalogWithRateLimits(providerCatalog);
+console.log('✅ Provider catalog enriched with rate limit information');
+
 const { createGuardrailValidator } = require('../guardrails/guardrail-factory');
 
 // NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
@@ -301,8 +368,38 @@ A response is NOT comprehensive if:
         console.log(`🔍 Evaluation rawResponse:`, evalResponse.rawResponse ? 'present' : 'MISSING');
         console.log(`🔍 Evaluation usage:`, evalResponse.rawResponse?.usage ? JSON.stringify(evalResponse.rawResponse.usage) : 'MISSING');
         
+        // CRITICAL: Check for obviously incomplete responses using heuristics FIRST
+        // This catches cases where the evaluation itself fails or gives wrong answers
+        const isObviouslyIncomplete = 
+            finalResponse.trim().length < 50 || // Too short
+            finalResponse.trim().endsWith('...') || // Trailing ellipsis
+            finalResponse.match(/\.\.\.$/) || // Ends with ...
+            finalResponse.match(/[,;]\s*$/) || // Ends with comma or semicolon (mid-sentence)
+            finalResponse.match(/\blet\s+\w+\s*=\s*$/) || // Ends with variable assignment (no value)
+            finalResponse.match(/function\s+\w*\s*\([^)]*\)\s*\{\s*$/) || // Function with no body
+            finalResponse.match(/\{\s*$/) || // Ends with opening brace
+            finalResponse.match(/\[\s*$/) || // Ends with opening bracket
+            finalResponse.match(/\(\s*$/) || // Ends with opening paren
+            finalResponse.match(/[{[(]\s*$/) || // Ends with any opening delimiter
+            finalResponse.includes('```javascript\n') && !finalResponse.match(/```javascript[\s\S]*```/) || // Unclosed code block
+            finalResponse.includes('```\n') && (finalResponse.match(/```/g) || []).length % 2 !== 0; // Odd number of ```
+        
+        if (isObviouslyIncomplete) {
+            console.log('🚨 Detected obviously incomplete response via heuristics');
+            return {
+                isComprehensive: false,
+                reason: 'Response is obviously incomplete: ends abruptly, has unclosed delimiters, or is too short',
+                usage: evalResponse.rawResponse?.usage || null,
+                rawResponse: evalResponse.rawResponse || null,
+                httpHeaders: evalResponse.httpHeaders || {},
+                httpStatus: evalResponse.httpStatus,
+                messages: []
+            };
+        }
+        
         // Try to parse JSON from response
-        let evalResult = { comprehensive: true, reason: 'Evaluation failed - assuming comprehensive' };
+        // CHANGED: Default to NOT comprehensive (fail-closed instead of fail-open)
+        let evalResult = { comprehensive: false, reason: 'Evaluation failed - assuming NOT comprehensive for safety' };
         try {
             // Extract JSON from response (may have markdown code blocks)
             const jsonMatch = evalText.match(/\{[\s\S]*\}/);
@@ -353,10 +450,11 @@ A response is NOT comprehensive if:
                         reason: `Text evaluation: ${evalText.substring(0, 150)}`
                     };
                 } else {
-                    // Can't determine - assume comprehensive (fail-safe)
+                    // Can't determine - assume NOT comprehensive (fail-closed for safety)
+                    // It's better to ask for more detail than to return an incomplete answer
                     evalResult = {
-                        comprehensive: true,
-                        reason: `Could not parse text evaluation, assuming comprehensive: ${evalText.substring(0, 150)}`
+                        comprehensive: false,
+                        reason: `Could not parse text evaluation, assuming NOT comprehensive for safety: ${evalText.substring(0, 150)}`
                     };
                 }
                 
@@ -400,10 +498,11 @@ A response is NOT comprehensive if:
             };
         }
         
-        // For other errors, assume comprehensive to avoid blocking response
+        // For other errors, assume NOT comprehensive (fail-closed)
+        // Better to retry than to return incomplete responses
         return {
-            isComprehensive: true,
-            reason: 'Evaluation failed - assuming comprehensive',
+            isComprehensive: false,
+            reason: 'Evaluation failed - assuming NOT comprehensive for safety',
             usage: null,
             error: error.message,
             messages: [] // No messages on error
@@ -752,9 +851,10 @@ async function executeToolCalls(toolCalls, context, sseWriter) {
                 }
             }
             
-            // Create tool context with event writer
+            // Create tool context with event writer and tool call ID
             const toolContext = {
                 ...context,
+                tool_call_id: id, // Pass tool call ID for event correlation
                 writeEvent: (type, data) => {
                     sseWriter.writeEvent(type, data);
                 }
@@ -885,6 +985,7 @@ async function handler(event, responseStream, context) {
     let model = null; // Selected model (moved to function scope)
     let extractedContent = null; // Extracted media content (moved to function scope)
     let currentMessages = []; // Current message history with tool results (moved to function scope)
+    let guardrailValidator = null; // Guardrail validator (initialized after auth)
     
     // Get memory tracker from parent handler
     const { getMemoryTracker } = require('../utils/memory-tracker');
@@ -1163,13 +1264,35 @@ async function handler(event, responseStream, context) {
         const providerPool = buildProviderPool(userProviders, authResult.authorized);
         console.log(`🎯 Provider pool for ${authResult.email}: ${providerPool.length} provider(s) available`);
         
-        // Initialize guardrails if enabled
-        let guardrailValidator = null;
+        // Extract Google OAuth token from Authorization header for API calls
+        googleToken = null; // Reset to null first
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            googleToken = authHeader.substring(7);
+        }
+        
+        // Extract YouTube OAuth token from custom header (for YouTube Transcript API)
+        const youtubeToken = event.headers['x-youtube-token'] || event.headers['X-YouTube-Token'] || null;
+        if (youtubeToken) {
+            console.log('YouTube OAuth token detected for transcript access');
+        }
+        
+        // Extract Google Drive access token from custom header (for billing sheet logging)
+        driveAccessToken = event.headers['x-google-access-token'] || event.headers['X-Google-Access-Token'] || null;
+        if (driveAccessToken) {
+            console.log('Google Drive access token detected for billing sheet logging');
+        }
+        
+        // Set verified user from auth result
+        const verifiedUser = authResult.user;
+        userEmail = verifiedUser?.email || authResult.email || 'unknown';
+        
+        // Initialize guardrails if enabled (AFTER userEmail is set)
         try {
             // Build context with API keys for guardrail provider
             const guardrailContext = {
                 ...body, // Include all request context (may have API keys)
-                authorized: authResult.authorized
+                authorized: authResult.authorized,
+                userEmail // Now available for logging
             };
             
             const guardrailConfig = loadGuardrailConfig(guardrailContext);
@@ -1215,11 +1338,12 @@ async function handler(event, responseStream, context) {
                 if (userInputText.trim().length > 0) {
                     console.log(`🛡️ Filtering user input (${userInputText.length} chars)...`);
                     
-                    try {
+                    try{
                         const inputValidation = await guardrailValidator.validateInput(userInputText);
                         
                         // Track guardrail API call for cost transparency
                         const guardrailApiCall = {
+                            phase: 'guardrail_input', // Use 'phase' instead of 'type' to prevent duplicate logging
                             type: 'guardrail_input',
                             model: inputValidation.tracking.model,
                             provider: inputValidation.tracking.provider,
@@ -1258,9 +1382,8 @@ async function handler(event, responseStream, context) {
                         
                         console.log('🛡️ Input validation PASSED');
                         
-                        // Store guardrail API call in body for later inclusion in final response
-                        if (!body.llmApiCalls) body.llmApiCalls = [];
-                        body.llmApiCalls.push(guardrailApiCall);
+                        // NOTE: Guardrail API calls are logged DIRECTLY to sheets below
+                        // Do NOT add to llmApiCalls array to avoid duplicate logging
                         
                         // Log guardrail input validation to Google Sheets
                         try {
@@ -1274,7 +1397,7 @@ async function handler(event, responseStream, context) {
                             );
                             
                             await logToBothSheets(driveAccessToken, {
-                                userEmail,
+                                userEmail, // Now correctly set!
                                 provider: inputValidation.tracking.provider,
                                 model: inputValidation.tracking.model,
                                 promptTokens,
@@ -1309,28 +1432,6 @@ async function handler(event, responseStream, context) {
                 }
             }
         }
-        
-        // Extract Google OAuth token from Authorization header for API calls
-        googleToken = null; // Reset to null first
-        if (authHeader && authHeader.startsWith('Bearer ')) {
-            googleToken = authHeader.substring(7);
-        }
-        
-        // Extract YouTube OAuth token from custom header (for YouTube Transcript API)
-        const youtubeToken = event.headers['x-youtube-token'] || event.headers['X-YouTube-Token'] || null;
-        if (youtubeToken) {
-            console.log('YouTube OAuth token detected for transcript access');
-        }
-        
-        // Extract Google Drive access token from custom header (for billing sheet logging)
-        driveAccessToken = event.headers['x-google-access-token'] || event.headers['X-Google-Access-Token'] || null;
-        if (driveAccessToken) {
-            console.log('Google Drive access token detected for billing sheet logging');
-        }
-        
-        // Set verified user from auth result
-        const verifiedUser = authResult.user;
-        userEmail = verifiedUser?.email || authResult.email || 'unknown';
         
         // Validate required fields
         if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -1847,9 +1948,13 @@ async function handler(event, responseStream, context) {
             // STEP 5: Proactive rate limit checking before making the request
             // Check if the selected model is available for this request
             const estimatedInputTokens = selection?.analysis?.estimatedTokens || 1000;
+            // CRITICAL: Groq's rate limits apply to TOTAL tokens (input + output), not just input
+            // Estimate total tokens by adding expected output (use max_tokens as worst case)
+            const maxOutputTokens = requestBody.max_tokens || 2048;
+            const estimatedTotalTokens = estimatedInputTokens + maxOutputTokens;
             const rateLimitTracker = getRateLimitTracker();
             
-            if (!rateLimitTracker.isAvailable(provider, model, estimatedInputTokens)) {
+            if (!rateLimitTracker.isAvailable(provider, model, estimatedTotalTokens)) {
                 console.log(`⚠️ Proactive rate limit check: ${provider}/${model} unavailable or rate-limited`);
                 
                 // Try to find an alternative model using selectWithFallback
@@ -1904,9 +2009,11 @@ async function handler(event, responseStream, context) {
             let response, httpHeaders, httpStatus;
             let lastError = null;
             const maxRetries = 3;
+            const maxProviderSwitches = 10; // Allow up to 10 provider/model switches total
             const attemptedModels = new Set([model]);
             const attemptedProviders = new Set([selectedProvider.id]);
             let sameModelRetries = 0;
+            let totalAttempts = 0; // Total attempts across all providers
             
             // Calculate complexity for model selection during retries
             const totalLength = messages.reduce((sum, msg) => 
@@ -1919,14 +2026,16 @@ async function handler(event, responseStream, context) {
             let timeToFirstToken = null;
             let firstTokenReceived = false;
             
-            for (let retryAttempt = 0; retryAttempt < maxRetries; retryAttempt++) {
+            // Use while loop to allow flexible retry logic when switching providers
+            while (totalAttempts < maxProviderSwitches) {
+                totalAttempts++;
                 try {
                     const currentRequestBody = {
                         ...requestBody,
                         model: requestBody.model || model
                     };
                     
-                    console.log(`🔄 Attempt ${retryAttempt + 1}/${maxRetries}: provider=${provider}, model=${currentRequestBody.model}`);
+                    console.log(`🔄 Attempt ${totalAttempts}/${maxProviderSwitches}: provider=${provider}, model=${currentRequestBody.model}`);
                     
                     // STEP 12: Capture request start time
                     requestStartTime = Date.now();
@@ -1935,7 +2044,7 @@ async function handler(event, responseStream, context) {
                     
                     httpHeaders = response.httpHeaders || {};
                     httpStatus = response.httpStatus;
-                    console.log(`✅ Request succeeded on attempt ${retryAttempt + 1}`);
+                    console.log(`✅ Request succeeded on attempt ${totalAttempts}`);
                     
                     // STEP 5: Update rate limit tracker from response headers
                     if (httpHeaders) {
@@ -1950,7 +2059,7 @@ async function handler(event, responseStream, context) {
                     
                 } catch (error) {
                     lastError = error;
-                    console.error(`❌ Attempt ${retryAttempt + 1} failed:`, error.message);
+                    console.error(`❌ Attempt ${totalAttempts} failed:`, error.message);
                     console.log(`🔍 Error details: statusCode=${error.statusCode}, code=${error.code}, message=${error.message?.substring(0, 200)}`);
                     
                     const isRateLimitError = 
@@ -1962,8 +2071,19 @@ async function handler(event, responseStream, context) {
                         error.message?.includes('TPD') ||
                         error.message?.includes('TPM') ||
                         error.message?.includes('Request too large') ||
+                        error.message?.includes('reduce the length') ||
+                        error.message?.includes('reduce your message size') ||
+                        error.message?.includes('context length') ||
                         error.message?.includes('429') ||
                         error.statusCode === 429;
+                    
+                    // Specifically detect TPM/capacity errors (need model with higher TPM/context)
+                    const isCapacityError =
+                        error.message?.includes('Request too large') ||
+                        error.message?.includes('tokens per minute') ||
+                        error.message?.includes('TPM') ||
+                        error.message?.includes('reduce your message size') ||
+                        error.message?.includes('context length');
                     
                     const isNetworkError = 
                         error.code === 'ECONNRESET' ||
@@ -1973,7 +2093,7 @@ async function handler(event, responseStream, context) {
                         error.message?.includes('network') ||
                         (error.statusCode >= 500 && error.statusCode < 600);
                     
-                    const isLastAttempt = retryAttempt === maxRetries - 1;
+                    const isLastAttempt = totalAttempts >= maxProviderSwitches;
                     
                     // Handle rate limit: try different models on same provider, then switch provider
                     if (isRateLimitError) {
@@ -2002,18 +2122,36 @@ async function handler(event, responseStream, context) {
                         // STEP 14: Record error for health tracking
                         rateLimitTracker.recordError(provider, model);
                         
+                        // For capacity errors (TPM/context), we need to switch to HIGH-CAPACITY models
+                        // These models have much higher TPM limits (100K-1M instead of 6K)
+                        const highCapacityModels = {
+                            'groq': ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.3-70b-versatile'], // 30K, 12K TPM
+                            'groq-free': ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.3-70b-versatile'], // 30K, 12K TPM
+                            'gemini': ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'], // 1M TPM, 2M context
+                            'gemini-free': ['gemini-2.0-flash-exp', 'gemini-1.5-flash'], // 1M TPM
+                            'openai': ['gpt-4o', 'gpt-4o-mini'], // High TPM
+                            'openai-compatible': ['gpt-4o', 'gpt-4o-mini']
+                        };
+                        
                         // Define fallback models for each provider type
                         // NOTE: mixtral-8x7b-32768 was decommissioned by Groq in Oct 2025
                         // NOTE: llama-3.1-70b-versatile was decommissioned by Groq in Oct 2025
-                        const providerModelFallbacks = {
+                        const standardFallbackModels = {
                             'openai': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
                             'openai-compatible': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
                             'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
                             'groq-free': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
                         };
                         
+                        // Choose appropriate fallback list based on error type
+                        const providerModelFallbacks = isCapacityError 
+                            ? (highCapacityModels[selectedProvider.type] || standardFallbackModels[selectedProvider.type] || [])
+                            : (standardFallbackModels[selectedProvider.type] || []);
+                        
+                        console.log(`🔍 ${isCapacityError ? '⚡ CAPACITY ERROR' : '⏱️  Rate limit'} - using ${isCapacityError ? 'high-capacity' : 'standard'} fallback models`);
+                        
                         // First, try other models on the same provider
-                        const fallbackModels = providerModelFallbacks[selectedProvider.type] || [];
+                        const fallbackModels = providerModelFallbacks;
                         const nextModel = fallbackModels.find(m => !attemptedModels.has(m));
                         
                         if (nextModel) {
@@ -2035,30 +2173,82 @@ async function handler(event, responseStream, context) {
                         }
                         
                         // All models exhausted on this provider, try next provider
-                        console.log(`⚠️ All models exhausted on provider ${provider}`);
+                        console.log(`⚠️ All models exhausted on provider ${provider} (ID: ${selectedProvider.id})`);
                         
-                        // Prioritize switching to a DIFFERENT provider type when rate limited
-                        // Priority order: free providers (gemini-free) > paid providers > same type
+                        // For capacity errors, prioritize HIGH-CAPACITY providers (Gemini with 1M TPM)
+                        // For other rate limits, use standard priority order
                         const currentProviderType = selectedProvider.type;
+                        const currentProviderId = selectedProvider.id;
+                        const currentModel = model;
                         
-                        // First priority: Try free providers that are chat-enabled
-                        let nextProvider = chatEnabledProviders.find(p => 
-                            !attemptedProviders.has(p.id) && 
-                            p.type !== currentProviderType && 
-                            (p.type === 'gemini-free')
-                        );
+                        let nextProvider = null;
                         
-                        // Second priority: Try other provider types (excluding groq variants to avoid bouncing)
-                        if (!nextProvider) {
+                        if (isCapacityError) {
+                            console.log('⚡ CAPACITY ERROR - prioritizing high-capacity providers (Gemini 1M TPM)');
+                            
+                            // For capacity errors: Prioritize Gemini (free or paid) with massive TPM
                             nextProvider = chatEnabledProviders.find(p => 
                                 !attemptedProviders.has(p.id) && 
-                                p.type !== currentProviderType && 
-                                p.type !== 'groq-free' && 
-                                p.type !== 'groq'
+                                (p.type === 'gemini-free' || p.type === 'gemini')
                             );
+                            
+                            if (nextProvider) {
+                                console.log(`✅ Switching to high-capacity provider: ${nextProvider.type}`);
+                            }
+                            
+                            // If no Gemini available, try OpenAI (also high TPM)
+                            if (!nextProvider) {
+                                nextProvider = chatEnabledProviders.find(p => 
+                                    !attemptedProviders.has(p.id) && 
+                                    p.type === 'openai'
+                                );
+                            }
+                            
+                            // Last resort for capacity: any provider except the failed one
+                            if (!nextProvider) {
+                                nextProvider = chatEnabledProviders.find(p => 
+                                    !attemptedProviders.has(p.id) && 
+                                    p.type !== currentProviderType
+                                );
+                            }
+                        } else {
+                            // Standard priority order for regular rate limits:
+                            // 1. Same type but different model (e.g., other groq-free expanded instances)
+                            // 2. Free providers (gemini-free)
+                            // 3. Other paid providers
+                            
+                            // First priority: Try same provider type but different model/instance (expanded providers)
+                            nextProvider = chatEnabledProviders.find(p => 
+                                !attemptedProviders.has(p.id) && 
+                                p.type === currentProviderType &&  // Same type (e.g., groq-free)
+                                p.id !== currentProviderId &&       // Different instance ID
+                                p.model !== currentModel            // Different model
+                            );
+                            
+                            if (nextProvider) {
+                                console.log(`🔄 Found another ${currentProviderType} instance: ${nextProvider.id} (model: ${nextProvider.model})`);
+                            }
+                            
+                            // Second priority: Try free/alternative providers that are chat-enabled (different type)
+                            // Include both gemini-free and gemini (paid) as fallback options
+                            if (!nextProvider) {
+                                nextProvider = chatEnabledProviders.find(p => 
+                                    !attemptedProviders.has(p.id) && 
+                                    p.type !== currentProviderType && 
+                                    (p.type === 'gemini-free' || p.type === 'gemini')
+                                );
+                            }
+                            
+                            // Third priority: Try other provider types (excluding same type to force diversity)
+                            if (!nextProvider) {
+                                nextProvider = chatEnabledProviders.find(p => 
+                                    !attemptedProviders.has(p.id) && 
+                                    p.type !== currentProviderType
+                                );
+                            }
                         }
                         
-                        // Last resort: Try any unattempted provider
+                        // Last resort: Try any unattempted provider (even same type)
                         if (!nextProvider) {
                             nextProvider = chatEnabledProviders.find(p => !attemptedProviders.has(p.id));
                         }
@@ -2069,7 +2259,14 @@ async function handler(event, responseStream, context) {
                             provider = selectedProvider.type;
                             apiKey = selectedProvider.apiKey;
                             targetUrl = getEndpointUrl(selectedProvider);
-                            model = selectModelForProvider(selectedProvider, requestedModel, isComplex);
+                            
+                            // For expanded providers, use the pre-assigned model
+                            if (selectedProvider.model) {
+                                model = selectedProvider.model;
+                                console.log(`🎯 Using pre-assigned model from expanded provider: ${model}`);
+                            } else {
+                                model = selectModelForProvider(selectedProvider, requestedModel, isComplex);
+                            }
                             
                             attemptedProviders.add(selectedProvider.id);
                             attemptedModels.add(model);
@@ -2110,7 +2307,7 @@ async function handler(event, responseStream, context) {
                                 }
                             }
                             
-                            console.log(`🚀 Switching to different provider type: ${provider}, model: ${model}`);
+                            console.log(`🚀 Switching to provider instance: ${selectedProvider.id} (type: ${provider}, model: ${model})`);
                             continue; // Retry with new provider
                         }
                         
@@ -2290,7 +2487,8 @@ async function handler(event, responseStream, context) {
                 },
                 httpHeaders: httpHeaders || {},
                 httpStatus: httpStatus,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                durationMs: requestStartTime ? (Date.now() - requestStartTime) : null
             };
             
             // Add llmApiCall to assistant message for tracking
@@ -2987,7 +3185,7 @@ async function handler(event, responseStream, context) {
             
             // SELF-EVALUATION: Check if response is comprehensive before sending
             // Maximum 2 retry attempts if not comprehensive
-            const MAX_EVALUATION_RETRIES = 2;
+            const MAX_EVALUATION_RETRIES = 4; // Increased from 2 to 4 for better completion rate
             let evaluationRetries = 0;
             let finalContent = assistantMessage.content;
             let evaluationResults = []; // Track all evaluation attempts
@@ -3043,6 +3241,32 @@ async function handler(event, responseStream, context) {
                         phase: evalLlmCall.phase,
                         comprehensive: evaluation.isComprehensive
                     });
+                } else {
+                    // Log failed assessment (no usage data - likely Gemini empty response)
+                    console.warn(`⚠️ Assessment attempt ${evaluationRetries + 1} returned no usage data (provider: ${provider}, model: ${model})`);
+                    
+                    // Log the failed assessment to Google Sheets for tracking
+                    try {
+                        await logToBothSheets(driveAccessToken, {
+                            userEmail,
+                            provider: provider || 'unknown',
+                            model: model || 'unknown',
+                            promptTokens: 0,
+                            completionTokens: 0,
+                            totalTokens: 0,
+                            cost: 0,
+                            duration: 0,
+                            type: 'assessment_failed',
+                            memoryLimitMB,
+                            memoryUsedMB,
+                            requestId,
+                            errorCode: 'NO_USAGE_DATA',
+                            errorMessage: `Assessment returned no usage data - likely empty response from ${provider}`
+                        });
+                        console.log(`✅ Logged failed assessment attempt`);
+                    } catch (logError) {
+                        console.error('⚠️ Failed to log failed assessment:', logError.message);
+                    }
                 }
                 
                 evaluationResults.push({
@@ -3077,10 +3301,20 @@ async function handler(event, responseStream, context) {
                 // Build retry request with encouragement
                 const retryMessages = [...currentMessages];
                 
-                // Add an empty assistant message to trigger more output
+                // Check why it's incomplete and tailor the retry message
+                const hasIncompleteCode = evaluation.reason?.includes('incomplete') && 
+                    (finalContent.includes('function') || finalContent.includes('let') || finalContent.includes('const'));
+                
+                let retryPrompt = 'Please provide a more comprehensive and complete answer. Think deeply about all aspects of the question and ensure you address everything thoroughly.';
+                
+                if (hasIncompleteCode) {
+                    retryPrompt = 'Your previous response contained incomplete code that was cut off mid-statement. Please provide the COMPLETE solution by calling the execute_javascript tool with FULL, WORKING code. Do NOT show partial code snippets in your response - just call the tool with complete code and explain the results.';
+                }
+                
+                // Add encouragement message to trigger more output
                 retryMessages.push({
                     role: 'user',
-                    content: 'Please provide a more comprehensive and complete answer. Think deeply about all aspects of the question and ensure you address everything thoroughly.'
+                    content: retryPrompt
                 });
                 
                 // Make retry request
@@ -3197,8 +3431,8 @@ async function handler(event, responseStream, context) {
                         timestamp: new Date().toISOString()
                     };
                     
-                    // Always add guardrail call to llmApiCalls for cost tracking
-                    allLlmApiCalls.push(guardrailApiCall);
+                    // NOTE: Guardrail API calls are logged DIRECTLY to sheets below
+                    // Do NOT add to allLlmApiCalls to avoid duplicate logging
                     
                     if (!outputValidation.safe) {
                         console.warn('🛡️ Output REJECTED:', outputValidation.reason);
@@ -3271,7 +3505,7 @@ async function handler(event, responseStream, context) {
                         totalTime: 0,
                         timestamp: new Date().toISOString()
                     };
-                    allLlmApiCalls.push(guardrailErrorCall);
+                    // NOTE: Error will be logged separately, no need to add to allLlmApiCalls
                     
                     sseWriter.writeEvent('error', {
                         error: 'Content moderation system error. Response blocked for safety.',
@@ -3502,7 +3736,7 @@ async function handler(event, responseStream, context) {
             const requestEndTime = Date.now();
             const durationMs = requestStartTime ? (requestEndTime - requestStartTime) : 0;
             
-            logToBothSheets(driveAccessToken, {
+            await logToBothSheets(driveAccessToken, {
                 userEmail: userEmail,
                 provider: provider || 'unknown',
                 model: model || 'unknown',
@@ -3518,9 +3752,9 @@ async function handler(event, responseStream, context) {
                 timestamp: new Date().toISOString(),
                 errorCode: 'MAX_ITERATIONS',
                 errorMessage: `Maximum tool execution iterations reached (${iterationCount})`
-            }).catch(err => console.error('Failed to log error to sheets:', err.message));
+            });
         } catch (err) {
-            console.error('Sheets error logging failed:', err.message);
+            console.error('Failed to log error to sheets:', err.message);
         }
         
         responseStream.end();
@@ -3588,7 +3822,7 @@ async function handler(event, responseStream, context) {
             // userEmail might not be defined if error occurs before auth
             const logUserEmail = (typeof userEmail !== 'undefined') ? userEmail : 'unknown';
             
-            logToBothSheets(driveAccessToken, {
+            await logToBothSheets(driveAccessToken, {
                 userEmail: logUserEmail,
                 provider: provider || (lastRequestBody ? lastRequestBody.provider : 'unknown'),
                 model: model || (lastRequestBody ? lastRequestBody.model : 'unknown'),
@@ -3604,9 +3838,9 @@ async function handler(event, responseStream, context) {
                 timestamp: new Date().toISOString(),
                 errorCode: error.code || 'ERROR',
                 errorMessage: error.message || 'Internal server error'
-            }).catch(err => console.error('Failed to log error to sheets:', err.message));
+            });
         } catch (err) {
-            console.error('Sheets error logging failed:', err.message);
+            console.error('Failed to log error to sheets:', err.message);
         }
         
         // Only use sseWriter if it was initialized

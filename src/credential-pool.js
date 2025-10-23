@@ -85,6 +85,71 @@ function loadEnvironmentProviders() {
 }
 
 /**
+ * Get available models for a provider type from catalog
+ * @param {string} providerType - Provider type (e.g., 'groq-free')
+ * @returns {Array<string>} Array of model IDs
+ */
+function getAvailableModelsForProvider(providerType) {
+    try {
+        const catalogPath = require('path').join(__dirname, '..', 'PROVIDER_CATALOG.json');
+        const catalog = require(catalogPath);
+        
+        if (catalog && catalog.chat && catalog.chat.providers && catalog.chat.providers[providerType]) {
+            const provider = catalog.chat.providers[providerType];
+            if (provider.models) {
+                // Filter out guardrail models and get available models
+                const models = Object.keys(provider.models).filter(modelId => {
+                    const model = provider.models[modelId];
+                    return model.available && !model.guardrailModel;
+                });
+                return models;
+            }
+        }
+    } catch (error) {
+        console.warn(`⚠️ Could not load catalog for ${providerType}:`, error.message);
+    }
+    return [];
+}
+
+/**
+ * Expand a single provider into multiple providers (one per model) for load balancing
+ * @param {Object} provider - Provider configuration
+ * @returns {Array<Object>} Array of expanded providers
+ */
+function expandProviderForLoadBalancing(provider) {
+    // Only expand groq-free and groq providers
+    if (provider.type !== 'groq-free' && provider.type !== 'groq') {
+        return [provider]; // Return as-is for other providers
+    }
+    
+    // If provider already has a specific model set, don't expand
+    if (provider.modelName || provider.model) {
+        return [provider];
+    }
+    
+    // Get available models for this provider type
+    const models = getAvailableModelsForProvider(provider.type);
+    
+    if (models.length === 0) {
+        console.warn(`⚠️ No models found for ${provider.type}, using provider as-is`);
+        return [provider];
+    }
+    
+    // Create one provider instance per model
+    const expandedProviders = models.map((modelId, index) => ({
+        ...provider,
+        id: `${provider.id || provider.type}-${index}`,
+        model: modelId,          // Set 'model' property for rate limit tracking
+        modelName: modelId,      // Keep 'modelName' for backward compatibility
+        originalProvider: provider.id || provider.type
+    }));
+    
+    console.log(`🔄 Expanded ${provider.type} into ${expandedProviders.length} model-specific providers for load balancing`);
+    
+    return expandedProviders;
+}
+
+/**
  * Build provider pool by merging user providers with environment providers
  * @param {Array<Object>} userProviders - Providers from user's settings (UI-managed, respects enabled/disabled)
  * @param {boolean} isAuthorized - Whether user is authorized (in ALLOWED_EMAILS)
@@ -105,21 +170,28 @@ function buildProviderPool(userProviders = [], isAuthorized = false) {
             return true;
         });
         
-        // Mark user providers with source
+        // Expand providers for load balancing and mark with source
         validUserProviders.forEach(p => {
-            pool.push({
-                ...p,
-                source: 'user'
+            const expanded = expandProviderForLoadBalancing(p);
+            expanded.forEach(ep => {
+                pool.push({
+                    ...ep,
+                    source: 'user'
+                });
             });
         });
         
-        console.log(`👤 Added ${validUserProviders.length} user provider(s) to pool`);
+        console.log(`👤 Added ${validUserProviders.length} user provider(s) (expanded to ${pool.length}) to pool`);
     }
     
     // Add environment providers ONLY if user is authorized
     if (isAuthorized) {
         const envProviders = loadEnvironmentProviders();
-        envProviders.forEach(p => pool.push(p));
+        // Expand environment providers too
+        envProviders.forEach(p => {
+            const expanded = expandProviderForLoadBalancing(p);
+            expanded.forEach(ep => pool.push(ep));
+        });
         console.log(`🔓 User authorized: added ${envProviders.length} environment provider(s)`);
     } else {
         console.log(`🔒 User not authorized: environment providers not available`);
@@ -155,5 +227,7 @@ function hasAvailableProviders(userProviders = [], isAuthorized = false) {
 module.exports = {
     loadEnvironmentProviders,
     buildProviderPool,
-    hasAvailableProviders
+    hasAvailableProviders,
+    getAvailableModelsForProvider,
+    expandProviderForLoadBalancing
 };

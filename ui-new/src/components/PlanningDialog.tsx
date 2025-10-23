@@ -708,6 +708,133 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
                         </div>
                       </div>
                     )}
+                    
+                    {/* GUIDANCE Display - For complex multi-iteration plans */}
+                    {result.queryType === 'guidance' && (
+                      <div className="card p-4 space-y-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+                        <h3 className="font-semibold text-purple-900 dark:text-purple-100 flex items-center gap-2">
+                          <span className="text-2xl">🎯</span> Seeking Guidance - Complex Multi-Iteration Plan
+                        </h3>
+                        
+                        {/* Plan Type Badge */}
+                        {result.planType && (
+                          <div className="flex gap-2 items-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Plan Type:</span>
+                            <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded-full text-sm font-medium">
+                              {result.planType.replace(/-/g, ' ').toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Detected Patterns */}
+                        {result.detectedPatterns?.length > 0 && (
+                          <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-purple-200 dark:border-purple-700">
+                            <h4 className="text-sm font-medium mb-2 text-purple-800 dark:text-purple-200">
+                              🔍 Detected Complexity Patterns:
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                              {result.detectedPatterns.map((pattern: string, idx: number) => (
+                                <span key={idx} className="px-2 py-1 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs">
+                                  {pattern}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Estimated Scope */}
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          {result.estimatedIterations && (
+                            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
+                              <div className="font-medium text-blue-700 dark:text-blue-300">Estimated Iterations</div>
+                              <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{result.estimatedIterations}</div>
+                            </div>
+                          )}
+                          {result.toolsRequired?.length > 0 && (
+                            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
+                              <div className="font-medium text-blue-700 dark:text-blue-300">Tools Required</div>
+                              <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{result.toolsRequired.length}</div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Suggested Workflow */}
+                        {result.suggestedWorkflow && (
+                          <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                            <h4 className="text-sm font-medium mb-2 text-blue-800 dark:text-blue-200">
+                              ⚙️ Suggested Workflow:
+                            </h4>
+                            <p className="text-sm text-blue-700 dark:text-blue-300">{result.suggestedWorkflow}</p>
+                          </div>
+                        )}
+                        
+                        {/* Tools Required */}
+                        {result.toolsRequired?.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium mb-2">🛠️ Required Tools:</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {result.toolsRequired.map((tool: string, idx: number) => (
+                                <span key={idx} className="px-3 py-1 bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 text-blue-800 dark:text-blue-200 rounded-lg text-sm font-mono">
+                                  {tool}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Guidance Questions */}
+                        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 p-4 rounded-lg border-2 border-yellow-300 dark:border-yellow-700">
+                          <h4 className="text-sm font-medium mb-3 text-yellow-900 dark:text-yellow-100 flex items-center gap-2">
+                            <span className="text-lg">💡</span> Please answer these questions to refine your plan:
+                          </h4>
+                          {result.guidanceQuestions?.length > 0 && (
+                            <ol className="list-decimal list-inside space-y-2 text-sm mb-4">
+                              {result.guidanceQuestions.map((q: string, idx: number) => (
+                                <li key={idx} className="text-yellow-800 dark:text-yellow-200 font-medium">{q}</li>
+                              ))}
+                            </ol>
+                          )}
+                          
+                          <div className="mt-4 space-y-2">
+                            <label className="block text-sm font-semibold text-yellow-900 dark:text-yellow-100">
+                              Update your research prompt with answers:
+                            </label>
+                            <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-2">
+                              💡 Tip: Include answers to the questions above in your updated query. The more specific you are, 
+                              the better the AI can create an effective multi-iteration plan with proper tool usage and few-shot examples.
+                            </p>
+                            <textarea
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                              className="input-field"
+                              rows={6}
+                              placeholder="Example: I want to build a comprehensive research report on climate change by:
+1. Creating 25 todos for different sub-topics (policy, science, economics, etc.)
+2. Searching the web for each topic and saving results to snippets
+3. Generating charts to visualize key data points
+4. Combining all snippets into a master analysis
+
+Please create a detailed plan with few-shot examples showing how to use create_todo, search_web, create_snippet, and generate_chart together in each iteration..."
+                            />
+                            <button
+                              onClick={handleSubmit}
+                              className="btn-primary mt-2 w-full"
+                            >
+                              🎯 Generate Detailed Execution Plan
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Info Box */}
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-300 dark:border-blue-700">
+                          <p className="text-xs text-blue-800 dark:text-blue-200">
+                            <strong>About Guidance Mode:</strong> This mode detects complex projects that require multiple iterations 
+                            and extensive tool usage. Answer the questions above to help create a detailed execution plan with 
+                            few-shot examples showing how to use todos, snippets, and multiple tool calls per iteration.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                 </div>
               </div>
             )}

@@ -61,22 +61,33 @@ function filterByCost(models, maxCostPerMillion) {
 }
 
 /**
- * Prioritize free tier models (STEP 7: Cheap Mode)
- * Prefer smallest capable free models first to save large ones for when needed
- * @param {Array<Object>} models - Candidate models
- * @returns {Array<Object>} Models sorted with free tier first (small to large)
+ * Prioritize models by free tier first (STEP 6: Cost-Optimized Mode)
+ * 
+ * @param {Array} models - Array of model objects to prioritize
+ * @param {number} requiredTokens - Estimated tokens needed for the request
  */
-function prioritizeFreeTier(models) {
+function prioritizeFreeTier(models, requiredTokens = 0) {
   const freeTier = models.filter(m => m.free === true);
   const paid = models.filter(m => m.free !== true);
   
-  // Within free tier, prefer smallest capable models first
-  // Save large context models (gemini-2.0-flash 2M) for when needed
+  // SMART CONTEXT-AWARE SORTING:
+  // For large requests (>50K tokens), prefer larger context models first
+  // For small requests, prefer smaller models (faster, less rate-limited)
+  const largeRequestThreshold = 50000; // 50K tokens
+  
   freeTier.sort((a, b) => {
-    // Sort by context window (smaller first) - smaller models are usually faster and less rate-limited
     const contextA = a.context_window || 0;
     const contextB = b.context_window || 0;
-    return contextA - contextB;
+    
+    if (requiredTokens > largeRequestThreshold) {
+      // Large request: prefer LARGER context models (DESCENDING)
+      // This prevents choosing llama-3.1-8b (128K) when gemini-2.0-flash (2M) is available
+      return contextB - contextA;
+    } else {
+      // Small request: prefer SMALLER models first (ASCENDING)
+      // Save large context models (gemini-2.0-flash 2M) for when truly needed
+      return contextA - contextB;
+    }
   });
   
   // Within paid tier, sort by cost (cheapest first) as fallback
@@ -250,13 +261,20 @@ function selectModel(options = {}) {
     throw new Error('No models with sufficient context window');
   }
 
+  console.log(`📊 After context filter: ${candidates.length} models available, need ${totalTokens} tokens (input: ${inputTokens}, output: ${outputTokens})`);
+  console.log(`   Models: ${candidates.map(m => `${m.name}(${m.context_window})`).join(', ')}`);
+
   // Step 5: Filter by rate limits
   if (rateLimitTracker) {
-    candidates = filterByRateLimits(candidates, rateLimitTracker, inputTokens);
+    // Use totalTokens for rate limit check to ensure model can handle full request
+    candidates = filterByRateLimits(candidates, rateLimitTracker, totalTokens);
     
     if (candidates.length === 0) {
       throw new Error('All models are rate limited');
     }
+    
+    console.log(`⏱️  After rate limit filter: ${candidates.length} models available`);
+    console.log(`   Models: ${candidates.map(m => `${m.name}(TPM: ${m.tpm || 'unknown'})`).join(', ')}`);
     
     // STEP 14: Filter by health (remove unhealthy models)
     if (typeof rateLimitTracker.filterByHealth === 'function') {
@@ -282,8 +300,8 @@ function selectModel(options = {}) {
   // Step 7: Apply strategy
   switch (strategy) {
     case SelectionStrategy.FREE_TIER:
-      // STEP 7: Cheap mode - free tier with smallest models first
-      candidates = prioritizeFreeTier(candidates);
+      // STEP 7: Cheap mode - free tier with context-aware sorting
+      candidates = prioritizeFreeTier(candidates, totalTokens);
       break;
     
     case SelectionStrategy.COST_OPTIMIZED:
@@ -380,6 +398,23 @@ function selectModel(options = {}) {
     throw new Error('Failed to select model');
   }
 
+  // Log selection decision for debugging
+  console.log('🎯 Model selected:', {
+    model: selectedModel.name || selectedModel.id,
+    provider: selectedModel.providerType,
+    category,
+    contextWindow: selectedModel.context_window || selectedModel.contextWindow,
+    estimatedTokens: {
+      input: inputTokens,
+      output: outputTokens,
+      total: totalTokens
+    },
+    requestType: analysis.type,
+    requiresReasoning: analysis.requiresReasoning,
+    strategy,
+    candidatesAvailable: candidates.length
+  });
+
   // Step 9: Return result
   return {
     model: selectedModel,
@@ -463,7 +498,7 @@ function selectWithFallback(options = {}) {
           const preferFree = preferences && preferences.preferFree !== false;
           
           if (strategy === SelectionStrategy.FREE_TIER || preferFree) {
-            candidates = prioritizeFreeTier(candidates);
+            candidates = prioritizeFreeTier(candidates, totalTokens);
           } else if (strategy === SelectionStrategy.COST_OPTIMIZED) {
             candidates = prioritizeCost(candidates);
           } else if (strategy === SelectionStrategy.QUALITY_OPTIMIZED) {

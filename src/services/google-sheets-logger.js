@@ -74,20 +74,14 @@ const PRICING = {
 
 /**
  * Calculate cost based on token usage or fixed cost (for image generation)
- * Returns 0 if running in local development mode
  * @param {string} model - Model name
  * @param {number} promptTokens - Input tokens (0 for image generation)
  * @param {number} completionTokens - Output tokens (0 for image generation)
  * @param {number} fixedCost - Fixed cost for non-token-based requests (image generation)
  */
 function calculateCost(model, promptTokens, completionTokens, fixedCost = null) {
-    // Return 0 cost if running locally
-    const isLocal = process.env.LOCAL_LAMBDA === 'true' || 
-                   process.env.NODE_ENV === 'development' ||
-                   process.env.AWS_EXECUTION_ENV === undefined;
-    if (isLocal) {
-        return 0;
-    }
+    // NOTE: Calculate costs in both local and production environments
+    // This allows tracking real API costs during development
     
     // If fixed cost provided (e.g., image generation), use that
     if (fixedCost !== null && fixedCost !== undefined) {

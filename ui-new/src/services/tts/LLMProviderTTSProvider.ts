@@ -7,7 +7,6 @@
 
 import type { TTSProvider, Voice, SpeakOptions } from '../../types/tts';
 import type { ProviderConfig } from '../../types/provider';
-import { base64ToBlob } from '../../utils/textPreprocessing';
 
 export class LLMProviderTTSProvider implements TTSProvider {
   public name = 'llm';
@@ -121,105 +120,82 @@ export class LLMProviderTTSProvider implements TTSProvider {
     console.log('LLMProviderTTSProvider: speak() called, stopping any existing audio');
     this.stop();
 
-    let audioBlob: Blob;
-
-    if (this.provider.type === 'openai') {
-      audioBlob = await this.speakWithOpenAI(text, options);
-    } else if (this.provider.type === 'gemini' || this.provider.type === 'gemini-free') {
-      audioBlob = await this.speakWithGoogle(text, options);
-    } else if (this.provider.type === 'groq-free') {
-      audioBlob = await this.speakWithGroq(text, options);
-    } else if (this.provider.type === 'together') {
-      audioBlob = await this.speakWithTogether(text, options);
-    } else {
-      throw new Error(`TTS not supported for provider type: ${this.provider.type}. Supported providers: OpenAI, Gemini, Groq`);
-    }
+    // Use proxy endpoint for TTS to enable logging
+    const audioBlob = await this.speakViaProxy(text, options);
 
     // Play the audio
     return this.playAudio(audioBlob, options);
   }
 
-  private async speakWithOpenAI(text: string, options: SpeakOptions): Promise<Blob> {
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+  /**
+   * Speak via Lambda proxy endpoint for comprehensive logging
+   */
+  private async speakViaProxy(text: string, options: SpeakOptions): Promise<Blob> {
+    // Get API base URL (local or remote)
+    const apiBase = await this.getApiBase();
+    
+    // Map provider type to proxy provider name
+    let providerName: string = this.provider!.type;
+    if (providerName === 'gemini' || providerName === 'gemini-free') {
+      providerName = 'google';
+    } else if (providerName === 'groq-free') {
+      providerName = 'groq';
+    }
+    
+    // Get auth token from localStorage
+    const authToken = localStorage.getItem('google_id_token');
+    if (!authToken) {
+      throw new Error('Authentication required. Please sign in.');
+    }
+
+    const response = await fetch(`${apiBase}/tts`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.provider!.apiKey}`,
+        'Authorization': `Bearer ${authToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'tts-1',
-        input: text,
-        voice: options.voice || 'alloy',
-        speed: options.rate || 1.0,
+        provider: providerName,
+        text,
+        voice: options.voice,
+        rate: options.rate || 1.0,
+        pitch: options.pitch || 1.0,
+        model: providerName === 'openai' ? 'tts-1' : undefined,
+        apiKey: this.provider!.apiKey // Pass API key for backend to use
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`OpenAI TTS API error: ${response.status} - ${errorText}`);
+      throw new Error(`TTS Proxy API error: ${response.status} - ${errorText}`);
     }
 
     return await response.blob();
   }
 
-  private async speakWithGoogle(text: string, options: SpeakOptions): Promise<Blob> {
-    const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': this.provider!.apiKey
-      },
-      body: JSON.stringify({
-        input: { text },
-        voice: {
-          languageCode: 'en-US',
-          name: options.voice || 'en-US-Neural2-A'
-        },
-        audioConfig: {
-          audioEncoding: 'MP3',
-          speakingRate: options.rate || 1.0,
-          pitch: ((options.pitch || 1.0) - 1.0) * 20 // Convert 0.5-2.0 to -10 to +20
+  /**
+   * Get API base URL (check for local dev server first)
+   */
+  private async getApiBase(): Promise<string> {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      const localUrl = 'http://localhost:3000';
+      try {
+        const response = await fetch(`${localUrl}/health`, { 
+          method: 'GET',
+          signal: AbortSignal.timeout(1000)
+        });
+        if (response.ok) {
+          console.log('🏠 Using local Lambda server for TTS');
+          return localUrl;
         }
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Google TTS API error: ${response.status} - ${errorText}`);
+      } catch (err) {
+        // Local Lambda not available, fall through to remote
+      }
     }
-
-    const data = await response.json();
-    return base64ToBlob(data.audioContent, 'audio/mp3');
-  }
-
-  private async speakWithGroq(text: string, options: SpeakOptions): Promise<Blob> {
-    const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.provider!.apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'playai-tts',
-        input: text,
-        voice: options.voice || 'Jennifer-PlayAI', // Use valid PlayAI voice as default
-        response_format: 'mp3',
-        speed: options.rate || 1.0,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Groq TTS API error: ${response.status} - ${errorText}`);
-    }
-
-    return await response.blob();
-  }
-
-  private async speakWithTogether(_text: string, _options: SpeakOptions): Promise<Blob> {
-    // Note: Together AI does not appear to have a native TTS API
-    // This is a placeholder implementation - may need to fallback to another provider
-    throw new Error('Together AI TTS API is not currently available. Please use a different provider.');
+    // Use remote Lambda
+    return import.meta.env.VITE_API_BASE || 
+           'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
   }
 
   private async playAudio(audioBlob: Blob, options: SpeakOptions): Promise<void> {

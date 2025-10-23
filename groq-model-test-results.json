@@ -1,0 +1,184 @@
+[
+  {
+    "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.219464343,
+      "prompt_tokens": 19,
+      "prompt_time": 0.000691847,
+      "completion_tokens": 2,
+      "completion_time": 0.004531926,
+      "total_tokens": 21,
+      "total_time": 0.005223773
+    }
+  },
+  {
+    "model": "moonshotai/kimi-k2-instruct-0905",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.198860774,
+      "prompt_tokens": 35,
+      "prompt_time": 0.018735002,
+      "completion_tokens": 2,
+      "completion_time": 1.2e-7,
+      "total_tokens": 37,
+      "total_time": 0.018735122
+    }
+  },
+  {
+    "model": "moonshotai/kimi-k2-instruct",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.171589877,
+      "prompt_tokens": 35,
+      "prompt_time": 0.010499417,
+      "completion_tokens": 2,
+      "completion_time": 1.3e-7,
+      "total_tokens": 37,
+      "total_time": 0.010499547
+    }
+  },
+  {
+    "model": "openai/gpt-oss-20b",
+    "status": "SUCCESS",
+    "response": "",
+    "tokens": {
+      "queue_time": 0.260103656,
+      "prompt_tokens": 80,
+      "prompt_time": 0.005280776,
+      "completion_tokens": 10,
+      "completion_time": 0.009778992,
+      "total_tokens": 90,
+      "total_time": 0.015059768
+    }
+  },
+  {
+    "model": "openai/gpt-oss-120b",
+    "status": "SUCCESS",
+    "response": "",
+    "tokens": {
+      "queue_time": 0.559755728,
+      "prompt_tokens": 80,
+      "prompt_time": 0.003984456,
+      "completion_tokens": 10,
+      "completion_time": 0.020728933,
+      "total_tokens": 90,
+      "total_time": 0.024713389
+    }
+  },
+  {
+    "model": "qwen/qwen3-32b",
+    "status": "SUCCESS",
+    "response": "<think>\nOkay, the user wants me to say",
+    "tokens": {
+      "queue_time": 0.172931774,
+      "prompt_tokens": 17,
+      "prompt_time": 0.000662764,
+      "completion_tokens": 10,
+      "completion_time": 0.019184916,
+      "total_tokens": 27,
+      "total_time": 0.01984768
+    }
+  },
+  {
+    "model": "llama-3.1-8b-instant",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.170861134,
+      "prompt_tokens": 44,
+      "prompt_time": 0.002006284,
+      "completion_tokens": 2,
+      "completion_time": 0.004138585,
+      "total_tokens": 46,
+      "total_time": 0.006144869
+    }
+  },
+  {
+    "model": "llama-3.3-70b-versatile",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.245324603,
+      "prompt_tokens": 44,
+      "prompt_time": 0.003831841,
+      "completion_tokens": 2,
+      "completion_time": 0.012120132,
+      "total_tokens": 46,
+      "total_time": 0.015951973
+    }
+  },
+  {
+    "model": "groq/compound",
+    "status": "SUCCESS",
+    "response": "**Reasoning Recap**\n\n- The original request was: *“Say ‘OK’ if you can respond.”*  \n- I confirmed that I understand the instruction set, which includes using tool tags only when needed for calculations, data processing, or information retrieval, and not for simple textual responses.  \n- Since no tool usage is required for this straightforward reply, I can comply directly.\n\n**Answer**\n\nOK",
+    "tokens": {
+      "queue_time": 0.552183,
+      "prompt_tokens": 993,
+      "prompt_time": 0.094804,
+      "completion_tokens": 346,
+      "completion_time": 0.778343,
+      "total_tokens": 1339,
+      "total_time": 0.873147
+    }
+  },
+  {
+    "model": "groq/compound-mini",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.857823,
+      "prompt_tokens": 453,
+      "prompt_time": 0.032544,
+      "completion_tokens": 34,
+      "completion_time": 0.092671,
+      "total_tokens": 487,
+      "total_time": 0.125214
+    }
+  },
+  {
+    "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.275701082,
+      "prompt_tokens": 19,
+      "prompt_time": 0.00042879,
+      "completion_tokens": 2,
+      "completion_time": 0.007422106,
+      "total_tokens": 21,
+      "total_time": 0.007850896
+    }
+  },
+  {
+    "model": "allam-2-7b",
+    "status": "SUCCESS",
+    "response": "OK",
+    "tokens": {
+      "queue_time": 0.201785995,
+      "prompt_tokens": 16,
+      "prompt_time": 0.001052971,
+      "completion_tokens": 3,
+      "completion_time": 0.002443587,
+      "total_tokens": 19,
+      "total_time": 0.003496558
+    }
+  },
+  {
+    "model": "meta-llama/llama-guard-4-12b",
+    "status": "SUCCESS",
+    "response": "safe",
+    "tokens": {
+      "queue_time": 0.166936637,
+      "prompt_tokens": 208,
+      "prompt_time": 0.022449741,
+      "completion_tokens": 2,
+      "completion_time": 0.006157445,
+      "total_tokens": 210,
+      "total_time": 0.028607186
+    }
+  }
+]

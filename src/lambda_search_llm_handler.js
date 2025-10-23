@@ -51,10 +51,77 @@ let globalPricingCache = null;
 
 // System prompt and safeParseJson moved to config/prompts.js and utils/token-estimation.js respectively
 
-async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
-    console.log(`🔧 ENTERED runToolLoop - model: ${model}, apiKey: ${!!apiKey}, userQuery length: ${userQuery?.length || 0}`);
-    console.log(`🔧 runToolLoop userQuery:`, userQuery);
-    console.log(`🔧 runToolLoop systemPrompt:`, systemPrompt);
+/**
+ * Select default model for a provider type
+ * @param {string} providerType - Provider type (e.g., 'groq', 'gemini', 'openai')
+ * @returns {string} Formatted model string (e.g., 'groq:llama-3.3-70b-versatile')
+ */
+function selectDefaultModelForProvider(providerType) {
+    const defaults = {
+        'groq': 'groq:llama-3.3-70b-versatile',
+        'groq-free': 'groq-free:llama-3.3-70b-versatile',
+        'gemini': 'gemini:gemini-2.0-flash-exp',
+        'gemini-free': 'gemini-free:gemini-2.0-flash-exp',
+        'openai': 'openai:gpt-4o-mini',
+        'together': 'together:meta-llama/Llama-3-70b-chat-hf',
+        'atlascloud': 'atlascloud:llama-3.3-70b-versatile'
+    };
+    
+    return defaults[providerType] || `${providerType}:default`;
+}
+
+/**
+ * Select next model in rotation sequence
+ * @param {string} currentModel - Current model that failed
+ * @param {Array} rotationSequence - Pre-built rotation sequence
+ * @param {Array<string>} triedModels - Models already attempted
+ * @returns {{model: string, apiKey: string, providerType: string} | null}
+ */
+function selectNextModelInRotation(currentModel, rotationSequence, triedModels) {
+    if (!Array.isArray(rotationSequence) || rotationSequence.length === 0) {
+        console.log('⚠️ Empty rotation sequence');
+        return null;
+    }
+    
+    // Find current model in sequence
+    const currentIndex = rotationSequence.findIndex(item => item.model === currentModel);
+    
+    // Try next models in sequence that haven't been tried
+    const startIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+    
+    for (let i = startIndex; i < rotationSequence.length; i++) {
+        const candidate = rotationSequence[i];
+        if (!triedModels.includes(candidate.model)) {
+            console.log(`🔄 Next model in rotation: ${candidate.model} (${candidate.tokensPerMinute} TPM)`);
+            return {
+                model: candidate.model,
+                apiKey: candidate.apiKey,
+                providerType: candidate.providerType
+            };
+        }
+    }
+    
+    // Wrap around to beginning if needed
+    for (let i = 0; i < startIndex; i++) {
+        const candidate = rotationSequence[i];
+        if (!triedModels.includes(candidate.model)) {
+            console.log(`🔄 Wrapping to: ${candidate.model}`);
+            return {
+                model: candidate.model,
+                apiKey: candidate.apiKey,
+                providerType: candidate.providerType
+            };
+        }
+    }
+    
+    console.log(`❌ All models in rotation have been tried (${triedModels.length} attempts)`);
+    return null;
+}
+
+async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream, uiProviders, optimization = 'cheap' }) {
+    console.log(`🔧 ENTERED runToolLoop - providedModel: ${model || 'auto-select'}, apiKey: ${!!apiKey}, userQuery length: ${userQuery?.length || 0}`);
+    console.log(`🔧 runToolLoop optimization: ${optimization}`);
+    console.log(`🔧 runToolLoop uiProviders count: ${uiProviders?.length || 0}`);
     console.log(`🔧 STREAM CHECK - stream exists:`, !!stream, ', stream.writeEvent exists:', !!stream?.writeEvent);
     
     // TEST: Emit a test event immediately to verify stream works
@@ -64,6 +131,35 @@ async function runToolLoop({ model, apiKey, userQuery, systemPrompt, stream }) {
     } else {
         console.error('❌ TEST: stream or stream.writeEvent is undefined!');
     }
+    
+    // Build model rotation sequence for rate limit fallback
+    const { buildModelRotationSequence, estimateTokenRequirements } = require('./model-selector-v2');
+    
+    const requirements = {
+        needsTools: true, // Assume tools are needed for chat endpoint
+        needsVision: false, // TODO: Detect image content in messages
+        estimatedTokens: estimateTokenRequirements([], true),
+        optimization: optimization || 'cheap'
+    };
+    
+    const rotationSequence = buildModelRotationSequence(uiProviders, requirements);
+    const triedModels = []; // Track which models we've tried
+    
+    if (rotationSequence.length === 0) {
+        console.error('❌ No available models in rotation sequence');
+        throw new Error('No available providers configured. Please add providers in settings.');
+    }
+    
+    // If model not provided, auto-select from first in rotation
+    if (!model) {
+        const firstModel = rotationSequence[0];
+        model = firstModel.model;
+        apiKey = firstModel.apiKey;
+        console.log(`🎯 Auto-selected model: ${model}`);
+        triedModels.push(model);
+    }
+    
+    console.log(`🔧 Starting with model: ${model}`);
     
     // Initialize tracking variables
     let allToolCallCycles = [];
@@ -327,59 +423,123 @@ IMPORTANT: Only include fields relevant to the query_type. Be decisive in classi
         });
         
         let output, text;
-        try {
-            const response = await llmResponsesWithTools(toolIterationRequestBody);
-            output = response.output;
-            text = response.text;
-            
-            // Debug logging for HTTP headers
-            console.log('📋 DEBUG tool_iteration - Full response object keys:', Object.keys(response));
-            console.log('📋 DEBUG tool_iteration - httpHeaders:', response.httpHeaders);
-            console.log('📋 DEBUG tool_iteration - httpHeaders JSON:', JSON.stringify(response.httpHeaders, null, 2));
-            console.log('📊 DEBUG tool_iteration - httpStatus:', response.httpStatus);
-            
-            // Emit LLM response event with full response metadata and HTTP headers
-            const eventData = {
-                phase: 'tool_iteration',
-                iteration: iter + 1,
-                model,
-                response: response.rawResponse || { output, text },
-                httpHeaders: response.httpHeaders || {},
-                httpStatus: response.httpStatus,
-                timestamp: new Date().toISOString()
-            };
-            console.log('🔧 DEBUG tool_iteration - Event data:', JSON.stringify(eventData, null, 2));
-            stream?.writeEvent?.('llm_response', eventData);
-            
-            console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
-            console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
-        } catch (e) {
-            console.error(`LLM call failed in tool iteration ${iter + 1}:`, e?.message || e);
-            
-            // Check if this is a tool_use_failed error (model generated malformed tool calls)
-            const errorMsg = e?.message || String(e);
-            const isToolFormatError = errorMsg.includes('tool_use_failed') || errorMsg.includes('Failed to call a function');
-            
-            if (isToolFormatError) {
-                console.error(`⚠️ Model generated malformed tool calls. This model may not support tool calling properly.`);
-                console.error(`💡 Recommendation: Try using a different model with better tool-calling support (e.g., groq:llama-3.3-70b-versatile or openai:gpt-4)`);
+        let lastError;
+        const maxProviderRetries = 3; // Try up to 3 alternative providers
+        
+        // Provider fallback retry loop
+        for (let providerRetry = 0; providerRetry < maxProviderRetries; providerRetry++) {
+            try {
+                const response = await llmResponsesWithTools(toolIterationRequestBody);
+                output = response.output;
+                text = response.text;
                 
-                stream?.writeEvent?.('error', {
-                    error: `Model does not support tool calling properly. Try a different model like groq:llama-3.3-70b-versatile or openai:gpt-4. Error: ${errorMsg}`,
+                // Debug logging for HTTP headers
+                console.log('📋 DEBUG tool_iteration - Full response object keys:', Object.keys(response));
+                console.log('📋 DEBUG tool_iteration - httpHeaders:', response.httpHeaders);
+                console.log('📋 DEBUG tool_iteration - httpHeaders JSON:', JSON.stringify(response.httpHeaders, null, 2));
+                console.log('📊 DEBUG tool_iteration - httpStatus:', response.httpStatus);
+                
+                // Emit LLM response event with full response metadata and HTTP headers
+                const eventData = {
                     phase: 'tool_iteration',
                     iteration: iter + 1,
-                    model_incompatible: true,
-                    suggested_models: ['groq:llama-3.3-70b-versatile', 'groq:llama-3.3-70b-specdec', 'openai:gpt-4', 'openai:gpt-4o']
-                });
-            } else {
-                stream?.writeEvent?.('error', {
-                    error: `LLM call failed: ${errorMsg}`,
-                    phase: 'tool_iteration',
-                    iteration: iter + 1
-                });
+                    model,
+                    response: response.rawResponse || { output, text },
+                    httpHeaders: response.httpHeaders || {},
+                    httpStatus: response.httpStatus,
+                    timestamp: new Date().toISOString()
+                };
+                console.log('🔧 DEBUG tool_iteration - Event data:', JSON.stringify(eventData, null, 2));
+                stream?.writeEvent?.('llm_response', eventData);
+                
+                console.log(`🔧 LLM Response - output:`, output?.length || 0, 'items, text length:', text?.length || 0);
+                console.log(`🔧 LLM Output items:`, output?.map(item => ({ type: item.type, name: item.name })) || []);
+                
+                // Success - break retry loop
+                break;
+                
+            } catch (e) {
+                lastError = e;
+                const errorMsg = e?.message || String(e);
+                console.error(`LLM call failed in tool iteration ${iter + 1}:`, errorMsg);
+                
+                // Check if this is a rate limit error
+                const isRateLimitError = isQuotaLimitError(errorMsg);
+                
+                if (isRateLimitError) {
+                    console.log(`⚠️ Rate limit detected on ${model}, attempting model rotation...`);
+                    
+                    // Mark current model as tried
+                    if (!triedModels.includes(model)) {
+                        triedModels.push(model);
+                    }
+                    
+                    // Get next model in rotation
+                    const nextModel = selectNextModelInRotation(model, rotationSequence, triedModels);
+                    
+                    if (nextModel) {
+                        // Notify user of fallback
+                        stream?.writeEvent?.('provider_fallback', {
+                            originalModel: model,
+                            fallbackModel: nextModel.model,
+                            fallbackProvider: nextModel.providerType,
+                            reason: 'rate_limit',
+                            attempt: providerRetry + 1,
+                            errorMessage: errorMsg,
+                            phase: 'tool_iteration',
+                            iteration: iter + 1,
+                            triedModels: triedModels.length,
+                            remainingModels: rotationSequence.length - triedModels.length
+                        });
+                        
+                        console.log(`🔄 Rotating to: ${nextModel.model} (tried ${triedModels.length}/${rotationSequence.length})`);
+                        
+                        // Update for retry
+                        model = nextModel.model;
+                        apiKey = nextModel.apiKey;
+                        toolIterationRequestBody.model = nextModel.model;
+                        toolIterationRequestBody.options.apiKey = nextModel.apiKey;
+                        triedModels.push(nextModel.model);
+                        
+                        // Continue retry loop
+                        continue;
+                    } else {
+                        console.error(`❌ No more models available (tried ${triedModels.length}/${rotationSequence.length})`);
+                        // Break retry loop
+                        break;
+                    }
+                } else {
+                    // Check if this is a tool_use_failed error (model generated malformed tool calls)
+                    const isToolFormatError = errorMsg.includes('tool_use_failed') || errorMsg.includes('Failed to call a function');
+                    
+                    if (isToolFormatError) {
+                        console.error(`⚠️ Model generated malformed tool calls. This model may not support tool calling properly.`);
+                        console.error(`💡 Recommendation: Try using a different model with better tool-calling support (e.g., groq:llama-3.3-70b-versatile or openai:gpt-4)`);
+                        
+                        stream?.writeEvent?.('error', {
+                            error: `Model does not support tool calling properly. Try a different model like groq:llama-3.3-70b-versatile or openai:gpt-4. Error: ${errorMsg}`,
+                            phase: 'tool_iteration',
+                            iteration: iter + 1,
+                            model_incompatible: true,
+                            suggested_models: ['groq:llama-3.3-70b-versatile', 'groq:llama-3.3-70b-specdec', 'openai:gpt-4', 'openai:gpt-4o']
+                        });
+                    } else {
+                        stream?.writeEvent?.('error', {
+                            error: `LLM call failed: ${errorMsg}`,
+                            phase: 'tool_iteration',
+                            iteration: iter + 1
+                        });
+                    }
+                    
+                    // Non-rate-limit error - don't retry, break immediately
+                    break;
+                }
             }
-            
-            // Break the loop - cannot continue without LLM response
+        }
+        
+        // If all retries failed, break the main tool loop
+        if (!output && lastError) {
+            console.error(`❌ All provider retries exhausted, breaking tool loop`);
             break;
         }
 
@@ -1211,10 +1371,12 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         
         const body = JSON.parse(event.body || '{}');
         query = body.query || '';
-        const model = body.model || 'groq:llama-3.1-8b-instant';
+        const model = body.model; // Optional - backend will auto-select if not provided
         const accessSecret = body.accessSecret || '';
         const apiKey = body.apiKey || '';
         const tavilyApiKey = body.tavilyApiKey || '';
+        const uiProviders = body.providers || []; // Array of provider configs from UI
+        const optimization = body.optimization || 'cheap'; // Model selection strategy
         
         // Extract Google token from body OR Authorization header
         let googleToken = body.google_token || body.googleToken || null;
@@ -1286,11 +1448,13 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         console.log('🔧 HANDLER: streamObject:', !!streamObject, 'streamObject.writeEvent:', typeof streamObject.writeEvent);
         
         const toolsRun = await runToolLoop({
-            model,
+            model, // Optional - will auto-select if not provided
             apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
             userQuery: query,
             systemPrompt: getComprehensiveResearchSystemPrompt(), // Get fresh prompt with current date/time
-            stream: streamObject
+            stream: streamObject,
+            uiProviders, // Pass UI providers for model rotation and fallback
+            optimization // Pass optimization strategy for model selection
         });
         
         // Send completion event
@@ -1404,6 +1568,28 @@ Please provide your analysis in the following JSON format based on the query typ
   "enhancedUserPrompt": "I need clarification on your request. [clarificationQuestions]"
 }
 
+**For guidance-seeking queries (complex multi-iteration plans):**
+{
+  "queryType": "guidance",
+  "complexity": "complex",
+  "planType": "deep-research|document-building|story-creation|software-development|custom",
+  "guidanceQuestions": [
+    "What is the specific goal/outcome?",
+    "What level of detail? (brief vs comprehensive)",
+    "What format for final output?",
+    "Specific aspects to emphasize?",
+    "Source priorities?",
+    "Constraints? (length, style, technical level, timeline)"
+  ],
+  "detectedPatterns": ["multi-stage workflow", "requires iteration", "uses tools extensively"],
+  "suggestedWorkflow": "Brief recommended approach",
+  "estimatedIterations": 5-20,
+  "toolsRequired": ["create_todo", "search_web", "create_snippet", "execute_javascript", "generate_chart"],
+  "expertPersona": "You are a project planning specialist.",
+  "enhancedSystemPrompt": "Guide user through complex multi-iteration project. Ask clarifying questions before detailed plan.",
+  "enhancedUserPrompt": "Need guidance on: [query]. Answer these questions for optimal plan: [guidanceQuestions]"
+}
+
 **CRITICAL JSON Requirements:**
 - Response MUST be valid JSON only - no additional text before or after
 - All strings must use double quotes, not single quotes
@@ -1413,13 +1599,13 @@ Please provide your analysis in the following JSON format based on the query typ
 - Objects must be properly closed with }
 
 **Guidelines:**
-- **searchQueries**: Create 8-12 diverse search terms including: primary terms, alternative phrasings, technical terms, related concepts, and specific subtopics
-- **researchQuestions**: Generate 8-15 comprehensive questions covering: fundamental concepts, relationships, current trends, challenges, expert perspectives, evidence, implications, comparisons, and future developments  
-- **suggestedSources**: Provide 4-6 source categories with specific examples of where to find authoritative information
-- **enhancedSystemPrompt**: Build a detailed system prompt that incorporates the expert persona, search queries, research questions, suggested sources, and methodology
-- **enhancedUserPrompt**: Create a detailed user prompt that references the search queries, research questions, suggested sources, and expected analysis
-- **expertPersona**: Define a specific expert role with relevant credentials and specialization
-- **methodology**: Describe the specific research and analysis approach including source diversification
+- **searchQueries**: 8-12 diverse terms (primary, alternatives, technical, related, specific)
+- **researchQuestions**: 8-15 comprehensive questions (fundamentals, relationships, trends, challenges, perspectives, evidence, implications, comparisons, future)
+- **suggestedSources**: 4-6 categories with specific examples
+- **enhancedSystemPrompt**: Detailed prompt with expert persona, search queries, questions, sources, methodology
+- **enhancedUserPrompt**: Detailed prompt referencing queries, questions, sources, expected analysis
+- **expertPersona**: Specific expert role with credentials
+- **methodology**: Research/analysis approach with source diversification
 
 **JSON Validation Checklist:**
 ✓ Valid JSON structure with proper opening and closing braces
@@ -1434,8 +1620,28 @@ Determine the optimal research strategy:
 - **overview**: Broad topics needing comprehensive coverage with multiple sources
 - **long-form**: Complex analysis requiring structured document creation  
 - **clarification**: Ambiguous queries needing clarification
+- **guidance**: Complex multi-iteration projects that need clarification and detailed workflow planning
 
-IMPORTANT: The enhancedSystemPrompt and enhancedUserPrompt must incorporate the planning details (searchQueries, researchQuestions, methodology, etc.) to guide the actual research process.`;
+**Guidance Query Detection:** Use "guidance" queryType when query involves:
+1. Deep research: "research X by asking 20+ questions, capture in snippets"
+2. Document building: "create document researching sections separately then combining"
+3. Story creation: "write story with chapter outlines then fill each chapter"
+4. Software development: "build app by planning functions, write/test each, then combine"
+5. Multi-stage: tasks needing todos → tools → snippets → synthesize
+6. Iterative refinement: tasks clearly needing many iterations with tool calls
+
+**Few-Shot Workflow Examples for Guidance Responses:**
+
+Example - Multi-Iteration Workflow:
+enhancedUserPrompt: "Follow this workflow for [task]:
+1. Create todos for major components/sections/topics using create_todo
+2. For each todo: execute relevant tools (search_web, execute_javascript, etc.)
+3. Save outputs to snippets using create_snippet or update_snippet
+4. Mark todos complete using update_todo as you finish each one
+5. Synthesize: combine snippets into final deliverable
+Expected: 3-5 tool calls per iteration. Continue until all todos complete."
+
+IMPORTANT: The enhancedSystemPrompt and enhancedUserPrompt must incorporate planning details (searchQueries, researchQuestions, methodology) to guide research. For guidance queries, include workflow showing multiple tool calls per iteration and use of todos/snippets.`;
 }
 
 // Export the handler and utility functions

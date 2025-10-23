@@ -20,6 +20,9 @@ import { TranscriptionProgress, type ProgressEvent } from './TranscriptionProgre
 import { ScrapingProgress } from './ScrapingProgress';
 import { SearchProgress } from './SearchProgress';
 import { YouTubeSearchProgress, type YouTubeSearchProgressData } from './YouTubeSearchProgress';
+import { JavaScriptExecutionProgress } from './JavaScriptExecutionProgress';
+import { ImageGenerationProgress } from './ImageGenerationProgress';
+import { ChartGenerationProgress } from './ChartGenerationProgress';
 import { ExtractionSummary } from './ExtractionSummary';
 import { LlmInfoDialog as LlmInfoDialogNew } from './LlmInfoDialogNew';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
@@ -167,6 +170,44 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // YouTube search progress tracking
   const [youtubeSearchProgress, setYoutubeSearchProgress] = useState<Map<string, YouTubeSearchProgressData>>(new Map());
   
+  // JavaScript execution progress tracking
+  const [javascriptProgress, setJavascriptProgress] = useState<Map<string, {
+    tool: string;
+    phase: string;
+    output?: string;
+    code_length?: number;
+    timeout_ms?: number;
+    output_lines?: number;
+    output_number?: number;
+    has_result?: boolean;
+    error?: string;
+    timestamp: string;
+  }>>(new Map());
+  
+  // Image generation progress tracking
+  const [imageGenerationProgress, setImageGenerationProgress] = useState<Map<string, {
+    tool: string;
+    phase: 'analyzing_prompt' | 'quality_selected' | 'selecting_provider' | 'generating' | 'completed' | 'error';
+    prompt?: string;
+    quality?: string;
+    provider?: string;
+    model?: string;
+    size?: string;
+    estimated_cost?: number;
+    estimated_seconds?: number;
+    remaining_seconds?: number;
+    error?: string;
+    url?: string;
+  }>>(new Map());
+  
+  // Chart generation progress tracking
+  const [chartGenerationProgress, setChartGenerationProgress] = useState<Map<string, {
+    tool: string;
+    phase: 'preparing' | 'completed';
+    chart_type?: string;
+    description?: string;
+  }>>(new Map());
+  
   // Content extraction tracking (for displaying structured data summaries)
   const [extractionData, setExtractionData] = useState<Map<string, {
     phase: string;
@@ -281,6 +322,40 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       }
     }
   }, []);
+  
+  // Countdown timer for image generation
+  useEffect(() => {
+    // Find the generating phase
+    const generatingData = Array.from(imageGenerationProgress.values()).find(
+      data => data.phase === 'generating' && data.estimated_seconds
+    );
+    
+    if (!generatingData || generatingData.remaining_seconds === 0) {
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setImageGenerationProgress(prev => {
+        const newMap = new Map(prev);
+        const key = 'img_generating';
+        const current = newMap.get(key);
+        
+        if (current && current.phase === 'generating') {
+          const remainingSeconds = current.remaining_seconds ?? current.estimated_seconds ?? 0;
+          if (remainingSeconds > 0) {
+            newMap.set(key, {
+              ...current,
+              remaining_seconds: remainingSeconds - 1
+            });
+          }
+        }
+        
+        return newMap;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [imageGenerationProgress]);
 
   // Extract provider API keys from settings for image generation
   const providerApiKeys = React.useMemo(() => {
@@ -2252,36 +2327,194 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               break;
               
             case 'image_generation_progress':
-              // Image generation in progress - add to imageGenerations with 'generating' status
+              // Image generation progress - update status based on phase
               console.log('🎨 Image generation progress event:', data);
               setMessages(prev => {
                 const newMessages = [...prev];
                 // Find the last assistant message
                 for (let i = newMessages.length - 1; i >= 0; i--) {
                   if (newMessages[i].role === 'assistant') {
-                    // Check if we already have this image generation
-                    const existingImgGen = newMessages[i].imageGenerations?.find((ig: any) => ig.id === data.id);
-                    if (!existingImgGen) {
-                      // Add new image generation with 'generating' status
-                      if (!newMessages[i].imageGenerations) {
-                        newMessages[i].imageGenerations = [];
-                      }
+                    if (!newMessages[i].imageGenerations) {
+                      newMessages[i].imageGenerations = [];
+                    }
+                    
+                    // Try to find existing image generation by ID
+                    const existingIndex = newMessages[i].imageGenerations.findIndex((ig: any) => 
+                      ig.id === data.id || (data.prompt && ig.prompt === data.prompt)
+                    );
+                    
+                    if (existingIndex >= 0) {
+                      // Update existing image generation with progress
+                      const existing = newMessages[i].imageGenerations[existingIndex];
+                      newMessages[i].imageGenerations[existingIndex] = {
+                        ...existing,
+                        phase: data.phase, // 'selecting_provider', 'generating', 'completed', 'error'
+                        provider: data.provider || existing.provider,
+                        model: data.model || existing.model,
+                        estimatedSeconds: data.estimated_seconds || existing.estimatedSeconds,
+                        status: data.phase === 'error' ? 'error' : 'generating'
+                      };
+                    } else {
+                      // Create new image generation entry
                       newMessages[i].imageGenerations.push({
-                        id: data.id,
-                        provider: 'unknown', // Will be updated when complete
-                        model: 'unknown',
-                        cost: 0,
+                        id: data.id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        provider: data.provider || 'unknown',
+                        model: data.model || 'unknown',
+                        cost: data.estimated_cost || 0,
                         prompt: data.prompt || '',
-                        size: '1024x1024',
-                        status: 'generating' as const
+                        size: data.size || '1024x1024',
+                        qualityTier: data.quality || 'standard',
+                        status: 'generating' as const,
+                        phase: data.phase,
+                        estimatedSeconds: data.estimated_seconds,
+                        ready: false
                       });
-                      console.log('✅ Added generating image to imageGenerations');
                     }
                     break;
                   }
                 }
                 return newMessages;
               });
+              break;
+              
+            case 'image_complete':
+              // Image generation complete with URL - download and convert to base64 client-side
+              console.log('🎨 Image complete event:', {
+                hasUrl: !!data.url,
+                url: data.url,
+                provider: data.provider,
+                model: data.model,
+                quality: data.qualityTier
+              });
+              
+              // Update message with URL immediately (loading state)
+              setMessages(prev => {
+                const newMessages = [...prev];
+                // Find the last assistant message
+                for (let i = newMessages.length - 1; i >= 0; i--) {
+                  if (newMessages[i].role === 'assistant') {
+                    if (!newMessages[i].imageGenerations) {
+                      newMessages[i].imageGenerations = [];
+                    }
+                    
+                    const imgGenId = data.id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    const existingIndex = newMessages[i].imageGenerations.findIndex((ig: any) => ig.id === imgGenId);
+                    
+                    const imageData = {
+                      id: imgGenId,
+                      provider: data.provider || 'unknown',
+                      model: data.model || 'unknown',
+                      modelKey: data.model,
+                      cost: data.cost || 0,
+                      prompt: data.prompt || '',
+                      size: data.size || '1024x1024',
+                      style: data.style || 'natural',
+                      qualityTier: data.qualityTier || 'standard',
+                      status: 'downloading' as const, // New status: downloading
+                      imageUrl: data.url, // Temporary URL
+                      base64: undefined, // Will be populated after download
+                      ready: false,
+                      llmApiCall: data.llmApiCall,
+                      revisedPrompt: data.revisedPrompt
+                    };
+                    
+                    if (existingIndex >= 0) {
+                      newMessages[i].imageGenerations[existingIndex] = imageData;
+                    } else {
+                      newMessages[i].imageGenerations.push(imageData);
+                    }
+                    break;
+                  }
+                }
+                return newMessages;
+              });
+              
+              // Download and convert image to base64 asynchronously
+              if (data.url && data.id) {
+                (async () => {
+                  try {
+                    console.log('📥 Downloading image via Lambda proxy:', data.url);
+                    
+                    // Use Lambda proxy to bypass CORS
+                    const apiEndpoint = localStorage.getItem('api_endpoint') || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+                    const proxyResponse = await fetch(`${apiEndpoint}/proxy-image`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                        url: data.url,
+                        format: 'base64' // Request base64 data URI format
+                      })
+                    });
+                    
+                    if (!proxyResponse.ok) {
+                      throw new Error(`Proxy fetch failed: ${proxyResponse.status}`);
+                    }
+                    
+                    const proxyData = await proxyResponse.json();
+                    if (!proxyData.success || !proxyData.dataUri) {
+                      throw new Error('Invalid proxy response');
+                    }
+                    
+                    console.log('✅ Image downloaded via proxy, size:', proxyData.size, 'bytes');
+                    console.log('📦 Proxy data keys:', Object.keys(proxyData));
+                    console.log('📦 Data URI prefix:', proxyData.dataUri?.substring(0, 50));
+                    
+                    // Use the data URI directly (already in base64 format)
+                    const base64 = proxyData.dataUri;
+                    
+                    // Update message with base64 data
+                    setMessages(prev => {
+                      const newMessages = [...prev];
+                      console.log('🔄 Updating messages, total:', newMessages.length);
+                      for (let i = newMessages.length - 1; i >= 0; i--) {
+                        if (newMessages[i].role === 'assistant' && newMessages[i].imageGenerations) {
+                          console.log(`🔍 Checking message ${i}, imageGenerations:`, newMessages[i].imageGenerations?.length);
+                          const imgIndex = newMessages[i].imageGenerations.findIndex((ig: any) => ig.id === data.id);
+                          console.log(`🔍 Found image at index: ${imgIndex}, searching for ID: ${data.id}`);
+                          if (imgIndex >= 0) {
+                            const before = { ...newMessages[i].imageGenerations[imgIndex] };
+                            newMessages[i].imageGenerations[imgIndex] = {
+                              ...newMessages[i].imageGenerations[imgIndex],
+                              status: 'complete',
+                              base64: base64,
+                              imageUrl: base64, // Use base64 for display
+                              ready: true
+                            };
+                            const after = newMessages[i].imageGenerations[imgIndex];
+                            console.log('✅ Updated image with base64 data');
+                            console.log('   Before:', { status: before.status, hasBase64: !!before.base64, ready: before.ready });
+                            console.log('   After:', { status: after.status, hasBase64: !!after.base64, ready: after.ready });
+                            break;
+                          }
+                        }
+                      }
+                      return newMessages;
+                    });
+                  } catch (error) {
+                    console.error('❌ Failed to download/convert image:', error);
+                    // Update status to error
+                    setMessages(prev => {
+                      const newMessages = [...prev];
+                      for (let i = newMessages.length - 1; i >= 0; i--) {
+                        if (newMessages[i].role === 'assistant' && newMessages[i].imageGenerations) {
+                          const imgIndex = newMessages[i].imageGenerations.findIndex((ig: any) => ig.id === data.id);
+                          if (imgIndex >= 0) {
+                            newMessages[i].imageGenerations[imgIndex] = {
+                              ...newMessages[i].imageGenerations[imgIndex],
+                              status: 'error',
+                              ready: false
+                            };
+                            break;
+                          }
+                        }
+                      }
+                      return newMessages;
+                    });
+                  }
+                })();
+              }
               break;
               
             case 'tool_call_result':
@@ -2307,6 +2540,24 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 setYoutubeSearchProgress(new Map());
               }
               
+              // Clear JavaScript execution progress when execute_javascript completes
+              if (data.name === 'execute_javascript') {
+                console.log('💻 Clearing JavaScript execution progress after execute_javascript completion');
+                setJavascriptProgress(new Map());
+              }
+              
+              // Clear image generation progress when generate_image completes
+              if (data.name === 'generate_image') {
+                console.log('🎨 Clearing image generation progress after generate_image completion');
+                setImageGenerationProgress(new Map());
+              }
+              
+              // Clear chart generation progress when generate_chart completes
+              if (data.name === 'generate_chart') {
+                console.log('📊 Clearing chart generation progress after generate_chart completion');
+                setChartGenerationProgress(new Map());
+              }
+              
               // Embed tool result in the assistant message that triggered it
               // This keeps tool results grouped with the response, making the agentic process compact
               setMessages(prev => {
@@ -2327,11 +2578,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 
                 // Find the FIRST (earliest) assistant message with the matching tool call
                 // Search forward to find the first occurrence, not the last
+                let foundIndex = -1;
                 for (let i = 0; i < newMessages.length; i++) {
                   if (newMessages[i].role === 'assistant' && newMessages[i].tool_calls) {
                     // Check if this assistant has the tool call that matches
                     const hasMatchingToolCall = newMessages[i].tool_calls?.some((tc: any) => tc.id === data.id);
                     if (hasMatchingToolCall) {
+                      foundIndex = i;
                       console.log('🟪 ✅ Found FIRST assistant with matching tool call at index:', i, 'of', newMessages.length);
                       
                       // Extract ONLY tool-internal LLM calls (summarization, etc.)
@@ -2367,6 +2620,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       }
                       
                       console.log('🟪 Embedded tool result in assistant message at index', i, ', total toolResults:', newMessages[i].toolResults?.length);
+                      
+                      // Auto-expand execute_javascript tool results so they're visible immediately
+                      if (data.name === 'execute_javascript') {
+                        const toolResultIndex = (newMessages[i].toolResults?.length || 1) - 1;
+                        const expandKey = i * 1000 + toolResultIndex;
+                        console.log('💻 Auto-expanding execute_javascript result at key:', expandKey);
+                        setExpandedToolMessages(prev => {
+                          const newSet = new Set(prev);
+                          newSet.add(expandKey);
+                          return newSet;
+                        });
+                      }
+                      
+                      foundIndex = i;
                       break;
                     }
                   } else if (newMessages[i].role === 'assistant') {
@@ -2375,9 +2642,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 }
                 
                 // Check if we found a match
-                const foundMatch = newMessages.some((msg) => 
-                  msg.role === 'assistant' && msg.toolResults?.some((tr: any) => tr.tool_call_id === data.id)
-                );
+                const foundMatch = foundIndex !== -1;
                 if (!foundMatch) {
                   console.warn('🟪 ⚠️ Could not find assistant message with matching tool_call_id:', data.id);
                   console.warn('🟪 Available tool_call_ids:', 
@@ -2529,6 +2794,71 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               }
               break;
               
+            case 'javascript_execution_progress':
+              // JavaScript execution progress events
+              console.log('💻 JavaScript execution progress:', data);
+              
+              // Create a unique key based on phase
+              const jsProgressKey = data.phase === 'console_output' 
+                ? `js_output_${data.output_number || Date.now()}`
+                : `js_${data.phase}`;
+              
+              setJavascriptProgress(prev => {
+                const newMap = new Map(prev);
+                newMap.set(jsProgressKey, data);
+                return newMap;
+              });
+              
+              // Clear progress when complete or error
+              if (data.phase === 'completed' || data.phase === 'error') {
+                setTimeout(() => {
+                  setJavascriptProgress(new Map());
+                }, 2000);
+              }
+              break;
+            
+            case 'image_generation_progress':
+              // Image generation progress events
+              console.log('🎨 Image generation progress:', data);
+              
+              // Create a unique key based on phase
+              const imgProgressKey = `img_${data.phase}`;
+              
+              setImageGenerationProgress(prev => {
+                const newMap = new Map(prev);
+                newMap.set(imgProgressKey, data);
+                return newMap;
+              });
+              
+              // Clear progress when complete or error
+              if (data.phase === 'completed' || data.phase === 'error') {
+                setTimeout(() => {
+                  setImageGenerationProgress(new Map());
+                }, 2000);
+              }
+              break;
+            
+            case 'chart_generation_progress':
+              // Chart generation progress events
+              console.log('📊 Chart generation progress:', data);
+              
+              // Create a unique key based on phase
+              const chartProgressKey = `chart_${data.phase}`;
+              
+              setChartGenerationProgress(prev => {
+                const newMap = new Map(prev);
+                newMap.set(chartProgressKey, data);
+                return newMap;
+              });
+              
+              // Clear progress when complete
+              if (data.phase === 'completed') {
+                setTimeout(() => {
+                  setChartGenerationProgress(new Map());
+                }, 2000);
+              }
+              break;
+              
             case 'scrape_progress':
             case 'transcript_extracted':
               // Content extraction events (from scrape_web_content, transcribe_url, or search_web)
@@ -2642,12 +2972,27 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       // Update the existing streaming message instead of creating a new one
                       console.log('🟡 Updating last assistant message with message_complete data');
                       const newMessages = [...prev];
+                      
+                      // Merge imageGenerations: preserve existing ones and add new ones
+                      let mergedImageGenerations = lastMessage.imageGenerations || [];
+                      if (data.imageGenerations && data.imageGenerations.length > 0) {
+                        mergedImageGenerations = [...mergedImageGenerations];
+                        data.imageGenerations.forEach((newImg: any) => {
+                          const existingIndex = mergedImageGenerations.findIndex((img: any) => img.id === newImg.id);
+                          if (existingIndex >= 0) {
+                            mergedImageGenerations[existingIndex] = { ...mergedImageGenerations[existingIndex], ...newImg };
+                          } else {
+                            mergedImageGenerations.push(newImg);
+                          }
+                        });
+                      }
+                      
                       const updatedMessage = {
                         ...lastMessage,
                         content: data.content || lastMessage.content || '',
                         tool_calls: data.tool_calls || lastMessage.tool_calls,
                         extractedContent: data.extractedContent || lastMessage.extractedContent,
-                        imageGenerations: data.imageGenerations || lastMessage.imageGenerations,
+                        imageGenerations: mergedImageGenerations,
                         llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
                         evaluations: data.evaluations || lastMessage.evaluations,
                         isStreaming: false
@@ -2701,17 +3046,62 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     
                     if (shouldUpdate) {
                       console.log('🟡 Updating last assistant message with message_complete data');
+                      console.log('🖼️ lastMessage.imageGenerations:', lastMessage.imageGenerations);
+                      console.log('🖼️ data.imageGenerations:', data.imageGenerations);
                       const newMessages = [...prev];
-                      newMessages[lastMessageIndex] = {
+                      
+                      // Merge imageGenerations: preserve existing ones and add new ones
+                      let mergedImageGenerations = lastMessage.imageGenerations || [];
+                      console.log('🖼️ mergedImageGenerations BEFORE merge:', mergedImageGenerations);
+                      if (data.imageGenerations && data.imageGenerations.length > 0) {
+                        mergedImageGenerations = [...mergedImageGenerations];
+                        data.imageGenerations.forEach((newImg: any) => {
+                          console.log('🖼️ Processing imageGeneration from message_complete:', {
+                            id: newImg.id,
+                            hasBase64: !!newImg.base64,
+                            base64Length: newImg.base64?.length,
+                            hasImageUrl: !!newImg.imageUrl
+                          });
+                          const existingIndex = mergedImageGenerations.findIndex((img: any) => img.id === newImg.id);
+                          if (existingIndex >= 0) {
+                            // Preserve base64 from existing if new one doesn't have it
+                            const existingBase64 = mergedImageGenerations[existingIndex].base64;
+                            console.log('🖼️ Merging - existing has base64:', !!existingBase64, 'new has base64:', !!newImg.base64);
+                            mergedImageGenerations[existingIndex] = { 
+                              ...mergedImageGenerations[existingIndex], 
+                              ...newImg,
+                              // Don't overwrite base64 with undefined
+                              base64: newImg.base64 || existingBase64
+                            };
+                            console.log('🖼️ After merge - has base64:', !!mergedImageGenerations[existingIndex].base64);
+                          } else {
+                            mergedImageGenerations.push(newImg);
+                            console.log('🖼️ Added new image to merge');
+                          }
+                        });
+                      }
+                      console.log('🖼️ mergedImageGenerations AFTER merge:', mergedImageGenerations);
+                      
+                      const updatedMessage = {
                         ...lastMessage,
                         content: data.content || lastMessage.content || '',
                         tool_calls: data.tool_calls || lastMessage.tool_calls,
                         extractedContent: data.extractedContent || lastMessage.extractedContent,
-                        imageGenerations: data.imageGenerations || lastMessage.imageGenerations,
+                        imageGenerations: mergedImageGenerations,
                         llmApiCalls: data.llmApiCalls || lastMessage.llmApiCalls,
                         evaluations: data.evaluations || lastMessage.evaluations,
                         isStreaming: false
                       };
+                      console.log('🖼️ updatedMessage.imageGenerations:', updatedMessage.imageGenerations);
+                      newMessages[lastMessageIndex] = updatedMessage;
+                      console.log('🖼️ newMessages[lastMessageIndex].imageGenerations:', newMessages[lastMessageIndex].imageGenerations);
+                      console.log('🖼️ RETURNING newMessages array:', newMessages.map((m, i) => ({ 
+                        idx: i, 
+                        role: m.role, 
+                        hasImageGenerations: !!m.imageGenerations, 
+                        imageGenerationsLength: m.imageGenerations?.length,
+                        actualImageGenerations: m.imageGenerations
+                      })));
                       return newMessages;
                     }
                   }
@@ -2766,9 +3156,59 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               }
               break;
               
+            case 'provider_fallback':
+              // Provider hit rate limit, falling back to alternative
+              console.log('⚠️ Provider fallback:', data);
+              
+              const fallbackMsg = `⚠️ ${data.originalModel} hit rate limit, switching to ${data.fallbackModel} (attempt ${data.attempt})`;
+              
+              // Add system message to notify user
+              setMessages(prev => [...prev, {
+                role: 'system',
+                content: fallbackMsg,
+                timestamp: new Date().toISOString(),
+                metadata: {
+                  type: 'provider_fallback',
+                  originalModel: data.originalModel,
+                  fallbackModel: data.fallbackModel,
+                  fallbackProvider: data.fallbackProvider,
+                  reason: data.reason,
+                  attempt: data.attempt,
+                  phase: data.phase,
+                  iteration: data.iteration
+                }
+              }]);
+              break;
+              
             case 'complete':
               // All processing complete
               console.log('Stream complete:', data);
+              
+              // Attach extractedContent to the last assistant message
+              if (data.extractedContent) {
+                console.log('📦 Attaching extractedContent from complete event:', {
+                  hasAllImages: !!data.extractedContent.allImages,
+                  allImagesCount: data.extractedContent.allImages?.length || 0,
+                  hasImages: !!data.extractedContent.images,
+                  imagesCount: data.extractedContent.images?.length || 0
+                });
+                
+                setMessages(prev => {
+                  const updated = [...prev];
+                  // Find the last assistant message
+                  for (let i = updated.length - 1; i >= 0; i--) {
+                    if (updated[i].role === 'assistant') {
+                      updated[i] = {
+                        ...updated[i],
+                        extractedContent: data.extractedContent
+                      };
+                      console.log(`✅ Attached extractedContent to assistant message at index ${i}`);
+                      break;
+                    }
+                  }
+                  return updated;
+                });
+              }
               
               // Update usage cost if available
               if (data.cost && typeof data.cost === 'number') {
@@ -3662,10 +4102,21 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             No messages yet. Start a conversation!
           </div>
         )}
+        {(() => {
+          console.log('🖼️ RENDER: messages array:', messages.map((m, i) => ({ 
+            idx: i, 
+            role: m.role, 
+            hasImageGenerations: !!m.imageGenerations, 
+            imageGenerationsLength: m.imageGenerations?.length,
+            actualImageGenerations: m.imageGenerations
+          })));
+          return null;
+        })()}
         {messages.map((msg, idx) => {
           const isExpanded = expandedToolMessages.has(idx);
           const msgText = msg.content ? getMessageText(msg.content) : '';
           console.log(`Rendering message ${idx}:`, msg.role, msgText.substring(0, 50));
+          console.log(`🖼️ Message ${idx} imageGenerations:`, msg.imageGenerations);
           
           // Debug: Log tool_calls for assistant messages
           if (msg.role === 'assistant' && msg.tool_calls) {
@@ -4290,6 +4741,33 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           </div>
                         )}
                         
+                        {/* Show JavaScript execution progress ONLY on the last message while it's streaming */}
+                        {idx === messages.length - 1 && javascriptProgress.size > 0 && (
+                          <div className="mb-3 space-y-2">
+                            {Array.from(javascriptProgress.values()).map((progress, idx) => (
+                              <JavaScriptExecutionProgress key={idx} data={progress} />
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Show image generation progress ONLY on the last message while it's streaming */}
+                        {idx === messages.length - 1 && imageGenerationProgress.size > 0 && (
+                          <div className="mb-3 space-y-2">
+                            {Array.from(imageGenerationProgress.values()).map((progress, idx) => (
+                              <ImageGenerationProgress key={idx} data={progress} />
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Show chart generation progress ONLY on the last message while it's streaming */}
+                        {idx === messages.length - 1 && chartGenerationProgress.size > 0 && (
+                          <div className="mb-3 space-y-2">
+                            {Array.from(chartGenerationProgress.values()).map((progress, idx) => (
+                              <ChartGenerationProgress key={idx} data={progress} />
+                            ))}
+                          </div>
+                        )}
+                        
                         {/* Show transcription progress for tool calls in progress (NOT complete) */}
                         {msg.tool_calls && msg.tool_calls.map((tc: any, tcIdx: number) => {
                           // Transcription progress
@@ -4631,7 +5109,23 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         {/* 7. Tool results embedded in this assistant message - render like tool messages */}
                         {msg.toolResults && msg.toolResults.length > 0 && (
                           <div className="mt-4 space-y-3">
-                            {msg.toolResults.map((toolResult: any, trIdx: number) => {
+                            {msg.toolResults
+                              .filter((toolResult: any, trIdx: number) => {
+                                // Hide failed image generation attempts (keep only successful ones)
+                                if (toolResult.name === 'generate_image') {
+                                  try {
+                                    const parsed = JSON.parse(toolResult.content);
+                                    // Hide if error exists (failed attempt)
+                                    if (parsed.error) {
+                                      return false;
+                                    }
+                                  } catch (e) {
+                                    // Keep if can't parse
+                                  }
+                                }
+                                return true;
+                              })
+                              .map((toolResult: any, trIdx: number) => {
                               const isToolExpanded = expandedToolMessages.has(idx * 1000 + trIdx);
                               
                               // Try to parse search results for better display
@@ -4752,6 +5246,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       {isToolExpanded ? '▲' : '▼'}
                                     </button>
                                   </div>
+                                  
                                   {isToolExpanded && (
                                     <div className="text-xs space-y-2">
                                       {/* Show extraction summaries for this tool */}
@@ -4774,27 +5269,203 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       {searchResults && searchResults.length > 0 ? (
                                         <div className="space-y-3">
                                           {searchResults.map((result: any, rIdx: number) => {
+                                            // Use expandedToolMessages Set with a unique key
+                                            const searchResultKey = idx * 1000000 + trIdx * 1000 + rIdx;
+                                            const isExpanded = expandedToolMessages.has(searchResultKey);
+                                            const hasScrapedContent = result.content || result.page_content;
+                                            const actualContent = typeof result.content === 'string' ? result.content : 
+                                                                typeof result.page_content === 'string' ? result.page_content : 
+                                                                JSON.stringify(result.page_content || result.content, null, 2);
+                                            
                                             return (
-                                              <div key={rIdx} className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-800">
-                                                <a 
-                                                  href={result.url} 
-                                                  target="_blank" 
-                                                  rel="noopener noreferrer"
-                                                  className="font-semibold text-purple-700 dark:text-purple-300 hover:underline block mb-1"
-                                                >
-                                                  {result.title}
-                                                </a>
-                                                {result.snippet && (
-                                                  <p className="text-gray-700 dark:text-gray-300 text-xs mb-2">{result.snippet}</p>
+                                              <div key={rIdx} className="bg-white dark:bg-gray-900 rounded border border-purple-200 dark:border-purple-800 overflow-hidden">
+                                                {/* Header with title and link */}
+                                                <div className="p-3">
+                                                  <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                      <a 
+                                                        href={result.url} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="font-semibold text-purple-700 dark:text-purple-300 hover:underline block mb-1"
+                                                      >
+                                                        {result.title}
+                                                      </a>
+                                                      {(result.snippet || result.description) && (
+                                                        <p className="text-gray-700 dark:text-gray-300 text-xs mb-2">
+                                                          {result.snippet || result.description}
+                                                        </p>
+                                                      )}
+                                                      <a 
+                                                        href={result.url} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 dark:text-blue-400 hover:underline text-[10px] break-all block"
+                                                      >
+                                                        {result.url}
+                                                      </a>
+                                                    </div>
+                                                    
+                                                    {/* Expand button for scraped content */}
+                                                    {hasScrapedContent && (
+                                                      <button
+                                                        onClick={() => {
+                                                          const newExpanded = new Set(expandedToolMessages);
+                                                          if (isExpanded) {
+                                                            newExpanded.delete(searchResultKey);
+                                                          } else {
+                                                            newExpanded.add(searchResultKey);
+                                                          }
+                                                          setExpandedToolMessages(newExpanded);
+                                                        }}
+                                                        className="flex-shrink-0 text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-200 text-xs"
+                                                        title={isExpanded ? 'Hide details' : 'Show details'}
+                                                      >
+                                                        {isExpanded ? '▲' : '▼'}
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                  
+                                                  {/* Metadata badges */}
+                                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                                    {result.state && (
+                                                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                                        result.state === 'success' 
+                                                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' 
+                                                          : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                                                      }`}>
+                                                        {result.state}
+                                                      </span>
+                                                    )}
+                                                    {result.fetchTimeMs !== undefined && (
+                                                      <span className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded">
+                                                        ⏱️ {result.fetchTimeMs}ms
+                                                      </span>
+                                                    )}
+                                                    {result.contentFormat && (
+                                                      <span className="text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded">
+                                                        {result.contentFormat}
+                                                      </span>
+                                                    )}
+                                                    {result.intelligentlyExtracted && (
+                                                      <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded" title="Content intelligently extracted">
+                                                        🧠 smart
+                                                      </span>
+                                                    )}
+                                                    {result.truncated && (
+                                                      <span className="text-[10px] bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-1.5 py-0.5 rounded" title="Truncated to fit model">
+                                                        ✂️ truncated
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                                
+                                                {/* Expandable details section */}
+                                                {isExpanded && hasScrapedContent && (
+                                                  <div className="border-t border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-900/10">
+                                                    {/* Scraping & Compression metadata */}
+                                                    <div className="px-3 py-2 border-b border-purple-200 dark:border-purple-800">
+                                                      <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-2">
+                                                        📊 Scraping & Compression Details:
+                                                      </div>
+                                                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
+                                                        {/* Scrape Strategy */}
+                                                        <div className="col-span-2">
+                                                          <span className="text-gray-500 dark:text-gray-400">Scrape Method:</span>{' '}
+                                                          <span className="font-semibold text-purple-600 dark:text-purple-400">
+                                                            Direct HTTP Fetch
+                                                          </span>
+                                                          <span className="text-gray-500 dark:text-gray-400 text-[9px] block mt-0.5">
+                                                            (Search results use simple HTTP GET - no browser automation)
+                                                          </span>
+                                                        </div>
+                                                        
+                                                        {/* Load Time */}
+                                                        {result.fetchTimeMs !== undefined && (
+                                                          <div>
+                                                            <span className="text-gray-500 dark:text-gray-400">Load Time:</span>{' '}
+                                                            <span className="font-mono text-gray-700 dark:text-gray-300">
+                                                              {result.fetchTimeMs}ms
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                        
+                                                        {/* Content Format */}
+                                                        {result.contentFormat && (
+                                                          <div>
+                                                            <span className="text-gray-500 dark:text-gray-400">Format:</span>{' '}
+                                                            <span className="font-mono text-gray-700 dark:text-gray-300">
+                                                              {result.contentFormat}
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                        
+                                                        {/* Original Size */}
+                                                        {(result.originalLength || result.originalContentLength) && (
+                                                          <div>
+                                                            <span className="text-gray-500 dark:text-gray-400">Original Size:</span>{' '}
+                                                            <span className="font-mono text-gray-700 dark:text-gray-300">
+                                                              {((result.originalLength || result.originalContentLength) / 1024).toFixed(1)}KB
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                        
+                                                        {/* Compressed Size */}
+                                                        {actualContent && (
+                                                          <div>
+                                                            <span className="text-gray-500 dark:text-gray-400">Compressed Size:</span>{' '}
+                                                            <span className="font-mono text-gray-700 dark:text-gray-300">
+                                                              {(actualContent.length / 1024).toFixed(1)}KB
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                        
+                                                        {/* Compression Ratio */}
+                                                        {result.compressionRatio && (
+                                                          <div>
+                                                            <span className="text-gray-500 dark:text-gray-400">Compression:</span>{' '}
+                                                            <span className="font-mono text-green-600 dark:text-green-400">
+                                                              {result.compressionRatio.toFixed(2)}x
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                        
+                                                        {/* Compression Method */}
+                                                        <div className="col-span-2">
+                                                          <span className="text-gray-500 dark:text-gray-400">Compression Strategy:</span>{' '}
+                                                          <span className="text-gray-700 dark:text-gray-300">
+                                                            {result.intelligentlyExtracted ? (
+                                                              <span>
+                                                                Smart extraction 
+                                                                {result.contentFormat === 'markdown' ? ' → Markdown' : ' → Plain text'}
+                                                                {result.truncated && ' → Truncated to model limits'}
+                                                              </span>
+                                                            ) : (
+                                                              <span>Basic extraction</span>
+                                                            )}
+                                                          </span>
+                                                        </div>
+                                                        
+                                                        {/* Note about LLM calls */}
+                                                        <div className="col-span-2 mt-1 text-gray-500 dark:text-gray-400 italic">
+                                                          Note: No LLM calls used for compression (rule-based extraction only)
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                    
+                                                    {/* Scraped content preview */}
+                                                    <div className="p-3">
+                                                      <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-2">
+                                                        📄 Content Sent to LLM:
+                                                      </div>
+                                                      <div className="bg-white dark:bg-gray-900 p-3 rounded border border-purple-200 dark:border-purple-700 max-h-96 overflow-y-auto">
+                                                        <pre className="whitespace-pre-wrap text-[11px] text-gray-900 dark:text-gray-100 font-mono leading-relaxed">
+                                                          {actualContent}
+                                                        </pre>
+                                                      </div>
+                                                    </div>
+                                                  </div>
                                                 )}
-                                                <a 
-                                                  href={result.url} 
-                                                  target="_blank" 
-                                                  rel="noopener noreferrer"
-                                                  className="text-blue-600 dark:text-blue-400 hover:underline text-[10px] break-all block mb-2"
-                                                >
-                                                  {result.url}
-                                                </a>
                                               </div>
                                             );
                                           })}
@@ -4971,82 +5642,125 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                         />
                                       ) : toolResult.name === 'generate_image' ? (
                                         (() => {
-                                          // Parse generate_image tool result to extract base64 image
-                                          console.log('🎨 generate_image tool result:', {
-                                            contentType: typeof toolResult.content,
-                                            contentPreview: typeof toolResult.content === 'string' 
-                                              ? toolResult.content.substring(0, 200) 
-                                              : JSON.stringify(toolResult.content).substring(0, 200),
-                                            hasBase64: toolResult.content && (
-                                              typeof toolResult.content === 'string' 
-                                                ? toolResult.content.includes('base64') 
-                                                : toolResult.content.base64
-                                            )
-                                          });
+                                          // Image is shown ABOVE (always visible), here we show metadata when expanded
+                                          // IMPORTANT: Find by tool_call_id, not by array index!
+                                          const toolCallId = toolResult.tool_call_id || toolResult.id;
+                                          const imageGeneration = msg.imageGenerations?.find((ig: any) => 
+                                            ig.id === toolCallId
+                                          );
                                           
+                                          if (imageGeneration) {
+                                            return (
+                                              <div className="space-y-3 mt-3">
+                                                {/* Metadata table */}
+                                                <div className="overflow-x-auto">
+                                                  <table className="w-full text-sm border-collapse border border-purple-200 dark:border-purple-800 rounded">
+                                                    <tbody>
+                                                      {imageGeneration.prompt && (
+                                                        <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20 w-1/3">Title/Prompt</td>
+                                                          <td className="py-2 px-3">{imageGeneration.prompt}</td>
+                                                        </tr>
+                                                      )}
+                                                      {imageGeneration.revisedPrompt && imageGeneration.revisedPrompt !== imageGeneration.prompt && (
+                                                        <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">Final Prompt</td>
+                                                          <td className="py-2 px-3">{imageGeneration.revisedPrompt}</td>
+                                                        </tr>
+                                                      )}
+                                                      {imageGeneration.size && (
+                                                        <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">Size</td>
+                                                          <td className="py-2 px-3">{imageGeneration.size}</td>
+                                                        </tr>
+                                                      )}
+                                                      {imageGeneration.model && (
+                                                        <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">Model</td>
+                                                          <td className="py-2 px-3">{imageGeneration.provider}/{imageGeneration.model}</td>
+                                                        </tr>
+                                                      )}
+                                                      {imageGeneration.qualityTier && (
+                                                        <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">Quality</td>
+                                                          <td className="py-2 px-3 capitalize">{imageGeneration.qualityTier}</td>
+                                                        </tr>
+                                                      )}
+                                                      {imageGeneration.cost !== undefined && (
+                                                        <tr className="border-b border-purple-200 dark:border-purple-800">
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">Cost</td>
+                                                          <td className="py-2 px-3">${imageGeneration.cost.toFixed(4)}</td>
+                                                        </tr>
+                                                      )}
+                                                      <tr>
+                                                        <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">Status</td>
+                                                        <td className="py-2 px-3">
+                                                          {imageGeneration.status === 'complete' ? (
+                                                            <span className="text-green-600 dark:text-green-400 font-semibold">✅ Success</span>
+                                                          ) : imageGeneration.status === 'error' ? (
+                                                            <span className="text-red-600 dark:text-red-400 font-semibold">❌ Failed</span>
+                                                          ) : (
+                                                            <span className="text-yellow-600 dark:text-yellow-400">{imageGeneration.status}</span>
+                                                          )}
+                                                        </td>
+                                                      </tr>
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                                
+                                                {/* JSON expandable trees */}
+                                                {imageGeneration.llmApiCall?.request && (
+                                                  <div className="border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
+                                                    <button
+                                                      onClick={() => {
+                                                        const id = `img-req-${imageGeneration.id}`;
+                                                        const el = document.getElementById(id);
+                                                        if (el) el.classList.toggle('hidden');
+                                                      }}
+                                                      className="w-full px-3 py-2 flex items-center justify-between bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors"
+                                                    >
+                                                      <span className="font-mono text-sm text-gray-700 dark:text-gray-300">📤 Request Data</span>
+                                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                      </svg>
+                                                    </button>
+                                                    <pre id={`img-req-${imageGeneration.id}`} className="hidden p-3 text-xs overflow-auto max-h-96 bg-white dark:bg-gray-900 font-mono text-gray-800 dark:text-gray-200">
+                                                      {JSON.stringify(imageGeneration.llmApiCall.request, null, 2)}
+                                                    </pre>
+                                                  </div>
+                                                )}
+                                                
+                                                {imageGeneration.llmApiCall?.response && (
+                                                  <div className="border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
+                                                    <button
+                                                      onClick={() => {
+                                                        const id = `img-res-${imageGeneration.id}`;
+                                                        const el = document.getElementById(id);
+                                                        if (el) el.classList.toggle('hidden');
+                                                      }}
+                                                      className="w-full px-3 py-2 flex items-center justify-between bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors"
+                                                    >
+                                                      <span className="font-mono text-sm text-gray-700 dark:text-gray-300">📥 Response Data</span>
+                                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                      </svg>
+                                                    </button>
+                                                    <pre id={`img-res-${imageGeneration.id}`} className="hidden p-3 text-xs overflow-auto max-h-96 bg-white dark:bg-gray-900 font-mono text-gray-800 dark:text-gray-200">
+                                                      {JSON.stringify(imageGeneration.llmApiCall.response, null, 2)}
+                                                    </pre>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          }
+
+                                          // Fallback: try to parse from tool result content
                                           try {
                                             const imageResult = typeof toolResult.content === 'string' 
                                               ? JSON.parse(toolResult.content) 
                                               : toolResult.content;
-                                            
-                                            console.log('🎨 Parsed imageResult:', {
-                                              hasBase64: !!imageResult.base64,
-                                              hasUrl: !!imageResult.url,
-                                              base64Length: imageResult.base64?.length,
-                                              keys: Object.keys(imageResult)
-                                            });
-                                            
-                                            // Check if we have a base64 image
-                                            if (imageResult && imageResult.base64) {
-                                              console.log('✅ Rendering base64 image from generate_image tool result');
-                                              return (
-                                                <div className="space-y-2">
-                                                  <div className="font-semibold text-purple-700 dark:text-purple-300 text-sm">
-                                                    🎨 Generated Image:
-                                                  </div>
-                                                  <img 
-                                                    src={`data:image/png;base64,${imageResult.base64}`}
-                                                    alt={imageResult.prompt || 'Generated image'}
-                                                    className="max-w-full rounded border border-purple-300 dark:border-purple-700"
-                                                    style={{ maxHeight: '512px', objectFit: 'contain' }}
-                                                  />
-                                                  {imageResult.prompt && (
-                                                    <div className="text-xs text-gray-600 dark:text-gray-400 italic">
-                                                      Prompt: {imageResult.prompt}
-                                                    </div>
-                                                  )}
-                                                  {imageResult.model && (
-                                                    <div className="text-xs text-gray-500 dark:text-gray-500">
-                                                      Model: {imageResult.model}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              );
-                                            } else if (imageResult && imageResult.url) {
-                                              // Fallback: if we have a URL instead of base64
-                                              return (
-                                                <div className="space-y-2">
-                                                  <div className="font-semibold text-purple-700 dark:text-purple-300 text-sm">
-                                                    🎨 Generated Image:
-                                                  </div>
-                                                  <img 
-                                                    src={imageResult.url}
-                                                    alt={imageResult.prompt || 'Generated image'}
-                                                    className="max-w-full rounded border border-purple-300 dark:border-purple-700"
-                                                    style={{ maxHeight: '512px', objectFit: 'contain' }}
-                                                  />
-                                                  {imageResult.prompt && (
-                                                    <div className="text-xs text-gray-600 dark:text-gray-400 italic">
-                                                      Prompt: {imageResult.prompt}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              );
-                                            }
-                                            // If no base64 or URL, fallback to JSON viewer
                                             return <ToolResultJsonViewer content={toolResult.content} />;
                                           } catch (e) {
-                                            console.error('Error parsing generate_image result:', e);
                                             return <ToolResultJsonViewer content={toolResult.content} />;
                                           }
                                         })()
@@ -5055,6 +5769,112 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       )}
                                     </div>
                                   )}
+                                  
+                                  {/* Special handling for generate_image: show image AFTER metadata */}
+                                  {toolResult.name === 'generate_image' && (() => {
+                                    // IMPORTANT: toolResult uses tool_call_id, not id!
+                                    const toolCallId = toolResult.tool_call_id || toolResult.id;
+                                    
+                                    // Find the imageGeneration that matches this tool call's ID
+                                    const imageGeneration = msg.imageGenerations?.find((ig: any) => 
+                                      ig.id === toolCallId
+                                    );
+                                    
+                                    // Show loading/progress indicator during generation or download
+                                    if (imageGeneration && (imageGeneration.status === 'generating' || imageGeneration.status === 'downloading')) {
+                                      const phase = imageGeneration.phase || 'generating';
+                                      const estimatedSec = imageGeneration.estimatedSeconds || 15;
+                                      
+                                      let phaseText = '🎨 Generating image...';
+                                      let phaseDetail = 'This may take 10-30 seconds for high-quality images';
+                                      
+                                      if (phase === 'selecting_provider') {
+                                        phaseText = '🔍 Selecting image provider...';
+                                        phaseDetail = 'Finding best available model';
+                                      } else if (phase === 'generating') {
+                                        phaseText = `🎨 Generating image... (~${estimatedSec}s)`;
+                                        phaseDetail = `Using ${imageGeneration.provider || 'selected'} ${imageGeneration.model || 'model'}`;
+                                      } else if (imageGeneration.status === 'downloading') {
+                                        phaseText = '📥 Downloading image...';
+                                        phaseDetail = 'Converting to base64 for offline storage';
+                                      }
+                                      
+                                      return (
+                                        <div className="mt-3 relative">
+                                          <div className="w-full rounded border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 flex flex-col items-center justify-center p-8">
+                                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 dark:border-purple-400 mb-4"></div>
+                                            <div className="text-sm text-purple-600 dark:text-purple-400 font-semibold mb-2">
+                                              {phaseText}
+                                            </div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 text-center max-w-md">
+                                              {phaseDetail}
+                                            </div>
+                                            {imageGeneration.prompt && (
+                                              <div className="text-xs text-gray-400 dark:text-gray-500 text-center max-w-md mt-3 italic">
+                                                "{imageGeneration.prompt.substring(0, 100)}{imageGeneration.prompt.length > 100 ? '...' : ''}"
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    
+                                    // Show image once downloaded
+                                    if (imageGeneration && (imageGeneration.imageUrl || imageGeneration.base64)) {
+                                      let imgSrc: string;
+                                      if (imageGeneration.base64) {
+                                        imgSrc = imageGeneration.base64.startsWith('data:image/') 
+                                          ? imageGeneration.base64 
+                                          : `data:image/png;base64,${imageGeneration.base64}`;
+                                      } else if (imageGeneration.imageUrl?.startsWith('data:image/')) {
+                                        imgSrc = imageGeneration.imageUrl;
+                                      } else {
+                                        imgSrc = imageGeneration.imageUrl || '';
+                                      }
+                                      
+                                      const imageHtml = `<img src="${imgSrc}" alt="${imageGeneration.prompt || 'Generated image'}" />`;
+                                      
+                                      return (
+                                        <div className="mt-3 relative group">
+                                          <img 
+                                            src={imgSrc}
+                                            alt={imageGeneration.prompt || 'Generated image'}
+                                            className="w-full rounded border border-purple-300 dark:border-purple-700"
+                                            style={{ maxHeight: '512px', objectFit: 'contain' }}
+                                          />
+                                          
+                                          {/* Hover buttons */}
+                                          <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                              onClick={() => {
+                                                navigator.clipboard.writeText(imgSrc || '');
+                                                showSuccess('Image copied to clipboard');
+                                              }}
+                                              className="p-1.5 bg-white/90 dark:bg-gray-800/90 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                              title="Copy image data URL"
+                                            >
+                                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                              </svg>
+                                            </button>
+                                            <button
+                                              onClick={async () => {
+                                                await addSnippet(imageHtml, 'chat', imageGeneration.prompt || 'Generated image');
+                                                showSuccess('Image grabbed to swag');
+                                              }}
+                                              className="p-1.5 bg-white/90 dark:bg-gray-800/90 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                              title="Grab to swag"
+                                            >
+                                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                   
                                   {/* NEW: Extraction Transparency & Debug Info for embedded tool results */}
                                   <ToolTransparency
@@ -5117,9 +5937,21 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         )}
                         
                         {/* Generated Images */}
+                        {(() => {
+                          console.log('🖼️ Checking imageGenerations:', { 
+                            hasImageGenerations: !!msg.imageGenerations, 
+                            length: msg.imageGenerations?.length,
+                            imageGenerations: msg.imageGenerations 
+                          });
+                          return null;
+                        })()}
                         {msg.imageGenerations && msg.imageGenerations.length > 0 && (
                           <div className="mt-3">
-                            {msg.imageGenerations.map((imgGen) => (
+                            {(() => {
+                              console.log('🖼️ About to render imageGenerations:', msg.imageGenerations);
+                              return msg.imageGenerations.map((imgGen) => {
+                                console.log('🖼️ Mapping imageGen:', imgGen);
+                                return (
                               <GeneratedImageBlock
                                 key={imgGen.id}
                                 data={imgGen}
@@ -5162,7 +5994,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   }));
                                 }}
                               />
-                            ))}
+                                );
+                              });
+                            })()}
                           </div>
                         )}
                       </div>
