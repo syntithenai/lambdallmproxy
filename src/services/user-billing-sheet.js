@@ -6,21 +6,48 @@
  * giving them direct access to their API usage and cost data.
  */
 
-const { google } = require('googleapis');
+const { GoogleSpreadsheet } = require('google-spreadsheet');
+const { OAuth2Client } = require('google-auth-library');
 
 /**
  * Create a configured OAuth2 client with an access token
  * @param {string} accessToken - The Google OAuth2 access token
- * @returns {google.auth.OAuth2} Configured OAuth2 client
+ * @returns {OAuth2Client} Configured OAuth2 client
  */
 function createOAuth2Client(accessToken) {
-  const oauth2Client = new google.auth.OAuth2(
+  const oauth2Client = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     'postmessage' // Special redirect URI for client-side OAuth
   );
   oauth2Client.setCredentials({ access_token: accessToken });
   return oauth2Client;
+}
+
+/**
+ * Helper to call Google Drive REST API
+ * @param {string} accessToken - OAuth access token
+ * @param {string} endpoint - API endpoint path
+ * @param {object} options - Fetch options
+ * @returns {Promise<object>} API response
+ */
+async function callDriveAPI(accessToken, endpoint, options = {}) {
+  const url = `https://www.googleapis.com/drive/v3${endpoint}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Drive API error: ${response.status} - ${error}`);
+  }
+  
+  return response.json();
 }
 
 
@@ -32,49 +59,35 @@ function createOAuth2Client(accessToken) {
  */
 async function findOrCreateFolder(folderName, accessToken) {
   console.log('🔑🔑🔑 findOrCreateFolder CALLED - folderName:', folderName);
-  console.log('🔑🔑🔑 accessToken type:', typeof accessToken);
   console.log('🔑🔑🔑 accessToken present:', !!accessToken);
-  console.log('🔑🔑🔑 accessToken length:', accessToken?.length || 0);
-  if (accessToken) {
-    console.log('🔑🔑🔑 accessToken preview:', accessToken.substring(0, 30) + '...');
-  }
-  
-  // Create OAuth2 client with proper credentials
-  console.log('🔑🔑🔑 Creating OAuth2 client with client ID:', process.env.GOOGLE_CLIENT_ID?.substring(0, 20) + '...');
-  const oauth2Client = createOAuth2Client(accessToken);
-  
-  console.log('🔑🔑🔑 OAuth2 credentials set:', JSON.stringify(oauth2Client.credentials));
-  
-  const drive = google.drive({
-    version: 'v3',
-    auth: oauth2Client
-  });
-  
-  console.log('🔑🔑🔑 Drive client created, about to make API call...');
   
   // Search for existing folder
-  const searchResponse = await drive.files.list({
-    q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id, name)',
-    spaces: 'drive'
-  });
+  const searchQuery = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const searchResponse = await callDriveAPI(
+    accessToken,
+    `/files?q=${encodeURIComponent(searchQuery)}&fields=files(id,name)&spaces=drive`
+  );
   
-  if (searchResponse.data.files && searchResponse.data.files.length > 0) {
+  if (searchResponse.files && searchResponse.files.length > 0) {
     console.log(`📁 Found existing folder: ${folderName}`);
-    return searchResponse.data.files[0].id;
+    return searchResponse.files[0].id;
   }
   
   // Create new folder
-  const createResponse = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder'
-    },
-    fields: 'id'
-  });
+  const createResponse = await callDriveAPI(
+    accessToken,
+    '/files',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder'
+      })
+    }
+  );
   
   console.log(`📁 Created new folder: ${folderName}`);
-  return createResponse.data.id;
+  return createResponse.id;
 }
 
 /**
@@ -85,22 +98,15 @@ async function findOrCreateFolder(folderName, accessToken) {
  * @returns {Promise<string|null>} Spreadsheet ID or null if not found
  */
 async function findSheetInFolder(fileName, folderId, accessToken) {
-  const oauth2Client = createOAuth2Client(accessToken);
+  const searchQuery = `name='${fileName}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+  const response = await callDriveAPI(
+    accessToken,
+    `/files?q=${encodeURIComponent(searchQuery)}&fields=files(id,name)&spaces=drive`
+  );
   
-  const drive = google.drive({
-    version: 'v3',
-    auth: oauth2Client
-  });
-  
-  const response = await drive.files.list({
-    q: `name='${fileName}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
-    fields: 'files(id, name)',
-    spaces: 'drive'
-  });
-  
-  if (response.data.files && response.data.files.length > 0) {
+  if (response.files && response.files.length > 0) {
     console.log(`📊 Found existing spreadsheet: ${fileName}`);
-    return response.data.files[0].id;
+    return response.files[0].id;
   }
   
   return null;
@@ -113,44 +119,23 @@ async function findSheetInFolder(fileName, folderId, accessToken) {
  * @returns {Promise<string>} Spreadsheet ID
  */
 async function createBillingSheet(folderId, accessToken) {
-  const oauth2Client = createOAuth2Client(accessToken);
+  // Create OAuth2 client
+  const auth = createOAuth2Client(accessToken);
   
-  const sheets = google.sheets({
-    version: 'v4',
-    auth: oauth2Client
+  // Create new spreadsheet using google-spreadsheet
+  const doc = await GoogleSpreadsheet.createNewSpreadsheetDocument(auth, {
+    title: 'Research Agent Billing'
   });
   
-  // Create spreadsheet
-  const createResponse = await sheets.spreadsheets.create({
-    requestBody: {
-      properties: {
-        title: 'Research Agent Billing'
-      },
-      sheets: [{
-        properties: {
-          title: 'Transactions',
-          gridProperties: {
-            frozenRowCount: 1 // Freeze header row
-          }
-        }
-      }]
-    }
-  });
-  
-  const spreadsheetId = createResponse.data.spreadsheetId;
+  const spreadsheetId = doc.spreadsheetId;
   console.log(`📊 Created new billing spreadsheet: ${spreadsheetId}`);
   
-  // Move to folder - reuse the same OAuth2 client
-  const drive = google.drive({
-    version: 'v3',
-    auth: oauth2Client
-  });
-  
-  await drive.files.update({
-    fileId: spreadsheetId,
-    addParents: folderId,
-    fields: 'id, parents'
-  });
+  // Move to folder using Drive API
+  await callDriveAPI(
+    accessToken,
+    `/files/${spreadsheetId}?addParents=${folderId}&fields=id,parents`,
+    { method: 'PATCH' }
+  );
   
   // Initialize with headers
   await initializeBillingSheet(spreadsheetId, accessToken);
@@ -164,13 +149,18 @@ async function createBillingSheet(folderId, accessToken) {
  * @param {string} accessToken - User's OAuth access token
  */
 async function initializeBillingSheet(spreadsheetId, accessToken) {
-  const oauth2Client = createOAuth2Client(accessToken);
+  const auth = createOAuth2Client(accessToken);
+  const doc = new GoogleSpreadsheet(spreadsheetId, auth);
+  await doc.loadInfo();
   
-  const sheets = google.sheets({
-    version: 'v4',
-    auth: oauth2Client
-  });
+  // Get first sheet and rename to "Transactions"
+  const sheet = doc.sheetsByIndex[0];
+  await sheet.updateProperties({ title: 'Transactions' });
   
+  // Set frozen rows
+  await sheet.updateGridProperties({ frozenRowCount: 1 });
+  
+  // Add header row
   const headers = [
     'Timestamp',
     'Type',
@@ -188,41 +178,7 @@ async function initializeBillingSheet(spreadsheetId, accessToken) {
     'Error'
   ];
   
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: 'Transactions!A1:N1',
-    valueInputOption: 'RAW',
-    requestBody: {
-      values: [headers]
-    }
-  });
-  
-  // Format header row
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: [{
-        repeatCell: {
-          range: {
-            sheetId: 0,
-            startRowIndex: 0,
-            endRowIndex: 1
-          },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: { red: 0.2, green: 0.3, blue: 0.5 },
-              textFormat: {
-                foregroundColor: { red: 1, green: 1, blue: 1 },
-                bold: true
-              },
-              horizontalAlignment: 'CENTER'
-            }
-          },
-          fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
-        }
-      }]
-    }
-  });
+  await sheet.setHeaderRow(headers);
   
   console.log('✅ Initialized billing sheet with headers');
 }
@@ -280,40 +236,36 @@ async function logToBillingSheet(accessToken, logData) {
     // Get user's billing sheet
     const spreadsheetId = await getOrCreateBillingSheet(logData.userEmail, accessToken);
     
-    const oauth2Client = createOAuth2Client(accessToken);
+    const auth = createOAuth2Client(accessToken);
+    const doc = new GoogleSpreadsheet(spreadsheetId, auth);
+    await doc.loadInfo();
     
-    const sheets = google.sheets({
-      version: 'v4',
-      auth: oauth2Client
-    });
+    // Get Transactions sheet
+    const sheet = doc.sheetsByTitle['Transactions'];
+    if (!sheet) {
+      throw new Error('Transactions sheet not found');
+    }
     
     // Prepare row data
-    const rowData = [
-      logData.timestamp || new Date().toISOString(),
-      logData.type || 'chat',
-      logData.provider || 'unknown',
-      logData.model || 'unknown',
-      logData.promptTokens || 0,
-      logData.completionTokens || 0,
-      logData.totalTokens || 0,
-      logData.cost ? logData.cost.toFixed(6) : '0.000000',
-      logData.durationMs || 0,
-      logData.memoryLimitMB || '',
-      logData.memoryUsedMB || '',
-      logData.requestId || '',
-      logData.status || 'success',
-      logData.error || ''
-    ];
+    const rowData = {
+      'Timestamp': logData.timestamp || new Date().toISOString(),
+      'Type': logData.type || 'chat',
+      'Provider': logData.provider || 'unknown',
+      'Model': logData.model || 'unknown',
+      'Tokens In': logData.promptTokens || 0,
+      'Tokens Out': logData.completionTokens || 0,
+      'Total Tokens': logData.totalTokens || 0,
+      'Cost ($)': logData.cost ? logData.cost.toFixed(6) : '0.000000',
+      'Duration (ms)': logData.durationMs || 0,
+      'Memory Limit (MB)': logData.memoryLimitMB || '',
+      'Memory Used (MB)': logData.memoryUsedMB || '',
+      'Request ID': logData.requestId || '',
+      'Status': logData.status || 'success',
+      'Error': logData.error || ''
+    };
     
-    // Append to sheet
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'Transactions!A:N',
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [rowData]
-      }
-    });
+    // Add row
+    await sheet.addRow(rowData);
     
     console.log(`✅ Logged transaction to user billing sheet: ${logData.type} - ${logData.provider}/${logData.model}`);
   } catch (error) {
@@ -337,40 +289,40 @@ async function readBillingData(accessToken, userEmail, filters = {}) {
   try {
     const spreadsheetId = await getOrCreateBillingSheet(userEmail, accessToken);
     
-    const oauth2Client = createOAuth2Client(accessToken);
+    const auth = createOAuth2Client(accessToken);
+    const doc = new GoogleSpreadsheet(spreadsheetId, auth);
+    await doc.loadInfo();
     
-    const sheets = google.sheets({
-      version: 'v4',
-      auth: oauth2Client
-    });
+    // Get Transactions sheet
+    const sheet = doc.sheetsByTitle['Transactions'];
+    if (!sheet) {
+      return [];
+    }
     
-    // Read all data (skip header row)
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Transactions!A2:N'
-    });
+    // Get all rows
+    const rows = await sheet.getRows();
     
-    if (!response.data.values || response.data.values.length === 0) {
+    if (rows.length === 0) {
       return [];
     }
     
     // Parse rows into transaction objects
-    let transactions = response.data.values.map((row, index) => ({
-      rowIndex: index + 2, // +2 because A2 is first data row
-      timestamp: row[0] || '',
-      type: row[1] || 'chat',
-      provider: row[2] || 'unknown',
-      model: row[3] || 'unknown',
-      tokensIn: parseInt(row[4]) || 0,
-      tokensOut: parseInt(row[5]) || 0,
-      totalTokens: parseInt(row[6]) || 0,
-      cost: parseFloat(row[7]) || 0,
-      durationMs: parseInt(row[8]) || 0,
-      memoryLimitMB: parseInt(row[9]) || 0,
-      memoryUsedMB: parseInt(row[10]) || 0,
-      requestId: row[11] || '',
-      status: row[12] || 'success',
-      error: row[13] || ''
+    let transactions = rows.map((row, index) => ({
+      rowIndex: row.rowNumber,
+      timestamp: row.get('Timestamp') || '',
+      type: row.get('Type') || 'chat',
+      provider: row.get('Provider') || 'unknown',
+      model: row.get('Model') || 'unknown',
+      tokensIn: parseInt(row.get('Tokens In')) || 0,
+      tokensOut: parseInt(row.get('Tokens Out')) || 0,
+      totalTokens: parseInt(row.get('Total Tokens')) || 0,
+      cost: parseFloat(row.get('Cost ($)')) || 0,
+      durationMs: parseInt(row.get('Duration (ms)')) || 0,
+      memoryLimitMB: parseInt(row.get('Memory Limit (MB)')) || 0,
+      memoryUsedMB: parseInt(row.get('Memory Used (MB)')) || 0,
+      requestId: row.get('Request ID') || '',
+      status: row.get('Status') || 'success',
+      error: row.get('Error') || ''
     }));
     
     // Apply filters
@@ -414,12 +366,15 @@ async function clearBillingData(accessToken, userEmail, options = {}) {
   try {
     const spreadsheetId = await getOrCreateBillingSheet(userEmail, accessToken);
     
-    const oauth2Client = createOAuth2Client(accessToken);
+    const auth = createOAuth2Client(accessToken);
+    const doc = new GoogleSpreadsheet(spreadsheetId, auth);
+    await doc.loadInfo();
     
-    const sheets = google.sheets({
-      version: 'v4',
-      auth: oauth2Client
-    });
+    // Get Transactions sheet
+    const sheet = doc.sheetsByTitle['Transactions'];
+    if (!sheet) {
+      throw new Error('Transactions sheet not found');
+    }
     
     // Read all current data
     const transactions = await readBillingData(accessToken, userEmail);
@@ -453,37 +408,29 @@ async function clearBillingData(accessToken, userEmail, options = {}) {
       throw new Error('Invalid clear mode or missing parameters');
     }
     
-    // Clear all data rows (keep headers)
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: 'Transactions!A2:N'
-    });
+    // Clear all data rows
+    await sheet.clearRows();
     
     // Write back kept rows
     if (toKeep.length > 0) {
-      const values = toKeep.map(t => [
-        t.timestamp,
-        t.type,
-        t.provider,
-        t.model,
-        t.tokensIn,
-        t.tokensOut,
-        t.totalTokens,
-        t.cost,
-        t.durationMs,
-        t.memoryLimitMB || '',
-        t.memoryUsedMB || '',
-        t.requestId || '',
-        t.status,
-        t.error || ''
-      ]);
+      const rowsToAdd = toKeep.map(t => ({
+        'Timestamp': t.timestamp,
+        'Type': t.type,
+        'Provider': t.provider,
+        'Model': t.model,
+        'Tokens In': t.tokensIn,
+        'Tokens Out': t.tokensOut,
+        'Total Tokens': t.totalTokens,
+        'Cost ($)': t.cost,
+        'Duration (ms)': t.durationMs,
+        'Memory Limit (MB)': t.memoryLimitMB || '',
+        'Memory Used (MB)': t.memoryUsedMB || '',
+        'Request ID': t.requestId || '',
+        'Status': t.status,
+        'Error': t.error || ''
+      }));
       
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: 'Transactions!A2:N',
-        valueInputOption: 'RAW',
-        requestBody: { values }
-      });
+      await sheet.addRows(rowsToAdd);
     }
     
     console.log(`✅ Cleared ${toDelete.length} transactions, kept ${toKeep.length}`);

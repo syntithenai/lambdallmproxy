@@ -6,6 +6,7 @@
  */
 
 const { convertToMarkdown } = require('../rag/file-converters');
+const { authenticateRequest } = require('../auth');
 
 /**
  * Lambda handler for document conversion
@@ -14,7 +15,35 @@ const { convertToMarkdown } = require('../rag/file-converters');
  * @returns {Promise<void>}
  */
 exports.handler = async (event, responseStream) => {
+  const awslambda = (typeof globalThis.awslambda !== 'undefined') 
+    ? globalThis.awslambda 
+    : require('aws-lambda');
+  
   try {
+    // Authenticate request
+    const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+    const authResult = await authenticateRequest(authHeader);
+    
+    if (!authResult.authenticated) {
+      const metadata = {
+        statusCode: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      };
+      responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+      responseStream.write(JSON.stringify({
+        error: 'Authentication required. Please provide a valid token.',
+        code: 'UNAUTHORIZED'
+      }));
+      responseStream.end();
+      return;
+    }
+    
+    const userEmail = authResult.email || 'unknown';
+    console.log(`✅ Authenticated convert request from: ${userEmail}`);
+    
     const body = JSON.parse(event.body || '{}');
     let markdown;
 

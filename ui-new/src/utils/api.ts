@@ -272,8 +272,12 @@ export interface ChatMessage {
       supportsStyle?: boolean;
     };
     imageUrl?: string;               // Generated image URL (after generation)
+    base64?: string;                 // Base64 encoded image data (for inline display)
     llmApiCall?: any;                // LLM API call data for generation
-    status: 'pending' | 'generating' | 'complete' | 'error';  // Generation status
+    status: 'pending' | 'generating' | 'downloading' | 'complete' | 'error';  // Generation status
+    phase?: string;                  // Generation phase ('selecting_provider', 'generating', 'completed', 'error')
+    estimatedSeconds?: number;       // Estimated time to completion in seconds
+    revisedPrompt?: string;          // Revised prompt from provider (e.g., DALL-E)
     error?: string;                  // Error message if generation failed
     fallbackUsed?: boolean;          // Whether a fallback provider was used
     availableAlternatives?: Array<{  // Alternative providers that can handle request

@@ -3,9 +3,55 @@
  * 
  * Logs LLM API usage to a Google Sheet using a Service Account
  * Tracks: user email, model, tokens in/out, cost, duration, timestamp
+ * 
+ * ARCHITECTURE:
+ * - Each user gets their own sheet (tab) named after their email
+ * - This avoids hitting Google Sheets' 10M cell limit per workbook
+ * - Maximum supported users: 200 (Google Sheets tab limit per workbook)
+ * - Sheet naming: Email address is sanitized (replace @ with _at_, . with _dot_)
  */
 
 const https = require('https');
+
+/**
+ * Sanitize email address for use as sheet name
+ * Google Sheets tab names have restrictions:
+ * - Max 100 characters
+ * - Cannot contain: : / ? * [ ] \
+ * 
+ * @param {string} email - User's email address
+ * @returns {string} Sanitized sheet name
+ */
+function sanitizeEmailForSheetName(email) {
+    if (!email || typeof email !== 'string') {
+        return 'unknown_user';
+    }
+    
+    // Replace @ and . with readable equivalents
+    // Example: user@example.com -> user_at_example_dot_com
+    let sanitized = email
+        .toLowerCase()
+        .replace(/@/g, '_at_')
+        .replace(/\./g, '_dot_')
+        .replace(/[:/\?*\[\]\\]/g, '_'); // Remove invalid characters
+    
+    // Truncate to 100 characters (Google Sheets limit)
+    if (sanitized.length > 100) {
+        sanitized = sanitized.substring(0, 100);
+    }
+    
+    return sanitized;
+}
+
+/**
+ * Get sheet name for a user (creates unique tab per user)
+ * 
+ * @param {string} userEmail - User's email address
+ * @returns {string} Sheet name for this user
+ */
+function getUserSheetName(userEmail) {
+    return sanitizeEmailForSheetName(userEmail);
+}
 
 // Pricing per 1M tokens (input/output) - update as needed
 const PRICING = {
@@ -79,16 +125,29 @@ const PRICING = {
  * @param {number} completionTokens - Output tokens (0 for image generation)
  * @param {number} fixedCost - Fixed cost for non-token-based requests (image generation)
  */
+/**
+ * Calculate LLM API cost from token usage
+ * 
+ * ✅ CREDIT SYSTEM: LLM costs are PASS-THROUGH (no markup)
+ * Users pay exactly what we pay to the LLM providers.
+ * Only Lambda infrastructure costs get 4x markup (see calculateLambdaCost).
+ * 
+ * NOTE: Calculate costs in both local and production environments.
+ * This allows tracking real API costs during development.
+ * 
+ * @param {string} model - Model name (e.g., 'gpt-4-turbo', 'llama-3.1-70b')
+ * @param {number} promptTokens - Number of prompt/input tokens
+ * @param {number} completionTokens - Number of completion/output tokens
+ * @param {number|null} fixedCost - Optional fixed cost (e.g., image generation)
+ * @returns {number} Total cost in dollars (no markup)
+ */
 function calculateCost(model, promptTokens, completionTokens, fixedCost = null) {
-    // NOTE: Calculate costs in both local and production environments
-    // This allows tracking real API costs during development
-    
     // If fixed cost provided (e.g., image generation), use that
     if (fixedCost !== null && fixedCost !== undefined) {
         return fixedCost;
     }
     
-    // Otherwise calculate from tokens
+    // Otherwise calculate from tokens using provider pricing (pass-through)
     const pricing = PRICING[model] || { input: 0, output: 0 };
     const inputCost = (promptTokens / 1000000) * pricing.input;
     const outputCost = (completionTokens / 1000000) * pricing.output;
@@ -97,13 +156,19 @@ function calculateCost(model, promptTokens, completionTokens, fixedCost = null) 
 
 /**
  * Calculate AWS Lambda invocation cost
+ * 
+ * ✅ CREDIT SYSTEM: Applies 4x profit margin to Lambda infrastructure costs
+ * 
  * Pricing (us-east-1, x86_64, October 2025):
- * - Compute: $0.0000166667 per GB-second
- * - Requests: $0.20 per 1M requests ($0.0000002 per request)
+ * - Compute: $0.0000166667 per GB-second (AWS cost)
+ * - Requests: $0.20 per 1M requests = $0.0000002 per request (AWS cost)
+ * - Profit Margin: 4x multiplier (configurable via LAMBDA_PROFIT_MARGIN env var)
+ * 
+ * Example: 256MB for 500ms = $0.0000023 AWS cost × 4 = $0.0000092 charged to user
  * 
  * @param {number} memoryMB - Memory allocated in MB
  * @param {number} durationMs - Execution duration in milliseconds
- * @returns {number} Total cost in dollars
+ * @returns {number} Total cost in dollars (including profit margin)
  */
 function calculateLambdaCost(memoryMB, durationMs) {
     // Convert memory to GB and duration to seconds
@@ -116,8 +181,14 @@ function calculateLambdaCost(memoryMB, durationMs) {
     // Calculate request cost
     const requestCost = 0.0000002;
     
-    // Total cost
-    return computeCost + requestCost;
+    // Total AWS cost
+    const awsCost = computeCost + requestCost;
+    
+    // Apply profit margin (default 4x, configurable via env var)
+    const profitMargin = parseFloat(process.env.LAMBDA_PROFIT_MARGIN) || 4;
+    const totalCost = awsCost * profitMargin;
+    
+    return totalCost;
 }
 
 /**
@@ -199,6 +270,12 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
 
 /**
  * Check if a sheet tab exists, create it if not
+ * 
+ * @param {string} spreadsheetId - Google Sheets spreadsheet ID
+ * @param {string} sheetName - Name of the sheet to ensure exists
+ * @param {string} accessToken - OAuth access token
+ * @returns {Promise<boolean>} True if sheet exists or was created
+ * @throws {Error} If 200 sheet limit is reached (error code: SHEET_LIMIT_REACHED)
  */
 async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
     return new Promise((resolve, reject) => {
@@ -218,6 +295,8 @@ async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
             res.on('end', () => {
                 if (res.statusCode === 200) {
                     const spreadsheet = JSON.parse(data);
+                    
+                    // Check for exact match first
                     const sheetExists = spreadsheet.sheets?.some(
                         sheet => sheet.properties.title === sheetName
                     );
@@ -227,7 +306,38 @@ async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
                         return;
                     }
                     
-                    // Sheet doesn't exist, create it
+                    // DUPLICATE PREVENTION: Check for similar sheet names (case-insensitive)
+                    // This prevents accidental duplicates from different capitalization
+                    const normalizedSheetName = sheetName.toLowerCase();
+                    const existingSheets = spreadsheet.sheets?.map(s => s.properties.title) || [];
+                    const similarSheet = existingSheets.find(
+                        name => name.toLowerCase() === normalizedSheetName
+                    );
+                    
+                    if (similarSheet) {
+                        console.log(`⚠️  Found similar sheet "${similarSheet}" for requested "${sheetName}", using existing sheet`);
+                        resolve(true);
+                        return;
+                    }
+                    
+                    // Check if we're at the 200 sheet limit
+                    const currentSheetCount = spreadsheet.sheets?.length || 0;
+                    if (currentSheetCount >= 200) {
+                        console.error(`❌ Google Sheets limit reached: ${currentSheetCount}/200 sheets`);
+                        const error = new Error(
+                            `System capacity reached: Maximum 200 users supported. ` +
+                            `The system is currently at full capacity (${currentSheetCount} users). ` +
+                            `Please try again later or contact the system administrator.`
+                        );
+                        error.code = 'SHEET_LIMIT_REACHED';
+                        error.userMessage = 'System at full capacity. Unable to create new user account. Please try again later.';
+                        reject(error);
+                        return;
+                    }
+                    
+                    // Sheet doesn't exist and we have capacity, create it
+                    console.log(`📋 Creating new user sheet: "${sheetName}" (${currentSheetCount + 1}/200)`);
+                    
                     const createPayload = {
                         requests: [{
                             addSheet: {
@@ -255,8 +365,18 @@ async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
                         createRes.on('data', chunk => createResData += chunk);
                         createRes.on('end', () => {
                             if (createRes.statusCode === 200) {
-                                console.log(`✅ Created sheet tab: "${sheetName}"`);
+                                console.log(`✅ Created sheet tab: "${sheetName}" (${currentSheetCount + 1}/200)`);
                                 resolve(true);
+                            } else if (createRes.statusCode === 400 && createResData.includes('exceeded')) {
+                                // Google API returned 400 with "exceeded" message (backup check)
+                                console.error(`❌ Google Sheets API limit error: ${createResData}`);
+                                const error = new Error(
+                                    `System capacity reached: Maximum 200 users supported. ` +
+                                    `Please try again later or contact the system administrator.`
+                                );
+                                error.code = 'SHEET_LIMIT_REACHED';
+                                error.userMessage = 'System at full capacity. Unable to create new user account. Please try again later.';
+                                reject(error);
                             } else {
                                 reject(new Error(`Failed to create sheet: ${createRes.statusCode} - ${createResData}`));
                             }
@@ -469,8 +589,11 @@ async function appendToSheet(spreadsheetId, range, values, accessToken) {
 /**
  * Log LLM request to Google Sheets
  * 
+ * Each user gets their own sheet (tab) to avoid hitting the 10M cell limit.
+ * Maximum supported users: 200 (Google Sheets workbook tab limit)
+ * 
  * @param {Object} logData - Request data to log
- * @param {string} logData.userEmail - User's email address
+ * @param {string} logData.userEmail - User's email address (REQUIRED - used to determine sheet name)
  * @param {string} logData.provider - LLM provider (openai, groq, gemini)
  * @param {string} logData.model - Model name
  * @param {number} logData.promptTokens - Input tokens
@@ -480,33 +603,38 @@ async function appendToSheet(spreadsheetId, range, values, accessToken) {
  * @param {string} logData.timestamp - ISO timestamp
  * @param {string} logData.errorCode - Error code if request failed (optional)
  * @param {string} logData.errorMessage - Error message if request failed (optional)
+ * @throws {Error} If 200 sheet limit is reached (error code: SHEET_LIMIT_REACHED)
  */
 async function logToGoogleSheets(logData) {
-    try {
-        // Check if Google Sheets logging is configured
-        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
-        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
-        
-        console.log('🔍 Google Sheets config check:', {
-            hasSpreadsheetId: !!spreadsheetId,
-            hasServiceAccountEmail: !!serviceAccountEmail,
-            hasPrivateKey: !!privateKey,
-            sheetName,
-            logDataType: logData.type,
-            logDataModel: logData.model
+    // Check if Google Sheets logging is configured
+    const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+    const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
+    const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+    
+    // Get user-specific sheet name (each user gets their own tab)
+    const userEmail = logData.userEmail || 'unknown';
+    const sheetName = getUserSheetName(userEmail);
+    
+    console.log('🔍 Google Sheets config check:', {
+        hasSpreadsheetId: !!spreadsheetId,
+        hasServiceAccountEmail: !!serviceAccountEmail,
+        hasPrivateKey: !!privateKey,
+        userEmail,
+        sheetName,
+        logDataType: logData.type,
+        logDataModel: logData.model
+    });
+    
+    if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
+        console.log('❌ Google Sheets logging not configured (skipping)', {
+            spreadsheetId: spreadsheetId ? 'SET' : 'MISSING',
+            serviceAccountEmail: serviceAccountEmail ? 'SET' : 'MISSING',
+            privateKey: privateKey ? 'SET' : 'MISSING'
         });
-        
-        if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
-            console.log('❌ Google Sheets logging not configured (skipping)', {
-                spreadsheetId: spreadsheetId ? 'SET' : 'MISSING',
-                serviceAccountEmail: serviceAccountEmail ? 'SET' : 'MISSING',
-                privateKey: privateKey ? 'SET' : 'MISSING'
-            });
-            return;
-        }
-        
+        return;
+    }
+    
+    try {
         // Format private key (handle escaped newlines)
         console.log('🔐 Formatting private key...');
         const formattedKey = privateKey.replace(/\\n/g, '\n');
@@ -524,8 +652,8 @@ async function logToGoogleSheets(logData) {
             throw authError;
         }
         
-        // Ensure the sheet tab exists (creates it if needed)
-        console.log('📋 Ensuring sheet exists:', sheetName);
+        // Ensure the user-specific sheet tab exists (creates it if needed)
+        console.log(`📋 Ensuring user sheet exists: "${sheetName}" for ${userEmail}`);
         try {
             await ensureSheetExists(spreadsheetId, sheetName, accessToken);
             console.log('✅ Sheet exists or created');
@@ -537,16 +665,48 @@ async function logToGoogleSheets(logData) {
         
         // Check if sheet is empty and add headers if needed
         console.log('🔍 Checking if sheet is empty...');
+        let isNewUser = false;
         try {
             const isEmpty = await isSheetEmpty(spreadsheetId, sheetName, accessToken);
             if (isEmpty) {
                 console.log('📝 Sheet is empty, adding header row...');
                 await addHeaderRow(spreadsheetId, sheetName, accessToken);
+                isNewUser = true; // Mark as new user for welcome credit
             } else {
                 console.log('✅ Sheet has data, skipping headers');
             }
         } catch (headerError) {
             console.warn('⚠️ Could not check/add headers (continuing anyway):', headerError.message);
+        }
+        
+        // ✅ CREDIT SYSTEM: Add welcome credit for new users
+        if (isNewUser && userEmail !== 'unknown') {
+            console.log(`🎁 Adding $0.50 welcome credit for new user: ${userEmail}`);
+            try {
+                const welcomeCreditRow = [
+                    new Date().toISOString(),          // timestamp
+                    userEmail,                         // email
+                    'system',                          // provider
+                    'welcome_credit',                  // model
+                    'credit_added',                    // type
+                    0,                                 // promptTokens
+                    0,                                 // completionTokens
+                    0,                                 // totalTokens
+                    '-0.50',                           // cost (negative = credit)
+                    '0.00',                            // duration
+                    '',                                // memoryLimitMB
+                    '',                                // memoryUsedMB
+                    '',                                // requestId
+                    '',                                // errorCode
+                    '',                                // errorMessage
+                    'credit-system'                    // hostname
+                ];
+                await appendToSheet(spreadsheetId, `${sheetName}!A:P`, welcomeCreditRow, accessToken);
+                console.log(`✅ Added $0.50 welcome credit to ${userEmail}`);
+            } catch (creditError) {
+                console.error('❌ Failed to add welcome credit:', creditError.message);
+                // Don't throw - continue with normal logging
+            }
         }
         
         // Calculate cost (use provided cost for image generation, or calculate from tokens)
@@ -586,7 +746,9 @@ async function logToGoogleSheets(logData) {
             hostname                          // Server hostname
         ];
         
-        console.log('📤 Appending row to sheet...');
+        console.log('📤 Appending row to user sheet...');
+        console.log(`   User: ${userEmail}`);
+        console.log(`   Sheet: ${sheetName}`);
         console.log('   Range:', `${sheetName}!A:P`);
         console.log('   Data preview:', {
             timestamp: rowData[0],
@@ -597,17 +759,23 @@ async function logToGoogleSheets(logData) {
             cost: rowData[8]
         });
         
-        // Append to sheet (now includes Type + Lambda metrics + Hostname)
+        // Append to user-specific sheet (now includes Type + Lambda metrics + Hostname)
         try {
             await appendToSheet(spreadsheetId, `${sheetName}!A:P`, rowData, accessToken);
-            console.log(`✅ Logged to Google Sheets: ${logData.model} (${logData.totalTokens} tokens, $${cost.toFixed(4)})`);
+            console.log(`✅ Logged to Google Sheets [${sheetName}]: ${logData.model} (${logData.totalTokens} tokens, $${cost.toFixed(4)})`);
         } catch (appendError) {
             console.error('❌ Append to sheet error:', appendError.message);
             console.error('   Stack:', appendError.stack);
             throw appendError;
         }
     } catch (error) {
-        // Log error but don't fail the request
+        // Re-throw SHEET_LIMIT_REACHED errors so they can be handled by the caller
+        if (error.code === 'SHEET_LIMIT_REACHED') {
+            console.error('❌ CRITICAL: Sheet limit reached - throwing error to caller');
+            throw error;
+        }
+        
+        // Log other errors but don't fail the request
         console.error('❌ Failed to log to Google Sheets:', error.message);
         console.error('   Full error:', error);
         console.error('   Stack trace:', error.stack);
@@ -698,7 +866,10 @@ async function getSheetData(spreadsheetId, range, accessToken) {
 }
 
 /**
- * Get total cost for a specific user by aggregating from Google Sheets
+ * Get total cost for a specific user by reading from their dedicated sheet
+ * 
+ * Each user has their own sheet (tab), so we only need to sum the cost column.
+ * This is much faster than filtering a shared sheet with millions of rows.
  * 
  * @param {string} userEmail - User's email address
  * @returns {Promise<number>} Total cost in dollars
@@ -709,12 +880,14 @@ async function getUserTotalCost(userEmail) {
         const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
         const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
         const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
-        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             console.log('ℹ️ Google Sheets logging not configured - returning 0 cost');
             return 0;
         }
+        
+        // Get user-specific sheet name
+        const sheetName = getUserSheetName(userEmail);
         
         // Format private key (handle escaped newlines)
         const formattedKey = privateKey.replace(/\\n/g, '\n');
@@ -722,25 +895,35 @@ async function getUserTotalCost(userEmail) {
         // Get OAuth access token
         const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
         
-        // Read all data from the sheet (columns A-P, skip header row)
+        // Read all data from the user's sheet (columns A-P, skip header row)
         // Schema: Timestamp, User Email, Provider, Model, Type, Tokens In, Tokens Out, Total Tokens, Cost, Duration, Memory Limit, Memory Used, Request ID, Error Code, Error Message, Hostname
         const range = `${sheetName}!A2:P`;
-        const sheetData = await getSheetData(spreadsheetId, range, accessToken);
+        
+        let sheetData;
+        try {
+            sheetData = await getSheetData(spreadsheetId, range, accessToken);
+        } catch (error) {
+            // Sheet doesn't exist yet (user has no usage data)
+            if (error.message.includes('404') || error.message.includes('not found')) {
+                console.log(`ℹ️ No sheet found for ${userEmail} - user has no usage data yet`);
+                return 0;
+            }
+            throw error;
+        }
         
         if (!sheetData.values || sheetData.values.length === 0) {
-            console.log(`ℹ️ No usage data found for ${userEmail}`);
+            console.log(`ℹ️ No usage data found in sheet for ${userEmail}`);
             return 0;
         }
         
-        // Aggregate cost for the user
-        // Column indexes (updated schema): 0=Timestamp, 1=Email, 2=Provider, 3=Model, 4=Type, 5=TokensIn, 6=TokensOut, 7=TotalTokens, 8=Cost, 9=Duration, 10=MemoryLimit, 11=MemoryUsed, 12=RequestID, 13=ErrorCode, 14=ErrorMessage, 15=Hostname
+        // Aggregate cost for the user (sum column I - index 8)
+        // Column indexes: 0=Timestamp, 1=Email, 2=Provider, 3=Model, 4=Type, 5=TokensIn, 6=TokensOut, 7=TotalTokens, 8=Cost, ...
         let totalCost = 0;
         let recordCount = 0;
         let debugSample = [];
         
         for (const row of sheetData.values) {
-            const rowEmail = row[1]; // Column B (index 1) is User Email
-            const rowCost = parseFloat(row[8]) || 0; // Column I (index 8) is Cost ($) in new schema
+            const rowCost = parseFloat(row[8]) || 0; // Column I (index 8) is Cost ($)
             
             // Skip rows with suspiciously high costs (likely schema misalignment from old logs)
             // Typical costs are $0.0001 to $0.50 per request. Anything over $1 is suspicious.
@@ -749,22 +932,21 @@ async function getUserTotalCost(userEmail) {
                 continue;
             }
             
-            if (rowEmail === userEmail) {
-                totalCost += rowCost;
-                recordCount++;
-                // Collect sample for debugging (first 3 and last 3)
-                if (debugSample.length < 3 || recordCount > sheetData.values.length - 3) {
-                    debugSample.push({
-                        timestamp: row[0],
-                        model: row[3],
-                        type: row[4],
-                        cost: rowCost
-                    });
-                }
+            totalCost += rowCost;
+            recordCount++;
+            
+            // Collect sample for debugging (first 3 and last 3)
+            if (debugSample.length < 3 || recordCount > sheetData.values.length - 3) {
+                debugSample.push({
+                    timestamp: row[0],
+                    model: row[3],
+                    type: row[4],
+                    cost: rowCost
+                });
             }
         }
         
-        console.log(`📊 Found ${recordCount} records for ${userEmail}, total cost: $${totalCost.toFixed(4)}`);
+        console.log(`📊 [${sheetName}] Found ${recordCount} records, total cost: $${totalCost.toFixed(4)}`);
         console.log(`🔍 Sample records:`, JSON.stringify(debugSample, null, 2));
         
         return totalCost;
@@ -776,7 +958,10 @@ async function getUserTotalCost(userEmail) {
 }
 
 /**
- * Get detailed billing data for a specific user from service sheet
+ * Get detailed billing data for a specific user from their dedicated sheet
+ * 
+ * Each user has their own sheet (tab), so we just read that sheet directly.
+ * This is much faster than filtering a shared sheet with millions of rows.
  * 
  * @param {string} userEmail - User's email address
  * @param {Object} filters - Optional filters (startDate, endDate, type, provider)
@@ -788,12 +973,14 @@ async function getUserBillingData(userEmail, filters = {}) {
         const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
         const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
         const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
-        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             console.log('ℹ️ Google Sheets logging not configured - returning empty array');
             return [];
         }
+        
+        // Get user-specific sheet name
+        const sheetName = getUserSheetName(userEmail);
         
         // Format private key (handle escaped newlines)
         const formattedKey = privateKey.replace(/\\n/g, '\n');
@@ -801,13 +988,24 @@ async function getUserBillingData(userEmail, filters = {}) {
         // Get OAuth access token
         const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
         
-        // Read all data from the sheet (columns A-P, skip header row)
+        // Read all data from the user's sheet (columns A-P, skip header row)
         // Schema: Timestamp, User Email, Provider, Model, Type, Tokens In, Tokens Out, Total Tokens, Cost, Duration, Memory Limit, Memory Used, Request ID, Error Code, Error Message, Hostname
         const range = `${sheetName}!A2:P`;
-        const sheetData = await getSheetData(spreadsheetId, range, accessToken);
+        
+        let sheetData;
+        try {
+            sheetData = await getSheetData(spreadsheetId, range, accessToken);
+        } catch (error) {
+            // Sheet doesn't exist yet (user has no usage data)
+            if (error.message.includes('404') || error.message.includes('not found')) {
+                console.log(`ℹ️ No sheet found for ${userEmail} - user has no usage data yet`);
+                return [];
+            }
+            throw error;
+        }
         
         if (!sheetData.values || sheetData.values.length === 0) {
-            console.log(`ℹ️ No usage data found for ${userEmail}`);
+            console.log(`ℹ️ No usage data found in sheet for ${userEmail}`);
             return [];
         }
         
@@ -821,11 +1019,6 @@ async function getUserBillingData(userEmail, filters = {}) {
         const transactions = [];
         
         for (const row of sheetData.values) {
-            const rowEmail = row[1]; // Column B (index 1) is User Email
-            
-            // Skip if not this user
-            if (rowEmail !== userEmail) continue;
-            
             const timestamp = row[0]; // Column A - ISO timestamp
             const provider = row[2]; // Column C
             const model = row[3]; // Column D
@@ -877,7 +1070,7 @@ async function getUserBillingData(userEmail, filters = {}) {
             transactions.push(transaction);
         }
         
-        console.log(`📊 Found ${transactions.length} transactions for ${userEmail} (filtered from ${sheetData.values.length} total)`);
+        console.log(`📊 [${sheetName}] Found ${transactions.length} transactions (filtered from ${sheetData.values.length} total)`);
         
         return transactions;
     } catch (error) {
@@ -890,8 +1083,10 @@ async function getUserBillingData(userEmail, filters = {}) {
 /**
  * Log AWS Lambda invocation to Google Sheets
  * 
+ * Each user gets their own sheet (tab) to avoid hitting the 10M cell limit.
+ * 
  * @param {Object} logData - Lambda invocation data
- * @param {string} logData.userEmail - User's email address
+ * @param {string} logData.userEmail - User's email address (REQUIRED - used to determine sheet name)
  * @param {string} logData.endpoint - Endpoint path (e.g., /chat, /search, /transcribe)
  * @param {number} logData.memoryLimitMB - Lambda memory limit in MB
  * @param {number} logData.memoryUsedMB - Lambda memory used in MB
@@ -907,7 +1102,10 @@ async function logLambdaInvocation(logData) {
         const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
         const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
         const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
-        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
+        
+        // Get user-specific sheet name (each user gets their own tab)
+        const userEmail = logData.userEmail || 'unknown';
+        const sheetName = getUserSheetName(userEmail);
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             console.log('ℹ️ Google Sheets logging not configured (skipping Lambda invocation log)');
@@ -929,8 +1127,8 @@ async function logLambdaInvocation(logData) {
             throw authError;
         }
         
-        // Ensure the sheet tab exists (creates it if needed)
-        console.log('📋 [Lambda Log] Ensuring sheet exists:', sheetName);
+        // Ensure the user-specific sheet tab exists (creates it if needed)
+        console.log(`📋 [Lambda Log] Ensuring user sheet exists: "${sheetName}" for ${userEmail}`);
         try {
             await ensureSheetExists(spreadsheetId, sheetName, accessToken);
             console.log('✅ [Lambda Log] Sheet exists or created');
@@ -984,7 +1182,9 @@ async function logLambdaInvocation(logData) {
             hostname                           // Server hostname
         ];
         
-        console.log('📤 [Lambda Log] Appending row to sheet...');
+        console.log('📤 [Lambda Log] Appending row to user sheet...');
+        console.log(`   User: ${userEmail}`);
+        console.log(`   Sheet: ${sheetName}`);
         console.log('   Range:', `${sheetName}!A:P`);
         console.log('   Data preview:', {
             timestamp: rowData[0],
@@ -997,18 +1197,86 @@ async function logLambdaInvocation(logData) {
             memoryUsed: rowData[11]
         });
         
-        // Append to sheet
+        // Append to user-specific sheet
         try {
             await appendToSheet(spreadsheetId, `${sheetName}!A:P`, rowData, accessToken);
-            console.log(`✅ Logged Lambda invocation: ${logData.endpoint} (${logData.durationMs}ms, ${logData.memoryUsedMB}MB, $${lambdaCost.toFixed(8)})`);
+            console.log(`✅ Logged Lambda invocation [${sheetName}]: ${logData.endpoint} (${logData.durationMs}ms, ${logData.memoryUsedMB}MB, $${lambdaCost.toFixed(8)})`);
         } catch (appendError) {
             console.error('❌ [Lambda Log] Append to sheet error:', appendError.message);
             console.error('   Stack:', appendError.stack);
             throw appendError;
         }
     } catch (error) {
-        // Log error but don't fail the request
+        // Re-throw SHEET_LIMIT_REACHED errors so they can be handled by the caller
+        if (error.code === 'SHEET_LIMIT_REACHED') {
+            console.error('❌ CRITICAL: Sheet limit reached during Lambda invocation logging - throwing error to caller');
+            throw error;
+        }
+        
+        // Log other errors but don't fail the request
         console.error('❌ Failed to log Lambda invocation to Google Sheets:', error.message);
+    }
+}
+
+/**
+ * Get user's current credit balance from billing sheet
+ * ✅ CREDIT SYSTEM: Calculate balance from all transactions
+ * 
+ * @param {string} userEmail - User's email address
+ * @returns {Promise<number>} Current credit balance (positive = has credit)
+ */
+async function getUserCreditBalance(userEmail) {
+    try {
+        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
+        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        
+        if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
+            console.log('❌ Google Sheets logging not configured - cannot calculate balance');
+            return 0;
+        }
+        
+        // Format private key
+        const formattedKey = privateKey.replace(/\\n/g, '\n');
+        
+        // Get OAuth access token
+        const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
+        
+        // Get user sheet name
+        const sheetName = getUserSheetName(userEmail);
+        
+        // Get all data from user's sheet
+        const range = `${sheetName}!A:P`;
+        const data = await getSheetData(spreadsheetId, range, accessToken);
+        
+        if (!data || !data.values || data.values.length <= 1) {
+            // No data or only headers
+            console.log(`💳 No transactions found for ${userEmail}, balance: $0.00`);
+            return 0;
+        }
+        
+        // Skip header row and calculate balance
+        let balance = 0;
+        for (let i = 1; i < data.values.length; i++) {
+            const row = data.values[i];
+            const type = row[4]; // Type column (index 4)
+            const cost = parseFloat(row[8] || 0); // Cost column (index 8)
+            
+            if (type === 'credit_added') {
+                // Credits are stored as negative costs, so we add the absolute value
+                balance += Math.abs(cost);
+            } else {
+                // Regular usage costs
+                balance -= cost;
+            }
+        }
+        
+        console.log(`💳 Credit balance for ${userEmail}: $${balance.toFixed(4)}`);
+        return balance;
+        
+    } catch (error) {
+        console.error('❌ Failed to get credit balance:', error.message);
+        return 0;
     }
 }
 
@@ -1021,5 +1289,8 @@ module.exports = {
     getUserTotalCost,
     getUserBillingData,
     clearSheet,
-    addHeaderRow
+    addHeaderRow,
+    getUserSheetName,           // Export for testing/debugging
+    sanitizeEmailForSheetName,  // Export for testing/debugging
+    getUserCreditBalance        // ✅ NEW: Credit balance calculation
 };

@@ -161,6 +161,47 @@ export const ExamplesModal: React.FC<ExamplesModalProps> = ({
                 </div>
               </div>
 
+              {/* Browser Automation (Selenium) */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                  🤖 Browser Automation (Selenium)
+                </h3>
+                <div className="space-y-1">
+                  <button 
+                    onClick={() => handleExampleClick('Scrape https://www.linkedin.com/login and tell me what you see - this requires login')} 
+                    className="w-full text-left px-3 py-2 text-sm rounded bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-800 dark:text-amber-300 transition-colors border border-amber-200 dark:border-amber-800"
+                  >
+                    🔐 Login Required: LinkedIn
+                  </button>
+                  <button 
+                    onClick={() => handleExampleClick('Access https://twitter.com/home and get the latest tweets - requires authentication')} 
+                    className="w-full text-left px-3 py-2 text-sm rounded bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-800 dark:text-amber-300 transition-colors border border-amber-200 dark:border-amber-800"
+                  >
+                    🔐 Login Required: Twitter/X
+                  </button>
+                  <button 
+                    onClick={() => handleExampleClick('Get content from https://www.instagram.com/instagram/ - login needed to view posts')} 
+                    className="w-full text-left px-3 py-2 text-sm rounded bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-800 dark:text-amber-300 transition-colors border border-amber-200 dark:border-amber-800"
+                  >
+                    🔐 Login Required: Instagram
+                  </button>
+                  <button 
+                    onClick={() => handleExampleClick('Scrape https://www.google.com/recaptcha/api2/demo and complete the captcha challenge')} 
+                    className="w-full text-left px-3 py-2 text-sm rounded bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-800 dark:text-red-300 transition-colors border border-red-200 dark:border-red-800"
+                  >
+                    🧩 CAPTCHA: Google reCAPTCHA v2
+                  </button>
+                  <button 
+                    onClick={() => handleExampleClick('Access https://2captcha.com/demo/recaptcha-v2 and solve the captcha')} 
+                    className="w-full text-left px-3 py-2 text-sm rounded bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-800 dark:text-red-300 transition-colors border border-red-200 dark:border-red-800"
+                  >
+                    🧩 CAPTCHA: reCAPTCHA Demo Site
+                  </button>
+                  <p className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 italic">⚠️ Opens browser for manual login/CAPTCHA solving</p>
+                  <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ Tier 3/4: Selenium with interactive mode (local only)</p>
+                </div>
+              </div>
+
               {/* Location */}
               <div>
                 <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
@@ -263,6 +304,43 @@ export const ExamplesModal: React.FC<ExamplesModalProps> = ({
                   <button onClick={() => handleExampleClick('Search my snippets for "react hooks"')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: Saved snippets</button>
                   <button onClick={() => handleExampleClick('Find all my snippets tagged with "python"')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">Search: By tag</button>
                   <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-500 italic">ℹ️ Stored in your personal Google Sheet</p>
+                </div>
+              </div>
+
+              {/* Recursive Agent (ask_llm) */}
+              <div>
+                <div className="flex items-center mb-2 pb-2 border-b border-amber-300 dark:border-amber-600">
+                  <h3 className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                    🤖 Recursive Agent (ask_llm)
+                  </h3>
+                  <span className="ml-2 text-xs px-2 py-0.5 bg-amber-200 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 rounded font-semibold">
+                    ⚠️ HIGH TOKENS
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <button onClick={() => handleExampleClick('Search for recent quantum computing research papers, scrape the top 3, analyze their methodologies, and create a comprehensive comparison table')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-amber-50 dark:hover:bg-amber-900/20 text-gray-700 dark:text-gray-300 transition-colors border border-transparent hover:border-amber-300">Multi-step research + analysis</button>
+                  <button onClick={() => handleExampleClick('Find Python async/await tutorials, analyze the best one, extract code examples, and generate a beginner-friendly explanation with working examples')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-amber-50 dark:hover:bg-amber-900/20 text-gray-700 dark:text-gray-300 transition-colors border border-transparent hover:border-amber-300">Tutorial extraction + synthesis</button>
+                  <button onClick={() => handleExampleClick('Search for the latest TypeScript features, create a detailed summary, generate code examples, and save the best practices to my snippets')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-amber-50 dark:hover:bg-amber-900/20 text-gray-700 dark:text-gray-300 transition-colors border border-transparent hover:border-amber-300">Research + documentation + save</button>
+                  <p className="px-3 py-2 text-xs text-amber-600 dark:text-amber-500 italic bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">⚠️ Spawns sub-agent with full tool access<br/>⚠️ Uses 5-10x more tokens<br/>⚠️ Enable in Settings first</p>
+                </div>
+              </div>
+
+              {/* Advanced Reasoning (generate_reasoning_chain) */}
+              <div>
+                <div className="flex items-center mb-2 pb-2 border-b border-red-400 dark:border-red-600">
+                  <h3 className="text-sm font-bold text-red-600 dark:text-red-400">
+                    🧠 Advanced Reasoning (o1/DeepSeek-R1)
+                  </h3>
+                  <span className="ml-2 text-xs px-2 py-0.5 bg-red-300 dark:bg-red-900/50 text-red-900 dark:text-red-300 rounded font-bold animate-pulse">
+                    ⚠️⚠️ EXTREME
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <button onClick={() => handleExampleClick('Prove that the square root of 2 is irrational using a step-by-step logical proof with explicit reasoning')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-300 transition-colors border border-transparent hover:border-red-300">Mathematical proof (irrationality)</button>
+                  <button onClick={() => handleExampleClick('Analyze the time complexity of quicksort and prove why it is O(n log n) on average with detailed step-by-step reasoning')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-300 transition-colors border border-transparent hover:border-red-300">Algorithm complexity proof</button>
+                  <button onClick={() => handleExampleClick('Design a normalized database schema for an e-commerce platform with explicit reasoning about normalization tradeoffs, performance implications, and scalability considerations')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-300 transition-colors border border-transparent hover:border-red-300">Architecture design + reasoning</button>
+                  <button onClick={() => handleExampleClick('Debug this code and explain the logical steps to identify the bug: function fibonacci(n) { if (n <= 1) return n; return fibonacci(n-1) + fibonacci(n-3); }')} className="w-full text-left px-3 py-2 text-sm rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-300 transition-colors border border-transparent hover:border-red-300">Logical debugging analysis</button>
+                  <p className="px-3 py-2 text-xs text-red-700 dark:text-red-500 italic bg-red-50 dark:bg-red-900/20 rounded border border-red-300 dark:border-red-800 font-semibold">⚠️⚠️ Uses OpenAI o1 or DeepSeek-R1<br/>⚠️⚠️ Maximum reasoning depth<br/>⚠️⚠️ Uses 10-50x MORE tokens<br/>⚠️⚠️ Enable in Settings first</p>
                 </div>
               </div>
             </div>

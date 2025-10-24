@@ -30,9 +30,11 @@ const ragEndpoint = require('./endpoints/rag');
 const billingEndpoint = require('./endpoints/billing');
 const ttsEndpoint = require('./endpoints/tts');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
-const { handleUsageRequest } = require('./endpoints/usage');
+const { handleCacheStats } = require('./endpoints/cache-stats');
+const { CREDIT_LIMIT } = require('./endpoints/usage'); // Keep CREDIT_LIMIT export for backward compatibility
 const { resetMemoryTracker } = require('./utils/memory-tracker');
 const { handleGenerateImage } = require('./endpoints/generate-image');
+const { handleCreateOrder, handleCaptureOrder } = require('./endpoints/paypal');
 const fixMermaidChartEndpoint = require('./endpoints/fix-mermaid-chart');
 const { getProviderHealthStatus } = require('./utils/provider-health');
 const { initializeCache, getFullStats } = require('./utils/cache');
@@ -228,6 +230,20 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        // Cache stats endpoint (for monitoring credit cache performance)
+        if (method === 'GET' && path === '/cache-stats') {
+            console.log('Routing to cache-stats endpoint');
+            const cacheStatsResponse = await handleCacheStats(event);
+            const metadata = {
+                statusCode: cacheStatsResponse.statusCode,
+                headers: cacheStatsResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(cacheStatsResponse.body);
+            responseStream.end();
+            return;
+        }
+        
         // TTS endpoint
         if (method === 'POST' && path === '/tts') {
             console.log('Routing to TTS endpoint');
@@ -247,20 +263,6 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ message: 'CORS preflight OK' }));
-            responseStream.end();
-            return;
-        }
-        
-        if (method === 'GET' && path === '/usage') {
-            console.log('Routing to usage endpoint (buffered)');
-            // Note: Usage endpoint returns standard response, not streaming
-            const usageResponse = await handleUsageRequest(event);
-            const metadata = {
-                statusCode: usageResponse.statusCode,
-                headers: usageResponse.headers
-            };
-            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-            responseStream.write(usageResponse.body);
             responseStream.end();
             return;
         }
@@ -360,6 +362,33 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(imageResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        // PayPal endpoints (buffered responses)
+        if (method === 'POST' && path === '/paypal/create-order') {
+            console.log('Routing to PayPal create-order endpoint');
+            const paypalResponse = await handleCreateOrder(event);
+            const metadata = {
+                statusCode: paypalResponse.statusCode,
+                headers: paypalResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(paypalResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        if (method === 'POST' && path === '/paypal/capture-order') {
+            console.log('Routing to PayPal capture-order endpoint');
+            const paypalResponse = await handleCaptureOrder(event);
+            const metadata = {
+                statusCode: paypalResponse.statusCode,
+                headers: paypalResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(paypalResponse.body);
             responseStream.end();
             return;
         }

@@ -65,6 +65,11 @@ help:
 	@echo "  make update-catalog      - Update PROVIDER_CATALOG.json with latest data"
 	@echo "  make clean               - Clean temporary files"
 	@echo "  make serve               - Serve UI locally on port 8081"
+	@echo ""
+	@echo "Google Sheets Management:"
+	@echo "  make sheets-list         - List all billing sheets and check for duplicates"
+	@echo "  make sheets-merge        - Merge duplicate sheets (dry-run mode)"
+	@echo "  make sheets-merge-live   - Merge duplicate sheets (live mode)"
 
 # ================================================================
 # Installation & Setup
@@ -541,6 +546,31 @@ test-tier-3:
 test-tier-4:
 	@echo "🧪 Testing Tier 4 (Interactive mode)..."
 	@echo "⚠️  Tier 4 requires manual interaction - use test-scraping instead"
+
+# ================================================================
+# Google Sheets Management
+# ================================================================
+
+# List all billing sheets and check for duplicates
+sheets-list:
+	@echo "📊 Listing all billing sheets..."
+	@chmod +x scripts/list-sheets.js
+	@node scripts/list-sheets.js
+
+# Merge duplicate sheets (dry-run mode - safe, no changes)
+sheets-merge:
+	@echo "🔍 Checking for duplicate sheets (dry-run mode)..."
+	@chmod +x scripts/merge-duplicate-sheets.js
+	@node scripts/merge-duplicate-sheets.js --dry-run
+
+# Merge duplicate sheets (live mode - makes changes)
+sheets-merge-live:
+	@echo "⚠️  WARNING: This will modify your Google Sheets"
+	@echo "Press Ctrl+C to cancel, or Enter to continue..."
+	@read confirm
+	@echo "🔄 Merging duplicate sheets..."
+	@chmod +x scripts/merge-duplicate-sheets.js
+	@node scripts/merge-duplicate-sheets.js
 	@if [ -z "$(ID)" ]; then \
 		echo "⚠️  Error: ID parameter required"; \
 		echo "Usage: make rag-delete ID='snippet-id'"; \

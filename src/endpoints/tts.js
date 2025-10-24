@@ -281,6 +281,25 @@ async function handleTTS(event, responseStream, context) {
         }
 
         console.log(`🎙️ TTS request from ${userEmail}: provider=${provider}, voice=${voice}, textLength=${text.length}`);
+        
+        // ✅ CREDIT SYSTEM: Check credit balance before processing request
+        const { checkCreditBalance, estimateTTSCost } = require('../utils/credit-check');
+        const estimatedCost = estimateTTSCost(text, model || 'tts-1');
+        const creditCheck = await checkCreditBalance(userEmail, estimatedCost, 'tts');
+        
+        if (!creditCheck.allowed) {
+            console.log(`💳 Insufficient credit for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
+            const metadata = {
+                statusCode: creditCheck.error.statusCode,
+                headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify(creditCheck.error));
+            responseStream.end();
+            return;
+        }
+        
+        console.log(`💳 Credit check passed for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
 
         // Get API key from environment or client
         let apiKey;
@@ -352,13 +371,14 @@ async function handleTTS(event, responseStream, context) {
         // Log to Google Sheets (async, don't block response)
         try {
             const { logToGoogleSheets } = require('../services/google-sheets-logger');
+            const { logToBillingSheet } = require('../services/user-billing-sheet');
             const os = require('os');
             
             const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
             const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
             
-            logToGoogleSheets({
+            const logData = {
                 userEmail,
                 provider,
                 model: model || voice || 'default',
@@ -375,12 +395,26 @@ async function handleTTS(event, responseStream, context) {
                 hostname: os.hostname(),
                 errorCode: '',
                 errorMessage: ''
-            }).catch(err => {
-                console.error('Failed to log TTS to Google Sheets:', err);
+            };
+            
+            // Log to both service account sheet and user billing sheet
+            logToGoogleSheets(logData).catch(err => {
+                console.error('Failed to log TTS to service account sheet:', err);
             });
+            
+            // Also log to user's personal billing sheet if authenticated
+            if (authResult.accessToken && userEmail && userEmail !== 'unknown') {
+                logToBillingSheet(authResult.accessToken, logData).catch(err => {
+                    console.error('Failed to log TTS to user billing sheet:', err);
+                });
+            }
         } catch (logError) {
             console.error('Error setting up Google Sheets logging:', logError);
         }
+        
+        // ✅ CREDIT SYSTEM: Optimistically deduct actual cost from cache
+        const { deductCreditFromCache } = require('../utils/credit-check');
+        await deductCreditFromCache(userEmail, cost, 'tts');
 
         console.log(`✅ TTS generated: ${text.length} chars, $${cost.toFixed(6)}, ${duration}ms`);
 

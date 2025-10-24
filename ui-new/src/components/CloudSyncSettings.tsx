@@ -6,7 +6,7 @@ interface CloudSyncSettingsProps {
   onClose?: () => void;
 }
 
-const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose }) => {
+const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose }) => {
   const { settings, setSettings } = useSettings();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);

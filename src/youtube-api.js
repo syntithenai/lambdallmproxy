@@ -711,10 +711,79 @@ async function getPublicYouTubeTranscript(videoId, language = 'en') {
   }
 }
 
+/**
+ * Fetch YouTube transcript using Selenium (fallback method)
+ * Works when API methods fail - higher success rate but slower
+ * 
+ * @param {string} videoId - YouTube video ID
+ * @param {Object} options - Optional parameters
+ * @param {boolean} options.includeTimestamps - Return structured data with timestamps
+ * @param {string} options.language - Preferred language code (default: 'en')
+ * @param {boolean} options.interactive - Keep browser open for manual intervention
+ * @returns {Promise<string|Object>} - Transcript text or structured data
+ */
+async function getYouTubeTranscriptViaSelenium(videoId, options = {}) {
+  const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+  
+  if (IS_LAMBDA) {
+    throw new Error('Selenium caption scraping is not available on AWS Lambda. Use InnerTube or OAuth API instead.');
+  }
+  
+  const {
+    includeTimestamps = false,
+    language = 'en',
+    interactive = false
+  } = options;
+  
+  console.log(`🤖 [Selenium] Fetching YouTube captions for ${videoId} (language: ${language}, timestamps: ${includeTimestamps})`);
+  
+  try {
+    const { scrapeYouTubeCaptions } = require('./scrapers/youtube-caption-scraper');
+    
+    const result = await scrapeYouTubeCaptions(videoId, {
+      language,
+      includeTimestamps,
+      interactive,
+      timeout: 30000
+    });
+    
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    
+    if (includeTimestamps && result.segments) {
+      // Return structured data with timestamps
+      return {
+        videoId: result.videoId,
+        title: result.title,
+        text: result.text,
+        language: result.language,
+        method: result.method,
+        snippets: result.segments.map(seg => ({
+          timestamp: seg.timestamp,
+          text: seg.text
+        })),
+        metadata: {
+          captionCount: result.captionCount,
+          source: 'selenium-dom'
+        }
+      };
+    } else {
+      // Return plain text
+      return result.text;
+    }
+    
+  } catch (error) {
+    console.error(`❌ [Selenium] Caption scraping failed:`, error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getYouTubeTranscript,
   getYouTubeTranscriptViaInnerTube,
   getPublicYouTubeTranscript,
+  getYouTubeTranscriptViaSelenium,
   extractYouTubeVideoId,
   parseSrtToText,
   parseSrtToSegments,

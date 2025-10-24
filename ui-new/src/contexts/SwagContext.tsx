@@ -61,7 +61,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [storageStats, setStorageStats] = useState<{ totalSize: number; limit: number; percentUsed: number } | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const { showError, showWarning, showSuccess } = useToast();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
 
   // Load from storage on mount
   useEffect(() => {
@@ -694,10 +694,12 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       while (retryCount <= maxRetries) {
         try {
           const apiUrl = await getCachedApiBase();
+          const token = await getToken();
           response = await fetch(`${apiUrl}/rag/embed-snippets`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({
               snippets: snippetsToEmbed.map(s => ({

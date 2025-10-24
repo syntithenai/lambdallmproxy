@@ -73,23 +73,49 @@ async function handleGenerateImage(event) {
       };
     }
     
-    // Authenticate user
+    // Authenticate user - REQUIRED
+    if (!accessToken) {
+      console.log('❌ No access token provided');
+      return {
+        statusCode: 401,
+        headers: { 'Content-Type': 'application/json', ...getCorsHeaders(event) },
+        body: JSON.stringify({ 
+          error: 'Authentication required. Please provide a valid access token.',
+          code: 'UNAUTHORIZED'
+        })
+      };
+    }
+    
     let userEmail = null;
-    if (accessToken) {
-      try {
-        const tokenData = await verifyGoogleOAuthToken(accessToken);
-        userEmail = tokenData.email;
-        console.log(`✅ Authenticated user: ${userEmail}`);
-      } catch (authError) {
-        console.warn('⚠️ Authentication failed:', authError.message);
+    try {
+      const tokenData = await verifyGoogleOAuthToken(accessToken);
+      userEmail = tokenData.email;
+      console.log(`✅ Authenticated user: ${userEmail}`);
+    } catch (authError) {
+      console.warn('⚠️ Authentication failed:', authError.message);
+      return {
+        statusCode: 401,
+        headers: { 'Content-Type': 'application/json', ...getCorsHeaders(event) },
+        body: JSON.stringify({ error: 'Invalid or expired access token' })
+      };
+    }
+    
+    // ✅ CREDIT SYSTEM: Check credit balance before processing request
+    if (userEmail) {
+      const { checkCreditBalance, estimateImageCost } = require('../utils/credit-check');
+      const estimatedCost = estimateImageCost(model, quality, size);
+      const creditCheck = await checkCreditBalance(userEmail, estimatedCost, 'image_generation');
+      
+      if (!creditCheck.allowed) {
+        console.log(`💳 Insufficient credit for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
         return {
-          statusCode: 401,
+          statusCode: creditCheck.error.statusCode,
           headers: { 'Content-Type': 'application/json', ...getCorsHeaders(event) },
-          body: JSON.stringify({ error: 'Invalid or expired access token' })
+          body: JSON.stringify(creditCheck.error)
         };
       }
-    } else {
-      console.log('⚠️ No access token provided, proceeding without authentication');
+      
+      console.log(`💳 Credit check passed for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
     }
     
     // Get API key for provider (from context/UI settings first, then environment)
@@ -259,6 +285,12 @@ async function handleGenerateImage(event) {
       });
     } catch (err) {
       console.error('Google Sheets logging error (image generation):', err.message);
+    }
+    
+    // ✅ CREDIT SYSTEM: Optimistically deduct actual cost from cache
+    if (userEmail && result.cost) {
+      const { deductCreditFromCache } = require('../utils/credit-check');
+      await deductCreditFromCache(userEmail, result.cost, 'image_generation');
     }
     
     // Return successful response
@@ -431,16 +463,54 @@ async function generateImageDirect(params) {
   } = params;
   
   try {
-    // Extract provider API keys from context
-    const contextKeys = context ? {
-      openaiApiKey: context.openaiApiKey,
-      togetherApiKey: context.togetherApiKey,
-      geminiApiKey: context.geminiApiKey,
-      replicateApiKey: context.replicateApiKey
-    } : {};
+    // Helper to extract API key from provider pool
+    const getApiKeyFromPool = (providerType, providerPool) => {
+      if (!providerPool || !Array.isArray(providerPool)) return null;
+      
+      // Normalize provider type (groq-free → groq)
+      const normalizedType = providerType === 'groq-free' ? 'groq' : providerType;
+      
+      // Find first matching provider with API key
+      const provider = providerPool.find(p => {
+        const pType = p.type === 'groq-free' ? 'groq' : p.type;
+        return pType === normalizedType && p.apiKey;
+      });
+      
+      return provider?.apiKey || null;
+    };
     
-    // Get API key for provider (from context first, then environment)
-    const apiKey = getApiKeyForProvider(provider, contextKeys);
+    // Extract API key from provider pool (new method) or legacy context
+    let apiKey = null;
+    
+    if (context?.providerPool) {
+      apiKey = getApiKeyFromPool(provider, context.providerPool);
+      if (apiKey) {
+        console.log(`🔑 [Direct] Using API key from provider pool for ${provider}`);
+      }
+    }
+    
+    // Fallback to legacy context keys if provider pool not available
+    if (!apiKey && context) {
+      const contextKeys = {
+        openai: context.openaiApiKey,
+        together: context.togetherApiKey,
+        gemini: context.geminiApiKey,
+        replicate: context.replicateApiKey
+      };
+      apiKey = contextKeys[provider];
+      if (apiKey) {
+        console.log(`🔑 [Direct] Using API key from legacy context for ${provider}`);
+      }
+    }
+    
+    // Final fallback to environment
+    if (!apiKey) {
+      apiKey = getApiKeyForProvider(provider, {});
+      if (apiKey) {
+        console.log(`🔑 [Direct] Using API key from environment for ${provider}`);
+      }
+    }
+    
     if (!apiKey) {
       return {
         success: false,
@@ -492,13 +562,27 @@ async function generateImageDirect(params) {
     
     // Generate image
     const startTime = Date.now();
+    
+    // Get API key for selected provider (may be different from original if fallback was used)
+    let selectedApiKey = apiKey; // Start with the original API key
+    if (fallbackUsed) {
+      // Need to get API key for the fallback provider
+      if (context?.providerPool) {
+        selectedApiKey = getApiKeyFromPool(selectedProvider, context.providerPool);
+      }
+      if (!selectedApiKey) {
+        // Fallback to environment
+        selectedApiKey = getApiKeyForProvider(selectedProvider, {});
+      }
+    }
+    
     const result = await providerHandler.generateImage({
       prompt,
       model: selectedModel,
       size,
       style,
       referenceImages,
-      apiKey: getApiKeyForProvider(selectedProvider, contextKeys)
+      apiKey: selectedApiKey
     });
     
     const totalDuration = Date.now() - startTime;

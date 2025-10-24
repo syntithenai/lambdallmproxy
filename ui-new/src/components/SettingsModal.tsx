@@ -20,6 +20,8 @@ interface EnabledTools {
   search_knowledge_base: boolean;
   manage_todos: boolean;
   manage_snippets: boolean;
+  ask_llm: boolean;
+  generate_reasoning_chain: boolean;
 }
 
 interface SettingsModalProps {
@@ -468,6 +470,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
                     Save and search code snippets and knowledge in your personal Google Sheet
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-2 border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.ask_llm}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, ask_llm: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    🤖 Recursive LLM Agent
+                    <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-200 dark:bg-amber-900/50 dark:text-amber-400 rounded-full">
+                      ⚠️ HIGH TOKEN USAGE
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300 font-medium mb-1">
+                    Spawn sub-agent with full tool access for complex multi-step queries
+                  </div>
+                  <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 p-2 rounded border border-amber-300 dark:border-amber-800">
+                    <strong>WARNING:</strong> This tool creates complete recursive conversations with all available tools and multiple iterations. 
+                    Can consume <strong>5-10x more tokens</strong> than direct responses. Use ONLY for complex queries requiring multiple steps with different tools. 
+                    Limited to 5 iterations with token budget safeguards.
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors border-3 border-red-400 dark:border-red-900 bg-red-50 dark:bg-red-950/20 shadow-md">
+                <input
+                  type="checkbox"
+                  checked={enabledTools.generate_reasoning_chain}
+                  onChange={(e) => setEnabledTools({ ...enabledTools, generate_reasoning_chain: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-red-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    🧠 Deep Reasoning Chain
+                    <span className="inline-flex items-center px-2 py-0.5 text-xs font-bold text-red-800 bg-red-300 dark:bg-red-900/70 dark:text-red-300 rounded-full animate-pulse">
+                      ⚠️⚠️ EXTREME TOKEN USAGE
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-gray-200 font-semibold mb-1">
+                    Generate transparent reasoning chains with advanced reasoning models (o1, DeepSeek-R1)
+                  </div>
+                  <div className="text-xs text-red-800 dark:text-red-300 bg-red-100 dark:bg-red-950/50 p-3 rounded border-2 border-red-400 dark:border-red-800 space-y-1">
+                    <div className="font-bold text-sm mb-2">🚨 CRITICAL WARNINGS:</div>
+                    <div>• Can consume <strong className="text-red-900 dark:text-red-200">10-50x MORE tokens</strong> than normal responses</div>
+                    <div>• Uses <strong>maximum reasoning depth</strong> - models think extensively before responding</div>
+                    <div>• May trigger <strong>PARALLEL ASYNCHRONOUS TOOL CALLS</strong> causing rapid token consumption</div>
+                    <div>• Reasoning models charge for <strong>both reasoning AND output tokens</strong></div>
+                    <div className="mt-2 pt-2 border-t border-red-300 dark:border-red-800">
+                      <strong>USE ONLY FOR:</strong> Complex problems requiring deep logical analysis, multi-step proofs, mathematical derivations, or strategic planning where explicit reasoning transparency is essential.
+                    </div>
                   </div>
                 </div>
               </label>

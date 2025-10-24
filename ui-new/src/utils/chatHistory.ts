@@ -63,6 +63,7 @@ export async function saveChatToHistory(
     planningQuery?: string;
     generatedSystemPrompt?: string;
     generatedUserQuery?: string;
+    selectedSnippetIds?: string[];
   }
 ): Promise<string> {
   try {
@@ -108,6 +109,7 @@ export async function loadChatWithMetadata(chatId: string): Promise<{
   planningQuery?: string;
   generatedSystemPrompt?: string;
   generatedUserQuery?: string;
+  selectedSnippetIds?: string[];
 } | null> {
   try {
     const entry = await chatHistoryDB.getChatWithMetadata(chatId);
@@ -118,7 +120,8 @@ export async function loadChatWithMetadata(chatId: string): Promise<{
       systemPrompt: entry.systemPrompt,
       planningQuery: entry.planningQuery,
       generatedSystemPrompt: entry.generatedSystemPrompt,
-      generatedUserQuery: entry.generatedUserQuery
+      generatedUserQuery: entry.generatedUserQuery,
+      selectedSnippetIds: entry.selectedSnippetIds
     };
   } catch (error) {
     console.error('Error loading chat with metadata from IndexedDB:', error);

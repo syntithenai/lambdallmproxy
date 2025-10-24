@@ -6,6 +6,7 @@
  */
 
 const { initSheetsClient, saveSnippetToSheets, loadSnippetsFromSheets, bulkSaveSnippetsToSheets, deleteSnippetFromSheets } = require('../rag/sheets-storage');
+const { authenticateRequest } = require('../auth');
 
 /**
  * Lambda handler for RAG sync operations
@@ -15,10 +16,55 @@ const { initSheetsClient, saveSnippetToSheets, loadSnippetsFromSheets, bulkSaveS
  */
 exports.handler = async (event, responseStream) => {
   try {
+    // Authenticate request
+    const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+    const authResult = await authenticateRequest(authHeader);
+    
+    if (!authResult.authenticated) {
+      const errorResponse = {
+        statusCode: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+        body: JSON.stringify({ 
+          error: 'Authentication required. Please provide a valid token.',
+          code: 'UNAUTHORIZED'
+        }),
+      };
+      responseStream.write(JSON.stringify(errorResponse));
+      responseStream.end();
+      return;
+    }
+    
+    const authenticatedEmail = authResult.email;
+    console.log(`✅ Authenticated rag-sync request from: ${authenticatedEmail}`);
+    
     const body = JSON.parse(event.body || '{}');
     const { operation, userEmail, deviceId, data, lastSync } = body;
     
-    if (!userEmail) {
+    // Verify userEmail matches authenticated email
+    if (userEmail && userEmail !== authenticatedEmail) {
+      const errorResponse = {
+        statusCode: 403,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+        body: JSON.stringify({ 
+          error: 'Cannot sync data for another user',
+          code: 'FORBIDDEN'
+        }),
+      };
+      responseStream.write(JSON.stringify(errorResponse));
+      responseStream.end();
+      return;
+    }
+    
+    // Use authenticated email if not provided in body
+    const effectiveUserEmail = userEmail || authenticatedEmail;
+    
+    if (!effectiveUserEmail) {
       const errorResponse = {
         statusCode: 400,
         headers: {
@@ -57,23 +103,23 @@ exports.handler = async (event, responseStream) => {
     
     switch (operation) {
       case 'push-snippets':
-        result = await handlePushSnippets(sheets, spreadsheetId, data, userEmail, deviceId);
+        result = await handlePushSnippets(sheets, spreadsheetId, data, effectiveUserEmail, deviceId);
         break;
         
       case 'pull-snippets':
-        result = await handlePullSnippets(sheets, spreadsheetId, userEmail);
+        result = await handlePullSnippets(sheets, spreadsheetId, effectiveUserEmail);
         break;
         
       case 'delete-snippet':
-        result = await handleDeleteSnippet(sheets, spreadsheetId, data.snippetId, userEmail);
+        result = await handleDeleteSnippet(sheets, spreadsheetId, data.snippetId, effectiveUserEmail);
         break;
         
       case 'full-sync':
-        result = await handleFullSync(sheets, spreadsheetId, data, userEmail, deviceId, lastSync);
+        result = await handleFullSync(sheets, spreadsheetId, data, effectiveUserEmail, deviceId, lastSync);
         break;
         
       case 'get-sync-status':
-        result = await handleGetSyncStatus(sheets, spreadsheetId, userEmail);
+        result = await handleGetSyncStatus(sheets, spreadsheetId, effectiveUserEmail);
         break;
         
       default:

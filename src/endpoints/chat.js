@@ -217,6 +217,7 @@ function buildRuntimeCatalog(baseCatalog, availableProviders) {
  * Log transaction to both service account sheet and user's personal billing sheet
  * @param {string} accessToken - User's OAuth access token (can be null)
  * @param {object} logData - Transaction data
+ * @throws {Error} If sheet limit reached (error code: SHEET_LIMIT_REACHED)
  */
 async function logToBothSheets(accessToken, logData) {
     console.log('📊 logToBothSheets called:', {
@@ -231,6 +232,13 @@ async function logToBothSheets(accessToken, logData) {
         await logToGoogleSheets(logData);
         console.log('✅ Logged to service account sheet');
     } catch (error) {
+        // Re-throw SHEET_LIMIT_REACHED errors - this is a critical system limit
+        if (error.code === 'SHEET_LIMIT_REACHED') {
+            console.error('❌ CRITICAL: Sheet limit reached - cannot accept new users');
+            throw error; // Propagate to caller to return 503 error to user
+        }
+        
+        // Log other errors but don't fail the request
         console.error('⚠️ Failed to log to service account sheet:', error.message);
     }
     
@@ -262,9 +270,10 @@ async function logToBothSheets(accessToken, logData) {
  * @param {string} model - Model to use for evaluation (cheap model)
  * @param {string} apiKey - API key
  * @param {string} provider - Provider name
+ * @param {Object} providerConfig - Provider configuration (optional, for model filtering)
  * @returns {Promise<Object>} {isComprehensive: boolean, reason: string, usage: object}
  */
-async function evaluateResponseComprehensiveness(messages, finalResponse, model, apiKey, provider) {
+async function evaluateResponseComprehensiveness(messages, finalResponse, model, apiKey, provider, providerConfig) {
     try {
         // Build minimal evaluation context: only user prompts and assistant responses (no tool results, no media)
         const evaluationMessages = [];
@@ -305,22 +314,24 @@ async function evaluateResponseComprehensiveness(messages, finalResponse, model,
         evaluationMessages.push({ role: 'assistant', content: finalResponse });
         
         // Minimal system prompt for evaluation
-        const evaluationSystemPrompt = `You are a response quality evaluator. Your job is to determine if the assistant's final response comprehensively answers the user's query.
+        const evaluationSystemPrompt = `You are a response quality evaluator. Your job is to determine if the assistant's final response is acceptable.
 
 Respond with ONLY a JSON object in this exact format:
 {"comprehensive": true/false, "reason": "brief explanation"}
 
-A response is comprehensive if:
-- It directly addresses the user's question or request
-- It provides sufficient detail and information
-- It doesn't leave obvious questions unanswered
-- It doesn't end with "let me search" or indicate incomplete work
+Mark as comprehensive (true) if:
+- The response makes a reasonable attempt to answer the question
+- It provides useful information or results
+- It's a complete thought (not cut off mid-sentence)
+- Any tool results or search results are present and explained
 
-A response is NOT comprehensive if:
-- It's too brief or vague
-- It ignores part of the multi-part question
-- It says it will do something but hasn't done it yet
-- It's clearly incomplete or cut off`;
+Mark as NOT comprehensive (false) ONLY if:
+- The response is clearly cut off or truncated mid-sentence
+- It has obvious syntax errors (unclosed brackets, etc.)
+- It's extremely short (<30 chars) and doesn't answer anything
+- It literally says "I will do X" but hasn't done X yet
+
+Be LENIENT - assume the response is good unless there's an obvious problem.`;
 
         // Make minimal LLM call for evaluation
         const evalRequestBody = {
@@ -353,7 +364,8 @@ A response is NOT comprehensive if:
                 temperature: 0.1,
                 max_tokens: 200,
                 enforceJson: false,
-                timeoutMs: 15000
+                timeoutMs: 15000,
+                providerConfig: providerConfig // Pass provider config for model filtering
             }
         });
         
@@ -398,8 +410,8 @@ A response is NOT comprehensive if:
         }
         
         // Try to parse JSON from response
-        // CHANGED: Default to NOT comprehensive (fail-closed instead of fail-open)
-        let evalResult = { comprehensive: false, reason: 'Evaluation failed - assuming NOT comprehensive for safety' };
+        // Default to comprehensive unless clearly wrong (fail-open approach)
+        let evalResult = { comprehensive: true, reason: 'Evaluation parsing failed - assuming comprehensive by default' };
         try {
             // Extract JSON from response (may have markdown code blocks)
             const jsonMatch = evalText.match(/\{[\s\S]*\}/);
@@ -1313,6 +1325,20 @@ async function handler(event, responseStream, context) {
             return;
         }
         
+        // ✅ CREDIT SYSTEM: Check credit balance before processing request
+        const { checkCreditBalance, estimateChatCost } = require('../utils/credit-check');
+        const estimatedCost = estimateChatCost(messages, model);
+        const creditCheck = await checkCreditBalance(userEmail, estimatedCost, 'chat');
+        
+        if (!creditCheck.allowed) {
+            console.log(`💳 Insufficient credit for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
+            sseWriter.writeEvent('error', creditCheck.error);
+            responseStream.end();
+            return;
+        }
+        
+        console.log(`💳 Credit check passed for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
+        
         // FILTER INPUT if guardrails enabled
         if (guardrailValidator && messages && messages.length > 0) {
             // Find the last user message to filter
@@ -1717,34 +1743,14 @@ async function handler(event, responseStream, context) {
             console.log(`📏 Using user-specified max_tokens: ${max_tokens}`);
         }
         
-        // Extract provider-specific API keys from provider pool for image generation and transcription
-        const providerApiKeys = {};
-        providerPool.forEach(provider => {
-            if (provider.apiKey && provider.type) {
-                // Map provider types to standard keys
-                const keyMap = {
-                    'openai': 'openaiApiKey',
-                    'groq': 'groqApiKey',
-                    'groq-free': 'groqApiKey', // Both groq and groq-free map to same key
-                    'together': 'togetherApiKey',
-                    'gemini': 'geminiApiKey',
-                    'gemini-free': 'geminiApiKey',
-                    'replicate': 'replicateApiKey'
-                };
-                const keyName = keyMap[provider.type];
-                if (keyName && !providerApiKeys[keyName]) {
-                    providerApiKeys[keyName] = provider.apiKey;
-                }
-            }
-        });
-        
-        // Build tool context
+        // Build tool context with full provider pool for tools to select from
+        // This allows tools to access ALL configured API keys, not just the first one
         const toolContext = {
             user: verifiedUser.email,
             userEmail: verifiedUser.email,
             model,
             apiKey,
-            ...providerApiKeys, // Add all provider-specific API keys for tools
+            providerPool, // Pass full provider pool for tools to select from (supports multiple keys per type)
             googleToken,
             driveAccessToken, // Pass Google Sheets OAuth token for snippets/billing
             youtubeAccessToken: youtubeToken, // Pass YouTube OAuth token for transcript access
@@ -1759,7 +1765,10 @@ async function handler(event, responseStream, context) {
             __todosManager: todosManager,
             writeEvent: (type, data) => sseWriter.writeEvent(type, data),
             // Pass conversation messages for tools that need context (e.g., generate_image reference images)
-            messages: messages || []
+            messages: messages || [],
+            // Pass provider configuration for model filtering in LLM calls
+            providerConfig: selectedProvider,
+            providers: providerPool // Pass full provider pool for tools that need access to multiple providers
         };
         
         const hasToolsConfigured = Array.isArray(tools) && tools.length > 0;
@@ -2644,6 +2653,14 @@ async function handler(event, responseStream, context) {
             // POST-PROCESSING: Extract comprehensive content from all tool calls
             // These will be sent as separate fields in the response, not appended to content
             // This keeps them out of LLM context while allowing UI to display them
+            console.log(`🔍 DEBUGGING: currentMessages before filtering for tool messages:`);
+            console.log(`   - Total messages: ${currentMessages.length}`);
+            console.log(`   - Message roles: ${currentMessages.map((m, i) => `${i}:${m.role}`).join(', ')}`);
+            console.log(`   - Tool messages count: ${currentMessages.filter(m => m.role === 'tool').length}`);
+            if (currentMessages.some(m => m.role === 'tool')) {
+                console.log(`   - Tool message details:`, currentMessages.filter(m => m.role === 'tool').map(m => ({ name: m.name, tool_call_id: m.tool_call_id, hasRawResult: !!m.rawResult })));
+            }
+            
             const toolMessages = currentMessages.filter(m => m.role === 'tool');
             
             extractedContent = null; // Assignment to function-scoped variable
@@ -2654,6 +2671,11 @@ async function handler(event, responseStream, context) {
             const toolExtractionMetadata = {}; // Key: tool_call_id, Value: { summary, images, links, etc. }
             
             console.log(`🔍 POST-PROCESSING: toolMessages=${toolMessages.length}, assistantContent=${assistantMessage.content?.length || 0} chars`);
+            console.log(`🔍 POST-PROCESSING CONDITIONS:`);
+            console.log(`   - toolMessages.length > 0: ${toolMessages.length > 0} (length=${toolMessages.length})`);
+            console.log(`   - assistantMessage.content exists: ${!!assistantMessage.content}`);
+            console.log(`   - assistantMessage.content.length > 0: ${assistantMessage.content?.length > 0} (length=${assistantMessage.content?.length})`);
+            console.log(`   - ALL CONDITIONS PASS: ${toolMessages.length > 0 && assistantMessage.content && assistantMessage.content.length > 0}`);
             
             if (toolMessages.length > 0 && assistantMessage.content && assistantMessage.content.length > 0) {
                 console.log(`✅ Processing ${toolMessages.length} tool messages for extraction`);
@@ -2699,6 +2721,9 @@ async function handler(event, responseStream, context) {
                                     console.log(`     - videos: ${result.page_content.videos?.length || 0}`);
                                     console.log(`     - media: ${result.page_content.media?.length || 0}`);
                                     console.log(`     - links: ${result.page_content.links?.length || 0}`);
+                                    if (result.page_content.images && result.page_content.images.length > 0) {
+                                        console.log(`     📸 Sample images:`, result.page_content.images.slice(0, 2).map(img => ({ src: img.src?.substring(0, 50), alt: img.alt })));
+                                    }
                                 }
                                 
                                 // Extract ALL links from page_content (scraped from page)
@@ -3106,6 +3131,15 @@ async function handler(event, responseStream, context) {
                 
                 console.log(`✅ Extracted content: ${allLinks.length} total links (${prioritizedLinks.length} prioritized), ${uniqueImages.length} images (${prioritizedImages.length} prioritized), ${youtubeVideos.length} YouTube videos, ${otherVideos.length} other videos, ${uniqueMedia.length} media items`);
                 console.log(`📊 Metadata added to extractedContent:`, JSON.stringify(extractionMetadata, null, 2));
+                console.log(`📋 EXTRACTION SUMMARY:`);
+                console.log(`   - allImages array length: ${allImages.length}`);
+                console.log(`   - uniqueImages length: ${uniqueImages.length}`);
+                console.log(`   - allVideos array length: ${allVideos.length}`);
+                console.log(`   - allUrls array length: ${allUrls.length}`);
+                console.log(`   - allMedia array length: ${allMedia.length}`);
+                if (uniqueImages.length > 0) {
+                    console.log(`   - Sample images:`, uniqueImages.slice(0, 3).map(img => ({ src: img.src?.substring(0, 60), source: img.source })));
+                }
             }
             
             // Inject generated images as markdown into assistant's response
@@ -3183,14 +3217,18 @@ async function handler(event, responseStream, context) {
             console.log(`📤 Preparing final response: ${assistantMessage.content.length} chars`);
             console.log(`📤 Preview: ${assistantMessage.content.substring(0, 100)}...`);
             
-            // SELF-EVALUATION: Check if response is comprehensive before sending
-            // Maximum 2 retry attempts if not comprehensive
-            const MAX_EVALUATION_RETRIES = 4; // Increased from 2 to 4 for better completion rate
-            let evaluationRetries = 0;
+            // Store content for later - assessment will run only once at the very end
             let finalContent = assistantMessage.content;
             let evaluationResults = []; // Track all evaluation attempts
             
-            while (evaluationRetries < MAX_EVALUATION_RETRIES) {
+            // Skip assessment for now - we'll do it once at the end after all iterations complete
+            // This ensures we only assess the final response, not intermediate iterations
+            
+            // Placeholder while loop removed - assessment moved to after main loop
+            const MAX_EVALUATION_RETRIES = 4; // Increased from 2 to 4 for better completion rate
+            let evaluationRetries = 0;
+            
+            if (false) { // Disabled - moved to after main loop
                 console.log(`🔍 Self-evaluation attempt ${evaluationRetries + 1}/${MAX_EVALUATION_RETRIES + 1}`);
                 
                 // Evaluate current response
@@ -3199,7 +3237,8 @@ async function handler(event, responseStream, context) {
                     finalContent,
                     model, // Use same model for evaluation
                     apiKey,
-                    provider
+                    provider,
+                    selectedProvider // Pass provider config for model filtering
                 );
                 
                 // Track evaluation call in LLM transparency
@@ -3347,7 +3386,8 @@ async function handler(event, responseStream, context) {
                             temperature: requestBody.temperature || 0.7,
                             max_tokens: requestBody.max_tokens || 4096,
                             enforceJson: false,
-                            timeoutMs: 30000
+                            timeoutMs: 30000,
+                            providerConfig: selectedProvider // Pass provider config for model filtering
                         }
                     });
                     
@@ -3397,7 +3437,7 @@ async function handler(event, responseStream, context) {
                 }
                 
                 evaluationRetries++;
-            }
+            } // End of disabled assessment while loop
             
             // Update final assistant message content
             assistantMessage.content = finalContent;
@@ -3632,6 +3672,97 @@ async function handler(event, responseStream, context) {
             
             console.log(`✅ Completing request after ${iterationCount} iterations (${todoAutoIterations} todo auto-iterations)`);
             
+            // SELF-EVALUATION: Check if final response is comprehensive (runs ONCE at the end)
+            // If not comprehensive, retry with encouragement message
+            // Filter out tool messages - assessor only sees user and assistant messages
+            const lastAssistantMessage = currentMessages[currentMessages.length - 1];
+            
+            let evaluation = null;
+            if (lastAssistantMessage && lastAssistantMessage.role === 'assistant' && lastAssistantMessage.content) {
+                console.log(`🔍 Running comprehensive assessment on final response`);
+                
+                // Filter messages to only include user and assistant (no tool or tool_call messages)
+                const messagesForEvaluation = currentMessages
+                    .filter(m => m.role === 'user' || (m.role === 'assistant' && !m.tool_calls))
+                    .slice(0, -1); // All messages except the final assistant message we're evaluating
+                
+                console.log(`📋 Evaluating with ${messagesForEvaluation.length} messages (filtered from ${currentMessages.length} total, excluding tool messages)`);
+                
+                evaluation = await evaluateResponseComprehensiveness(
+                    messagesForEvaluation,
+                    lastAssistantMessage.content,
+                    model, // Use same model for evaluation
+                    apiKey,
+                    provider,
+                    selectedProvider // Pass provider config for model filtering
+                );
+                
+                // Track evaluation call in LLM transparency
+                if (evaluation && (evaluation.usage || evaluation.rawResponse)) {
+                    const evalLlmCall = {
+                        phase: 'assessment',
+                        type: 'assessment',
+                        iteration: 1,
+                        model: model,
+                        provider: provider,
+                        request: {
+                            messages: evaluation.messages || [],
+                            purpose: 'evaluate_final_response_comprehensiveness',
+                            temperature: 0.1,
+                            max_tokens: 200
+                        },
+                        response: {
+                            usage: evaluation.usage,
+                            comprehensive: evaluation.isComprehensive,
+                            reason: evaluation.reason,
+                            text: evaluation.rawResponse?.text || evaluation.rawResponse?.content || ''
+                        },
+                        httpHeaders: evaluation.httpHeaders || {},
+                        httpStatus: evaluation.httpStatus || 200,
+                        timestamp: new Date().toISOString(),
+                        cost: evaluation.usage ? calculateCostSafe(model, evaluation.usage.prompt_tokens || 0, evaluation.usage.completion_tokens || 0) : 0,
+                        durationMs: evaluation.rawResponse?.durationMs || 0
+                    };
+                    allLlmApiCalls.push(evalLlmCall);
+                    console.log(`📊 Tracked final assessment LLM call`, {
+                        type: evalLlmCall.type,
+                        phase: evalLlmCall.phase,
+                        comprehensive: evaluation.isComprehensive
+                    });
+                } else {
+                    console.warn(`⚠️ Final assessment returned no usage data (provider: ${provider}, model: ${model})`);
+                }
+                
+                if (evaluation && evaluation.isComprehensive) {
+                    console.log(`✅ Final response deemed comprehensive: ${evaluation.reason}`);
+                } else if (evaluation) {
+                    console.log(`⚠️ Final response not comprehensive: ${evaluation.reason}`);
+                    
+                    // Only retry if OBVIOUSLY incomplete (too short, syntax errors, etc.)
+                    const isObviouslyBroken = 
+                        evaluation.reason?.includes('obviously incomplete') ||
+                        evaluation.reason?.includes('ends abruptly') ||
+                        evaluation.reason?.includes('unclosed delimiters');
+                    
+                    if (isObviouslyBroken && !evaluation.skipEvaluation && iterationCount < maxIterations) {
+                        console.log(`🔄 Response has obvious errors - retrying with encouragement`);
+                        
+                        currentMessages.push({
+                            role: 'user',
+                            content: 'Your previous response was incomplete or cut off. Please provide the COMPLETE answer.'
+                        });
+                        
+                        continue;
+                    } else {
+                        console.log(`ℹ️ Response not perfect but acceptable - completing anyway`);
+                    }
+                } else if (evaluation && evaluation.skipEvaluation) {
+                    console.log(`⚠️ Evaluation skipped due to API error - proceeding with current response`);
+                } else {
+                    console.log(`⚠️ Max iterations reached - proceeding with current response despite incomplete assessment`);
+                }
+            }
+            
             // Add memory tracking snapshot before completing
             memoryTracker.snapshot('chat-complete');
             const finalMemoryMetadata = memoryTracker.getResponseMetadata();
@@ -3694,6 +3825,10 @@ async function handler(event, responseStream, context) {
                 cost: parseFloat(finalRequestCost.toFixed(4)), // Cost for this request
                 ...finalMemoryMetadata
             });
+            
+            // ✅ CREDIT SYSTEM: Optimistically deduct actual cost from cache
+            const { deductCreditFromCache } = require('../utils/credit-check');
+            await deductCreditFromCache(userEmail, finalRequestCost, 'chat');
             
             // Log memory summary
             console.log('📊 Chat endpoint ' + memoryTracker.getSummary());
@@ -3763,6 +3898,30 @@ async function handler(event, responseStream, context) {
         
     } catch (error) {
         console.error('Chat endpoint error:', error);
+        
+        // Handle SHEET_LIMIT_REACHED error (system at capacity)
+        if (error.code === 'SHEET_LIMIT_REACHED') {
+            console.error('❌ CRITICAL: System at capacity - cannot accept new users');
+            
+            const capacityError = {
+                error: error.userMessage || 'System at full capacity. Unable to create new user account. Please try again later.',
+                code: 'SYSTEM_CAPACITY_REACHED',
+                timestamp: new Date().toISOString(),
+                message: 'The system has reached its maximum user capacity (200 users). Please try again later or contact support.'
+            };
+            
+            if (sseWriter) {
+                sseWriter.writeEvent('error', capacityError);
+            } else {
+                try {
+                    responseStream.write(`event: error\ndata: ${JSON.stringify(capacityError)}\n\n`);
+                } catch (streamError) {
+                    console.error('Failed to write capacity error to stream:', streamError);
+                }
+            }
+            responseStream.end();
+            return; // Don't try to log this to sheets (that's what caused the error!)
+        }
         
         // Build error event with request info if available
         const errorEvent = {
@@ -3841,6 +4000,10 @@ async function handler(event, responseStream, context) {
                 errorMessage: error.message || 'Internal server error'
             });
         } catch (err) {
+            // Don't mask SHEET_LIMIT_REACHED errors
+            if (err.code === 'SHEET_LIMIT_REACHED') {
+                throw err; // Re-throw to be handled by outer catch
+            }
             console.error('Failed to log error to sheets:', err.message);
         }
         

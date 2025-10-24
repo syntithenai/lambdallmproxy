@@ -34,7 +34,7 @@ const DEFAULT_CONFIG = {
  * @param {string} model - Model name (e.g., 'text-embedding-3-small')
  * @param {string} provider - Provider name ('openai', 'cohere', 'together')
  * @param {string} apiKey - API key for the provider
- * @param {object} options - Additional options (retries, timeout, etc.)
+ * @param {object} options - Additional options (retries, timeout, providerConfig, etc.)
  * @returns {Promise<{embedding: Float32Array, dimensions: number, tokens: number, cost: number}>}
  */
 async function generateEmbedding(text, model, provider, apiKey, options = {}) {
@@ -47,6 +47,25 @@ async function generateEmbedding(text, model, provider, apiKey, options = {}) {
   
   if (!apiKey) {
     throw new Error(`API key required for provider: ${provider}`);
+  }
+  
+  // STEP 1: Validate model against allowedModels restriction if provider config provided
+  if (options.providerConfig) {
+    const providerConfig = options.providerConfig;
+    
+    // Check if model is allowed (empty/null = allow all, non-empty array = filter)
+    if (providerConfig.allowedModels && Array.isArray(providerConfig.allowedModels) && providerConfig.allowedModels.length > 0) {
+      const isAllowed = providerConfig.allowedModels.includes(model);
+      if (!isAllowed) {
+        const error = new Error(`Embedding model "${model}" is not in the allowed models list for provider "${providerConfig.type}". Allowed models: ${providerConfig.allowedModels.join(', ')}`);
+        error.code = 'MODEL_NOT_ALLOWED';
+        error.provider = providerConfig.type;
+        error.requestedModel = model;
+        error.allowedModels = providerConfig.allowedModels;
+        throw error;
+      }
+      console.log(`✅ Embedding model "${model}" is allowed for provider "${providerConfig.type}"`);
+    }
   }
   
   // Get model info from catalog
@@ -114,7 +133,7 @@ async function generateEmbedding(text, model, provider, apiKey, options = {}) {
  * @param {string} model - Model name
  * @param {string} provider - Provider name
  * @param {string} apiKey - API key
- * @param {object} options - Options including onProgress callback
+ * @param {object} options - Options including onProgress callback and providerConfig
  * @returns {Promise<Array<{embedding: Float32Array, dimensions: number, tokens: number, cost: number}>>}
  */
 async function batchGenerateEmbeddings(texts, model, provider, apiKey, options = {}) {
@@ -123,6 +142,25 @@ async function batchGenerateEmbeddings(texts, model, provider, apiKey, options =
   
   if (!Array.isArray(texts) || texts.length === 0) {
     throw new Error('Texts must be a non-empty array');
+  }
+  
+  // STEP 1: Validate model against allowedModels restriction if provider config provided
+  if (options.providerConfig) {
+    const providerConfig = options.providerConfig;
+    
+    // Check if model is allowed (empty/null = allow all, non-empty array = filter)
+    if (providerConfig.allowedModels && Array.isArray(providerConfig.allowedModels) && providerConfig.allowedModels.length > 0) {
+      const isAllowed = providerConfig.allowedModels.includes(model);
+      if (!isAllowed) {
+        const error = new Error(`Batch embedding model "${model}" is not in the allowed models list for provider "${providerConfig.type}". Allowed models: ${providerConfig.allowedModels.join(', ')}`);
+        error.code = 'MODEL_NOT_ALLOWED';
+        error.provider = providerConfig.type;
+        error.requestedModel = model;
+        error.allowedModels = providerConfig.allowedModels;
+        throw error;
+      }
+      console.log(`✅ Batch embedding model "${model}" is allowed for provider "${providerConfig.type}"`);
+    }
   }
   
   const results = [];

@@ -17,6 +17,7 @@ export interface ChatHistoryEntry {
   planningQuery?: string;           // Original planning query input
   generatedSystemPrompt?: string;   // Generated system prompt from planning
   generatedUserQuery?: string;      // Generated user query from planning
+  selectedSnippetIds?: string[];   // Selected SWAG snippet IDs for context
 }
 
 class ChatHistoryDB {

@@ -7,6 +7,8 @@
 const { authenticateRequest } = require('../auth');
 const { readBillingData, clearBillingData } = require('../services/user-billing-sheet');
 const { getUserTotalCost, getUserBillingData } = require('../services/google-sheets-logger');
+const { getCachedCreditBalance } = require('../utils/credit-cache');
+const { CREDIT_LIMIT } = require('./usage');
 
 /**
  * Get CORS headers for billing endpoint
@@ -119,12 +121,26 @@ async function handleGetBilling(event, responseStream) {
         ? globalThis.awslambda 
         : require('aws-lambda');
 
+    console.log('📊 [BILLING] handleGetBilling called');
+    console.log('📊 [BILLING] Event headers:', JSON.stringify(event.headers || {}, null, 2));
+    console.log('📊 [BILLING] Event path:', event.rawPath || event.path);
+
     try {
         // Authenticate request
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        console.log('🔐 [BILLING] Auth header present:', !!authHeader);
+        console.log('🔐 [BILLING] Auth header length:', authHeader?.length || 0);
+        
         const authResult = await authenticateRequest(authHeader);
+        
+        console.log('🔐 [BILLING] Auth result:', {
+            authenticated: authResult.authenticated,
+            authorized: authResult.authorized,
+            email: authResult.email
+        });
 
         if (!authResult.authenticated) {
+            console.error('❌ [BILLING] Authentication failed');
             const metadata = {
                 statusCode: 401,
                 headers: getCorsHeaders()
@@ -272,7 +288,11 @@ async function handleGetBilling(event, responseStream) {
         }
 
     } catch (error) {
-        console.error('❌ Error reading billing data:', error);
+        console.error('❌ [BILLING] Error reading billing data:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
 
         const metadata = {
             statusCode: 500,
@@ -282,7 +302,8 @@ async function handleGetBilling(event, responseStream) {
         responseStream.write(JSON.stringify({
             error: 'Failed to read billing data',
             message: error.message,
-            code: 'READ_ERROR'
+            code: 'READ_ERROR',
+            details: error.stack
         }));
         responseStream.end();
     }
@@ -412,6 +433,146 @@ async function handleClearBilling(event, responseStream) {
 }
 
 /**
+ * Handle GET /billing/transactions - Get user transaction history with credit balance
+ * @param {Object} event - Lambda event
+ * @param {Object} responseStream - Response stream
+ */
+async function handleGetTransactions(event, responseStream) {
+    const awslambda = (typeof globalThis.awslambda !== 'undefined') 
+        ? globalThis.awslambda 
+        : require('aws-lambda');
+
+    console.log('📊 [BILLING] handleGetTransactions called');
+
+    try {
+        // Authenticate request
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const authResult = await authenticateRequest(authHeader);
+
+        if (!authResult.authenticated) {
+            const metadata = {
+                statusCode: 401,
+                headers: getCorsHeaders()
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({
+                error: 'Authentication required',
+                code: 'UNAUTHORIZED'
+            }));
+            responseStream.end();
+            return;
+        }
+
+        const userEmail = authResult.email || 'unknown';
+        console.log(`📊 Getting transactions for user: ${userEmail}`);
+
+        // Get transactions from service sheet
+        const transactions = await getUserBillingData(userEmail);
+        
+        // Get current credit balance from cache
+        const creditBalance = await getCachedCreditBalance(userEmail);
+
+        console.log(`📊 Found ${transactions.length} transaction(s), balance: $${creditBalance.toFixed(4)}`);
+
+        const metadata = {
+            statusCode: 200,
+            headers: getCorsHeaders()
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({
+            transactions: transactions.reverse(), // Most recent first
+            creditBalance: creditBalance,
+            count: transactions.length
+        }));
+        responseStream.end();
+
+    } catch (error) {
+        console.error('❌ [BILLING] Error getting transactions:', error);
+
+        const metadata = {
+            statusCode: 500,
+            headers: getCorsHeaders()
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({
+            error: 'Failed to retrieve transactions',
+            message: error.message,
+            code: 'READ_ERROR'
+        }));
+        responseStream.end();
+    }
+}
+
+/**
+ * Handle GET /billing/balance - Get user's current credit balance
+ * @param {Object} event - Lambda event
+ * @param {Object} responseStream - Response stream
+ */
+async function handleGetBalance(event, responseStream) {
+    const awslambda = (typeof globalThis.awslambda !== 'undefined') 
+        ? globalThis.awslambda 
+        : require('aws-lambda');
+
+    console.log('💳 [BILLING] handleGetBalance called');
+
+    try {
+        // Authenticate request
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const authResult = await authenticateRequest(authHeader);
+
+        if (!authResult.authenticated) {
+            const metadata = {
+                statusCode: 401,
+                headers: getCorsHeaders()
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({
+                error: 'Authentication required',
+                code: 'UNAUTHORIZED'
+            }));
+            responseStream.end();
+            return;
+        }
+
+        const userEmail = authResult.email || 'unknown';
+        
+        // Check for force refresh parameter
+        const forceRefresh = event.queryStringParameters?.refresh === 'true';
+        
+        // Get balance from cache
+        const balance = await getCachedCreditBalance(userEmail, forceRefresh);
+        
+        console.log(`💳 Credit balance for ${userEmail}: $${balance.toFixed(4)}`);
+
+        const metadata = {
+            statusCode: 200,
+            headers: getCorsHeaders()
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({
+            creditBalance: balance,
+            userEmail: userEmail
+        }));
+        responseStream.end();
+
+    } catch (error) {
+        console.error('❌ [BILLING] Error getting balance:', error);
+
+        const metadata = {
+            statusCode: 500,
+            headers: getCorsHeaders()
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({
+            error: 'Failed to retrieve balance',
+            message: error.message,
+            code: 'READ_ERROR'
+        }));
+        responseStream.end();
+    }
+}
+
+/**
  * Main billing endpoint handler
  * @param {Object} event - Lambda event
  * @param {Object} responseStream - Response stream
@@ -422,6 +583,16 @@ async function handler(event, responseStream, context) {
     const method = event.requestContext?.http?.method || event.httpMethod;
 
     console.log(`📊 Billing endpoint: ${method} ${path}`);
+
+    // GET /billing/transactions - Get transaction history with credit balance
+    if (path === '/billing/transactions' && method === 'GET') {
+        return await handleGetTransactions(event, responseStream);
+    }
+
+    // GET /billing/balance - Get current credit balance
+    if (path === '/billing/balance' && method === 'GET') {
+        return await handleGetBalance(event, responseStream);
+    }
 
     // GET /billing - Read billing data
     if (path === '/billing' && method === 'GET') {

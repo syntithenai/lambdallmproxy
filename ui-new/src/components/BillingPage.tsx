@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './BillingPage.css';
 import { useAuth } from '../contexts/AuthContext';
+import { useUsage } from '../contexts/UsageContext';
 
 interface Transaction {
   rowIndex: number;
@@ -209,6 +210,7 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
 
 const BillingPage: React.FC = () => {
   const { accessToken, isAuthenticated } = useAuth();
+  const { refreshUsage } = useUsage(); // Get refresh function from UsageContext
   const [billingData, setBillingData] = useState<BillingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -226,21 +228,30 @@ const BillingPage: React.FC = () => {
     setError(null);
 
     try {
+      console.log('📊 [BillingPage] fetchBillingData called');
+      console.log('📊 [BillingPage] accessToken present:', !!accessToken);
+      console.log('📊 [BillingPage] isAuthenticated:', isAuthenticated);
+      
       if (!accessToken || !isAuthenticated) {
-        throw new Error('Not authenticated. Please sign in.');
+        const errorMsg = 'Not authenticated. Please sign in.';
+        console.error('❌ [BillingPage] Authentication check failed:', errorMsg);
+        throw new Error(errorMsg);
       }
 
       // Get Google Drive access token and billing sync preference
       const driveAccessToken = localStorage.getItem('google_drive_access_token');
       const billingSyncEnabled = localStorage.getItem('cloud_sync_billing') === 'true';
       
-      console.log('🔐 Drive access token present:', !!driveAccessToken);
-      console.log('🔐 Token length:', driveAccessToken?.length || 0);
-      console.log('🔐 Billing sync enabled:', billingSyncEnabled);
+      console.log('🔐 [BillingPage] Drive access token present:', !!driveAccessToken);
+      console.log('🔐 [BillingPage] Token length:', driveAccessToken?.length || 0);
+      console.log('🔐 [BillingPage] Billing sync enabled:', billingSyncEnabled);
 
       // Fetch ALL data without filters - filtering will be done locally
       const apiBase = await getApiBase();
       const url = `${apiBase}/billing`;
+      
+      console.log('🌐 [BillingPage] API Base:', apiBase);
+      console.log('🌐 [BillingPage] Request URL:', url);
 
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${accessToken}`,
@@ -251,26 +262,43 @@ const BillingPage: React.FC = () => {
       // Only add Drive access token if billing sync is enabled
       if (billingSyncEnabled && driveAccessToken) {
         headers['X-Google-Access-Token'] = driveAccessToken;
-        console.log('✅ Sending billing request with personal sheet headers:', {
+        console.log('✅ [BillingPage] Sending billing request with personal sheet headers:', {
           hasBillingSyncHeader: true,
           hasGoogleTokenHeader: true,
           tokenLength: driveAccessToken.length
         });
       } else {
-        console.log('ℹ️ Sending billing request without personal sheet headers:', {
+        console.log('ℹ️ [BillingPage] Sending billing request without personal sheet headers:', {
           billingSyncEnabled,
           hasDriveToken: !!driveAccessToken
         });
       }
+      
+      console.log('📤 [BillingPage] Sending request to:', url);
+      console.log('📤 [BillingPage] Request headers:', Object.keys(headers));
 
       const response = await fetch(url, {
         method: 'GET',
         headers
       });
+      
+      console.log('📥 [BillingPage] Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
+      });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `HTTP ${response.status}`);
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (parseError) {
+          console.error('❌ [BillingPage] Failed to parse error response:', parseError);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        console.error('❌ [BillingPage] Backend returned error:', errorData);
+        throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`);
       }
 
       const data: BillingData = await response.json();
@@ -301,11 +329,31 @@ const BillingPage: React.FC = () => {
       }
       
       setBillingData(data);
+      console.log('✅ [BillingPage] Billing data loaded successfully');
+      
+      // Refresh usage context (calculates usage from billing totals)
+      refreshUsage();
     } catch (err: any) {
-      console.error('Error fetching billing data:', err);
-      setError(err.message || 'Failed to load billing data');
+      console.error('❌ [BillingPage] Error fetching billing data:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name,
+        error: err
+      });
+      const errorMessage = err.message || 'Failed to load billing data';
+      setError(errorMessage);
+      
+      // Show user-friendly error message
+      if (err.message?.includes('Not authenticated')) {
+        setError('❌ Not authenticated. Please sign in with Google to view billing data.');
+      } else if (err.message?.includes('NetworkError') || err.message?.includes('Failed to fetch')) {
+        setError('❌ Network error. Please check your connection and ensure the backend server is running.');
+      } else {
+        setError(`❌ Failed to load billing data: ${errorMessage}`);
+      }
     } finally {
       setLoading(false);
+      console.log('🏁 [BillingPage] fetchBillingData completed, loading:', false);
     }
   };
 
@@ -497,7 +545,30 @@ const BillingPage: React.FC = () => {
   }
 
   if (!billingData) {
-    return null;
+    return (
+      <div className="billing-page">
+        <div className="loading">No billing data available. Please wait...</div>
+      </div>
+    );
+  }
+  
+  // Handle empty transactions case
+  if (!billingData.transactions || billingData.transactions.length === 0) {
+    return (
+      <div className="billing-page">
+        <div className="billing-header">
+          <h1>💰 Billing Dashboard</h1>
+          <p style={{ color: '#666', marginTop: '8px' }}>
+            {billingData.message || 'No transactions found'}
+          </p>
+        </div>
+        <div className="info-box" style={{ marginTop: '20px', padding: '20px', background: '#f5f5f5', borderRadius: '8px' }}>
+          <h3 style={{ marginTop: 0 }}>📊 No Billing Data Yet</h3>
+          <p>Start using the chat to generate billing records. All API usage is automatically tracked.</p>
+          <button onClick={fetchBillingData} style={{ marginTop: '15px' }}>🔄 Refresh</button>
+        </div>
+      </div>
+    );
   }
 
   // Apply local filtering
@@ -520,34 +591,66 @@ const BillingPage: React.FC = () => {
 
   // Calculate totals from filtered data
   const calculateFilteredTotals = (transactions: Transaction[]) => {
-    const byType: Record<string, { cost: number; count: number }> = {};
-    const byProvider: Record<string, { cost: number; count: number }> = {};
-    const byModel: Record<string, { cost: number; count: number }> = {};
+    const byType: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number }> = {};
+    const byProvider: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number }> = {};
+    const byModel: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number; provider: string }> = {};
     let totalCost = 0;
     let totalTokens = 0;
+    let totalTokensIn = 0;
+    let totalTokensOut = 0;
+    
+    // Count unique request IDs for user queries
+    const uniqueRequestIds = new Set(
+      transactions
+        .filter(tx => tx.requestId && tx.requestId !== '')
+        .map(tx => tx.requestId)
+    );
+    const totalUserQueries = uniqueRequestIds.size;
+    const totalLLMCalls = transactions.length;
 
     transactions.forEach(tx => {
       totalCost += tx.cost;
-      totalTokens += tx.totalTokens;
+      totalTokens += tx.totalTokens || 0;
+      totalTokensIn += tx.tokensIn || 0;
+      totalTokensOut += tx.tokensOut || 0;
 
       // By type
       const type = String(tx.type);
-      if (!byType[type]) byType[type] = { cost: 0, count: 0 };
+      if (!byType[type]) byType[type] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0 };
       byType[type].cost += tx.cost;
+      byType[type].tokens += tx.totalTokens || 0;
+      byType[type].tokensIn += tx.tokensIn || 0;
+      byType[type].tokensOut += tx.tokensOut || 0;
       byType[type].count += 1;
 
       // By provider
-      if (!byProvider[tx.provider]) byProvider[tx.provider] = { cost: 0, count: 0 };
+      if (!byProvider[tx.provider]) byProvider[tx.provider] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0 };
       byProvider[tx.provider].cost += tx.cost;
+      byProvider[tx.provider].tokens += tx.totalTokens || 0;
+      byProvider[tx.provider].tokensIn += tx.tokensIn || 0;
+      byProvider[tx.provider].tokensOut += tx.tokensOut || 0;
       byProvider[tx.provider].count += 1;
 
-      // By model
-      if (!byModel[tx.model]) byModel[tx.model] = { cost: 0, count: 0 };
+      // By model (with provider information)
+      if (!byModel[tx.model]) byModel[tx.model] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0, provider: tx.provider };
       byModel[tx.model].cost += tx.cost;
+      byModel[tx.model].tokens += tx.totalTokens || 0;
+      byModel[tx.model].tokensIn += tx.tokensIn || 0;
+      byModel[tx.model].tokensOut += tx.tokensOut || 0;
       byModel[tx.model].count += 1;
     });
 
-    return { totalCost, totalTokens, byType, byProvider, byModel };
+    return { 
+      totalCost, 
+      totalTokens, 
+      totalTokensIn, 
+      totalTokensOut, 
+      totalUserQueries, 
+      totalLLMCalls, 
+      byType, 
+      byProvider, 
+      byModel 
+    };
   };
 
   const filteredTotals = calculateFilteredTotals(filteredTransactions);
@@ -809,10 +912,16 @@ const BillingPage: React.FC = () => {
             <div className="summary-card">
               <div className="summary-label">Total Tokens</div>
               <div className="summary-value">{filteredTotals.totalTokens.toLocaleString()}</div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                In: {filteredTotals.totalTokensIn.toLocaleString()} | Out: {filteredTotals.totalTokensOut.toLocaleString()}
+              </div>
             </div>
             <div className="summary-card">
               <div className="summary-label">Total Requests</div>
-              <div className="summary-value">{filteredTransactions.length}</div>
+              <div className="summary-value">{filteredTotals.totalUserQueries} / {filteredTotals.totalLLMCalls}</div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                User Queries / LLM Calls
+              </div>
             </div>
           </div>
 
@@ -824,6 +933,9 @@ const BillingPage: React.FC = () => {
                   <tr>
                     <th>Type</th>
                     <th>Requests</th>
+                    <th>Tokens In</th>
+                    <th>Tokens Out</th>
+                    <th>Total Tokens</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
@@ -832,6 +944,9 @@ const BillingPage: React.FC = () => {
                     <tr key={type}>
                       <td>{type}</td>
                       <td>{data.count}</td>
+                      <td>{data.tokensIn.toLocaleString()}</td>
+                      <td>{data.tokensOut.toLocaleString()}</td>
+                      <td>{data.tokens.toLocaleString()}</td>
                       <td>${data.cost.toFixed(4)}</td>
                     </tr>
                   ))}
@@ -848,6 +963,9 @@ const BillingPage: React.FC = () => {
                   <tr>
                     <th>Provider</th>
                     <th>Requests</th>
+                    <th>Tokens In</th>
+                    <th>Tokens Out</th>
+                    <th>Total Tokens</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
@@ -856,6 +974,9 @@ const BillingPage: React.FC = () => {
                     <tr key={provider}>
                       <td>{provider}</td>
                       <td>{data.count}</td>
+                      <td>{data.tokensIn.toLocaleString()}</td>
+                      <td>{data.tokensOut.toLocaleString()}</td>
+                      <td>{data.tokens.toLocaleString()}</td>
                       <td>${data.cost.toFixed(4)}</td>
                     </tr>
                   ))}
@@ -870,19 +991,35 @@ const BillingPage: React.FC = () => {
               <table className="breakdown-table">
                 <thead>
                   <tr>
+                    <th>Provider</th>
                     <th>Model</th>
                     <th>Requests</th>
+                    <th>Tokens In</th>
+                    <th>Tokens Out</th>
+                    <th>Total Tokens</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(filteredTotals.byModel).map(([model, data]) => (
-                    <tr key={model}>
-                      <td>{model}</td>
-                      <td>{data.count}</td>
-                      <td>${data.cost.toFixed(4)}</td>
-                    </tr>
-                  ))}
+                  {/* Group models by provider and sort */}
+                  {Object.entries(filteredTotals.byModel)
+                    .sort((a, b) => {
+                      // Sort by provider first, then by model name
+                      const providerCompare = a[1].provider.localeCompare(b[1].provider);
+                      if (providerCompare !== 0) return providerCompare;
+                      return a[0].localeCompare(b[0]);
+                    })
+                    .map(([model, data]) => (
+                      <tr key={model}>
+                        <td>{data.provider}</td>
+                        <td>{model}</td>
+                        <td>{data.count}</td>
+                        <td>{data.tokensIn.toLocaleString()}</td>
+                        <td>{data.tokensOut.toLocaleString()}</td>
+                        <td>{data.tokens.toLocaleString()}</td>
+                        <td>${data.cost.toFixed(4)}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>

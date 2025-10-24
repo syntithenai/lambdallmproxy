@@ -3,6 +3,7 @@ import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
 import { useCast } from '../contexts/CastContext';
 import { useTTS } from '../contexts/TTSContext';
+import { useAuth } from '../contexts/AuthContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { StorageStats } from './StorageStats';
@@ -24,6 +25,7 @@ import { getCachedApiBase } from '../utils/api';
 
 export const SwagPage: React.FC = () => {
   const { showSuccess, showError, showWarning } = useToast();
+  const { getToken } = useAuth();
   const { 
     snippets,
     addSnippet,
@@ -103,13 +105,13 @@ export const SwagPage: React.FC = () => {
   
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
-  const [dragCounter, setDragCounter] = useState(0);
+  const [_dragCounter, setDragCounter] = useState(0);
   
   // Confirmation dialog state for tag deletion
   const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState(false);
   
   // Load RAG config for similarity threshold
-  const [ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
+  const [_ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
   
   useEffect(() => {
     const loadRagConfig = () => {
@@ -203,11 +205,6 @@ export const SwagPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleOpenDoc = (docId: string) => {
-    // Open Google Doc in new tab
-    window.open(`https://docs.google.com/document/d/${docId}/edit`, '_blank');
   };
 
   const handleCreateDoc = async () => {
@@ -742,10 +739,14 @@ export const SwagPage: React.FC = () => {
         console.log('🔄 Fetching new query embedding from backend');
         // Get query embedding from backend (use auto-detected API base)
         const apiUrl = await getCachedApiBase();
+        const token = await getToken();
         console.log('🌐 Using API URL for embed-query:', apiUrl);
         const response = await fetch(`${apiUrl}/rag/embed-query`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ query: vectorSearchQuery })
         });
         

@@ -41,6 +41,9 @@ export interface ProgressEvent {
     textLength?: number;
     completedChunks?: number;
     error?: string;
+    linkCount?: number;
+    imageCount?: number;
+    totalTime?: number;
   };
   timestamp?: string;
 }

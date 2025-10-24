@@ -39,6 +39,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSwag } from '../contexts/SwagContext';
+import { useAuth } from '../contexts/AuthContext';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
@@ -56,8 +57,9 @@ interface SnippetSelectorProps {
 export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
   selectedSnippetIds,
   onSelectionChange,
-  userEmail
+  userEmail: _userEmail
 }) => {
+  const { getToken } = useAuth();
   const { snippets, getAllTags } = useSwag();
   
   // Search mode: 'text' for keyword search, 'vector' for semantic search
@@ -118,9 +120,13 @@ export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
     try {
       // Get query embedding from backend (use auto-detected API base)
       const apiUrl = await getCachedApiBase();
+      const token = await getToken();
       const response = await fetch(`${apiUrl}/rag/embed-query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ query: vectorQuery })
       });
       

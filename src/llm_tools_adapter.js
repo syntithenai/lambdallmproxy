@@ -170,6 +170,31 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
   const frequency_penalty = options?.frequency_penalty ?? 0.3;
   const presence_penalty = options?.presence_penalty ?? 0.4;
 
+  // STEP 1: Validate model against allowedModels restriction if provider config provided
+  if (options?.providerConfig) {
+    const providerConfig = options.providerConfig;
+    
+    // Extract model name without provider prefix for comparison
+    let modelNameWithoutPrefix = model;
+    if (model.includes(':')) {
+      modelNameWithoutPrefix = model.split(':')[1];
+    }
+    
+    // Check if model is allowed (empty/null = allow all, non-empty array = filter)
+    if (providerConfig.allowedModels && Array.isArray(providerConfig.allowedModels) && providerConfig.allowedModels.length > 0) {
+      const isAllowed = providerConfig.allowedModels.includes(modelNameWithoutPrefix);
+      if (!isAllowed) {
+        const error = new Error(`Model "${modelNameWithoutPrefix}" is not in the allowed models list for provider "${providerConfig.type}". Allowed models: ${providerConfig.allowedModels.join(', ')}`);
+        error.code = 'MODEL_NOT_ALLOWED';
+        error.provider = providerConfig.type;
+        error.requestedModel = modelNameWithoutPrefix;
+        error.allowedModels = providerConfig.allowedModels;
+        throw error;
+      }
+      console.log(`✅ Model "${modelNameWithoutPrefix}" is allowed for provider "${providerConfig.type}"`);
+    }
+  }
+
   // Auto-detect and add provider prefix if missing
   let normalizedModel = model;
   if (!isOpenAIModel(model) && !isGroqModel(model) && !isGeminiModel(model)) {

@@ -67,7 +67,7 @@ exports.handler = async (event, responseStream, context) => {
 
         // POST /rag/embed-query - Generate embedding for search query
         if (path === '/rag/embed-query' && method === 'POST') {
-            return await handleEmbedQuery(body, responseStream);
+            return await handleEmbedQuery(event, body, responseStream);
         }
 
         // POST /rag/sync-embeddings - Sync embeddings to/from Google Sheets
@@ -511,8 +511,25 @@ async function handleGetUserSpreadsheet(event, responseStream) {
  * Handle embed query request
  * Generates embedding for a search query
  */
-async function handleEmbedQuery(body, responseStream) {
+async function handleEmbedQuery(event, body, responseStream) {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') ? globalThis.awslambda : require('aws-lambda');
+    
+    // Extract user email and token for logging
+    let userEmail = 'unknown';
+    let googleToken = null;
+    try {
+        const authHeader = event.headers?.authorization || event.headers?.Authorization;
+        if (authHeader) {
+            const authResult = await authenticateRequest(authHeader);
+            userEmail = authResult.email || 'unknown';
+            // Extract OAuth token
+            if (authHeader.startsWith('Bearer ')) {
+                googleToken = authHeader.substring(7);
+            }
+        }
+    } catch (authError) {
+        console.log('⚠️ Could not authenticate for logging:', authError.message);
+    }
     
     try {
         const { query } = body;
@@ -539,6 +556,30 @@ async function handleEmbedQuery(body, responseStream) {
             process.env.OPENAI_API_KEY
         );
         const duration = Date.now() - startTime;
+        
+        // Log to Google Sheets
+        try {
+            const totalCost = calculateCost('text-embedding-3-small', result.tokens || 0, 0);
+            
+            await logToBothSheets(googleToken, {
+                userEmail,
+                provider: 'openai',
+                model: 'text-embedding-3-small',
+                promptTokens: result.tokens || 0,
+                completionTokens: 0,
+                totalTokens: result.tokens || 0,
+                cost: totalCost,
+                duration: duration / 1000, // Convert ms to seconds
+                type: 'embedding',
+                metadata: {
+                    queryLength: query.length,
+                    embeddingDimensions: result.embedding?.length || 0
+                }
+            });
+            console.log(`✅ Logged query embedding: ${result.tokens} tokens, $${totalCost.toFixed(6)}`);
+        } catch (logError) {
+            console.error('⚠️ Failed to log query embedding to sheets:', logError.message);
+        }
         
         // Create llmApiCall object for transparency
         const llmApiCall = {

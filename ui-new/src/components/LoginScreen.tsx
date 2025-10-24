@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { GitHubLink } from './GitHubLink';
 
 export const LoginScreen: React.FC = () => {
   const { login } = useAuth();
@@ -105,6 +106,9 @@ export const LoginScreen: React.FC = () => {
           Secure authentication powered by Google
         </div>
       </div>
+
+      {/* GitHub Link */}
+      <GitHubLink />
     </div>
   );
 };

@@ -23,8 +23,11 @@ import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
 import { SwagPage } from './components/SwagPage';
 import BillingPage from './components/BillingPage';
+import { HelpPage } from './components/HelpPage';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 import ProviderSetupGate from './components/ProviderSetupGate';
 import { GlobalTTSStopButton } from './components/ReadButton';
+import { GitHubLink } from './components/GitHubLink';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
 // Create a wrapper component that can access auth context
@@ -38,6 +41,7 @@ function AppContent() {
   const [showMCPDialog, setShowMCPDialog] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
+  const [isChatLoading, setIsChatLoading] = useState(false);
   
   // Tool configuration - shared between ChatTab and SettingsModal
   const [enabledTools, setEnabledTools] = useLocalStorage<{
@@ -51,6 +55,8 @@ function AppContent() {
     search_knowledge_base: boolean;
     manage_todos: boolean;
     manage_snippets: boolean;
+    ask_llm: boolean;
+    generate_reasoning_chain: boolean;
   }>('chat_enabled_tools', {
     web_search: true,
     execute_js: true,
@@ -61,7 +67,9 @@ function AppContent() {
     generate_image: true,
     search_knowledge_base: false, // Independent server-side knowledge base tool
     manage_todos: true, // Backend todo queue management
-    manage_snippets: true // Google Sheets snippets storage
+    manage_snippets: true, // Google Sheets snippets storage
+    ask_llm: false, // Recursive LLM agent - DISABLED by default due to high token usage
+    generate_reasoning_chain: false // Deep reasoning chains - DISABLED by default due to EXTREME token usage
   });
   
   // NOTE: search_knowledge_base is now independent from the local RAG system
@@ -199,8 +207,13 @@ function AppContent() {
             {location.pathname !== '/billing' && (
               <button
                 onClick={() => navigate('/billing')}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
-                title={usage ? `You have used $${usage.totalCost.toFixed(2)} of your $${usage.creditLimit.toFixed(2)} credit` : 'View billing and usage details'}
+                disabled={isChatLoading}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
+                  isChatLoading 
+                    ? 'bg-gray-300 dark:bg-gray-800 text-gray-500 dark:text-gray-600 cursor-not-allowed opacity-50' 
+                    : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                }`}
+                title={isChatLoading ? 'Cannot navigate during active chat request' : (usage ? `You have used $${usage.totalCost.toFixed(2)} of your $${usage.creditLimit.toFixed(2)} credit` : 'View billing and usage details')}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -231,8 +244,13 @@ function AppContent() {
                 </button>
                 <button
                   onClick={() => navigate('/swag')}
-                  className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm font-medium"
-                  title="Content Swag - Save and manage snippets"
+                  disabled={isChatLoading}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
+                    isChatLoading
+                      ? 'bg-blue-400 text-white cursor-not-allowed opacity-50'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                  title={isChatLoading ? 'Cannot navigate during active chat request' : 'Content Swag - Save and manage snippets'}
                 >
                   {/* Sack/bag icon */}
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -255,8 +273,13 @@ function AppContent() {
             ) : (
               <button
                 onClick={() => navigate('/swag')}
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm font-medium"
-                title="Content Swag - Save and manage snippets"
+                disabled={isChatLoading}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
+                  isChatLoading
+                    ? 'bg-blue-400 text-white cursor-not-allowed opacity-50'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+                title={isChatLoading ? 'Cannot navigate during active chat request' : 'Content Swag - Save and manage snippets'}
               >
                 {/* Sack/bag icon */}
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -265,6 +288,26 @@ function AppContent() {
                 <span className="text-sm">Swag</span>
               </button>
             )}
+            
+            {/* Help Button - Always visible */}
+            {(location.pathname === '/help' || location.pathname === '/privacy') ? null : (
+              <button
+                onClick={() => navigate('/help')}
+                disabled={isChatLoading}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
+                  isChatLoading
+                    ? 'bg-purple-400 text-white cursor-not-allowed opacity-50'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                }`}
+                title={isChatLoading ? 'Cannot navigate during active chat request' : 'Help & Documentation'}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm">Help</span>
+              </button>
+            )}
+            
             <button
               onClick={() => setShowSettings(true)}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -298,11 +341,14 @@ function AppContent() {
                   setEnabledTools={setEnabledTools}
                   showMCPDialog={showMCPDialog}
                   setShowMCPDialog={setShowMCPDialog}
+                  onLoadingChange={setIsChatLoading}
                 />
               } 
             />
             <Route path="/swag" element={<SwagPage />} />
             <Route path="/billing" element={<BillingPage />} />
+            <Route path="/help" element={<HelpPage />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
           </Routes>
         </div>
       </main>
@@ -315,6 +361,9 @@ function AppContent() {
         setEnabledTools={setEnabledTools}
         onOpenMCPDialog={() => setShowMCPDialog(true)}
       />
+
+      {/* GitHub Link - Fixed bottom right */}
+      <GitHubLink />
     </div>
   );
 }

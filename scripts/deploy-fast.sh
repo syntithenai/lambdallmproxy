@@ -62,10 +62,11 @@ cp "$OLDPWD"/src/tavily-search.js ./ 2>/dev/null || true
 cp "$OLDPWD"/src/pricing_scraper.js ./
 cp "$OLDPWD"/src/model-selector.js ./
 cp "$OLDPWD"/src/groq-rate-limits.js ./
+cp "$OLDPWD"/src/gemini-rate-limits.js ./
 cp "$OLDPWD"/src/youtube-api.js ./ 2>/dev/null || true
 
 # Copy modular components
-mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers guardrails providers rag
+mkdir -p config utils services streaming endpoints tools model-selection routing retry mcp image-providers guardrails providers rag scrapers
 cp -r "$OLDPWD"/src/config/* ./config/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/utils/* ./utils/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/services/* ./services/ 2>/dev/null || true
@@ -80,6 +81,7 @@ cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/guardrails/* ./guardrails/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/providers/* ./providers/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/rag/* ./rag/ 2>/dev/null || true
+cp -r "$OLDPWD"/src/scrapers/* ./scrapers/ 2>/dev/null || true
 
 # Copy PROVIDER_CATALOG.json (required for image generation)
 if cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null; then

@@ -2,19 +2,25 @@
  * Usage Tracking Endpoint
  * 
  * Provides per-user cost tracking by reading from Google Sheets logging
- * Returns total cost and credit limit for authenticated users
+ * Returns current credit balance (credits - spending) for authenticated users
+ * 
+ * ✅ CREDIT SYSTEM: Replaced hard $3 limit with dynamic credit balance
  */
 
 const { verifyGoogleToken } = require('../auth');
 const { getUserTotalCost } = require('../services/google-sheets-logger');
+const { getCachedCreditBalance } = require('../utils/credit-cache');
 
-const CREDIT_LIMIT = 3.00; // $3 credit limit per user
+const CREDIT_LIMIT = 3.00; // $3 credit limit per user (DEPRECATED - kept for backward compatibility)
 
 /**
- * GET /usage - Get user's total LLM usage cost
+ * GET /usage - Get user's credit balance and spending
  * 
- * Reads from Google Sheets log and aggregates cost by user email
- * Returns { totalCost, creditLimit, remaining, exceeded }
+ * ✅ CREDIT SYSTEM: Returns credit balance instead of hard limit
+ * Reads from Google Sheets log and calculates:
+ * - totalSpent: Sum of all usage costs
+ * - creditBalance: Sum of credits added - total spent
+ * - exceeded: true if balance <= 0
  * 
  * Requires: Authorization: Bearer <google_token>
  */
@@ -65,23 +71,24 @@ async function handleUsageRequest(event) {
 
         console.log(`📊 Fetching usage for: ${userEmail}`);
 
-        // Get total cost from Google Sheets
-        const totalCost = await getUserTotalCost(userEmail);
+        // Get total spending and credit balance (cached for performance)
+        const totalSpent = await getUserTotalCost(userEmail);
+        const creditBalance = await getCachedCreditBalance(userEmail);
         
-        // Calculate remaining credit
-        const remaining = Math.max(0, CREDIT_LIMIT - totalCost);
-        const exceeded = totalCost >= CREDIT_LIMIT;
+        // User has exceeded limit if balance is zero or negative
+        const exceeded = creditBalance <= 0;
 
         const response = {
             userEmail,
-            totalCost: parseFloat(totalCost.toFixed(4)),
-            creditLimit: CREDIT_LIMIT,
-            remaining: parseFloat(remaining.toFixed(4)),
+            totalSpent: parseFloat(totalSpent.toFixed(4)),
+            creditBalance: parseFloat(creditBalance.toFixed(4)),
+            creditLimit: CREDIT_LIMIT, // Deprecated, kept for backward compatibility
+            remaining: parseFloat(creditBalance.toFixed(4)), // Alias for creditBalance
             exceeded,
             timestamp: new Date().toISOString()
         };
 
-        console.log(`💰 Usage for ${userEmail}: $${totalCost.toFixed(4)} / $${CREDIT_LIMIT} (${exceeded ? 'EXCEEDED' : 'OK'})`);
+        console.log(`💰 Usage for ${userEmail}: $${totalSpent.toFixed(4)} spent, $${creditBalance.toFixed(4)} remaining (${exceeded ? 'EXCEEDED' : 'OK'})`);
 
         return {
             statusCode: 200,

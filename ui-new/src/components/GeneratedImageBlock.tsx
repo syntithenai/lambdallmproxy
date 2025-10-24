@@ -19,11 +19,13 @@ interface ImageGenerationData {
   imageUrl?: string;
   base64?: string; // Base64 encoded image data for storage
   revisedPrompt?: string;
+  phase?: string; // Generation phase for progress tracking
+  estimatedSeconds?: number; // Estimated completion time
   llmApiCall?: {
     request?: any;
     response?: any;
   };
-  status: 'pending' | 'generating' | 'complete' | 'error';
+  status: 'pending' | 'generating' | 'downloading' | 'complete' | 'error';
   error?: string;
   fallbackUsed?: boolean;
   availableAlternatives?: Array<{

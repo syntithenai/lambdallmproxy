@@ -14,17 +14,36 @@ echo "📦 Installing development dependencies..."
 npm install --save-dev playwright playwright-extra playwright-extra-plugin-stealth
 npm install --save-dev selenium-webdriver chromedriver
 
-# Setup Python environment for undetected-chromedriver
+# Setup Python environment for Selenium YouTube caption scraper
 if command -v python3 &> /dev/null; then
     echo "🐍 Setting up Python environment..."
-    python3 -m venv .venv
-    source .venv/bin/activate
+    
+    # Check if python3-venv is available
+    if ! python3 -m venv --help &> /dev/null; then
+        echo "⚠️  python3-venv not installed. Installing..."
+        if command -v apt &> /dev/null; then
+            sudo apt install -y python3-venv python3-full
+        else
+            echo "❌ Please install python3-venv manually for your system"
+            exit 1
+        fi
+    fi
+    
+    # Create virtual environment in project root (venv, not .venv)
+    if [ ! -d "venv" ]; then
+        python3 -m venv venv
+        echo "✅ Created Python virtual environment: venv/"
+    fi
+    
+    # Activate and install dependencies
+    source venv/bin/activate
     pip install --upgrade pip
-    pip install undetected-chromedriver selenium
-    echo "✅ Python environment ready"
+    pip install selenium undetected-chromedriver
+    deactivate
+    echo "✅ Python environment ready (venv/)"
 else
-    echo "⚠️  Python3 not found. Skipping Tier 3 (Selenium) setup."
-    echo "   Install Python 3.8+ to use undetected-chromedriver."
+    echo "⚠️  Python3 not found. Skipping Selenium YouTube scraper setup."
+    echo "   Install Python 3.8+ to use Selenium caption extraction."
 fi
 
 # Install Playwright browsers

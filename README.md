@@ -1,6 +1,530 @@
-# Lambda LLM Proxy & Intelligent Search System
+````markdown
+# Lambda LLM Proxy - AI Research Agent with Deep Knowledge Integration
 
-An advanced AWS Lambda function that combines comprehensive web search with large language model processing to provide thorough, well-researched answers with citations and source references.
+An advanced AI research assistant that combines comprehensive web scraping, agentic workflows, and knowledge management to deliver quality referenced, fact-checked, broad and deep knowledge tailored to your needs. Built for building large structured documents with confidence.
+
+## 🎯 Core Mission
+
+**Bringing quality referenced, fact-checked, broad and deep knowledge attuned to the audience, with the capacity to build large structured documents.**
+
+This system goes beyond simple Q&A - it's designed for researchers, writers, and knowledge workers who need:
+- **Comprehensive Research**: Multi-angle search with iterative refinement
+- **Fact-Checked Answers**: Every claim backed by authoritative sources
+- **Deep Context**: Integration with personal and organizational knowledge bases
+- **Document Building**: Planning workflows with todos and structured snippets
+- **Source Transparency**: Full citation trails and extraction metadata
+
+## ✨ Defining Features
+
+### 🌐 Live Recent Relevant Data with Tiered Scraping
+
+Access the most current information from across the web with an intelligent scraping system:
+
+- **Multi-Tier Content Extraction**: Falls back gracefully from lightweight to heavyweight methods
+  - **Tier 1**: Direct HTTP fetch with intelligent HTML parsing
+  - **Tier 2**: Reader mode extraction for article-focused sites
+  - **Tier 3**: Browser automation via local Puppeteer service
+- **Nearly Universal Compatibility**: Read content from almost all websites, including JavaScript-heavy SPAs
+- **Local Puppeteer Service**: Run headless Chrome locally for scraping sites that block standard requests
+  - Handles dynamic content, authentication walls, anti-scraping protections
+  - Configurable via `PUPPETEER_ENDPOINT` environment variable
+  - Optional - system degrades gracefully if unavailable
+- **Smart Content Extraction**: Strips ads, navigation, and boilerplate to focus on main content
+- **Fresh Data**: Always retrieve the latest information, not outdated cached results
+
+**Key Technologies**: DuckDuckGo search, JSDOM parsing, Readability.js, optional Puppeteer integration
+
+### 🤖 Agentic Workflows with Tool Calling
+
+The AI doesn't just answer - it reasons and acts:
+
+- **Intelligent Tool Selection**: AI autonomously decides which tools to use and when
+- **Iterative Refinement**: Multiple search passes to ensure comprehensive coverage
+- **Self-Evaluation**: Assesses response quality and decides if more research is needed
+- **Available Tools**:
+  - `search_web`: Multi-query web search with content extraction
+  - `scrape_url`: Direct page scraping with fallback tiers
+  - `execute_js`: Safe JavaScript execution for data manipulation
+  - `generate_chart`: Create visualizations from data
+  - `generate_image`: AI image generation via multiple providers
+  - `transcribe_url`: Audio/video transcription with timestamp support
+  - `search_knowledge_base`: Query internal documentation
+  - `manage_todos`: Backend todo queue management
+  - `manage_snippets`: Google Sheets snippet storage
+  - `ask_llm`: **⚠️ HIGH TOKEN USAGE** - Recursive LLM agent for complex multi-step queries
+    - Spawns sub-agent with full tool access
+    - Iterates up to 5 times for comprehensive answers
+    - Consumes 5-10x more tokens than direct responses
+    - Use for: deep research, multi-tool workflows, complex analysis
+  - `generate_reasoning_chain`: **⚠️⚠️ EXTREME TOKEN USAGE** - Advanced reasoning with transparency
+    - Uses o1-preview or DeepSeek-R1 with maximum reasoning depth
+    - Generates explicit step-by-step reasoning chains
+    - May trigger parallel asynchronous tool calls
+    - Consumes 10-50x more tokens than normal responses
+    - Charges for both reasoning AND output tokens
+    - Use for: mathematical proofs, logical analysis, strategic planning, debugging complex problems
+- **Continuation Logic**: Automatically continues research if initial results are insufficient
+- **Transparency**: Full tool execution logs and reasoning chains visible to users
+
+**Key Technologies**: OpenAI function calling, Groq models, multi-provider fallback
+
+### 📝 Document Building Workflows
+
+Transform research into structured documents with planning tools:
+
+- **Planning Page**: Visual todo management system
+  - Create, organize, and track research tasks
+  - Priority management and status tracking (not started, in progress, complete)
+  - Backend persistence with Google Sheets sync
+- **Snippet Management**: Save and organize key findings
+  - Tag and categorize research snippets
+  - Full-text search across saved content
+  - Export to structured document formats
+  - Sync with Google Sheets for backup and sharing
+- **Todo Integration**: Link todos to snippets for organized workflow
+- **Citation Tracking**: Automatic source attribution for every snippet
+
+**Key Technologies**: React-based planning UI, Google Sheets API, IndexedDB local storage
+
+### 🧠 Browser-Based RAG (Retrieval-Augmented Generation)
+
+Inject your own content into AI queries automatically:
+
+- **Client-Side Knowledge Base**: Store documents, PDFs, notes in browser IndexedDB
+- **Automatic Context Injection**: AI automatically searches your knowledge base when relevant
+- **Explicit Reference**: Users can explicitly trigger knowledge base searches
+- **Swag Snippets**: Save important findings directly into your personal knowledge base
+  - Organize by tags, categories, projects
+  - Full-text search across all snippets
+  - Sync to Google Drive for backup and sharing
+- **Privacy-First**: All data stored locally in browser, no server upload required
+- **Multi-Format Support**: Markdown, PDF, TXT, HTML, CSV, JSON
+
+**Key Technologies**: IndexedDB, LangChain.js, OpenAI embeddings (client-side), vector search
+
+### 🗄️ Server-Based RAG for Team Knowledge
+
+Scale knowledge sharing across your organization:
+
+- **Centralized Knowledge Base**: libSQL database with vector extension
+- **Team Documentation**: Ingest project docs, API references, best practices
+- **Fast Retrieval**: Sub-second searches with embedding cache (3ms for cached queries)
+- **Cost-Effective**: Query caching eliminates redundant embedding API calls
+- **CLI Tools**: Ingest, search, and manage documentation via command line
+- **Automatic Integration**: AI automatically searches server knowledge base when needed
+- **Source Attribution**: Full citation trails with document excerpts
+
+**Key Technologies**: libSQL with vector extension, OpenAI text-embedding-3-small, cosine similarity search
+
+### ☁️ Google Drive Integration
+
+Seamless sync and backup of your AI workspace:
+
+- **UI State Sync**: Preserve chat history, settings, and preferences across devices
+- **API Key Management**: Securely store provider API keys in your Google Drive
+  - OpenAI, Groq, Together AI, Replicate, Gemini
+  - Per-provider configuration (base URLs, models, quotas)
+  - Automatic sync on settings changes
+- **Local RAG Sync**: Backup swag snippets to Google Sheets
+  - Full-text search across synced snippets
+  - Tag-based organization
+  - Export to CSV/JSON for analysis
+- **Personal Billing Sheet**: Track your LLM usage in your own Google Sheet
+  - Detailed cost breakdown by provider, model, type
+  - Token usage analytics (input/output/total)
+  - Filter by date range, provider, or operation type
+  - Export for budgeting and analysis
+- **Privacy Control**: You control access - data stays in your Google Drive
+- **Automatic Backup**: Changes sync automatically when online
+
+**Key Technologies**: Google Drive API, Google Sheets API, OAuth 2.0, incremental sync
+
+### ⚖️ Provider Load Balancing with Fine-Grained Access Control
+
+Advanced multi-provider management with intelligent load distribution:
+
+- **Multi-Provider Pool**: Configure multiple LLM providers simultaneously
+  - OpenAI (GPT-4o, GPT-4o-mini, o1, o1-mini)
+  - Groq (Llama 3.1, Llama 3.3, Mixtral, Gemma, DeepSeek-R1)
+  - Google Gemini (Gemini 2.0 Flash, Gemini 2.5 Pro/Flash)
+  - Together AI, Replicate, Anthropic Claude
+  - 13+ provider configurations supported
+
+- **Automatic Load Balancing**: System intelligently distributes requests
+  - Round-robin selection within model categories
+  - Rate limit detection and automatic failover
+  - Health tracking with circuit breaker pattern
+  - Speed-based routing for fastest response times
+
+- **Fine-Grained Capability Control**: Per-provider feature flags
+  - **Chat**: Enable/disable providers for conversational AI
+  - **Embeddings**: Control which providers can generate embeddings
+  - **Image Generation**: Manage image model access (DALL-E, Flux, Stable Diffusion)
+  - **Transcription**: Configure audio/video transcription providers (Whisper variants)
+  - Independent capability control - disable chat but keep embeddings enabled
+
+- **Model Allowlists**: Restrict access to specific models per provider
+  - Security: Prevent expensive model usage (e.g., block o1-preview, allow only o1-mini)
+  - Cost Control: Limit to cheaper models (gpt-4o-mini only, no gpt-4o)
+  - Compliance: Enforce organizational model policies
+  - Example: Allow only `["gpt-4o-mini", "gpt-3.5-turbo"]` from OpenAI provider
+
+- **Rate Limit Management**: Intelligent throttling and recovery
+  - Per-model rate limit tracking (RPM, TPM, RPD)
+  - Automatic backoff with exponential retry
+  - Real-time availability checking before selection
+  - Proactive rate limit avoidance (checks before request)
+
+- **Circuit Breaker Protection**: Automatic unhealthy provider isolation
+  - Tracks consecutive failures per provider
+  - Temporary removal after threshold (default: 5 failures)
+  - Automatic recovery after timeout (default: 10 minutes)
+  - Prevents cascading failures across providers
+
+- **Cost Optimization**: Smart provider selection based on pricing
+  - Free tier prioritization (Groq, Gemini free)
+  - Cost-per-quality ratio analysis
+  - Automatic fallback to paid when free tier exhausted
+  - Transparent billing by provider and model
+
+**Configuration Example**:
+```javascript
+// Provider with fine-grained capabilities
+{
+  type: 'openai',
+  apiKey: 'sk-...',
+  capabilities: {
+    chat: true,           // Enable for chat
+    embeddings: true,     // Enable for RAG embeddings
+    imageGeneration: false, // Disable image generation
+    transcription: false  // Disable audio transcription
+  },
+  allowedModels: ['gpt-4o-mini', 'gpt-3.5-turbo'], // Only these models
+  enabled: true
+}
+```
+
+**Benefits**:
+- ✅ **No Single Point of Failure**: Automatic failover between providers
+- ✅ **Cost Control**: Free tier maximization + model restrictions
+- ✅ **Flexibility**: Mix and match provider strengths (Groq for speed, OpenAI for quality)
+- ✅ **Security**: Fine-grained access prevents unauthorized model usage
+- ✅ **Reliability**: Circuit breaker and health tracking ensure stability
+
+**Key Technologies**: Round-robin scheduling, circuit breaker pattern, rate limit tracking, provider health monitoring
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Node.js 20+** (required for ES modules)
+- **AWS Account** with Lambda access
+- **Google Cloud Project** for OAuth and Drive API
+- **API Keys** (at least one):
+  - OpenAI API key (recommended)
+  - Groq API key (free tier available)
+  - Together AI, Replicate, or Gemini (optional)
+
+### Installation
+
+**Complete setup in 3 commands:**
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/syntithenai/lambdallmproxy.git
+cd lambdallmproxy
+
+# 2. Run automated setup (installs dependencies, creates .env)
+make install
+
+# 3. Configure your credentials (see below)
+nano .env
+```
+
+### Configuration
+
+#### Required Environment Variables
+
+Edit the `.env` file created by `make install`:
+
+```bash
+# Google OAuth (REQUIRED for authentication)
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+ALLOWED_EMAILS=your-email@example.com,teammate@example.com
+
+# LLM Provider API Keys (at least one required)
+OPENAI_API_KEY=sk-proj-...
+GROQ_API_KEY=gsk_...
+
+# AWS Configuration (for deployment)
+AWS_REGION=us-east-1
+LAMBDA_FUNCTION_NAME=llmproxy
+```
+
+#### Getting Google Credentials
+
+1. **Create Google Cloud Project**:
+   - Visit [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select existing
+   - Enable APIs:
+     - Google Drive API
+     - Google Sheets API
+     - Google Identity Services
+
+2. **Create OAuth 2.0 Client ID**:
+   - Navigate to "Credentials" → "Create Credentials" → "OAuth client ID"
+   - Application type: "Web application"
+   - Authorized JavaScript origins: `http://localhost:8081`, your deployed URL
+   - Authorized redirect URIs: `http://localhost:8081/callback`
+   - Copy the **Client ID** to `GOOGLE_CLIENT_ID` in `.env`
+
+3. **Create Service Account** (for backend Google Sheets logging):
+   - Navigate to "Credentials" → "Create Credentials" → "Service Account"
+   - Download JSON key file
+   - Add path to `.env`:
+     ```bash
+     GOOGLE_SERVICE_ACCOUNT_JSON=/path/to/service-account-key.json
+     ```
+
+#### Getting AWS Credentials
+
+1. **Install AWS CLI**: https://aws.amazon.com/cli/
+
+2. **Configure AWS Profile**:
+   ```bash
+   aws configure
+   # Enter your Access Key ID, Secret Access Key, Region (us-east-1)
+   ```
+
+3. **Create Lambda Execution Role**:
+   ```bash
+   aws iam create-role --role-name lambda-llmproxy-role \
+     --assume-role-policy-document '{
+       "Version": "2012-10-17",
+       "Statement": [{
+         "Effect": "Allow",
+         "Principal": {"Service": "lambda.amazonaws.com"},
+         "Action": "sts:AssumeRole"
+       }]
+     }'
+   
+   # Attach basic execution policy
+   aws iam attach-role-policy --role-name lambda-llmproxy-role \
+     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+   ```
+
+4. **Add role ARN to `.env`**:
+   ```bash
+   AWS_LAMBDA_ROLE=arn:aws:iam::123456789012:role/lambda-llmproxy-role
+   ```
+
+### Development Workflow
+
+```bash
+# Start local development servers (backend + frontend)
+make dev
+```
+
+This starts:
+- **Backend**: `http://localhost:3000` (Lambda proxy with hot reload)
+- **Frontend**: `http://localhost:8081` (Vite dev server with HMR)
+
+**Development cycle:**
+1. Edit code in `src/` (backend) or `ui-new/src/` (frontend)
+2. Changes auto-reload via nodemon (backend) or Vite HMR (frontend)
+3. Test at `http://localhost:8081`
+4. Deploy only when ready for production
+
+### Production Deployment
+
+**Deploy to AWS Lambda:**
+
+```bash
+# First-time: Create Lambda Layer with dependencies (~2 min, one-time)
+make setup-layer
+
+# Deploy backend code only (~10 seconds)
+make deploy-lambda-fast
+
+# Deploy environment variables to Lambda
+make deploy-env
+
+# Deploy frontend to GitHub Pages
+make deploy-ui
+```
+
+**Deployment targets:**
+- **Backend**: AWS Lambda Function URL
+- **Frontend**: GitHub Pages (free static hosting)
+
+## 📚 Common Commands
+
+```bash
+# Installation & Setup
+make install             # Install all dependencies
+make setup-layer         # Create Lambda Layer (one-time, ~2 min)
+
+# Local Development (Primary Workflow)
+make dev                 # Start backend + frontend with hot reload
+make run-lambda-local    # Start backend only (port 3000)
+make serve-ui            # Start frontend only (port 8081)
+
+# Production Deployment
+make deploy-lambda-fast  # Deploy backend code (~10 sec)
+make deploy-lambda       # Full backend deploy with deps (~3 min)
+make deploy-ui           # Build and deploy UI to GitHub Pages
+make deploy-env          # Sync .env variables to Lambda
+
+# Knowledge Base (RAG)
+make rag-ingest          # Ingest docs from knowledge-base/
+make rag-search QUERY="how to deploy"  # Search knowledge base
+make rag-stats           # Show database statistics
+make rag-list            # List all documents
+
+# Debugging & Monitoring
+make logs                # View recent Lambda logs
+make logs-tail           # Tail Lambda logs in real-time
+make test                # Run test suite
+make help                # Show all commands
+```
+
+## 🏗️ Architecture
+
+### System Components
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    React Frontend (UI)                   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
+│  │   Chat   │  │ Planning │  │   Swag   │  │ Billing │ │
+│  └──────────┘  └──────────┘  └──────────┘  └─────────┘ │
+│         │              │            │            │       │
+│         └──────────────┴────────────┴────────────┘       │
+│                        │                                 │
+│                 ┌──────▼──────┐                          │
+│                 │ IndexedDB    │ (Local RAG)             │
+│                 │ Knowledge    │                         │
+│                 └──────────────┘                         │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+                          │ HTTPS/SSE
+                          │
+┌─────────────────────────▼───────────────────────────────┐
+│              AWS Lambda Backend (Serverless)             │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │            Agentic Workflow Engine                │  │
+│  │  ┌────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ │  │
+│  │  │ Search │ │  Scrape  │ │   LLM    │ │  Tools │ │  │
+│  │  └────────┘ └──────────┘ └──────────┘ └────────┘ │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │      Provider Load Balancer & Health Monitor     │  │
+│  │  ┌──────────┐ ┌────────────┐ ┌──────────────┐  │  │
+│  │  │ Round    │ │ Rate Limit │ │  Circuit     │  │  │
+│  │  │ Robin    │ │ Tracker    │ │  Breaker     │  │  │
+│  │  └──────────┘ └────────────┘ └──────────────┘  │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │           Server-Side RAG (libSQL)                │  │
+│  │  ┌────────────┐  ┌─────────────┐  ┌───────────┐ │  │
+│  │  │ Vector DB  │  │  Embeddings │  │   Cache   │ │  │
+│  │  └────────────┘  └─────────────┘  └───────────┘ │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          │ API Calls (Load Balanced)
+                          │
+┌─────────────────────────▼───────────────────────────────┐
+│                  External Services                       │
+│  ┌────────┐ ┌─────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │ OpenAI │ │  Groq   │ │ Together │ │ Google APIs  │  │
+│  └────────┘ └─────────┘ └──────────┘ └──────────────┘  │
+│  ┌──────────┐ ┌──────────┐ ┌───────────────────────┐  │
+│  │Replicate│ │Anthropic│ │   DuckDuckGo Search    │  │
+│  └──────────┘ └──────────┘ └───────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │        Puppeteer Service (Local/Optional)        │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Provider Load Balancing Flow
+
+```
+Request → Request Analysis → Model Selection Strategy
+                                      ↓
+                    ┌─────────────────┴─────────────────┐
+                    │   Filter by Capabilities          │
+                    │   (chat/embeddings/image/etc)     │
+                    └─────────────────┬─────────────────┘
+                                      ↓
+                    ┌─────────────────┴─────────────────┐
+                    │   Apply Model Allowlist           │
+                    │   (per-provider restrictions)     │
+                    └─────────────────┬─────────────────┘
+                                      ↓
+                    ┌─────────────────┴─────────────────┐
+                    │   Check Rate Limits               │
+                    │   (RPM/TPM/RPD tracking)          │
+                    └─────────────────┬─────────────────┘
+                                      ↓
+                    ┌─────────────────┴─────────────────┐
+                    │   Check Health Status             │
+                    │   (circuit breaker state)         │
+                    └─────────────────┬─────────────────┘
+                                      ↓
+                    ┌─────────────────┴─────────────────┐
+                    │   Round-Robin Selection           │
+                    │   (distribute load evenly)        │
+                    └─────────────────┬─────────────────┘
+                                      ↓
+                              Selected Provider/Model
+                                      ↓
+                        ┌─────────────┴─────────────┐
+                        │  If Fails → Automatic     │
+                        │  Failover to Next Provider│
+                        └───────────────────────────┘
+```
+
+### Key Design Principles
+
+1. **Local-First Development**: Test everything locally before deploying
+2. **Serverless Architecture**: Zero server management, automatic scaling
+3. **Privacy-Preserving**: Client-side RAG, optional Google Drive sync
+4. **Cost-Optimized**: Free tier prioritization, aggressive caching
+5. **Multi-Provider Resilience**: No single point of failure with automatic failover
+6. **Fine-Grained Control**: Per-provider capability and model restrictions
+7. **Extensible**: Modular tool system, easy to add new capabilities
+
+## 📖 Documentation
+
+- **[INSTALLATION.md](INSTALLATION.md)** - Detailed setup guide
+- **[MODEL_SELECTION.md](MODEL_SELECTION.md)** - Intelligent model selection system
+- **[GUARDRAILS_GROQ_SETUP.md](GUARDRAILS_GROQ_SETUP.md)** - Content moderation setup
+- **[GOOGLE_CLOUD_SETUP.md](GOOGLE_CLOUD_SETUP.md)** - Google API configuration
+- **[BROWSER_FEATURES_INTEGRATION_GUIDE.md](developer_logs/BROWSER_FEATURES_INTEGRATION_GUIDE.md)** - Browser tools integration
+- **[RAG_FINAL_STATUS.txt](RAG_FINAL_STATUS.txt)** - RAG system overview
+- **[developer_logs/](developer_logs/)** - Complete development history
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes with tests
+4. Test locally: `make dev`
+5. Deploy to your Lambda: `make deploy-lambda-fast`
+6. Submit a pull request
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+**Live Demo**: https://syntithenai.github.io/lambdallmproxy/  
+**Repository**: https://github.com/syntithenai/lambdallmproxy  
+**Issues**: https://github.com/syntithenai/lambdallmproxy/issues
+````
 
 ## 🧠 Intelligent Model Selection
 

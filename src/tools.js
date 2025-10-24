@@ -711,6 +711,51 @@ const toolFunctions = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ask_llm',
+      description: '🤖 **RECURSIVE LLM AGENT**: Spawn a sub-agent conversation with full tool access to handle complex queries. ⚠️ **WARNING: HIGH TOKEN USAGE** - This tool creates a complete recursive conversation with all available tools (search, scrape, transcribe, execute_js, etc.) and will iterate multiple times to fully answer the query. Use ONLY when: (1) Query requires multiple steps with different tools, (2) Need deep research combining searches + scraping, (3) Complex analysis requiring calculations + data gathering, (4) User explicitly requests thorough multi-step investigation. **AVOID** for simple queries that can be answered directly or with a single tool call. The sub-agent has access to all tools EXCEPT ask_llm itself (prevents infinite recursion). Limited to 5 conversation iterations with token budget safeguards. Returns the final comprehensive answer. **COST IMPACT**: Can consume 5-10x more tokens than direct responses. **ASSESSOR OVERRIDE**: This tool is ALWAYS available to the assessor tool for query reformulation, regardless of user settings.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The question or task to pass to the sub-agent. Should be clear and complete. Example: "Search for recent quantum computing breakthroughs, scrape the top 3 results, and compare their approaches with code examples"'
+          }
+        },
+        required: ['query'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_reasoning_chain',
+      description: '🧠 **DEEP REASONING CHAIN GENERATOR**: ⚠️ **EXTREME TOKEN USAGE WARNING** - This tool uses advanced reasoning models (o1-preview, DeepSeek-R1) with MAXIMUM reasoning depth to generate comprehensive step-by-step reasoning chains. **CRITICAL WARNINGS**: (1) Can consume 10-50x MORE tokens than normal responses due to extended thinking process, (2) May trigger PARALLEL ASYNCHRONOUS TOOL CALLS during reasoning, causing rapid token consumption, (3) Reasoning models charge for both reasoning tokens AND output tokens. **USE ONLY FOR**: Complex problems requiring deep logical analysis, multi-step proofs, mathematical derivations, strategic planning, or when explicit reasoning transparency is essential. **AVOID FOR**: Simple queries, factual lookups, or cost-sensitive applications. The tool takes user queries and LLM responses as context, generates a detailed reasoning chain with the model\'s thinking process exposed, and can autonomously call other tools (search, execute_js, scrape, etc.) during reasoning. All embedded tool results are injected into the final reasoning chain output. Reasoning depth is set to MAXIMUM for thoroughness.',
+      parameters: {
+        type: 'object',
+        properties: {
+          user_query: {
+            type: 'string',
+            description: 'The original user query or question that requires deep reasoning analysis'
+          },
+          llm_responses: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Array of previous LLM responses in the conversation to provide context for reasoning'
+          },
+          reasoning_goal: {
+            type: 'string',
+            description: 'Optional: Specific reasoning objective (e.g., "verify mathematical correctness", "identify logical fallacies", "generate step-by-step proof"). If omitted, generates general comprehensive reasoning chain.'
+          }
+        },
+        required: ['user_query'],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -1063,7 +1108,8 @@ Brief answer with URLs:`;
                     apiKey,
                     temperature: 0.2,
                     max_tokens: 80,  // Reduced from 100 to 80 for ultra-compact response
-                    timeoutMs: 30000
+                    timeoutMs: 30000,
+                    providerConfig: context?.providerConfig // Pass provider config for model filtering
                   }
                 };
 
@@ -1207,7 +1253,8 @@ ${result.content.substring(0, maxContentChars)}
                       apiKey,
                       temperature: 0.2,
                       max_tokens: 150, // Standard size since we're using capable models
-                      timeoutMs: 20000
+                      timeoutMs: 20000,
+                      providerConfig: context?.providerConfig // Pass provider config for model filtering
                     }
                   };
                   
@@ -1336,7 +1383,8 @@ Brief answer with URLs:`;
                   apiKey,
                   temperature: 0.2,
                   max_tokens: 150, // Reduced from 250 to minimize token usage
-                  timeoutMs: 30000
+                  timeoutMs: 30000,
+                  providerConfig: context?.providerConfig // Pass provider config for model filtering
                 }
               };
               
@@ -1428,7 +1476,8 @@ Brief answer with URLs:`;
                   apiKey,
                   temperature: 0.2,
                   max_tokens: 150,
-                  timeoutMs: 30000
+                  timeoutMs: 30000,
+                  providerConfig: context?.providerConfig // Pass provider config for model filtering
                 }
               };
               
@@ -1710,11 +1759,20 @@ Brief answer with URLs:`;
               'rag_embeddings',
               { text: query, model: embeddingModel },
               async () => {
+                const embeddingProvider = process.env.RAG_EMBEDDING_PROVIDER || 'openai';
+                
+                // Try to find provider config from context for model filtering
+                let providerConfig = null;
+                if (context?.providers && Array.isArray(context.providers)) {
+                  providerConfig = context.providers.find(p => p.type === embeddingProvider);
+                }
+                
                 const result = await embeddings.generateEmbedding(
                   query,
                   embeddingModel,
-                  process.env.RAG_EMBEDDING_PROVIDER || 'openai',
-                  embeddingApiKey
+                  embeddingProvider,
+                  embeddingApiKey,
+                  { providerConfig } // Pass provider config for model filtering
                 );
                 // Convert Float32Array to regular array for JSON serialization
                 return { 
@@ -2347,53 +2405,95 @@ Brief answer with URLs:`;
         const onProgress = context.onProgress || null;
         const toolCallId = context.toolCallId || null;
 
-        // Determine provider and API key with preference for Groq (free > paid) over OpenAI
-        // Priority: groq-free (FREE) > groq (paid) > openai (paid)
-        // ALSO check voice capability if providers array is available
+        // Helper function to select API key from provider pool
+        // Prioritizes: groq-free (FREE) > groq > openai
+        const selectWhisperProvider = (providerPool) => {
+          if (!providerPool || !Array.isArray(providerPool)) {
+            return { provider: null, apiKey: null };
+          }
+
+          // Helper to check voice capability
+          const hasVoiceCapability = (provider) => {
+            if (!provider.capabilities) return true; // No capabilities = assume enabled
+            return provider.capabilities.voice !== false;
+          };
+
+          // Filter to providers with voice capability and valid API keys
+          const eligibleProviders = providerPool.filter(p => 
+            p.apiKey && hasVoiceCapability(p) &&
+            (p.type === 'groq-free' || p.type === 'groq' || p.type === 'openai')
+          );
+
+          if (eligibleProviders.length === 0) {
+            return { provider: null, apiKey: null };
+          }
+
+          // Priority order: groq-free > groq > openai
+          const priorityOrder = ['groq-free', 'groq', 'openai'];
+          for (const type of priorityOrder) {
+            const provider = eligibleProviders.find(p => p.type === type);
+            if (provider) {
+              console.log(`🎤 Selected ${type} from provider pool for transcription (${type.includes('free') ? 'FREE' : 'PAID'})`);
+              return { 
+                provider: type === 'groq-free' ? 'groq' : type, // Normalize groq-free to groq
+                apiKey: provider.apiKey 
+              };
+            }
+          }
+
+          // Fallback to first eligible
+          console.log(`🎤 Selected ${eligibleProviders[0].type} from provider pool (fallback)`);
+          return { 
+            provider: eligibleProviders[0].type === 'groq-free' ? 'groq' : eligibleProviders[0].type,
+            apiKey: eligibleProviders[0].apiKey 
+          };
+        };
+
+        // Select provider from pool (new method)
         let provider = null;
         let apiKey = null;
-        
-        // Helper function to check if provider has voice capability enabled
-        const hasVoiceCapability = (providerType) => {
-          if (!context.providers || !Array.isArray(context.providers)) return true; // No providers array = assume enabled
-          const providerConfig = context.providers.find(p => p.type === providerType || p.type === `${providerType}-free`);
-          if (!providerConfig) return true; // Provider not in config = assume enabled
-          if (!providerConfig.capabilities) return true; // No capabilities = assume all enabled
-          return providerConfig.capabilities.voice !== false; // Check voice capability
-        };
-        
-        // Check for Groq keys first (they start with gsk_) - prioritize if voice capability enabled
-        if (context.apiKey?.startsWith('gsk_')) {
-          const providerType = 'groq';
-          if (hasVoiceCapability(providerType)) {
-            provider = providerType;
-            apiKey = context.apiKey;
-            console.log('🎤 Using Groq Whisper (main API key) - FREE transcription');
-          } else {
-            console.log('⚠️ Groq provider has voice capability disabled, checking alternatives...');
-          }
-        } else if (context.groqApiKey && hasVoiceCapability('groq')) {
-          // Groq key available in context and voice enabled
-          provider = 'groq';
-          apiKey = context.groqApiKey;
-          console.log('🎤 Using Groq Whisper (groqApiKey) - FREE transcription');
-        } else if (context.groqApiKey && !hasVoiceCapability('groq')) {
-          console.log('⚠️ Groq provider has voice capability disabled, checking alternatives...');
+
+        if (context.providerPool) {
+          const selected = selectWhisperProvider(context.providerPool);
+          provider = selected.provider;
+          apiKey = selected.apiKey;
         }
-        
-        // Fallback to OpenAI if Groq not available or voice disabled
-        if (!provider && context.openaiApiKey && hasVoiceCapability('openai')) {
-          // OpenAI key available and voice enabled
-          provider = 'openai';
-          apiKey = context.openaiApiKey;
-          console.log('🎤 Using OpenAI Whisper (openaiApiKey) - PAID transcription');
-        } else if (!provider && context.apiKey?.startsWith('sk-') && hasVoiceCapability('openai')) {
-          // Main API key is OpenAI and voice enabled
-          provider = 'openai';
-          apiKey = context.apiKey;
-          console.log('🎤 Using OpenAI Whisper (main API key) - PAID transcription');
-        } else if (!provider && context.openaiApiKey && !hasVoiceCapability('openai')) {
-          console.log('⚠️ OpenAI provider has voice capability disabled');
+
+        // Fallback to legacy context properties if provider pool not available
+        if (!apiKey) {
+          // Helper function to check if provider has voice capability enabled (legacy)
+          const hasVoiceCapability = (providerType) => {
+            if (!context.providers || !Array.isArray(context.providers)) return true;
+            const providerConfig = context.providers.find(p => p.type === providerType || p.type === `${providerType}-free`);
+            if (!providerConfig) return true;
+            if (!providerConfig.capabilities) return true;
+            return providerConfig.capabilities.voice !== false;
+          };
+          
+          // Check for Groq keys first - prioritize if voice capability enabled
+          if (context.apiKey?.startsWith('gsk_')) {
+            const providerType = 'groq';
+            if (hasVoiceCapability(providerType)) {
+              provider = providerType;
+              apiKey = context.apiKey;
+              console.log('🎤 Using Groq Whisper (legacy main API key) - FREE transcription');
+            }
+          } else if (context.groqApiKey && hasVoiceCapability('groq')) {
+            provider = 'groq';
+            apiKey = context.groqApiKey;
+            console.log('🎤 Using Groq Whisper (legacy groqApiKey) - FREE transcription');
+          }
+          
+          // Fallback to OpenAI if Groq not available
+          if (!provider && context.openaiApiKey && hasVoiceCapability('openai')) {
+            provider = 'openai';
+            apiKey = context.openaiApiKey;
+            console.log('🎤 Using OpenAI Whisper (legacy openaiApiKey) - PAID transcription');
+          } else if (!provider && context.apiKey?.startsWith('sk-') && hasVoiceCapability('openai')) {
+            provider = 'openai';
+            apiKey = context.apiKey;
+            console.log('🎤 Using OpenAI Whisper (legacy main API key) - PAID transcription');
+          }
         }
 
         // Check if the API key is actually a Gemini key (which doesn't support Whisper)
@@ -2408,7 +2508,26 @@ Brief answer with URLs:`;
 
         // Validate that we have a suitable API key
         if (!apiKey) {
-          // Check if providers exist but have voice capability disabled
+          // Check provider pool for disabled voice capability
+          if (context.providerPool && Array.isArray(context.providerPool)) {
+            const whisperProviders = context.providerPool.filter(p => 
+              p.type === 'groq' || p.type === 'groq-free' || p.type === 'openai'
+            );
+            const hasVoiceDisabledProviders = whisperProviders.some(p => 
+              p.capabilities && p.capabilities.voice === false
+            );
+            
+            if (hasVoiceDisabledProviders && whisperProviders.length > 0) {
+              return JSON.stringify({
+                error: 'No providers are enabled for voice transcription. All Whisper-compatible providers (OpenAI, Groq) have voice capability disabled. Please enable voice capability for at least one provider in Settings.',
+                url,
+                source: 'whisper',
+                hint: 'Go to Settings → Providers → Edit a provider → Enable "🎤 Voice / Transcription" capability.'
+              });
+            }
+          }
+          
+          // Legacy check for backward compatibility
           const hasProviders = context.providers && Array.isArray(context.providers) && context.providers.length > 0;
           const hasVoiceDisabledProviders = hasProviders && context.providers.some(p => 
             (p.type === 'groq' || p.type === 'groq-free' || p.type === 'openai') && 
@@ -2489,7 +2608,8 @@ Summary:`;
                 apiKey: context.apiKey,
                 temperature: 0.3,
                 max_tokens: 500,
-                timeoutMs: 30000
+                timeoutMs: 30000,
+                providerConfig: context?.providerConfig // Pass provider config for model filtering
               }
             };
 
@@ -2706,23 +2826,104 @@ Summary:`;
           }
         }
         
-        if (matchingModels.length === 0) {
+        // 2.5. Apply provider-specific restrictions from context
+        console.log(`🔒 Checking provider restrictions from ${context.providers?.length || 0} provider configs`);
+        const restrictedModels = matchingModels.filter(m => {
+          // Find provider config for this model's provider
+          if (!context.providers) return true; // No restrictions if no provider configs
+          
+          const providerConfig = context.providers.find(p => p.type === m.provider);
+          if (!providerConfig) return true; // No config = no restrictions
+          
+          // Check if provider has model restrictions (applies to ALL LLM calls)
+          // null or undefined or empty array = allow all models
+          // non-empty array = only allow exact matches
+          if (providerConfig.allowedModels && Array.isArray(providerConfig.allowedModels) && providerConfig.allowedModels.length > 0) {
+            const isAllowed = providerConfig.allowedModels.includes(m.model);
+            if (!isAllowed) {
+              console.log(`⛔ Model ${m.model} not in allowed list for ${m.provider}: ${providerConfig.allowedModels.join(', ')}`);
+            }
+            return isAllowed;
+          }
+          
+          // No allowed models list = all models allowed
+          return true;
+        });
+        
+        // 2.6. Check if quality tier is restricted by provider config
+        let effectiveQualityTier = qualityTier;
+        const qualityTierOrder = ['fast', 'standard', 'high', 'ultra'];
+        
+        if (context.providers) {
+          for (const providerConfig of context.providers) {
+            if (providerConfig.maxImageQuality) {
+              const maxQualityIndex = qualityTierOrder.indexOf(providerConfig.maxImageQuality);
+              const requestedQualityIndex = qualityTierOrder.indexOf(qualityTier);
+              
+              if (requestedQualityIndex > maxQualityIndex) {
+                console.log(`⬇️ Quality downgraded from ${qualityTier} to ${providerConfig.maxImageQuality} due to provider ${providerConfig.type} restrictions`);
+                effectiveQualityTier = providerConfig.maxImageQuality;
+                
+                // Re-filter models for the new quality tier
+                const downgradedModels = [];
+                for (const [providerName, providerData] of Object.entries(providers)) {
+                  for (const [modelKey, modelData] of Object.entries(providerData.models || {})) {
+                    if (modelData.qualityTier === effectiveQualityTier) {
+                      downgradedModels.push({
+                        provider: providerName,
+                        modelKey,
+                        model: modelData.id || modelKey,
+                        qualityTier: modelData.qualityTier,
+                        pricing: modelData.pricing,
+                        supportedSizes: modelData.supportedSizes || ['1024x1024'],
+                        capabilities: modelData.capabilities || [],
+                        fallbackPriority: modelData.fallbackPriority || 99
+                      });
+                    }
+                  }
+                }
+                
+                // Apply same allowed models filter to downgraded models
+                const filteredDowngradedModels = downgradedModels.filter(m => {
+                  const pc = context.providers.find(p => p.type === m.provider);
+                  if (!pc || !pc.allowedModels || !Array.isArray(pc.allowedModels) || pc.allowedModels.length === 0) return true;
+                  return pc.allowedModels.includes(m.model);
+                });
+                
+                if (filteredDowngradedModels.length > 0) {
+                  console.log(`✅ Found ${filteredDowngradedModels.length} models for downgraded quality tier ${effectiveQualityTier}`);
+                  // Replace matchingModels with downgraded filtered models
+                  matchingModels.length = 0;
+                  matchingModels.push(...filteredDowngradedModels);
+                }
+                
+                break; // Use first provider's restriction
+              }
+            }
+          }
+        }
+        
+        const finalMatchingModels = restrictedModels.length > 0 ? restrictedModels : matchingModels;
+        
+        if (finalMatchingModels.length === 0) {
           return JSON.stringify({
-            error: `No models available for quality tier: ${qualityTier}`,
-            qualityTier,
+            error: `No allowed models available for quality tier: ${effectiveQualityTier}. Check provider image restrictions (allowedImageModels, maxImageQuality).`,
+            qualityTier: effectiveQualityTier,
+            originalQuality: qualityTier,
             availableTiers: Object.keys(qualityTiers),
-            ready: false
+            ready: false,
+            hint: 'Provider may have allowedImageModels or maxImageQuality restrictions configured'
           });
         }
         
         // 3. Check provider availability for all matching models
-        const uniqueProviders = [...new Set(matchingModels.map(m => m.provider))];
+        const uniqueProviders = [...new Set(finalMatchingModels.map(m => m.provider))];
         const availabilityResults = await checkMultipleProviders(uniqueProviders, context);
         
         console.log('🔍 Provider availability:', JSON.stringify(availabilityResults, null, 2));
         
         // 4. Filter to only available providers AND check image capability
-        const availableModels = matchingModels.filter(m => {
+        const availableModels = finalMatchingModels.filter(m => {
           const availability = availabilityResults[m.provider];
           if (!availability || !availability.available) return false;
           
@@ -2746,7 +2947,7 @@ Summary:`;
         
         if (availableModels.length === 0) {
           // No providers available - return helpful error with alternatives
-          const unavailableReasons = matchingModels.map(m => {
+          const unavailableReasons = finalMatchingModels.map(m => {
             const availability = availabilityResults[m.provider];
             return {
               provider: m.provider,
@@ -2757,10 +2958,11 @@ Summary:`;
           
           return JSON.stringify({
             error: 'No image generation providers currently available',
-            qualityTier,
+            qualityTier: effectiveQualityTier,
+            originalQuality: qualityTier,
             requestedModels: unavailableReasons,
             ready: false,
-            hint: 'Check provider configuration: API keys, feature flags (ENABLE_IMAGE_GENERATION_*), and circuit breaker status'
+            hint: 'Check provider configuration: API keys, feature flags (ENABLE_IMAGE_GENERATION_*), circuit breaker status, and provider image restrictions'
           });
         }
         
@@ -2912,7 +3114,8 @@ Summary:`;
             phase: 'completed',
             provider: selectedModel.provider,
             model: selectedModel.model,
-            quality: qualityTier,
+            quality: effectiveQualityTier,
+            originalQuality: qualityTier,
             size: finalSize,
             cost: estimatedCost,
             url: imageResult.url ? 'generated' : 'base64'
@@ -2950,7 +3153,8 @@ Summary:`;
           // base64: imageResult.base64, // ❌ REMOVED - causes Lambda timeout + token bloat
           provider: selectedModel.provider,
           model: selectedModel.model,
-          qualityTier,
+          qualityTier: effectiveQualityTier,
+          originalQualityRequested: qualityTier,
           prompt,
           size: finalSize,
           style: args.style || 'natural',
@@ -3205,7 +3409,7 @@ Summary:`;
       }
       
       try {
-        const { getYouTubeTranscriptViaInnerTube, getYouTubeTranscript, extractYouTubeVideoId } = require('./youtube-api');
+        const { getYouTubeTranscriptViaInnerTube, getYouTubeTranscript, getYouTubeTranscriptViaSelenium, extractYouTubeVideoId } = require('./youtube-api');
         
         // Validate YouTube URL
         const videoId = extractYouTubeVideoId(url);
@@ -3255,11 +3459,47 @@ Summary:`;
               console.log(`✅ OAuth API succeeded`);
             } catch (oauthError) {
               console.log(`❌ OAuth API also failed: ${oauthError.message}`);
-              throw innerTubeError; // Throw original error
+              
+              // Final fallback: Selenium (local only)
+              const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+              if (!IS_LAMBDA) {
+                console.log('🔄 Falling back to Selenium caption scraper (local only)...');
+                try {
+                  result = await getYouTubeTranscriptViaSelenium(videoId, {
+                    includeTimestamps,
+                    language,
+                    interactive: false
+                  });
+                  source = 'selenium';
+                  console.log(`✅ Selenium scraper succeeded`);
+                } catch (seleniumError) {
+                  console.log(`❌ Selenium scraper also failed: ${seleniumError.message}`);
+                  throw innerTubeError; // Throw original error
+                }
+              } else {
+                throw oauthError;
+              }
             }
           } else {
-            // No OAuth token, throw InnerTube error
-            throw innerTubeError;
+            // No OAuth token, try Selenium fallback (local only)
+            const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+            if (!IS_LAMBDA) {
+              console.log('🔄 Falling back to Selenium caption scraper (local only)...');
+              try {
+                result = await getYouTubeTranscriptViaSelenium(videoId, {
+                  includeTimestamps,
+                  language,
+                  interactive: false
+                });
+                source = 'selenium';
+                console.log(`✅ Selenium scraper succeeded`);
+              } catch (seleniumError) {
+                console.log(`❌ Selenium scraper also failed: ${seleniumError.message}`);
+                throw innerTubeError; // Throw original error
+              }
+            } else {
+              throw innerTubeError;
+            }
           }
         }
         
@@ -3295,7 +3535,8 @@ Summary:`;
                   apiKey: context.apiKey,
                   temperature: 0.3,
                   max_tokens: 500,
-                  timeoutMs: 30000
+                  timeoutMs: 30000,
+                  providerConfig: context?.providerConfig // Pass provider config for model filtering
                 }
               };
 
@@ -3454,7 +3695,8 @@ Summary:`;
                   apiKey: context.apiKey,
                   temperature: 0.3,
                   max_tokens: 500,
-                  timeoutMs: 30000
+                  timeoutMs: 30000,
+                  providerConfig: context?.providerConfig // Pass provider config for model filtering
                 }
               };
 
@@ -3656,6 +3898,359 @@ ${chart_type === 'pie' ? `- Start with: pie title "Title"
 
 After generating the chart, continue with any explanation or additional information.`
       });
+    }
+    
+    case 'ask_llm': {
+      console.log('🤖 ask_llm: Starting recursive LLM agent call');
+      
+      const query = String(args.query || '').trim();
+      if (!query) {
+        return JSON.stringify({ 
+          error: 'query required',
+          message: 'The ask_llm tool requires a query parameter with the question or task for the sub-agent'
+        });
+      }
+      
+      // Emit progress event
+      if (context.writeEvent) {
+        context.writeEvent('ask_llm_progress', {
+          tool: 'ask_llm',
+          phase: 'starting',
+          query: query.substring(0, 100),
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        // Import the chat endpoint handler
+        const { handler: chatHandler } = require('./endpoints/chat');
+        
+        // Prepare a synthetic event for the chat endpoint
+        // Remove ask_llm from available tools to prevent infinite recursion
+        const enabledTools = context.enabledTools || [];
+        const toolsWithoutAskLLM = enabledTools.filter(t => t !== 'ask_llm');
+        
+        // Build the messages array with the query
+        const messages = [
+          {
+            role: 'user',
+            content: query
+          }
+        ];
+        
+        // Create a buffer to capture the SSE stream
+        let streamBuffer = [];
+        let finalResponse = '';
+        let totalIterations = 0;
+        const MAX_ITERATIONS = 5;
+        
+        // Create a mock response stream that captures events
+        const mockResponseStream = {
+          write: (chunk) => {
+            streamBuffer.push(chunk);
+            // Parse SSE events to extract assistant messages
+            const chunkStr = chunk.toString();
+            const lines = chunkStr.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.substring(6));
+                  if (data.type === 'content' && data.content) {
+                    finalResponse += data.content;
+                  } else if (data.type === 'done' && data.finalMessage) {
+                    finalResponse = data.finalMessage.content || finalResponse;
+                  }
+                } catch (e) {
+                  // Ignore parse errors
+                }
+              }
+            }
+          },
+          end: () => {},
+          on: () => {},
+          once: () => {},
+          emit: () => {}
+        };
+        
+        // Create the synthetic event
+        const subEvent = {
+          body: JSON.stringify({
+            messages,
+            model: context.model || 'groq:llama-3.3-70b-versatile',
+            stream: true,
+            tools: true,
+            enabledTools: toolsWithoutAskLLM,
+            max_iterations: MAX_ITERATIONS,
+            // Pass through other context
+            optimization: context.optimization,
+            modelStrategy: context.modelStrategy,
+            google_api_key: context.google_api_key,
+            google_search_cx: context.google_search_cx
+          }),
+          headers: {
+            'authorization': context.googleToken ? `Bearer ${context.googleToken}` : undefined,
+            'x-google-token': context.googleToken,
+            'x-user-email': context.userEmail
+          },
+          requestContext: {
+            requestId: `ask_llm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          }
+        };
+        
+        // Emit iteration start event
+        if (context.writeEvent) {
+          context.writeEvent('ask_llm_progress', {
+            tool: 'ask_llm',
+            phase: 'executing',
+            query: query.substring(0, 100),
+            max_iterations: MAX_ITERATIONS,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Execute the chat handler
+        console.log('🤖 ask_llm: Calling chat handler with query:', query.substring(0, 100));
+        await chatHandler(subEvent, mockResponseStream, context);
+        
+        totalIterations = 1; // The chat handler manages its own iterations internally
+        
+        // Emit completion event
+        if (context.writeEvent) {
+          context.writeEvent('ask_llm_progress', {
+            tool: 'ask_llm',
+            phase: 'completed',
+            query: query.substring(0, 100),
+            iterations: totalIterations,
+            response_length: finalResponse.length,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        console.log(`🤖 ask_llm: Completed after ${totalIterations} iteration(s), response length: ${finalResponse.length}`);
+        
+        // Return the final response
+        return JSON.stringify({
+          success: true,
+          query,
+          response: finalResponse,
+          iterations: totalIterations,
+          message: `Successfully completed recursive LLM agent call in ${totalIterations} iteration(s)`
+        });
+        
+      } catch (error) {
+        console.error('❌ ask_llm error:', error.message);
+        
+        if (context.writeEvent) {
+          context.writeEvent('ask_llm_progress', {
+            tool: 'ask_llm',
+            phase: 'error',
+            query: query.substring(0, 100),
+            error: error.message,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        return JSON.stringify({
+          success: false,
+          error: error.message,
+          message: `Recursive LLM agent call failed: ${error.message}`
+        });
+      }
+    }
+    
+    case 'generate_reasoning_chain': {
+      console.log('🧠 generate_reasoning_chain: Starting deep reasoning chain generation');
+      
+      const userQuery = String(args.user_query || '').trim();
+      if (!userQuery) {
+        return JSON.stringify({ 
+          error: 'user_query required',
+          message: 'The generate_reasoning_chain tool requires a user_query parameter'
+        });
+      }
+      
+      const llmResponses = Array.isArray(args.llm_responses) ? args.llm_responses : [];
+      const reasoningGoal = args.reasoning_goal || 'Generate a comprehensive step-by-step reasoning chain';
+      
+      // Emit progress event
+      if (context.writeEvent) {
+        context.writeEvent('reasoning_chain_progress', {
+          tool: 'generate_reasoning_chain',
+          phase: 'starting',
+          query: userQuery.substring(0, 100),
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      try {
+        // Select a reasoning-capable model (prefer DeepSeek-R1 or o1-preview)
+        const reasoningModel = context.model && context.model.includes('o1') 
+          ? context.model 
+          : 'openrouter:deepseek-ai/DeepSeek-R1'; // Default to DeepSeek-R1 via OpenRouter
+        
+        console.log(`🧠 Using reasoning model: ${reasoningModel}`);
+        
+        // Build the reasoning prompt with context
+        const contextSection = llmResponses.length > 0 
+          ? `\n\nPrevious conversation context:\n${llmResponses.map((r, i) => `Response ${i + 1}: ${r}`).join('\n\n')}`
+          : '';
+        
+        const reasoningPrompt = `You are a deep reasoning assistant. Your task is to generate a comprehensive, transparent reasoning chain for the following query.
+
+**User Query**: ${userQuery}
+
+**Reasoning Goal**: ${reasoningGoal}${contextSection}
+
+**Instructions**:
+1. Think step-by-step through the problem
+2. Show your reasoning process explicitly
+3. If you need additional information, you can call tools like search_web, execute_javascript, scrape_web_content, etc.
+4. Identify assumptions and uncertainties
+5. Consider alternative approaches
+6. Arrive at a well-reasoned conclusion
+
+Generate your detailed reasoning chain now:`;
+        
+        // Prepare messages for LLM
+        const messages = [
+          { role: 'user', content: reasoningPrompt }
+        ];
+        
+        // Emit LLM request event
+        if (context.writeEvent) {
+          context.writeEvent('reasoning_chain_progress', {
+            tool: 'generate_reasoning_chain',
+            phase: 'reasoning',
+            model: reasoningModel,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Get all available tools for the reasoning model to use
+        const { mergeTools } = require('./tools');
+        const allTools = await mergeTools(context);
+        
+        // Filter out generate_reasoning_chain itself to prevent recursion
+        const toolsForReasoning = allTools.filter(t => 
+          t.function && t.function.name !== 'generate_reasoning_chain'
+        );
+        
+        console.log(`🧠 Reasoning model has access to ${toolsForReasoning.length} tools`);
+        
+        // Call LLM with MAXIMUM reasoning depth
+        const reasoningResponse = await llmResponsesWithTools({
+          model: reasoningModel,
+          input: messages,
+          tools: toolsForReasoning,
+          options: {
+            reasoningEffort: 'high', // MAXIMUM reasoning depth
+            max_tokens: 8192, // Allow longer reasoning chains
+            temperature: 0.7,
+            ...context.providerConfig
+          }
+        });
+        
+        console.log(`🧠 Reasoning response:`, {
+          hasText: !!reasoningResponse.text,
+          hasToolCalls: !!reasoningResponse.toolCalls,
+          toolCallCount: reasoningResponse.toolCalls?.length || 0
+        });
+        
+        let reasoningChain = reasoningResponse.text || reasoningResponse.finalText || '';
+        const embeddedToolResults = [];
+        
+        // If reasoning generated tool calls, execute them immediately
+        if (reasoningResponse.toolCalls && reasoningResponse.toolCalls.length > 0) {
+          console.log(`🧠 Reasoning chain generated ${reasoningResponse.toolCalls.length} embedded tool calls - executing asynchronously...`);
+          
+          if (context.writeEvent) {
+            context.writeEvent('reasoning_chain_progress', {
+              tool: 'generate_reasoning_chain',
+              phase: 'executing_embedded_tools',
+              tool_count: reasoningResponse.toolCalls.length,
+              timestamp: new Date().toISOString()
+            });
+          }
+          
+          // Execute tool calls in parallel for maximum speed (but also maximum token consumption!)
+          const toolPromises = reasoningResponse.toolCalls.map(async (toolCall) => {
+            const toolName = toolCall.name || toolCall.function?.name;
+            const toolArgs = typeof toolCall.arguments === 'string' 
+              ? JSON.parse(toolCall.arguments) 
+              : (toolCall.arguments || toolCall.function?.arguments || {});
+            
+            console.log(`🧠 Executing embedded tool: ${toolName}`);
+            
+            try {
+              const toolResult = await callFunction(toolName, toolArgs, context);
+              return {
+                tool: toolName,
+                arguments: toolArgs,
+                result: toolResult,
+                success: true
+              };
+            } catch (error) {
+              console.error(`❌ Embedded tool ${toolName} failed:`, error.message);
+              return {
+                tool: toolName,
+                arguments: toolArgs,
+                error: error.message,
+                success: false
+              };
+            }
+          });
+          
+          // Wait for all tools to complete
+          const toolResults = await Promise.all(toolPromises);
+          embeddedToolResults.push(...toolResults);
+          
+          console.log(`🧠 Completed ${embeddedToolResults.length} embedded tool executions`);
+        }
+        
+        // Emit completion event
+        if (context.writeEvent) {
+          context.writeEvent('reasoning_chain_progress', {
+            tool: 'generate_reasoning_chain',
+            phase: 'completed',
+            query: userQuery.substring(0, 100),
+            reasoning_length: reasoningChain.length,
+            embedded_tools: embeddedToolResults.length,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        console.log(`🧠 generate_reasoning_chain: Completed with ${reasoningChain.length} chars reasoning, ${embeddedToolResults.length} embedded tools`);
+        
+        // Return the complete reasoning chain with embedded tool results
+        return JSON.stringify({
+          success: true,
+          user_query: userQuery,
+          reasoning_goal: reasoningGoal,
+          reasoning_chain: reasoningChain,
+          embedded_tool_results: embeddedToolResults,
+          model: reasoningModel,
+          message: `Generated reasoning chain with ${embeddedToolResults.length} embedded tool execution(s)`
+        });
+        
+      } catch (error) {
+        console.error('❌ generate_reasoning_chain error:', error.message);
+        
+        if (context.writeEvent) {
+          context.writeEvent('reasoning_chain_progress', {
+            tool: 'generate_reasoning_chain',
+            phase: 'error',
+            query: userQuery.substring(0, 100),
+            error: error.message,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        return JSON.stringify({
+          success: false,
+          error: error.message,
+          message: `Reasoning chain generation failed: ${error.message}`
+        });
+      }
     }
     
     default: {

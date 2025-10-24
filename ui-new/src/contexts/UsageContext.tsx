@@ -29,7 +29,8 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Fetch usage data from backend
+   * Fetch usage data from billing endpoint
+   * Usage is calculated from billing totals on the frontend
    */
   const fetchUsage = async () => {
     if (!accessToken || !isAuthenticated) {
@@ -42,12 +43,25 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const apiBase = await getCachedApiBase();
-      const response = await fetch(`${apiBase}/usage`, {
+      
+      // Get Google Drive access token and billing sync preference
+      const driveAccessToken = localStorage.getItem('google_drive_access_token');
+      const billingSyncEnabled = localStorage.getItem('cloud_sync_billing') === 'true';
+      
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Billing-Sync': billingSyncEnabled ? 'true' : 'false'
+      };
+
+      // Only add Drive access token if billing sync is enabled
+      if (billingSyncEnabled && driveAccessToken) {
+        headers['X-Google-Access-Token'] = driveAccessToken;
+      }
+      
+      const response = await fetch(`${apiBase}/billing`, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
+        headers
       });
 
       if (!response.ok) {
@@ -55,9 +69,25 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.message || `HTTP ${response.status}`);
       }
 
-      const data: UsageData = await response.json();
-      setUsage(data);
-      console.log('💰 Usage loaded:', data);
+      const billingData = await response.json();
+      
+      // Calculate usage from billing totals (frontend calculation)
+      const totalCost = billingData.totals?.totalCost || 0;
+      const creditLimit = 3.00; // Credit limit constant
+      const remaining = Math.max(0, creditLimit - totalCost);
+      const exceeded = totalCost >= creditLimit;
+      
+      const calculatedUsage: UsageData = {
+        userEmail: '',
+        totalCost: parseFloat(totalCost.toFixed(4)),
+        creditLimit,
+        remaining: parseFloat(remaining.toFixed(4)),
+        exceeded,
+        timestamp: new Date().toISOString()
+      };
+      
+      setUsage(calculatedUsage);
+      console.log('💰 Usage calculated from billing data:', calculatedUsage);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load usage';
       console.error('❌ Failed to fetch usage:', errorMessage);

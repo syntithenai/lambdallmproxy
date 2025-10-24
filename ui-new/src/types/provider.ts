@@ -16,6 +16,7 @@ export type ProviderType =
   | 'gemini-free'         // Gemini free tier - https://generativelanguage.googleapis.com/v1beta
   | 'gemini'              // Gemini paid tier - https://generativelanguage.googleapis.com/v1beta
   | 'together'            // Together AI - https://api.together.xyz/v1
+  | 'replicate'           // Replicate - https://api.replicate.com/v1
   | 'atlascloud'          // Atlas Cloud - https://api.atlascloud.ai/v1
   | 'openai-compatible';  // Custom endpoint - user specifies endpoint AND modelName
 
@@ -27,6 +28,13 @@ export interface ProviderConfig {
   modelName?: string;      // ONLY for openai-compatible - preserved through to upstream
   rateLimitTPM?: number;   // ONLY for openai-compatible - explicit rate limit or undefined
   enabled?: boolean;       // Whether this provider should be used (defaults to true if undefined)
+  // Model restrictions - applies to ALL LLM calls (chat, image, etc.)
+  // null or undefined = allow all models
+  // empty array = allow all models
+  // non-empty array = only allow exact model name matches
+  allowedModels?: string[] | null;
+  // Image generation quality cap
+  maxImageQuality?: 'fast' | 'standard' | 'high' | 'ultra';
   // Capability flags - control which services this provider can be used for
   capabilities?: {
     chat?: boolean;        // Enable for chat/text completion (default: true)
@@ -70,6 +78,7 @@ export const PROVIDER_ENDPOINTS: Record<Exclude<ProviderType, 'openai-compatible
   'gemini': 'https://generativelanguage.googleapis.com/v1beta',
   'gemini-free': 'https://generativelanguage.googleapis.com/v1beta',
   'together': 'https://api.together.xyz/v1',
+  'replicate': 'https://api.replicate.com/v1',
   'atlascloud': 'https://api.atlascloud.ai/v1',
 };
 
@@ -106,6 +115,11 @@ export const PROVIDER_INFO: Record<ProviderType, { name: string; icon: string; d
     name: 'Together AI',
     icon: '🔌',
     description: 'Open source models with trial credits'
+  },
+  'replicate': {
+    name: 'Replicate',
+    icon: '🔄',
+    description: 'Run ML models with API'
   },
   'atlascloud': {
     name: 'Atlas Cloud',

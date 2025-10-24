@@ -12,7 +12,7 @@ interface ScrapingProgressProps {
  * Shows browser launch, navigation, extraction progress
  */
 export const ScrapingProgress: React.FC<ScrapingProgressProps> = ({
-  toolCallId,
+  toolCallId: _toolCallId,
   url,
   events
 }) => {

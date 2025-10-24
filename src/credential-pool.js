@@ -21,6 +21,8 @@ const uuidv4 = generateUuid;
  * - LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_N=https://api.groq.com/openai/v1 (optional)
  * - LLAMDA_LLM_PROXY_PROVIDER_MODEL_N=llama-3.1-70b-instruct (optional, for openai-compatible)
  * - LLAMDA_LLM_PROXY_PROVIDER_RATE_LIMIT_N=10000 (optional, TPM for openai-compatible)
+ * - LLAMDA_LLM_PROXY_PROVIDER_ALLOWED_MODELS_N=model1,model2 (optional, filter models - empty=allow all)
+ * - LLAMDA_LLM_PROXY_PROVIDER_IMAGE_MAX_QUALITY_N=fast|standard|high|ultra (optional)
  * 
  * Where N can be any non-negative integer (0, 1, 2, 5, 10, etc.)
  * Scans indices 0-99 to find all configured providers, allowing gaps in numbering
@@ -38,6 +40,8 @@ function loadEnvironmentProviders() {
         const endpointKey = `LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_${index}`;
         const modelKey = `LLAMDA_LLM_PROXY_PROVIDER_MODEL_${index}`;
         const rateLimitKey = `LLAMDA_LLM_PROXY_PROVIDER_RATE_LIMIT_${index}`;
+        const allowedModelsKey = `LLAMDA_LLM_PROXY_PROVIDER_ALLOWED_MODELS_${index}`;
+        const maxQualityKey = `LLAMDA_LLM_PROXY_PROVIDER_IMAGE_MAX_QUALITY_${index}`;
         
         const type = process.env[typeKey];
         const apiKey = process.env[keyKey];
@@ -69,6 +73,37 @@ function loadEnvironmentProviders() {
         // Add optional rate limit (for openai-compatible)
         if (process.env[rateLimitKey]) {
             provider.rateLimitTPM = parseInt(process.env[rateLimitKey], 10);
+        }
+        
+        // Add allowed models filter (applies to ALL LLM calls using this provider)
+        // If present but empty: allow all models
+        // If present and non-empty: comma-separated exact model names
+        if (process.env[allowedModelsKey] !== undefined) {
+            const rawValue = process.env[allowedModelsKey].trim();
+            if (rawValue === '') {
+                // Empty string = allow all models from this provider
+                provider.allowedModels = null;
+                console.log(`   🔓 Allowed models: ALL (unrestricted)`);
+            } else {
+                // Parse comma-separated model list
+                provider.allowedModels = rawValue
+                    .split(',')
+                    .map(m => m.trim())
+                    .filter(m => m.length > 0);
+                console.log(`   🔒 Allowed models: ${provider.allowedModels.join(', ')}`);
+            }
+        }
+        
+        // Add image generation quality cap
+        if (process.env[maxQualityKey]) {
+            const quality = process.env[maxQualityKey].trim().toLowerCase();
+            // Validate quality tier
+            if (['fast', 'standard', 'high', 'ultra'].includes(quality)) {
+                provider.maxImageQuality = quality;
+                console.log(`   🎨 Max image quality: ${quality}`);
+            } else {
+                console.warn(`   ⚠️ Invalid max quality "${quality}" for ${type}, ignoring`);
+            }
         }
         
         providers.push(provider);

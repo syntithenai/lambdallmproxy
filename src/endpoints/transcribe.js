@@ -280,6 +280,24 @@ async function handler(event, context) {
         }
 
         console.log(`🎤 Audio file received: ${audioPart.filename}, ${audioPart.data.length} bytes`);
+        
+        // ✅ CREDIT SYSTEM: Check credit balance before processing request
+        // Estimate duration: ~1MB per minute (rough estimate)
+        const { checkCreditBalance, estimateTranscriptionCost } = require('../utils/credit-check');
+        const estimatedDurationMinutes = audioPart.data.length / (1024 * 1024); // Convert bytes to MB
+        const estimatedCost = estimateTranscriptionCost(estimatedDurationMinutes);
+        const creditCheck = await checkCreditBalance(userEmail, estimatedCost, 'transcription');
+        
+        if (!creditCheck.allowed) {
+            console.log(`💳 Insufficient credit for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
+            return {
+                statusCode: creditCheck.error.statusCode,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(creditCheck.error)
+            };
+        }
+        
+        console.log(`💳 Credit check passed for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
 
         // Generate hash of audio content for caching
         const audioHash = crypto.createHash('md5').update(audioPart.data).digest('hex');
@@ -428,6 +446,10 @@ async function handler(event, context) {
                 } catch (err) {
                     console.error('Google Sheets logging error (transcription):', err.message);
                 }
+                
+                // ✅ CREDIT SYSTEM: Optimistically deduct actual cost from cache
+                const { deductCreditFromCache } = require('../utils/credit-check');
+                await deductCreditFromCache(userEmail, cost, 'transcription');
                 
                 // Save to cache (non-blocking) - TTL 24 hours for transcriptions
                 const cacheKey = getCacheKey('transcriptions', { audioHash });

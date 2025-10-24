@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 
 interface MediaSectionsProps {
-  images?: string[];
+  images?: Array<{ src: string; alt?: string }>;
   links?: Array<{ url: string; title?: string }>;
   youtubeLinks?: Array<{ url: string; title?: string }>;
   otherMedia?: Array<{ url: string; type: string }>;
-  onGrabImage?: (url: string) => void;
+  onGrabImage?: (url: string, description?: string) => void;
 }
 
 export const MediaSections: React.FC<MediaSectionsProps> = ({
@@ -56,20 +56,23 @@ export const MediaSections: React.FC<MediaSectionsProps> = ({
               {images.map((img, idx) => {
                 if (hiddenImages.has(idx)) return null;
                 
+                const imgSrc = typeof img === 'string' ? img : img.src;
+                const imgAlt = typeof img === 'string' ? `Image ${idx + 1}` : (img.alt || `Image ${idx + 1}`);
+                
                 return (
                   <div 
                     key={idx}
                     className="relative group rounded overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 h-24"
                   >
                     <a 
-                      href={img}
+                      href={imgSrc}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="block w-full h-full"
                     >
                       <img 
-                        src={img} 
-                        alt={`Image ${idx + 1}`}
+                        src={imgSrc} 
+                        alt={imgAlt}
                         className="w-full h-full object-cover"
                         loading="lazy"
                         onError={() => setHiddenImages(prev => new Set(prev).add(idx))}
@@ -80,7 +83,7 @@ export const MediaSections: React.FC<MediaSectionsProps> = ({
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          onGrabImage(img);
+                          onGrabImage(imgSrc, imgAlt);
                         }}
                         className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded shadow-lg z-10"
                         title="Add to SWAG"

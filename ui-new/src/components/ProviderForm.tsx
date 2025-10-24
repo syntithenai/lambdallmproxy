@@ -31,6 +31,12 @@ export function ProviderForm({ initialProvider, onSave, onCancel }: ProviderForm
     voice: initialProvider?.capabilities?.voice !== false,
     tts: initialProvider?.capabilities?.tts !== false,
   });
+  const [allowedModels, setAllowedModels] = useState(
+    initialProvider?.allowedModels?.join(', ') || ''
+  );
+  const [maxImageQuality, setMaxImageQuality] = useState<'fast' | 'standard' | 'high' | 'ultra'>(
+    initialProvider?.maxImageQuality || 'fast'
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Auto-fill endpoint when provider type changes
@@ -63,6 +69,18 @@ export function ProviderForm({ initialProvider, onSave, onCancel }: ProviderForm
       if (rateLimitTPM) {
         provider.rateLimitTPM = parseInt(rateLimitTPM, 10);
       }
+    }
+
+    // Add allowed models filter if specified
+    if (allowedModels.trim()) {
+      provider.allowedModels = allowedModels.split(',').map(m => m.trim()).filter(m => m.length > 0);
+    } else {
+      provider.allowedModels = null; // Empty = allow all
+    }
+
+    // Add max image quality if image capability enabled
+    if (capabilities.image && maxImageQuality) {
+      provider.maxImageQuality = maxImageQuality;
     }
 
     // Validate
@@ -259,6 +277,64 @@ export function ProviderForm({ initialProvider, onSave, onCancel }: ProviderForm
           </label>
         </div>
       </div>
+
+      {/* Model Restrictions (ALL LLM Calls) */}
+      <div className="p-4 bg-gray-800 border border-gray-700 rounded-lg">
+        <label className="block text-sm font-medium text-gray-200 mb-3">
+          � Model Access Restrictions
+        </label>
+        <p className="text-xs text-gray-500 mb-3">
+          Restrict which models can be used for ALL LLM operations (chat, image generation, etc.). Leave empty to allow all models.
+        </p>
+        <div>
+          <label className="block text-sm font-medium text-gray-200 mb-2">
+            Allowed Models (comma-separated)
+          </label>
+          <input
+            type="text"
+            value={allowedModels}
+            onChange={(e) => setAllowedModels(e.target.value)}
+            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+            placeholder="Leave empty for all models, or: llama-3.1-8b-instant, gpt-4o-mini"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            ⓘ <strong>Empty</strong> = allow all models | <strong>Non-empty</strong> = exact model name must match
+          </p>
+          <p className="mt-1 text-xs text-gray-400">
+            Examples: <code className="text-blue-400">llama-3.1-8b-instant</code>, <code className="text-blue-400">black-forest-labs/FLUX.1-schnell-Free</code>
+          </p>
+        </div>
+      </div>
+
+      {/* Image Generation Configuration (only shown if image capability enabled) */}
+      {capabilities.image && (
+        <div className="p-4 bg-gray-800 border border-gray-700 rounded-lg">
+          <label className="block text-sm font-medium text-gray-200 mb-3">
+            🎨 Image Generation Quality Cap
+          </label>
+          <p className="text-xs text-gray-500 mb-3">
+            Limit maximum image quality to control costs. Works together with "Allowed Models" above.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-200 mb-2">
+              Maximum Quality Tier
+            </label>
+            <select
+              value={maxImageQuality}
+              onChange={(e) => setMaxImageQuality(e.target.value as 'fast' | 'standard' | 'high' | 'ultra')}
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="fast">Fast (draft, &lt;$0.001/image) - DEFAULT</option>
+              <option value="standard">Standard (normal, ~$0.002/image)</option>
+              <option value="high">High (detailed, ~$0.04/image)</option>
+              <option value="ultra">Ultra (photorealistic, ~$0.12/image)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              ⓘ Prevents generating images above this quality tier
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-2 justify-end pt-4">

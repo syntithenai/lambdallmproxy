@@ -41,7 +41,6 @@ import { SearchWebResults } from './SearchWebResults';
 import { ExamplesModal } from './ExamplesModal';
 import { 
   saveChatToHistory, 
-  loadChatFromHistory,
   loadChatWithMetadata,
   deleteChatFromHistory, 
   getAllChatHistory,
@@ -60,6 +59,8 @@ interface EnabledTools {
   search_knowledge_base: boolean;
   manage_todos: boolean;
   manage_snippets: boolean;
+  ask_llm: boolean;
+  generate_reasoning_chain: boolean;
 }
 
 interface ChatTabProps {
@@ -68,6 +69,7 @@ interface ChatTabProps {
   setEnabledTools: (tools: EnabledTools) => void;
   showMCPDialog: boolean;
   setShowMCPDialog: (show: boolean) => void;
+  onLoadingChange?: (isLoading: boolean) => void;
 }
 
 export const ChatTab: React.FC<ChatTabProps> = ({ 
@@ -75,9 +77,10 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   enabledTools,
   // setEnabledTools, // Not used in ChatTab - only in SettingsModal
   showMCPDialog,
-  setShowMCPDialog
+  setShowMCPDialog,
+  onLoadingChange
 }) => {
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, getToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracksToStart } = usePlaylist();
@@ -113,6 +116,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   }>>('chat_mcp_servers', []);
   
   const [newMCPServer, setNewMCPServer] = useState({ name: '', url: '' });
+
+  // Notify parent component when loading state changes
+  useEffect(() => {
+    onLoadingChange?.(isLoading);
+  }, [isLoading, onLoadingChange]);
   
   // Tool execution status tracking
   const [toolStatus, setToolStatus] = useState<Array<{
@@ -287,8 +295,10 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   
   // RAG context integration
-  const [useRagContext, setUseRagContext] = useLocalStorage<boolean>('chat_use_rag', false);
-  const [ragSearching, setRagSearching] = useState(false);
+  const [useRagContext] = useLocalStorage<boolean>('chat_use_rag', false);
+  // TODO: ragSearching state is set but never used - could be used for loading indicator
+  // const [ragSearching, setRagSearching] = useState(false);
+  const [, setRagSearching] = useState(false); // Keep setter to avoid breaking code that calls it
   const [ragThreshold, setRagThreshold] = useState(0.3); // Default to 0.3 (relaxed for better recall)
   
   // Todos state (backend-managed multi-step workflows)
@@ -561,21 +571,25 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     return fullContent;
   };
 
-  const handleGrabImage = async (imageUrl: string) => {
+  const handleGrabImage = async (imageUrl: string, description?: string) => {
     try {
       // Convert image to base64 before storing
       const { imageUrlToBase64 } = await import('../utils/imageUtils');
       const base64Image = await imageUrlToBase64(imageUrl);
       
+      // Use description as title if provided, otherwise default to "Image"
+      const title = description || 'Image';
+      
       // Create HTML with base64 image
-      const imageHtml = `<img src="${base64Image}" alt="Grabbed image" style="max-width: 100%; height: auto;" />`;
-      await addSnippet(imageHtml, 'assistant', 'Image');
+      const imageHtml = `<img src="${base64Image}" alt="${title}" style="max-width: 100%; height: auto;" />`;
+      await addSnippet(imageHtml, 'assistant', title);
       showSuccess('Image added to Swag!');
     } catch (error) {
       console.error('Failed to grab image:', error);
       // Fallback to original URL if conversion fails
-      const imageHtml = `<img src="${imageUrl}" alt="Grabbed image" style="max-width: 100%; height: auto;" />`;
-      await addSnippet(imageHtml, 'assistant', 'Image');
+      const title = description || 'Image';
+      const imageHtml = `<img src="${imageUrl}" alt="${title}" style="max-width: 100%; height: auto;" />`;
+      await addSnippet(imageHtml, 'assistant', title);
       showSuccess('Image added to Swag (without conversion)!');
     }
   };
@@ -1793,9 +1807,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
           console.log('🔄 Fetching new query embedding from backend');
           // Get query embedding from backend (use auto-detected API base)
           const apiUrl = await getCachedApiBase();
+          const token = await getToken();
           const embedResponse = await fetch(`${apiUrl}/rag/embed-query`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
             body: JSON.stringify({ query: textToSend })
           });
           
@@ -2338,15 +2356,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       newMessages[i].imageGenerations = [];
                     }
                     
+                    const imageGens = newMessages[i].imageGenerations!; // Non-null assertion after check
+                    
                     // Try to find existing image generation by ID
-                    const existingIndex = newMessages[i].imageGenerations.findIndex((ig: any) => 
+                    const existingIndex = imageGens.findIndex((ig: any) => 
                       ig.id === data.id || (data.prompt && ig.prompt === data.prompt)
                     );
                     
                     if (existingIndex >= 0) {
                       // Update existing image generation with progress
-                      const existing = newMessages[i].imageGenerations[existingIndex];
-                      newMessages[i].imageGenerations[existingIndex] = {
+                      const existing = imageGens[existingIndex];
+                      imageGens[existingIndex] = {
                         ...existing,
                         phase: data.phase, // 'selecting_provider', 'generating', 'completed', 'error'
                         provider: data.provider || existing.provider,
@@ -2356,7 +2376,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       };
                     } else {
                       // Create new image generation entry
-                      newMessages[i].imageGenerations.push({
+                      imageGens.push({
                         id: data.id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         provider: data.provider || 'unknown',
                         model: data.model || 'unknown',
@@ -2397,8 +2417,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       newMessages[i].imageGenerations = [];
                     }
                     
+                    const imageGens = newMessages[i].imageGenerations!; // Non-null assertion after check
                     const imgGenId = data.id || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    const existingIndex = newMessages[i].imageGenerations.findIndex((ig: any) => ig.id === imgGenId);
+                    const existingIndex = imageGens.findIndex((ig: any) => ig.id === imgGenId);
                     
                     const imageData = {
                       id: imgGenId,
@@ -2419,9 +2440,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     };
                     
                     if (existingIndex >= 0) {
-                      newMessages[i].imageGenerations[existingIndex] = imageData;
+                      imageGens[existingIndex] = imageData;
                     } else {
-                      newMessages[i].imageGenerations.push(imageData);
+                      imageGens.push(imageData);
                     }
                     break;
                   }
@@ -2470,19 +2491,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       console.log('🔄 Updating messages, total:', newMessages.length);
                       for (let i = newMessages.length - 1; i >= 0; i--) {
                         if (newMessages[i].role === 'assistant' && newMessages[i].imageGenerations) {
-                          console.log(`🔍 Checking message ${i}, imageGenerations:`, newMessages[i].imageGenerations?.length);
-                          const imgIndex = newMessages[i].imageGenerations.findIndex((ig: any) => ig.id === data.id);
+                          const imageGens = newMessages[i].imageGenerations!; // Non-null assertion after check
+                          console.log(`🔍 Checking message ${i}, imageGenerations:`, imageGens.length);
+                          const imgIndex = imageGens.findIndex((ig: any) => ig.id === data.id);
                           console.log(`🔍 Found image at index: ${imgIndex}, searching for ID: ${data.id}`);
                           if (imgIndex >= 0) {
-                            const before = { ...newMessages[i].imageGenerations[imgIndex] };
-                            newMessages[i].imageGenerations[imgIndex] = {
-                              ...newMessages[i].imageGenerations[imgIndex],
+                            const before = { ...imageGens[imgIndex] };
+                            imageGens[imgIndex] = {
+                              ...imageGens[imgIndex],
                               status: 'complete',
                               base64: base64,
                               imageUrl: base64, // Use base64 for display
                               ready: true
                             };
-                            const after = newMessages[i].imageGenerations[imgIndex];
+                            const after = imageGens[imgIndex];
                             console.log('✅ Updated image with base64 data');
                             console.log('   Before:', { status: before.status, hasBase64: !!before.base64, ready: before.ready });
                             console.log('   After:', { status: after.status, hasBase64: !!after.base64, ready: after.ready });
@@ -2499,10 +2521,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       const newMessages = [...prev];
                       for (let i = newMessages.length - 1; i >= 0; i--) {
                         if (newMessages[i].role === 'assistant' && newMessages[i].imageGenerations) {
-                          const imgIndex = newMessages[i].imageGenerations.findIndex((ig: any) => ig.id === data.id);
+                          const imageGens = newMessages[i].imageGenerations!; // Non-null assertion after check
+                          const imgIndex = imageGens.findIndex((ig: any) => ig.id === data.id);
                           if (imgIndex >= 0) {
-                            newMessages[i].imageGenerations[imgIndex] = {
-                              ...newMessages[i].imageGenerations[imgIndex],
+                            imageGens[imgIndex] = {
+                              ...imageGens[imgIndex],
                               status: 'error',
                               ready: false
                             };
@@ -5027,7 +5050,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           loading="lazy"
                                         />
                                         <button
-                                          onClick={() => handleGrabImage(img.src)}
+                                          onClick={() => handleGrabImage(img.src, img.alt || `Image ${idx + 1}`)}
                                           className="absolute top-2 right-2 p-1.5 bg-white dark:bg-gray-800 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
                                           title="Grab image"
                                         >
@@ -5120,7 +5143,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         {msg.toolResults && msg.toolResults.length > 0 && (
                           <div className="mt-4 space-y-3">
                             {msg.toolResults
-                              .filter((toolResult: any, trIdx: number) => {
+                              .filter((toolResult: any) => {
                                 // Hide failed image generation attempts (keep only successful ones)
                                 if (toolResult.name === 'generate_image') {
                                   try {
@@ -5916,7 +5939,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
 
                                           // Fallback: try to parse from tool result content
                                           try {
-                                            const imageResult = typeof toolResult.content === 'string' 
+                                            // Parse image result but don't use it directly - just validate
+                                            typeof toolResult.content === 'string' 
                                               ? JSON.parse(toolResult.content) 
                                               : toolResult.content;
                                             return <ToolResultJsonViewer content={toolResult.content} />;
@@ -6019,7 +6043,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                             </button>
                                             <button
                                               onClick={async () => {
-                                                await addSnippet(imageHtml, 'chat', imageGeneration.prompt || 'Generated image');
+                                                await addSnippet(imageHtml, 'assistant', imageGeneration.prompt || 'Generated image');
                                                 showSuccess('Image grabbed to swag');
                                               }}
                                               className="p-1.5 bg-white/90 dark:bg-gray-800/90 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

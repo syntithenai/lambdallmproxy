@@ -53,15 +53,10 @@ async function verifyGoogleToken(token) {
             return null;
         }
         
-        // Check if email is in whitelist (read from env dynamically)
-        const allowed = getAllowedEmails();
-        console.log(`🔍 Checking email against whitelist: [${allowed.join(', ')}]`);
-        if (!allowed.includes(payload.email)) {
-            console.log(`❌ Email not in whitelist: ${payload.email}`);
-            return null;
-        }
-        
+        // ✅ CREDIT SYSTEM: All authenticated Google users are allowed
+        // Whitelist check removed - access control is now via credit balance
         console.log(`✅ Authentication successful for: ${payload.email}`);
+        
         return {
             email: payload.email,
             name: payload.name,
@@ -132,16 +127,10 @@ async function verifyGoogleOAuthToken(accessToken) {
                             return;
                         }
                         
-                        // Check if email is in whitelist
-                        const allowed = getAllowedEmails();
-                        console.log(`🔍 Checking email against whitelist: [${allowed.join(', ')}]`);
-                        if (!allowed.includes(tokenInfo.email)) {
-                            console.log(`❌ Email not in whitelist: ${tokenInfo.email}`);
-                            resolve(null);
-                            return;
-                        }
-                        
+                        // ✅ CREDIT SYSTEM: All authenticated Google users are allowed
+                        // Whitelist check removed - access control is now via credit balance
                         console.log(`✅ OAuth token verified for: ${tokenInfo.email}`);
+                        
                         resolve({
                             email: tokenInfo.email,
                             name: tokenInfo.email, // OAuth tokeninfo doesn't include name
@@ -211,9 +200,9 @@ async function authenticateRequest(authHeader) {
     }
     
     // Token is valid and verified
-    // Check if user is in whitelist (already done in verify functions)
-    const allowedEmails = getAllowedEmails();
-    const isAuthorized = allowedEmails.includes(user.email);
+    // ✅ CREDIT SYSTEM: All authenticated users are authorized
+    // Authorization is now controlled by credit balance, not email whitelist
+    const isAuthorized = true; // All authenticated users are authorized
     
     console.log(`🔐 Request authenticated: ${user.email}, authorized: ${isAuthorized}`);
     

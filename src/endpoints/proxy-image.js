@@ -6,6 +6,7 @@
 
 const https = require('https');
 const http = require('http');
+const { authenticateRequest } = require('../auth');
 
 /**
  * Create Webshare proxy agent for image fetching
@@ -132,6 +133,27 @@ async function handler(event) {
   console.log('proxy-image endpoint called');
   
   try {
+    // Authenticate request
+    const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+    const authResult = await authenticateRequest(authHeader);
+    
+    if (!authResult.authenticated) {
+      return {
+        statusCode: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        },
+        body: JSON.stringify({
+          error: 'Authentication required. Please provide a valid token.',
+          code: 'UNAUTHORIZED'
+        })
+      };
+    }
+    
+    const userEmail = authResult.email || 'unknown';
+    console.log(`✅ Authenticated proxy-image request from: ${userEmail}`);
+    
     // Parse request body
     const body = typeof event.body === 'string' 
       ? JSON.parse(event.body) 
