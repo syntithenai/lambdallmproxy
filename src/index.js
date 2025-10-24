@@ -55,15 +55,20 @@ async function ensureCacheInitialized() {
 
 /**
  * Handle CORS preflight requests
- * Note: CORS headers are handled by Lambda Function URL configuration
+ * Returns proper CORS headers for all origins
  * @param {Object} event - Lambda event
  * @returns {Object} Lambda response
  */
 function handleCORS(event) {
+    const origin = event.headers?.origin || event.headers?.Origin || '*';
     return {
         statusCode: 200,
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Google-OAuth-Token,X-YouTube-OAuth-Token',
+            'Access-Control-Max-Age': '86400'
         },
         body: JSON.stringify({ message: 'CORS preflight response' })
     };
