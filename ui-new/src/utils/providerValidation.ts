@@ -10,10 +10,8 @@ import type { ProviderType, ProviderConfig } from '../types/provider';
  * API key format validation patterns per provider type
  */
 const API_KEY_PATTERNS: Record<ProviderType, RegExp> = {
-  'groq-free': /^gsk_[a-zA-Z0-9]{32,}$/,
   'groq': /^gsk_[a-zA-Z0-9]{32,}$/,
   'openai': /^sk-[a-zA-Z0-9_-]{20,}$/,
-  'gemini-free': /^AIza[a-zA-Z0-9_-]{35}$/,
   'gemini': /^AIza[a-zA-Z0-9_-]{35}$/,
   'together': /^[a-zA-Z0-9_-]{32,}$/,
   'atlascloud': /^apikey-[a-f0-9]{32}$/,
@@ -32,10 +30,8 @@ export function validateApiKey(apiKey: string, providerType: ProviderType): { va
   const pattern = API_KEY_PATTERNS[providerType];
   if (!pattern.test(apiKey)) {
     const errorMessages: Record<ProviderType, string> = {
-      'groq-free': 'Groq API key must start with "gsk_" followed by at least 32 characters',
       'groq': 'Groq API key must start with "gsk_" followed by at least 32 characters',
       'openai': 'OpenAI API key must start with "sk-" followed by at least 20 characters',
-      'gemini-free': 'Gemini API key must start with "AIza" followed by 35 characters',
       'gemini': 'Gemini API key must start with "AIza" followed by 35 characters',
       'together': 'Together AI API key must be at least 32 characters',
       'atlascloud': 'Atlas Cloud API key must start with "apikey-" followed by 32 hex characters',

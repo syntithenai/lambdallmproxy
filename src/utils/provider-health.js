@@ -27,11 +27,24 @@ function hasApiKey(provider, context = {}) {
     'replicate': 'replicateApiKey'
   };
   
-  // ONLY check context (from UI providers)
-  // Do NOT fallback to environment variables - those are for server-side RAG indexing only
+  // Check legacy context keys (from UI provider settings)
   const contextKey = contextKeyMap[provider.toLowerCase()];
   if (contextKey && context[contextKey]) {
     return true;
+  }
+  
+  // Check providerPool (includes both UI providers and environment providers)
+  if (context.providerPool && Array.isArray(context.providerPool)) {
+    const hasProviderInPool = context.providerPool.some(p => {
+      // Normalize provider type (together, together-free → together)
+      const normalizedType = p.type.replace(/-free$/, '');
+      const normalizedProvider = provider.toLowerCase().replace(/-free$/, '');
+      return normalizedType === normalizedProvider && p.apiKey;
+    });
+    
+    if (hasProviderInPool) {
+      return true;
+    }
   }
   
   // No key found in user's configured providers

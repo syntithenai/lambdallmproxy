@@ -5,6 +5,7 @@ import { ragSyncService } from '../services/ragSyncService';
 import { isGoogleIdentityAvailable, appendRows, formatChunksForSheets, getAccessToken } from '../services/googleSheetsClient';
 import type { SyncStatus } from '../services/ragSyncService';
 import { useAuth } from './AuthContext';
+import { useSettings } from './SettingsContext';
 import { ragDB } from '../utils/ragDB';
 import { fetchSnippetById } from '../services/snippetsSync';
 import { getCachedApiBase } from '../utils/api';
@@ -62,6 +63,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const { showError, showWarning, showSuccess } = useToast();
   const { user, getToken } = useAuth();
+  const { settings } = useSettings();
 
   // Load from storage on mount
   useEffect(() => {
@@ -695,6 +697,19 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const apiUrl = await getCachedApiBase();
           const token = await getToken();
+          
+          // Format providers for backend (only enabled providers with embedding capability)
+          const providers = settings.providers
+            .filter(p => p.enabled !== false && p.capabilities?.embedding !== false)
+            .map(p => ({
+              type: p.type,
+              apiKey: p.apiKey,
+              apiEndpoint: p.apiEndpoint,
+              modelName: p.modelName,
+              allowedModels: p.allowedModels,
+              maxImageQuality: p.maxImageQuality
+            }));
+          
           response = await fetch(`${apiUrl}/rag/embed-snippets`, {
             method: 'POST',
             headers: {
@@ -709,6 +724,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 tags: s.tags,
                 timestamp: s.timestamp
               })),
+              providers,  // Include providers in request
               force
             }),
           });

@@ -2499,7 +2499,7 @@ Brief answer with URLs:`;
         // Check if the API key is actually a Gemini key (which doesn't support Whisper)
         if (apiKey && apiKey.startsWith('AIza')) {
           return JSON.stringify({
-            error: 'Audio transcription requires OpenAI or Groq API credentials. Gemini does not support Whisper transcription. Please configure LLAMDA_LLM_PROXY_PROVIDER_TYPE_N=openai or groq-free with the corresponding API key to enable transcription.',
+            error: 'Audio transcription requires OpenAI or Groq API credentials. Gemini does not support Whisper transcription. Please configure LP_TYPE_N=openai or groq-free with the corresponding API key to enable transcription.',
             url,
             source: 'whisper',
             hint: 'Add an OpenAI provider (for Whisper-1) or Groq provider (for Whisper-large-v3-turbo) to your environment configuration.'
@@ -2547,7 +2547,7 @@ Brief answer with URLs:`;
             error: 'No Whisper-compatible API key found. Audio transcription requires OpenAI or Groq credentials.',
             url,
             source: 'whisper',
-            hint: 'Configure LLAMDA_LLM_PROXY_PROVIDER_TYPE_N with openai or groq-free and provide the corresponding API key.'
+            hint: 'Configure LP_TYPE_N with openai or groq-free and provide the corresponding API key.'
           });
         }
 
@@ -2828,12 +2828,25 @@ Summary:`;
         
         // 2.5. Apply provider-specific restrictions from context
         console.log(`🔒 Checking provider restrictions from ${context.providers?.length || 0} provider configs`);
+        console.log(`🔍 Provider configs:`, context.providers?.map(p => ({ 
+          type: p.type, 
+          allowedModels: p.allowedModels, 
+          maxImageQuality: p.maxImageQuality 
+        })));
+        console.log(`🔍 Matching models BEFORE filtering:`, matchingModels.map(m => ({ provider: m.provider, model: m.model, qualityTier: m.qualityTier })));
+        
         const restrictedModels = matchingModels.filter(m => {
           // Find provider config for this model's provider
-          if (!context.providers) return true; // No restrictions if no provider configs
+          if (!context.providers) {
+            console.log(`   ✅ ${m.model}: No provider configs, allowing`);
+            return true; // No restrictions if no provider configs
+          }
           
           const providerConfig = context.providers.find(p => p.type === m.provider);
-          if (!providerConfig) return true; // No config = no restrictions
+          if (!providerConfig) {
+            console.log(`   ✅ ${m.model}: No config for provider ${m.provider}, allowing`);
+            return true; // No config = no restrictions
+          }
           
           // Check if provider has model restrictions (applies to ALL LLM calls)
           // null or undefined or empty array = allow all models
@@ -2841,14 +2854,19 @@ Summary:`;
           if (providerConfig.allowedModels && Array.isArray(providerConfig.allowedModels) && providerConfig.allowedModels.length > 0) {
             const isAllowed = providerConfig.allowedModels.includes(m.model);
             if (!isAllowed) {
-              console.log(`⛔ Model ${m.model} not in allowed list for ${m.provider}: ${providerConfig.allowedModels.join(', ')}`);
+              console.log(`   ⛔ ${m.model} not in allowed list for ${m.provider}: ${providerConfig.allowedModels.join(', ')}`);
+            } else {
+              console.log(`   ✅ ${m.model} in allowed list for ${m.provider}`);
             }
             return isAllowed;
           }
           
           // No allowed models list = all models allowed
+          console.log(`   ✅ ${m.model}: No allowedModels restriction for ${m.provider}, allowing`);
           return true;
         });
+        
+        console.log(`🔍 Restricted models AFTER filtering:`, restrictedModels.map(m => ({ provider: m.provider, model: m.model, qualityTier: m.qualityTier })));
         
         // 2.6. Check if quality tier is restricted by provider config
         let effectiveQualityTier = qualityTier;

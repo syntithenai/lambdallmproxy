@@ -90,7 +90,7 @@ async function downloadAudio(videoId, onProgress) {
         let totalSize = 0;
 
         // Get download timeout from environment (default: 30 seconds)
-        const downloadTimeout = parseInt(process.env.MEDIA_DOWNLOAD_TIMEOUT) || 30000;
+        const downloadTimeout = 15000; // 15 second timeout for YouTube downloads
         
         // Set up timeout
         const timeoutId = setTimeout(() => {

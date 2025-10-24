@@ -59,11 +59,11 @@ function hasProviderApiKey(providerType, context = {}) {
     return true;
   }
   
-  // Check indexed providers (LLAMDA_LLM_PROXY_PROVIDER_TYPE_*)
+  // Check indexed providers (LP_TYPE_*)
   let index = 0;
   while (true) {
-    const typeVar = `LLAMDA_LLM_PROXY_PROVIDER_TYPE_${index}`;
-    const keyVar = `LLAMDA_LLM_PROXY_PROVIDER_KEY_${index}`;
+    const typeVar = `LP_TYPE_${index}`;
+    const keyVar = `LP_KEY_${index}`;
     
     const providerType = process.env[typeVar];
     const providerKey = process.env[keyVar];

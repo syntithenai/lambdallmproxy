@@ -16,7 +16,6 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
   // Sync preferences
   const [configSync, setConfigSync] = useState(false);
   const [swagSync, setSwagSync] = useState(false);
-  const [billingSync, setBillingSync] = useState(false);
 
   // Check authentication status on mount
   useEffect(() => {
@@ -32,12 +31,10 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
     // Config sync comes from SettingsContext.syncToGoogleDrive
     setConfigSync(settings.syncToGoogleDrive || false);
     
-    // Swag and billing sync come from localStorage
+    // Swag sync comes from localStorage
     const swagPref = localStorage.getItem('cloud_sync_swag');
-    const billingPref = localStorage.getItem('cloud_sync_billing');
     
     setSwagSync(swagPref !== 'false'); // Default true
-    setBillingSync(billingPref !== 'false'); // Default true
   }, [settings.syncToGoogleDrive]);
 
   const handleGoogleAuth = async () => {
@@ -115,7 +112,6 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
     localStorage.removeItem('google_drive_access_token');
     localStorage.removeItem('user_email');
     localStorage.removeItem('cloud_sync_swag');
-    localStorage.removeItem('cloud_sync_billing');
     
     // Disable config sync in SettingsContext
     setSettings({ ...settings, syncToGoogleDrive: false });
@@ -124,11 +120,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
     setUserEmail(null);
     setConfigSync(false);
     setSwagSync(false);
-    setBillingSync(false);
     setError(null);
-    
-    // Notify billing page that settings changed
-    window.dispatchEvent(new CustomEvent('billing-settings-changed'));
   };
 
   const handleConfigSyncChange = (enabled: boolean) => {
@@ -140,14 +132,6 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
   const handleSwagSyncChange = (enabled: boolean) => {
     setSwagSync(enabled);
     localStorage.setItem('cloud_sync_swag', enabled.toString());
-  };
-
-  const handleBillingSyncChange = (enabled: boolean) => {
-    setBillingSync(enabled);
-    localStorage.setItem('cloud_sync_billing', enabled.toString());
-    
-    // Dispatch custom event to notify billing page
-    window.dispatchEvent(new CustomEvent('billing-settings-changed'));
   };
 
   return (
@@ -244,39 +228,6 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
             </label>
           </div>
 
-          <div className="sync-option">
-            <label>
-              <input
-                type="checkbox"
-                checked={billingSync}
-                onChange={(e) => handleBillingSyncChange(e.target.checked)}
-              />
-              <div className="option-content">
-                <strong>Personal Billing Sheet</strong>
-                <span className="option-description">
-                  Also log API usage to your personal Google Sheet and display it in the Billing page
-                </span>
-              </div>
-            </label>
-            {!billingSync && (
-              <div className="sync-warning">
-                <strong>Note:</strong> Usage data is always logged to the centralized service sheet. 
-                When this option is disabled, the Billing page will display aggregated data from the 
-                central service instead of detailed transactions from your personal sheet.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!isAuthenticated && (
-        <div className="sync-disabled-notice">
-          <p>
-            <strong>About Billing Data:</strong> All API usage is automatically logged to a centralized 
-            service sheet for your records. Connect your Google account to also sync this data to your 
-            personal Google Sheet, where you can view detailed transaction history, export data, and 
-            track usage across sessions.
-          </p>
         </div>
       )}
     </div>

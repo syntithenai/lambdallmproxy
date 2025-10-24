@@ -17,7 +17,6 @@ const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
 const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
 const { loadGuardrailConfig } = require('../guardrails/config');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
-const { logToBillingSheet } = require('../services/user-billing-sheet');
 
 // Load provider catalog with fallback
 let providerCatalog;
@@ -242,24 +241,7 @@ async function logToBothSheets(accessToken, logData) {
         console.error('⚠️ Failed to log to service account sheet:', error.message);
     }
     
-    // Also log to user's personal billing sheet if token available
-    if (accessToken && logData.userEmail && logData.userEmail !== 'unknown') {
-        try {
-            console.log('📝 Attempting to log to personal billing sheet...');
-            await logToBillingSheet(accessToken, logData);
-            console.log('✅ Successfully logged to personal billing sheet');
-        } catch (error) {
-            console.error('⚠️ Failed to log to user billing sheet:', error.message);
-            console.error('Stack:', error.stack);
-            // Don't fail the request if user billing logging fails
-        }
-    } else {
-        console.log('⏭️ Skipping personal billing sheet:', {
-            hasToken: !!accessToken,
-            hasEmail: !!logData.userEmail,
-            emailValid: logData.userEmail !== 'unknown'
-        });
-    }
+
 }
 
 /**
@@ -3231,6 +3213,34 @@ async function handler(event, responseStream, context) {
             if (false) { // Disabled - moved to after main loop
                 console.log(`🔍 Self-evaluation attempt ${evaluationRetries + 1}/${MAX_EVALUATION_RETRIES + 1}`);
                 
+                // SKIP ASSESSMENT if successful tool calls exist (especially image generation)
+                // The assessor doesn't see tool results, so it incorrectly marks short responses as incomplete
+                // when the actual content is in the tool result (e.g., generated image)
+                // Use toolMessages (filter from currentMessages) instead of toolResults (out of scope)
+                const toolMessagesForCheck = currentMessages.filter(m => m.role === 'tool');
+                const hasSuccessfulTools = toolMessagesForCheck.length > 0 && toolMessagesForCheck.some(tm => {
+                    try {
+                        const contentToCheck = tm.rawResult || tm.content;
+                        if (!contentToCheck) return false;
+                        const result = JSON.parse(contentToCheck);
+                        // Check for successful tool execution markers
+                        return result.success === true || 
+                               result.generated === true || // Image generation
+                               result.url || // Has URL result
+                               result.imageUrl || // Image URL
+                               result.transcript || // Transcription result
+                               result.content || // Scraped content
+                               result.results; // Search results
+                    } catch {
+                        return false;
+                    }
+                });
+                
+                if (hasSuccessfulTools) {
+                    console.log(`✅ Skipping assessment - successful tool results exist`);
+                    break; // Skip assessment and return response as-is
+                }
+                
                 // Evaluate current response
                 const evaluation = await evaluateResponseComprehensiveness(
                     currentMessages.slice(0, -1), // All messages except the final assistant message we're evaluating
@@ -3679,44 +3689,71 @@ async function handler(event, responseStream, context) {
             
             let evaluation = null;
             if (lastAssistantMessage && lastAssistantMessage.role === 'assistant' && lastAssistantMessage.content) {
-                console.log(`🔍 Running comprehensive assessment on final response`);
+                // SKIP ASSESSMENT if successful tool calls exist (especially image generation)
+                // The assessor doesn't see tool results, so it incorrectly marks short responses as incomplete
+                // when the actual content is in the tool result (e.g., generated image)
+                // Use toolMessages (already in scope) instead of toolResults (out of scope)
+                const toolMessagesForCheck = currentMessages.filter(m => m.role === 'tool');
+                const hasSuccessfulTools = toolMessagesForCheck.length > 0 && toolMessagesForCheck.some(tm => {
+                    try {
+                        const contentToCheck = tm.rawResult || tm.content;
+                        if (!contentToCheck) return false;
+                        const result = JSON.parse(contentToCheck);
+                        // Check for successful tool execution markers
+                        return result.success === true || 
+                               result.generated === true || // Image generation
+                               result.url || // Has URL result
+                               result.imageUrl || // Image URL
+                               result.transcript || // Transcription result
+                               result.content || // Scraped content
+                               result.results; // Search results
+                    } catch {
+                        return false;
+                    }
+                });
                 
-                // Filter messages to only include user and assistant (no tool or tool_call messages)
-                const messagesForEvaluation = currentMessages
-                    .filter(m => m.role === 'user' || (m.role === 'assistant' && !m.tool_calls))
-                    .slice(0, -1); // All messages except the final assistant message we're evaluating
-                
-                console.log(`📋 Evaluating with ${messagesForEvaluation.length} messages (filtered from ${currentMessages.length} total, excluding tool messages)`);
-                
-                evaluation = await evaluateResponseComprehensiveness(
-                    messagesForEvaluation,
-                    lastAssistantMessage.content,
-                    model, // Use same model for evaluation
-                    apiKey,
-                    provider,
-                    selectedProvider // Pass provider config for model filtering
-                );
-                
-                // Track evaluation call in LLM transparency
-                if (evaluation && (evaluation.usage || evaluation.rawResponse)) {
-                    const evalLlmCall = {
-                        phase: 'assessment',
-                        type: 'assessment',
-                        iteration: 1,
-                        model: model,
-                        provider: provider,
-                        request: {
-                            messages: evaluation.messages || [],
-                            purpose: 'evaluate_final_response_comprehensiveness',
-                            temperature: 0.1,
-                            max_tokens: 200
-                        },
-                        response: {
-                            usage: evaluation.usage,
-                            comprehensive: evaluation.isComprehensive,
-                            reason: evaluation.reason,
-                            text: evaluation.rawResponse?.text || evaluation.rawResponse?.content || ''
-                        },
+                if (hasSuccessfulTools) {
+                    console.log(`✅ Skipping final assessment - successful tool results exist (${toolMessagesForCheck.length} tool(s))`);
+                    // Skip assessment and return response as-is
+                } else {
+                    console.log(`🔍 Running comprehensive assessment on final response`);
+                    
+                    // Filter messages to only include user and assistant (no tool or tool_call messages)
+                    const messagesForEvaluation = currentMessages
+                        .filter(m => m.role === 'user' || (m.role === 'assistant' && !m.tool_calls))
+                        .slice(0, -1); // All messages except the final assistant message we're evaluating
+                    
+                    console.log(`📋 Evaluating with ${messagesForEvaluation.length} messages (filtered from ${currentMessages.length} total, excluding tool messages)`);
+                    
+                    evaluation = await evaluateResponseComprehensiveness(
+                        messagesForEvaluation,
+                        lastAssistantMessage.content,
+                        model, // Use same model for evaluation
+                        apiKey,
+                        provider,
+                        selectedProvider // Pass provider config for model filtering
+                    );
+                    
+                    // Track evaluation call in LLM transparency
+                    if (evaluation && (evaluation.usage || evaluation.rawResponse)) {
+                        const evalLlmCall = {
+                            phase: 'assessment',
+                            type: 'assessment',
+                            iteration: 1,
+                            model: model,
+                            provider: provider,
+                            request: {
+                                messages: evaluation.messages || [],
+                                purpose: 'evaluate_final_response_comprehensiveness',
+                                temperature: 0.1,
+                                max_tokens: 200
+                            },
+                            response: {
+                                usage: evaluation.usage,
+                                comprehensive: evaluation.isComprehensive,
+                                reason: evaluation.reason,
+                                text: evaluation.rawResponse?.text || evaluation.rawResponse?.content || ''
+                            },
                         httpHeaders: evaluation.httpHeaders || {},
                         httpStatus: evaluation.httpStatus || 200,
                         timestamp: new Date().toISOString(),
@@ -3761,7 +3798,8 @@ async function handler(event, responseStream, context) {
                 } else {
                     console.log(`⚠️ Max iterations reached - proceeding with current response despite incomplete assessment`);
                 }
-            }
+                } // End of assessment else block
+            } // End of lastAssistantMessage check
             
             // Add memory tracking snapshot before completing
             memoryTracker.snapshot('chat-complete');

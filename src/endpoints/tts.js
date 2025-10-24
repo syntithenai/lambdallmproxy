@@ -371,7 +371,6 @@ async function handleTTS(event, responseStream, context) {
         // Log to Google Sheets (async, don't block response)
         try {
             const { logToGoogleSheets } = require('../services/google-sheets-logger');
-            const { logToBillingSheet } = require('../services/user-billing-sheet');
             const os = require('os');
             
             const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -397,17 +396,10 @@ async function handleTTS(event, responseStream, context) {
                 errorMessage: ''
             };
             
-            // Log to both service account sheet and user billing sheet
+            // Log to centralized service account sheet
             logToGoogleSheets(logData).catch(err => {
                 console.error('Failed to log TTS to service account sheet:', err);
             });
-            
-            // Also log to user's personal billing sheet if authenticated
-            if (authResult.accessToken && userEmail && userEmail !== 'unknown') {
-                logToBillingSheet(authResult.accessToken, logData).catch(err => {
-                    console.error('Failed to log TTS to user billing sheet:', err);
-                });
-            }
         } catch (logError) {
             console.error('Error setting up Google Sheets logging:', logError);
         }

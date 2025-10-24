@@ -295,7 +295,7 @@ export const RAGSettings: React.FC = () => {
               Cloud Sync Settings
             </div>
             <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-              Configure cloud synchronization for your Swag, Snippets, and Billing data in the <strong>Cloud Sync</strong> tab.
+              Configure cloud synchronization for your Swag and Snippets in the <strong>Cloud Sync</strong> tab.
             </div>
           </div>
         </div>

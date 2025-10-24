@@ -491,7 +491,12 @@ async function scrapeWithTierFallback(url, options = {}) {
         result.compressionRatio = extracted.compressionRatio;
         result.extractionWarning = extracted.warning;
         
-        console.log(`✨ [Orchestrator] Smart extraction: ${extracted.originalLength} → ${extracted.extractedLength} chars (${extracted.compressionRatio.toFixed(2)}x compression, format: ${extracted.format})`);
+        // Handle compressionRatio - it might already be a string from .toFixed()
+        const compressionDisplay = typeof extracted.compressionRatio === 'number' 
+          ? extracted.compressionRatio.toFixed(2) 
+          : extracted.compressionRatio;
+        
+        console.log(`✨ [Orchestrator] Smart extraction: ${extracted.originalLength} → ${extracted.extractedLength} chars (${compressionDisplay}x compression, format: ${extracted.format})`);
         if (extracted.warning) {
           console.log(`⚠️  [Orchestrator] Extraction warning: ${extracted.warning}`);
         }

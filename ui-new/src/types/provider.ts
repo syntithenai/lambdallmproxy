@@ -5,16 +5,16 @@
  * Key changes from v1:
  * - Single provider → Multiple providers array
  * - Model selection removed (backend decides)
- * - Provider type encoding (groq-free vs groq)
+ * - Provider type encoding
  * - OpenAI-compatible support with modelName
+ * 
+ * Note: All pricing uses paid tier rates regardless of API key source
  */
 
 export type ProviderType =
-  | 'groq-free'           // Groq free tier - https://api.groq.com/openai/v1
-  | 'groq'                // Groq paid tier - https://api.groq.com/openai/v1
+  | 'groq'                // Groq - https://api.groq.com/openai/v1
   | 'openai'              // OpenAI - https://api.openai.com/v1
-  | 'gemini-free'         // Gemini free tier - https://generativelanguage.googleapis.com/v1beta
-  | 'gemini'              // Gemini paid tier - https://generativelanguage.googleapis.com/v1beta
+  | 'gemini'              // Google Gemini - https://generativelanguage.googleapis.com/v1beta
   | 'together'            // Together AI - https://api.together.xyz/v1
   | 'replicate'           // Replicate - https://api.replicate.com/v1
   | 'atlascloud'          // Atlas Cloud - https://api.atlascloud.ai/v1
@@ -73,10 +73,8 @@ export interface SettingsV1 {
  */
 export const PROVIDER_ENDPOINTS: Record<Exclude<ProviderType, 'openai-compatible'>, string> = {
   'groq': 'https://api.groq.com/openai/v1',
-  'groq-free': 'https://api.groq.com/openai/v1',
   'openai': 'https://api.openai.com/v1',
   'gemini': 'https://generativelanguage.googleapis.com/v1beta',
-  'gemini-free': 'https://generativelanguage.googleapis.com/v1beta',
   'together': 'https://api.together.xyz/v1',
   'replicate': 'https://api.replicate.com/v1',
   'atlascloud': 'https://api.atlascloud.ai/v1',
@@ -84,42 +82,33 @@ export const PROVIDER_ENDPOINTS: Record<Exclude<ProviderType, 'openai-compatible
 
 /**
  * Provider display names and descriptions
+ * All providers use paid tier pricing regardless of API key source
  */
 export const PROVIDER_INFO: Record<ProviderType, { name: string; icon: string; description: string }> = {
-  'groq-free': {
-    name: 'Groq (Free Tier)',
-    icon: '🆓',
-    description: 'Fast inference with generous free tier limits'
-  },
   'groq': {
-    name: 'Groq (Paid)',
-    icon: '💰',
-    description: 'Fast inference with higher rate limits'
+    name: 'Groq',
+    icon: '⚡',
+    description: 'Fast inference with LLaMA and Mixtral models'
   },
   'openai': {
     name: 'OpenAI',
-    icon: '💰',
+    icon: '🤖',
     description: 'GPT-4, GPT-4o, and other OpenAI models'
   },
-  'gemini-free': {
-    name: 'Google Gemini (Free Tier)',
-    icon: '🆓',
-    description: 'Google\'s Gemini models with free tier'
-  },
   'gemini': {
-    name: 'Google Gemini (Paid)',
-    icon: '💰',
-    description: 'Google\'s Gemini models with higher limits'
+    name: 'Google Gemini',
+    icon: '✨',
+    description: 'Google\'s Gemini models'
   },
   'together': {
     name: 'Together AI',
     icon: '🔌',
-    description: 'Open source models with trial credits'
+    description: 'Open source models including FLUX image generation'
   },
   'replicate': {
     name: 'Replicate',
     icon: '🔄',
-    description: 'Run ML models with API'
+    description: 'Run ML models via API'
   },
   'atlascloud': {
     name: 'Atlas Cloud',

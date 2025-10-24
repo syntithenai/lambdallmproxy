@@ -15,17 +15,17 @@ const uuidv4 = generateUuid;
 
 /**
  * Load providers from environment variables
- * Reads indexed environment variables in the format:
- * - LLAMDA_LLM_PROXY_PROVIDER_TYPE_N=groq-free
- * - LLAMDA_LLM_PROXY_PROVIDER_KEY_N=gsk_...
- * - LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_N=https://api.groq.com/openai/v1 (optional)
- * - LLAMDA_LLM_PROXY_PROVIDER_MODEL_N=llama-3.1-70b-instruct (optional, for openai-compatible)
- * - LLAMDA_LLM_PROXY_PROVIDER_RATE_LIMIT_N=10000 (optional, TPM for openai-compatible)
- * - LLAMDA_LLM_PROXY_PROVIDER_ALLOWED_MODELS_N=model1,model2 (optional, filter models - empty=allow all)
- * - LLAMDA_LLM_PROXY_PROVIDER_IMAGE_MAX_QUALITY_N=fast|standard|high|ultra (optional)
  * 
- * Where N can be any non-negative integer (0, 1, 2, 5, 10, etc.)
- * Scans indices 0-99 to find all configured providers, allowing gaps in numbering
+ * Format (indexed approach - recommended):
+ * - LP_TYPE_N=groq-free
+ * - LP_KEY_N=gsk_...
+ * - LP_ENDPOINT_N=https://api.groq.com/openai/v1 (optional)
+ * - LP_MODEL_N=llama-3.1-70b-instruct (optional, for openai-compatible)
+ * - LP_RATE_LIMIT_N=10000 (optional, TPM for openai-compatible)
+ * - LP_ALLOWED_MODELS_N=model1,model2 (optional, filter models - empty=allow all)
+ * - LP_IMAGE_MAX_QUALITY_N=fast|standard|high|ultra (optional)
+ * 
+ * Where N is a numeric index (0, 1, 2, ...)
  * 
  * @returns {Array<Object>} Array of provider configurations
  */
@@ -35,13 +35,13 @@ function loadEnvironmentProviders() {
     
     // Scan all possible indices (allows gaps in numbering)
     for (let index = 0; index <= MAX_PROVIDER_INDEX; index++) {
-        const typeKey = `LLAMDA_LLM_PROXY_PROVIDER_TYPE_${index}`;
-        const keyKey = `LLAMDA_LLM_PROXY_PROVIDER_KEY_${index}`;
-        const endpointKey = `LLAMDA_LLM_PROXY_PROVIDER_ENDPOINT_${index}`;
-        const modelKey = `LLAMDA_LLM_PROXY_PROVIDER_MODEL_${index}`;
-        const rateLimitKey = `LLAMDA_LLM_PROXY_PROVIDER_RATE_LIMIT_${index}`;
-        const allowedModelsKey = `LLAMDA_LLM_PROXY_PROVIDER_ALLOWED_MODELS_${index}`;
-        const maxQualityKey = `LLAMDA_LLM_PROXY_PROVIDER_IMAGE_MAX_QUALITY_${index}`;
+        const typeKey = `LP_TYPE_${index}`;
+        const keyKey = `LP_KEY_${index}`;
+        const endpointKey = `LP_ENDPOINT_${index}`;
+        const modelKey = `LP_MODEL_${index}`;
+        const rateLimitKey = `LP_RATE_LIMIT_${index}`;
+        const allowedModelsKey = `LP_ALLOWED_MODELS_${index}`;
+        const maxQualityKey = `LP_IMAGE_MAX_QUALITY_${index}`;
         
         const type = process.env[typeKey];
         const apiKey = process.env[keyKey];

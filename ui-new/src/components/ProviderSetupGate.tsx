@@ -1,17 +1,21 @@
 /**
  * ProviderSetupGate Component
  * 
- * Blocks unauthorized users from using the application until they configure
- * at least one LLM provider. Shows a full-screen overlay with provider setup form.
+ * Blocks users from using the application until they have access to LLM providers.
+ * Shows a full-screen overlay with provider setup form.
  * 
  * This component is displayed when:
- * - User is authenticated but NOT authorized (not in ALLOWED_EMAILS)
- * - User has zero providers configured
+ * - User has zero UI providers configured
  * - Backend returns 403 with requiresProviderSetup: true
+ * 
+ * Note: Authenticated users with credits automatically get server-side providers
+ * and don't need to configure UI providers. This gate is only shown when the
+ * backend explicitly requires provider setup (no providers available at all).
  */
 
 import React, { useState, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from '../contexts/AuthContext';
 import { ProviderForm } from './ProviderForm';
 import type { ProviderConfig } from '../types/provider';
 
@@ -22,15 +26,30 @@ interface ProviderSetupGateProps {
 
 const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnblock }) => {
   const { settings } = useSettings();
+  const { isAuthenticated } = useAuth();
   const [showForm, setShowForm] = useState(false);
 
-  // Check if user has providers - if they do, automatically unblock
+  // Check if user has providers OR is authenticated (which gives server-side providers)
+  // If either condition is true, automatically unblock
   useEffect(() => {
-    if (isBlocked && settings.providers && settings.providers.length > 0) {
-      console.log('✅ User has providers configured, unblocking UI');
-      onUnblock();
+    if (isBlocked) {
+      const hasUIProviders = settings.providers && settings.providers.length > 0;
+      
+      // Authenticated users get server-side providers automatically
+      if (isAuthenticated) {
+        console.log('✅ User authenticated - server-side providers available, unblocking UI');
+        onUnblock();
+        return;
+      }
+      
+      // Otherwise, check if they have UI providers configured
+      if (hasUIProviders) {
+        console.log('✅ User has UI providers configured, unblocking UI');
+        onUnblock();
+        return;
+      }
     }
-  }, [isBlocked, settings.providers, onUnblock]);
+  }, [isBlocked, settings.providers, isAuthenticated, onUnblock]);
 
   // Handle provider added event
   useEffect(() => {

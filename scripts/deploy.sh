@@ -85,29 +85,23 @@ cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
 # Copy PROVIDER_CATALOG.json (required for image generation)
 cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null || echo -e "${YELLOW}⚠️  PROVIDER_CATALOG.json not found${NC}"
 
-# Create package.json for the Lambda function with dependencies
+# Create minimal package.json - dependencies provided by layer
 cat > package.json << EOF
 {
   "name": "llmproxy-lambda",
-  "version": "1.0.0",
-  "description": "AWS Lambda handler for intelligent search + LLM response",
-  "main": "index.js",
   "dependencies": {
     "@distube/ytdl-core": "^4.14.4",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "fluent-ffmpeg": "^2.1.2",
     "form-data": "^4.0.0",
     "google-auth-library": "^10.4.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
   }
 }
 EOF
 
-# Install production dependencies
-echo -e "${YELLOW}📦 Installing production dependencies...${NC}"
-npm install --production --no-package-lock
+# Install minimal dependencies (most come from layer)
+echo -e "${YELLOW}📦 Installing minimal dependencies (others in layer)...${NC}"
+npm install --omit=dev --no-package-lock --legacy-peer-deps
 
 # List files before packaging
 echo -e "${YELLOW}📦 Files to be packaged:${NC}"

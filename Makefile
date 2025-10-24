@@ -20,7 +20,8 @@ help:
 	@echo "  make deploy-lambda       - Deploy main Lambda function (full with dependencies)"
 	@echo "  make deploy-lambda-fast  - Deploy main Lambda function (code only, 10 sec)"
 	@echo "  make setup-layer         - Create Lambda layer (run once before fast deploy)"
-	@echo "  make deploy-env          - Deploy environment variables from .env to Lambda"
+	@echo "  make deploy-env          - Deploy environment variables from .env.lambda to Lambda"
+	@echo "  make setup-secrets       - Setup AWS Secrets Manager (moves large secrets)"
 	@echo ""
 	@echo "Puppeteer Lambda Function:"
 	@echo "  make setup-puppeteer            - Setup Puppeteer Lambda function (one-time)"
@@ -211,11 +212,18 @@ setup-layer:
 	./scripts/deploy-layer.sh
 	@echo "✅ Layer created! Now use 'make deploy-lambda-fast' for rapid deployments"
 
-# Deploy environment variables from .env to Lambda
+# Deploy environment variables from .env.lambda to Lambda
 deploy-env:
 	@echo "🔧 Deploying environment variables to Lambda..."
+	@echo "📝 Note: Using .env.lambda (Lambda-optimized, excludes local-only vars)"
 	@chmod +x scripts/deploy-env.sh
 	./scripts/deploy-env.sh --yes
+
+# Setup AWS Secrets Manager for large secrets (Google Sheets private key)
+setup-secrets:
+	@echo "🔐 Setting up AWS Secrets Manager..."
+	@chmod +x scripts/setup-secrets.sh
+	./scripts/setup-secrets.sh
 
 # Setup Puppeteer Lambda function (one-time setup)
 setup-puppeteer:

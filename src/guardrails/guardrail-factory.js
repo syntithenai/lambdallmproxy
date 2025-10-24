@@ -28,7 +28,7 @@ const SAFETY_CATEGORIES = {
 
 /**
  * Get API key for a provider from context or indexed environment variables
- * Only supports indexed format (LLAMDA_LLM_PROXY_PROVIDER_*) for guardrails
+ * Only supports indexed format (LP_*) for guardrails
  * @param {string} provider - Provider name
  * @param {Object} context - Request context
  * @returns {string|null} API key or null if not found
@@ -55,11 +55,11 @@ function getProviderApiKey(provider, context = {}) {
     return context[contextKey];
   }
   
-  // Check indexed format (LLAMDA_LLM_PROXY_PROVIDER_*) - ONLY source for guardrails
+  // Check indexed format (LP_*) - ONLY source for guardrails
   let index = 0;
   while (true) {
-    const typeVar = `LLAMDA_LLM_PROXY_PROVIDER_TYPE_${index}`;
-    const keyVar = `LLAMDA_LLM_PROXY_PROVIDER_KEY_${index}`;
+    const typeVar = `LP_TYPE_${index}`;
+    const keyVar = `LP_KEY_${index}`;
     
     const providerType = process.env[typeVar];
     const providerKey = process.env[keyVar];

@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 FUNCTION_NAME="llmproxy"
-ENV_FILE=".env"
+ENV_FILE=".env.lambda"  # Use Lambda-optimized env file (no local-only vars)
 REGION="us-east-1"
 SKIP_CONFIRMATION=false
 
@@ -77,9 +77,11 @@ while IFS='=' read -r key value; do
         continue
     fi
     
-    # Trim whitespace
+    # Trim whitespace from key only (not value, to preserve backslashes)
     key=$(echo "$key" | xargs)
-    value=$(echo "$value" | xargs)
+    # Trim leading/trailing spaces from value without interpreting escapes
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
     
     # Skip if key or value is empty
     if [[ -z "$key" ]] || [[ -z "$value" ]]; then
@@ -91,11 +93,12 @@ while IFS='=' read -r key value; do
         continue
     fi
     
-    # Remove quotes from value if present
-    value="${value%\"}"
-    value="${value#\"}"
-    value="${value%\'}"
-    value="${value#\'}"
+    # Remove quotes from value if present (preserve backslashes)
+    if [[ "$value" =~ ^\".*\"$ ]]; then
+        value="${value:1:-1}"
+    elif [[ "$value" =~ ^\'.*\'$ ]]; then
+        value="${value:1:-1}"
+    fi
     
     # Add comma if not first entry
     if [ "$FIRST" = false ]; then
@@ -104,8 +107,9 @@ while IFS='=' read -r key value; do
     FIRST=false
     
     # Escape special characters in value for JSON
-    # Replace newlines with \n, quotes with \", etc.
-    value=$(echo "$value" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+    # Important: Use printf instead of echo to preserve backslashes in values like \n
+    # This ensures private keys with \n sequences are preserved correctly
+    value=$(printf '%s' "$value" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
     
     ENV_VARS_JSON+="\"$key\":\"$value\""
     COUNT=$((COUNT + 1))

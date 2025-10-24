@@ -213,18 +213,18 @@ function AppContent() {
                     ? 'bg-gray-300 dark:bg-gray-800 text-gray-500 dark:text-gray-600 cursor-not-allowed opacity-50' 
                     : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
                 }`}
-                title={isChatLoading ? 'Cannot navigate during active chat request' : (usage ? `You have used $${usage.totalCost.toFixed(2)} of your $${usage.creditLimit.toFixed(2)} credit` : 'View billing and usage details')}
+                title={isChatLoading ? 'Cannot navigate during active chat request' : (usage ? `You have $${usage.creditBalance.toFixed(2)} remaining of $${usage.totalCredits.toFixed(2)} total credits` : 'View billing and usage details')}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
-                {usage && !usageLoading && typeof usage.totalCost === 'number' && typeof usage.creditLimit === 'number' && (
+                {usage && !usageLoading && typeof usage.creditBalance === 'number' && typeof usage.totalCredits === 'number' && (
                   <span className={`text-xs font-medium ${
                     usage.exceeded 
                       ? 'text-red-600 dark:text-red-400' 
                       : 'text-green-600 dark:text-green-400'
                   }`}>
-                    ${usage.totalCost.toFixed(2)} / ${usage.creditLimit.toFixed(2)}
+                    ${usage.creditBalance.toFixed(2)} / ${usage.totalCredits.toFixed(2)}
                   </span>
                 )}
               </button>

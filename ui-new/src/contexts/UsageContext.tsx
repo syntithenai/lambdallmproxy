@@ -5,8 +5,8 @@ import { getCachedApiBase } from '../utils/api';
 interface UsageData {
   userEmail: string;
   totalCost: number;
-  creditLimit: number;
-  remaining: number;
+  creditBalance: number;    // Remaining credit (credits - usage)
+  totalCredits: number;     // Total credit added
   exceeded: boolean;
   timestamp: string;
 }
@@ -44,20 +44,10 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
     try {
       const apiBase = await getCachedApiBase();
       
-      // Get Google Drive access token and billing sync preference
-      const driveAccessToken = localStorage.getItem('google_drive_access_token');
-      const billingSyncEnabled = localStorage.getItem('cloud_sync_billing') === 'true';
-      
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'X-Billing-Sync': billingSyncEnabled ? 'true' : 'false'
+        'Content-Type': 'application/json'
       };
-
-      // Only add Drive access token if billing sync is enabled
-      if (billingSyncEnabled && driveAccessToken) {
-        headers['X-Google-Access-Token'] = driveAccessToken;
-      }
       
       const response = await fetch(`${apiBase}/billing`, {
         method: 'GET',
@@ -71,23 +61,41 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
 
       const billingData = await response.json();
       
-      // Calculate usage from billing totals (frontend calculation)
-      const totalCost = billingData.totals?.totalCost || 0;
-      const creditLimit = 3.00; // Credit limit constant
-      const remaining = Math.max(0, creditLimit - totalCost);
-      const exceeded = totalCost >= creditLimit;
+      // Calculate credit balance and total credits from transactions
+      let totalCredits = 0;
+      let totalUsage = 0;
+      
+      if (billingData.transactions) {
+        for (const tx of billingData.transactions) {
+          if (tx.type === 'credit_added') {
+            // Credits are stored as negative costs (-0.50), so we add the absolute value
+            totalCredits += Math.abs(tx.cost);
+          } else {
+            // Regular spending
+            totalUsage += tx.cost;
+          }
+        }
+      }
+      
+      const creditBalance = totalCredits - totalUsage;
+      const exceeded = creditBalance <= 0;
       
       const calculatedUsage: UsageData = {
         userEmail: '',
-        totalCost: parseFloat(totalCost.toFixed(4)),
-        creditLimit,
-        remaining: parseFloat(remaining.toFixed(4)),
+        totalCost: parseFloat(totalUsage.toFixed(4)),
+        creditBalance: parseFloat(Math.max(0, creditBalance).toFixed(2)),  // Ensure non-negative, match display precision
+        totalCredits: parseFloat(totalCredits.toFixed(2)),
         exceeded,
         timestamp: new Date().toISOString()
       };
       
       setUsage(calculatedUsage);
-      console.log('💰 Usage calculated from billing data:', calculatedUsage);
+      console.log('💰 Usage calculated from billing data:', {
+        ...calculatedUsage,
+        rawTotalCredits: totalCredits,
+        rawTotalUsage: totalUsage,
+        rawCreditBalance: creditBalance
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load usage';
       console.error('❌ Failed to fetch usage:', errorMessage);
@@ -107,18 +115,18 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
     if (!usage) return;
 
     const newTotalCost = usage.totalCost + cost;
-    const newRemaining = Math.max(0, usage.creditLimit - newTotalCost);
-    const newExceeded = newTotalCost >= usage.creditLimit;
+    const newCreditBalance = usage.totalCredits - newTotalCost;
+    const newExceeded = newCreditBalance <= 0;
 
     setUsage({
       ...usage,
       totalCost: newTotalCost,
-      remaining: newRemaining,
+      creditBalance: newCreditBalance,
       exceeded: newExceeded,
       timestamp: new Date().toISOString()
     });
 
-    console.log(`💸 Added $${cost.toFixed(4)} to usage - New total: $${newTotalCost.toFixed(4)}`);
+    console.log(`💸 Added $${cost.toFixed(4)} to usage - New balance: $${newCreditBalance.toFixed(4)}`);
   };
 
   /**

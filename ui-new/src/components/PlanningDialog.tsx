@@ -9,7 +9,6 @@ import {
   getAllCachedPlans, 
   saveCachedPlan, 
   deleteCachedPlan,
-  requestPersistentStorage,
   getStorageEstimate
 } from '../utils/planningCache';
 import type { CachedPlan } from '../utils/planningCache';
@@ -29,12 +28,12 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const [query, setQuery] = useLocalStorage<string>('planning_query', '');
   const [result, setResult] = useLocalStorage<any>('planning_result', null);
   const [isLoading, setIsLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>(''); // New: track status messages
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [savedPlans, setSavedPlans] = useState<CachedPlan[]>([]);
   
   // Storage management
   const [storageInfo, setStorageInfo] = useState<{ usage: number; quota: number; percentage: number } | null>(null);
-  const [isPersistent, setIsPersistent] = useState(false);
   
   // LLM transparency tracking
   const [llmInfo, setLlmInfo] = useState<any>(null);
@@ -83,23 +82,6 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const updateStorageInfo = async () => {
     const estimate = await getStorageEstimate();
     setStorageInfo(estimate);
-    
-    // Check if storage is persistent
-    if ('storage' in navigator && 'persisted' in navigator.storage) {
-      const persisted = await navigator.storage.persisted();
-      setIsPersistent(persisted);
-    }
-  };
-  
-  // Request persistent storage
-  const handleRequestPersistentStorage = async () => {
-    const granted = await requestPersistentStorage();
-    if (granted) {
-      showSuccess('Persistent storage granted! Your saved plans will be protected from automatic deletion.');
-      setIsPersistent(true);
-    } else {
-      showError('Persistent storage was denied. Plans may be cleared by the browser.');
-    }
   };
 
   const handleSubmit = async () => {
@@ -107,6 +89,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
 
     setIsLoading(true);
     setResult(null);
+    setStatusMessage('Initializing...'); // Show immediate feedback
     
     try {
       const token = await getToken();
@@ -140,6 +123,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
           switch (event) {
             case 'status':
               console.log('Status:', data.message);
+              setStatusMessage(data.message || 'Processing...'); // Update status message
               break;
               
             case 'result':
@@ -194,12 +178,14 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
         () => {
           console.log('Planning stream complete');
           setIsLoading(false);
+          setStatusMessage(''); // Clear status message on completion
         },
         (error: Error) => {
           console.error('Planning stream error:', error);
           setResult({ error: error.message });
           showError(`Planning failed: ${error.message}`);
           setIsLoading(false);
+          setStatusMessage(''); // Clear status message on error
         }
       );
     } catch (error) {
@@ -208,6 +194,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
       setResult({ error: errorMsg });
       showError(`Planning error: ${errorMsg}`);
       setIsLoading(false);
+      setStatusMessage(''); // Clear status message on error
     }
   };
 
@@ -305,71 +292,115 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-              Research Planning
-            </h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="p-6 space-y-4">
-            {/* Action Buttons - All in one row */}
-            <div className="flex flex-wrap gap-2">
-              <button 
-                onClick={handleSubmit}
-                disabled={isLoading || !query.trim() || !isAuthenticated}
-                className="btn-primary text-sm"
-              >
-                {isLoading ? 'Generating...' : 'Generate Plan'}
-              </button>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                Research Planning
+              </h2>
+              
+              {/* Left side buttons */}
+              <div className="ml-4">
+                <button 
+                  onClick={handleSavePlan}
+                  disabled={!result || result.error}
+                  className="btn-primary text-sm flex items-center gap-1.5"
+                  title="Save the current plan to your saved plans list"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Save Plan
+                </button>
+              </div>
               
               <button 
-                onClick={handleSavePlan}
-                disabled={!result || result.error}
-                className="btn-primary text-sm"
-                title="Save the current plan to your saved plans list"
+                onClick={() => setShowLoadDialog(true)} 
+                className="btn-secondary text-sm flex items-center gap-1.5"
               >
-                Save Plan
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Load Saved
               </button>
-              
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Transfer to Chat - Far Right */}
               {onTransferToChat && (
                 <button
                   onClick={handleTransferToChat}
                   disabled={!generatedUserQuery || !generatedUserQuery.trim()}
-                  className="btn-primary text-sm"
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
                 >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
                   Transfer to Chat
                 </button>
               )}
               
-              <button 
-                onClick={() => setShowLoadDialog(true)} 
-                className="btn-secondary text-sm"
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
-                Load Saved Plans
-              </button>
-              
-              <button 
-                onClick={handleClear}
-                className="btn-secondary text-sm"
-                title="Clear all planning data and start fresh"
-              >
-                Clear All
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 space-y-4">
+            {/* Status Message - Show when loading */}
+            {isLoading && statusMessage && (
+              <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <svg className="animate-spin h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-700">{statusMessage}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Query Input */}
             <div className="card p-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Research Query
-              </label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Research Query
+                </label>
+                
+                {/* Generate Plan Button (Green) - Below right of label */}
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={handleSubmit}
+                    disabled={isLoading || !query.trim() || !isAuthenticated}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    {isLoading ? 'Generating...' : 'Generate Plan'}
+                  </button>
+                  
+                  {/* Clear All Button (Red with Bin Icon) */}
+                  <button 
+                    onClick={handleClear}
+                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
+                    title="Clear all planning data and start fresh"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Clear All
+                  </button>
+                </div>
+              </div>
               {!isAuthenticated ? (
                 <div className="text-center text-red-500 py-4">
                   Please sign in to use planning
@@ -855,42 +886,15 @@ Please create a detailed plan with few-shot examples showing how to use create_t
               )}
             </div>
             
-            {/* Storage warning and persistent storage option */}
+            {/* Storage warning - only show when storage is critically full */}
             {storageInfo && storageInfo.percentage > 80 && (
               <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <div className="text-sm text-yellow-800 dark:text-yellow-200 font-semibold mb-2">
                   ⚠️ Storage is {storageInfo.percentage.toFixed(1)}% full
                 </div>
-                <div className="text-xs text-yellow-700 dark:text-yellow-300 mb-2">
+                <div className="text-xs text-yellow-700 dark:text-yellow-300">
                   Consider deleting old plans to free up space.
                 </div>
-                {!isPersistent && (
-                  <button
-                    onClick={handleRequestPersistentStorage}
-                    className="text-xs btn-secondary bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800"
-                  >
-                    🔒 Request Persistent Storage (prevents auto-deletion)
-                  </button>
-                )}
-                {isPersistent && (
-                  <div className="text-xs text-green-700 dark:text-green-300">
-                    ✓ Persistent storage enabled - plans are protected
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {!isPersistent && storageInfo && storageInfo.percentage <= 80 && (
-              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <div className="text-xs text-blue-700 dark:text-blue-300 mb-2">
-                  💡 Your browser may clear saved plans automatically. Enable persistent storage to prevent this.
-                </div>
-                <button
-                  onClick={handleRequestPersistentStorage}
-                  className="text-xs btn-secondary bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-800"
-                >
-                  🔒 Request Persistent Storage
-                </button>
               </div>
             )}
             

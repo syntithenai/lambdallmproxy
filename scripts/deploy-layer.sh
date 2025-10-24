@@ -47,7 +47,8 @@ cat > package.json << 'EOF'
     "fluent-ffmpeg": "^2.1.2",
     "form-data": "^4.0.0",
     "google-auth-library": "^10.4.0",
-    "google-spreadsheet": "4.1.5"
+    "google-spreadsheet": "4.1.5",
+    "jsonwebtoken": "^9.0.2"
   }
 }
 EOF

@@ -95,10 +95,8 @@ export function ProviderForm({ initialProvider, onSave, onCancel }: ProviderForm
   };
 
   const providerTypes: ProviderType[] = [
-    'groq-free',
     'groq',
     'openai',
-    'gemini-free',
     'gemini',
     'together',
     'openai-compatible',

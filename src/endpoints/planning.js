@@ -11,30 +11,20 @@ const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { DEFAULT_REASONING_EFFORT, MAX_TOKENS_PLANNING } = require('../config/tokens');
 const { verifyGoogleToken, getAllowedEmails } = require('../auth');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
-const { logToBillingSheet } = require('../services/user-billing-sheet');
+const { buildProviderPool } = require('../credential-pool');
 const path = require('path');
 
 /**
- * Log transaction to both service account sheet and user's personal billing sheet
- * @param {string} accessToken - User's OAuth access token (can be null)
+ * Log transaction to service account sheet
+ * @param {string} accessToken - User's OAuth access token (unused, for backward compatibility)
  * @param {object} logData - Transaction data
  */
 async function logToBothSheets(accessToken, logData) {
-    // Always log to service account sheet (admin tracking)
+    // Always log to service account sheet (centralized tracking)
     try {
         await logToGoogleSheets(logData);
     } catch (error) {
         console.error('⚠️ Failed to log to service account sheet:', error.message);
-    }
-    
-    // Also log to user's personal billing sheet if token available
-    if (accessToken && logData.userEmail && logData.userEmail !== 'unknown') {
-        try {
-            await logToBillingSheet(accessToken, logData);
-        } catch (error) {
-            console.error('⚠️ Failed to log to user billing sheet:', error.message);
-            // Don't fail the request if user billing logging fails
-        }
     }
 }
 
@@ -100,19 +90,42 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
         providers: {}
     };
     
+    console.log(`📋 Building runtime catalog from providers:`, Object.keys(providers));
+    console.log(`📋 Base catalog has chat providers:`, !!providerCatalog.chat?.providers);
+    
     // Copy chat providers from base catalog and apply API keys from UI settings
     if (providerCatalog.chat?.providers) {
+        console.log(`📋 Base catalog provider types:`, Object.keys(providerCatalog.chat.providers));
         Object.entries(providerCatalog.chat.providers).forEach(([providerType, providerInfo]) => {
             const userProvider = providers[providerType];
+            console.log(`🔍 Checking provider: ${providerType}, hasUserProvider: ${!!userProvider}, hasApiKey: ${!!(userProvider?.apiKey)}`);
             if (userProvider && userProvider.apiKey) {
+                // Check if provider is restricted to image-only models
+                // If allowedModels is set and none are chat models, skip this provider for chat
+                if (userProvider.allowedModels && Array.isArray(userProvider.allowedModels) && userProvider.allowedModels.length > 0) {
+                    // Check if any allowed model is an image model (contains FLUX, DALL-E, stable-diffusion, etc.)
+                    const imageModelPatterns = ['FLUX', 'DALL-E', 'dalle', 'stable-diffusion', 'sdxl', 'playground'];
+                    const hasOnlyImageModels = userProvider.allowedModels.every(modelName => 
+                        imageModelPatterns.some(pattern => modelName.includes(pattern))
+                    );
+                    
+                    if (hasOnlyImageModels) {
+                        console.log(`⛔ Skipping ${providerType} for chat - only image models allowed: ${userProvider.allowedModels.join(', ')}`);
+                        return; // Skip this provider for chat model selection
+                    }
+                }
+                
                 runtimeCatalog.providers[providerType] = {
                     ...providerInfo,
                     apiKey: userProvider.apiKey,
                     enabled: true
                 };
+                console.log(`✅ Added ${providerType} to runtime catalog with ${Object.keys(providerInfo.models || {}).length} models`);
             }
         });
     }
+    
+    console.log(`📊 Runtime catalog providers:`, Object.keys(runtimeCatalog.providers));
 
     // Create messages for planning prompt
     const { generatePlanningPrompt } = require('../lambda_search_llm_handler');
@@ -680,6 +693,49 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
                 enhancedSystemPrompt,
                 enhancedUserPrompt
             };
+        } else if (queryType === 'guidance' || queryType === 'GUIDANCE') {
+            // Handle guidance queries - complex multi-iteration projects needing workflow planning
+            const guidanceQuestions = parsed.guidanceQuestions || parsed.guidance_questions || [];
+            const workflow = parsed.workflow || [];
+            const iterations = parsed.iterations || parsed.suggested_iterations || 3;
+            const persona = parsed.expertPersona || parsed.optimal_persona || 'You are an expert strategist and project planner';
+            
+            // Build enhanced prompts for guidance
+            let enhancedSystemPrompt = parsed.enhancedSystemPrompt || parsed.enhanced_system_prompt || '';
+            let enhancedUserPrompt = parsed.enhancedUserPrompt || parsed.enhanced_user_prompt || '';
+            
+            if (!enhancedSystemPrompt || enhancedSystemPrompt.length < 30) {
+                enhancedSystemPrompt = `${persona}. You will guide the user through a complex, multi-step process for "${query}". Break down the work into manageable iterations.`;
+                
+                if (workflow.length > 0) {
+                    enhancedSystemPrompt += ` Follow this workflow: ${workflow.map((w, i) => `Step ${i + 1}: ${w}`).join('; ')}.`;
+                }
+                
+                enhancedSystemPrompt += ` Use research, planning, and execution tools strategically across ${iterations} iterations.`;
+            }
+            
+            if (!enhancedUserPrompt || enhancedUserPrompt.length < 30) {
+                enhancedUserPrompt = `I need guidance on: "${query}".`;
+                
+                if (guidanceQuestions.length > 0) {
+                    enhancedUserPrompt += `\n\n**Key Questions to Address:**\n${guidanceQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
+                }
+                
+                if (workflow.length > 0) {
+                    enhancedUserPrompt += `\n\n**Suggested Workflow:**\n${workflow.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+                }
+                
+                enhancedUserPrompt += `\n\nPlease guide me through this process step by step, using multiple iterations of research, planning, and execution.`;
+            }
+            
+            return {
+                ...baseResult,
+                guidanceQuestions,
+                workflow,
+                iterations,
+                enhancedSystemPrompt,
+                enhancedUserPrompt
+            };
         } else {
             throw new Error(`Unknown query_type: ${queryType}`);
         }
@@ -767,8 +823,41 @@ async function handler(event, responseStream, context) {
         // Parse request body
         const body = JSON.parse(event.body || '{}');
         query = body.query || '';
-        providers = body.providers || {};
+        const userProviders = body.providers || {};
         requestedModel = body.model || null;
+        
+        // Build provider pool (combines UI providers + environment providers)
+        const providerPool = buildProviderPool(userProviders, true); // true = authorized user
+        console.log(`🎯 Provider pool for planning (${userEmail}): ${providerPool.length} provider(s) available`);
+        console.log(`📋 Provider pool details:`, JSON.stringify(providerPool.map(p => ({ 
+            type: p.type, 
+            id: p.id,
+            hasApiKey: !!p.apiKey,
+            source: p.source,
+            model: p.model || p.modelName
+        }))));
+        
+        // Convert provider pool to old format expected by generatePlan
+        providers = {};
+        for (const provider of providerPool) {
+            if (!providers[provider.type]) {
+                providers[provider.type] = {
+                    apiKey: provider.apiKey, // Use apiKey (not provider.key)
+                    endpoint: provider.apiEndpoint, // Use apiEndpoint (not endpoint)
+                    model: provider.modelName || provider.model,
+                    rateLimit: provider.rateLimitTPM || provider.rateLimit,
+                    allowedModels: provider.allowedModels,
+                    imageMaxQuality: provider.imageMaxQuality
+                };
+                console.log(`✅ Added provider: ${provider.type}, hasKey: ${!!provider.apiKey}, keyPreview: ${provider.apiKey?.substring(0, 10)}...`);
+            }
+        }
+        
+        console.log(`🔑 Planning providers: ${Object.keys(providers).join(', ')}`);
+        console.log(`📊 Provider details:`, JSON.stringify(Object.keys(providers).reduce((acc, key) => {
+            acc[key] = { hasApiKey: !!providers[key].apiKey, endpoint: providers[key].endpoint };
+            return acc;
+        }, {})));
         
         // Validate inputs
         if (!query) {
@@ -781,7 +870,7 @@ async function handler(event, responseStream, context) {
         
         if (!providers || Object.keys(providers).length === 0) {
             sseWriter.writeEvent('error', {
-                error: 'At least one provider with API key is required. Please configure providers in UI settings.'
+                error: 'No providers available. Please configure providers in UI settings or environment variables.'
             });
             responseStream.end();
             return;

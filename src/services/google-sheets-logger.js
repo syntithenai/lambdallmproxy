@@ -233,7 +233,8 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(postData)
-            }
+            },
+            timeout: 30000 // 30 second timeout
         };
         
         const req = https.request(options, (res) => {
@@ -257,6 +258,12 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
                     reject(new Error(`OAuth failed: ${res.statusCode} - ${data}`));
                 }
             });
+        });
+        
+        req.on('timeout', () => {
+            console.error('❌ OAuth request timeout (30s)');
+            req.destroy();
+            reject(new Error('OAuth request timeout after 30 seconds'));
         });
         
         req.on('error', (error) => {
@@ -286,7 +293,8 @@ async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${accessToken}`
-            }
+            },
+            timeout: 30000 // 30 second timeout
         };
         
         const req = https.request(options, (res) => {
@@ -393,6 +401,12 @@ async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
             });
         });
         
+        req.on('timeout', () => {
+            console.error('❌ Sheets API request timeout (30s) - ensureSheetExists');
+            req.destroy();
+            reject(new Error('Google Sheets API request timeout after 30 seconds'));
+        });
+        
         req.on('error', reject);
         req.end();
     });
@@ -406,31 +420,72 @@ async function isSheetEmpty(spreadsheetId, sheetName, accessToken) {
         const encodedRange = encodeURIComponent(`${sheetName}!A1:P1000`);
         const options = {
             hostname: 'sheets.googleapis.com',
-            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}`,
+            path: `/v4/spreadsheetId}/values/${encodedRange}`,
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${accessToken}`
-            }
+            },
+            timeout: 30000 // 30 second timeout to prevent indefinite hangs
         };
+        
+        console.log(`🔍 isSheetEmpty: Checking ${sheetName} in spreadsheet ${spreadsheetId}`);
+        const startTime = Date.now();
         
         const req = https.request(options, (res) => {
             let data = '';
-            res.on('data', chunk => data += chunk);
+            let dataSize = 0;
+            
+            res.on('data', chunk => {
+                data += chunk;
+                dataSize += chunk.length;
+                // Defensive: Prevent memory issues from huge responses
+                if (dataSize > 5 * 1024 * 1024) { // 5MB limit
+                    console.error(`❌ isSheetEmpty: Response too large (${dataSize} bytes), aborting`);
+                    req.destroy();
+                    reject(new Error(`Response too large: ${dataSize} bytes`));
+                }
+            });
+            
             res.on('end', () => {
+                const duration = Date.now() - startTime;
+                console.log(`✅ isSheetEmpty: Response received in ${duration}ms (${res.statusCode})`);
+                
                 if (res.statusCode === 200) {
-                    const result = JSON.parse(data);
-                    const isEmpty = !result.values || result.values.length === 0;
-                    resolve(isEmpty);
+                    try {
+                        const result = JSON.parse(data);
+                        const isEmpty = !result.values || result.values.length === 0;
+                        console.log(`✅ isSheetEmpty: Sheet ${isEmpty ? 'IS' : 'IS NOT'} empty`);
+                        resolve(isEmpty);
+                    } catch (parseError) {
+                        console.error(`❌ isSheetEmpty: JSON parse error:`, parseError.message);
+                        reject(new Error(`Failed to parse response: ${parseError.message}`));
+                    }
                 } else if (res.statusCode === 404) {
                     // Sheet range doesn't exist, so it's empty
+                    console.log(`ℹ️ isSheetEmpty: Sheet not found (404), treating as empty`);
                     resolve(true);
                 } else {
+                    console.error(`❌ isSheetEmpty: Unexpected status ${res.statusCode}, response: ${data.substring(0, 200)}`);
                     reject(new Error(`Failed to check if sheet is empty: ${res.statusCode} - ${data}`));
                 }
             });
         });
         
-        req.on('error', reject);
+        req.on('timeout', () => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ isSheetEmpty: Request timeout after ${duration}ms (limit: 30s)`);
+            console.error(`   Spreadsheet: ${spreadsheetId}, Sheet: ${sheetName}`);
+            req.destroy();
+            reject(new Error('Google Sheets API request timeout after 30 seconds (isSheetEmpty)'));
+        });
+        
+        req.on('error', (error) => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ isSheetEmpty: Network error after ${duration}ms:`, error.message);
+            console.error(`   Error code: ${error.code}, Spreadsheet: ${spreadsheetId}`);
+            reject(error);
+        });
+        
         req.end();
     });
 }
@@ -474,24 +529,63 @@ async function addHeaderRow(spreadsheetId, sheetName, accessToken) {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(postData)
-            }
+            },
+            timeout: 30000 // 30 second timeout
         };
+        
+        console.log(`🔍 addHeaderRow: Adding headers to ${sheetName} (${Buffer.byteLength(postData)} bytes)`);
+        const startTime = Date.now();
         
         const req = https.request(options, (res) => {
             let data = '';
-            res.on('data', chunk => data += chunk);
+            let dataSize = 0;
+            
+            res.on('data', chunk => {
+                data += chunk;
+                dataSize += chunk.length;
+                // Defensive: Prevent memory issues
+                if (dataSize > 1 * 1024 * 1024) { // 1MB limit for header response
+                    console.error(`❌ addHeaderRow: Response too large (${dataSize} bytes)`);
+                    req.destroy();
+                    reject(new Error(`Response too large: ${dataSize} bytes`));
+                }
+            });
+            
             res.on('end', () => {
+                const duration = Date.now() - startTime;
+                console.log(`✅ addHeaderRow: Response received in ${duration}ms (${res.statusCode})`);
+                
                 if (res.statusCode === 200) {
-                    console.log('✅ Added header row to sheet');
-                    resolve(JSON.parse(data));
+                    try {
+                        const result = JSON.parse(data);
+                        console.log('✅ Added header row to sheet successfully');
+                        resolve(result);
+                    } catch (parseError) {
+                        console.error(`❌ addHeaderRow: JSON parse error:`, parseError.message);
+                        reject(new Error(`Failed to parse response: ${parseError.message}`));
+                    }
                 } else {
-                    console.error(`❌ Failed to add headers: ${res.statusCode} - ${data}`);
+                    console.error(`❌ Failed to add headers: ${res.statusCode} - ${data.substring(0, 200)}`);
                     reject(new Error(`Failed to add headers: ${res.statusCode} - ${data}`));
                 }
             });
         });
         
-        req.on('error', reject);
+        req.on('timeout', () => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ addHeaderRow: Request timeout after ${duration}ms`);
+            console.error(`   Spreadsheet: ${spreadsheetId}, Sheet: ${sheetName}`);
+            req.destroy();
+            reject(new Error('Google Sheets API request timeout after 30 seconds (addHeaderRow)'));
+        });
+        
+        req.on('error', (error) => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ addHeaderRow: Network error after ${duration}ms:`, error.message);
+            console.error(`   Error code: ${error.code}`);
+            reject(error);
+        });
+        
         req.write(postData);
         req.end();
     });
@@ -512,24 +606,63 @@ async function clearSheet(spreadsheetId, sheetName, accessToken) {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
                 'Content-Length': '0'
-            }
+            },
+            timeout: 30000 // 30 second timeout
         };
+        
+        console.log(`🔍 clearSheet: Clearing ${sheetName} in spreadsheet ${spreadsheetId}`);
+        const startTime = Date.now();
         
         const req = https.request(options, (res) => {
             let data = '';
-            res.on('data', chunk => data += chunk);
+            let dataSize = 0;
+            
+            res.on('data', chunk => {
+                data += chunk;
+                dataSize += chunk.length;
+                // Defensive: Prevent memory issues
+                if (dataSize > 1 * 1024 * 1024) { // 1MB limit
+                    console.error(`❌ clearSheet: Response too large (${dataSize} bytes)`);
+                    req.destroy();
+                    reject(new Error(`Response too large: ${dataSize} bytes`));
+                }
+            });
+            
             res.on('end', () => {
+                const duration = Date.now() - startTime;
+                console.log(`✅ clearSheet: Response received in ${duration}ms (${res.statusCode})`);
+                
                 if (res.statusCode === 200) {
-                    console.log('✅ Sheet cleared successfully');
-                    resolve(JSON.parse(data));
+                    try {
+                        const result = JSON.parse(data);
+                        console.log('✅ Sheet cleared successfully');
+                        resolve(result);
+                    } catch (parseError) {
+                        console.error(`❌ clearSheet: JSON parse error:`, parseError.message);
+                        reject(new Error(`Failed to parse response: ${parseError.message}`));
+                    }
                 } else {
-                    console.error(`❌ Failed to clear sheet: ${res.statusCode} - ${data}`);
+                    console.error(`❌ Failed to clear sheet: ${res.statusCode} - ${data.substring(0, 200)}`);
                     reject(new Error(`Failed to clear sheet: ${res.statusCode} - ${data}`));
                 }
             });
         });
         
-        req.on('error', reject);
+        req.on('timeout', () => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ clearSheet: Request timeout after ${duration}ms`);
+            console.error(`   Spreadsheet: ${spreadsheetId}, Sheet: ${sheetName}`);
+            req.destroy();
+            reject(new Error('Google Sheets API request timeout after 30 seconds (clearSheet)'));
+        });
+        
+        req.on('error', (error) => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ clearSheet: Network error after ${duration}ms:`, error.message);
+            console.error(`   Error code: ${error.code}`);
+            reject(error);
+        });
+        
         req.end();
     });
 }
@@ -554,33 +687,67 @@ async function appendToSheet(spreadsheetId, range, values, accessToken) {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(postData)
-            }
+            },
+            timeout: 30000 // 30 second timeout
         };
+        
+        console.log(`🔍 appendToSheet: Appending to ${range} (${Buffer.byteLength(postData)} bytes)`);
+        const startTime = Date.now();
         
         const req = https.request(options, (res) => {
             let data = '';
-            res.on('data', chunk => data += chunk);
+            let dataSize = 0;
+            
+            res.on('data', chunk => {
+                data += chunk;
+                dataSize += chunk.length;
+                // Defensive: Prevent memory issues
+                if (dataSize > 2 * 1024 * 1024) { // 2MB limit
+                    console.error(`❌ appendToSheet: Response too large (${dataSize} bytes)`);
+                    req.destroy();
+                    reject(new Error(`Response too large: ${dataSize} bytes`));
+                }
+            });
+            
             res.on('end', () => {
-                console.log(`📊 appendToSheet response: ${res.statusCode}`);
+                const duration = Date.now() - startTime;
+                console.log(`📊 appendToSheet response: ${res.statusCode} (${duration}ms)`);
+                
                 if (res.statusCode === 200) {
-                    const result = JSON.parse(data);
-                    const updatedRange = result.updates?.updatedRange || 'unknown';
-                    const updatedRows = result.updates?.updatedRows || 0;
-                    console.log(`✅ appendToSheet SUCCESS: ${updatedRows} rows added to ${range}`);
-                    console.log(`   Updated range: ${updatedRange}`);
-                    console.log(`   Full response:`, JSON.stringify(result.updates, null, 2));
-                    resolve(result);
+                    try {
+                        const result = JSON.parse(data);
+                        const updatedRange = result.updates?.updatedRange || 'unknown';
+                        const updatedRows = result.updates?.updatedRows || 0;
+                        console.log(`✅ appendToSheet SUCCESS: ${updatedRows} rows added to ${range}`);
+                        console.log(`   Updated range: ${updatedRange}`);
+                        console.log(`   Full response:`, JSON.stringify(result.updates, null, 2));
+                        resolve(result);
+                    } catch (parseError) {
+                        console.error(`❌ appendToSheet: JSON parse error:`, parseError.message);
+                        reject(new Error(`Failed to parse response: ${parseError.message}`));
+                    }
                 } else {
-                    console.error(`❌ appendToSheet FAILED: ${res.statusCode} - ${data}`);
+                    console.error(`❌ appendToSheet FAILED: ${res.statusCode} - ${data.substring(0, 200)}`);
                     reject(new Error(`Sheets API error: ${res.statusCode} - ${data}`));
                 }
             });
         });
         
+        req.on('timeout', () => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ appendToSheet: Request timeout after ${duration}ms`);
+            console.error(`   Spreadsheet: ${spreadsheetId}, Range: ${range}`);
+            req.destroy();
+            reject(new Error('Google Sheets API request timeout after 30 seconds (appendToSheet)'));
+        });
+        
         req.on('error', (error) => {
-            console.error(`❌ appendToSheet network error:`, error.message);
+            const duration = Date.now() - startTime;
+            console.error(`❌ appendToSheet network error after ${duration}ms:`, error.message);
+            console.error(`   Error code: ${error.code}, Range: ${range}`);
             reject(error);
         });
+        
         req.write(postData);
         req.end();
     });
@@ -665,13 +832,11 @@ async function logToGoogleSheets(logData) {
         
         // Check if sheet is empty and add headers if needed
         console.log('🔍 Checking if sheet is empty...');
-        let isNewUser = false;
         try {
             const isEmpty = await isSheetEmpty(spreadsheetId, sheetName, accessToken);
             if (isEmpty) {
                 console.log('📝 Sheet is empty, adding header row...');
                 await addHeaderRow(spreadsheetId, sheetName, accessToken);
-                isNewUser = true; // Mark as new user for welcome credit
             } else {
                 console.log('✅ Sheet has data, skipping headers');
             }
@@ -679,35 +844,8 @@ async function logToGoogleSheets(logData) {
             console.warn('⚠️ Could not check/add headers (continuing anyway):', headerError.message);
         }
         
-        // ✅ CREDIT SYSTEM: Add welcome credit for new users
-        if (isNewUser && userEmail !== 'unknown') {
-            console.log(`🎁 Adding $0.50 welcome credit for new user: ${userEmail}`);
-            try {
-                const welcomeCreditRow = [
-                    new Date().toISOString(),          // timestamp
-                    userEmail,                         // email
-                    'system',                          // provider
-                    'welcome_credit',                  // model
-                    'credit_added',                    // type
-                    0,                                 // promptTokens
-                    0,                                 // completionTokens
-                    0,                                 // totalTokens
-                    '-0.50',                           // cost (negative = credit)
-                    '0.00',                            // duration
-                    '',                                // memoryLimitMB
-                    '',                                // memoryUsedMB
-                    '',                                // requestId
-                    '',                                // errorCode
-                    '',                                // errorMessage
-                    'credit-system'                    // hostname
-                ];
-                await appendToSheet(spreadsheetId, `${sheetName}!A:P`, welcomeCreditRow, accessToken);
-                console.log(`✅ Added $0.50 welcome credit to ${userEmail}`);
-            } catch (creditError) {
-                console.error('❌ Failed to add welcome credit:', creditError.message);
-                // Don't throw - continue with normal logging
-            }
-        }
+        // NOTE: Welcome credit is now added in getUserCreditBalance() on first balance check
+        // This ensures users get credit even before making their first API call
         
         // Calculate cost (use provided cost for image generation, or calculate from tokens)
         const cost = calculateCost(
@@ -845,22 +983,70 @@ async function getSheetData(spreadsheetId, range, accessToken) {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json'
-            }
+            },
+            timeout: 30000 // 30 second timeout - CRITICAL for billing endpoint
         };
 
+        console.log(`🔍 getSheetData: Fetching ${range} from spreadsheet ${spreadsheetId}`);
+        const startTime = Date.now();
+        
         const req = https.request(options, (res) => {
             let data = '';
-            res.on('data', chunk => data += chunk);
+            let dataSize = 0;
+            
+            res.on('data', chunk => {
+                data += chunk;
+                dataSize += chunk.length;
+                // Defensive: Prevent memory issues from large billing data
+                if (dataSize > 10 * 1024 * 1024) { // 10MB limit
+                    console.error(`❌ getSheetData: Response too large (${dataSize} bytes), aborting`);
+                    console.error(`   Range: ${range}, this indicates excessive billing data`);
+                    req.destroy();
+                    reject(new Error(`Response too large: ${dataSize} bytes. Range ${range} has too much data.`));
+                }
+            });
+            
             res.on('end', () => {
+                const duration = Date.now() - startTime;
+                console.log(`✅ getSheetData: Response received in ${duration}ms (${res.statusCode}, ${dataSize} bytes)`);
+                
                 if (res.statusCode === 200) {
-                    resolve(JSON.parse(data));
+                    try {
+                        const result = JSON.parse(data);
+                        const rowCount = result.values?.length || 0;
+                        console.log(`✅ getSheetData: Successfully parsed ${rowCount} rows from ${range}`);
+                        resolve(result);
+                    } catch (parseError) {
+                        console.error(`❌ getSheetData: JSON parse error:`, parseError.message);
+                        console.error(`   Data size: ${dataSize} bytes, Range: ${range}`);
+                        reject(new Error(`Failed to parse response: ${parseError.message}`));
+                    }
                 } else {
+                    console.error(`❌ getSheetData: Request failed with status ${res.statusCode}`);
+                    console.error(`   Range: ${range}, Response: ${data.substring(0, 200)}`);
                     reject(new Error(`Get sheet data failed: ${res.statusCode} - ${data}`));
                 }
             });
         });
 
-        req.on('error', reject);
+        req.on('timeout', () => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ getSheetData: Request timeout after ${duration}ms (limit: 30s)`);
+            console.error(`   CRITICAL: This is the function that caused 7 production timeouts!`);
+            console.error(`   Spreadsheet: ${spreadsheetId}, Range: ${range}`);
+            console.error(`   Possible causes: Google API unresponsive, network issues, DNS resolution failure`);
+            req.destroy();
+            reject(new Error('Google Sheets API request timeout after 30 seconds (getSheetData) - Check CloudWatch logs for network issues'));
+        });
+
+        req.on('error', (error) => {
+            const duration = Date.now() - startTime;
+            console.error(`❌ getSheetData: Network error after ${duration}ms:`, error.message);
+            console.error(`   Error code: ${error.code}, Spreadsheet: ${spreadsheetId}, Range: ${range}`);
+            console.error(`   Common codes: ECONNREFUSED (service down), ETIMEDOUT (network), ENOTFOUND (DNS)`);
+            reject(error);
+        });
+        
         req.end();
     });
 }
@@ -1115,6 +1301,7 @@ async function logLambdaInvocation(logData) {
         // Format private key (handle escaped newlines)
         console.log('🔐 [Lambda Log] Formatting private key...');
         const formattedKey = privateKey.replace(/\\n/g, '\n');
+        console.log('🔐 [Lambda Log] Private key formatted, length:', formattedKey.length);
         
         // Get OAuth access token
         console.log('🔑 [Lambda Log] Getting OAuth access token...');
@@ -1249,13 +1436,60 @@ async function getUserCreditBalance(userEmail) {
         const range = `${sheetName}!A:P`;
         const data = await getSheetData(spreadsheetId, range, accessToken);
         
-        if (!data || !data.values || data.values.length <= 1) {
-            // No data or only headers
-            console.log(`💳 No transactions found for ${userEmail}, balance: $0.00`);
-            return 0;
+        // ✅ CREDIT SYSTEM: Check if user has any credit_added entries
+        let hasWelcomeCredit = false;
+        if (data && data.values && data.values.length > 1) {
+            // Check if any transaction is a credit_added type
+            for (let i = 1; i < data.values.length; i++) {
+                const row = data.values[i];
+                const type = row[4]; // Type column (index 4)
+                if (type === 'credit_added') {
+                    hasWelcomeCredit = true;
+                    break;
+                }
+            }
         }
         
-        // Skip header row and calculate balance
+        // Add welcome credit if user doesn't have any credit entries yet
+        if (!hasWelcomeCredit && userEmail !== 'unknown') {
+            // User has no credit entries - add $0.50 welcome credit
+            console.log(`🎁 Adding $0.50 welcome credit for ${userEmail} (no existing credits found)`);
+            
+            try {
+                const welcomeCreditRow = [
+                    new Date().toISOString(),          // timestamp
+                    userEmail,                         // email
+                    'system',                          // provider
+                    'welcome_credit',                  // model
+                    'credit_added',                    // type
+                    0,                                 // promptTokens
+                    0,                                 // completionTokens
+                    0,                                 // totalTokens
+                    '-0.50',                           // cost (negative = credit)
+                    '0.00',                            // duration
+                    '',                                // memoryLimitMB
+                    '',                                // memoryUsedMB
+                    '',                                // requestId
+                    '',                                // errorCode
+                    '',                                // errorMessage
+                    'credit-system'                    // hostname
+                ];
+                
+                // Append welcome credit to sheet
+                await appendToSheet(spreadsheetId, `${sheetName}!A:P`, welcomeCreditRow, accessToken);
+                console.log(`✅ Added $0.50 welcome credit to ${userEmail}`);
+                
+                // Return the welcome credit balance
+                return 0.50;
+                
+            } catch (creditError) {
+                console.error('❌ Failed to add welcome credit:', creditError.message);
+                // Return 0 if we couldn't add the credit
+                return 0;
+            }
+        }
+        
+        // Existing user - calculate balance from transactions
         let balance = 0;
         for (let i = 1; i < data.values.length; i++) {
             const row = data.values[i];

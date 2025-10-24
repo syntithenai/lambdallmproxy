@@ -6,31 +6,147 @@
 const { chunker, embeddings } = require('../rag');
 const { generateUUID } = require('../rag/utils');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
-const { logToBillingSheet } = require('../services/user-billing-sheet');
 const { authenticateRequest } = require('../auth');
+const { buildProviderPool } = require('../credential-pool');
 
 /**
- * Log transaction to both service account sheet and user's personal billing sheet
- * @param {string} accessToken - User's OAuth access token (can be null)
+ * Log transaction to service account sheet
+ * @param {string} accessToken - User's OAuth access token (unused, for backward compatibility)
  * @param {object} logData - Transaction data
  */
 async function logToBothSheets(accessToken, logData) {
-    // Always log to service account sheet (admin tracking)
+    // Always log to service account sheet (centralized tracking)
     try {
         await logToGoogleSheets(logData);
     } catch (error) {
         console.error('⚠️ Failed to log to service account sheet:', error.message);
     }
+}
+
+/**
+ * Select an embedding provider from the available pool
+ * Prefers requested model, then cheapest models first, then falls back to quality
+ * @param {Array} providerPool - Available providers
+ * @param {string|null} requestedModel - Optional specific embedding model to use (e.g., 'text-embedding-3-small')
+ * @returns {Object|null} Selected provider with { provider, model, apiKey, providerConfig } or null if none available
+ */
+function selectEmbeddingProvider(providerPool, requestedModel = null) {
+    // Load embedding catalog to know which providers support embeddings
+    let embeddingCatalog;
+    try {
+        embeddingCatalog = require('../../EMBEDDING_MODELS_CATALOG.json');
+    } catch (e) {
+        embeddingCatalog = require('../EMBEDDING_MODELS_CATALOG.json');
+    }
     
-    // Also log to user's personal billing sheet if token available
-    if (accessToken && logData.userEmail && logData.userEmail !== 'unknown') {
-        try {
-            await logToBillingSheet(accessToken, logData);
-        } catch (error) {
-            console.error('⚠️ Failed to log to user billing sheet:', error.message);
-            // Don't fail the request if user billing logging fails
+    // Get all embedding providers from catalog
+    const embeddingProviders = [...new Set(embeddingCatalog.models.map(m => m.provider))];
+    console.log(`📚 Embedding providers in catalog: ${embeddingProviders.join(', ')}`);
+    
+    // If a specific model was requested, try to find it first
+    if (requestedModel) {
+        console.log(`🎯 Requested specific embedding model: ${requestedModel}`);
+        
+        for (const provider of providerPool) {
+            const providerType = provider.type === 'openai-compatible' ? 'openai' : provider.type;
+            
+            // Find the requested model in catalog
+            const requestedModelInfo = embeddingCatalog.models.find(m => 
+                m.id === requestedModel && m.provider === providerType
+            );
+            
+            if (requestedModelInfo) {
+                // Check if model is in allowedModels restriction (if set)
+                if (provider.allowedModels && Array.isArray(provider.allowedModels) && provider.allowedModels.length > 0) {
+                    const isAllowed = provider.allowedModels.includes(requestedModel);
+                    if (!isAllowed) {
+                        console.log(`   ⛔ Requested model "${requestedModel}" blocked by allowedModels filter for provider ${providerType}`);
+                        continue;
+                    }
+                }
+                
+                console.log(`✅ Using requested embedding model: ${providerType}:${requestedModel} ($${requestedModelInfo.pricing?.perMillionTokens || requestedModelInfo.pricePerMillionTokens}/M tokens)`);
+                
+                return {
+                    provider: providerType,
+                    model: requestedModel,
+                    apiKey: provider.apiKey,
+                    providerConfig: provider
+                };
+            }
+        }
+        
+        console.warn(`⚠️ Requested embedding model "${requestedModel}" not found in available providers. Falling back to automatic selection...`);
+    }
+    
+    // Build list of all available models with their pricing
+    const availableOptions = [];
+    
+    for (const provider of providerPool) {
+        // Find matching provider type in catalog
+        const providerType = provider.type === 'openai-compatible' ? 'openai' : provider.type;
+        
+        // Get all models for this provider
+        const modelsForProvider = embeddingCatalog.models.filter(m => {
+            // Match provider
+            if (m.provider !== providerType) return false;
+            
+            // Check if model is in allowedModels restriction (if set)
+            if (provider.allowedModels && Array.isArray(provider.allowedModels) && provider.allowedModels.length > 0) {
+                const isAllowed = provider.allowedModels.includes(m.id);
+                if (!isAllowed) {
+                    console.log(`   ⛔ Embedding model "${m.id}" blocked by allowedModels filter`);
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        // Add each available model to our options
+        for (const model of modelsForProvider) {
+            availableOptions.push({
+                provider: providerType,
+                model: model.id,
+                modelInfo: model,
+                apiKey: provider.apiKey,
+                providerConfig: provider,
+                pricePerMillion: model.pricing?.perMillionTokens || model.pricePerMillionTokens || Infinity
+            });
         }
     }
+    
+    if (availableOptions.length === 0) {
+        console.error('❌ No embedding models available in pool');
+        return null;
+    }
+    
+    // Sort by price (cheapest first), then by recommended status
+    availableOptions.sort((a, b) => {
+        // First compare price
+        if (a.pricePerMillion !== b.pricePerMillion) {
+            return a.pricePerMillion - b.pricePerMillion;
+        }
+        // If same price, prefer recommended models
+        if (a.modelInfo.recommended && !b.modelInfo.recommended) return -1;
+        if (!a.modelInfo.recommended && b.modelInfo.recommended) return 1;
+        return 0;
+    });
+    
+    // Select the cheapest option
+    const selected = availableOptions[0];
+    
+    console.log(`✅ Selected cheapest embedding model: ${selected.provider}:${selected.model} ($${selected.pricePerMillion}/M tokens)`);
+    if (availableOptions.length > 1) {
+        console.log(`   💰 Other options available: ${availableOptions.slice(1, 3).map(o => `${o.provider}:${o.model} ($${o.pricePerMillion}/M)`).join(', ')}${availableOptions.length > 3 ? ` and ${availableOptions.length - 3} more` : ''}`);
+    }
+    
+    return {
+        provider: selected.provider,
+        model: selected.model,
+        apiKey: selected.apiKey,
+        providerConfig: selected.providerConfig
+    };
 }
 
 /**
@@ -122,16 +238,18 @@ exports.handler = async (event, responseStream, context) => {
 async function handleEmbedSnippets(event, body, writeEvent, responseStream, lambdaMetrics) {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') ? globalThis.awslambda : require('aws-lambda');
     
-    const { snippets, force = false } = body;
+    const { snippets, force = false, providers: userProviders = [], embeddingModel: requestedModel = null } = body;
     
-    // Extract user email for logging
+    // Extract user email for logging and authorization
     let userEmail = 'unknown';
     let googleToken = null;
+    let isAuthorized = false;
     try {
         const authHeader = event.headers?.authorization || event.headers?.Authorization;
         if (authHeader) {
             const authResult = await authenticateRequest(authHeader);
             userEmail = authResult.email || 'unknown';
+            isAuthorized = authResult.authorized || false;
             // Extract OAuth token
             if (authHeader.startsWith('Bearer ')) {
                 googleToken = authHeader.substring(7);
@@ -157,6 +275,38 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
 
     try {
         console.log(`Processing ${snippets.length} snippets...`);
+        
+        // Build provider pool (UI providers + environment providers if authorized)
+        const providerPool = buildProviderPool(userProviders, isAuthorized);
+        console.log(`📦 Provider pool size: ${providerPool.length}`);
+        
+        // Determine which embedding model to use
+        // Priority: 1. UI request, 2. Environment variable, 3. Automatic selection
+        const embeddingModelToUse = requestedModel || process.env.RAG_EMBEDDING_MODEL || null;
+        if (embeddingModelToUse) {
+            console.log(`🎯 Embedding model preference: ${embeddingModelToUse} (source: ${requestedModel ? 'UI request' : 'environment variable'})`);
+        } else {
+            console.log(`🎯 No specific embedding model requested, will auto-select cheapest available`);
+        }
+        
+        // Select embedding provider from pool
+        const embeddingSelection = selectEmbeddingProvider(providerPool, embeddingModelToUse);
+        if (!embeddingSelection) {
+            const metadata = {
+                statusCode: 400,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ 
+                success: false,
+                error: 'No embedding provider available. Please configure an OpenAI, Together.AI, Cohere, or Voyage provider in Settings.',
+                hint: 'Go to Settings → Providers → Add Provider → OpenAI and enable the "🔗 Embeddings" capability.'
+            }));
+            responseStream.end();
+            return;
+        }
+        
+        const { provider: embeddingProvider, model: embeddingModel, apiKey, providerConfig } = embeddingSelection;
         
         const results = [];
         const startTime = Date.now();
@@ -192,15 +342,6 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                     continue;
                 }
                 
-                // Step 2: Generate embeddings
-                const embeddingModel = 'text-embedding-3-small';
-                const embeddingProvider = 'openai';
-                const apiKey = process.env.OPENAI_API_KEY;
-                
-                if (!apiKey) {
-                    throw new Error('OPENAI_API_KEY not configured');
-                }
-                
                 // Prepend title and tags to each chunk for embedding
                 // This allows vector search to match on title and tag keywords
                 const metadataPrefix = [];
@@ -217,7 +358,8 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                     chunkTexts,
                     embeddingModel,
                     embeddingProvider,
-                    apiKey
+                    apiKey,
+                    { providerConfig } // Pass provider config for allowedModels validation
                 );
                 
                 console.log(`Generated ${embeddingResults.length} embeddings for snippet ${snippet.id}`);

@@ -6,7 +6,7 @@ import { useUsage } from '../contexts/UsageContext';
 interface Transaction {
   rowIndex: number;
   timestamp: string;
-  type: 'chat' | 'embedding' | 'guardrail_input' | 'guardrail_output' | 'planning' | 'image_generation' | 'tts' | 'assessment' | 'chat_iteration';
+  type: 'chat' | 'embedding' | 'guardrail_input' | 'guardrail_output' | 'planning' | 'image_generation' | 'tts' | 'assessment' | 'chat_iteration' | 'credit_added';
   provider: string;
   model: string;
   tokensIn: number;
@@ -222,6 +222,7 @@ const BillingPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions'>('overview');
   const [groupByRequest, setGroupByRequest] = useState(true); // Group transactions by request ID
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set()); // Track expanded request groups
+  const [creditBalance, setCreditBalance] = useState<number>(0); // User's current credit balance
 
   const fetchBillingData = async () => {
     setLoading(true);
@@ -238,14 +239,6 @@ const BillingPage: React.FC = () => {
         throw new Error(errorMsg);
       }
 
-      // Get Google Drive access token and billing sync preference
-      const driveAccessToken = localStorage.getItem('google_drive_access_token');
-      const billingSyncEnabled = localStorage.getItem('cloud_sync_billing') === 'true';
-      
-      console.log('🔐 [BillingPage] Drive access token present:', !!driveAccessToken);
-      console.log('🔐 [BillingPage] Token length:', driveAccessToken?.length || 0);
-      console.log('🔐 [BillingPage] Billing sync enabled:', billingSyncEnabled);
-
       // Fetch ALL data without filters - filtering will be done locally
       const apiBase = await getApiBase();
       const url = `${apiBase}/billing`;
@@ -255,24 +248,8 @@ const BillingPage: React.FC = () => {
 
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'X-Billing-Sync': billingSyncEnabled ? 'true' : 'false'
+        'Content-Type': 'application/json'
       };
-
-      // Only add Drive access token if billing sync is enabled
-      if (billingSyncEnabled && driveAccessToken) {
-        headers['X-Google-Access-Token'] = driveAccessToken;
-        console.log('✅ [BillingPage] Sending billing request with personal sheet headers:', {
-          hasBillingSyncHeader: true,
-          hasGoogleTokenHeader: true,
-          tokenLength: driveAccessToken.length
-        });
-      } else {
-        console.log('ℹ️ [BillingPage] Sending billing request without personal sheet headers:', {
-          billingSyncEnabled,
-          hasDriveToken: !!driveAccessToken
-        });
-      }
       
       console.log('📤 [BillingPage] Sending request to:', url);
       console.log('📤 [BillingPage] Request headers:', Object.keys(headers));
@@ -330,6 +307,24 @@ const BillingPage: React.FC = () => {
       
       setBillingData(data);
       console.log('✅ [BillingPage] Billing data loaded successfully');
+      
+      // Calculate credit balance from transactions
+      // Credits are added with type 'credit_added', spending subtracts from balance
+      let balance = 0;
+      if (data.transactions) {
+        for (const tx of data.transactions) {
+          if (tx.type === 'credit_added') {
+            // Credits are stored as negative costs (-0.50), so we add the absolute value
+            balance += Math.abs(tx.cost);
+            console.log(`💳 Found credit: +$${Math.abs(tx.cost).toFixed(2)}, new balance: $${balance.toFixed(2)}`);
+          } else {
+            // Regular spending subtracts from balance
+            balance -= tx.cost;
+          }
+        }
+      }
+      setCreditBalance(balance);
+      console.log(`💳 Final credit balance: $${balance.toFixed(4)}`);
       
       // Refresh usage context (calculates usage from billing totals)
       refreshUsage();
@@ -479,31 +474,7 @@ const BillingPage: React.FC = () => {
     }
   }, [isAuthenticated, accessToken]);
 
-  // Listen for changes to billing sync settings
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      // Refetch if billing sync preference or Google Drive token changes
-      if (e.key === 'cloud_sync_billing' || e.key === 'google_drive_access_token') {
-        console.log('🔄 Billing sync settings changed, refetching data...');
-        fetchBillingData();
-      }
-    };
 
-    // Listen for storage events from other tabs/windows
-    window.addEventListener('storage', handleStorageChange);
-
-    // Also listen for custom event (for same-tab changes)
-    const handleSettingsChange = () => {
-      console.log('🔄 Settings changed, refetching billing data...');
-      fetchBillingData();
-    };
-    window.addEventListener('billing-settings-changed', handleSettingsChange);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('billing-settings-changed', handleSettingsChange);
-    };
-  }, [accessToken, isAuthenticated, startDate, endDate, typeFilter, providerFilter]);
 
   if (loading) {
     return (
@@ -590,7 +561,7 @@ const BillingPage: React.FC = () => {
   });
 
   // Calculate totals from filtered data
-  const calculateFilteredTotals = (transactions: Transaction[]) => {
+  const calculateFilteredTotals = (transactions: Transaction[], excludeCredits: boolean = false) => {
     const byType: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number }> = {};
     const byProvider: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number }> = {};
     const byModel: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number; provider: string }> = {};
@@ -598,7 +569,7 @@ const BillingPage: React.FC = () => {
     let totalTokens = 0;
     let totalTokensIn = 0;
     let totalTokensOut = 0;
-    
+
     // Count unique request IDs for user queries
     const uniqueRequestIds = new Set(
       transactions
@@ -609,7 +580,10 @@ const BillingPage: React.FC = () => {
     const totalLLMCalls = transactions.length;
 
     transactions.forEach(tx => {
-      totalCost += tx.cost;
+      // Exclude credit transactions from totalCost if requested
+      if (!excludeCredits || String(tx.type) !== 'credit_added') {
+        totalCost += tx.cost;
+      }
       totalTokens += tx.totalTokens || 0;
       totalTokensIn += tx.tokensIn || 0;
       totalTokensOut += tx.tokensOut || 0;
@@ -653,7 +627,8 @@ const BillingPage: React.FC = () => {
     };
   };
 
-  const filteredTotals = calculateFilteredTotals(filteredTransactions);
+  // Calculate totals excluding credit transactions from cost
+  const filteredTotals = calculateFilteredTotals(filteredTransactions, true);
 
   const uniqueProviders = Array.from(
     new Set(billingData.transactions.map(t => t.provider))
@@ -717,31 +692,6 @@ const BillingPage: React.FC = () => {
         <div className="billing-header">
           <div className="billing-title">
             <h1>💰 Billing Dashboard</h1>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
-              <p style={{ margin: 0, color: '#666', fontSize: '0.9rem' }}>
-                {billingData.personalSheetEmpty ? (
-                  <>🆕 Data source: <strong>Service (Personal sheet collecting data...)</strong></>
-                ) : billingData.source === 'service' ? (
-                  <>📊 Data source: <strong>Centralized Service</strong></>
-                ) : billingData.fallback ? (
-                  <>⚠️ Data source: <strong>Service (Fallback)</strong></>
-                ) : (
-                  <>📋 Data source: <strong>Personal Sheet</strong></>
-                )}
-              </p>
-              <span style={{ color: '#ddd' }}>•</span>
-              <p style={{ margin: 0, color: '#666', fontSize: '0.85rem' }}>
-                ⚠️ Costs are estimates – verify with provider billing
-              </p>
-              {billingData.personalSheetEmpty && (
-                <>
-                  <span style={{ color: '#ddd' }}>•</span>
-                  <p style={{ margin: 0, color: '#2196F3', fontSize: '0.85rem' }}>
-                    ℹ️ New transactions will log to your personal sheet
-                  </p>
-                </>
-              )}
-            </div>
           </div>
           <div className="billing-actions">
             <button className="btn-secondary" onClick={exportToCSV}>
@@ -905,9 +855,47 @@ const BillingPage: React.FC = () => {
       {activeTab === 'overview' && (
         <div className="billing-overview">
           <div className="summary-cards">
+            {/* Credit Balance Card - Highlighted and positioned first */}
+            <div className="summary-card" style={{
+              background: creditBalance > 0 ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+              color: 'white',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              border: '2px solid rgba(255,255,255,0.3)'
+            }}>
+              <div className="summary-label" style={{ color: 'rgba(255,255,255,0.9)' }}>💳 Credit Balance</div>
+              <div className="summary-value" style={{ fontSize: '2rem', fontWeight: 'bold' }}>${creditBalance.toFixed(2)}</div>
+              <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)', marginTop: '4px' }}>
+                {creditBalance > 0 
+                  ? `$${creditBalance.toFixed(2)} available` 
+                  : 'Add credit to continue'}
+              </div>
+              {creditBalance <= 0 && (
+                <button 
+                  style={{
+                    background: 'white',
+                    color: '#764ba2',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '0.85rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    marginTop: '8px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  }}
+                  onClick={() => alert('PayPal integration coming soon!')}
+                >
+                  ➕ Add Credit
+                </button>
+              )}
+            </div>
+            
             <div className="summary-card">
               <div className="summary-label">Total Cost</div>
               <div className="summary-value">${filteredTotals.totalCost.toFixed(4)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
+                Usage only (excl. credits)
+              </div>
             </div>
             <div className="summary-card">
               <div className="summary-label">Total Tokens</div>

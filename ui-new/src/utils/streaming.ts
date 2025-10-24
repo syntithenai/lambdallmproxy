@@ -176,7 +176,7 @@ export async function createSSERequest(
     headers['X-Google-Access-Token'] = driveAccessToken;
     console.log(`✅ Including Drive access token for Google Sheets operations (source: ${tokenSource})`);
   } else {
-    console.log('⚠️ No Drive access token available - snippet management and billing sync will not work');
+    console.log('⚠️ No Drive access token available - snippet management will not work');
     console.log('   Checked keys:', tokenSources);
   }
 

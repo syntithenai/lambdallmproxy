@@ -212,7 +212,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                     statusCode: 200,
                     headers: {
                         'Access-Control-Allow-Origin': '*',
-                        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Google-Access-Token,X-Billing-Sync',
+                        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Google-Access-Token',
                         'Access-Control-Allow-Methods': 'GET,DELETE,OPTIONS'
                     }
                 };

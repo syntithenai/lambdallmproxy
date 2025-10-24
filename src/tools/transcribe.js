@@ -181,7 +181,7 @@ async function downloadMedia(url, onProgress) {
     }
     
     // Get download timeout from environment (default: 30 seconds)
-    const downloadTimeout = parseInt(process.env.MEDIA_DOWNLOAD_TIMEOUT) || 30000;
+    const downloadTimeout = 15000; // 15 second timeout for media downloads
     
     let response;
     try {
