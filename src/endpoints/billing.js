@@ -11,16 +11,12 @@ const { getCachedCreditBalance } = require('../utils/credit-cache');
 const { CREDIT_LIMIT } = require('./usage');
 
 /**
- * Get CORS headers for billing endpoint
- * Includes X-Google-Access-Token for Google Sheets API access
- * Includes X-Billing-Sync for billing sync preference
+ * Get response headers for billing endpoint
+ * Note: CORS headers are handled by Lambda Function URL configuration
  */
-function getCorsHeaders() {
+function getResponseHeaders() {
     return {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Google-Access-Token,X-Billing-Sync',
-        'Access-Control-Allow-Methods': 'GET,DELETE,OPTIONS'
+        'Content-Type': 'application/json'
     };
 }
 
@@ -143,7 +139,7 @@ async function handleGetBilling(event, responseStream) {
             console.error('❌ [BILLING] Authentication failed');
             const metadata = {
                 statusCode: 401,
-                headers: getCorsHeaders()
+                headers: getResponseHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -207,7 +203,7 @@ async function handleGetBilling(event, responseStream) {
                     // Return service data with a message about personal sheet being new
                     const metadata = {
                         statusCode: 200,
-                        headers: getCorsHeaders()
+                        headers: getResponseHeaders()
                     };
                     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                     responseStream.write(JSON.stringify({
@@ -229,7 +225,7 @@ async function handleGetBilling(event, responseStream) {
                 // Return success response
                 const metadata = {
                     statusCode: 200,
-                    headers: getCorsHeaders()
+                    headers: getResponseHeaders()
                 };
                 responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                 responseStream.write(JSON.stringify({
@@ -249,7 +245,7 @@ async function handleGetBilling(event, responseStream) {
                 
                 const metadata = {
                     statusCode: 200,
-                    headers: getCorsHeaders()
+                    headers: getResponseHeaders()
                 };
                 responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                 responseStream.write(JSON.stringify({
@@ -273,7 +269,7 @@ async function handleGetBilling(event, responseStream) {
             
             const metadata = {
                 statusCode: 200,
-                headers: getCorsHeaders()
+                headers: getResponseHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -296,7 +292,7 @@ async function handleGetBilling(event, responseStream) {
 
         const metadata = {
             statusCode: 500,
-            headers: getCorsHeaders()
+            headers: getResponseHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -327,7 +323,7 @@ async function handleClearBilling(event, responseStream) {
         if (!authResult.authenticated) {
             const metadata = {
                 statusCode: 401,
-                headers: getCorsHeaders()
+                headers: getResponseHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -346,7 +342,7 @@ async function handleClearBilling(event, responseStream) {
         if (!accessToken) {
             const metadata = {
                 statusCode: 401,
-                headers: getCorsHeaders()
+                headers: getResponseHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -367,7 +363,7 @@ async function handleClearBilling(event, responseStream) {
             if (!params.provider) {
                 const metadata = {
                     statusCode: 400,
-                    headers: getCorsHeaders()
+                    headers: getResponseHeaders()
                 };
                 responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                 responseStream.write(JSON.stringify({
@@ -382,7 +378,7 @@ async function handleClearBilling(event, responseStream) {
             if (!params.startDate && !params.endDate) {
                 const metadata = {
                     statusCode: 400,
-                    headers: getCorsHeaders()
+                    headers: getResponseHeaders()
                 };
                 responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                 responseStream.write(JSON.stringify({
@@ -404,7 +400,7 @@ async function handleClearBilling(event, responseStream) {
         // Return success response
         const metadata = {
             statusCode: 200,
-            headers: getCorsHeaders()
+            headers: getResponseHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -420,7 +416,7 @@ async function handleClearBilling(event, responseStream) {
 
         const metadata = {
             statusCode: 500,
-            headers: getCorsHeaders()
+            headers: getResponseHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -452,7 +448,7 @@ async function handleGetTransactions(event, responseStream) {
         if (!authResult.authenticated) {
             const metadata = {
                 statusCode: 401,
-                headers: getCorsHeaders()
+                headers: getResponseHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -476,7 +472,7 @@ async function handleGetTransactions(event, responseStream) {
 
         const metadata = {
             statusCode: 200,
-            headers: getCorsHeaders()
+            headers: getResponseHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -491,7 +487,7 @@ async function handleGetTransactions(event, responseStream) {
 
         const metadata = {
             statusCode: 500,
-            headers: getCorsHeaders()
+            headers: getResponseHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -523,7 +519,7 @@ async function handleGetBalance(event, responseStream) {
         if (!authResult.authenticated) {
             const metadata = {
                 statusCode: 401,
-                headers: getCorsHeaders()
+                headers: getResponseHeaders()
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -546,7 +542,7 @@ async function handleGetBalance(event, responseStream) {
 
         const metadata = {
             statusCode: 200,
-            headers: getCorsHeaders()
+            headers: getResponseHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -560,7 +556,7 @@ async function handleGetBalance(event, responseStream) {
 
         const metadata = {
             statusCode: 500,
-            headers: getCorsHeaders()
+            headers: getResponseHeaders()
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -611,7 +607,7 @@ async function handler(event, responseStream, context) {
 
     const metadata = {
         statusCode: 404,
-        headers: getCorsHeaders()
+        headers: getResponseHeaders()
     };
     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
     responseStream.write(JSON.stringify({
