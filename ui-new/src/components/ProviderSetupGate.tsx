@@ -1,22 +1,12 @@
 /**
  * ProviderSetupGate Component
  * 
- * Blocks users from using the application until they have access to LLM providers.
- * Shows a full-screen overlay with provider setup form.
- * 
- * This component is displayed when:
- * - User has zero UI providers configured
- * - Backend returns 403 with requiresProviderSetup: true
- * 
- * Note: Authenticated users with credits automatically get server-side providers
- * and don't need to configure UI providers. This gate is only shown when the
- * backend explicitly requires provider setup (no providers available at all).
+ * Shows "Buy Credits" screen for authenticated users who need to purchase credits.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { ProviderForm } from './ProviderForm';
 import type { ProviderConfig } from '../types/provider';
 
 interface ProviderSetupGateProps {
@@ -27,35 +17,21 @@ interface ProviderSetupGateProps {
 const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnblock }) => {
   const { settings } = useSettings();
   const { isAuthenticated } = useAuth();
-  const [showForm, setShowForm] = useState(false);
 
-  // Check if user has providers OR is authenticated (which gives server-side providers)
-  // If either condition is true, automatically unblock
   useEffect(() => {
     if (isBlocked) {
       const hasUIProviders = settings.providers && settings.providers.length > 0;
-      
-      // Authenticated users get server-side providers automatically
-      if (isAuthenticated) {
-        console.log('✅ User authenticated - server-side providers available, unblocking UI');
-        onUnblock();
-        return;
-      }
-      
-      // Otherwise, check if they have UI providers configured
       if (hasUIProviders) {
-        console.log('✅ User has UI providers configured, unblocking UI');
+        console.log('User has UI providers configured, unblocking UI');
         onUnblock();
         return;
       }
     }
-  }, [isBlocked, settings.providers, isAuthenticated, onUnblock]);
+  }, [isBlocked, settings.providers, onUnblock]);
 
-  // Handle provider added event
   useEffect(() => {
     const handleProviderAdded = (event: CustomEvent<ProviderConfig>) => {
-      console.log('🎉 Provider added:', event.detail);
-      // Give settings context time to update
+      console.log('Provider added:', event.detail);
       setTimeout(() => {
         if (settings.providers && settings.providers.length > 0) {
           onUnblock();
@@ -64,7 +40,6 @@ const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnbl
     };
 
     window.addEventListener('provider-added', handleProviderAdded as EventListener);
-
     return () => {
       window.removeEventListener('provider-added', handleProviderAdded as EventListener);
     };
@@ -74,251 +49,75 @@ const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnbl
     return null;
   }
 
-  return (
-    <div className="provider-setup-gate">
-      <div className="gate-overlay">
-        <div className="gate-content">
-          <div className="gate-header">
-            <h1>🔐 Provider Setup Required</h1>
-            <p className="gate-subtitle">
-              To use this service, you need to configure at least one LLM provider with your own API key.
-            </p>
-          </div>
-
-          <div className="gate-info">
-            <div className="info-box">
-              <h3>Why do I need to add a provider?</h3>
-              <p>
-                This service requires API credentials to access Large Language Models (LLMs).
-                You can use free tier providers like Groq or Gemini to get started at no cost.
+  if (isAuthenticated) {
+    return (
+      <div className="provider-setup-gate">
+        <div className="gate-overlay">
+          <div className="gate-content">
+            <div className="gate-header">
+              <h1>💳 Credits Required</h1>
+              <p className="gate-subtitle">
+                To use this service, you need to purchase credits.
               </p>
             </div>
 
-            <div className="info-box">
-              <h3>Recommended: Free Tier Providers</h3>
-              <ul>
-                <li>
-                  <strong>Groq (Free):</strong> Fast inference with generous free tier
-                  <br />
-                  <a href="https://console.groq.com/" target="_blank" rel="noopener noreferrer">
-                    Get API key →
-                  </a>
-                </li>
-                <li>
-                  <strong>Gemini (Free):</strong> Google's LLM with free tier
-                  <br />
-                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
-                    Get API key →
-                  </a>
-                </li>
-              </ul>
+            <div className="gate-info">
+              <div className="info-box">
+                <h3>How does it work?</h3>
+                <p>
+                  This is a pay-as-you-go service. Purchase credits to access our LLM providers 
+                  without needing your own API keys. Your credits are tracked automatically, 
+                  and you will be charged based on actual usage.
+                </p>
+              </div>
+
+              <div className="info-box">
+                <h3>Pricing</h3>
+                <ul>
+                  <li><strong>Small models:</strong> approximately $0.0001 per request</li>
+                  <li><strong>Large models:</strong> approximately $0.001 per request</li>
+                  <li><strong>Minimum purchase:</strong> $5.00 (5,000-50,000 requests)</li>
+                </ul>
+                <p style={{ marginTop: '1rem', fontSize: '0.9rem', color: '#888' }}>
+                  Actual costs vary based on model and tokens used.
+                </p>
+              </div>
+
+              <div className="info-box">
+                <h3>Secure Payment</h3>
+                <p>
+                  Payments are processed securely through PayPal. Your credit balance 
+                  is updated instantly after purchase.
+                </p>
+              </div>
             </div>
 
-            <div className="info-box">
-              <h3>Your API keys are secure</h3>
-              <p>
-                All API keys are stored locally in your browser and transmitted securely to our backend.
-                We never store your API keys on our servers.
-              </p>
-            </div>
-          </div>
-
-          <div className="gate-action">
-            {!showForm ? (
+            <div className="gate-action">
               <button 
                 className="btn-primary btn-large"
-                onClick={() => setShowForm(true)}
+                onClick={() => {
+                  console.log('Opening billing tab');
+                  onUnblock();
+                }}
               >
-                Add Your First Provider
+                Buy Credits Now
               </button>
-            ) : (
-              <div className="gate-form">
-                <h3>Configure Provider</h3>
-                <ProviderForm 
-                  onSave={() => {
-                    console.log('✅ Provider added successfully');
-                    setShowForm(false);
-                    // The useEffect above will handle unblocking
-                  }}
-                  onCancel={() => setShowForm(false)}
-                />
-              </div>
-            )}
-          </div>
+            </div>
 
-          <div className="gate-footer">
-            <p className="text-muted">
-              Once you add a provider, you'll be able to use all features of the application.
-            </p>
+            <div className="gate-footer">
+              <p className="text-muted">
+                Your balance will be displayed in the top right corner after purchase.
+              </p>
+            </div>
           </div>
         </div>
+
+        <style>{`.provider-setup-gate{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;background:rgba(0,0,0,0.95);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)}.gate-overlay{width:100%;height:100%;overflow-y:auto;display:flex;align-items:center;justify-content:center;padding:2rem}.gate-content{max-width:800px;width:100%;background:#1a1a1a;border-radius:12px;padding:3rem;box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid #333}.gate-header{text-align:center;margin-bottom:2rem}.gate-header h1{font-size:2rem;margin:0 0 1rem 0;color:#fff}.gate-subtitle{font-size:1.1rem;color:#bbb;margin:0}.gate-info{margin-bottom:2rem}.info-box{background:#252525;border-radius:8px;padding:1.5rem;margin-bottom:1rem;border:1px solid #333}.info-box h3{margin:0 0 0.75rem 0;color:#fff;font-size:1.1rem}.info-box p{margin:0;color:#bbb;line-height:1.6}.info-box ul{margin:0.5rem 0 0 0;padding-left:1.5rem;color:#bbb}.info-box li{margin-bottom:0.75rem;line-height:1.6}.gate-action{text-align:center;margin-bottom:2rem}.btn-primary{background:#4a9eff;color:white;border:none;padding:1rem 2rem;border-radius:8px;font-size:1.1rem;font-weight:600;cursor:pointer;transition:all 0.2s ease}.btn-primary:hover{background:#357ac9;transform:translateY(-2px);box-shadow:0 4px 12px rgba(74,158,255,0.3)}.btn-large{padding:1.25rem 2.5rem;font-size:1.2rem}.gate-footer{text-align:center;border-top:1px solid #333;padding-top:1.5rem}.text-muted{color:#888;font-size:0.95rem;margin:0}@media (max-width:768px){.gate-content{padding:2rem 1.5rem}.gate-header h1{font-size:1.5rem}.gate-subtitle{font-size:1rem}}`}</style>
       </div>
+    );
+  }
 
-      <style>{`
-        .provider-setup-gate {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          z-index: 10000;
-          background: rgba(0, 0, 0, 0.95);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          backdrop-filter: blur(10px);
-        }
-
-        .gate-overlay {
-          width: 100%;
-          height: 100%;
-          overflow-y: auto;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 2rem;
-        }
-
-        .gate-content {
-          max-width: 800px;
-          width: 100%;
-          background: #1a1a1a;
-          border-radius: 12px;
-          padding: 3rem;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-          border: 1px solid #333;
-        }
-
-        .gate-header {
-          text-align: center;
-          margin-bottom: 2rem;
-        }
-
-        .gate-header h1 {
-          font-size: 2rem;
-          margin: 0 0 1rem 0;
-          color: #fff;
-        }
-
-        .gate-subtitle {
-          font-size: 1.1rem;
-          color: #bbb;
-          margin: 0;
-        }
-
-        .gate-info {
-          margin-bottom: 2rem;
-        }
-
-        .info-box {
-          background: #252525;
-          border-radius: 8px;
-          padding: 1.5rem;
-          margin-bottom: 1rem;
-          border: 1px solid #333;
-        }
-
-        .info-box h3 {
-          margin: 0 0 0.75rem 0;
-          color: #fff;
-          font-size: 1.1rem;
-        }
-
-        .info-box p {
-          margin: 0;
-          color: #bbb;
-          line-height: 1.6;
-        }
-
-        .info-box ul {
-          margin: 0.5rem 0 0 0;
-          padding-left: 1.5rem;
-          color: #bbb;
-        }
-
-        .info-box li {
-          margin-bottom: 0.75rem;
-          line-height: 1.6;
-        }
-
-        .info-box a {
-          color: #4a9eff;
-          text-decoration: none;
-          font-size: 0.95rem;
-        }
-
-        .info-box a:hover {
-          text-decoration: underline;
-        }
-
-        .gate-action {
-          text-align: center;
-          margin-bottom: 2rem;
-        }
-
-        .gate-form {
-          background: #252525;
-          border-radius: 8px;
-          padding: 2rem;
-          border: 1px solid #333;
-        }
-
-        .gate-form h3 {
-          margin: 0 0 1.5rem 0;
-          color: #fff;
-        }
-
-        .btn-primary {
-          background: #4a9eff;
-          color: white;
-          border: none;
-          padding: 1rem 2rem;
-          border-radius: 8px;
-          font-size: 1.1rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-
-        .btn-primary:hover {
-          background: #357ac9;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
-        }
-
-        .btn-large {
-          padding: 1.25rem 2.5rem;
-          font-size: 1.2rem;
-        }
-
-        .gate-footer {
-          text-align: center;
-          border-top: 1px solid #333;
-          padding-top: 1.5rem;
-        }
-
-        .text-muted {
-          color: #888;
-          font-size: 0.95rem;
-          margin: 0;
-        }
-
-        @media (max-width: 768px) {
-          .gate-content {
-            padding: 2rem 1.5rem;
-          }
-
-          .gate-header h1 {
-            font-size: 1.5rem;
-          }
-
-          .gate-subtitle {
-            font-size: 1rem;
-          }
-        }
-      `}</style>
-    </div>
-  );
+  return null;
 };
 
 export default ProviderSetupGate;

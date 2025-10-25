@@ -80,3 +80,4 @@ ENV_AUDIT_AND_CLEANUP_*.md
 output.txt
 abc2book-7ba987c44a16.json
 coverage/
+.env.lambda

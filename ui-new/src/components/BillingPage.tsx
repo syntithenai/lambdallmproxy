@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './BillingPage.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useUsage } from '../contexts/UsageContext';
-import { getCachedApiBase, createPayPalOrder, capturePayPalOrder } from '../utils/api';
+import { createPayPalOrder, capturePayPalOrder } from '../utils/api';
 
 // Declare PayPal SDK types
 declare global {
@@ -232,7 +232,8 @@ const BillingPage: React.FC = () => {
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set()); // Track expanded request groups
   const [creditBalance, setCreditBalance] = useState<number>(0); // User's current credit balance (available = credits - expenses)
   const [totalCredits, setTotalCredits] = useState<number>(0); // Total credits purchased
-  const [totalExpenses, setTotalExpenses] = useState<number>(0); // Total spent on API calls
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_, setTotalExpenses] = useState<number>(0); // Total spent on API calls
   const [showAddCreditModal, setShowAddCreditModal] = useState(false); // Add Credit modal state
   const [creditAmount, setCreditAmount] = useState('5.00'); // Amount to purchase
   const [paypalLoading, setPaypalLoading] = useState(false); // PayPal button loading state

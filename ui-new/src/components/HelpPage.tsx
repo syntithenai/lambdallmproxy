@@ -113,12 +113,62 @@ function FeaturesContent() {
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔍 Web Search Integration</h3>
-        <p className="mb-2">Get real-time information with integrated web search capabilities:</p>
-        <div className="space-y-2 pl-4">
-          <p><strong>DuckDuckGo Search:</strong> Privacy-focused web search that doesn't track your queries or build user profiles, ideal for general information retrieval.</p>
-          <p><strong>Tavily AI:</strong> Advanced AI-powered research engine optimized for gathering comprehensive information (requires API key).</p>
-          <p><strong>Automatic Citation:</strong> All search results include source URLs, allowing you to verify information and explore topics further.</p>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔍 Web Search & Scraping Integration</h3>
+        <p className="mb-3">
+          Get real-time information and extract content from any website using integrated search and advanced web scraping capabilities. 
+          The system intelligently handles both simple searches and complex data extraction with multiple fallback strategies.
+        </p>
+        
+        <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800 mb-4">
+          <p className="font-semibold mb-2">Web Search Capabilities:</p>
+          <div className="space-y-2">
+            <p><strong>DuckDuckGo Search:</strong> Privacy-focused web search that doesn't track your queries or build user profiles, ideal for general information retrieval and finding relevant URLs.</p>
+            <p><strong>Tavily AI:</strong> Advanced AI-powered research engine optimized for gathering comprehensive information from multiple sources (requires API key).</p>
+            <p><strong>Automatic Citation:</strong> All search results include source URLs, allowing you to verify information and explore topics further.</p>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+          <p className="font-semibold mb-3">Advanced Web Scraping Tools:</p>
+          <p className="mb-3">
+            Extract structured content from websites that require JavaScript execution, handle anti-bot protection, or need complex 
+            interactions. The system automatically selects the best scraping method based on the target site's requirements.
+          </p>
+          
+          <div className="space-y-3 mb-3">
+            <div className="border-l-4 border-blue-500 pl-3">
+              <p className="font-medium text-blue-700 dark:text-blue-300">Direct HTTP Scraping</p>
+              <p className="text-sm">Fast extraction of static HTML content using standard HTTP requests - ideal for simple pages and APIs.</p>
+            </div>
+            
+            <div className="border-l-4 border-purple-500 pl-3">
+              <p className="font-medium text-purple-700 dark:text-purple-300">Puppeteer Scraping</p>
+              <p className="text-sm">Headless Chrome automation for JavaScript-heavy sites - executes page scripts, waits for dynamic content, 
+              and can interact with elements before extraction.</p>
+            </div>
+            
+            <div className="border-l-4 border-green-500 pl-3">
+              <p className="font-medium text-green-700 dark:text-green-300">Playwright Scraping</p>
+              <p className="text-sm">Cross-browser automation with advanced capabilities - supports multiple browser engines, automatic waiting 
+              for elements, and sophisticated page interaction patterns.</p>
+            </div>
+            
+            <div className="border-l-4 border-orange-500 pl-3">
+              <p className="font-medium text-orange-700 dark:text-orange-300">Selenium Scraping</p>
+              <p className="text-sm">Industry-standard browser automation with extensive ecosystem - handles complex workflows, form submissions, 
+              and sites with strict anti-automation measures.</p>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/30 dark:to-red-900/30 p-3 rounded-lg border border-orange-300 dark:border-orange-700">
+            <p className="font-semibold text-orange-800 dark:text-orange-200 mb-2">🛡️ Residential Proxy Support (Optional)</p>
+            <p className="text-sm">
+              For websites with stringent bot detection and protection systems, the scraper can route requests through residential proxy networks. 
+              This provides real residential IP addresses that appear as legitimate users, allowing successful data extraction from sites that 
+              block datacenter IPs, implement CAPTCHA challenges, or employ sophisticated fingerprinting techniques. Particularly useful for 
+              e-commerce sites, social media platforms, and services with aggressive anti-scraping measures.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -170,65 +220,121 @@ function FeaturesContent() {
 function PlanningContent() {
   return (
     <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Planning, Todos & Content Management for Long-Term Thinking</h2>
+      <h2 className="text-3xl font-bold mb-4">Planning Wizard, Todos & Content Management for Long-Term Thinking</h2>
       
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📋 Creating Effective Plans</h3>
         <p className="mb-3">
           Whether you're tackling complex research, building documents, or managing multi-step projects, effective 
-          planning helps the AI deliver better results. You can create plans explicitly or let the AI generate them 
-          automatically based on your needs.
+          planning helps the AI deliver better results. You can create plans explicitly using the <strong>"Create a Plan"</strong> button 
+          in the chat interface, or let the AI generate them automatically based on your needs.
         </p>
 
         <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-5 rounded-lg border border-blue-200 dark:border-blue-800 mb-4">
-          <p className="font-semibold mb-3 text-lg">The Planning Process:</p>
-          <ol className="space-y-4">
-            <li className="border-l-4 border-blue-500 pl-4">
-              <strong className="text-blue-700 dark:text-blue-300">1. Define Clear Objectives</strong>
-              <p className="text-sm mt-1">Start with a detailed prompt that specifies what you want to achieve, the format you need, 
-              and any constraints or requirements. The more specific your initial request, the better the AI can plan.</p>
-              <p className="text-xs mt-2 italic text-gray-600 dark:text-gray-400">
-                Example: "Create a comprehensive analysis of renewable energy trends, including solar, wind, and hydro. 
-                I need statistics from 2020-2024, key market players, and future projections. Format as a structured report."
+          <p className="font-semibold mb-4 text-lg">The Planning Process:</p>
+          
+          <div className="space-y-6">
+            <div className="border-l-4 border-blue-500 pl-4">
+              <strong className="text-blue-700 dark:text-blue-300 block mb-2">1. Define Clear Objectives</strong>
+              <p className="text-sm mb-3">
+                Start with a detailed prompt that specifies what you want to achieve, the format you need, 
+                and any constraints or requirements. The more specific your initial request, the better the AI can plan.
               </p>
-            </li>
-            <li className="border-l-4 border-purple-500 pl-4">
-              <strong className="text-purple-700 dark:text-purple-300">2. Use Iteration & Tools</strong>
-              <p className="text-sm mt-1">Plans work best when they leverage available tools strategically. The AI can break down 
-              complex tasks into steps that use web search for research, snippets for building documents incrementally, 
-              and todos for tracking progress across multiple sessions.</p>
-              <p className="text-xs mt-2 italic text-gray-600 dark:text-gray-400">
-                Example workflow: Search for recent data → Save findings to snippets → Create todo items for each section 
-                → Build document piece by piece → Reference saved snippets when needed
+              <div className="bg-white dark:bg-gray-800/50 p-3 rounded border border-blue-200 dark:border-blue-700">
+                <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Example Prompts:</p>
+                <div className="space-y-2 text-xs italic text-gray-700 dark:text-gray-300">
+                  <p>💬 "Create a comprehensive analysis of renewable energy trends, including solar, wind, and hydro. 
+                  I need statistics from 2020-2024, key market players, and future projections. Format as a structured report."</p>
+                  <p>💬 "Build a 5-week curriculum for learning Python from scratch, with daily exercises, weekly projects, 
+                  and assessment milestones. Target audience is complete beginners."</p>
+                  <p>💬 "Research the top 10 productivity apps for remote teams, compare their features, pricing, and user reviews, 
+                  then create a decision matrix with recommendations for different team sizes."</p>
+                  <p>💬 "Develop a marketing strategy for launching a new mobile app. Include target audience analysis, 
+                  competitive landscape, channel recommendations, and a 90-day action plan with budget estimates."</p>
+                </div>
+              </div>
+            </div>
+
+            <hr className="border-gray-300 dark:border-gray-600" />
+
+            <div className="border-l-4 border-purple-500 pl-4">
+              <strong className="text-purple-700 dark:text-purple-300 block mb-2">2. Use Iteration & Tools</strong>
+              <p className="text-sm mb-3">
+                Plans work best when they leverage available tools strategically. The AI can break down 
+                complex tasks into steps that use web search for research, snippets for building documents incrementally, 
+                and todos for tracking progress across multiple sessions.
               </p>
-            </li>
-            <li className="border-l-4 border-green-500 pl-4">
-              <strong className="text-green-700 dark:text-green-300">3. Enable Planning Mode (Optional)</strong>
-              <p className="text-sm mt-1">For research-heavy tasks, enable Planning Mode in the chat interface. This creates 
-              an explicit research plan before executing searches, ensuring comprehensive coverage and avoiding redundant queries.</p>
-            </li>
-            <li className="border-l-4 border-orange-500 pl-4">
-              <strong className="text-orange-700 dark:text-orange-300">4. Build Incrementally with Snippets</strong>
-              <p className="text-sm mt-1">For document creation, use the snippet management tool to build content incrementally. 
-              The AI can save sections as snippets, update them as new information arrives, and reference them in future conversations 
-              to maintain consistency.</p>
-              <p className="text-xs mt-2 italic text-gray-600 dark:text-gray-400">
-                Tip: Tag snippets by topic (e.g., "renewable-energy-solar", "renewable-energy-wind") for easy retrieval
+              <div className="bg-white dark:bg-gray-800/50 p-3 rounded border border-purple-200 dark:border-purple-700">
+                <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Example Workflow:</p>
+                <p className="text-xs text-gray-700 dark:text-gray-300">
+                  Search for recent data → Save findings to snippets → Create todo items for each section 
+                  → Build document piece by piece → Reference saved snippets when needed
+                </p>
+              </div>
+            </div>
+
+            <hr className="border-gray-300 dark:border-gray-600" />
+
+            <div className="border-l-4 border-green-500 pl-4">
+              <strong className="text-green-700 dark:text-green-300 block mb-2">3. Enable Planning Wizard (Optional)</strong>
+              <p className="text-sm mb-3">
+                For research-heavy tasks, click the <strong>"Create a Plan"</strong> button in the chat interface to activate the Planning Wizard. 
+                This creates an explicit research plan before executing searches, ensuring comprehensive coverage and avoiding redundant queries.
               </p>
-            </li>
-            <li className="border-l-4 border-red-500 pl-4">
-              <strong className="text-red-700 dark:text-red-300">5. Track with Todos</strong>
-              <p className="text-sm mt-1">Use the todo management tool to track multi-step projects across sessions. The AI can 
-              create tasks, mark them complete as work progresses, and maintain context about what's been done and what remains.</p>
-            </li>
-          </ol>
+              <div className="bg-white dark:bg-gray-800/50 p-3 rounded border border-green-200 dark:border-green-700">
+                <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">When to Use Planning Wizard:</p>
+                <ul className="text-xs space-y-1 pl-4 text-gray-700 dark:text-gray-300">
+                  <li>• Multi-source research requiring synthesis from 5+ websites</li>
+                  <li>• Comparative analysis needing structured data gathering</li>
+                  <li>• Complex topics where you need to ensure thorough coverage</li>
+                  <li>• Time-sensitive research where you want to avoid re-searching</li>
+                </ul>
+              </div>
+            </div>
+
+            <hr className="border-gray-300 dark:border-gray-600" />
+
+            <div className="border-l-4 border-orange-500 pl-4">
+              <strong className="text-orange-700 dark:text-orange-300 block mb-2">4. Build Incrementally with Snippets</strong>
+              <p className="text-sm mb-3">
+                For document creation, use the snippet management tool to build content incrementally. 
+                The AI can save sections as snippets, update them as new information arrives, and reference them in future conversations 
+                to maintain consistency.
+              </p>
+              <div className="bg-white dark:bg-gray-800/50 p-3 rounded border border-orange-200 dark:border-orange-700">
+                <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Pro Tip:</p>
+                <p className="text-xs italic text-gray-700 dark:text-gray-300">
+                  Tag snippets by topic (e.g., "renewable-energy-solar", "renewable-energy-wind") for easy retrieval
+                </p>
+              </div>
+            </div>
+
+            <hr className="border-gray-300 dark:border-gray-600" />
+
+            <div className="border-l-4 border-red-500 pl-4">
+              <strong className="text-red-700 dark:text-red-300 block mb-2">5. Track with Todos</strong>
+              <p className="text-sm mb-3">
+                Use the todo management tool to track multi-step projects across sessions. The AI can 
+                create tasks, mark them complete as work progresses, and maintain context about what's been done and what remains.
+              </p>
+              <div className="bg-white dark:bg-gray-800/50 p-3 rounded border border-red-200 dark:border-red-700">
+                <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Example Prompts:</p>
+                <div className="space-y-1 text-xs italic text-gray-700 dark:text-gray-300">
+                  <p>💬 "Create a todo list for organizing a conference: venue booking, speaker outreach, marketing plan, registration setup"</p>
+                  <p>💬 "Break down the website redesign project into actionable tasks with priorities"</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
           <p className="font-semibold mb-2">💡 Pro Tip: Detailed Prompts = Better Plans</p>
-          <p className="text-sm">When asking the AI to create a plan, be explicit about your requirements, desired format, timeline, 
-          and any specific sources or constraints. The AI will use this information to generate a structured plan with clear steps, 
-          tool usage, and success criteria.</p>
+          <p className="text-sm">
+            When asking the AI to create a plan (either by clicking <strong>"Create a Plan"</strong> or through natural language), 
+            be explicit about your requirements, desired format, timeline, and any specific sources or constraints. The AI will use 
+            this information to generate a structured plan with clear steps, tool usage, and success criteria.
+          </p>
         </div>
       </section>
 
@@ -942,139 +1048,213 @@ function PrivacyContent() {
     <div className="space-y-6 text-gray-800 dark:text-gray-200">
       <h2 className="text-3xl font-bold mb-4">Privacy Policy</h2>
       
-      <section className="space-y-4">
+      <section className="space-y-3">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📅 Last Updated</h3>
         <p>October 24, 2025</p>
       </section>
 
-      <section className="space-y-4">
+      <section className="space-y-3">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔒 Information We Collect</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li>
-            <strong>Authentication Data:</strong> Google OAuth tokens, email address, profile information
-          </li>
-          <li>
-            <strong>Usage Data:</strong> API requests, model selections, token counts, costs, timestamps
-          </li>
-          <li>
-            <strong>Chat History:</strong> Messages sent to and from LLM providers (stored locally in your browser)
-          </li>
-          <li>
-            <strong>Billing Data:</strong> PayPal transaction IDs, purchase amounts, credit balances
-          </li>
-          <li>
-            <strong>Content Data:</strong> SWAG snippets, embeddings, tags (stored locally in IndexedDB, optionally synced to your Google Drive)
-          </li>
-          <li>
-            <strong>Optional Data:</strong> Location (if you grant permission), Google Drive file access (if you use sync features)
-          </li>
-        </ul>
-      </section>
-
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎯 How We Use Your Information</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Authentication:</strong> Verify your identity and provide access to the service</li>
-          <li><strong>API Routing:</strong> Forward your requests to selected LLM providers</li>
-          <li><strong>Billing:</strong> Track credit usage, process payments, generate transaction records</li>
-          <li><strong>Service Improvement:</strong> Monitor performance, debug issues, optimize infrastructure</li>
-          <li><strong>Communication:</strong> Send service updates or respond to support requests</li>
-        </ul>
-      </section>
-
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🤝 Data Sharing</h3>
-        <p>We share your data with:</p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li>
-            <strong>LLM Providers:</strong> Your prompts and chat history are sent to OpenAI, Google, Groq, or other providers you select
-          </li>
-          <li>
-            <strong>Payment Processors:</strong> PayPal handles payment processing (subject to their privacy policy)
-          </li>
-          <li>
-            <strong>Cloud Services:</strong> AWS Lambda hosts our backend infrastructure
-          </li>
-          <li>
-            <strong>Your Google Drive:</strong> If you enable sync, content is saved to your personal Google Drive
-          </li>
-        </ul>
-        <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-800">
-          ⚠️ <strong>Important:</strong> We do NOT sell or rent your personal information to third parties for marketing purposes.
+        <p className="mb-3">
+          When you use LLM Proxy, we collect several types of information to provide and improve our service. 
+          This includes your authentication credentials obtained through Google OAuth, such as your email address 
+          and profile information, which we use to identify you and secure your account.
+        </p>
+        <p className="mb-3">
+          We track your usage of the service including the API requests you make, which models you select, token 
+          counts for billing purposes, associated costs, and timestamps of your activity. Your chat history—the 
+          messages you send to and receive from LLM providers—is stored locally in your browser's storage for your 
+          convenience and privacy.
+        </p>
+        <p className="mb-3">
+          For billing purposes, we maintain records of your PayPal transactions including transaction IDs, purchase 
+          amounts, and your current credit balance. If you use the content management features, your SWAG snippets, 
+          embeddings, and organizational tags are stored locally in your browser's IndexedDB. You have the option 
+          to sync this content to your personal Google Drive for backup and cross-device access.
+        </p>
+        <p>
+          Additionally, certain optional data may be collected if you grant permission, such as your location information 
+          for location-based features, or access to your Google Drive files if you choose to enable cloud synchronization 
+          features.
         </p>
       </section>
 
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔐 Data Storage & Security</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Local Storage:</strong> Chat history, SWAG content, and embeddings are stored in your browser's IndexedDB</li>
-          <li><strong>Cloud Storage:</strong> Billing transactions logged securely on our backend infrastructure</li>
-          <li><strong>Encryption:</strong> HTTPS for all data transmission, OAuth2 for authentication</li>
-          <li><strong>Access Control:</strong> Only you can access your personal data (via Google authentication)</li>
-          <li><strong>Retention:</strong> We retain billing logs for accounting purposes; chat history is stored locally and you can delete it anytime</li>
-        </ul>
+      <section className="space-y-3">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎯 How We Use Your Information</h3>
+        <p className="mb-3">
+          Your information serves several critical functions within our service. We use your authentication data to verify 
+          your identity and provide secure access to your account and personalized settings. When you make requests, we route 
+          them to the LLM providers you've selected, passing along necessary context to fulfill your queries.
+        </p>
+        <p className="mb-3">
+          For billing operations, we track your credit usage against your available balance, process payments through PayPal 
+          when you add credits, and generate detailed transaction records so you can monitor your spending. This financial 
+          transparency is important for managing your budget and understanding service costs.
+        </p>
+        <p>
+          We also use aggregated usage data to improve the service—monitoring performance metrics, debugging technical issues, 
+          and optimizing our infrastructure for better reliability and speed. When necessary, we may use your contact information 
+          to send important service updates or respond to your support requests.
+        </p>
       </section>
 
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🛡️ Your Privacy Rights</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Access:</strong> View your billing transactions and usage data in the Billing page</li>
-          <li><strong>Deletion:</strong> Clear your local chat history and SWAG content anytime</li>
-          <li><strong>Portability:</strong> Export your transaction history and usage data</li>
-          <li><strong>Opt-Out:</strong> Disconnect Google Drive sync, disable location access, or close your account</li>
-        </ul>
-      </section>
-
-      <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">⚠️ Disclaimer of Liability</h3>
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-          <p className="font-semibold mb-2">IMPORTANT - PLEASE READ CAREFULLY:</p>
-          <ul className="list-disc pl-6 space-y-2 text-sm">
-            <li>
-              <strong>AI-Generated Content:</strong> Responses from LLM providers are generated by artificial intelligence and may contain errors, biases, or inappropriate content.
-            </li>
-            <li>
-              <strong>No Warranties:</strong> We provide the service "AS IS" without warranties of any kind, express or implied.
-            </li>
-            <li>
-              <strong>No Responsibility:</strong> We are NOT responsible for the accuracy, completeness, safety, or legality of AI-generated outputs.
-            </li>
-            <li>
-              <strong>User Responsibility:</strong> YOU are responsible for verifying any information before acting on it.
-            </li>
-            <li>
-              <strong>Third-Party Services:</strong> We are not liable for issues with OpenAI, Google, Groq, PayPal, or other third-party services.
-            </li>
-            <li>
-              <strong>Data Loss:</strong> We are not responsible for loss of local data (chat history, SWAG content) due to browser issues, cache clearing, or device failure.
-            </li>
-            <li>
-              <strong>Limitation of Liability:</strong> Our total liability shall not exceed the amount you paid for credits in the past 30 days.
-            </li>
-          </ul>
+      <section className="space-y-3">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🤝 Data Sharing</h3>
+        <p className="mb-3">
+          To provide our service effectively, we share certain information with trusted third parties. When you send prompts 
+          to generate responses, your queries and chat history are transmitted to the LLM providers you've selected—such as 
+          OpenAI, Google, Groq, or others. Each of these providers has their own privacy policies governing how they handle 
+          your data, and we encourage you to review their terms.
+        </p>
+        <p className="mb-3">
+          Payment processing is handled entirely by PayPal, which means your financial information and transaction details 
+          are subject to PayPal's privacy policy rather than ours. We never see or store your credit card numbers or banking 
+          information directly. Our backend infrastructure runs on AWS Lambda cloud services, which hosts the application code 
+          that processes your requests.
+        </p>
+        <p className="mb-3">
+          If you enable synchronization features, your content is saved directly to your personal Google Drive account. This 
+          means the data goes from your browser to your own Drive storage—we don't maintain a copy on our servers.
+        </p>
+        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+          <p className="font-semibold text-red-800 dark:text-red-200 mb-2">⚠️ Important Privacy Commitment</p>
+          <p className="text-sm">
+            We do NOT sell or rent your personal information to third parties for marketing purposes. We do NOT share your 
+            data with advertisers or data brokers. Your information is used solely to provide the service you've signed up for.
+          </p>
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section className="space-y-3">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔐 Data Storage & Security</h3>
+        <p className="mb-3">
+          We take a privacy-first approach to data storage. The majority of your personal content—including your full chat 
+          history, SWAG snippets, and generated embeddings—is stored exclusively in your browser's local IndexedDB database. 
+          This means the data stays on your device and is not transmitted to our servers unless you explicitly choose to sync 
+          it to your Google Drive.
+        </p>
+        <p className="mb-3">
+          The only information we store on our backend infrastructure is billing-related data: your transaction history, 
+          credit purchases, and usage logs for accounting purposes. This financial data is stored securely on our cloud 
+          infrastructure with appropriate access controls.
+        </p>
+        <p className="mb-3">
+          All data transmitted between your browser and our servers is encrypted using industry-standard HTTPS protocol. 
+          Authentication is handled through secure OAuth2 flows with Google, ensuring your credentials are never exposed 
+          to our application directly. Access to your personal data is restricted exclusively to you through your authenticated 
+          Google account—no other users or administrators can access your information.
+        </p>
+        <p>
+          We retain billing logs for accounting and tax compliance purposes as required by law. Your chat history, being stored 
+          locally in your browser, is under your control—you can delete it at any time through your browser's storage management 
+          tools or the application's clear data features.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🛡️ Your Privacy Rights</h3>
+        <p className="mb-3">
+          You maintain significant control over your data within our service. You can access your billing transactions and 
+          detailed usage data at any time through the Billing page, which provides complete transparency into how your credits 
+          have been used and what you've been charged for.
+        </p>
+        <p className="mb-3">
+          Because your chat history and content are stored locally in your browser, you have the ability to delete this 
+          information whenever you choose. The application provides clear options to clear your local data, and you can 
+          also use your browser's built-in storage management to remove IndexedDB data if preferred.
+        </p>
+        <p className="mb-3">
+          Your data is portable—you can export your transaction history and usage data for your own records or to migrate 
+          to another service. You also have granular control over optional features: disconnect Google Drive synchronization 
+          to stop cloud backups, revoke location access permissions, or close your account entirely if you no longer wish 
+          to use the service.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">⚠️ Disclaimer of Liability</h3>
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-5 rounded-lg border-2 border-yellow-300 dark:border-yellow-700">
+          <p className="font-bold mb-3 text-lg text-yellow-900 dark:text-yellow-100">IMPORTANT - PLEASE READ CAREFULLY</p>
+          
+          <p className="mb-4">
+            <strong className="text-yellow-800 dark:text-yellow-200">Artificial Intelligence Content:</strong> The responses 
+            generated by LLM providers are produced by artificial intelligence systems that, while sophisticated, are not 
+            infallible. These AI-generated outputs may contain factual errors, exhibit biases present in their training data, 
+            include inappropriate or offensive content, or provide information that is outdated or incorrect. AI systems can 
+            also "hallucinate" information—presenting fabricated details with apparent confidence.
+          </p>
+
+          <p className="mb-4">
+            <strong className="text-yellow-800 dark:text-yellow-200">No Warranties or Guarantees:</strong> We provide this 
+            service "AS IS" and "AS AVAILABLE" without any warranties of any kind, whether express or implied. This includes 
+            but is not limited to implied warranties of merchantability, fitness for a particular purpose, or non-infringement. 
+            We make no guarantees about the accuracy, reliability, completeness, or timeliness of any information provided 
+            through the service.
+          </p>
+
+          <p className="mb-4">
+            <strong className="text-yellow-800 dark:text-yellow-200">Your Responsibility:</strong> You acknowledge and agree 
+            that YOU are solely responsible for verifying any information obtained through this service before relying on it 
+            for any purpose. This is especially critical for decisions involving health, legal matters, financial planning, 
+            safety, or any other consequential actions. We strongly recommend consulting appropriate professionals for important 
+            decisions rather than relying solely on AI-generated content.
+          </p>
+
+          <p className="mb-4">
+            <strong className="text-yellow-800 dark:text-yellow-200">Third-Party Services:</strong> We are not responsible 
+            for the performance, availability, accuracy, or policies of third-party services including OpenAI, Google AI, 
+            Groq, Together AI, PayPal, Google Drive, or any other integrated service. Issues arising from these services 
+            are governed by their respective terms of service and privacy policies.
+          </p>
+
+          <p className="mb-4">
+            <strong className="text-yellow-800 dark:text-yellow-200">Data Loss:</strong> While we implement reasonable measures 
+            to protect your data, we cannot guarantee against data loss. We are not liable for any loss of local data including 
+            chat history, SWAG content, or other browser-stored information due to browser cache clearing, device failure, 
+            software conflicts, or any other cause. We strongly recommend regularly backing up important content to external 
+            storage or cloud services.
+          </p>
+
+          <p>
+            <strong className="text-yellow-800 dark:text-yellow-200">Limitation of Liability:</strong> To the maximum extent 
+            permitted by law, our total aggregate liability to you for all claims arising out of or related to your use of 
+            the service shall not exceed the amount you have paid us for credits in the thirty (30) days immediately preceding 
+            the event giving rise to the claim. In no event shall we be liable for any indirect, incidental, special, 
+            consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly.
+          </p>
+        </div>
+      </section>
+
+      <section className="space-y-3">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔄 Changes to This Policy</h3>
         <p>
-          We may update this privacy policy from time to time. We will notify you of significant changes by 
-          posting a notice in the application or updating the "Last Updated" date above.
+          We reserve the right to modify this privacy policy at any time as our service evolves or in response to legal 
+          or regulatory requirements. When we make significant changes that materially affect your rights or how we handle 
+          your data, we will notify you by posting a prominent notice within the application or by updating the "Last Updated" 
+          date at the top of this document. We encourage you to review this policy periodically to stay informed about how 
+          we're protecting your information. Your continued use of the service after any modifications indicates your acceptance 
+          of the updated terms.
         </p>
       </section>
 
-      <section className="space-y-4">
+      <section className="space-y-3">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📧 Contact Us</h3>
         <p>
-          If you have questions about this privacy policy or your data, please contact us via GitHub issues 
-          at the project repository.
+          If you have questions, concerns, or requests regarding this privacy policy, your personal data, or how we handle 
+          your information, we want to hear from you. Please contact us through the GitHub issues page at our project 
+          repository. We review and respond to privacy-related inquiries as promptly as possible, typically within a few 
+          business days.
         </p>
       </section>
 
-      <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 mt-6">
-        <p className="text-sm font-medium">
-          By using LLM Proxy, you acknowledge that you have read, understood, and agree to this privacy policy 
-          and disclaimer of liability.
+      <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-lg border-2 border-blue-300 dark:border-blue-700 mt-6">
+        <p className="font-semibold text-lg mb-2 text-blue-900 dark:text-blue-100">Acknowledgment and Consent</p>
+        <p className="text-sm">
+          By accessing or using LLM Proxy, you acknowledge that you have read this privacy policy in its entirety, 
+          understand its terms and implications, and agree to be bound by it along with the disclaimer of liability. 
+          You also acknowledge that you understand the nature of AI-generated content and the inherent limitations and 
+          risks associated with using such technology. If you do not agree with any part of this policy, please discontinue 
+          use of the service immediately.
         </p>
       </div>
     </div>
