@@ -320,6 +320,453 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
 }
 
 /**
+ * Ensure sheet has proper headers in the first row
+ * If the first row is missing or doesn't look like headers, add them
+ * 
+ * @param {string} sheetName - Name of the sheet
+ * @param {string} spreadsheetId - Google Sheets spreadsheet ID
+ * @param {string} accessToken - OAuth access token
+ */
+async function ensureSheetHeaders(sheetName, spreadsheetId, accessToken) {
+    const expectedHeaders = [
+        'Timestamp', 'Email', 'Type', 'Model', 'Provider',
+        'Tokens In', 'Tokens Out', 'Cost', 'Duration (ms)', 'Status'
+    ];
+    
+    return new Promise((resolve, reject) => {
+        // Read first row
+        const range = `${sheetName}!A1:J1`;
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    const result = JSON.parse(data);
+                    const firstRow = result.values?.[0] || [];
+                    
+                    // Check if headers exist and look correct
+                    const hasValidHeaders = firstRow.length > 0 && 
+                        firstRow.some(cell => expectedHeaders.includes(cell));
+                    
+                    if (hasValidHeaders) {
+                        console.log(`✅ Sheet "${sheetName}" has valid headers`);
+                        resolve(true);
+                    } else {
+                        // Insert headers at the top
+                        console.log(`📝 Adding headers to sheet "${sheetName}"`);
+                        const insertOptions = {
+                            hostname: 'sheets.googleapis.com',
+                            path: `/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'Content-Type': 'application/json'
+                            }
+                        };
+                        
+                        const insertPayload = JSON.stringify({
+                            requests: [{
+                                insertDimension: {
+                                    range: {
+                                        sheetId: 0, // Will be updated with correct sheetId
+                                        dimension: 'ROWS',
+                                        startIndex: 0,
+                                        endIndex: 1
+                                    },
+                                    inheritFromBefore: false
+                                }
+                            }]
+                        });
+                        
+                        // First, get sheetId for the sheet name
+                        getSheetId(sheetName, spreadsheetId, accessToken)
+                            .then(sheetId => {
+                                const payload = JSON.stringify({
+                                    requests: [{
+                                        insertDimension: {
+                                            range: {
+                                                sheetId: sheetId,
+                                                dimension: 'ROWS',
+                                                startIndex: 0,
+                                                endIndex: 1
+                                            },
+                                            inheritFromBefore: false
+                                        }
+                                    }]
+                                });
+                                
+                                const insertReq = https.request(insertOptions, (insertRes) => {
+                                    let insertData = '';
+                                    insertRes.on('data', chunk => insertData += chunk);
+                                    insertRes.on('end', () => {
+                                        if (insertRes.statusCode === 200) {
+                                            // Now write headers to A1:J1
+                                            const writeRange = `${sheetName}!A1:J1`;
+                                            const writeOptions = {
+                                                hostname: 'sheets.googleapis.com',
+                                                path: `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(writeRange)}?valueInputOption=RAW`,
+                                                method: 'PUT',
+                                                headers: {
+                                                    'Authorization': `Bearer ${accessToken}`,
+                                                    'Content-Type': 'application/json'
+                                                }
+                                            };
+                                            
+                                            const writePayload = JSON.stringify({
+                                                values: [expectedHeaders]
+                                            });
+                                            
+                                            const writeReq = https.request(writeOptions, (writeRes) => {
+                                                let writeData = '';
+                                                writeRes.on('data', chunk => writeData += chunk);
+                                                writeRes.on('end', () => {
+                                                    if (writeRes.statusCode === 200) {
+                                                        console.log(`✅ Headers added to "${sheetName}"`);
+                                                        resolve(true);
+                                                    } else {
+                                                        reject(new Error(`Failed to write headers: ${writeRes.statusCode}`));
+                                                    }
+                                                });
+                                            });
+                                            
+                                            writeReq.on('error', reject);
+                                            writeReq.write(writePayload);
+                                            writeReq.end();
+                                        } else {
+                                            reject(new Error(`Failed to insert row: ${insertRes.statusCode}`));
+                                        }
+                                    });
+                                });
+                                
+                                insertReq.on('error', reject);
+                                insertReq.write(payload);
+                                insertReq.end();
+                            })
+                            .catch(reject);
+                    }
+                } else {
+                    reject(new Error(`Failed to read headers: ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/**
+ * Get sheetId for a sheet name
+ */
+async function getSheetId(sheetName, spreadsheetId, accessToken) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    const result = JSON.parse(data);
+                    const sheet = result.sheets?.find(s => s.properties.title === sheetName);
+                    if (sheet) {
+                        resolve(sheet.properties.sheetId);
+                    } else {
+                        reject(new Error(`Sheet "${sheetName}" not found`));
+                    }
+                } else {
+                    reject(new Error(`Failed to get sheetId: ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/**
+ * Consolidate multiple user sheets into one
+ * Merges all matching sheets, sorts by timestamp, and deletes duplicates
+ * 
+ * @param {Array} matchingSheets - Array of sheet objects to consolidate
+ * @param {string} targetSheetName - Final sheet name to keep
+ * @param {string} spreadsheetId - Google Sheets spreadsheet ID
+ * @param {string} accessToken - OAuth access token
+ */
+async function consolidateUserSheets(matchingSheets, targetSheetName, spreadsheetId, accessToken) {
+    console.log(`🔄 Consolidating ${matchingSheets.length} sheets into "${targetSheetName}"...`);
+    
+    // 1. Read all data from all matching sheets
+    const allTransactions = [];
+    
+    for (const sheet of matchingSheets) {
+        const sheetName = sheet.properties.title;
+        const transactions = await readSheetTransactions(sheetName, spreadsheetId, accessToken);
+        console.log(`   📥 Read ${transactions.length} transactions from "${sheetName}"`);
+        allTransactions.push(...transactions);
+    }
+    
+    // 2. Sort by timestamp (oldest first)
+    allTransactions.sort((a, b) => {
+        const dateA = new Date(a[0]); // Timestamp is first column
+        const dateB = new Date(b[0]);
+        return dateA - dateB;
+    });
+    
+    console.log(`   📊 Total transactions after merge: ${allTransactions.length}`);
+    
+    // 3. Determine which sheet to keep (prefer exact match, or first one)
+    const targetSheet = matchingSheets.find(s => s.properties.title === targetSheetName) || matchingSheets[0];
+    const targetSheetTitle = targetSheet.properties.title;
+    
+    // 4. Clear the target sheet
+    await clearSheet(targetSheetTitle, spreadsheetId, accessToken);
+    
+    // 5. Ensure headers exist
+    await ensureSheetHeaders(targetSheetTitle, spreadsheetId, accessToken);
+    
+    // 6. Write all consolidated data to target sheet
+    if (allTransactions.length > 0) {
+        await writeSheetData(targetSheetTitle, allTransactions, spreadsheetId, accessToken);
+        console.log(`   ✅ Wrote ${allTransactions.length} transactions to "${targetSheetTitle}"`);
+    }
+    
+    // 7. Delete the other sheets
+    for (const sheet of matchingSheets) {
+        if (sheet.properties.sheetId !== targetSheet.properties.sheetId) {
+            await deleteSheet(sheet.properties.sheetId, spreadsheetId, accessToken);
+            console.log(`   🗑️  Deleted duplicate sheet: "${sheet.properties.title}"`);
+        }
+    }
+    
+    // 8. Rename target sheet if needed (to match canonical format)
+    if (targetSheetTitle !== targetSheetName) {
+        await renameSheet(targetSheet.properties.sheetId, targetSheetName, spreadsheetId, accessToken);
+        console.log(`   ✏️  Renamed "${targetSheetTitle}" → "${targetSheetName}"`);
+    }
+    
+    console.log(`✅ Consolidation complete: "${targetSheetName}" now contains all ${allTransactions.length} transactions`);
+}
+
+/**
+ * Read all transactions from a sheet
+ */
+async function readSheetTransactions(sheetName, spreadsheetId, accessToken) {
+    return new Promise((resolve, reject) => {
+        const range = `${sheetName}!A:J`;
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    const result = JSON.parse(data);
+                    const rows = result.values || [];
+                    
+                    // Filter out header row and empty rows
+                    const transactions = rows.filter((row, index) => {
+                        if (index === 0) return false; // Skip header
+                        if (!row || row.length === 0) return false; // Skip empty
+                        if (!row[0]) return false; // Skip if no timestamp
+                        return true;
+                    });
+                    
+                    resolve(transactions);
+                } else {
+                    reject(new Error(`Failed to read sheet: ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/**
+ * Clear all data from a sheet
+ */
+async function clearSheet(sheetName, spreadsheetId, accessToken) {
+    return new Promise((resolve, reject) => {
+        const range = `${sheetName}!A:J`;
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:clear`,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    resolve(true);
+                } else {
+                    reject(new Error(`Failed to clear sheet: ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.write('{}');
+        req.end();
+    });
+}
+
+/**
+ * Write data to a sheet (appending rows)
+ */
+async function writeSheetData(sheetName, rows, spreadsheetId, accessToken) {
+    return new Promise((resolve, reject) => {
+        const range = `${sheetName}!A2:J`; // Start at row 2 (after headers)
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        };
+        
+        const payload = JSON.stringify({
+            values: rows
+        });
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    resolve(true);
+                } else {
+                    reject(new Error(`Failed to write data: ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
+}
+
+/**
+ * Delete a sheet by sheetId
+ */
+async function deleteSheet(sheetId, spreadsheetId, accessToken) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        };
+        
+        const payload = JSON.stringify({
+            requests: [{
+                deleteSheet: {
+                    sheetId: sheetId
+                }
+            }]
+        });
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    resolve(true);
+                } else {
+                    reject(new Error(`Failed to delete sheet: ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
+}
+
+/**
+ * Rename a sheet
+ */
+async function renameSheet(sheetId, newName, spreadsheetId, accessToken) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'sheets.googleapis.com',
+            path: `/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        };
+        
+        const payload = JSON.stringify({
+            requests: [{
+                updateSheetProperties: {
+                    properties: {
+                        sheetId: sheetId,
+                        title: newName
+                    },
+                    fields: 'title'
+                }
+            }]
+        });
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    resolve(true);
+                } else {
+                    reject(new Error(`Failed to rename sheet: ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
+}
+
+/**
  * Check if a sheet tab exists, create it if not
  * 
  * @param {string} spreadsheetId - Google Sheets spreadsheet ID
@@ -344,31 +791,48 @@ async function ensureSheetExists(spreadsheetId, sheetName, accessToken) {
         const req = https.request(options, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
-            res.on('end', () => {
+            res.on('end', async () => {
                 if (res.statusCode === 200) {
                     const spreadsheet = JSON.parse(data);
                     
                     // Check for exact match first
-                    const sheetExists = spreadsheet.sheets?.some(
+                    const exactMatch = spreadsheet.sheets?.find(
                         sheet => sheet.properties.title === sheetName
                     );
-                    
-                    if (sheetExists) {
-                        resolve(true);
-                        return;
-                    }
                     
                     // DUPLICATE PREVENTION: Check for similar sheet names (case-insensitive)
                     // This prevents accidental duplicates from different capitalization
                     const normalizedSheetName = sheetName.toLowerCase();
-                    const existingSheets = spreadsheet.sheets?.map(s => s.properties.title) || [];
-                    const similarSheet = existingSheets.find(
-                        name => name.toLowerCase() === normalizedSheetName
+                    const existingSheets = spreadsheet.sheets || [];
+                    const matchingSheets = existingSheets.filter(
+                        sheet => sheet.properties.title.toLowerCase() === normalizedSheetName
                     );
                     
-                    if (similarSheet) {
-                        console.log(`⚠️  Found similar sheet "${similarSheet}" for requested "${sheetName}", using existing sheet`);
-                        resolve(true);
+                    if (matchingSheets.length > 1) {
+                        // CONSOLIDATION: Multiple sheets match - merge them into one
+                        console.log(`🔄 Found ${matchingSheets.length} sheets matching "${sheetName}", consolidating...`);
+                        try {
+                            await consolidateUserSheets(matchingSheets, sheetName, spreadsheetId, accessToken);
+                            console.log(`✅ Consolidated ${matchingSheets.length} sheets into "${sheetName}"`);
+                            resolve(true);
+                        } catch (consolidateError) {
+                            console.error(`❌ Failed to consolidate sheets:`, consolidateError);
+                            reject(consolidateError);
+                        }
+                        return;
+                    } else if (matchingSheets.length === 1) {
+                        // Single match found - validate and ensure headers
+                        const matchedSheet = matchingSheets[0];
+                        console.log(`✅ Found existing sheet: "${matchedSheet.properties.title}"`);
+                        
+                        // Ensure headers are present
+                        try {
+                            await ensureSheetHeaders(matchedSheet.properties.title, spreadsheetId, accessToken);
+                            resolve(true);
+                        } catch (headerError) {
+                            console.error(`❌ Failed to ensure headers:`, headerError);
+                            reject(headerError);
+                        }
                         return;
                     }
                     
