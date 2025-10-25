@@ -71,10 +71,10 @@ function FeaturesContent() {
       <h2 className="text-3xl font-bold mb-4">Features & Advantages</h2>
       
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-green-600 dark:text-green-400">🎯 Why LLM Proxy is Better Than ChatGPT</h3>
+        <h3 className="text-xl font-semibold text-green-600 dark:text-green-400">🎯 Why Research Agent is Better Than ChatGPT</h3>
         <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-5 rounded-lg border-2 border-green-300 dark:border-green-700 mb-6">
           <p className="mb-4">
-            While ChatGPT is a powerful AI assistant, LLM Proxy offers significant advantages for users who want more control, 
+            While ChatGPT is a powerful AI assistant, Research Agent offers significant advantages for users who want more control, 
             flexibility, and cost optimization:
           </p>
           
@@ -196,15 +196,19 @@ function FeaturesContent() {
             </div>
             
             <div className="border-l-4 border-green-500 pl-3">
-              <p className="font-medium text-green-700 dark:text-green-300">Playwright Scraping</p>
+              <p className="font-medium text-green-700 dark:text-green-300">Playwright Scraping (Self-Hosted)</p>
               <p className="text-sm">Cross-browser automation with advanced capabilities - supports multiple browser engines, automatic waiting 
-              for elements, and sophisticated page interaction patterns.</p>
+              for elements, and sophisticated page interaction patterns. <strong>Only available when running the service on your own computer</strong> 
+              (see <a href="https://github.com/syntithenai/lambdallmproxy" target="_blank" rel="noopener noreferrer" className="text-green-600 dark:text-green-400 hover:underline">GitHub repo</a>), 
+              with the advantage of not paying infrastructure costs.</p>
             </div>
             
             <div className="border-l-4 border-orange-500 pl-3">
-              <p className="font-medium text-orange-700 dark:text-orange-300">Selenium Scraping</p>
+              <p className="font-medium text-orange-700 dark:text-orange-300">Selenium Scraping (Self-Hosted)</p>
               <p className="text-sm">Industry-standard browser automation with extensive ecosystem - handles complex workflows, form submissions, 
-              and sites with strict anti-automation measures.</p>
+              and sites with strict anti-automation measures. <strong>Only available when running the service on your own computer</strong> 
+              (see <a href="https://github.com/syntithenai/lambdallmproxy" target="_blank" rel="noopener noreferrer" className="text-orange-600 dark:text-orange-400 hover:underline">GitHub repo</a>), 
+              with the advantage of not paying infrastructure costs.</p>
             </div>
           </div>
 
@@ -876,7 +880,7 @@ function PricingContent() {
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💰 Credit-Based System</h3>
         <p className="mb-3">
-          LLM Proxy uses a prepaid credit system. Purchase credits via PayPal and they're automatically deducted 
+          Research Agent uses a prepaid credit system. Purchase credits via PayPal and they're automatically deducted 
           as you use the service. Credits never expire and can be used for any API operations.
         </p>
         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -1144,7 +1148,7 @@ function PrivacyContent() {
       <section className="space-y-3">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔒 Information We Collect</h3>
         <p className="mb-3">
-          When you use LLM Proxy, we collect several types of information to provide and improve our service. 
+          When you use Research Agent, we collect several types of information to provide and improve our service. 
           This includes your authentication credentials obtained through Google OAuth, such as your email address 
           and profile information, which we use to identify you and secure your account.
         </p>
@@ -1357,7 +1361,7 @@ function PrivacyContent() {
       <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-lg border-2 border-blue-300 dark:border-blue-700 mt-6">
         <p className="font-semibold text-lg mb-2 text-blue-900 dark:text-blue-100">Acknowledgment and Consent</p>
         <p className="text-sm">
-          By accessing or using LLM Proxy, you acknowledge that you have read this privacy policy in its entirety, 
+          By accessing or using Research Agent, you acknowledge that you have read this privacy policy in its entirety, 
           understand its terms and implications, and agree to be bound by it along with the disclaimer of liability. 
           You also acknowledge that you understand the nature of AI-generated content and the inherent limitations and 
           risks associated with using such technology. If you do not agree with any part of this policy, please discontinue 
