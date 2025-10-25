@@ -71,64 +71,97 @@ function FeaturesContent() {
       <h2 className="text-3xl font-bold mb-4">Features & Advantages</h2>
       
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🚀 Multi-Provider LLM Access</h3>
-        <p>Access multiple AI providers in one place:</p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>OpenAI:</strong> GPT-4, GPT-4o, GPT-4 Turbo</li>
-          <li><strong>Google Gemini:</strong> Gemini 1.5 Pro, Flash models (with free tier)</li>
-          <li><strong>Groq:</strong> Ultra-fast inference with Llama, Mixtral, Gemma models</li>
-          <li><strong>Together AI:</strong> Open source models with trial credits</li>
-          <li><strong>Custom Endpoints:</strong> Bring your own OpenAI-compatible API</li>
-        </ul>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🚀 Multi-Provider LLM Access with Intelligent Load Balancing</h3>
+        <p className="mb-3">
+          Access multiple AI providers seamlessly through a single interface. The system intelligently selects 
+          the best provider for each request using sophisticated load balancing that considers multiple factors 
+          to optimize performance, cost, and reliability.
+        </p>
+        
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 mb-4">
+          <p className="font-semibold mb-2">Smart Provider Selection Considers:</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="font-medium text-blue-700 dark:text-blue-300">Performance Factors:</p>
+              <ul className="list-disc pl-5 mt-1 space-y-1">
+                <li>Model capability requirements</li>
+                <li>Response speed optimization</li>
+                <li>Current API availability</li>
+                <li>Rate limit status</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-blue-700 dark:text-blue-300">Cost & Strategy:</p>
+              <ul className="list-disc pl-5 mt-1 space-y-1">
+                <li>Pricing tier optimization</li>
+                <li>Free tier preference</li>
+                <li>Custom priority settings</li>
+                <li>Fallback chain resilience</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <p className="font-medium mb-2">Supported Providers:</p>
+        <div className="space-y-2 pl-4">
+          <p><strong>OpenAI:</strong> Industry-leading models including GPT-4, GPT-4o, GPT-4 Turbo, and GPT-4o-mini for high-quality generation and reasoning tasks.</p>
+          <p><strong>Google Gemini:</strong> Advanced multimodal models (Gemini 1.5 Pro, 2.0 Flash, 2.5 Pro) with generous free tier limits for cost-effective usage.</p>
+          <p><strong>Groq:</strong> Ultra-fast inference engine delivering responses up to 10x faster using Llama, Mixtral, and Gemma models, perfect for real-time applications.</p>
+          <p><strong>Together AI:</strong> Access to cutting-edge open source models including Llama 4, DeepSeek, and specialized models, with trial credits available.</p>
+          <p><strong>Custom Endpoints:</strong> Bring your own OpenAI-compatible API endpoints for complete flexibility and control over model selection.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔍 Web Search Integration</h3>
-        <p>Get real-time information with:</p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>DuckDuckGo Search:</strong> Privacy-focused web search</li>
-          <li><strong>Tavily AI:</strong> Advanced AI-powered research (requires API key)</li>
-          <li><strong>Automatic Citation:</strong> Sources are cited in responses</li>
-        </ul>
+        <p className="mb-2">Get real-time information with integrated web search capabilities:</p>
+        <div className="space-y-2 pl-4">
+          <p><strong>DuckDuckGo Search:</strong> Privacy-focused web search that doesn't track your queries or build user profiles, ideal for general information retrieval.</p>
+          <p><strong>Tavily AI:</strong> Advanced AI-powered research engine optimized for gathering comprehensive information (requires API key).</p>
+          <p><strong>Automatic Citation:</strong> All search results include source URLs, allowing you to verify information and explore topics further.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎯 Intelligent Planning Mode</h3>
-        <p>Complex queries benefit from planning before execution:</p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Research Planning:</strong> Break down complex questions</li>
-          <li><strong>Multi-Step Execution:</strong> Execute searches and analyze results</li>
-          <li><strong>Cost Optimization:</strong> Efficient use of API credits</li>
-        </ul>
+        <p className="mb-2">
+          Complex queries benefit from planning before execution. Planning mode breaks down sophisticated questions 
+          into manageable steps, executes them efficiently, and synthesizes results into comprehensive answers.
+        </p>
+        <div className="space-y-2 pl-4">
+          <p><strong>Research Planning:</strong> Automatically decomposes complex questions into focused sub-queries for thorough investigation.</p>
+          <p><strong>Multi-Step Execution:</strong> Sequentially executes searches, analyzes intermediate results, and adapts the research strategy based on findings.</p>
+          <p><strong>Cost Optimization:</strong> Minimizes token usage by planning efficient query sequences and avoiding redundant API calls.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎨 Rich Media Support</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Image Generation:</strong> DALL-E 3, Stable Diffusion, Flux models</li>
-          <li><strong>Chart Generation:</strong> Mermaid diagrams for flowcharts, sequences, etc.</li>
-          <li><strong>YouTube Integration:</strong> Search, transcript extraction, video analysis</li>
-          <li><strong>Audio Transcription:</strong> Convert audio/video to text with Whisper</li>
-        </ul>
+        <div className="space-y-2 pl-4">
+          <p><strong>Image Generation:</strong> Create images using DALL-E 3, Stable Diffusion, or Flux models with customizable styles and quality settings.</p>
+          <p><strong>Chart Generation:</strong> Visualize data and processes with Mermaid diagrams including flowcharts, sequence diagrams, Gantt charts, and more.</p>
+          <p><strong>YouTube Integration:</strong> Search for videos, extract transcripts, and analyze video content without leaving the interface.</p>
+          <p><strong>Audio Transcription:</strong> Convert audio and video files to searchable text using OpenAI's Whisper model with high accuracy.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💾 Knowledge Management</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Content Swag:</strong> Save snippets, images, links for later</li>
-          <li><strong>Browser RAG:</strong> Search your saved content with embeddings</li>
-          <li><strong>Chat History:</strong> Persistent storage with search</li>
-          <li><strong>Google Drive Sync:</strong> Backup to your own Google Drive</li>
-        </ul>
+        <div className="space-y-2 pl-4">
+          <p><strong>Content Management:</strong> Save snippets, images, and links to your personal knowledge base with tagging and organization features.</p>
+          <p><strong>Browser RAG:</strong> Search your saved content using semantic embeddings for intelligent context retrieval during conversations.</p>
+          <p><strong>Chat History:</strong> Persistent storage of all conversations with full-text search capabilities for easy reference.</p>
+          <p><strong>Google Drive Sync:</strong> Optionally backup your content to your personal Google Drive for cross-device access and data persistence.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎵 Media Playback</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Background Player:</strong> Play audio from YouTube, podcasts, etc.</li>
-          <li><strong>Playlists:</strong> Queue multiple tracks</li>
-          <li><strong>Chromecast Support:</strong> Cast to TV or speakers</li>
-        </ul>
+        <div className="space-y-2 pl-4">
+          <p><strong>Background Player:</strong> Play audio content from YouTube, podcasts, and other sources while continuing to use the chat interface.</p>
+          <p><strong>Playlists:</strong> Queue multiple audio tracks and manage playback with standard controls.</p>
+          <p><strong>Chromecast Support:</strong> Cast audio to compatible TV speakers or smart devices for enhanced listening experience.</p>
+        </div>
       </section>
     </div>
   );
@@ -137,63 +170,117 @@ function FeaturesContent() {
 function PlanningContent() {
   return (
     <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Planning, Todos & SWAG for Long-Term Thinking</h2>
+      <h2 className="text-3xl font-bold mb-4">Planning, Todos & Content Management for Long-Term Thinking</h2>
       
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📋 Planning Mode</h3>
-        <p>Enable planning mode in chat for complex, multi-step research tasks:</p>
-        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <p className="font-medium mb-2">How it works:</p>
-          <ol className="list-decimal pl-6 space-y-2">
-            <li>AI analyzes your question and creates a research plan</li>
-            <li>Executes searches and gathers information</li>
-            <li>Synthesizes findings into a comprehensive answer</li>
-            <li>Cites all sources used</li>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📋 Creating Effective Plans</h3>
+        <p className="mb-3">
+          Whether you're tackling complex research, building documents, or managing multi-step projects, effective 
+          planning helps the AI deliver better results. You can create plans explicitly or let the AI generate them 
+          automatically based on your needs.
+        </p>
+
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-5 rounded-lg border border-blue-200 dark:border-blue-800 mb-4">
+          <p className="font-semibold mb-3 text-lg">The Planning Process:</p>
+          <ol className="space-y-4">
+            <li className="border-l-4 border-blue-500 pl-4">
+              <strong className="text-blue-700 dark:text-blue-300">1. Define Clear Objectives</strong>
+              <p className="text-sm mt-1">Start with a detailed prompt that specifies what you want to achieve, the format you need, 
+              and any constraints or requirements. The more specific your initial request, the better the AI can plan.</p>
+              <p className="text-xs mt-2 italic text-gray-600 dark:text-gray-400">
+                Example: "Create a comprehensive analysis of renewable energy trends, including solar, wind, and hydro. 
+                I need statistics from 2020-2024, key market players, and future projections. Format as a structured report."
+              </p>
+            </li>
+            <li className="border-l-4 border-purple-500 pl-4">
+              <strong className="text-purple-700 dark:text-purple-300">2. Use Iteration & Tools</strong>
+              <p className="text-sm mt-1">Plans work best when they leverage available tools strategically. The AI can break down 
+              complex tasks into steps that use web search for research, snippets for building documents incrementally, 
+              and todos for tracking progress across multiple sessions.</p>
+              <p className="text-xs mt-2 italic text-gray-600 dark:text-gray-400">
+                Example workflow: Search for recent data → Save findings to snippets → Create todo items for each section 
+                → Build document piece by piece → Reference saved snippets when needed
+              </p>
+            </li>
+            <li className="border-l-4 border-green-500 pl-4">
+              <strong className="text-green-700 dark:text-green-300">3. Enable Planning Mode (Optional)</strong>
+              <p className="text-sm mt-1">For research-heavy tasks, enable Planning Mode in the chat interface. This creates 
+              an explicit research plan before executing searches, ensuring comprehensive coverage and avoiding redundant queries.</p>
+            </li>
+            <li className="border-l-4 border-orange-500 pl-4">
+              <strong className="text-orange-700 dark:text-orange-300">4. Build Incrementally with Snippets</strong>
+              <p className="text-sm mt-1">For document creation, use the snippet management tool to build content incrementally. 
+              The AI can save sections as snippets, update them as new information arrives, and reference them in future conversations 
+              to maintain consistency.</p>
+              <p className="text-xs mt-2 italic text-gray-600 dark:text-gray-400">
+                Tip: Tag snippets by topic (e.g., "renewable-energy-solar", "renewable-energy-wind") for easy retrieval
+              </p>
+            </li>
+            <li className="border-l-4 border-red-500 pl-4">
+              <strong className="text-red-700 dark:text-red-300">5. Track with Todos</strong>
+              <p className="text-sm mt-1">Use the todo management tool to track multi-step projects across sessions. The AI can 
+              create tasks, mark them complete as work progresses, and maintain context about what's been done and what remains.</p>
+            </li>
           </ol>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          <strong>Best for:</strong> Research questions, comparative analysis, multi-part queries
-        </p>
+
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
+          <p className="font-semibold mb-2">💡 Pro Tip: Detailed Prompts = Better Plans</p>
+          <p className="text-sm">When asking the AI to create a plan, be explicit about your requirements, desired format, timeline, 
+          and any specific sources or constraints. The AI will use this information to generate a structured plan with clear steps, 
+          tool usage, and success criteria.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">✅ Backend Todo Management</h3>
-        <p>The <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">manage_todos</code> tool allows AI to maintain a persistent todo list:</p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Task Tracking:</strong> AI can create, update, and complete tasks</li>
-          <li><strong>Multi-Turn Context:</strong> Todos persist across chat sessions</li>
-          <li><strong>Project Management:</strong> Break down large tasks into steps</li>
-        </ul>
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-          <p className="font-medium">💡 Example Usage:</p>
-          <p className="mt-2 italic">"Create a todo list for building a web scraper: research libraries, write code, test, deploy"</p>
+        <p className="mb-2">
+          The <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">manage_todos</code> tool provides persistent 
+          task tracking that works across all your chat sessions.
+        </p>
+        <div className="space-y-2 pl-4">
+          <p><strong>Task Tracking:</strong> The AI can create, update, and complete tasks automatically as you work through projects.</p>
+          <p><strong>Multi-Turn Context:</strong> Todos persist across chat sessions, allowing you to pause work and resume later without losing context.</p>
+          <p><strong>Project Management:</strong> Break down large tasks into manageable steps, track dependencies, and maintain a clear picture of progress.</p>
+        </div>
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 mt-3">
+          <p className="font-medium mb-2">Example Usage:</p>
+          <p className="text-sm italic">"Create a todo list for building a web scraper: research libraries, write code, test with sample data, deploy to production"</p>
+          <p className="text-xs mt-2 text-gray-600 dark:text-gray-400">The AI will create structured todos and can mark them complete as you make progress</p>
         </div>
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎒 Content SWAG</h3>
-        <p>SWAG (Stuff We All Get) is your personal knowledge repository:</p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Save Anything:</strong> Text snippets, images, code, links</li>
-          <li><strong>Organize with Tags:</strong> Categorize content for easy retrieval</li>
-          <li><strong>Search & Filter:</strong> Find content by text, tags, or type</li>
-          <li><strong>Generate Embeddings:</strong> Enable semantic search across your content</li>
-          <li><strong>Cloud Sync:</strong> Backup to Google Drive for persistence</li>
-        </ul>
-        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-          <p className="font-medium">🎯 Long-Term Thinking:</p>
-          <p className="mt-2">Combine Planning Mode + Todos + SWAG to build a knowledge base over time. Save research findings to SWAG, reference them in future chats using RAG, and track progress with todos.</p>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎒 Content Management</h3>
+        <p className="mb-2">
+          Your personal knowledge repository for saving, organizing, and retrieving information across sessions.
+        </p>
+        <div className="space-y-2 pl-4">
+          <p><strong>Save Anything:</strong> Store text snippets, code blocks, images, links, and any other content you want to reference later.</p>
+          <p><strong>Organize with Tags:</strong> Categorize content using tags for easy filtering and retrieval by topic or project.</p>
+          <p><strong>Search & Filter:</strong> Find content quickly using full-text search, tag filters, or content type.</p>
+          <p><strong>Generate Embeddings:</strong> Enable semantic search across your content to find relevant information by meaning, not just keywords.</p>
+          <p><strong>Cloud Sync:</strong> Backup your content to Google Drive for persistence across devices and browsers.</p>
+        </div>
+        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800 mt-3">
+          <p className="font-semibold mb-2">🎯 Long-Term Knowledge Building:</p>
+          <p className="text-sm">Combine Planning Mode, Todos, and Content Management to build a growing knowledge base over time. 
+          Save research findings as you discover them, reference past work using RAG semantic search, track ongoing projects with todos, 
+          and build comprehensive documents incrementally using saved snippets.</p>
         </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📝 Google Sheets Integration</h3>
-        <p>The <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">manage_snippets</code> tool syncs with Google Sheets:</p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Cloud Storage:</strong> Snippets saved to your Google Drive</li>
-          <li><strong>Collaborative:</strong> Share sheets with team members</li>
-          <li><strong>Persistent:</strong> Never lose your data</li>
-        </ul>
+        <p className="mb-2">
+          The <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">manage_snippets</code> tool provides cloud-based 
+          snippet storage with Google Sheets integration.
+        </p>
+        <div className="space-y-2 pl-4">
+          <p><strong>Cloud Storage:</strong> Snippets are automatically synced to a Google Sheet in your Drive for permanent storage.</p>
+          <p><strong>Collaborative:</strong> Share your snippet sheets with team members for collaborative knowledge management.</p>
+          <p><strong>Always Available:</strong> Access your snippets from any device by connecting to your Google account.</p>
+        </div>
       </section>
     </div>
   );
@@ -204,9 +291,9 @@ function ToolsContent() {
     <div className="space-y-6 text-gray-800 dark:text-gray-200">
       <h2 className="text-3xl font-bold mb-4">Backend LLM Tools</h2>
       
-      <p className="text-lg">
+      <p className="text-lg mb-4">
         The AI has access to powerful backend tools that it can call automatically when needed. 
-        Enable/disable tools in <strong>Settings → Tools</strong>.
+        Enable or disable specific tools in <strong>Settings → Tools</strong> to control which capabilities are available.
       </p>
 
       <section className="space-y-4">
@@ -216,57 +303,85 @@ function ToolsContent() {
           <ToolCard
             name="web_search"
             icon="🔍"
-            description="Search the web using DuckDuckGo"
+            description="Search the web using DuckDuckGo for current information, news, and research"
             trigger="Automatically triggered when current information is needed"
-            example={`User: "What's the weather in Tokyo?"`}
+            examples={[
+              "What's the current price of Bitcoin?",
+              "Find the latest research on climate change mitigation strategies",
+              "What are the top news stories today about artificial intelligence?"
+            ]}
           />
           
           <ToolCard
             name="execute_js"
             icon="⚡"
-            description="Execute JavaScript code for calculations, data processing, etc."
+            description="Execute JavaScript code for calculations, data processing, and algorithmic tasks"
             trigger="Triggered when computation or data manipulation is needed"
-            example='User: "Calculate the Fibonacci sequence up to 100"'
+            examples={[
+              "Calculate the Fibonacci sequence up to the 20th number",
+              "Sort this list of numbers: [42, 17, 93, 8, 51] and find the median",
+              "Generate a random password with 16 characters including symbols"
+            ]}
           />
           
           <ToolCard
             name="scrape_url"
             icon="🌐"
-            description="Extract content from any URL"
+            description="Extract and analyze content from any publicly accessible URL"
             trigger="Triggered when a specific webpage needs to be analyzed"
-            example='User: "Summarize the content at example.com/article"'
+            examples={[
+              "Summarize the main points from https://example.com/article",
+              "Extract all the product prices from this e-commerce page",
+              "What are the key features described on this documentation page?"
+            ]}
           />
           
           <ToolCard
             name="youtube"
             icon="🎥"
-            description="Search YouTube and extract video transcripts"
+            description="Search YouTube and extract video transcripts for analysis"
             trigger="Triggered when YouTube content is mentioned"
-            example='User: "Find videos about machine learning"'
+            examples={[
+              "Find videos about machine learning fundamentals",
+              "Get the transcript from this YouTube video about quantum computing",
+              "Search for tutorials on React hooks and summarize the top result"
+            ]}
           />
           
           <ToolCard
             name="transcribe"
             icon="🎙️"
-            description="Transcribe audio/video files using Whisper"
-            trigger="User uploads an audio/video file"
-            example="Upload an MP3 file and ask to transcribe it"
+            description="Transcribe audio and video files using OpenAI's Whisper model"
+            trigger="User uploads an audio or video file"
+            examples={[
+              "Upload an MP3 recording and ask: 'Transcribe this interview'",
+              "Transcribe this podcast episode and create a summary",
+              "Convert this meeting recording to text and extract action items"
+            ]}
           />
           
           <ToolCard
             name="generate_chart"
             icon="📊"
-            description="Create diagrams using Mermaid syntax"
+            description="Create diagrams and visualizations using Mermaid syntax"
             trigger="Triggered when visualization is requested"
-            example='User: "Create a flowchart for user authentication"'
+            examples={[
+              "Create a flowchart showing the user authentication process",
+              "Generate a sequence diagram for a REST API call",
+              "Draw a Gantt chart for a 3-month software development project"
+            ]}
           />
           
           <ToolCard
             name="generate_image"
             icon="🎨"
-            description="Generate images using DALL-E 3, Stable Diffusion, or Flux"
+            description="Generate images using DALL-E 3, Stable Diffusion, or Flux models"
             trigger="Triggered when image generation is requested"
-            example='User: "Generate an image of a sunset over mountains"'
+            examples={[
+              "Generate an image of a sunset over mountains in watercolor style",
+              "Create a professional headshot of a businesswoman in an office",
+              "Design a logo for a coffee shop with a minimalist aesthetic"
+            ]}
           />
           
           <ToolCard
@@ -274,41 +389,61 @@ function ToolsContent() {
             icon="📚"
             description="Search server-side knowledge base (separate from local RAG)"
             trigger="Manually enabled tool - searches backend embeddings"
-            example="Enable in Settings for access to server-stored documents"
+            examples={[
+              "Search the knowledge base for information about API authentication",
+              "Find all documentation related to database schema design",
+              "What does the knowledge base say about deployment procedures?"
+            ]}
           />
           
           <ToolCard
             name="manage_todos"
             icon="✅"
-            description="Create, update, and manage a persistent todo list"
+            description="Create, update, and manage a persistent todo list across chat sessions"
             trigger="Triggered when task management is discussed"
-            example='User: "Add a todo to finish the report by Friday"'
+            examples={[
+              "Add a todo to finish the quarterly report by Friday",
+              "Create a checklist for preparing the product launch",
+              "Mark the 'Review design mockups' todo as complete"
+            ]}
           />
           
           <ToolCard
             name="manage_snippets"
             icon="📋"
-            description="Save and retrieve snippets to Google Sheets"
+            description="Save and retrieve text snippets to Google Sheets for later reference"
             trigger="Triggered when snippet storage is requested"
-            example='User: "Save this code snippet for later"'
+            examples={[
+              "Save this code snippet for later: [code block]",
+              "Store these meeting notes in my snippets",
+              "Retrieve all snippets tagged with 'python-tips'"
+            ]}
           />
           
           <ToolCard
             name="ask_llm"
             icon="🤖"
-            description="Recursive LLM agent for complex multi-step reasoning"
+            description="Recursive LLM agent for complex multi-step reasoning (HIGH token usage)"
             trigger="⚠️ DISABLED by default - HIGH token usage"
-            example="Enable in Settings for advanced AI-to-AI reasoning"
-            warning="Can result in very high API costs"
+            examples={[
+              "Use deep reasoning to analyze the ethical implications of AI governance",
+              "Break down this complex business problem into strategic recommendations",
+              "Perform a comprehensive competitive analysis with multiple perspectives"
+            ]}
+            warning="Can result in very high API costs due to recursive calls"
           />
           
           <ToolCard
             name="generate_reasoning_chain"
             icon="🧠"
-            description="Deep reasoning chains for complex problem-solving"
+            description="Deep reasoning chains for academic-level problem-solving (EXTREME token usage)"
             trigger="⚠️ DISABLED by default - EXTREME token usage"
-            example="Enable for academic-level reasoning tasks"
-            warning="Can result in extremely high API costs"
+            examples={[
+              "Prove this mathematical theorem using step-by-step logical reasoning",
+              "Analyze the philosophical arguments for and against utilitarianism",
+              "Develop a comprehensive research methodology for studying climate patterns"
+            ]}
+            warning="Can result in extremely high API costs due to extensive reasoning chains"
           />
         </div>
       </section>
@@ -316,11 +451,19 @@ function ToolsContent() {
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💡 How to Use Tools</h3>
         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <ol className="list-decimal pl-6 space-y-2">
-            <li><strong>Enable tools</strong> in Settings → Tools</li>
-            <li><strong>Ask naturally</strong> - AI will automatically call the right tool</li>
-            <li><strong>Check responses</strong> - Tool calls are shown in the chat</li>
-            <li><strong>Review costs</strong> - Tool usage affects API billing</li>
+          <ol className="space-y-3">
+            <li className="border-l-4 border-blue-500 pl-3">
+              <strong>1. Enable tools</strong> in Settings → Tools by toggling the switches for the capabilities you want available
+            </li>
+            <li className="border-l-4 border-purple-500 pl-3">
+              <strong>2. Ask naturally</strong> - The AI will automatically call the right tool based on your request context
+            </li>
+            <li className="border-l-4 border-green-500 pl-3">
+              <strong>3. Check responses</strong> - Tool calls are shown in the chat with their inputs and outputs
+            </li>
+            <li className="border-l-4 border-orange-500 pl-3">
+              <strong>4. Review costs</strong> - Tool usage affects API billing, especially for compute-intensive operations
+            </li>
           </ol>
         </div>
       </section>
@@ -333,11 +476,11 @@ interface ToolCardProps {
   icon: string;
   description: string;
   trigger: string;
-  example: string;
+  examples: string[];
   warning?: string;
 }
 
-function ToolCard({ name, icon, description, trigger, example, warning }: ToolCardProps) {
+function ToolCard({ name, icon, description, trigger, examples, warning }: ToolCardProps) {
   return (
     <div className="border dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
       <div className="flex items-start gap-3">
@@ -348,11 +491,18 @@ function ToolCard({ name, icon, description, trigger, example, warning }: ToolCa
           </h4>
           <p className="text-gray-700 dark:text-gray-300 mt-2">{description}</p>
           <div className="mt-3 text-sm">
-            <p className="text-gray-600 dark:text-gray-400"><strong>Triggered:</strong> {trigger}</p>
-            <p className="text-blue-600 dark:text-blue-400 mt-1 italic">💬 {example}</p>
+            <p className="text-gray-600 dark:text-gray-400 mb-2"><strong>Triggered:</strong> {trigger}</p>
+            <p className="font-medium text-blue-700 dark:text-blue-300 mb-1">Example Uses:</p>
+            <ul className="space-y-1 pl-4">
+              {examples.map((example, index) => (
+                <li key={index} className="text-blue-600 dark:text-blue-400 text-sm">
+                  💬 "{example}"
+                </li>
+              ))}
+            </ul>
           </div>
           {warning && (
-            <div className="mt-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-200 dark:border-red-800">
+            <div className="mt-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-200 dark:border-red-800">
               ⚠️ {warning}
             </div>
           )}
@@ -368,39 +518,101 @@ function RAGContent() {
       <h2 className="text-3xl font-bold mb-4">Browser-Based RAG (Retrieval Augmented Generation)</h2>
       
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🧠 What is RAG?</h3>
-        <p>
-          RAG enhances AI responses by retrieving relevant information from your personal knowledge base 
-          before generating answers. Everything runs in your browser - no data sent to servers.
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🧠 What is RAG and Why Use It?</h3>
+        <p className="mb-3">
+          RAG (Retrieval Augmented Generation) is a system for capturing, managing, and intelligently retrieving content 
+          from your conversations and saved materials. It enhances AI responses by finding and injecting relevant context 
+          from your personal knowledge base before generating answers.
+        </p>
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+          <p className="font-semibold mb-2">Core Purpose:</p>
+          <ul className="space-y-2 text-sm pl-4">
+            <li className="border-l-4 border-blue-500 pl-3">
+              <strong>Capture:</strong> Save valuable content from LLM responses, your own notes, code snippets, and research findings
+            </li>
+            <li className="border-l-4 border-purple-500 pl-3">
+              <strong>Manage:</strong> Organize content with tags, search by keywords, and generate embeddings for semantic search
+            </li>
+            <li className="border-l-4 border-green-500 pl-3">
+              <strong>Retrieve:</strong> Automatically find relevant content when you ask questions, ensuring the AI has access to your accumulated knowledge
+            </li>
+            <li className="border-l-4 border-orange-500 pl-3">
+              <strong>Export:</strong> Download your knowledge base or sync to Google Drive for backup and cross-device access
+            </li>
+          </ul>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+          Everything runs in your browser using local embeddings - your content never leaves your device unless you explicitly sync to Google Drive.
         </p>
       </section>
 
       <section className="space-y-4">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">� Interaction Modes</h3>
+        <div className="space-y-3">
+          <div className="border-2 border-green-500 dark:border-green-600 rounded-lg p-4 bg-green-50 dark:bg-green-900/20">
+            <h4 className="font-semibold text-green-800 dark:text-green-200 mb-2">✅ Automatic Injection (Recommended)</h4>
+            <p className="text-sm mb-2">
+              When you enable "Use Knowledge Base Context" in the chat interface, the system automatically:
+            </p>
+            <ol className="text-sm space-y-1 pl-5">
+              <li>1. Takes your query and generates an embedding for it</li>
+              <li>2. Searches your knowledge base for semantically similar content</li>
+              <li>3. Injects the top matching snippets into the conversation context</li>
+              <li>4. The AI uses this context when generating its response</li>
+            </ol>
+            <p className="text-xs mt-2 text-gray-600 dark:text-gray-400 italic">
+              This happens transparently - you don't need to manually select what context to include
+            </p>
+          </div>
+
+          <div className="border-2 border-blue-500 dark:border-blue-600 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
+            <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">📎 Explicit Attach Context (Manual Control)</h4>
+            <p className="text-sm mb-2">
+              Alternatively, you can manually control what context to include:
+            </p>
+            <ol className="text-sm space-y-1 pl-5">
+              <li>1. Browse your saved content in the Content Management page</li>
+              <li>2. Select specific snippets you want to reference</li>
+              <li>3. Use the "Attach to Chat" feature to explicitly include them</li>
+              <li>4. The selected content is added to your next message</li>
+            </ol>
+            <p className="text-xs mt-2 text-gray-600 dark:text-gray-400 italic">
+              Useful when you know exactly which content is relevant, or want to control token usage
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🚀 How to Use Browser RAG</h3>
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
-          <ol className="list-decimal pl-6 space-y-3">
-            <li className="font-medium">
-              <strong>Save Content to SWAG</strong>
-              <p className="font-normal text-sm mt-1 text-gray-700 dark:text-gray-300">
-                Navigate to the SWAG page and add text snippets, code, notes, or any content you want to reference later.
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-6 rounded-lg border border-purple-200 dark:border-purple-800">
+          <ol className="space-y-4">
+            <li className="border-l-4 border-purple-500 pl-4">
+              <strong className="text-purple-700 dark:text-purple-300">Step 1: Save Content</strong>
+              <p className="text-sm mt-1">
+                Navigate to the Content Management page and add text snippets, code blocks, research notes, or any content 
+                you want to reference later. You can save content from LLM responses directly or paste your own material.
               </p>
             </li>
-            <li className="font-medium">
-              <strong>Generate Embeddings</strong>
-              <p className="font-normal text-sm mt-1 text-gray-700 dark:text-gray-300">
-                In SWAG, select snippets and click "Generate Embeddings". This creates vector representations for semantic search.
+            <li className="border-l-4 border-pink-500 pl-4">
+              <strong className="text-pink-700 dark:text-pink-300">Step 2: Generate Embeddings</strong>
+              <p className="text-sm mt-1">
+                Select snippets and click "Generate Embeddings". This creates vector representations using a local ML model 
+                (Transformers.js) running in your browser. Embeddings enable semantic search by meaning rather than keywords.
               </p>
             </li>
-            <li className="font-medium">
-              <strong>Enable RAG in Chat</strong>
-              <p className="font-normal text-sm mt-1 text-gray-700 dark:text-gray-300">
-                In the chat interface, check "Use Knowledge Base Context" to search your SWAG content during conversations.
+            <li className="border-l-4 border-blue-500 pl-4">
+              <strong className="text-blue-700 dark:text-blue-300">Step 3: Enable RAG in Chat</strong>
+              <p className="text-sm mt-1">
+                In the chat interface, check "Use Knowledge Base Context" to enable automatic context injection. The system 
+                will search your knowledge base for each query and include relevant snippets.
               </p>
             </li>
-            <li className="font-medium">
-              <strong>Ask Questions</strong>
-              <p className="font-normal text-sm mt-1 text-gray-700 dark:text-gray-300">
-                The AI will automatically search your knowledge base and include relevant snippets in its context.
+            <li className="border-l-4 border-green-500 pl-4">
+              <strong className="text-green-700 dark:text-green-300">Step 4: Ask Questions</strong>
+              <p className="text-sm mt-1">
+                Ask questions naturally. The AI will automatically search your knowledge base and use relevant snippets 
+                to provide more informed, personalized responses based on your accumulated knowledge.
               </p>
             </li>
           </ol>
@@ -409,42 +621,49 @@ function RAGContent() {
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">✨ Features</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Local Processing:</strong> Embeddings generated in your browser using Transformers.js</li>
-          <li><strong>Privacy First:</strong> Your content never leaves your device</li>
-          <li><strong>Semantic Search:</strong> Find content by meaning, not just keywords</li>
-          <li><strong>Smart Ranking:</strong> Most relevant snippets are prioritized</li>
-          <li><strong>Chunk Management:</strong> Large content automatically split for better retrieval</li>
-        </ul>
+        <div className="space-y-2 pl-4">
+          <p><strong>Local Processing:</strong> Embeddings are generated in your browser using Transformers.js - no data sent to external servers for the embedding process.</p>
+          <p><strong>Privacy First:</strong> Your content stays on your device unless you explicitly enable Google Drive sync for backup.</p>
+          <p><strong>Semantic Search:</strong> Find content by meaning and context, not just exact keyword matches.</p>
+          <p><strong>Smart Ranking:</strong> Most relevant snippets are prioritized using cosine similarity scoring.</p>
+          <p><strong>Chunk Management:</strong> Large content is automatically split into optimal-sized chunks for better retrieval accuracy.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💾 Storage & Sync</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>IndexedDB:</strong> Local browser storage for snippets and embeddings</li>
-          <li><strong>Google Drive Backup:</strong> Optional cloud sync for persistence</li>
-          <li><strong>No Size Limits:</strong> Store as much as your browser allows</li>
-        </ul>
+        <div className="space-y-2 pl-4">
+          <p><strong>IndexedDB:</strong> All snippets and embeddings are stored locally in your browser's IndexedDB for instant access.</p>
+          <p><strong>Google Drive Backup:</strong> Enable optional cloud sync to back up your content to Google Drive for persistence across browsers and devices.</p>
+          <p><strong>Browser Storage Limits:</strong> Most modern browsers allow several GB of IndexedDB storage, sufficient for extensive knowledge bases.</p>
+        </div>
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-200 dark:border-yellow-800 mt-2 text-sm">
+          <p className="font-medium">⚠️ Note on Storage:</p>
+          <p>While browser storage is generous, very large knowledge bases (100,000+ snippets) may impact performance. 
+          Consider organizing content into focused collections and archiving older material if needed.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎯 Best Practices</h3>
         <div className="space-y-3">
           <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-            <p className="font-medium text-green-800 dark:text-green-200">✅ Do:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1 text-sm">
-              <li>Save well-organized, focused snippets</li>
-              <li>Use descriptive tags for categorization</li>
-              <li>Generate embeddings for content you'll reference often</li>
-              <li>Keep snippets under 10,000 characters for best results</li>
+            <p className="font-medium text-green-800 dark:text-green-200 mb-2">✅ Do:</p>
+            <ul className="space-y-1 text-sm pl-5">
+              <li>Save well-organized, focused snippets with clear topics</li>
+              <li>Use descriptive tags for categorization (e.g., "python-tutorial", "project-ideas")</li>
+              <li>Generate embeddings for content you'll reference often in conversations</li>
+              <li>Keep individual snippets under 10,000 characters for optimal retrieval</li>
+              <li>Regularly review and archive outdated content</li>
             </ul>
           </div>
           <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
-            <p className="font-medium text-red-800 dark:text-red-200">❌ Don't:</p>
-            <ul className="list-disc pl-6 mt-2 space-y-1 text-sm">
-              <li>Save duplicate or redundant content</li>
-              <li>Store sensitive passwords or credentials</li>
-              <li>Expect perfect recall with low-quality snippets</li>
+            <p className="font-medium text-red-800 dark:text-red-200 mb-2">❌ Don't:</p>
+            <ul className="space-y-1 text-sm pl-5">
+              <li>Save duplicate or highly redundant content (wastes storage and degrades search quality)</li>
+              <li>Store sensitive passwords, API keys, or credentials (use a password manager instead)</li>
+              <li>Expect perfect recall with poorly organized or vague snippets</li>
+              <li>Generate embeddings for content you'll never search (wastes processing time)</li>
             </ul>
           </div>
         </div>
@@ -456,31 +675,36 @@ function RAGContent() {
           <table className="min-w-full border dark:border-gray-700">
             <thead className="bg-gray-100 dark:bg-gray-800">
               <tr>
-                <th className="border dark:border-gray-700 px-4 py-2 text-left">Feature</th>
-                <th className="border dark:border-gray-700 px-4 py-2 text-left">Browser RAG</th>
-                <th className="border dark:border-gray-700 px-4 py-2 text-left">Server KB Tool</th>
+                <th className="border dark:border-gray-700 px-4 py-2 text-left font-semibold">Feature</th>
+                <th className="border dark:border-gray-700 px-4 py-2 text-left font-semibold">Browser RAG (Local)</th>
+                <th className="border dark:border-gray-700 px-4 py-2 text-left font-semibold">Server KB Tool</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="text-sm">
               <tr>
                 <td className="border dark:border-gray-700 px-4 py-2 font-medium">Data Location</td>
-                <td className="border dark:border-gray-700 px-4 py-2">Your browser</td>
+                <td className="border dark:border-gray-700 px-4 py-2">Your browser (IndexedDB)</td>
                 <td className="border dark:border-gray-700 px-4 py-2">Backend server</td>
               </tr>
               <tr className="bg-gray-50 dark:bg-gray-800/50">
                 <td className="border dark:border-gray-700 px-4 py-2 font-medium">Privacy</td>
-                <td className="border dark:border-gray-700 px-4 py-2">100% private</td>
-                <td className="border dark:border-gray-700 px-4 py-2">Shared with backend</td>
+                <td className="border dark:border-gray-700 px-4 py-2 text-green-600 dark:text-green-400">100% private (offline)</td>
+                <td className="border dark:border-gray-700 px-4 py-2 text-orange-600 dark:text-orange-400">Shared with backend</td>
               </tr>
               <tr>
                 <td className="border dark:border-gray-700 px-4 py-2 font-medium">Content Source</td>
-                <td className="border dark:border-gray-700 px-4 py-2">Your SWAG</td>
-                <td className="border dark:border-gray-700 px-4 py-2">Server documents</td>
+                <td className="border dark:border-gray-700 px-4 py-2">Your saved content</td>
+                <td className="border dark:border-gray-700 px-4 py-2">Admin-uploaded documents</td>
               </tr>
               <tr className="bg-gray-50 dark:bg-gray-800/50">
-                <td className="border dark:border-gray-700 px-4 py-2 font-medium">Setup</td>
-                <td className="border dark:border-gray-700 px-4 py-2">Automatic</td>
-                <td className="border dark:border-gray-700 px-4 py-2">Enable in Settings</td>
+                <td className="border dark:border-gray-700 px-4 py-2 font-medium">Setup Required</td>
+                <td className="border dark:border-gray-700 px-4 py-2 text-green-600 dark:text-green-400">Automatic (built-in)</td>
+                <td className="border dark:border-gray-700 px-4 py-2 text-orange-600 dark:text-orange-400">Enable in Settings</td>
+              </tr>
+              <tr>
+                <td className="border dark:border-gray-700 px-4 py-2 font-medium">Use Case</td>
+                <td className="border dark:border-gray-700 px-4 py-2">Personal knowledge base</td>
+                <td className="border dark:border-gray-700 px-4 py-2">Shared documentation</td>
               </tr>
             </tbody>
           </table>
@@ -497,156 +721,214 @@ function PricingContent() {
       
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💰 Credit-Based System</h3>
-        <p>
-          LLM Proxy uses a prepaid credit system. You purchase credits via PayPal and they're deducted 
-          as you use API services.
+        <p className="mb-3">
+          LLM Proxy uses a prepaid credit system. Purchase credits via PayPal and they're automatically deducted 
+          as you use the service. Credits never expire and can be used for any API operations.
         </p>
         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <p className="font-medium">🎁 Welcome Bonus: $0.50 in free credits for new users!</p>
+          <p className="font-semibold mb-2">🎁 Welcome Bonus: $0.50 in free credits for new users!</p>
+          <p className="text-sm">Start experimenting with the service immediately - no payment required to try it out.</p>
         </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💳 Purchasing Credits</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Minimum Purchase:</strong> $5.00 USD</li>
-          <li><strong>Payment Method:</strong> PayPal (secure checkout)</li>
-          <li><strong>No Expiration:</strong> Credits never expire</li>
-          <li><strong>No Refunds:</strong> All sales are final</li>
-        </ul>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Visit the Billing page to check your balance and purchase more credits.
-        </p>
+        <div className="space-y-3">
+          <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-4 rounded-lg border-2 border-green-300 dark:border-green-700">
+            <p className="font-semibold text-lg mb-2">Quick Add Credits</p>
+            <p className="text-sm mb-3">Navigate to <strong>Billing → Add Credits</strong> to purchase more credits instantly.</p>
+            <ul className="space-y-1 text-sm pl-4">
+              <li><strong>Minimum Purchase:</strong> $5.00 USD</li>
+              <li><strong>Payment Method:</strong> PayPal (secure checkout)</li>
+              <li><strong>No Expiration:</strong> Credits never expire</li>
+              <li><strong>Instant Availability:</strong> Credits appear immediately after payment</li>
+              <li><strong>No Refunds:</strong> All sales are final</li>
+            </ul>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Check your current balance and transaction history on the Billing page anytime.
+          </p>
+        </div>
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📊 Cost Structure</h3>
-        <div className="space-y-3">
-          <div className="border-2 border-green-500 dark:border-green-600 rounded-lg p-4 bg-green-50 dark:bg-green-900/20">
-            <h4 className="font-semibold mb-2 text-green-800 dark:text-green-200">✨ Your Own API Keys: $0 LLM Cost!</h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              <strong>Bring your own API keys</strong> and pay <strong>ZERO</strong> for LLM operations! 
-              You pay the provider directly, we don't charge any markup.
-            </p>
-            <ul className="list-disc pl-6 mt-2 text-sm space-y-1">
-              <li><strong>Add providers</strong> in Settings with your own API keys (OpenAI, Groq, Gemini, etc.)</li>
-              <li><strong>$0 LLM cost</strong> - no surcharge when using your keys</li>
-              <li><strong>Only pay infrastructure costs</strong> (Lambda, 4x markup on server fees)</li>
-              <li><strong>Full control</strong> over which models and providers you use</li>
-            </ul>
-            <div className="bg-white dark:bg-gray-800 p-3 rounded text-sm font-mono mt-3">
-              <div className="text-green-600 dark:text-green-400 font-bold">Your API Key Example:</div>
-              <div>LLM API:        $0.0000 (YOU pay provider directly)</div>
-              <div>Lambda fees:    $0.0001 (AWS charge)</div>
-              <div className="border-t dark:border-gray-600 mt-2 pt-2">
-              Infrastructure: $0.0004 (4x markup)
-              </div>
-              <div className="font-bold mt-2 text-green-600 dark:text-green-400">
-              Total:          $0.0004 ✨ (99.6% savings!)
-              </div>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📊 Simple Pricing Table</h3>
+        <p className="mb-3">Understanding your costs is straightforward:</p>
+        
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-2 dark:border-gray-600 text-sm">
+            <thead className="bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900 dark:to-purple-900">
+              <tr>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Cost Component</th>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Your API Keys (BYOK)</th>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Server-Provided Keys</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="bg-white dark:bg-gray-800">
+                <td className="border dark:border-gray-600 px-4 py-3 font-semibold">LLM API Calls</td>
+                <td className="border dark:border-gray-600 px-4 py-3 text-green-600 dark:text-green-400 font-bold">
+                  $0.00<br/>
+                  <span className="text-xs font-normal">(You pay provider directly)</span>
+                </td>
+                <td className="border dark:border-gray-600 px-4 py-3 text-orange-600 dark:text-orange-400">
+                  Provider cost <strong>+ 25% surcharge</strong><br/>
+                  <span className="text-xs">(Example: $0.10 → $0.125)</span>
+                </td>
+              </tr>
+              <tr className="bg-gray-50 dark:bg-gray-700">
+                <td className="border dark:border-gray-600 px-4 py-3 font-semibold">Lambda Infrastructure</td>
+                <td className="border dark:border-gray-600 px-4 py-3" colSpan={2}>
+                  <strong>4x markup</strong> on AWS Lambda hosting costs<br/>
+                  <span className="text-xs text-gray-600 dark:text-gray-400">
+                    (Typical: $0.0001 AWS charge → $0.0004 billed)<br/>
+                    Covers execution time, storage, networking, operational overhead
+                  </span>
+                </td>
+              </tr>
+              <tr className="bg-blue-50 dark:bg-blue-900/30">
+                <td className="border dark:border-gray-600 px-4 py-3 font-bold">Example Total Cost</td>
+                <td className="border dark:border-gray-600 px-4 py-3">
+                  <span className="text-green-600 dark:text-green-400 font-bold">$0.0004</span><br/>
+                  <span className="text-xs">(Infrastructure only)</span>
+                </td>
+                <td className="border dark:border-gray-600 px-4 py-3">
+                  <span className="text-blue-600 dark:text-blue-400 font-bold">$0.1254</span><br/>
+                  <span className="text-xs">($0.10 LLM + $0.025 surcharge + $0.0004 infra)</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800 mt-4">
+          <p className="font-semibold mb-2">💡 Key Takeaway:</p>
+          <p className="text-sm">
+            Bring Your Own Key (BYOK) users pay <strong>~99.6% less</strong> for LLM operations! The only charge is 
+            the minimal Lambda infrastructure fee. You pay your LLM provider directly (often free with generous quotas) 
+            and avoid the 25% surcharge entirely.
+          </p>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔑 Advantages of Bringing Your Own API Keys (BYOK)</h3>
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-5 rounded-lg border-2 border-purple-300 dark:border-purple-700">
+          <p className="font-semibold mb-3 text-lg">Why use your own API keys?</p>
+          <div className="space-y-3">
+            <div className="border-l-4 border-green-500 pl-4">
+              <p className="font-semibold text-green-700 dark:text-green-300">✅ Zero LLM Surcharge</p>
+              <p className="text-sm">Avoid the 25% markup - you only pay the small Lambda infrastructure fee ($0.0001-0.0005 per request).</p>
+            </div>
+            <div className="border-l-4 border-blue-500 pl-4">
+              <p className="font-semibold text-blue-700 dark:text-blue-300">✅ Access Free Tier Plans</p>
+              <p className="text-sm">Use Groq's free tier (unlimited), Google Gemini's free tier, or Together AI's trial credits directly. 
+              These generous free quotas mean you pay almost nothing for LLM usage.</p>
+            </div>
+            <div className="border-l-4 border-purple-500 pl-4">
+              <p className="font-semibold text-purple-700 dark:text-purple-300">✅ Wider Model Selection</p>
+              <p className="text-sm">Access all models available to your account, including latest releases, specialized models, 
+              and experimental features not available through server-side keys.</p>
+            </div>
+            <div className="border-l-4 border-orange-500 pl-4">
+              <p className="font-semibold text-orange-700 dark:text-orange-300">✅ Full Control</p>
+              <p className="text-sm">Choose exactly which providers and models to use, set your own rate limits, and manage your own API budgets.</p>
+            </div>
+            <div className="border-l-4 border-pink-500 pl-4">
+              <p className="font-semibold text-pink-700 dark:text-pink-300">✅ Better Privacy</p>
+              <p className="text-sm">Your prompts go directly from Lambda to your API provider - the service owner doesn't need to manage server-side keys.</p>
             </div>
           </div>
-
-          <div className="border dark:border-gray-700 rounded-lg p-4">
-            <h4 className="font-semibold mb-2">Server-Side API Keys: 25% Surcharge</h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              When using server-provided API keys (configured by admin), a <strong>25% surcharge</strong> is applied 
-              to cover API costs and service maintenance.
-            </p>
-            <ul className="list-disc pl-6 mt-2 text-sm space-y-1">
-              <li>OpenAI GPT-4: ~$0.01-0.03 per 1K tokens <span className="text-red-600 dark:text-red-400">+ 25% surcharge</span></li>
-              <li>Gemini Pro: ~$0.00035 per 1K tokens <span className="text-red-600 dark:text-red-400">+ 25% surcharge</span></li>
-              <li>Groq: Paid tier rates <span className="text-red-600 dark:text-red-400">+ 25% surcharge</span></li>
-            </ul>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              Note: All pricing uses paid tier rates, even if server uses free tier API keys.
-            </p>
-            <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded text-sm font-mono mt-3">
-              <div className="text-gray-600 dark:text-gray-400">Server API Key Example:</div>
-              <div>LLM base cost:  $0.1000 (Provider charge)</div>
-              <div className="text-red-600 dark:text-red-400">LLM surcharge:  $0.0250 (25% markup)</div>
-              <div>Lambda fees:    $0.0001 (AWS charge)</div>
-              <div className="border-t dark:border-gray-600 mt-2 pt-2">
-              Infrastructure: $0.0004 (4x markup)
-              </div>
-              <div className="font-bold mt-2 text-blue-600 dark:text-blue-400">
-              Total:          $0.1255
-              </div>
-            </div>
-          </div>
-
-          <div className="border dark:border-gray-700 rounded-lg p-4">
-            <h4 className="font-semibold mb-2">Infrastructure Costs (Always Apply)</h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              <strong>4x profit margin</strong> on Lambda/server costs to maintain the service.
-            </p>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-              This covers AWS Lambda execution, storage, networking, and operational overhead.
-              Applied regardless of whether you use your own or server-side API keys.
-            </p>
+          <div className="mt-4 bg-white dark:bg-gray-800 p-3 rounded-lg">
+            <p className="text-sm font-semibold mb-1">How to add your API keys:</p>
+            <p className="text-sm">Go to <strong>Settings → Providers → Add Provider</strong> and enter your API key from OpenAI, Groq, Gemini, Together AI, or any OpenAI-compatible endpoint.</p>
           </div>
         </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📈 Usage Tracking</h3>
-        <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Real-Time Balance:</strong> Check credits remaining in Billing page</li>
-          <li><strong>Transaction History:</strong> Detailed log of all API calls</li>
-          <li><strong>Cost Breakdown:</strong> See exactly what you paid for</li>
-          <li><strong>Google Sheets Export:</strong> Download your usage data</li>
-        </ul>
+        <div className="space-y-2 pl-4">
+          <p><strong>Real-Time Balance:</strong> Check your credit balance anytime on the Billing page.</p>
+          <p><strong>Transaction History:</strong> View detailed logs of all API calls with timestamps, models used, token counts, and costs.</p>
+          <p><strong>Cost Breakdown:</strong> See exactly what you paid for each request - LLM costs, infrastructure fees, and surcharges (if applicable).</p>
+          <p><strong>Export Options:</strong> Download your transaction history for personal record-keeping or expense reporting.</p>
+        </div>
       </section>
 
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💡 Cost Optimization Tips</h3>
         <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-          <ul className="list-disc pl-6 space-y-2">
-            <li><strong>🎯 Best Savings:</strong> Add your own API keys in Settings - pay $0 for LLM costs!</li>
-            <li>Use <strong>free tier providers</strong> (Groq, Gemini) with your own keys</li>
-            <li>Choose <strong>smaller models</strong> (GPT-4o-mini, Gemini Flash) for simple tasks</li>
-            <li>Enable only <strong>necessary tools</strong> to reduce API calls</li>
-            <li>Use <strong>planning mode</strong> strategically for complex queries only</li>
-            <li>Avoid <strong>ask_llm</strong> and <strong>reasoning chains</strong> unless absolutely needed</li>
-            <li><strong>Monitor costs</strong> in the LLM API Transparency panel</li>
+          <ul className="space-y-2 pl-4">
+            <li className="border-l-4 border-green-500 pl-3">
+              <strong>🎯 #1 Best Savings:</strong> Add your own API keys in Settings - pay $0 for LLM operations! Use Groq or Gemini free tiers for unlimited access.
+            </li>
+            <li className="border-l-4 border-blue-500 pl-3">
+              <strong>Choose Smaller Models:</strong> Use GPT-4o-mini instead of GPT-4, or Gemini Flash instead of Pro for routine tasks.
+            </li>
+            <li className="border-l-4 border-purple-500 pl-3">
+              <strong>Enable Only Necessary Tools:</strong> Disable expensive tools like `ask_llm` and `generate_reasoning_chain` unless absolutely needed.
+            </li>
+            <li className="border-l-4 border-orange-500 pl-3">
+              <strong>Strategic Planning Mode:</strong> Use planning mode only for complex research queries where the upfront planning cost saves tokens overall.
+            </li>
+            <li className="border-l-4 border-pink-500 pl-3">
+              <strong>Monitor Transparently:</strong> Check the LLM API Transparency panel in chat to see real-time costs and adjust your usage patterns.
+            </li>
           </ul>
         </div>
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">❓ FAQs</h3>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">❓ Frequently Asked Questions</h3>
         <div className="space-y-3">
-          <details className="border dark:border-gray-700 rounded-lg p-4">
-            <summary className="font-medium cursor-pointer">What happens if I run out of credits?</summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-              Chat requests will be rejected with a 402 Payment Required error. Simply purchase more credits to continue.
+          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <summary className="font-semibold cursor-pointer text-base">What happens if I run out of credits?</summary>
+            <p className="mt-2 text-sm pl-4">
+              Chat requests will be rejected with a "402 Payment Required" error. Simply add more credits via the 
+              Billing page to continue using the service. Your chat history and settings are preserved.
             </p>
           </details>
-          <details className="border dark:border-gray-700 rounded-lg p-4">
-            <summary className="font-medium cursor-pointer">Do I need credits if I provide my own API keys?</summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-              Yes, but only for infrastructure costs! When using your own API keys, you pay <strong>$0 for LLM operations</strong> 
-              and only pay the small Lambda infrastructure fee (4x markup on server costs, typically $0.0001-0.0005 per request).
+          
+          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <summary className="font-semibold cursor-pointer text-base">Do I need credits if I provide my own API keys?</summary>
+            <p className="mt-2 text-sm pl-4">
+              Yes, but only for minimal infrastructure costs! When using your own API keys (BYOK), you pay <strong>$0 for LLM operations</strong> 
+              and only pay the Lambda infrastructure fee (4x markup on AWS costs, typically $0.0001-0.0005 per request). 
+              This is 99.6% cheaper than using server-provided keys.
             </p>
           </details>
-          <details className="border dark:border-gray-700 rounded-lg p-4">
-            <summary className="font-medium cursor-pointer">Why is there a 25% surcharge on server-side keys?</summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-              The 25% surcharge on server-provided API keys covers the cost of maintaining those API subscriptions. 
-              When you use your own keys, there's <strong>no surcharge</strong> - you only pay infrastructure costs.
+          
+          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <summary className="font-semibold cursor-pointer text-base">Why is there a 25% surcharge on server-side keys?</summary>
+            <p className="mt-2 text-sm pl-4">
+              The 25% surcharge on server-provided API keys covers the cost of maintaining API subscriptions and service overhead. 
+              When you use your own keys (BYOK), there's <strong>no surcharge</strong> - you only pay infrastructure costs.
             </p>
           </details>
-          <details className="border dark:border-gray-700 rounded-lg p-4">
-            <summary className="font-medium cursor-pointer">How do I add my own API keys?</summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-              Go to <strong>Settings → Providers</strong> and click "Add Provider". Enter your API key from OpenAI, Groq, 
-              Gemini, or other supported providers. Once saved, you'll pay $0 for LLM operations when using those providers!
+          
+          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <summary className="font-semibold cursor-pointer text-base">How do I add my own API keys?</summary>
+            <p className="mt-2 text-sm pl-4">
+              Navigate to <strong>Settings → Providers → Add Provider</strong>. Select your provider (OpenAI, Groq, Gemini, Together AI, or Custom), 
+              enter your API key, and save. Once configured, requests will use your key automatically, and you'll pay $0 for LLM operations!
             </p>
           </details>
-          <details className="border dark:border-gray-700 rounded-lg p-4">
-            <summary className="font-medium cursor-pointer">Can I get a refund?</summary>
-            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-              No, all credit purchases are final and non-refundable.
+          
+          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <summary className="font-semibold cursor-pointer text-base">What free tier options are available with BYOK?</summary>
+            <p className="mt-2 text-sm pl-4">
+              <strong>Groq:</strong> Unlimited free tier with rate limits (perfect for most users)<br/>
+              <strong>Google Gemini:</strong> Generous free tier with daily quotas<br/>
+              <strong>Together AI:</strong> Free trial credits for new accounts<br/>
+              When you use these free tiers with your own keys, your only cost is the minimal Lambda infrastructure fee!
+            </p>
+          </details>
+          
+          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <summary className="font-semibold cursor-pointer text-base">Can I get a refund on credit purchases?</summary>
+            <p className="mt-2 text-sm pl-4">
+              No, all credit purchases are final and non-refundable. Credits never expire, so you can use them whenever you're ready.
             </p>
           </details>
         </div>
@@ -678,7 +960,7 @@ function PrivacyContent() {
             <strong>Chat History:</strong> Messages sent to and from LLM providers (stored locally in your browser)
           </li>
           <li>
-            <strong>Billing Data:</strong> PayPal transaction IDs, purchase amounts, credit balances (logged to Google Sheets)
+            <strong>Billing Data:</strong> PayPal transaction IDs, purchase amounts, credit balances
           </li>
           <li>
             <strong>Content Data:</strong> SWAG snippets, embeddings, tags (stored locally in IndexedDB, optionally synced to your Google Drive)
@@ -711,7 +993,7 @@ function PrivacyContent() {
             <strong>Payment Processors:</strong> PayPal handles payment processing (subject to their privacy policy)
           </li>
           <li>
-            <strong>Cloud Services:</strong> AWS Lambda hosts our backend, Google Sheets stores billing logs
+            <strong>Cloud Services:</strong> AWS Lambda hosts our backend infrastructure
           </li>
           <li>
             <strong>Your Google Drive:</strong> If you enable sync, content is saved to your personal Google Drive
@@ -726,7 +1008,7 @@ function PrivacyContent() {
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔐 Data Storage & Security</h3>
         <ul className="list-disc pl-6 space-y-2">
           <li><strong>Local Storage:</strong> Chat history, SWAG content, and embeddings are stored in your browser's IndexedDB</li>
-          <li><strong>Cloud Storage:</strong> Billing transactions logged to Google Sheets in your Google Drive</li>
+          <li><strong>Cloud Storage:</strong> Billing transactions logged securely on our backend infrastructure</li>
           <li><strong>Encryption:</strong> HTTPS for all data transmission, OAuth2 for authentication</li>
           <li><strong>Access Control:</strong> Only you can access your personal data (via Google authentication)</li>
           <li><strong>Retention:</strong> We retain billing logs for accounting purposes; chat history is stored locally and you can delete it anytime</li>
@@ -736,9 +1018,9 @@ function PrivacyContent() {
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🛡️ Your Privacy Rights</h3>
         <ul className="list-disc pl-6 space-y-2">
-          <li><strong>Access:</strong> View your billing transactions and usage data</li>
+          <li><strong>Access:</strong> View your billing transactions and usage data in the Billing page</li>
           <li><strong>Deletion:</strong> Clear your local chat history and SWAG content anytime</li>
-          <li><strong>Portability:</strong> Export your data from Google Sheets</li>
+          <li><strong>Portability:</strong> Export your transaction history and usage data</li>
           <li><strong>Opt-Out:</strong> Disconnect Google Drive sync, disable location access, or close your account</li>
         </ul>
       </section>

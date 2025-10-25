@@ -683,7 +683,7 @@
           "note": "May not expose all limits in headers"
         },
         "models": {
-          "gemini-1.5-flash": {
+          "gemini-2.5-flash": {
             "id": "gemini-2.5-flash",
             "category": "small",
             "contextWindow": 1000000,
@@ -696,36 +696,13 @@
             },
             "supportsTools": true,
             "supportsVision": true,
-            "supportsStreaming": false,
+            "supportsStreaming": true,
             "rateLimits": {
               "tokensPerMinute": 1000000,
               "requestsPerMinute": 15
             },
             "deprecated": false,
-            "available": true,
-            "note": "Using gemini-2.5-flash directly (fast, non-reasoning)"
-          },
-          "gemini-1.5-pro": {
-            "id": "gemini-2.5-flash",
-            "category": "large",
-            "contextWindow": 1000000,
-            "maxOutput": 8192,
-            "pricing": {
-              "input": 0,
-              "output": 0,
-              "unit": "per_million_tokens",
-              "free": true
-            },
-            "supportsTools": true,
-            "supportsVision": true,
-            "supportsStreaming": false,
-            "rateLimits": {
-              "tokensPerMinute": 1000000,
-              "requestsPerMinute": 15
-            },
-            "deprecated": false,
-            "available": true,
-            "note": "Using gemini-2.5-flash (fast, non-reasoning) instead of gemini-pro-latest to avoid thinking token issues"
+            "available": true
           },
           "gemini-2.5-pro": {
             "id": "gemini-2.5-pro",
@@ -768,27 +745,6 @@
             },
             "deprecated": false,
             "available": true
-          },
-          "gemini-2.5-flash": {
-            "id": "gemini-2.5-flash",
-            "category": "small",
-            "contextWindow": 1000000,
-            "maxOutput": 8192,
-            "pricing": {
-              "input": 0,
-              "output": 0,
-              "unit": "per_million_tokens",
-              "free": true
-            },
-            "supportsTools": true,
-            "supportsVision": true,
-            "supportsStreaming": true,
-            "rateLimits": {
-              "tokensPerMinute": 1000000,
-              "requestsPerMinute": 15
-            },
-            "deprecated": false,
-            "available": true
           }
         }
       },
@@ -807,18 +763,15 @@
           "note": "May not expose all limits in headers"
         },
         "models": {
-          "gemini-1.5-flash": {
-            "id": "gemini-1.5-flash",
+          "gemini-2.5-flash": {
+            "id": "gemini-2.5-flash",
             "category": "small",
             "contextWindow": 1000000,
             "maxOutput": 8192,
             "pricing": {
-              "input": 0,
-              "output": 0,
-              "unit": "per_million_tokens",
-              "free": true,
-              "paidInput": 0.075,
-              "paidOutput": 0.3
+              "input": 0.075,
+              "output": 0.3,
+              "unit": "per_million_tokens"
             },
             "supportsTools": true,
             "supportsVision": true,
@@ -830,18 +783,15 @@
             "deprecated": false,
             "available": true
           },
-          "gemini-1.5-pro": {
-            "id": "gemini-1.5-pro",
+          "gemini-2.5-pro": {
+            "id": "gemini-2.5-pro",
             "category": "large",
             "contextWindow": 2000000,
             "maxOutput": 8192,
             "pricing": {
-              "input": 0,
-              "output": 0,
-              "unit": "per_million_tokens",
-              "free": true,
-              "paidInput": 1.25,
-              "paidOutput": 5
+              "input": 1.25,
+              "output": 5.0,
+              "unit": "per_million_tokens"
             },
             "supportsTools": true,
             "supportsVision": true,
@@ -857,6 +807,27 @@
             "id": "gemini-2.0-flash-exp",
             "category": "large",
             "contextWindow": 1000000,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 4000000,
+              "requestsPerMinute": 10
+            },
+            "deprecated": false,
+            "available": true
+          },
+          "gemini-exp-1206": {
+            "id": "gemini-exp-1206",
+            "category": "large",
+            "contextWindow": 2000000,
             "maxOutput": 8192,
             "pricing": {
               "input": 0,

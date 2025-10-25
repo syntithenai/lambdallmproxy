@@ -42,6 +42,47 @@ function AppContent() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [showNavigationWarning, setShowNavigationWarning] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  
+  // Handle navigation with loading check
+  const handleNavigate = (path: string) => {
+    if (isChatLoading && location.pathname === '/') {
+      // Show warning dialog instead of blocking
+      setPendingNavigation(path);
+      setShowNavigationWarning(true);
+    } else {
+      navigate(path);
+    }
+  };
+  
+  // Confirm navigation and stop active request
+  const confirmNavigation = () => {
+    setShowNavigationWarning(false);
+    if (pendingNavigation === 'settings') {
+      setShowSettings(true);
+    } else if (pendingNavigation) {
+      navigate(pendingNavigation);
+    }
+    setPendingNavigation(null);
+  };
+  
+  // Cancel navigation
+  const cancelNavigation = () => {
+    setShowNavigationWarning(false);
+    setPendingNavigation(null);
+  };
+  
+  // Handle Settings with loading check
+  const handleOpenSettings = () => {
+    if (isChatLoading && location.pathname === '/') {
+      // Show warning for settings too since it covers the chat
+      setPendingNavigation('settings');
+      setShowNavigationWarning(true);
+    } else {
+      setShowSettings(true);
+    }
+  };
   
   // Tool configuration - shared between ChatTab and SettingsModal
   const [enabledTools, setEnabledTools] = useLocalStorage<{
@@ -75,6 +116,20 @@ function AppContent() {
   // NOTE: search_knowledge_base is now independent from the local RAG system
   // Local RAG uses the "Use Knowledge Base Context" checkbox in chat
   // search_knowledge_base is a separate server-side tool enabled in Settings > Tools
+
+  // Warn user before closing/refreshing during active request
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isChatLoading && location.pathname === '/') {
+        e.preventDefault();
+        e.returnValue = ''; // Chrome requires returnValue to be set
+        return ''; // Some browsers use return value
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isChatLoading, location.pathname]);
 
   // Migrate chat history from localStorage to IndexedDB on mount
   useEffect(() => {
@@ -206,14 +261,9 @@ function AppContent() {
             {/* Billing Button with Credit Info - Hide on billing page */}
             {location.pathname !== '/billing' && (
               <button
-                onClick={() => navigate('/billing')}
-                disabled={isChatLoading}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
-                  isChatLoading 
-                    ? 'bg-gray-300 dark:bg-gray-800 text-gray-500 dark:text-gray-600 cursor-not-allowed opacity-50' 
-                    : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
-                }`}
-                title={isChatLoading ? 'Cannot navigate during active chat request' : (usage ? `You have $${usage.creditBalance.toFixed(2)} remaining of $${usage.totalCredits.toFixed(2)} total credits` : 'View billing and usage details')}
+                onClick={() => handleNavigate('/billing')}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                title={usage ? `You have $${usage.creditBalance.toFixed(2)} remaining of $${usage.totalCredits.toFixed(2)} total credits` : 'View billing and usage details'}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -243,14 +293,9 @@ function AppContent() {
                   <span className="text-sm">Back to Chat</span>
                 </button>
                 <button
-                  onClick={() => navigate('/swag')}
-                  disabled={isChatLoading}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
-                    isChatLoading
-                      ? 'bg-blue-400 text-white cursor-not-allowed opacity-50'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                  title={isChatLoading ? 'Cannot navigate during active chat request' : 'Content Swag - Save and manage snippets'}
+                  onClick={() => handleNavigate('/swag')}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                  title="Content Swag - Save and manage snippets"
                 >
                   {/* Sack/bag icon */}
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -272,14 +317,9 @@ function AppContent() {
               </button>
             ) : (
               <button
-                onClick={() => navigate('/swag')}
-                disabled={isChatLoading}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
-                  isChatLoading
-                    ? 'bg-blue-400 text-white cursor-not-allowed opacity-50'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-                title={isChatLoading ? 'Cannot navigate during active chat request' : 'Content Swag - Save and manage snippets'}
+                onClick={() => handleNavigate('/swag')}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                title="Content Swag - Save and manage snippets"
               >
                 {/* Sack/bag icon */}
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -292,14 +332,9 @@ function AppContent() {
             {/* Help Button - Always visible */}
             {(location.pathname === '/help' || location.pathname === '/privacy') ? null : (
               <button
-                onClick={() => navigate('/help')}
-                disabled={isChatLoading}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium ${
-                  isChatLoading
-                    ? 'bg-purple-400 text-white cursor-not-allowed opacity-50'
-                    : 'bg-purple-600 hover:bg-purple-700 text-white'
-                }`}
-                title={isChatLoading ? 'Cannot navigate during active chat request' : 'Help & Documentation'}
+                onClick={() => handleNavigate('/help')}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-purple-600 hover:bg-purple-700 text-white"
+                title="Help & Documentation"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -309,7 +344,7 @@ function AppContent() {
             )}
             
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={handleOpenSettings}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               title="Settings"
             >
@@ -361,6 +396,37 @@ function AppContent() {
         setEnabledTools={setEnabledTools}
         onOpenMCPDialog={() => setShowMCPDialog(true)}
       />
+
+      {/* Navigation Warning Dialog */}
+      {showNavigationWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="card max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+              ⚠️ Active Request in Progress
+            </h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              You have an active chat request running. Navigating away will stop the current request and you may lose the response.
+            </p>
+            <p className="text-gray-700 dark:text-gray-300 mb-6 font-semibold">
+              Are you sure you want to continue?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelNavigation}
+                className="btn-secondary px-4 py-2"
+              >
+                Stay Here
+              </button>
+              <button
+                onClick={confirmNavigation}
+                className="btn-primary px-4 py-2 bg-orange-600 hover:bg-orange-700"
+              >
+                Navigate Away
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* GitHub Link - Fixed bottom right */}
       <GitHubLink />

@@ -31,9 +31,33 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
 
-// Enable CORS for all origins in development
+// Enable CORS for specific origins in development
+// When credentials: true, origin cannot be wildcard
+const allowedOrigins = [
+  'http://localhost:8081',
+  'http://localhost:5173',
+  'https://ai.syntithenai.com',
+  'http://syntithenai.github.io',
+  'https://syntithenai.github.io'
+];
+
 app.use(cors({
-  origin: '*',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      // For development, allow all localhost origins
+      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+        callback(null, true);
+      } else {
+        console.warn(`⚠️  CORS: Blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id'],
   credentials: true

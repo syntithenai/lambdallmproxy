@@ -29,11 +29,10 @@ const PROVIDERS = {
         hostname: 'generativelanguage.googleapis.com',
         path: '/v1beta/openai/chat/completions',
         models: [
-            'gemini-2.5-flash',    // 1M context, best for large context
+            'gemini-2.5-flash',    // 1M context, best for large context (current default)
             'gemini-2.5-pro',      // 1M context, highest quality
-            'gemini-2.0-flash',    // 2M context, ultra-large context
-            'gemini-1.5-flash',    // 1M context, legacy
-            'gemini-1.5-pro'       // 2M context, legacy
+            'gemini-2.0-flash-exp',    // Experimental, often free tier
+            'gemini-exp-1206'      // Experimental model
         ]
     },
     // Together AI - PAID SERVICE (no free tier)

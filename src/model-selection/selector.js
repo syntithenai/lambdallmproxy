@@ -103,6 +103,27 @@ function prioritizeFreeTier(models, requiredTokens = 0) {
 }
 
 /**
+ * Prioritize models by priority field (lower number = higher priority)
+ * This applies provider-level priority from LP_PRIORITY_X environment variables
+ * @param {Array<Object>} models - Candidate models
+ * @returns {Array<Object>} Models sorted by priority (lower priority number first)
+ */
+function prioritizeByPriority(models) {
+  return [...models].sort((a, b) => {
+    const aPriority = a.priority !== undefined ? a.priority : 100;
+    const bPriority = b.priority !== undefined ? b.priority : 100;
+    
+    // Lower priority number = higher priority (comes first)
+    if (aPriority !== bPriority) {
+      return aPriority - bPriority;
+    }
+    
+    // If priorities are equal, maintain existing order
+    return 0;
+  });
+}
+
+/**
  * Prioritize models by quality (STEP 8: Powerful Mode)
  * Prefer best paid models, reasoning models for complex analysis
  * @param {Array<Object>} models - Candidate models
@@ -385,6 +406,18 @@ function selectModel(options = {}) {
       throw new Error(`Unknown selection strategy: ${strategy}`);
   }
 
+  // Step 7.5: Apply priority-based sorting (from LP_PRIORITY_X env vars)
+  // Priority takes precedence AFTER strategy-based sorting
+  // Within each priority tier, the strategy-based order is maintained
+  const hasPriorityInfo = candidates.some(c => c.priority !== undefined);
+  if (hasPriorityInfo) {
+    // Stable sort by priority (lower number = higher priority)
+    // Uses stable sort to maintain strategy-based order within same priority
+    candidates = prioritizeByPriority(candidates);
+    console.log('🎯 Applied priority-based sorting (LP_PRIORITY_X)');
+    console.log(`   Priority order: ${candidates.slice(0, 5).map(m => `${m.name}(p${m.priority || 100})`).join(', ')}`);
+  }
+
   // Step 8: Select model (round-robin if selector provided)
   let selectedModel;
   
@@ -402,6 +435,7 @@ function selectModel(options = {}) {
   console.log('🎯 Model selected:', {
     model: selectedModel.name || selectedModel.id,
     provider: selectedModel.providerType,
+    priority: selectedModel.priority !== undefined ? selectedModel.priority : 100,
     category,
     contextWindow: selectedModel.context_window || selectedModel.contextWindow,
     estimatedTokens: {

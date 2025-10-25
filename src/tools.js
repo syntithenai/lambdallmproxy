@@ -446,6 +446,7 @@ const toolFunctions = [
     function: {
       name: 'search_web',
       description: '🌐 **AUTOMATICALLY USE FOR**: (1) Current events, news, recent information, or anything after your knowledge cutoff, (2) Facts that need verification or citations, (3) Up-to-date statistics, prices, or data, (4) Recent developments in any field, (5) Any query mentioning "search", "look up", "find", "research", or "current". **MANDATORY**: Always provide references and cite sources with URLs in your response using markdown links [Title](URL). Use for general information, research, news, facts, and documentation. **DO NOT USE for YouTube or video searches** - use search_youtube instead. Can accept either a single query string or an array of queries. Automatically fetches and extracts full page content from all search results, including images and links. Returns comprehensive search result fields including title, url, description, score, content, images, and links.',
+      strict: true,
       parameters: {
         type: 'object',
         properties: {
@@ -470,6 +471,7 @@ const toolFunctions = [
     function: {
       name: 'scrape_web_content',
       description: 'Fetch and extract the full readable content from any URL (websites, GitHub repos, documentation, etc). Use this when the user asks to "scrape", "get content from", "read", "fetch", or "summarize" a specific URL/website. EXCELLENT for getting detailed information from educational resources, tutorials, documentation, course materials, or any specific webpage. Perfect for accessing comprehensive guides, detailed explanations, complete course curricula, or GitHub repository information. CRITICAL: When user provides a URL and asks about it, you MUST call this function - do NOT just describe what you would do.',
+      strict: true,
       parameters: {
         type: 'object',
         properties: {
@@ -486,6 +488,7 @@ const toolFunctions = [
     function: {
       name: 'execute_javascript',
       description: '🧮 **PRIMARY TOOL FOR ALL CALCULATIONS AND MATH**: Execute JavaScript code in a secure sandbox environment with async/await support. **MANDATORY USE** when user asks for: calculations, math problems, compound interest, percentages, conversions, data processing, algorithms, or any numerical computation. Also use for demonstrations and code examples. **ALWAYS call this tool for math instead of trying to calculate in your response.** Returns the console output and execution result. Use console.log() to display results. **SUPPORTS**: async/await, Promises, setTimeout/clearTimeout. Example: For compound interest, use: "const principal = 10000; const rate = 0.07; const time = 15; const amount = principal * Math.pow(1 + rate, time); console.log(`Final amount: $${amount.toFixed(2)}`);". Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically.',
+      strict: true,
       parameters: {
         type: 'object',
         properties: {
@@ -511,6 +514,7 @@ const toolFunctions = [
     function: {
       name: 'transcribe_url',
       description: '🎙️ **PRIMARY TOOL FOR GETTING VIDEO/AUDIO TEXT CONTENT**: Transcribe audio or video content from URLs using Groq Whisper (FREE) or OpenAI Whisper. **PREFERS GROQ** (free transcription) over OpenAI (paid). **MANDATORY USE** when user says: "transcribe", "transcript", "get text from", "what does the video say", "extract dialogue", "convert to text", OR provides a specific YouTube/video URL and asks about its content. **YOUTUBE SUPPORT**: Can transcribe directly from YouTube URLs (youtube.com, youtu.be, youtube.com/shorts). Also supports direct media URLs (.mp3, .mp4, .wav, .m4a, etc.). Automatically handles large files by chunking. Shows real-time progress with stop capability. Returns full transcription text. Use when user wants to: transcribe audio/video, get text from speech, analyze spoken content, extract dialogue, or convert voice to text.',
+      strict: true,
       parameters: {
         type: 'object',
         properties: {
@@ -543,6 +547,7 @@ const toolFunctions = [
     function: {
       name: 'generate_image',
       description: '🎨 Generate images using AI and display them IMMEDIATELY in the UI. **IMPORTANT: ONLY call this tool ONCE per image request - the image will appear automatically in the conversation, DO NOT call it multiple times for the same request.** Automatically selects the best provider and model, generates the image, and injects it directly into the UI. **Defaults to fast/draft quality (<$0.001) for cost efficiency** - only uses higher quality when explicitly requested. **Supports reference images** - can use images from user messages as context/reference for style transfer or compositional guidance. Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001 - DEFAULT). Multi-provider support: OpenAI DALL-E, Together AI Stable Diffusion, Replicate models. Automatically handles provider failures with intelligent fallback.',
+      strict: true,
       parameters: {
         type: 'object',
         properties: {
@@ -583,6 +588,7 @@ const toolFunctions = [
     function: {
       name: 'generate_chart',
       description: '📊 **PRIMARY TOOL FOR ALL DIAGRAMS, CHARTS, AND VISUALIZATIONS**: Generate professional Mermaid diagrams automatically rendered as interactive SVG in the UI. **MANDATORY USE** when user requests: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, Gantt charts, pie charts, mindmaps, git graphs, or ANY visual diagram/chart/visualization. **DO NOT use execute_javascript to generate charts - ALWAYS use this tool instead.** This tool generates beautiful, interactive diagrams that render directly in the UI. Simply call this tool and the system will handle the Mermaid code generation automatically. **Keywords that require this tool**: diagram, chart, flowchart, visualization, graph, workflow, process flow, data flow, architecture diagram, UML, ERD, timeline, mindmap.',
+      strict: true,
       parameters: {
         type: 'object',
         properties: {
@@ -607,6 +613,7 @@ const toolFunctions = [
     function: {
       name: 'search_knowledge_base',
       description: '📚 **SEARCH INTERNAL KNOWLEDGE BASE**: Perform vector similarity search against the ingested documentation and knowledge base. **USE THIS when user asks about**: project documentation, API references, implementation guides, architecture, deployment procedures, RAG system, embedding models, or any topics covered in the knowledge base. **EXCELLENT for**: finding specific code examples, configuration details, API endpoints, best practices, and technical documentation. Returns relevant text chunks with source file names and similarity scores. **Always use this BEFORE search_web when the question might be answered by internal documentation.**',
+      strict: true,
       parameters: {
         type: 'object',
         properties: {

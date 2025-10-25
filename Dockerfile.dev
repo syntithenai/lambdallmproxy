@@ -1,0 +1,38 @@
+# Lambda LLM Proxy - Development Docker Image
+FROM node:20-alpine
+
+# Install required system dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git \
+    bash
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY puppeteer-package.json ./
+
+# Install ALL dependencies (including devDependencies)
+RUN npm ci
+
+# Copy application code
+COPY . .
+
+# Create cache directory
+RUN mkdir -p /tmp/cache
+
+# Expose ports (backend and frontend)
+EXPOSE 3000 5173
+
+# Set environment variable for local Lambda mode
+ENV LOCAL_LAMBDA=true
+
+# Install nodemon globally for hot reload
+RUN npm install -g nodemon concurrently
+
+# Start both backend and frontend in dev mode
+CMD ["npm", "run", "dev"]

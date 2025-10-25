@@ -891,14 +891,22 @@ async function logToGoogleSheets(logData) {
         // NOTE: Welcome credit is now added in getUserCreditBalance() on first balance check
         // This ensures users get credit even before making their first API call
         
-        // Calculate cost (use provided cost for image generation, or calculate from tokens)
-        const cost = calculateCost(
-            logData.model,
-            logData.promptTokens || 0,
-            logData.completionTokens || 0,
-            logData.cost  // Pass through fixed cost if provided (e.g., for image generation)
-        );
-        console.log('💰 Calculated cost:', cost);
+        // Calculate cost (use provided cost for credit_added type, or calculate from tokens)
+        let cost;
+        if (logData.type === 'credit_added' && logData.cost !== undefined) {
+            // For credit purchases (PayPal, etc.), use the exact amount without surcharge
+            cost = logData.cost;
+            console.log('💰 Credit purchase: using exact amount:', cost);
+        } else {
+            // For regular LLM/Lambda calls, calculate cost with surcharge
+            cost = calculateCost(
+                logData.model,
+                logData.promptTokens || 0,
+                logData.completionTokens || 0,
+                logData.cost  // Pass through fixed cost if provided (e.g., for image generation)
+            );
+            console.log('💰 Calculated cost:', cost);
+        }
         
         // Format duration
         const durationMs = logData.duration || logData.durationMs || 0;

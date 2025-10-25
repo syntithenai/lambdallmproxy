@@ -4882,6 +4882,47 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           return null;
                         })}
                         
+                        {/* Display tool calls (for debugging and visibility) */}
+                        {msg.tool_calls && msg.tool_calls.length > 0 && !msg.toolResults && (
+                          <div className="mb-3 space-y-2">
+                            {msg.tool_calls.map((tc: any, tcIdx: number) => {
+                              let args: any = {};
+                              let parseError: string | null = null;
+                              try {
+                                args = JSON.parse(tc.function.arguments || '{}');
+                              } catch (e) {
+                                parseError = `Invalid JSON: ${tc.function.arguments}`;
+                                console.error(`Failed to parse tool call arguments for ${tc.id}:`, e);
+                              }
+                              
+                              return (
+                                <div key={tcIdx} className="bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 rounded-lg p-3">
+                                  <div className="text-xs font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-2 mb-2">
+                                    <span>🔧 {tc.function.name}</span>
+                                    {parseError && (
+                                      <span className="text-red-600 dark:text-red-400 font-normal">⚠️ Malformed arguments</span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-700 dark:text-gray-300 space-y-1">
+                                    {parseError ? (
+                                      <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded p-2 font-mono text-[10px]">
+                                        {parseError}
+                                      </div>
+                                    ) : (
+                                      Object.entries(args).map(([key, value]) => (
+                                        <div key={key}>
+                                          <span className="font-semibold">{key}:</span>{' '}
+                                          <span className="font-mono">{typeof value === 'string' ? value : JSON.stringify(value)}</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        
                         {/* Waiting indicator for tool execution */}
                         {msg.tool_calls && !msg.toolResults && !msg.isStreaming && (
                           <div className="mb-3 flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -6539,7 +6580,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           
           {/* RAG Context Toggle */}
           {/* Message Input */}
-          <div className="flex gap-2 relative">
+          <div className="flex gap-2 relative items-start">
             {/* Hidden File Input */}
             <input
               ref={fileInputRef}
@@ -6554,7 +6595,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading}
-              className="btn-secondary px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Attach images or PDFs"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6566,7 +6607,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             <button
               onClick={() => setShowVoiceInput(true)}
               disabled={isLoading || !accessToken}
-              className="btn-secondary px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -6658,7 +6699,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             <button
               onClick={isLoading ? handleStop : () => handleSend()}
               disabled={!isLoading && (!input.trim() || !accessToken)}
-              className="btn-primary self-end"
+              className="btn-primary h-10 flex-shrink-0 self-start"
               title={!accessToken ? 'Please sign in to send messages' : (!input.trim() ? 'Type a message first' : 'Send message')}
             >
               {isLoading ? '⏹ Stop' : (!input.trim() ? '✏️ Type a message' : '📤 Send')}

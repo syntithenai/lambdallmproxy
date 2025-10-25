@@ -230,7 +230,9 @@ const BillingPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions'>('overview');
   const [groupByRequest, setGroupByRequest] = useState(true); // Group transactions by request ID
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set()); // Track expanded request groups
-  const [creditBalance, setCreditBalance] = useState<number>(0); // User's current credit balance
+  const [creditBalance, setCreditBalance] = useState<number>(0); // User's current credit balance (available = credits - expenses)
+  const [totalCredits, setTotalCredits] = useState<number>(0); // Total credits purchased
+  const [totalExpenses, setTotalExpenses] = useState<number>(0); // Total spent on API calls
   const [showAddCreditModal, setShowAddCreditModal] = useState(false); // Add Credit modal state
   const [creditAmount, setCreditAmount] = useState('5.00'); // Amount to purchase
   const [paypalLoading, setPaypalLoading] = useState(false); // PayPal button loading state
@@ -323,20 +325,27 @@ const BillingPage: React.FC = () => {
       // Calculate credit balance from transactions
       // Credits are added with type 'credit_added', spending subtracts from balance
       let balance = 0;
+      let credits = 0;
+      let expenses = 0;
       if (data.transactions) {
         for (const tx of data.transactions) {
           if (tx.type === 'credit_added') {
             // Credits are stored as negative costs (-0.50), so we add the absolute value
-            balance += Math.abs(tx.cost);
-            console.log(`💳 Found credit: +$${Math.abs(tx.cost).toFixed(2)}, new balance: $${balance.toFixed(2)}`);
+            const creditAmount = Math.abs(tx.cost);
+            credits += creditAmount;
+            balance += creditAmount;
+            console.log(`💳 Found credit: +$${creditAmount.toFixed(2)}, total credits: $${credits.toFixed(2)}, balance: $${balance.toFixed(2)}`);
           } else {
             // Regular spending subtracts from balance
+            expenses += tx.cost;
             balance -= tx.cost;
           }
         }
       }
       setCreditBalance(balance);
-      console.log(`💳 Final credit balance: $${balance.toFixed(4)}`);
+      setTotalCredits(credits);
+      setTotalExpenses(expenses);
+      console.log(`💳 Final summary - Balance: $${balance.toFixed(4)}, Total Credits: $${credits.toFixed(4)}, Total Expenses: $${expenses.toFixed(4)}`);
       
       // Refresh usage context (calculates usage from billing totals)
       refreshUsage();
@@ -529,7 +538,7 @@ const BillingPage: React.FC = () => {
               }
               
               // Success! Refresh billing data and close modal
-              alert(`✅ Success! $${result.creditsAdded?.toFixed(2)} credits added.\nNew balance: $${result.newBalance?.toFixed(2)}`);
+              // (Removed alert - billing page shows updated balance automatically)
               setShowAddCreditModal(false);
               await fetchBillingData(); // Refresh to show new credit
               await refreshUsage(); // Refresh usage context
@@ -949,12 +958,10 @@ const BillingPage: React.FC = () => {
               boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
               border: '2px solid rgba(255,255,255,0.3)'
             }}>
-              <div className="summary-label" style={{ color: 'rgba(255,255,255,0.9)' }}>💳 Credit Balance</div>
-              <div className="summary-value" style={{ fontSize: '2rem', fontWeight: 'bold' }}>${creditBalance.toFixed(2)}</div>
-              <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)', marginTop: '4px' }}>
-                {creditBalance > 0 
-                  ? `$${creditBalance.toFixed(2)} available` 
-                  : 'Add credit to continue'}
+              <div className="summary-label" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '8px' }}>💳 Credit Balance</div>
+              <div className="summary-value" style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '12px' }}>${creditBalance.toFixed(2)}</div>
+              <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+                Total Credits: ${totalCredits.toFixed(2)}
               </div>
               <button 
                 style={{
@@ -966,7 +973,7 @@ const BillingPage: React.FC = () => {
                   fontSize: '0.85rem',
                   fontWeight: 'bold',
                   cursor: 'pointer',
-                  marginTop: '8px',
+                  marginTop: '12px',
                   boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                 }}
                 onClick={() => setShowAddCreditModal(true)}

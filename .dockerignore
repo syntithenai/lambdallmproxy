@@ -1,0 +1,74 @@
+# Node modules
+node_modules
+ui-new/node_modules
+
+# Build artifacts
+docs
+dist
+build
+*.log
+*.log.*
+
+# Environment files (mount these separately)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage
+
+# Temporary files
+*.tmp
+tmp
+temp
+/tmp
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+/tmp/make-dev-restart.log
+
+# Cache
+.cache
+.eslintcache
+
+# Output files
+output.txt
+deploy_output.txt
+layer_output.txt
+
+# Local development
+.env.backup.*
+
+# Lambda deployment artifacts
+lambda-layer
+lambda-deployment.zip
+layer.zip
+
+# Documentation builds
+developer_logs/analyze-*.js
+
+# Secrets and keys
+*.json.secret
+*.pem
+*.key
+abc2book-*.json

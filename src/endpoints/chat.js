@@ -95,6 +95,48 @@ function enrichCatalogWithRateLimits(catalog) {
     return catalog;
 }
 
+/**
+ * Enrich catalog with priority information from provider pool
+ * Priority is taken from LP_PRIORITY_X environment variables
+ * @param {Object} catalog - Provider catalog
+ * @param {Array} providerPool - Array of provider configurations from buildProviderPool
+ * @returns {Object} Enriched catalog
+ */
+function enrichCatalogWithPriority(catalog, providerPool) {
+    if (!catalog || !catalog.chat || !catalog.chat.providers || !providerPool) {
+        return catalog;
+    }
+    
+    // Build priority map: providerType -> lowest priority number
+    const priorityMap = {};
+    for (const provider of providerPool) {
+        const priority = provider.priority !== undefined ? provider.priority : 100;
+        const providerType = provider.type;
+        
+        // Use lowest priority number (highest priority) if multiple providers of same type
+        if (priorityMap[providerType] === undefined || priority < priorityMap[providerType]) {
+            priorityMap[providerType] = priority;
+        }
+    }
+    
+    // Apply priorities to all models in catalog
+    for (const [providerType, providerInfo] of Object.entries(catalog.chat.providers)) {
+        if (priorityMap[providerType] !== undefined && providerInfo.models) {
+            const priority = priorityMap[providerType];
+            
+            for (const [modelId, modelInfo] of Object.entries(providerInfo.models)) {
+                modelInfo.priority = priority;
+            }
+            
+            if (Object.keys(providerInfo.models).length > 0) {
+                console.log(`   🎯 Applied priority ${priority} to ${providerType} models`);
+            }
+        }
+    }
+    
+    return catalog;
+}
+
 // Enrich the catalog immediately after loading
 providerCatalog = enrichCatalogWithRateLimits(providerCatalog);
 console.log('✅ Provider catalog enriched with rate limit information');
@@ -1261,6 +1303,9 @@ async function handler(event, responseStream, context) {
         const providerPool = buildProviderPool(userProviders, authResult.authorized);
         console.log(`🎯 Provider pool for ${authResult.email}: ${providerPool.length} provider(s) available`);
         
+        // Enrich catalog with priority information from provider pool
+        const enrichedCatalog = enrichCatalogWithPriority(providerCatalog, providerPool);
+        
         // Extract Google OAuth token from Authorization header for API calls
         googleToken = null; // Reset to null first
         if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -1544,13 +1589,13 @@ async function handler(event, responseStream, context) {
                 }
                 return isComplex ? 'gpt-4o' : 'gpt-4o-mini';
             } else if (provider.type === 'gemini-free' || provider.type === 'gemini') {
-                const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                const geminiModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash-exp', 'gemini-exp-1206'];
                 if (requestedModel && geminiModels.includes(requestedModel)) {
                     return requestedModel;
                 }
                 // Use gemini-2.5-flash for most requests (1M context)
-                // Use gemini-2.0-flash for ultra-large context (2M context)
-                return isComplex ? 'gemini-2.0-flash' : 'gemini-2.5-flash';
+                // Use gemini-2.0-flash-exp for experimental features
+                return isComplex ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
             } else if (provider.type === 'together') {
                 // Together AI is a PAID service - Pricing as of Oct 2025:
                 // - Llama 3.3 70B: $0.88/M tokens (input), $0.88/M tokens (output)
@@ -1621,7 +1666,7 @@ async function handler(event, responseStream, context) {
         }
         
         // Build runtime catalog with only chat-enabled providers
-        const runtimeCatalog = buildRuntimeCatalog(providerCatalog, chatEnabledProviders);
+        const runtimeCatalog = buildRuntimeCatalog(enrichedCatalog, chatEnabledProviders);
         
         // Use sophisticated model selection
         let selection;

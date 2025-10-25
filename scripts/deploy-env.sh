@@ -132,6 +132,39 @@ ENV_VARS_JSON+="}"
 
 echo ""
 echo -e "${BLUE}📊 Summary: Found $COUNT environment variables to deploy${NC}"
+
+# Check JSON size against AWS Lambda 4KB limit
+JSON_SIZE=$(printf '%s' "$ENV_VARS_JSON" | wc -c)
+MAX_SIZE=4096
+
+echo -e "${BLUE}📏 Environment variables size: ${JSON_SIZE} bytes (limit: ${MAX_SIZE} bytes)${NC}"
+
+if [ $JSON_SIZE -ge $MAX_SIZE ]; then
+    echo ""
+    echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${RED}  ✗ ERROR: Environment variables exceed AWS Lambda limit${NC}"
+    echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${RED}Size: ${JSON_SIZE} bytes${NC}"
+    echo -e "${RED}Limit: ${MAX_SIZE} bytes${NC}"
+    echo -e "${RED}Excess: $((JSON_SIZE - MAX_SIZE)) bytes${NC}"
+    echo ""
+    echo -e "${YELLOW}Suggestions to reduce size:${NC}"
+    echo -e "  1. Move large API keys to AWS Secrets Manager"
+    echo -e "  2. Remove unused provider configurations"
+    echo -e "  3. Shorten variable names where possible"
+    echo -e "  4. Store large values (like private keys) in S3"
+    echo ""
+    exit 1
+fi
+
+# Warn if approaching limit (90% threshold)
+WARN_THRESHOLD=$((MAX_SIZE * 90 / 100))
+if [ $JSON_SIZE -ge $WARN_THRESHOLD ]; then
+    echo -e "${YELLOW}⚠️  Warning: Approaching size limit (${JSON_SIZE}/${MAX_SIZE} bytes = $((JSON_SIZE * 100 / MAX_SIZE))%)${NC}"
+    echo -e "${YELLOW}   Consider reducing environment variable size before adding more${NC}"
+fi
+
 echo ""
 
 # Confirm deployment (unless --yes flag is used)

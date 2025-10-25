@@ -200,6 +200,7 @@ async function handleCaptureOrder(event) {
         const capture = await paypalClient.execute(request);
         
         console.log(`📦 PayPal capture response status: ${capture.result.status}`);
+        console.log(`📦 PayPal capture full response:`, JSON.stringify(capture.result, null, 2));
         
         // Verify payment success
         if (capture.result.status !== 'COMPLETED') {
@@ -213,10 +214,38 @@ async function handleCaptureOrder(event) {
             };
         }
         
-        // Extract payment details
-        const amount = parseFloat(capture.result.purchase_units[0].amount.value);
-        const paypalEmail = capture.result.payer?.email_address || 'unknown';
-        const transactionId = capture.result.purchase_units[0].payments.captures[0].id;
+        // Extract payment details - handle different response structures
+        let amount, paypalEmail, transactionId;
+        
+        try {
+            // Try standard structure first
+            if (capture.result.purchase_units && capture.result.purchase_units[0]) {
+                const purchaseUnit = capture.result.purchase_units[0];
+                
+                // Get amount
+                if (purchaseUnit.amount && purchaseUnit.amount.value) {
+                    amount = parseFloat(purchaseUnit.amount.value);
+                } else if (purchaseUnit.payments?.captures?.[0]?.amount?.value) {
+                    amount = parseFloat(purchaseUnit.payments.captures[0].amount.value);
+                }
+                
+                // Get transaction ID
+                if (purchaseUnit.payments?.captures?.[0]?.id) {
+                    transactionId = purchaseUnit.payments.captures[0].id;
+                }
+            }
+            
+            // Get payer email
+            paypalEmail = capture.result.payer?.email_address || 'unknown';
+            
+            if (!amount || !transactionId) {
+                throw new Error('Missing amount or transaction ID in PayPal response');
+            }
+        } catch (parseError) {
+            console.error('❌ Error parsing PayPal response:', parseError);
+            console.error('📦 Capture result:', JSON.stringify(capture.result, null, 2));
+            throw new Error(`Failed to parse PayPal response: ${parseError.message}`);
+        }
         
         console.log(`✅ Payment completed: $${amount} from ${paypalEmail} (Transaction: ${transactionId})`);
         
@@ -249,12 +278,25 @@ async function handleCaptureOrder(event) {
         invalidateCreditCache(email);
         console.log(`🔄 Invalidated credit cache for ${email}`);
         
+        // Calculate new balance (we just added credits)
+        // Note: This is approximate since we just invalidated cache
+        // The next credit check will fetch the actual balance from Google Sheets
+        const { getCreditBalance } = require('../utils/credit-cache');
+        let newBalance = amount; // Default to amount added if we can't get previous balance
+        try {
+            const currentBalance = await getCreditBalance(email);
+            newBalance = currentBalance; // This should now include the credit we just added
+        } catch (err) {
+            console.warn(`⚠️ Could not fetch new balance: ${err.message}`);
+        }
+        
         return {
             statusCode: 200,
             headers: getCorsHeaders(event),
             body: JSON.stringify({
                 success: true,
-                creditAdded: amount,
+                creditsAdded: amount,
+                newBalance: newBalance,
                 transactionId: transactionId,
                 message: `Successfully added $${amount.toFixed(2)} to your account`
             })

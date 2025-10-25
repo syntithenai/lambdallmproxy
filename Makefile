@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python
+.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python docker-build docker-build-dev docker-up docker-up-dev docker-down docker-logs docker-logs-dev docker-shell docker-shell-dev docker-clean
 
 # Default target - Show help
 help:
@@ -15,6 +15,18 @@ help:
 	@echo "  make install             - Install all dependencies (backend + UI)"
 	@echo "  make install-backend     - Install backend dependencies only"
 	@echo "  make install-ui          - Install UI dependencies only"
+	@echo ""
+	@echo "🐳 Docker Commands:"
+	@echo "  make docker-build        - Build production Docker image"
+	@echo "  make docker-build-dev    - Build development Docker image"
+	@echo "  make docker-up           - Start production server in Docker (port 3000)"
+	@echo "  make docker-up-dev       - Start dev server in Docker (ports 3000, 5173)"
+	@echo "  make docker-down         - Stop and remove all Docker containers"
+	@echo "  make docker-logs         - View production container logs"
+	@echo "  make docker-logs-dev     - View development container logs"
+	@echo "  make docker-shell        - Open shell in production container"
+	@echo "  make docker-shell-dev    - Open shell in development container"
+	@echo "  make docker-clean        - Remove all Docker containers, images, and volumes"
 	@echo ""
 	@echo "Main Lambda Function:"
 	@echo "  make deploy-lambda       - Deploy main Lambda function (full with dependencies)"
@@ -348,6 +360,61 @@ dev:
 	@echo "Press Ctrl+C to stop both servers"
 	@echo ""
 	@bash -c 'trap "kill 0" INT; NODE_ENV=development HEADLESS=false npx nodemon & sleep 2; cd ui-new && npm run dev & wait'
+
+# ================================================================
+# Docker Commands
+# ================================================================
+
+docker-build:
+	@echo "🐳 Building production Docker image..."
+	docker build -t lambdallmproxy:latest .
+	@echo "✅ Production image built: lambdallmproxy:latest"
+
+docker-build-dev:
+	@echo "🐳 Building development Docker image..."
+	docker build -f Dockerfile.dev -t lambdallmproxy:dev .
+	@echo "✅ Development image built: lambdallmproxy:dev"
+
+docker-up:
+	@echo "🐳 Starting production server in Docker..."
+	docker-compose up -d llmproxy
+	@echo "✅ Production server running at http://localhost:3000"
+	@echo "📋 View logs: make docker-logs"
+
+docker-up-dev:
+	@echo "🐳 Starting development server in Docker..."
+	docker-compose up -d llmproxy-dev
+	@echo "✅ Development server running:"
+	@echo "   Backend:  http://localhost:3000"
+	@echo "   Frontend: http://localhost:5173"
+	@echo "📋 View logs: make docker-logs-dev"
+
+docker-down:
+	@echo "🐳 Stopping Docker containers..."
+	docker-compose down
+	@echo "✅ All containers stopped"
+
+docker-logs:
+	@echo "📋 Production container logs (Ctrl+C to exit):"
+	docker-compose logs -f llmproxy
+
+docker-logs-dev:
+	@echo "📋 Development container logs (Ctrl+C to exit):"
+	docker-compose logs -f llmproxy-dev
+
+docker-shell:
+	@echo "🐚 Opening shell in production container..."
+	docker-compose exec llmproxy sh
+
+docker-shell-dev:
+	@echo "🐚 Opening shell in development container..."
+	docker-compose exec llmproxy-dev sh
+
+docker-clean:
+	@echo "🧹 Cleaning up Docker resources..."
+	docker-compose down -v
+	docker rmi lambdallmproxy:latest lambdallmproxy:dev 2>/dev/null || true
+	@echo "✅ Docker cleanup complete"
 
 # ================================================================
 # RAG Knowledge Base Management

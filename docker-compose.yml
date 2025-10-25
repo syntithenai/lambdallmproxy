@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # Production server
+  llmproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llmproxy-prod
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - LOCAL_LAMBDA=true
+      - NODE_ENV=production
+    volumes:
+      # Mount cache directory for persistence
+      - cache:/tmp/cache
+    restart: unless-stopped
+    networks:
+      - llmproxy-network
+
+  # Development server (backend + frontend with hot reload)
+  llmproxy-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: llmproxy-dev
+    ports:
+      - "3000:3000"  # Backend
+      - "5173:5173"  # Frontend (Vite dev server)
+    env_file:
+      - .env
+    environment:
+      - LOCAL_LAMBDA=true
+      - NODE_ENV=development
+    volumes:
+      # Mount source code for hot reload
+      - ./src:/app/src
+      - ./ui-new/src:/app/ui-new/src
+      - ./scripts:/app/scripts
+      - ./.env:/app/.env
+      # Mount node_modules as named volumes for performance
+      - node_modules:/app/node_modules
+      - ui_node_modules:/app/ui-new/node_modules
+      # Mount cache directory for persistence
+      - cache:/tmp/cache
+    networks:
+      - llmproxy-network
+    stdin_open: true
+    tty: true
+
+volumes:
+  cache:
+    driver: local
+  node_modules:
+    driver: local
+  ui_node_modules:
+    driver: local
+
+networks:
+  llmproxy-network:
+    driver: bridge

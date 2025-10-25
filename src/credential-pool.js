@@ -24,8 +24,16 @@ const uuidv4 = generateUuid;
  * - LP_RATE_LIMIT_N=10000 (optional, TPM for openai-compatible)
  * - LP_ALLOWED_MODELS_N=model1,model2 (optional, filter models - empty=allow all)
  * - LP_IMAGE_MAX_QUALITY_N=fast|standard|high|ultra (optional)
+ * - LP_PRIORITY_N=1 (optional, lower number = higher priority, default=100)
  * 
  * Where N is a numeric index (0, 1, 2, ...)
+ * 
+ * Priority System:
+ * - Lower priority numbers are selected FIRST when multiple providers/models match
+ * - Default priority is 100 if not specified
+ * - Priority 1 = highest priority, 999 = lowest priority
+ * - Used across ALL endpoints (chat, embeddings, transcription, image generation)
+ * - Within same priority tier, models are sorted by quality/cost based on selection strategy
  * 
  * @returns {Array<Object>} Array of provider configurations
  */
@@ -42,6 +50,7 @@ function loadEnvironmentProviders() {
         const rateLimitKey = `LP_RATE_LIMIT_${index}`;
         const allowedModelsKey = `LP_ALLOWED_MODELS_${index}`;
         const maxQualityKey = `LP_IMAGE_MAX_QUALITY_${index}`;
+        const priorityKey = `LP_PRIORITY_${index}`;
         
         const type = process.env[typeKey];
         const apiKey = process.env[keyKey];
@@ -59,6 +68,20 @@ function loadEnvironmentProviders() {
             source: 'environment',
             index: index // Track original index for debugging
         };
+        
+        // Add priority (lower = higher priority)
+        if (process.env[priorityKey]) {
+            const priority = parseInt(process.env[priorityKey], 10);
+            if (!isNaN(priority) && priority > 0) {
+                provider.priority = priority;
+                console.log(`   🎯 Priority: ${priority} (lower = higher priority)`);
+            } else {
+                provider.priority = 100; // Default priority
+                console.warn(`   ⚠️ Invalid priority "${process.env[priorityKey]}", using default: 100`);
+            }
+        } else {
+            provider.priority = 100; // Default priority if not specified
+        }
         
         // Add optional endpoint (for openai-compatible)
         if (process.env[endpointKey]) {

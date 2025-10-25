@@ -239,7 +239,11 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
           ) : (
             <div className="space-y-3">
               {providers.map((provider) => {
-                const info = PROVIDER_INFO[provider.type];
+                const info = PROVIDER_INFO[provider.type] || { 
+                  name: provider.type || 'Unknown Provider', 
+                  icon: '❓', 
+                  description: 'Unknown provider type' 
+                };
                 // Default enabled to true if undefined, except for TogetherAI
                 const isTogether = provider.type === 'together';
                 const enabled = typeof provider.enabled === 'boolean' ? provider.enabled : (!isTogether ? true : false);
