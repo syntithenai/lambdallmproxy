@@ -44,6 +44,12 @@ function AppContent() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [showNavigationWarning, setShowNavigationWarning] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
   
   // Handle navigation with loading check
   const handleNavigate = (path: string) => {

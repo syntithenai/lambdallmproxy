@@ -970,7 +970,7 @@ function PricingContent() {
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔑 Advantages of Bringing Your Own API Keys (BYOK)</h3>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔑 Bring Your Own API Keys (BYOK)</h3>
         <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-5 rounded-lg border-2 border-purple-300 dark:border-purple-700">
           <p className="font-semibold mb-3 text-lg">Why use your own API keys?</p>
           <div className="space-y-3">
@@ -1001,6 +1001,53 @@ function PricingContent() {
             <p className="text-sm font-semibold mb-1">How to add your API keys:</p>
             <p className="text-sm">Go to <strong>Settings → Providers → Add Provider</strong> and enter your API key from OpenAI, Groq, Gemini, Together AI, or any OpenAI-compatible endpoint.</p>
           </div>
+        </div>
+
+        <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-5 rounded-lg border-2 border-blue-300 dark:border-blue-700">
+          <h4 className="text-lg font-semibold text-blue-800 dark:text-blue-200 mb-3">🔑 Where to Get API Keys</h4>
+          <p className="mb-4 text-sm">
+            Getting your own API keys lets you use the service with zero LLM costs! Here's where to sign up:
+          </p>
+          <div className="space-y-3">
+            <div className="border-l-4 border-blue-500 pl-3">
+              <p className="font-semibold text-blue-700 dark:text-blue-300">
+                <a href="https://console.groq.com/" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  Groq →
+                </a>
+              </p>
+              <p className="text-xs">Unlimited free tier with fast inference. Perfect for most users. Supports Llama, Mixtral, and Gemma models.</p>
+            </div>
+            
+            <div className="border-l-4 border-green-500 pl-3">
+              <p className="font-semibold text-green-700 dark:text-green-300">
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  Google Gemini →
+                </a>
+              </p>
+              <p className="text-xs">Generous free tier with daily quotas. Multimodal AI models with excellent performance.</p>
+            </div>
+            
+            <div className="border-l-4 border-orange-500 pl-3">
+              <p className="font-semibold text-orange-700 dark:text-orange-300">
+                <a href="https://api.together.xyz/" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  Together AI →
+                </a>
+              </p>
+              <p className="text-xs">Free trial credits for new accounts. Access to cutting-edge open source models including Llama 4 and DeepSeek.</p>
+            </div>
+            
+            <div className="border-l-4 border-purple-500 pl-3">
+              <p className="font-semibold text-purple-700 dark:text-purple-300">
+                <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                  OpenAI →
+                </a>
+              </p>
+              <p className="text-xs">Industry-leading GPT models. Paid service but competitive pricing. Includes GPT-4, GPT-4o, and GPT-4o-mini.</p>
+            </div>
+          </div>
+          <p className="mt-4 text-xs text-gray-600 dark:text-gray-400">
+            After getting your API key, add it in <strong>Settings → Providers → Add Provider</strong> to start using it immediately with $0 LLM costs!
+          </p>
         </div>
       </section>
 
@@ -1088,46 +1135,6 @@ function PricingContent() {
             <p className="mt-2 text-sm pl-4">
               No, all credit purchases are final and non-refundable. Credits never expire, so you can use them whenever you're ready.
             </p>
-          </details>
-          
-          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-            <summary className="font-semibold cursor-pointer text-base">Where can I sign up for API keys?</summary>
-            <div className="mt-2 text-sm pl-4 space-y-3">
-              <p className="mb-2">
-                Getting your own API keys lets you use the service with zero LLM costs! Here's where to sign up:
-              </p>
-              <div className="space-y-2">
-                <div className="border-l-4 border-blue-500 pl-3">
-                  <p className="font-semibold text-blue-700 dark:text-blue-300">
-                    <a href="https://console.groq.com/" target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      Groq →
-                    </a>
-                  </p>
-                  <p className="text-xs">Unlimited free tier with fast inference. Perfect for most users. Supports Llama, Mixtral, and Gemma models.</p>
-                </div>
-                
-                <div className="border-l-4 border-green-500 pl-3">
-                  <p className="font-semibold text-green-700 dark:text-green-300">
-                    <a href="https://api.together.xyz/" target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      Together AI →
-                    </a>
-                  </p>
-                  <p className="text-xs">Free trial credits for new accounts. Access to cutting-edge open source models including Llama 4 and DeepSeek.</p>
-                </div>
-                
-                <div className="border-l-4 border-purple-500 pl-3">
-                  <p className="font-semibold text-purple-700 dark:text-purple-300">
-                    <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      OpenAI →
-                    </a>
-                  </p>
-                  <p className="text-xs">Industry-leading GPT models. Paid service but competitive pricing. Includes GPT-4, GPT-4o, and GPT-4o-mini.</p>
-                </div>
-              </div>
-              <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-                After getting your API key, add it in <strong>Settings → Providers → Add Provider</strong> to start using it immediately.
-              </p>
-            </div>
           </details>
         </div>
       </section>

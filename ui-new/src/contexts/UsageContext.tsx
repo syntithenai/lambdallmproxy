@@ -78,7 +78,8 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
       }
       
       const creditBalance = totalCredits - totalUsage;
-      const exceeded = creditBalance <= 0;
+      // Consider "exceeded" only if balance is less than -$0.01 (to handle floating-point precision)
+      const exceeded = creditBalance < -0.01;
       
       const calculatedUsage: UsageData = {
         userEmail: '',
@@ -116,7 +117,8 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
 
     const newTotalCost = usage.totalCost + cost;
     const newCreditBalance = usage.totalCredits - newTotalCost;
-    const newExceeded = newCreditBalance <= 0;
+    // Consider "exceeded" only if balance is less than -$0.01 (to handle floating-point precision)
+    const newExceeded = newCreditBalance < -0.01;
 
     setUsage({
       ...usage,

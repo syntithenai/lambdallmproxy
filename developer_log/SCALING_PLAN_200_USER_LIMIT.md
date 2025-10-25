@@ -1,11 +1,151 @@
-# Scaling Plan: Google Sheets with 3-Month Transaction Retention
+# Scaling Plan: Google Sheets with Transaction Summary Aggregation
 
 **Date**: 2024-10-25  
-**Updated**: 2024-10-25 (On-demand archiving + separate spreadsheets)  
-**Strategy**: Optimize Google Sheets usage with rolling 3-month transaction retention  
+**Updated**: 2024-10-25 (Summary aggregation strategy - NO separate archive spreadsheets)  
+**Strategy**: Optimize Google Sheets usage with transaction summary aggregation  
 **Current Architecture**: One tab per user email for billing/usage logs  
 **Goal**: Support unlimited users while maintaining Google Sheets as primary data store  
-**Archive Strategy**: On-demand archiving triggered by balance endpoint, archives stored in separate Google Spreadsheets
+**Archive Strategy**: Aggregate old transactions into summary entries (NO separate spreadsheets needed)
+
+## Table of Contents
+
+1. [Current System Analysis](#current-system-analysis)
+2. [Google Sheets Limits Research](#google-sheets-limits-research)
+3. [Recommended Solution: Transaction Summary Aggregation](#recommended-solution-transaction-summary-aggregation)
+4. [Implementation Plan](#implementation-plan)
+5. [Code Changes Required](#code-changes-required)
+6. [Migration & Rollout](#migration--rollout)
+
+---
+
+## Current System Analysis
+
+### Architecture
+
+**File**: `src/services/google-sheets-logger.js`
+
+**Design Pattern**: One tab per user
+- Each user gets a dedicated sheet/tab named after their email (sanitized)
+- Example: `user@example.com` → tab named `user_at_example_dot_com`
+- Each tab contains: timestamp, email, type, model, provider, tokens_in, tokens_out, cost, duration_ms, status
+- Balance calculated by summing all transactions in user's tab
+
+**Current Code Structure**:
+- Line 1: Module documentation and architecture notes
+- Line 24: `sanitizeEmailForSheetName()` - converts email to valid sheet name
+- Line 53: `getUserSheetName()` - wrapper for sanitization
+- Line 62: `PRICING` - token pricing for all models
+- Line ~1283: `logToGoogleSheets()` - main logging function
+- Line ~1931: `getUserCreditBalance()` - balance calculation function
+
+**Key Environment Variables**:
+- `GOOGLE_SHEETS_LOG_SPREADSHEET_ID` - Current single spreadsheet ID (will become SHARD_0)
+- `GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY` - Service account JSON key
+- `GOOGLE_SHEETS_ARCHIVE_AFTER_DAYS` - Days before summarizing (default: 90)
+
+### Data Flow
+
+1. **User makes request** → Chat endpoint (`src/endpoints/chat.js`)
+2. **Credit check** → `getUserCreditBalance()` reads user's tab
+3. **Request processed** → LLM generates response
+4. **Log transaction** → `logToGoogleSheets()` appends row to user's tab
+5. **Balance updated** → Next request recalculates from all rows
+
+### Current Queries
+
+**Balance Calculation** (`getUserCreditBalance`, Line ~1931):
+- Read all rows from user's tab
+- Sum: (credits purchased - costs incurred)
+- Currently reads EVERY transaction ever made
+
+**Transaction Logging** (`logToGoogleSheets`, Line ~1283):
+- Append single row to user's tab
+- Includes: timestamp, email, type, model, provider, tokens_in, tokens_out, cost, duration_ms, status
+
+---
+
+## Google Sheets Limits Research
+
+### Hard Limits (from Google Documentation)
+
+| Limit Type | Value | Impact |
+|------------|-------|--------|
+| **Tabs per workbook** | **200 tabs** | ❌ **CURRENT BLOCKER** - limits to 200 users per spreadsheet |
+| **Cells per workbook** | 10,000,000 cells | ⚠️ Potential future issue with unlimited retention |
+| **Columns per sheet** | 18,278 columns | ✅ Not a concern (we use ~13 columns) |
+| **Rows per sheet** | No explicit limit | ✅ Limited by cell count |
+| **Characters per cell** | 50,000 characters | ✅ Not a concern |
+| **Spreadsheet size** | No explicit limit | ⚠️ Performance degrades >5MB |
+
+**Source**: https://support.google.com/drive/answer/37603
+
+### API Quotas (from Google Sheets API Documentation)
+
+| Quota Type | Limit | Impact |
+|------------|-------|--------|
+| **Read requests** | 300/min per project | ⚠️ Could hit with >100 concurrent users |
+| **Read requests** | 60/min per user per project | ✅ Service account = 1 user |
+| **Write requests** | 300/min per project | ⚠️ Could hit with high traffic |
+| **Write requests** | 60/min per user per project | ✅ Service account = 1 user |
+| **Request timeout** | 180 seconds max | ⚠️ Large batch operations risky |
+| **Payload size** | 2 MB recommended max | ✅ Our rows are ~500 bytes |
+
+**Source**: https://developers.google.com/sheets/api/limits
+
+**Key Insight**: API quotas are **per project**, not per spreadsheet. Multiple spreadsheets share the same quota pool.
+
+### Cell Count Analysis
+
+**Current Usage (200 users, 1 year, unlimited retention)**:
+- Columns per user tab: 13 (timestamp, email, type, model, provider, tokens_in, tokens_out, cost, duration_ms, status, period_start, period_end, transaction_count)
+- Rows per user per day: ~10 requests/day (average user)
+- Rows per user per year: ~3,650 rows
+- Cells per user per year: 3,650 × 13 = **47,450 cells**
+- **Total cells (200 users)**: 200 × 47,450 = **9,490,000 cells**
+
+**Result**: Current architecture hits 10M cell limit after ~1 year with 200 active users.
+
+**With Summary Aggregation (90-day retention)**:
+- Recent transactions (90 days): 900 rows × 13 columns = 11,700 cells per user
+- Summary entries (historical): ~12 summaries/year × 13 columns = 156 cells per user
+- **Total per user**: 11,856 cells (75% reduction)
+- **Total (200 users)**: 200 × 11,856 = **2,371,200 cells** (76% reduction)
+- **Remaining capacity**: 7.6M cells for growth or longer retention
+
+---
+
+## Recommended Solution: Transaction Summary Aggregation
+
+### Strategy Overview
+
+Keep only the **most recent 90 days** of detailed transactions in each user's tab. Automatically aggregate older transactions into **summary entries** that preserve totals but discard individual transaction details.
+
+**Key Benefits**:
+- ✅ **Stays within limits**: 76% reduction in cell count
+- ✅ **Fast queries**: Fewer rows = faster balance calculations
+- ✅ **Zero cost**: No new infrastructure needed
+- ✅ **Simple**: No separate spreadsheets to manage
+- ✅ **Automatic**: Summarization triggered on balance checks
+- ✅ **Accurate**: Preserves exact totals (costs, tokens, durations)
+
+**What's Preserved in Summaries**:
+- ✅ Total cost (exact to the cent)
+- ✅ Total tokens in/out (exact counts)
+- ✅ Total duration (milliseconds)
+- ✅ Date range (period_start, period_end)
+- ✅ Transaction count (number aggregated)
+
+**What's Lost in Summaries**:
+- ❌ Individual transaction timestamps
+- ❌ Model-specific breakdown
+- ❌ Provider-specific breakdown
+- ❌ Individual transaction durations
+
+**Why This Works**:
+- Users only need accurate current balance (preserved ✅)
+- Recent activity (<90 days) available for analysis (preserved ✅)
+- Historical totals sufficient for accounting (preserved ✅)
+- Individual old transactions rarely needed (acceptable loss)
 
 ## Table of Contents
 

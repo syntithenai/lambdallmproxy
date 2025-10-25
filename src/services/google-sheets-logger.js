@@ -121,6 +121,58 @@ const PRICING = {
     'text-embedding-ada-002': { input: 0.10, output: 0 }
 };
 
+// Summarization configuration (hardcoded - no env vars needed)
+const ARCHIVE_AFTER_DAYS = 90;  // Days before summarizing transactions
+
+/**
+ * Get list of shard spreadsheet IDs
+ * Supports both old single ID and new comma-separated list
+ * 
+ * @returns {Array<string>} - Array of spreadsheet IDs
+ */
+function getShardSpreadsheetIds() {
+    // Try new format first (comma-separated list)
+    const newFormat = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_IDS;
+    if (newFormat) {
+        return newFormat.split(',').map(id => id.trim()).filter(id => id.length > 0);
+    }
+    
+    // Fallback to old format (single ID)
+    const oldFormat = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+    if (oldFormat) {
+        return [oldFormat];
+    }
+    
+    throw new Error('Missing GOOGLE_SHEETS_LOG_SPREADSHEET_IDS or GOOGLE_SHEETS_LOG_SPREADSHEET_ID');
+}
+
+/**
+ * Determine which shard a user belongs to
+ * Uses consistent hash to assign users to spreadsheets
+ * 
+ * @param {string} userEmail - User's email
+ * @returns {string} - Spreadsheet ID for this user's shard
+ */
+function getShardSpreadsheetId(userEmail) {
+    const shards = getShardSpreadsheetIds();
+    
+    if (shards.length === 1) {
+        // Single spreadsheet - no sharding
+        return shards[0];
+    }
+    
+    // Hash email to determine shard (consistent hashing)
+    const hash = userEmail.split('').reduce((sum, char) => {
+        return sum + char.charCodeAt(0);
+    }, 0);
+    
+    const shardIndex = hash % shards.length;
+    
+    console.log(`  📊 User ${userEmail} → Shard ${shardIndex + 1}/${shards.length}`);
+    
+    return shards[shardIndex];
+}
+
 /**
  * Calculate cost based on token usage or fixed cost (for image generation)
  * @param {string} model - Model name
@@ -1282,7 +1334,6 @@ async function appendToSheet(spreadsheetId, range, values, accessToken) {
  */
 async function logToGoogleSheets(logData) {
     // Check if Google Sheets logging is configured
-    const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
     const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
     const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
     
@@ -1290,12 +1341,16 @@ async function logToGoogleSheets(logData) {
     const userEmail = logData.userEmail || 'unknown';
     const sheetName = getUserSheetName(userEmail);
     
+    // ⚡ SHARDING: Get user-specific spreadsheet ID
+    const spreadsheetId = getShardSpreadsheetId(userEmail);
+    
     console.log('🔍 Google Sheets config check:', {
         hasSpreadsheetId: !!spreadsheetId,
         hasServiceAccountEmail: !!serviceAccountEmail,
         hasPrivateKey: !!privateKey,
         userEmail,
         sheetName,
+        shard: spreadsheetId ? spreadsheetId.substring(0, 8) + '...' : 'NONE',  // Show shard hint
         logDataType: logData.type,
         logDataModel: logData.model
     });
@@ -1374,49 +1429,44 @@ async function logToGoogleSheets(logData) {
         
         // Format duration
         const durationMs = logData.duration || logData.durationMs || 0;
-        const durationSeconds = (durationMs / 1000).toFixed(2);
         
-        // Get hostname (os.hostname() or 'lambda' if in AWS)
-        const os = require('os');
-        const hostname = logData.hostname || process.env.AWS_LAMBDA_FUNCTION_NAME || os.hostname() || 'unknown';
-        
-        // Prepare row data with Lambda metrics
+        // Prepare row data in NEW 14-COLUMN SCHEMA
+        // Old schema had: timestamp, email, provider, model, type, promptTokens, completionTokens, totalTokens, cost, duration, memoryLimitMB, memoryUsedMB, requestId, errorCode, errorMessage, hostname (16 columns)
+        // New schema has: timestamp, email, type, model, provider, tokensIn, tokensOut, cost, durationMs, status, periodStart, periodEnd, transactionCount, breakdownJson (14 columns)
         const rowData = [
-            logData.timestamp || new Date().toISOString(),
-            logData.userEmail || 'unknown',
-            logData.provider || 'unknown',
-            logData.model || 'unknown',
-            logData.type || 'chat',  // Type: chat, embedding, guardrail_input, guardrail_output, planning, lambda_invocation
-            logData.promptTokens || 0,
-            logData.completionTokens || 0,
-            logData.totalTokens || 0,
-            cost.toFixed(4),
-            durationSeconds,
-            logData.memoryLimitMB || '',      // Lambda memory limit
-            logData.memoryUsedMB || '',       // Lambda memory used
-            logData.requestId || '',          // Lambda request ID
-            logData.errorCode || '',
-            logData.errorMessage || '',
-            hostname                          // Server hostname
+            logData.timestamp || new Date().toISOString(),  // A: timestamp
+            logData.userEmail || 'unknown',                 // B: email
+            logData.type || 'chat',                         // C: type (chat, embedding, credit_added, summary, etc.)
+            logData.model || 'unknown',                     // D: model
+            logData.provider || 'unknown',                  // E: provider
+            logData.promptTokens || 0,                      // F: tokensIn
+            logData.completionTokens || 0,                  // G: tokensOut
+            cost.toFixed(4),                                // H: cost
+            durationMs.toString(),                          // I: durationMs
+            logData.errorCode ? 'ERROR' : 'SUCCESS',        // J: status
+            '',                                             // K: periodStart (empty for regular transactions)
+            '',                                             // L: periodEnd (empty for regular transactions)
+            '',                                             // M: transactionCount (empty for regular transactions)
+            ''                                              // N: breakdownJson (empty for regular transactions)
         ];
         
         console.log('📤 Appending row to user sheet...');
         console.log(`   User: ${userEmail}`);
         console.log(`   Sheet: ${sheetName}`);
-        console.log('   Range:', `${sheetName}!A:P`);
+        console.log('   Range:', `${sheetName}!A:N`);  // ⚡ SCHEMA UPDATE: Now using 14 columns (A-N)
         console.log('   Data preview:', {
             timestamp: rowData[0],
             email: rowData[1],
-            provider: rowData[2],
+            type: rowData[2],
             model: rowData[3],
-            type: rowData[4],
-            cost: rowData[8]
+            provider: rowData[4],
+            cost: rowData[7]
         });
         
-        // Append to user-specific sheet (now includes Type + Lambda metrics + Hostname)
+        // Append to user-specific sheet (now 14 columns)
         try {
-            await appendToSheet(spreadsheetId, `${sheetName}!A:P`, rowData, accessToken);
-            console.log(`✅ Logged to Google Sheets [${sheetName}]: ${logData.model} (${logData.totalTokens} tokens, $${cost.toFixed(4)})`);
+            await appendToSheet(spreadsheetId, `${sheetName}!A:N`, rowData, accessToken);
+            console.log(`✅ Logged to Google Sheets [${sheetName}]: ${logData.model} (${logData.promptTokens + logData.completionTokens} tokens, $${cost.toFixed(4)})`);
         } catch (appendError) {
             console.error('❌ Append to sheet error:', appendError.message);
             console.error('   Stack:', appendError.stack);
@@ -1459,28 +1509,27 @@ async function initializeSheet() {
         await ensureSheetExists(spreadsheetId, sheetName, accessToken);
         
         // Add headers (including Type, Lambda metrics)
+        // ⚡ NEW 14-COLUMN SCHEMA (reduced from 16 columns)
         const headers = [
-            'Timestamp',
-            'User Email',
-            'Provider',
-            'Model',
-            'Type',  // chat, embedding, guardrail_input, guardrail_output, planning, lambda_invocation
-            'Tokens In',
-            'Tokens Out',
-            'Total Tokens',
-            'Cost ($)',
-            'Duration (s)',
-            'Memory Limit (MB)',  // Lambda memory configuration
-            'Memory Used (MB)',   // Lambda memory consumption
-            'Request ID',         // Lambda request ID for debugging
-            'Error Code',
-            'Error Message',
-            'Hostname'            // Server hostname (lambda function name or local hostname)
+            'Timestamp',           // A - ISO timestamp
+            'Email',               // B - User email
+            'Type',                // C - chat, embedding, credit_added, summary, etc.
+            'Model',               // D - Model name
+            'Provider',            // E - Provider name
+            'Tokens In',           // F - Input tokens
+            'Tokens Out',          // G - Output tokens
+            'Cost ($)',            // H - Transaction cost
+            'Duration (ms)',       // I - Duration in milliseconds
+            'Status',              // J - SUCCESS, ERROR, ARCHIVED
+            'Period Start',        // K - Summary period start (for summaries only)
+            'Period End',          // L - Summary period end (for summaries only)
+            'Transaction Count',   // M - Number of transactions in summary (for summaries only)
+            'Breakdown JSON'       // N - Provider/model breakdown for summaries (JSON string)
         ];
         
-        await appendToSheet(spreadsheetId, `${sheetName}!A1:P1`, headers, accessToken);
+        await appendToSheet(spreadsheetId, `${sheetName}!A1:N1`, headers, accessToken);
         
-        console.log('✅ Google Sheets initialized with headers');
+        console.log('✅ Google Sheets initialized with 14-column headers');
     } catch (error) {
         console.error('❌ Failed to initialize Google Sheets:', error.message);
     }
@@ -1922,6 +1971,381 @@ async function logLambdaInvocation(logData) {
 }
 
 /**
+ * Get all rows from a sheet (for reading transactions)
+ * 
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} sheetName - Sheet/tab name
+ * @param {string} accessToken - Google API access token
+ * @returns {Promise<Array>} - Array of row objects
+ */
+async function getSheetRows(spreadsheetId, sheetName, accessToken) {
+    const range = `${sheetName}!A:N`;  // All columns (A-N, 14 columns)
+    
+    const response = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+        {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        }
+    );
+    
+    if (!response.ok) {
+        console.error(`❌ Failed to read sheet: ${await response.text()}`);
+        return [];
+    }
+    
+    const data = await response.json();
+    const rows = data.values || [];
+    
+    // Skip header row and parse into objects
+    return rows.slice(1).map((row, index) => ({
+        rowIndex: index + 2, // +2 because: 1-indexed, skipped header
+        timestamp: row[0],
+        email: row[1],
+        type: row[2],
+        model: row[3],
+        provider: row[4],
+        tokensIn: row[5],
+        tokensOut: row[6],
+        cost: row[7],
+        durationMs: row[8],
+        status: row[9],
+        periodStart: row[10],
+        periodEnd: row[11],
+        transactionCount: row[12],
+        breakdownJson: row[13]  // NEW: JSON breakdown for summary entries
+    }));
+}
+
+/**
+ * Delete specific rows from a sheet
+ * Deletes from bottom up to avoid index shifting issues
+ * 
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} sheetName - Sheet/tab name
+ * @param {Array} rowsToDelete - Array of row objects with rowIndex property
+ * @param {string} accessToken - Google API access token
+ */
+async function deleteRowsFromSheet(spreadsheetId, sheetName, rowsToDelete, accessToken) {
+    if (!rowsToDelete || rowsToDelete.length === 0) {
+        return;
+    }
+    
+    // Get sheet ID (needed for batch update)
+    const metaResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`,
+        {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        }
+    );
+    
+    const metadata = await metaResponse.json();
+    const sheet = metadata.sheets.find(s => s.properties.title === sheetName);
+    
+    if (!sheet) {
+        console.error(`❌ Sheet "${sheetName}" not found in ${spreadsheetId}`);
+        return;
+    }
+    
+    const sheetId = sheet.properties.sheetId;
+    
+    // Sort row indices descending (delete from bottom up)
+    const rowIndices = rowsToDelete
+        .map(row => row.rowIndex)
+        .filter(idx => idx !== undefined)
+        .sort((a, b) => b - a); // Descending order
+    
+    // Batch delete in chunks of 100 (API limit)
+    for (let i = 0; i < rowIndices.length; i += 100) {
+        const chunk = rowIndices.slice(i, i + 100);
+        
+        const requests = chunk.map(rowIndex => ({
+            deleteDimension: {
+                range: {
+                    sheetId: sheetId,
+                    dimension: 'ROWS',
+                    startIndex: rowIndex - 1,  // 0-indexed for API
+                    endIndex: rowIndex         // Exclusive end
+                }
+            }
+        }));
+        
+        const deleteResponse = await fetch(
+            `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ requests })
+            }
+        );
+        
+        if (!deleteResponse.ok) {
+            console.error(`❌ Failed to delete rows: ${await deleteResponse.text()}`);
+        }
+    }
+}
+
+/**
+ * Sort sheet by timestamp column (chronological order)
+ * 
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} sheetName - Sheet/tab name
+ * @param {string} accessToken - Google API access token
+ */
+async function sortSheetByTimestamp(spreadsheetId, sheetName, accessToken) {
+    // Get sheet ID
+    const metaResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`,
+        {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        }
+    );
+    
+    const metadata = await metaResponse.json();
+    const sheet = metadata.sheets.find(s => s.properties.title === sheetName);
+    
+    if (!sheet) {
+        console.error(`❌ Sheet "${sheetName}" not found`);
+        return;
+    }
+    
+    const sheetId = sheet.properties.sheetId;
+    
+    // Sort request (column 0 = timestamp, ascending)
+    const sortResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                requests: [{
+                    sortRange: {
+                        range: {
+                            sheetId: sheetId,
+                            startRowIndex: 1  // Skip header row
+                        },
+                        sortSpecs: [{
+                            dimensionIndex: 0,  // Column A (timestamp)
+                            sortOrder: 'ASCENDING'
+                        }]
+                    }
+                }]
+            })
+        }
+    );
+    
+    if (!sortResponse.ok) {
+        console.error(`❌ Failed to sort sheet: ${await sortResponse.text()}`);
+    }
+}
+
+/**
+ * Append summary entry to user's sheet
+ * 
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} sheetName - Sheet/tab name
+ * @param {Object} summary - Summary object
+ * @param {string} accessToken - Google API access token
+ */
+async function appendSummaryToSheet(spreadsheetId, sheetName, summary, accessToken) {
+    const row = [
+        summary.timestamp,
+        summary.email,
+        summary.type,
+        summary.model,
+        summary.provider,
+        summary.tokensIn,
+        summary.tokensOut,
+        summary.cost,
+        summary.durationMs,
+        summary.status,
+        summary.periodStart,
+        summary.periodEnd,
+        summary.transactionCount,
+        summary.breakdownJson  // NEW: JSON string with provider/model breakdowns
+    ];
+    
+    const range = `${sheetName}!A:N`;  // 14 columns (A-N)
+    
+    const response = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                values: [row]
+            })
+        }
+    );
+    
+    if (!response.ok) {
+        throw new Error(`Failed to append summary: ${await response.text()}`);
+    }
+}
+
+/**
+ * Check if user has old transactions that need summarization
+ * Called during balance check to trigger on-demand summarization
+ * 
+ * @param {string} userEmail - User's email address
+ * @param {string} spreadsheetId - Active spreadsheet ID
+ * @param {string} accessToken - Google API access token
+ * @returns {Promise<boolean>} - True if summarization was performed
+ */
+async function summarizeOldTransactionsIfNeeded(userEmail, spreadsheetId, accessToken) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - ARCHIVE_AFTER_DAYS);
+    
+    console.log(`🔍 Checking summarization need for ${userEmail} (cutoff: ${cutoffDate.toISOString()})`);
+    
+    const sheetName = getUserSheetName(userEmail);
+    const rows = await getSheetRows(spreadsheetId, sheetName, accessToken);
+    
+    if (!rows || rows.length === 0) {
+        console.log(`  ✓ No transactions for ${userEmail}`);
+        return false;
+    }
+    
+    // Find regular transactions (not summaries) older than cutoff
+    const oldTransactions = rows.filter(row => {
+        if (!row.timestamp) return false;
+        if (row.type === 'summary') return false;  // Skip existing summaries
+        const timestamp = new Date(row.timestamp);
+        return timestamp < cutoffDate;
+    });
+    
+    if (oldTransactions.length === 0) {
+        console.log(`  ✓ No old transactions to summarize for ${userEmail}`);
+        return false;
+    }
+    
+    console.log(`📊 Summarizing ${oldTransactions.length} transactions for ${userEmail}`);
+    
+    // Find existing summary entries to merge
+    const existingSummaries = rows.filter(row => row.type === 'summary');
+    
+    // Aggregate ALL old transactions AND existing summaries
+    const allToAggregate = [...oldTransactions, ...existingSummaries];
+    
+    // Build provider and model breakdowns
+    const byProvider = {};
+    const byModel = {};
+    
+    for (const row of allToAggregate) {
+        // For regular transactions, add to breakdown
+        if (row.type !== 'summary') {
+            const provider = row.provider || 'unknown';
+            const model = row.model || 'unknown';
+            const tokensIn = parseInt(row.tokensIn) || 0;
+            const tokensOut = parseInt(row.tokensOut) || 0;
+            const cost = parseFloat(row.cost) || 0;
+            
+            // Aggregate by provider
+            if (!byProvider[provider]) {
+                byProvider[provider] = { cost: 0, tokensIn: 0, tokensOut: 0, count: 0 };
+            }
+            byProvider[provider].cost += cost;
+            byProvider[provider].tokensIn += tokensIn;
+            byProvider[provider].tokensOut += tokensOut;
+            byProvider[provider].count += 1;
+            
+            // Aggregate by model
+            if (!byModel[model]) {
+                byModel[model] = { cost: 0, tokensIn: 0, tokensOut: 0, count: 0, provider };
+            }
+            byModel[model].cost += cost;
+            byModel[model].tokensIn += tokensIn;
+            byModel[model].tokensOut += tokensOut;
+            byModel[model].count += 1;
+        } else {
+            // For existing summaries, merge their breakdowns
+            try {
+                const breakdown = JSON.parse(row.breakdownJson || '{}');
+                
+                // Merge provider breakdown
+                if (breakdown.byProvider) {
+                    for (const [provider, stats] of Object.entries(breakdown.byProvider)) {
+                        if (!byProvider[provider]) {
+                            byProvider[provider] = { cost: 0, tokensIn: 0, tokensOut: 0, count: 0 };
+                        }
+                        byProvider[provider].cost += stats.cost || 0;
+                        byProvider[provider].tokensIn += stats.tokensIn || 0;
+                        byProvider[provider].tokensOut += stats.tokensOut || 0;
+                        byProvider[provider].count += stats.count || 0;
+                    }
+                }
+                
+                // Merge model breakdown
+                if (breakdown.byModel) {
+                    for (const [model, stats] of Object.entries(breakdown.byModel)) {
+                        if (!byModel[model]) {
+                            byModel[model] = { 
+                                cost: 0, 
+                                tokensIn: 0, 
+                                tokensOut: 0, 
+                                count: 0, 
+                                provider: stats.provider || 'unknown' 
+                            };
+                        }
+                        byModel[model].cost += stats.cost || 0;
+                        byModel[model].tokensIn += stats.tokensIn || 0;
+                        byModel[model].tokensOut += stats.tokensOut || 0;
+                        byModel[model].count += stats.count || 0;
+                    }
+                }
+            } catch (e) {
+                console.warn(`  ⚠️  Failed to parse breakdown JSON for existing summary: ${e.message}`);
+            }
+        }
+    }
+    
+    const summary = {
+        timestamp: new Date(Math.max(...allToAggregate.map(r => new Date(r.timestamp || r.periodEnd)))).toISOString(),
+        email: userEmail,
+        type: 'summary',
+        model: 'AGGREGATED',
+        provider: 'AGGREGATED',
+        tokensIn: allToAggregate.reduce((sum, r) => sum + (parseInt(r.tokensIn) || 0), 0),
+        tokensOut: allToAggregate.reduce((sum, r) => sum + (parseInt(r.tokensOut) || 0), 0),
+        cost: allToAggregate.reduce((sum, r) => sum + (parseFloat(r.cost) || 0), 0),
+        durationMs: allToAggregate.reduce((sum, r) => sum + (parseInt(r.durationMs) || 0), 0),
+        status: 'ARCHIVED',
+        periodStart: new Date(Math.min(...allToAggregate.map(r => new Date(r.timestamp || r.periodStart)))).toISOString(),
+        periodEnd: new Date(Math.max(...allToAggregate.map(r => new Date(r.timestamp || r.periodEnd)))).toISOString(),
+        transactionCount: allToAggregate.reduce((sum, r) => sum + (parseInt(r.transactionCount) || 1), 0),
+        breakdownJson: JSON.stringify({ byProvider, byModel })
+    };
+    
+    console.log(`  📊 Summary: ${summary.transactionCount} transactions, ${summary.tokensIn + summary.tokensOut} tokens, $${summary.cost.toFixed(4)}`);
+    console.log(`  📊 Breakdown: ${Object.keys(byProvider).length} providers, ${Object.keys(byModel).length} models`);
+    
+    // Delete old rows (both transactions and old summaries)
+    await deleteRowsFromSheet(spreadsheetId, sheetName, allToAggregate, accessToken);
+    console.log(`  ✅ Deleted ${allToAggregate.length} old rows from sheet`);
+    
+    // Append new summary entry
+    await appendSummaryToSheet(spreadsheetId, sheetName, summary, accessToken);
+    console.log(`  📊 Added summary entry for period ${summary.periodStart} to ${summary.periodEnd}`);
+    
+    // Sort sheet by timestamp (chronological order)
+    await sortSheetByTimestamp(spreadsheetId, sheetName, accessToken);
+    console.log(`  ✅ Sheet sorted chronologically`);
+    
+    return true;
+}
+
+/**
  * Get user's current credit balance from billing sheet
  * ✅ CREDIT SYSTEM: Calculate balance from all transactions
  * 
@@ -1930,7 +2354,7 @@ async function logLambdaInvocation(logData) {
  */
 async function getUserCreditBalance(userEmail) {
     try {
-        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+        const spreadsheetId = getShardSpreadsheetId(userEmail);  // ⚡ SHARDING: User-specific spreadsheet
         const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
         const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
         
@@ -1945,11 +2369,14 @@ async function getUserCreditBalance(userEmail) {
         // Get OAuth access token
         const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
         
+        // ⚡ SUMMARIZATION: Trigger on-demand summarization before balance calculation
+        await summarizeOldTransactionsIfNeeded(userEmail, spreadsheetId, accessToken);
+        
         // Get user sheet name
         const sheetName = getUserSheetName(userEmail);
         
-        // Get all data from user's sheet
-        const range = `${sheetName}!A:P`;
+        // Get all data from user's sheet (now reads 14 columns including breakdown_json)
+        const range = `${sheetName}!A:N`;  // ⚡ SCHEMA UPDATE: Now using 14 columns (A-N)
         const data = await getSheetData(spreadsheetId, range, accessToken);
         
         // ✅ CREDIT SYSTEM: Check if user has any credit_added entries
@@ -1958,7 +2385,7 @@ async function getUserCreditBalance(userEmail) {
             // Check if any transaction is a credit_added type
             for (let i = 1; i < data.values.length; i++) {
                 const row = data.values[i];
-                const type = row[4]; // Type column (index 4)
+                const type = row[2]; // ⚡ SCHEMA UPDATE: Type is now column index 2 (was 4 in old schema)
                 if (type === 'credit_added') {
                     hasWelcomeCredit = true;
                     break;
@@ -1973,26 +2400,24 @@ async function getUserCreditBalance(userEmail) {
             
             try {
                 const welcomeCreditRow = [
-                    new Date().toISOString(),          // timestamp
-                    userEmail,                         // email
-                    'system',                          // provider
-                    'welcome_credit',                  // model
-                    'credit_added',                    // type
-                    0,                                 // promptTokens
-                    0,                                 // completionTokens
-                    0,                                 // totalTokens
-                    '-0.50',                           // cost (negative = credit)
-                    '0.00',                            // duration
-                    '',                                // memoryLimitMB
-                    '',                                // memoryUsedMB
-                    '',                                // requestId
-                    '',                                // errorCode
-                    '',                                // errorMessage
-                    'credit-system'                    // hostname
+                    new Date().toISOString(),          // timestamp (A)
+                    userEmail,                         // email (B)
+                    'credit_added',                    // type (C) ⚡ NEW SCHEMA
+                    'welcome_credit',                  // model (D)
+                    'system',                          // provider (E)
+                    0,                                 // tokensIn (F)
+                    0,                                 // tokensOut (G)
+                    '-0.50',                           // cost (H) - negative = credit
+                    '0',                               // durationMs (I)
+                    'SUCCESS',                         // status (J)
+                    '',                                // periodStart (K) - empty for regular transaction
+                    '',                                // periodEnd (L) - empty for regular transaction
+                    '',                                // transactionCount (M) - empty for regular transaction
+                    ''                                 // breakdownJson (N) - empty for regular transaction
                 ];
                 
-                // Append welcome credit to sheet
-                await appendToSheet(spreadsheetId, `${sheetName}!A:P`, welcomeCreditRow, accessToken);
+                // Append welcome credit to sheet (14 columns)
+                await appendToSheet(spreadsheetId, `${sheetName}!A:N`, welcomeCreditRow, accessToken);
                 console.log(`✅ Added $0.50 welcome credit to ${userEmail}`);
                 
                 // Return the welcome credit balance
@@ -2005,16 +2430,19 @@ async function getUserCreditBalance(userEmail) {
             }
         }
         
-        // Existing user - calculate balance from transactions
+        // Existing user - calculate balance from transactions (including summaries)
         let balance = 0;
         for (let i = 1; i < data.values.length; i++) {
             const row = data.values[i];
-            const type = row[4]; // Type column (index 4)
-            const cost = parseFloat(row[8] || 0); // Cost column (index 8)
+            const type = row[2]; // ⚡ SCHEMA UPDATE: Type is now column index 2 (was 4)
+            const cost = parseFloat(row[7] || 0); // ⚡ SCHEMA UPDATE: Cost is now column index 7 (was 8)
             
             if (type === 'credit_added') {
                 // Credits are stored as negative costs, so we add the absolute value
                 balance += Math.abs(cost);
+            } else if (type === 'summary') {
+                // ⚡ SUMMARIZATION: Summary entries count as regular costs
+                balance -= cost;
             } else {
                 // Regular usage costs
                 balance -= cost;
