@@ -52,7 +52,7 @@ export function HelpPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl">
           {activeTab === 'features' && <FeaturesContent />}
           {activeTab === 'planning' && <PlanningContent />}
           {activeTab === 'tools' && <ToolsContent />}
