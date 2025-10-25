@@ -372,6 +372,27 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         }
         
         // PayPal endpoints (buffered responses)
+        if (path === '/paypal/create-order' || path === '/paypal/capture-order') {
+            // Handle CORS preflight for PayPal endpoints
+            if (method === 'OPTIONS') {
+                console.log('Handling CORS preflight for PayPal endpoint');
+                const origin = event.headers?.origin || event.headers?.Origin || '*';
+                const metadata = {
+                    statusCode: 200,
+                    headers: {
+                        'Access-Control-Allow-Origin': origin,
+                        'Access-Control-Allow-Credentials': 'true',
+                        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                    }
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(JSON.stringify({ message: 'CORS preflight OK' }));
+                responseStream.end();
+                return;
+            }
+        }
+        
         if (method === 'POST' && path === '/paypal/create-order') {
             console.log('Routing to PayPal create-order endpoint');
             const paypalResponse = await handleCreateOrder(event);

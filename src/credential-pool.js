@@ -211,7 +211,8 @@ function buildProviderPool(userProviders = [], isAuthorized = false) {
             expanded.forEach(ep => {
                 pool.push({
                     ...ep,
-                    source: 'user'
+                    source: 'user',
+                    isServerSideKey: false // User-provided keys are NOT server-side
                 });
             });
         });
@@ -225,7 +226,12 @@ function buildProviderPool(userProviders = [], isAuthorized = false) {
         // Expand environment providers too
         envProviders.forEach(p => {
             const expanded = expandProviderForLoadBalancing(p);
-            expanded.forEach(ep => pool.push(ep));
+            expanded.forEach(ep => {
+                pool.push({
+                    ...ep,
+                    isServerSideKey: true // Environment providers ARE server-side
+                });
+            });
         });
         console.log(`🔓 User authorized: added ${envProviders.length} environment provider(s)`);
     } else {

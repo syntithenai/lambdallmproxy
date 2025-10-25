@@ -123,11 +123,14 @@ const isLocalDevelopment = () => {
 };
 
 // Calculate cost, but return 0 if running locally
-const calculateCostSafe = (model, promptTokens, completionTokens) => {
+// ✅ PRICING SYSTEM: Pass isUserProvidedKey flag to apply surcharge only for server keys
+const calculateCostSafe = (model, promptTokens, completionTokens, provider = null) => {
     if (isLocalDevelopment()) {
         return 0;
     }
-    return calculateCost(model, promptTokens, completionTokens);
+    // Determine if this is a user-provided key (no surcharge) or server key (surcharge applies)
+    const isUserProvidedKey = provider ? !provider.isServerSideKey : false;
+    return calculateCost(model, promptTokens, completionTokens, null, isUserProvidedKey);
 };
 
 /**
@@ -1401,7 +1404,8 @@ async function handler(event, responseStream, context) {
                             const cost = calculateCostSafe(
                                 inputValidation.tracking.model,
                                 promptTokens,
-                                completionTokens
+                                completionTokens,
+                                inputValidation.tracking.providerObj || null // Pass provider object if available
                             );
                             
                             await logToBothSheets(driveAccessToken, {
@@ -3281,7 +3285,7 @@ async function handler(event, responseStream, context) {
                         httpHeaders: evaluation.httpHeaders || {},
                         httpStatus: evaluation.httpStatus || 200,
                         timestamp: new Date().toISOString(),
-                        cost: evaluation.usage ? calculateCostSafe(model, evaluation.usage.prompt_tokens || 0, evaluation.usage.completion_tokens || 0) : 0,
+                        cost: evaluation.usage ? calculateCostSafe(model, evaluation.usage.prompt_tokens || 0, evaluation.usage.completion_tokens || 0, selectedProvider) : 0,
                         durationMs: evaluation.rawResponse?.durationMs || 0
                     };
                     allLlmApiCalls.push(evalLlmCall);
@@ -3512,7 +3516,8 @@ async function handler(event, responseStream, context) {
                         const cost = calculateCostSafe(
                             outputValidation.tracking.model,
                             promptTokens,
-                            completionTokens
+                            completionTokens,
+                            outputValidation.tracking.providerObj || null // Pass provider object if available
                         );
                         
                         await logToBothSheets(driveAccessToken, {
@@ -3757,7 +3762,7 @@ async function handler(event, responseStream, context) {
                         httpHeaders: evaluation.httpHeaders || {},
                         httpStatus: evaluation.httpStatus || 200,
                         timestamp: new Date().toISOString(),
-                        cost: evaluation.usage ? calculateCostSafe(model, evaluation.usage.prompt_tokens || 0, evaluation.usage.completion_tokens || 0) : 0,
+                        cost: evaluation.usage ? calculateCostSafe(model, evaluation.usage.prompt_tokens || 0, evaluation.usage.completion_tokens || 0, selectedProvider) : 0,
                         durationMs: evaluation.rawResponse?.durationMs || 0
                     };
                     allLlmApiCalls.push(evalLlmCall);
@@ -3814,7 +3819,8 @@ async function handler(event, responseStream, context) {
                     const cost = calculateCostSafe(
                         apiCall.model,
                         usage.prompt_tokens || 0,
-                        usage.completion_tokens || 0
+                        usage.completion_tokens || 0,
+                        selectedProvider
                     );
                     finalRequestCost += cost;
                 }
@@ -3828,7 +3834,8 @@ async function handler(event, responseStream, context) {
                     const cost = calculateCostSafe(
                         apiCall.model,
                         usage.prompt_tokens || 0,
-                        usage.completion_tokens || 0
+                        usage.completion_tokens || 0,
+                        selectedProvider
                     );
                     
                     try {

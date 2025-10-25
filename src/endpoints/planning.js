@@ -847,7 +847,8 @@ async function handler(event, responseStream, context) {
                     model: provider.modelName || provider.model,
                     rateLimit: provider.rateLimitTPM || provider.rateLimit,
                     allowedModels: provider.allowedModels,
-                    imageMaxQuality: provider.imageMaxQuality
+                    imageMaxQuality: provider.imageMaxQuality,
+                    isServerSideKey: provider.isServerSideKey // Preserve for cost calculation
                 };
                 console.log(`✅ Added provider: ${provider.type}, hasKey: ${!!provider.apiKey}, keyPreview: ${provider.apiKey?.substring(0, 10)}...`);
             }
@@ -962,7 +963,9 @@ async function handler(event, responseStream, context) {
         const durationMs = Date.now() - startTime;
         
         // Log the planning request with actual token counts and selected model
-        const cost = calculateCost(selectedModel.name, tokenUsage.promptTokens, tokenUsage.completionTokens);
+        const providerInfo = runtimeCatalog.providers[selectedModel.providerType];
+        const isUserProvidedKey = providerInfo ? !providerInfo.isServerSideKey : false;
+        const cost = calculateCost(selectedModel.name, tokenUsage.promptTokens, tokenUsage.completionTokens, null, isUserProvidedKey);
         logToBothSheets(googleToken, {
             timestamp: new Date().toISOString(),
             userEmail: userEmail,

@@ -22,6 +22,18 @@ async function checkCreditBalance(userEmail, estimatedCost = 0.01, operationType
         // Get current balance (from cache)
         const balance = await getCachedCreditBalance(userEmail);
         
+        // ✅ FAIL-SAFE: If balance is -1, it means the credit check failed (Google Sheets error)
+        // Allow the request to proceed rather than blocking the user
+        if (balance === -1) {
+            console.warn(`⚠️ FAIL-SAFE: Credit check failed for ${userEmail}, allowing ${operationType} to proceed`);
+            console.warn(`   This request will still be logged and charged once Google Sheets is accessible again`);
+            return {
+                allowed: true,
+                balance: 0,
+                warning: 'Credit check temporarily unavailable - request allowed as fail-safe'
+            };
+        }
+        
         // Check if sufficient
         if (balance < estimatedCost) {
             console.log(`❌ Insufficient credit for ${operationType}: ${userEmail} has $${balance.toFixed(4)}, needs $${estimatedCost.toFixed(4)}`);

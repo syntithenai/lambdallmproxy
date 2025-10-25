@@ -308,6 +308,9 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
         
         const { provider: embeddingProvider, model: embeddingModel, apiKey, providerConfig } = embeddingSelection;
         
+        // Extract isServerSideKey flag for cost calculation
+        const isUserProvidedKey = !embeddingSelection.isServerSideKey;
+        
         const results = [];
         const startTime = Date.now();
         
@@ -373,7 +376,7 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                 // Log embedding generation to Google Sheets
                 try {
                     const totalTokens = embeddingResults.reduce((sum, result) => sum + (result.tokens || 0), 0);
-                    const totalCost = calculateCost(embeddingModel, totalTokens, 0); // Embeddings have 0 output tokens
+                    const totalCost = calculateCost(embeddingModel, totalTokens, 0, null, isUserProvidedKey); // Embeddings have 0 output tokens
                     const duration = Date.now() - startTime;
                     
                     await logToBothSheets(googleToken, {
@@ -701,7 +704,7 @@ async function handleEmbedQuery(event, body, responseStream) {
         
         // Log to Google Sheets
         try {
-            const totalCost = calculateCost('text-embedding-3-small', result.tokens || 0, 0);
+            const totalCost = calculateCost('text-embedding-3-small', result.tokens || 0, 0, null, false); // Server-side OpenAI key
             
             await logToBothSheets(googleToken, {
                 userEmail,

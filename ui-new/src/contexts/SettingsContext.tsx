@@ -29,8 +29,8 @@ function migrateSettings(oldSettings: any): Settings {
   const migratedProviders: ProviderConfig[] = [];
 
   if (oldSettings.provider && oldSettings.llmApiKey) {
-    // Determine provider type - assume Groq was free tier by default
-    const providerType = oldSettings.provider === 'groq' ? 'groq-free' : 'openai';
+    // Determine provider type - map old groq to new groq type
+    const providerType = oldSettings.provider === 'groq' ? 'groq' : 'openai';
     
     migratedProviders.push({
       id: crypto.randomUUID(),

@@ -522,40 +522,68 @@ function PricingContent() {
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📊 Cost Structure</h3>
         <div className="space-y-3">
-          <div className="border dark:border-gray-700 rounded-lg p-4">
-            <h4 className="font-semibold mb-2">LLM API Costs</h4>
+          <div className="border-2 border-green-500 dark:border-green-600 rounded-lg p-4 bg-green-50 dark:bg-green-900/20">
+            <h4 className="font-semibold mb-2 text-green-800 dark:text-green-200">✨ Your Own API Keys: $0 LLM Cost!</h4>
             <p className="text-sm text-gray-700 dark:text-gray-300">
-              <strong>Pass-through pricing:</strong> You pay exactly what the provider charges. No markup on LLM API calls.
+              <strong>Bring your own API keys</strong> and pay <strong>ZERO</strong> for LLM operations! 
+              You pay the provider directly, we don't charge any markup.
             </p>
             <ul className="list-disc pl-6 mt-2 text-sm space-y-1">
-              <li>OpenAI GPT-4: ~$0.01-0.03 per 1K tokens</li>
-              <li>Gemini Pro: ~$0.00035 per 1K tokens (free tier available)</li>
-              <li>Groq: Free tier available, very fast</li>
+              <li><strong>Add providers</strong> in Settings with your own API keys (OpenAI, Groq, Gemini, etc.)</li>
+              <li><strong>$0 LLM cost</strong> - no surcharge when using your keys</li>
+              <li><strong>Only pay infrastructure costs</strong> (Lambda, 4x markup on server fees)</li>
+              <li><strong>Full control</strong> over which models and providers you use</li>
             </ul>
+            <div className="bg-white dark:bg-gray-800 p-3 rounded text-sm font-mono mt-3">
+              <div className="text-green-600 dark:text-green-400 font-bold">Your API Key Example:</div>
+              <div>LLM API:        $0.0000 (YOU pay provider directly)</div>
+              <div>Lambda fees:    $0.0001 (AWS charge)</div>
+              <div className="border-t dark:border-gray-600 mt-2 pt-2">
+              Infrastructure: $0.0004 (4x markup)
+              </div>
+              <div className="font-bold mt-2 text-green-600 dark:text-green-400">
+              Total:          $0.0004 ✨ (99.6% savings!)
+              </div>
+            </div>
           </div>
 
           <div className="border dark:border-gray-700 rounded-lg p-4">
-            <h4 className="font-semibold mb-2">Infrastructure Costs</h4>
+            <h4 className="font-semibold mb-2">Server-Side API Keys: 25% Surcharge</h4>
             <p className="text-sm text-gray-700 dark:text-gray-300">
-              <strong>4x profit margin</strong> on Lambda/server costs to maintain the service.
+              When using server-provided API keys (configured by admin), a <strong>25% surcharge</strong> is applied 
+              to cover API costs and service maintenance.
             </p>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-              Example: If a request costs $0.0001 in Lambda fees, you're charged $0.0004 ($0.0003 markup).
+            <ul className="list-disc pl-6 mt-2 text-sm space-y-1">
+              <li>OpenAI GPT-4: ~$0.01-0.03 per 1K tokens <span className="text-red-600 dark:text-red-400">+ 25% surcharge</span></li>
+              <li>Gemini Pro: ~$0.00035 per 1K tokens <span className="text-red-600 dark:text-red-400">+ 25% surcharge</span></li>
+              <li>Groq: Paid tier rates <span className="text-red-600 dark:text-red-400">+ 25% surcharge</span></li>
+            </ul>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Note: All pricing uses paid tier rates, even if server uses free tier API keys.
             </p>
-          </div>
-
-          <div className="border dark:border-gray-700 rounded-lg p-4">
-            <h4 className="font-semibold mb-2">Total Cost Example</h4>
-            <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded text-sm font-mono">
-              <div>LLM API:        $0.1000 (OpenAI charge)</div>
+            <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded text-sm font-mono mt-3">
+              <div className="text-gray-600 dark:text-gray-400">Server API Key Example:</div>
+              <div>LLM base cost:  $0.1000 (Provider charge)</div>
+              <div className="text-red-600 dark:text-red-400">LLM surcharge:  $0.0250 (25% markup)</div>
               <div>Lambda fees:    $0.0001 (AWS charge)</div>
               <div className="border-t dark:border-gray-600 mt-2 pt-2">
               Infrastructure: $0.0004 (4x markup)
               </div>
               <div className="font-bold mt-2 text-blue-600 dark:text-blue-400">
-              Total:          $0.1004
+              Total:          $0.1255
               </div>
             </div>
+          </div>
+
+          <div className="border dark:border-gray-700 rounded-lg p-4">
+            <h4 className="font-semibold mb-2">Infrastructure Costs (Always Apply)</h4>
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              <strong>4x profit margin</strong> on Lambda/server costs to maintain the service.
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+              This covers AWS Lambda execution, storage, networking, and operational overhead.
+              Applied regardless of whether you use your own or server-side API keys.
+            </p>
           </div>
         </div>
       </section>
@@ -574,11 +602,13 @@ function PricingContent() {
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💡 Cost Optimization Tips</h3>
         <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
           <ul className="list-disc pl-6 space-y-2">
-            <li>Use <strong>Groq free tier</strong> for fast, free inference</li>
+            <li><strong>🎯 Best Savings:</strong> Add your own API keys in Settings - pay $0 for LLM costs!</li>
+            <li>Use <strong>free tier providers</strong> (Groq, Gemini) with your own keys</li>
             <li>Choose <strong>smaller models</strong> (GPT-4o-mini, Gemini Flash) for simple tasks</li>
             <li>Enable only <strong>necessary tools</strong> to reduce API calls</li>
             <li>Use <strong>planning mode</strong> strategically for complex queries only</li>
-            <li>Disable <strong>ask_llm</strong> and <strong>reasoning chains</strong> unless absolutely needed</li>
+            <li>Avoid <strong>ask_llm</strong> and <strong>reasoning chains</strong> unless absolutely needed</li>
+            <li><strong>Monitor costs</strong> in the LLM API Transparency panel</li>
           </ul>
         </div>
       </section>
@@ -595,7 +625,22 @@ function PricingContent() {
           <details className="border dark:border-gray-700 rounded-lg p-4">
             <summary className="font-medium cursor-pointer">Do I need credits if I provide my own API keys?</summary>
             <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-              Yes. Credits cover infrastructure costs (Lambda, storage, etc.) even when using your own LLM API keys.
+              Yes, but only for infrastructure costs! When using your own API keys, you pay <strong>$0 for LLM operations</strong> 
+              and only pay the small Lambda infrastructure fee (4x markup on server costs, typically $0.0001-0.0005 per request).
+            </p>
+          </details>
+          <details className="border dark:border-gray-700 rounded-lg p-4">
+            <summary className="font-medium cursor-pointer">Why is there a 25% surcharge on server-side keys?</summary>
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+              The 25% surcharge on server-provided API keys covers the cost of maintaining those API subscriptions. 
+              When you use your own keys, there's <strong>no surcharge</strong> - you only pay infrastructure costs.
+            </p>
+          </details>
+          <details className="border dark:border-gray-700 rounded-lg p-4">
+            <summary className="font-medium cursor-pointer">How do I add my own API keys?</summary>
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+              Go to <strong>Settings → Providers</strong> and click "Add Provider". Enter your API key from OpenAI, Groq, 
+              Gemini, or other supported providers. Once saved, you'll pay $0 for LLM operations when using those providers!
             </p>
           </details>
           <details className="border dark:border-gray-700 rounded-lg p-4">

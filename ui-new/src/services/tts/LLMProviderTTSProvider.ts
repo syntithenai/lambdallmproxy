@@ -26,7 +26,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
     if (!this.provider) return false;
     
     // Check if the provider supports TTS
-    const supportedTypes = ['openai', 'gemini', 'gemini-free', 'groq-free', 'together'];
+    const supportedTypes = ['openai', 'gemini', 'groq', 'together'];
     return supportedTypes.includes(this.provider.type);
   }
 
@@ -45,7 +45,6 @@ export class LLMProviderTTSProvider implements TTSProvider {
         ];
       
       case 'gemini':
-      case 'gemini-free':
         return [
           // Neural2 voices (premium)
           { id: 'en-US-Neural2-A', name: 'Neural2 A (Male)', language: 'en-US', gender: 'male', provider: 'google' },
@@ -71,7 +70,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
           { id: 'en-US-Standard-D', name: 'Standard D (Male)', language: 'en-US', gender: 'male', provider: 'google' },
         ];
       
-      case 'groq-free':
+      case 'groq':
         return [
           { id: 'Aaliyah-PlayAI', name: 'Aaliyah', language: 'en-US', gender: 'female', provider: 'groq' },
           { id: 'Adelaide-PlayAI', name: 'Adelaide', language: 'en-US', gender: 'female', provider: 'groq' },
@@ -136,9 +135,9 @@ export class LLMProviderTTSProvider implements TTSProvider {
     
     // Map provider type to proxy provider name
     let providerName: string = this.provider!.type;
-    if (providerName === 'gemini' || providerName === 'gemini-free') {
+    if (providerName === 'gemini') {
       providerName = 'google';
-    } else if (providerName === 'groq-free') {
+    } else if (providerName === 'groq') {
       providerName = 'groq';
     }
     

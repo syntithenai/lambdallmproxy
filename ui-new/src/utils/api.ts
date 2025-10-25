@@ -583,3 +583,86 @@ export const getImageProviderHealth = async (): Promise<{
     };
   }
 };
+
+// PayPal Credit Purchase
+export const createPayPalOrder = async (amount: number, token: string): Promise<{
+  success: boolean;
+  orderId?: string;
+  error?: string;
+}> => {
+  const apiBase = await getCachedApiBase();
+  
+  try {
+    const response = await fetch(`${apiBase}/paypal/create-order`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ amount }),
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `HTTP ${response.status}: ${response.statusText}`
+      };
+    }
+    
+    return {
+      success: true,
+      orderId: data.orderId
+    };
+  } catch (error: any) {
+    console.error('PayPal order creation failed:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to create PayPal order'
+    };
+  }
+};
+
+export const capturePayPalOrder = async (orderId: string, token: string): Promise<{
+  success: boolean;
+  creditsAdded?: number;
+  newBalance?: number;
+  error?: string;
+}> => {
+  const apiBase = await getCachedApiBase();
+  
+  try {
+    const response = await fetch(`${apiBase}/paypal/capture-order`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ orderId }),
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `HTTP ${response.status}: ${response.statusText}`
+      };
+    }
+    
+    return {
+      success: true,
+      creditsAdded: data.creditsAdded,
+      newBalance: data.newBalance
+    };
+  } catch (error: any) {
+    console.error('PayPal order capture failed:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to capture PayPal order'
+    };
+  }
+};

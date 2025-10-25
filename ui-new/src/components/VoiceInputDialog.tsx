@@ -171,7 +171,7 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
     console.log('🎙️ Generated request ID for voice transcription:', requestId);
     
     // Find Groq or OpenAI API key from user providers (prefer Groq for free transcription)
-    const groqProvider = providers.find(p => p.type === 'groq' || p.type === 'groq-free');
+    const groqProvider = providers.find(p => p.type === 'groq');
     const openaiProvider = providers.find(p => p.type === 'openai');
     const whisperApiKey = groqProvider?.apiKey || openaiProvider?.apiKey || null;
     const whisperProvider = groqProvider ? 'groq' : (openaiProvider ? 'openai' : null);

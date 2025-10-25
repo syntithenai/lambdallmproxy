@@ -54,13 +54,15 @@ function getUserSheetName(userEmail) {
 }
 
 // Pricing per 1M tokens (input/output) - update as needed
+// NOTE: All pricing uses PAID TIER rates (free tier models map to paid tier for pricing)
 const PRICING = {
-    // Gemini models (free tier has no cost, but track for monitoring)
-    'gemini-2.0-flash': { input: 0, output: 0 },
-    'gemini-2.5-flash': { input: 0, output: 0 },
-    'gemini-2.5-pro': { input: 0, output: 0 },
-    'gemini-1.5-flash': { input: 0, output: 0 },
-    'gemini-1.5-pro': { input: 0, output: 0 },
+    // Gemini models (PAID TIER PRICING - free tier keys charged at these rates)
+    // Source: https://ai.google.dev/pricing (Oct 2025)
+    'gemini-2.0-flash': { input: 0.075, output: 0.30 },      // Same as 1.5-flash
+    'gemini-2.5-flash': { input: 0.075, output: 0.30 },      // Flash series
+    'gemini-2.5-pro': { input: 1.25, output: 5.00 },         // Pro series
+    'gemini-1.5-flash': { input: 0.075, output: 0.30 },      // $0.075/$0.30 per 1M tokens
+    'gemini-1.5-pro': { input: 1.25, output: 5.00 },         // $1.25/$5.00 per 1M tokens
     
     // OpenAI models (paid)
     'gpt-4o': { input: 2.50, output: 10.00 },
@@ -71,15 +73,16 @@ const PRICING = {
     'o1-preview': { input: 15.00, output: 60.00 },
     'o1-mini': { input: 3.00, output: 12.00 },
     
-    // Groq models
-    // Free tier
-    'llama-3.1-8b-instant': { input: 0, output: 0 },
-    'llama-3.3-70b-versatile': { input: 0, output: 0 },
-    'llama-3.1-70b-versatile': { input: 0, output: 0 },
-    'llama-3.2-3b-preview': { input: 0, output: 0 },
-    'mixtral-8x7b-32768': { input: 0, output: 0 },
-    // Paid tier
-    'meta-llama/llama-guard-4-12b': { input: 0.20, output: 0.20 },
+    // Groq models (PAID TIER PRICING - free tier users are charged these rates)
+    // Source: https://groq.com/pricing (Oct 2025)
+    // Free tier models use paid tier pricing for cost calculation
+    'llama-3.1-8b-instant': { input: 0.05, output: 0.08 },          // Paid: $0.05/$0.08 per 1M tokens
+    'llama-3.3-70b-versatile': { input: 0.59, output: 0.79 },       // Paid: $0.59/$0.79 per 1M tokens
+    'llama-3.1-70b-versatile': { input: 0.59, output: 0.79 },       // Paid: $0.59/$0.79 per 1M tokens
+    'llama-3.2-3b-preview': { input: 0.06, output: 0.06 },          // Paid: $0.06/$0.06 per 1M tokens
+    'mixtral-8x7b-32768': { input: 0.24, output: 0.24 },            // Paid: $0.24/$0.24 per 1M tokens
+    'llama-3.1-405b-reasoning': { input: 2.78, output: 4.20 },      // Paid: $2.78/$4.20 per 1M tokens
+    'meta-llama/llama-guard-4-12b': { input: 0.20, output: 0.20 },  // Paid: $0.20/$0.20 per 1M tokens
     
     // Together AI models (paid service)
     // Source: https://www.together.ai/pricing (Oct 2025)
@@ -141,17 +144,56 @@ const PRICING = {
  * @param {number|null} fixedCost - Optional fixed cost (e.g., image generation)
  * @returns {number} Total cost in dollars (no markup)
  */
-function calculateCost(model, promptTokens, completionTokens, fixedCost = null) {
-    // If fixed cost provided (e.g., image generation), use that
-    if (fixedCost !== null && fixedCost !== undefined) {
-        return fixedCost;
+/**
+ * Calculate LLM operation cost
+ * 
+ * ✅ PRICING SYSTEM: Applies profit margin ONLY for server-side API keys
+ * - User-provided keys (UI): $0 cost (pass-through, user pays provider directly)
+ * - Server-side keys (environment): LLM cost + LLM_PROFIT_MARGIN% surcharge
+ * 
+ * @param {string} model - Model identifier (e.g., 'gpt-4', 'llama-3.1-8b-instant')
+ * @param {number} promptTokens - Number of input/prompt tokens
+ * @param {number} completionTokens - Number of output/completion tokens
+ * @param {number|null} fixedCost - Fixed cost for operations like image generation (optional)
+ * @param {boolean} isUserProvidedKey - Whether this is a user-provided API key from UI (default: false)
+ * @returns {number} Cost in dollars
+ */
+function calculateCost(model, promptTokens, completionTokens, fixedCost = null, isUserProvidedKey = false) {
+    // ✅ User-provided keys: $0 cost (they pay the provider directly)
+    if (isUserProvidedKey) {
+        console.log(`💰 Cost calculation: $0.00 (user-provided key)`);
+        return 0;
     }
     
-    // Otherwise calculate from tokens using provider pricing (pass-through)
-    const pricing = PRICING[model] || { input: 0, output: 0 };
+    // If fixed cost provided (e.g., image generation), apply surcharge
+    if (fixedCost !== null && fixedCost !== undefined) {
+        const surcharge = parseFloat(process.env.LLM_PROFIT_MARGIN || '25') / 100;
+        const totalCost = fixedCost * (1 + surcharge);
+        console.log(`💰 Cost calculation: $${fixedCost.toFixed(6)} + ${(surcharge * 100).toFixed(0)}% surcharge = $${totalCost.toFixed(6)} (server-side key, fixed cost)`);
+        return totalCost;
+    }
+    
+    // Map free tier model names to paid tier for pricing lookup
+    // This ensures consistent pricing even if environment providers use free tier keys
+    let pricingModel = model;
+    if (model && (model.includes('groq-free') || model.includes('gemini-free'))) {
+        pricingModel = model.replace('-free', '');
+        console.log(`💰 Mapping free tier model ${model} → ${pricingModel} for pricing`);
+    }
+    
+    // Calculate token-based cost using PAID TIER pricing
+    const pricing = PRICING[pricingModel] || { input: 0, output: 0 };
     const inputCost = (promptTokens / 1000000) * pricing.input;
     const outputCost = (completionTokens / 1000000) * pricing.output;
-    return inputCost + outputCost;
+    const baseCost = inputCost + outputCost;
+    
+    // Apply surcharge for server-side keys
+    const surcharge = parseFloat(process.env.LLM_PROFIT_MARGIN || '25') / 100;
+    const totalCost = baseCost * (1 + surcharge);
+    
+    console.log(`💰 Cost calculation: $${baseCost.toFixed(6)} + ${(surcharge * 100).toFixed(0)}% surcharge = $${totalCost.toFixed(6)} (server-side key)`);
+    
+    return totalCost;
 }
 
 /**
@@ -234,7 +276,8 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(postData)
             },
-            timeout: 30000 // 30 second timeout
+            timeout: 60000, // 60 second timeout (increased from 30s)
+            family: 4 // Force IPv4 (sometimes IPv6 causes timeout issues)
         };
         
         const req = https.request(options, (res) => {
@@ -261,9 +304,10 @@ async function getAccessToken(serviceAccountEmail, privateKey) {
         });
         
         req.on('timeout', () => {
-            console.error('❌ OAuth request timeout (30s)');
+            console.error('❌ OAuth request timeout (60s)');
+            console.error('   This may indicate network/firewall blocking Google APIs');
             req.destroy();
-            reject(new Error('OAuth request timeout after 30 seconds'));
+            reject(new Error('OAuth request timeout after 60 seconds'));
         });
         
         req.on('error', (error) => {
@@ -1509,8 +1553,15 @@ async function getUserCreditBalance(userEmail) {
         return balance;
         
     } catch (error) {
-        console.error('❌ Failed to get credit balance:', error.message);
-        return 0;
+        console.error('❌ Failed to get credit balance:', error);
+        console.error('   Error details:', {
+            message: error?.message,
+            code: error?.code,
+            stack: error?.stack?.split('\n')[0]
+        });
+        // Return -1 to signal error (not 0, which looks like "no credit")
+        // This allows fail-safe logic to distinguish between "no credit" and "error fetching credit"
+        return -1;
     }
 }
 

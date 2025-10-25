@@ -89,7 +89,7 @@ async function handler(event) {
         }
 
         // Select fastest provider (prefer Groq for quick fixes)
-        const groqProviders = providerPool.filter(p => p.type === 'groq-free' || p.type === 'groq');
+        const groqProviders = providerPool.filter(p => p.type === 'groq');
         const selectedProvider = groqProviders[0] || providerPool[0];
 
         console.log(`🔧 Fixing Mermaid chart with ${selectedProvider.type} provider`);
@@ -153,7 +153,7 @@ Return ONLY the corrected Mermaid chart code (no markdown, no explanations, just
             result.usage,
             messages,
             fixedChart,
-            selectedProvider.type === 'groq-free' || selectedProvider.type === 'groq' ? 'groq' : selectedProvider.type
+            selectedProvider.type === 'groq' ? 'groq' : selectedProvider.type
         );
 
         console.log(`✅ Chart fixed in ${duration}ms`);

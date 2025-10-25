@@ -66,7 +66,7 @@ export class TTSProviderFactory {
     }
 
     // Groq TTS
-    const groqProvider = this.llmProviders.find(p => p.type === 'groq-free' && p.enabled !== false && p.apiKey);
+    const groqProvider = this.llmProviders.find(p => p.type === 'groq' && p.enabled !== false && p.apiKey);
     if (groqProvider) {
       const groqTTS = new LLMProviderTTSProvider(groqProvider);
       if (await groqTTS.isAvailable()) {
@@ -76,8 +76,8 @@ export class TTSProviderFactory {
 
     // Gemini TTS
     const geminiProvider = this.llmProviders.find(p => 
-      (p.type === 'gemini' || p.type === 'gemini-free') && p.enabled !== false && p.apiKey
-    ) || this.llmProviders.find(p => p.type === 'gemini-free' && p.enabled !== false && p.apiKey);
+      p.type === 'gemini' && p.enabled !== false && p.apiKey
+    );
     if (geminiProvider) {
       const geminiTTS = new LLMProviderTTSProvider(geminiProvider);
       if (await geminiTTS.isAvailable()) {
@@ -103,8 +103,7 @@ export class TTSProviderFactory {
     const ttsProviderPriority: (keyof typeof import('../../types/provider').PROVIDER_ENDPOINTS)[] = [
       'openai',      // Best TTS quality
       'gemini',      // Good TTS support
-      'gemini-free', // Free tier with TTS
-      'groq-free',   // Groq TTS via PlayAI
+      'groq',        // Groq TTS via PlayAI
       'together'     // Together AI TTS support
     ];
 
@@ -155,7 +154,7 @@ export class TTSProviderFactory {
       .filter(provider => 
         provider.enabled !== false && 
         provider.apiKey &&
-        ['openai', 'gemini', 'gemini-free', 'groq-free', 'together'].includes(provider.type)
+        ['openai', 'gemini', 'groq', 'together'].includes(provider.type)
       )
       .map(provider => ({
         type: provider.type,
@@ -177,9 +176,8 @@ export class TTSProviderFactory {
   private getLLMProviderDisplayName(type: string): string {
     const names: Record<string, string> = {
       'openai': 'OpenAI',
-      'gemini': 'Gemini Pro',
-      'gemini-free': 'Gemini Free',
-      'groq-free': 'Groq',
+      'gemini': 'Gemini',
+      'groq': 'Groq',
       'together': 'Together AI'
     };
     return names[type] || type;
@@ -292,10 +290,8 @@ export class TTSProviderFactory {
 
     const providerNames: Record<string, string> = {
       'openai': 'OpenAI',
-      'gemini': 'Google Gemini (Paid)',
-      'gemini-free': 'Google Gemini (Free)',
-      'groq': 'Groq (Paid)',
-      'groq-free': 'Groq (Free)',
+      'gemini': 'Google Gemini',
+      'groq': 'Groq',
       'together': 'Together AI',
       'atlascloud': 'Atlas Cloud'
     };

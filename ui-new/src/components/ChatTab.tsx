@@ -386,7 +386,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
             if (!keys.togetherApiKey) keys.togetherApiKey = provider.apiKey;
             break;
           case 'gemini':
-          case 'gemini-free':
             if (!keys.geminiApiKey) keys.geminiApiKey = provider.apiKey;
             break;
           case 'replicate':

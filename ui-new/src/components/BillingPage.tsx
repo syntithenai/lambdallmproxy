@@ -1,7 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './BillingPage.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useUsage } from '../contexts/UsageContext';
+import { getCachedApiBase, createPayPalOrder, capturePayPalOrder } from '../utils/api';
+
+// Declare PayPal SDK types
+declare global {
+  interface Window {
+    paypal?: any;
+  }
+}
 
 interface Transaction {
   rowIndex: number;
@@ -223,6 +231,10 @@ const BillingPage: React.FC = () => {
   const [groupByRequest, setGroupByRequest] = useState(true); // Group transactions by request ID
   const [expandedRequests, setExpandedRequests] = useState<Set<string>>(new Set()); // Track expanded request groups
   const [creditBalance, setCreditBalance] = useState<number>(0); // User's current credit balance
+  const [showAddCreditModal, setShowAddCreditModal] = useState(false); // Add Credit modal state
+  const [creditAmount, setCreditAmount] = useState('5.00'); // Amount to purchase
+  const [paypalLoading, setPaypalLoading] = useState(false); // PayPal button loading state
+  const paypalButtonsRef = useRef<HTMLDivElement>(null); // Ref for PayPal buttons container
 
   const fetchBillingData = async () => {
     setLoading(true);
@@ -473,6 +485,81 @@ const BillingPage: React.FC = () => {
       fetchBillingData();
     }
   }, [isAuthenticated, accessToken]);
+
+  // Render PayPal buttons when modal opens and SDK is loaded
+  useEffect(() => {
+    if (!showAddCreditModal || !paypalButtonsRef.current || !accessToken) {
+      return;
+    }
+
+    // Wait for PayPal SDK to load (polling approach)
+    const waitForPayPal = setInterval(() => {
+      if (window.paypal) {
+        clearInterval(waitForPayPal);
+        setPaypalLoading(true);
+        
+        // Clear any existing buttons
+        paypalButtonsRef.current!.innerHTML = '';
+        
+        window.paypal.Buttons({
+          createOrder: async () => {
+            try {
+              const amount = parseFloat(creditAmount);
+              if (amount < 5) {
+                throw new Error('Minimum purchase is $5.00');
+              }
+              
+              const result = await createPayPalOrder(amount, accessToken);
+              if (!result.success || !result.orderId) {
+                throw new Error(result.error || 'Failed to create order');
+              }
+              
+              return result.orderId;
+            } catch (error: any) {
+              console.error('PayPal createOrder error:', error);
+              alert(`Error creating order: ${error.message}`);
+              throw error;
+            }
+          },
+          onApprove: async (data: any) => {
+            try {
+              const result = await capturePayPalOrder(data.orderID, accessToken);
+              if (!result.success) {
+                throw new Error(result.error || 'Failed to capture payment');
+              }
+              
+              // Success! Refresh billing data and close modal
+              alert(`✅ Success! $${result.creditsAdded?.toFixed(2)} credits added.\nNew balance: $${result.newBalance?.toFixed(2)}`);
+              setShowAddCreditModal(false);
+              await fetchBillingData(); // Refresh to show new credit
+              await refreshUsage(); // Refresh usage context
+            } catch (error: any) {
+              console.error('PayPal onApprove error:', error);
+              alert(`Error processing payment: ${error.message}`);
+            }
+          },
+          onError: (err: any) => {
+            console.error('PayPal error:', err);
+            alert('PayPal encountered an error. Please try again.');
+          },
+          style: {
+            layout: 'vertical',
+            color: 'blue',
+            shape: 'rect',
+            label: 'paypal'
+          }
+        }).render(paypalButtonsRef.current!).then(() => {
+          setPaypalLoading(false);
+        }).catch((err: any) => {
+          console.error('PayPal render error:', err);
+          setPaypalLoading(false);
+        });
+      }
+    }, 100); // Check every 100ms for PayPal SDK
+
+    // Cleanup: stop polling if modal closes before SDK loads
+    return () => clearInterval(waitForPayPal);
+  }, [showAddCreditModal, creditAmount, accessToken]);
 
 
 
@@ -869,25 +956,23 @@ const BillingPage: React.FC = () => {
                   ? `$${creditBalance.toFixed(2)} available` 
                   : 'Add credit to continue'}
               </div>
-              {creditBalance <= 0 && (
-                <button 
-                  style={{
-                    background: 'white',
-                    color: '#764ba2',
-                    border: 'none',
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    fontSize: '0.85rem',
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    marginTop: '8px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}
-                  onClick={() => alert('PayPal integration coming soon!')}
-                >
-                  ➕ Add Credit
-                </button>
-              )}
+              <button 
+                style={{
+                  background: 'white',
+                  color: '#764ba2',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  marginTop: '8px',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}
+                onClick={() => setShowAddCreditModal(true)}
+              >
+                ➕ Add Credit
+              </button>
             </div>
             
             <div className="summary-card">
@@ -1242,6 +1327,106 @@ const BillingPage: React.FC = () => {
         onConfirm={handleClearData}
         providers={uniqueProviders}
       />
+
+      {/* Add Credit Modal */}
+      {showAddCreditModal && (
+        <div className="modal-overlay" onClick={() => setShowAddCreditModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h2>💳 Add Credits</h2>
+              <button className="modal-close" onClick={() => setShowAddCreditModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div style={{ marginBottom: '20px' }}>
+                <p>Purchase credits to use AI features. Minimum purchase: $5.00</p>
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                  Amount (USD):
+                </label>
+                <input 
+                  type="number" 
+                  min="5" 
+                  step="1" 
+                  value={creditAmount}
+                  onChange={(e) => setCreditAmount(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    fontSize: '1rem',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px'
+                  }}
+                  placeholder="Enter amount (min $5.00)"
+                />
+              </div>
+              
+              <div style={{ 
+                background: '#f5f5f5', 
+                padding: '15px', 
+                borderRadius: '4px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span>Credits to add:</span>
+                  <strong>${parseFloat(creditAmount || '0').toFixed(2)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#666' }}>
+                  <span>New balance:</span>
+                  <span>${(creditBalance + parseFloat(creditAmount || '0')).toFixed(2)}</span>
+                </div>
+              </div>
+              
+              <div style={{ 
+                padding: '12px', 
+                background: '#e3f2fd', 
+                borderRadius: '4px',
+                fontSize: '0.9rem',
+                marginBottom: '20px'
+              }}>
+                <strong>💡 Tip:</strong> Add your own API keys in Settings for $0 LLM costs!
+                <br/>
+                Only infrastructure costs apply when using your own keys.
+              </div>
+
+              {/* PayPal Buttons Container */}
+              <div 
+                ref={paypalButtonsRef} 
+                style={{ minHeight: '150px', display: paypalLoading ? 'none' : 'block' }}
+              ></div>
+              
+              {paypalLoading && (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                  Loading PayPal...
+                </div>
+              )}
+              
+              {!window.paypal && (
+                <div style={{
+                  padding: '15px',
+                  background: '#fff3cd',
+                  border: '1px solid #ffc107',
+                  borderRadius: '4px',
+                  color: '#856404'
+                }}>
+                  ⚠️ PayPal SDK not loaded. Please refresh the page.
+                </div>
+              )}
+            </div>
+            
+            <div className="modal-footer">
+              <button 
+                className="btn-secondary" 
+                onClick={() => setShowAddCreditModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

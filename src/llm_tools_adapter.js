@@ -331,7 +331,8 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     
     // Gemini API uses exact model names without modification
     // Available models as of Oct 2025: gemini-1.5-pro, gemini-1.5-flash, gemini-1.5-pro-002, etc.
-    const path = `/v1beta/models/${modelName}:generateContent`;
+    // Using v1 stable API (v1beta is being deprecated)
+    const path = `/v1/models/${modelName}:generateContent`;
     
     console.log(`🔍 Gemini API: Using model "${modelName}", path: ${path}`);
     

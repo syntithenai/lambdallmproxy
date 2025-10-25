@@ -28,6 +28,20 @@ function getPayPalClient() {
 }
 
 /**
+ * Get CORS headers for response
+ */
+function getCorsHeaders(event) {
+    const origin = event.headers?.origin || event.headers?.Origin || '*';
+    return {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    };
+}
+
+/**
  * Create PayPal order for credit purchase
  * POST /paypal/create-order
  * Body: { amount: 5.00 }
@@ -41,7 +55,7 @@ async function handleCreateOrder(event) {
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getCorsHeaders(event),
                 body: JSON.stringify({ error: 'Missing or invalid authorization header' })
             };
         }
@@ -52,7 +66,7 @@ async function handleCreateOrder(event) {
         if (!decodedToken || !decodedToken.email) {
             return {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getCorsHeaders(event),
                 body: JSON.stringify({ error: 'Invalid or expired token' })
             };
         }
@@ -71,7 +85,7 @@ async function handleCreateOrder(event) {
         if (isNaN(purchaseAmount) || purchaseAmount < minPurchase) {
             return {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getCorsHeaders(event),
                 body: JSON.stringify({
                     error: `Minimum purchase is $${minPurchase.toFixed(2)}`
                 })
@@ -111,7 +125,7 @@ async function handleCreateOrder(event) {
         
         return {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: getCorsHeaders(event),
             body: JSON.stringify({
                 orderId: order.result.id,
                 approveUrl: approveUrl
@@ -122,7 +136,7 @@ async function handleCreateOrder(event) {
         console.error('❌ PayPal order creation failed:', error);
         return {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' },
+            headers: getCorsHeaders(event),
             body: JSON.stringify({
                 error: 'Failed to create payment order',
                 details: error.message
@@ -145,7 +159,7 @@ async function handleCaptureOrder(event) {
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getCorsHeaders(event),
                 body: JSON.stringify({ error: 'Missing or invalid authorization header' })
             };
         }
@@ -156,7 +170,7 @@ async function handleCaptureOrder(event) {
         if (!decodedToken || !decodedToken.email) {
             return {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getCorsHeaders(event),
                 body: JSON.stringify({ error: 'Invalid or expired token' })
             };
         }
@@ -171,7 +185,7 @@ async function handleCaptureOrder(event) {
         if (!orderId) {
             return {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getCorsHeaders(event),
                 body: JSON.stringify({ error: 'orderId is required' })
             };
         }
@@ -191,7 +205,7 @@ async function handleCaptureOrder(event) {
         if (capture.result.status !== 'COMPLETED') {
             return {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' },
+                headers: getCorsHeaders(event),
                 body: JSON.stringify({
                     error: 'Payment not completed',
                     status: capture.result.status
@@ -237,7 +251,7 @@ async function handleCaptureOrder(event) {
         
         return {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: getCorsHeaders(event),
             body: JSON.stringify({
                 success: true,
                 creditAdded: amount,
@@ -250,7 +264,7 @@ async function handleCaptureOrder(event) {
         console.error('❌ PayPal capture failed:', error);
         return {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' },
+            headers: getCorsHeaders(event),
             body: JSON.stringify({
                 error: 'Failed to process payment',
                 details: error.message
