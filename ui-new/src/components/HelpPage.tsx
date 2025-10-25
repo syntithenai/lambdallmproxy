@@ -52,7 +52,7 @@ export function HelpPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl">
+        <div className="max-w-4xl text-left">
           {activeTab === 'features' && <FeaturesContent />}
           {activeTab === 'planning' && <PlanningContent />}
           {activeTab === 'tools' && <ToolsContent />}
@@ -67,8 +67,8 @@ export function HelpPage() {
 
 function FeaturesContent() {
   return (
-    <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Features & Advantages</h2>
+    <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
+      <h2 className="text-3xl font-bold mb-4 text-left">Features & Advantages</h2>
       
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-green-600 dark:text-green-400">🎯 Why Research Agent is Better Than ChatGPT</h3>
@@ -271,8 +271,8 @@ function FeaturesContent() {
 
 function PlanningContent() {
   return (
-    <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Planning Wizard, Todos & Content Management for Long-Term Thinking</h2>
+    <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
+      <h2 className="text-3xl font-bold mb-4 text-left">Planning Wizard, Todos & Content Management for Long-Term Thinking</h2>
       
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📋 Creating Effective Plans</h3>
@@ -446,8 +446,8 @@ function PlanningContent() {
 
 function ToolsContent() {
   return (
-    <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Backend LLM Tools</h2>
+    <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
+      <h2 className="text-3xl font-bold mb-4 text-left">Backend LLM Tools</h2>
       
       <p className="text-lg mb-4">
         The AI has access to powerful backend tools that it can call automatically when needed. 
@@ -672,8 +672,8 @@ function ToolCard({ name, icon, description, trigger, examples, warning }: ToolC
 
 function RAGContent() {
   return (
-    <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Browser-Based RAG (Retrieval Augmented Generation)</h2>
+    <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
+      <h2 className="text-3xl font-bold mb-4 text-left">Browser-Based RAG (Retrieval Augmented Generation)</h2>
       
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🧠 What is RAG and Why Use It?</h3>
@@ -874,8 +874,8 @@ function RAGContent() {
 
 function PricingContent() {
   return (
-    <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Pricing</h2>
+    <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
+      <h2 className="text-3xl font-bold mb-4 text-left">Pricing</h2>
       
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💰 Credit-Based System</h3>
@@ -1137,8 +1137,8 @@ function PricingContent() {
 
 function PrivacyContent() {
   return (
-    <div className="space-y-6 text-gray-800 dark:text-gray-200">
-      <h2 className="text-3xl font-bold mb-4">Privacy Policy</h2>
+    <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
+      <h2 className="text-3xl font-bold mb-4 text-left">Privacy Policy</h2>
       
       <section className="space-y-3">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📅 Last Updated</h3>
