@@ -106,7 +106,8 @@ const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnbl
 
             <div className="gate-footer">
               <p className="text-muted">
-                Your balance will be displayed in the top right corner after purchase.
+                Your balance will be displayed in the top left corner after purchase. 
+                New users receive trial credits that expire after 24 hours.
               </p>
             </div>
           </div>

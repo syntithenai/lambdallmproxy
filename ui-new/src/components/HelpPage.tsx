@@ -71,6 +71,54 @@ function FeaturesContent() {
       <h2 className="text-3xl font-bold mb-4">Features & Advantages</h2>
       
       <section className="space-y-4">
+        <h3 className="text-xl font-semibold text-green-600 dark:text-green-400">🎯 Why LLM Proxy is Better Than ChatGPT</h3>
+        <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-5 rounded-lg border-2 border-green-300 dark:border-green-700 mb-6">
+          <p className="mb-4">
+            While ChatGPT is a powerful AI assistant, LLM Proxy offers significant advantages for users who want more control, 
+            flexibility, and cost optimization:
+          </p>
+          
+          <div className="space-y-3">
+            <div className="border-l-4 border-green-500 pl-4">
+              <p className="font-semibold text-green-700 dark:text-green-300">✅ Access Multiple AI Providers</p>
+              <p className="text-sm">Choose from OpenAI, Google Gemini, Groq, Together AI, and custom endpoints - not locked into a single provider. 
+              Switch between models seamlessly to find the best fit for each task.</p>
+            </div>
+            
+            <div className="border-l-4 border-blue-500 pl-4">
+              <p className="font-semibold text-blue-700 dark:text-blue-300">✅ Massive Cost Savings with BYOK</p>
+              <p className="text-sm">Bring Your Own API Keys and pay $0 for LLM operations! Use Groq's unlimited free tier or Google Gemini's generous 
+              quotas. Only pay minimal infrastructure fees (~$0.0004 per request) instead of ChatGPT Plus $20/month.</p>
+            </div>
+            
+            <div className="border-l-4 border-purple-500 pl-4">
+              <p className="font-semibold text-purple-700 dark:text-purple-300">✅ Advanced Planning & Research Tools</p>
+              <p className="text-sm">Built-in planning mode breaks complex questions into steps. Integrated web search (DuckDuckGo, Tavily), 
+              advanced web scraping (Puppeteer, Playwright, Selenium), and YouTube integration for comprehensive research.</p>
+            </div>
+            
+            <div className="border-l-4 border-orange-500 pl-4">
+              <p className="font-semibold text-orange-700 dark:text-orange-300">✅ Knowledge Management with Browser RAG</p>
+              <p className="text-sm">Save snippets to your personal knowledge base, create semantic embeddings, and retrieve relevant context 
+              during conversations. Optional Google Drive sync keeps your data accessible across devices.</p>
+            </div>
+            
+            <div className="border-l-4 border-pink-500 pl-4">
+              <p className="font-semibold text-pink-700 dark:text-pink-300">✅ Full Transparency & Control</p>
+              <p className="text-sm">See exact costs for each request, token counts, model selection reasoning, and detailed API interactions. 
+              Enable/disable specific tools, customize provider priorities, and maintain complete control over your AI usage.</p>
+            </div>
+            
+            <div className="border-l-4 border-indigo-500 pl-4">
+              <p className="font-semibold text-indigo-700 dark:text-indigo-300">✅ Privacy-First Architecture</p>
+              <p className="text-sm">Chat history and content stored locally in your browser's IndexedDB - not on our servers. When using your 
+              own API keys, your prompts go directly from Lambda to your chosen provider with no middleman storage.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🚀 Multi-Provider LLM Access with Intelligent Load Balancing</h3>
         <p className="mb-3">
           Access multiple AI providers seamlessly through a single interface. The system intelligently selects 
@@ -866,20 +914,20 @@ function PricingContent() {
             <thead className="bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900 dark:to-purple-900">
               <tr>
                 <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Cost Component</th>
-                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Your API Keys (BYOK)</th>
                 <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Server-Provided Keys</th>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Your API Keys (BYOK)</th>
               </tr>
             </thead>
             <tbody>
               <tr className="bg-white dark:bg-gray-800">
                 <td className="border dark:border-gray-600 px-4 py-3 font-semibold">LLM API Calls</td>
-                <td className="border dark:border-gray-600 px-4 py-3 text-green-600 dark:text-green-400 font-bold">
-                  $0.00<br/>
-                  <span className="text-xs font-normal">(You pay provider directly)</span>
-                </td>
                 <td className="border dark:border-gray-600 px-4 py-3 text-orange-600 dark:text-orange-400">
                   Provider cost <strong>+ 25% surcharge</strong><br/>
                   <span className="text-xs">(Example: $0.10 → $0.125)</span>
+                </td>
+                <td className="border dark:border-gray-600 px-4 py-3 text-green-600 dark:text-green-400 font-bold">
+                  $0.00<br/>
+                  <span className="text-xs font-normal">(You pay provider directly)</span>
                 </td>
               </tr>
               <tr className="bg-gray-50 dark:bg-gray-700">
@@ -895,12 +943,12 @@ function PricingContent() {
               <tr className="bg-blue-50 dark:bg-blue-900/30">
                 <td className="border dark:border-gray-600 px-4 py-3 font-bold">Example Total Cost</td>
                 <td className="border dark:border-gray-600 px-4 py-3">
-                  <span className="text-green-600 dark:text-green-400 font-bold">$0.0004</span><br/>
-                  <span className="text-xs">(Infrastructure only)</span>
-                </td>
-                <td className="border dark:border-gray-600 px-4 py-3">
                   <span className="text-blue-600 dark:text-blue-400 font-bold">$0.1254</span><br/>
                   <span className="text-xs">($0.10 LLM + $0.025 surcharge + $0.0004 infra)</span>
+                </td>
+                <td className="border dark:border-gray-600 px-4 py-3">
+                  <span className="text-green-600 dark:text-green-400 font-bold">$0.0004</span><br/>
+                  <span className="text-xs">(Infrastructure only)</span>
                 </td>
               </tr>
             </tbody>
@@ -1036,6 +1084,46 @@ function PricingContent() {
             <p className="mt-2 text-sm pl-4">
               No, all credit purchases are final and non-refundable. Credits never expire, so you can use them whenever you're ready.
             </p>
+          </details>
+          
+          <details className="border-2 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <summary className="font-semibold cursor-pointer text-base">Where can I sign up for API keys?</summary>
+            <div className="mt-2 text-sm pl-4 space-y-3">
+              <p className="mb-2">
+                Getting your own API keys lets you use the service with zero LLM costs! Here's where to sign up:
+              </p>
+              <div className="space-y-2">
+                <div className="border-l-4 border-blue-500 pl-3">
+                  <p className="font-semibold text-blue-700 dark:text-blue-300">
+                    <a href="https://console.groq.com/" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      Groq →
+                    </a>
+                  </p>
+                  <p className="text-xs">Unlimited free tier with fast inference. Perfect for most users. Supports Llama, Mixtral, and Gemma models.</p>
+                </div>
+                
+                <div className="border-l-4 border-green-500 pl-3">
+                  <p className="font-semibold text-green-700 dark:text-green-300">
+                    <a href="https://api.together.xyz/" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      Together AI →
+                    </a>
+                  </p>
+                  <p className="text-xs">Free trial credits for new accounts. Access to cutting-edge open source models including Llama 4 and DeepSeek.</p>
+                </div>
+                
+                <div className="border-l-4 border-purple-500 pl-3">
+                  <p className="font-semibold text-purple-700 dark:text-purple-300">
+                    <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      OpenAI →
+                    </a>
+                  </p>
+                  <p className="text-xs">Industry-leading GPT models. Paid service but competitive pricing. Includes GPT-4, GPT-4o, and GPT-4o-mini.</p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+                After getting your API key, add it in <strong>Settings → Providers → Add Provider</strong> to start using it immediately.
+              </p>
+            </div>
           </details>
         </div>
       </section>
@@ -1239,11 +1327,30 @@ function PrivacyContent() {
 
       <section className="space-y-3">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📧 Contact Us</h3>
-        <p>
+        <p className="mb-3">
           If you have questions, concerns, or requests regarding this privacy policy, your personal data, or how we handle 
-          your information, we want to hear from you. Please contact us through the GitHub issues page at our project 
-          repository. We review and respond to privacy-related inquiries as promptly as possible, typically within a few 
-          business days.
+          your information, we want to hear from you:
+        </p>
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 space-y-3">
+          <div className="border-l-4 border-blue-500 pl-4">
+            <p className="font-semibold text-blue-700 dark:text-blue-300">Email Support</p>
+            <p className="text-sm mb-1">For general inquiries, privacy questions, or billing issues:</p>
+            <a href="mailto:stever@syntithenai.com" className="text-blue-600 dark:text-blue-400 hover:underline text-sm">
+              stever@syntithenai.com
+            </a>
+          </div>
+          
+          <div className="border-l-4 border-purple-500 pl-4">
+            <p className="font-semibold text-purple-700 dark:text-purple-300">Bug Reports & Feature Requests</p>
+            <p className="text-sm mb-1">For technical issues, bug reports, or feature suggestions:</p>
+            <a href="https://github.com/syntithenai/lambdallmproxy/issues" target="_blank" rel="noopener noreferrer" className="text-purple-600 dark:text-purple-400 hover:underline text-sm">
+              GitHub Issues →
+            </a>
+          </div>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+          We review and respond to inquiries as promptly as possible, typically within a few business days. For urgent 
+          issues affecting your account or billing, please indicate "URGENT" in the subject line.
         </p>
       </section>
 

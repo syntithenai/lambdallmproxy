@@ -939,68 +939,233 @@ if (path === '/admin/archive-shard' && method === 'POST') {
 
 ### Long-Term Archive Management
 
-**Permanent Storage**:
-- Archive spreadsheets are never deleted (permanent historical record)
-- Each month creates new archive spreadsheets as needed
-- Archives remain accessible via Google Drive
+**Summary Aggregation Strategy** (Replaces Permanent Storage):
+- Instead of keeping full archived transaction records, create monthly summary entries
+- Sum tokens (tokens_in + tokens_out), sum prices (total cost), sum durations
+- Create single summary entry with type: "summary"
+- Date summary with timestamp of last summarized transaction
+- Ingest previous summaries into new tallies (roll up old summaries)
+- Save sheet in chronological date order
 
-**Archive Access**:
+**Summary Entry Format**:
 ```javascript
-async function getUserHistoricalTransactions(email, startDate, endDate) {
-    const { shardIndex } = getActiveSpreadsheetId(email);
-    const accessToken = await getAccessToken();
-    
-    const allTransactions = [];
-    
-    // Determine which archive months to query
-    const months = getMonthsBetween(startDate, endDate);
-    
-    for (const { year, month } of months) {
-        const archiveName = `archive_shard${shardIndex}_${year}_${String(month).padStart(2, '0')}`;
-        
-        // Search for archive spreadsheet
-        const searchResponse = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=name='${archiveName}'`,
-            {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            }
-        );
-        
-        const searchData = await searchResponse.json();
-        
-        if (searchData.files && searchData.files.length > 0) {
-            const archiveSpreadsheetId = searchData.files[0].id;
-            const sheetName = email.replace(/@/g, '_at_').replace(/\./g, '_dot_');
-            
-            // Read transactions from archive
-            const rows = await getSheetRows(archiveSpreadsheetId, sheetName, accessToken);
-            allTransactions.push(...rows);
-        }
-    }
-    
-    // Also get recent transactions from active spreadsheet
-    const { spreadsheetId } = getActiveSpreadsheetId(email);
-    const sheetName = email.replace(/@/g, '_at_').replace(/\./g, '_dot_');
-    const recentRows = await getSheetRows(spreadsheetId, sheetName, accessToken);
-    allTransactions.push(...recentRows);
-    
-    // Filter by date range and sort
-    return allTransactions
-        .filter(tx => {
-            const txDate = new Date(tx.timestamp);
-            return txDate >= startDate && txDate <= endDate;
-        })
-        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+{
+    timestamp: lastTransactionDate,         // Date of most recent transaction included
+    email: "user@example.com",
+    type: "summary",                        // Mark as summary entry
+    model: "AGGREGATED",                    // Indicates multiple models
+    provider: "AGGREGATED",
+    tokensIn: 125000,                       // Sum of all tokens_in for period
+    tokensOut: 45000,                       // Sum of all tokens_out for period
+    cost: 12.50,                            // Total cost for period
+    durationMs: 567800,                     // Total duration for period
+    status: "ARCHIVED",
+    periodStart: "2024-10-01T00:00:00Z",   // First transaction in summary
+    periodEnd: "2024-10-31T23:59:59Z",     // Last transaction in summary
+    transactionCount: 450                   // Number of transactions summarized
 }
 ```
 
+**Archiving Process** (Modified):
+```javascript
+async function archiveOldTransactionsWithSummary(email, shardIndex, activeSpreadsheetId) {
+    const cutoffDate = new Date();
+    const archiveAfterDays = parseInt(process.env.GOOGLE_SHEETS_ARCHIVE_AFTER_DAYS || '90');
+    cutoffDate.setDate(cutoffDate.getDate() - archiveAfterDays);
+    
+    // Get user's sheet
+    const sheetName = email.replace(/@/g, '_at_').replace(/\./g, '_dot_');
+    const accessToken = await getAccessToken();
+    const rows = await getSheetRows(activeSpreadsheetId, sheetName, accessToken);
+    
+    // Find rows older than cutoff
+    const oldRows = rows.filter(row => {
+        const timestamp = new Date(row.timestamp);
+        return timestamp < cutoffDate;
+    });
+    
+    if (oldRows.length === 0) {
+        console.log(`  ✓ No old transactions for ${email}`);
+        return;
+    }
+    
+    // Check for existing summary entries to include in aggregation
+    const existingSummaries = oldRows.filter(row => row.type === 'summary');
+    const regularTransactions = oldRows.filter(row => row.type !== 'summary');
+    
+    console.log(`📊 Creating summary for ${email}: ${regularTransactions.length} transactions + ${existingSummaries.length} summaries`);
+    
+    // Aggregate all transactions AND existing summaries
+    const summary = {
+        timestamp: new Date(Math.max(...oldRows.map(r => new Date(r.timestamp)))).toISOString(),
+        email: email,
+        type: 'summary',
+        model: 'AGGREGATED',
+        provider: 'AGGREGATED',
+        tokensIn: oldRows.reduce((sum, r) => sum + (parseInt(r.tokensIn) || 0), 0),
+        tokensOut: oldRows.reduce((sum, r) => sum + (parseInt(r.tokensOut) || 0), 0),
+        cost: oldRows.reduce((sum, r) => sum + (parseFloat(r.cost) || 0), 0),
+        durationMs: oldRows.reduce((sum, r) => sum + (parseInt(r.durationMs) || 0), 0),
+        status: 'ARCHIVED',
+        periodStart: new Date(Math.min(...oldRows.map(r => new Date(r.timestamp)))).toISOString(),
+        periodEnd: new Date(Math.max(...oldRows.map(r => new Date(r.timestamp)))).toISOString(),
+        transactionCount: oldRows.length
+    };
+    
+    // Delete all old rows (including old summaries)
+    await deleteOldRowsFromSheet(activeSpreadsheetId, sheetName, oldRows, accessToken);
+    console.log(`  ✅ Deleted ${oldRows.length} old rows from active sheet`);
+    
+    // Append single summary entry
+    await appendSummaryToSheet(activeSpreadsheetId, sheetName, summary, accessToken);
+    console.log(`  📊 Added summary entry (${summary.transactionCount} transactions aggregated)`);
+    
+    // Sort sheet by timestamp to maintain chronological order
+    await sortSheetByTimestamp(activeSpreadsheetId, sheetName, accessToken);
+    console.log(`  ✅ Sheet sorted chronologically`);
+}
+
+/**
+ * Append summary entry to active sheet
+ */
+async function appendSummaryToSheet(spreadsheetId, sheetName, summary, accessToken) {
+    const row = [
+        summary.timestamp,
+        summary.email,
+        summary.type,
+        summary.model,
+        summary.provider,
+        summary.tokensIn,
+        summary.tokensOut,
+        summary.cost,
+        summary.durationMs,
+        summary.status,
+        summary.periodStart,
+        summary.periodEnd,
+        summary.transactionCount
+    ];
+    
+    await appendRowsToSheet(spreadsheetId, sheetName, [row], accessToken);
+}
+
+/**
+ * Sort sheet by timestamp column (chronological order)
+ */
+async function sortSheetByTimestamp(spreadsheetId, sheetName, accessToken) {
+    // Get sheet ID
+    const metaResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`,
+        {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        }
+    );
+    
+    const metadata = await metaResponse.json();
+    const sheet = metadata.sheets.find(s => s.properties.title === sheetName);
+    
+    if (!sheet) {
+        console.error(`❌ Sheet "${sheetName}" not found`);
+        return;
+    }
+    
+    const sheetId = sheet.properties.sheetId;
+    
+    // Sort request (column 0 = timestamp, ascending)
+    const sortResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                requests: [{
+                    sortRange: {
+                        range: {
+                            sheetId: sheetId,
+                            startRowIndex: 1  // Skip header
+                        },
+                        sortSpecs: [{
+                            dimensionIndex: 0,  // Timestamp column
+                            sortOrder: 'ASCENDING'
+                        }]
+                    }
+                }]
+            })
+        }
+    );
+    
+    if (!sortResponse.ok) {
+        console.error(`❌ Failed to sort sheet: ${await sortResponse.text()}`);
+    }
+}
+```
+
+**Balance Calculation** (Handles Summaries):
+```javascript
+async function getUserCreditBalance(email) {
+    const { spreadsheetId, shardIndex } = getActiveSpreadsheetId(email);
+    
+    // Trigger archiving/summarization if needed
+    await archiveOldTransactionsWithSummary(email, shardIndex, spreadsheetId);
+    
+    const sheetName = email.replace(/@/g, '_at_').replace(/\./g, '_dot_');
+    const accessToken = await getAccessToken();
+    const rows = await getSheetRows(spreadsheetId, sheetName, accessToken);
+    
+    // Calculate balance from BOTH regular transactions AND summary entries
+    let balance = 0;
+    for (const row of rows) {
+        if (row.type === 'credit_added') {
+            balance += parseFloat(row.cost || 0);
+        } else if (row.type === 'summary') {
+            // Summary entry: cost is already aggregated total
+            balance -= parseFloat(row.cost || 0);
+        } else {
+            // Regular transaction
+            balance -= parseFloat(row.cost || 0);
+        }
+    }
+    
+    return balance;
+}
+```
+
+**Benefits of Summary Aggregation**:
+- ✅ **Extreme cell reduction**: 10,000 transactions → 1 summary row (99.99% reduction)
+- ✅ **No separate archive spreadsheets**: Everything stays in active sheet
+- ✅ **Faster queries**: Fewer rows to process
+- ✅ **Automatic roll-up**: Old summaries get merged into new summaries
+- ✅ **Chronological order**: Sheet sorted by date for easy auditing
+- ✅ **Zero storage overhead**: No additional spreadsheets created
+- ✅ **Preserves essential data**: Token counts, costs, durations aggregated
+
+**What's Lost**:
+- ❌ Individual transaction history beyond 90 days
+- ❌ Model-specific analytics for old data
+- ❌ Exact timestamps for individual old requests
+
+**What's Preserved**:
+- ✅ Total cost (exact)
+- ✅ Total tokens (exact)
+- ✅ Total duration (exact)
+- ✅ Date range of summarized period
+- ✅ Count of transactions included
+- ✅ Recent transactions (<90 days) remain detailed
+
+**Archive Spreadsheet Elimination**:
+- No separate archive spreadsheets created
+- No Drive API usage for archive management
+- No archive spreadsheet count limits to worry about
+- All data consolidated in active sheet (summaries + recent transactions)
+
 **Cost Analysis**:
-- Google Sheets API: Free (archives are just more spreadsheets)
-- Google Drive storage: Free up to 15GB (spreadsheets typically <1MB each)
-- Archive spreadsheet count: ~12 per year per shard (one per month)
-  - Example with 5 shards: 60 archive spreadsheets per year
-  - After 5 years: 300 archive spreadsheets (well within Drive limits)
+- Google Sheets API: Free (same as before, fewer operations)
+- Google Drive storage: Free (no archive spreadsheets)
+- Processing overhead: Minimal (aggregation is simple arithmetic)
+- **Total**: $0/month
 
 ---
 
