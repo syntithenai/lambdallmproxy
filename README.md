@@ -1,6 +1,10 @@
 ````markdown
 # Lambda LLM Proxy - AI Research Agent with Deep Knowledge Integration
 
+[![Test](https://github.com/syntithenai/lambdallmproxy/actions/workflows/test.yml/badge.svg)](https://github.com/syntithenai/lambdallmproxy/actions/workflows/test.yml)
+[![Deploy UI](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-ui.yml/badge.svg)](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-ui.yml)
+[![Deploy Lambda](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-lambda.yml/badge.svg)](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-lambda.yml)
+
 An advanced AI research assistant that combines comprehensive web scraping, agentic workflows, and knowledge management to deliver quality referenced, fact-checked, broad and deep knowledge tailored to your needs. Built for building large structured documents with confidence.
 
 ## 🎯 Core Mission
@@ -1878,10 +1882,108 @@ Enable verbose logging by setting environment variables or adding debug flags in
 - **Self-contained**: All scraping and parsing logic included
 - **AWS Lambda Runtime**: Node.js 18.x or later recommended
 
+## 💰 Pricing & Cost Structure
+
+### Understanding Your Costs
+
+Research Agent uses a transparent, usage-based pricing model with two cost components:
+
+#### 1. AWS Infrastructure Costs (Always Charged)
+
+Every request incurs a small infrastructure fee to cover AWS Lambda hosting:
+
+- **Lambda Compute**: Execution time × memory allocation
+- **Lambda Requests**: $0.20 per million requests
+- **CloudWatch Logs**: ~$0.50/GB ingestion + $0.03/GB storage
+- **Data Transfer**: $0.09/GB for streaming responses
+- **S3 Storage**: Minimal cost for deployment packages
+
+**Markup**: 6x on total AWS infrastructure costs (industry standard: 3-10x)
+
+**Example Cost** (512MB memory, 800ms execution):
+```
+AWS Cost Breakdown:
+- Lambda Compute:  $0.00000667
+- Lambda Request:  $0.00000020
+- CloudWatch Logs: $0.00000102
+- Data Transfer:   $0.00000036
+- S3 Storage:      $0.00000003
+------------------------
+Total AWS Cost:    $0.00001087
+With 6x markup:    $0.00006522
+
+Cost to user: $0.065 per 1,000 requests
+```
+
+**Why 6x markup?** This is competitive with industry standards:
+- AWS API Gateway: 3-6x markup
+- Twilio SMS: 1.3x markup  
+- SendGrid Email: 3x markup
+- Stripe Payments: 1.6x markup
+
+#### 2. LLM API Costs (Depends on Configuration)
+
+##### Option A: Server-Provided API Keys
+- **LLM Cost**: Provider pricing + 25% surcharge
+- **Example**: $0.10 LLM call → $0.125 charged
+- **Use Case**: Convenient for occasional use, no setup required
+
+##### Option B: Bring Your Own Keys (BYOK) - **RECOMMENDED**
+- **LLM Cost**: $0.00 (you pay provider directly!)
+- **Only Pay**: Infrastructure fee (~$0.0001-0.0005/request)
+- **Use Case**: Regular users, cost-conscious users, free tier access
+
+**Cost Comparison Example** (100 requests/month, GPT-4o-mini):
+
+| Configuration | LLM Cost | Infrastructure | Total Monthly |
+|---------------|----------|----------------|---------------|
+| **Server Keys** | $10.00 + 25% = $12.50 | $0.065 | **$12.57** |
+| **BYOK** | $0.00 (direct to OpenAI) | $0.065 | **$0.065** |
+| **BYOK (Groq Free)** | $0.00 (free tier!) | $0.065 | **$0.065** |
+
+**Savings with BYOK**: 99.5% reduction in costs!
+
+### Free Tier Options with BYOK
+
+When you bring your own API keys, you can access generous free tiers:
+
+- **Groq**: Unlimited free tier (rate-limited, perfect for most users)
+- **Google Gemini**: 15 requests/minute, 1500 requests/day free
+- **Together AI**: Free trial credits for new accounts
+- **OpenAI**: Pay-as-you-go (no free tier, but you control costs)
+
+**Setup**: Settings → Providers → Add Provider → Enter your API key
+
+### Where to Get API Keys
+
+- **Groq** (Free): https://console.groq.com/
+- **Google Gemini** (Free tier): https://aistudio.google.com/app/apikey
+- **Together AI** (Trial credits): https://api.together.xyz/
+- **OpenAI** (Paid): https://platform.openai.com/
+
+### Transparent Billing
+
+Every request is logged with detailed cost breakdown:
+- Provider and model used
+- Input/output token counts
+- LLM API cost (if applicable)
+- Infrastructure fee
+- Total cost charged
+
+**View your costs**: Settings → Billing → Transaction History
+
+### Cost Optimization Tips
+
+1. **Use BYOK** (#1 recommendation): Save 99.5% on LLM costs
+2. **Choose cheaper models**: GPT-4o-mini vs GPT-4o, Gemini Flash vs Pro
+3. **Disable expensive tools**: `ask_llm` and `generate_reasoning_chain` consume 10-50x more tokens
+4. **Monitor usage**: Check LLM API Transparency panel for real-time costs
+5. **Use planning mode strategically**: Only for complex queries where planning saves overall tokens
+
 ## Limitations
 
 - **Search source**: Limited to DuckDuckGo search results
 - **Content size**: Large pages may hit Lambda memory limits
 - **Network dependencies**: Requires internet access for search and content fetching
 - **Rate limiting**: DuckDuckGo may implement rate limiting for high-volume usage
-- **LLM costs**: OpenAI API usage charges apply for LLM functionality
+- **LLM costs**: OpenAI/other provider API usage charges apply (see Pricing section above)
