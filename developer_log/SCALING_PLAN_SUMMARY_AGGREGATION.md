@@ -45,9 +45,9 @@
 
 ### Current Usage Pattern
 
-**Schema** (13 columns per row):
+**Schema** (14 columns per row):
 ```
-timestamp | email | type | model | provider | tokens_in | tokens_out | cost | duration_ms | status | period_start | period_end | transaction_count
+timestamp | email | type | model | provider | tokens_in | tokens_out | cost | duration_ms | status | period_start | period_end | transaction_count | breakdown_json
 ```
 
 **Transaction Types**:
@@ -58,10 +58,10 @@ timestamp | email | type | model | provider | tokens_in | tokens_out | cost | du
 **Current Cell Usage** (unlimited retention):
 - Average user: 10 API requests/day
 - Transactions per year: 10 × 365 = 3,650 rows
-- Cells per user per year: 3,650 rows × 13 columns = **47,450 cells**
-- 200 users: 200 × 47,450 = **9,490,000 cells** (near 10M limit)
+- Cells per user per year: 3,650 rows × 14 columns = **51,100 cells**
+- 200 users: 200 × 51,100 = **10,220,000 cells** (exceeds 10M limit)
 
-**Problem**: Single spreadsheet hits cell limit after ~1 year with 200 users.
+**Problem**: Single spreadsheet exceeds cell limit after ~1 year with 200 users.
 
 ---
 
@@ -75,14 +75,14 @@ Instead of archiving old transactions to separate spreadsheets, **aggregate them
 
 **Regular Transaction Row**:
 ```
-timestamp | email | type | model | provider | tokens_in | tokens_out | cost | duration_ms | status | period_start | period_end | transaction_count
-2025-01-15T10:30:00Z | user@example.com | usage | gpt-4o-mini | openai | 1200 | 300 | 0.00045 | 1234 | success | | |
+timestamp | email | type | model | provider | tokens_in | tokens_out | cost | duration_ms | status | period_start | period_end | transaction_count | breakdown_json
+2025-01-15T10:30:00Z | user@example.com | usage | gpt-4o-mini | openai | 1200 | 300 | 0.00045 | 1234 | success | | | | 
 ```
 
 **Summary Entry Row**:
 ```
-timestamp | email | type | model | provider | tokens_in | tokens_out | cost | duration_ms | status | period_start | period_end | transaction_count
-2024-12-31T23:59:59Z | user@example.com | summary | AGGREGATED | AGGREGATED | 125000 | 45000 | 12.50 | 567800 | ARCHIVED | 2024-10-01T00:00:00Z | 2024-12-31T23:59:59Z | 450
+timestamp | email | type | model | provider | tokens_in | tokens_out | cost | duration_ms | status | period_start | period_end | transaction_count | breakdown_json
+2024-12-31T23:59:59Z | user@example.com | summary | AGGREGATED | AGGREGATED | 125000 | 45000 | 12.50 | 567800 | ARCHIVED | 2024-10-01T00:00:00Z | 2024-12-31T23:59:59Z | 450 | {"byProvider":{"openai":{"cost":8.20,"tokensIn":80000,"tokensOut":25000,"count":280},"groq":{"cost":4.30,"tokensIn":45000,"tokensOut":20000,"count":170}},"byModel":{"gpt-4o-mini":{"cost":5.50,"tokensIn":50000,"tokensOut":15000,"count":180,"provider":"openai"},"gpt-4o":{"cost":2.70,"tokensIn":30000,"tokensOut":10000,"count":100,"provider":"openai"},"llama-3.3-70b-versatile":{"cost":4.30,"tokensIn":45000,"tokensOut":20000,"count":170,"provider":"groq"}}}
 ```
 
 **Key Differences**:
@@ -93,45 +93,90 @@ timestamp | email | type | model | provider | tokens_in | tokens_out | cost | du
 - `period_start` = First transaction timestamp in summary
 - `period_end` = Last transaction timestamp in summary
 - `transaction_count` = Number of transactions aggregated
+- `breakdown_json` = **NEW COLUMN** - JSON string with provider and model breakdowns
 - All numeric fields (tokens, cost, duration) are SUMS of individual transactions
+
+**Breakdown JSON Structure**:
+```json
+{
+  "byProvider": {
+    "openai": {
+      "cost": 8.20,
+      "tokensIn": 80000,
+      "tokensOut": 25000,
+      "count": 280
+    },
+    "groq": {
+      "cost": 4.30,
+      "tokensIn": 45000,
+      "tokensOut": 20000,
+      "count": 170
+    }
+  },
+  "byModel": {
+    "gpt-4o-mini": {
+      "cost": 5.50,
+      "tokensIn": 50000,
+      "tokensOut": 15000,
+      "count": 180,
+      "provider": "openai"
+    },
+    "gpt-4o": {
+      "cost": 2.70,
+      "tokensIn": 30000,
+      "tokensOut": 10000,
+      "count": 100,
+      "provider": "openai"
+    },
+    "llama-3.3-70b-versatile": {
+      "cost": 4.30,
+      "tokensIn": 45000,
+      "tokensOut": 20000,
+      "count": 170,
+      "provider": "groq"
+    }
+  }
+}
+```
 
 ### What's Preserved in Summaries
 
-**Preserved Data** (used for balance calculations):
+**Preserved Data** (used for balance calculations and billing page):
 - ✅ Total cost (sum of all transaction costs)
 - ✅ Total tokens (in/out summed separately)
 - ✅ Total duration (sum of all durations)
 - ✅ Date range (first and last transaction timestamps)
 - ✅ Transaction count (how many were aggregated)
+- ✅ **Provider breakdown** (cost, tokens in/out, count per provider)
+- ✅ **Model breakdown** (cost, tokens in/out, count, provider per model)
 
 **What's Lost in Summaries**:
-- ❌ Individual transaction timestamps
-- ❌ Model-specific breakdown
-- ❌ Provider-specific breakdown
-- ❌ Individual transaction durations
+- ❌ Individual transaction timestamps (only period_start/period_end preserved)
+- ❌ Individual transaction durations (only total duration summed)
 
 **Why This Works**:
 - Users only need accurate current balance (preserved ✅)
-- Recent activity (<90 days) available for analysis (preserved ✅)
+- Recent activity (<90 days) available with full detail (preserved ✅)
 - Historical totals sufficient for accounting (preserved ✅)
+- **Billing page provider/model breakdowns remain accurate** (preserved ✅)
 - Individual old transactions rarely needed (acceptable loss)
 
 ### Cell Count Analysis
 
 **Current Usage** (unlimited retention):
 - 200 users × 10 requests/day × 365 days = 730,000 rows/year
-- 730,000 rows × 13 columns = **9,490,000 cells/year**
-- **Problem**: Hits 10M cell limit after ~1 year
+- 730,000 rows × 14 columns = **10,220,000 cells/year**
+- **Problem**: Exceeds 10M cell limit after ~1 year
 
 **With 90-Day Retention + Summary Aggregation**:
 - Recent transactions (last 90 days): 200 users × 10 requests/day × 90 days = 180,000 rows
 - Summary entries (per user): ~12 summaries (one per month before 90-day window)
 - Total rows: 180,000 + (200 × 12) = **182,400 rows**
-- Total cells: 182,400 × 13 = **2,371,200 cells**
-- **Result**: 76% reduction (7.1M cells saved)
+- Total cells: 182,400 × 14 = **2,553,600 cells**
+- **Result**: 75% reduction (7.67M cells saved)
 
 **Scaling Capacity with Summaries**:
-- 10M cell limit ÷ 11,856 cells per user = **843 users per spreadsheet**
+- 10M cell limit ÷ 12,768 cells per user = **783 users per spreadsheet**
 - BUT still limited by 200 tabs per spreadsheet
 - **Conclusion**: Sharding still needed for >200 users
 
@@ -201,11 +246,83 @@ async function summarizeOldTransactionsIfNeeded(userEmail, spreadsheetId, access
     
     console.log(`📊 Summarizing ${oldTransactions.length} transactions for ${userEmail}`);
     
-    // Find existing summary entries to potentially merge
+    // Find existing summary entries to merge
     const existingSummaries = rows.filter(row => row.type === 'summary');
     
-    // Aggregate ALL old transactions AND existing summaries into ONE summary
+    // Aggregate ALL old transactions AND existing summaries
     const allToAggregate = [...oldTransactions, ...existingSummaries];
+    
+    // Build provider and model breakdowns
+    const byProvider = {};
+    const byModel = {};
+    
+    for (const row of allToAggregate) {
+        // For regular transactions, add to breakdown
+        if (row.type !== 'summary') {
+            const provider = row.provider || 'unknown';
+            const model = row.model || 'unknown';
+            const tokensIn = parseInt(row.tokensIn) || 0;
+            const tokensOut = parseInt(row.tokensOut) || 0;
+            const cost = parseFloat(row.cost) || 0;
+            
+            // Aggregate by provider
+            if (!byProvider[provider]) {
+                byProvider[provider] = { cost: 0, tokensIn: 0, tokensOut: 0, count: 0 };
+            }
+            byProvider[provider].cost += cost;
+            byProvider[provider].tokensIn += tokensIn;
+            byProvider[provider].tokensOut += tokensOut;
+            byProvider[provider].count += 1;
+            
+            // Aggregate by model
+            if (!byModel[model]) {
+                byModel[model] = { cost: 0, tokensIn: 0, tokensOut: 0, count: 0, provider };
+            }
+            byModel[model].cost += cost;
+            byModel[model].tokensIn += tokensIn;
+            byModel[model].tokensOut += tokensOut;
+            byModel[model].count += 1;
+        } else {
+            // For existing summaries, merge their breakdowns
+            try {
+                const breakdown = JSON.parse(row.breakdownJson || '{}');
+                
+                // Merge provider breakdown
+                if (breakdown.byProvider) {
+                    for (const [provider, stats] of Object.entries(breakdown.byProvider)) {
+                        if (!byProvider[provider]) {
+                            byProvider[provider] = { cost: 0, tokensIn: 0, tokensOut: 0, count: 0 };
+                        }
+                        byProvider[provider].cost += stats.cost || 0;
+                        byProvider[provider].tokensIn += stats.tokensIn || 0;
+                        byProvider[provider].tokensOut += stats.tokensOut || 0;
+                        byProvider[provider].count += stats.count || 0;
+                    }
+                }
+                
+                // Merge model breakdown
+                if (breakdown.byModel) {
+                    for (const [model, stats] of Object.entries(breakdown.byModel)) {
+                        if (!byModel[model]) {
+                            byModel[model] = { 
+                                cost: 0, 
+                                tokensIn: 0, 
+                                tokensOut: 0, 
+                                count: 0, 
+                                provider: stats.provider || 'unknown' 
+                            };
+                        }
+                        byModel[model].cost += stats.cost || 0;
+                        byModel[model].tokensIn += stats.tokensIn || 0;
+                        byModel[model].tokensOut += stats.tokensOut || 0;
+                        byModel[model].count += stats.count || 0;
+                    }
+                }
+            } catch (e) {
+                console.warn(`  ⚠️  Failed to parse breakdown JSON for existing summary: ${e.message}`);
+            }
+        }
+    }
     
     const summary = {
         timestamp: new Date(Math.max(...allToAggregate.map(r => new Date(r.timestamp || r.periodEnd)))).toISOString(),
@@ -220,10 +337,12 @@ async function summarizeOldTransactionsIfNeeded(userEmail, spreadsheetId, access
         status: 'ARCHIVED',
         periodStart: new Date(Math.min(...allToAggregate.map(r => new Date(r.timestamp || r.periodStart)))).toISOString(),
         periodEnd: new Date(Math.max(...allToAggregate.map(r => new Date(r.timestamp || r.periodEnd)))).toISOString(),
-        transactionCount: allToAggregate.reduce((sum, r) => sum + (parseInt(r.transactionCount) || 1), 0)
+        transactionCount: allToAggregate.reduce((sum, r) => sum + (parseInt(r.transactionCount) || 1), 0),
+        breakdownJson: JSON.stringify({ byProvider, byModel })
     };
     
     console.log(`  📊 Summary: ${summary.transactionCount} transactions, ${summary.tokensIn + summary.tokensOut} tokens, $${summary.cost.toFixed(4)}`);
+    console.log(`  📊 Breakdown: ${Object.keys(byProvider).length} providers, ${Object.keys(byModel).length} models`);
     
     // Delete old rows (both transactions and old summaries)
     await deleteRowsFromSheet(spreadsheetId, sheetName, allToAggregate, accessToken);
@@ -243,7 +362,7 @@ async function summarizeOldTransactionsIfNeeded(userEmail, spreadsheetId, access
 
 **Integration Point**: Called by `getUserCreditBalance()` before reading rows
 
-**Estimated Lines**: ~80 lines
+**Estimated Lines**: ~140 lines (increased from 80 due to breakdown aggregation)
 
 #### Function 2: Append summary entry
 
@@ -273,10 +392,11 @@ async function appendSummaryToSheet(spreadsheetId, sheetName, summary, accessTok
         summary.status,
         summary.periodStart,
         summary.periodEnd,
-        summary.transactionCount
+        summary.transactionCount,
+        summary.breakdownJson  // NEW: JSON string with provider/model breakdowns
     ];
     
-    const range = `${sheetName}!A:M`;  // 13 columns (A-M)
+    const range = `${sheetName}!A:N`;  // 14 columns (A-N)
     
     const response = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW`,
@@ -298,7 +418,7 @@ async function appendSummaryToSheet(spreadsheetId, sheetName, summary, accessTok
 }
 ```
 
-**Estimated Lines**: ~30 lines
+**Estimated Lines**: ~40 lines
 
 #### Function 3: Get sheet rows
 
@@ -315,7 +435,7 @@ async function appendSummaryToSheet(spreadsheetId, sheetName, summary, accessTok
  * @returns {Promise<Array>} - Array of row objects
  */
 async function getSheetRows(spreadsheetId, sheetName, accessToken) {
-    const range = `${sheetName}!A:M`;  // All columns (A-M, 13 columns)
+    const range = `${sheetName}!A:N`;  // All columns (A-N, 14 columns)
     
     const response = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
@@ -348,12 +468,13 @@ async function getSheetRows(spreadsheetId, sheetName, accessToken) {
         status: row[9],
         periodStart: row[10],
         periodEnd: row[11],
-        transactionCount: row[12]
+        transactionCount: row[12],
+        breakdownJson: row[13]  // NEW: JSON breakdown for summary entries
     }));
 }
 ```
 
-**Estimated Lines**: ~40 lines
+**Estimated Lines**: ~45 lines
 
 #### Function 4: Delete rows from sheet
 
@@ -620,10 +741,10 @@ async function getUserCreditBalance(userEmail) {
 const headers = [['Timestamp', 'Email', 'Type', 'Model', 'Provider', 'Tokens In', 'Tokens Out', 'Cost', 'Duration (ms)', 'Status']];
 ```
 
-#### New Headers (13 columns)
+#### New Headers (14 columns)
 
 ```javascript
-const headers = [['Timestamp', 'Email', 'Type', 'Model', 'Provider', 'Tokens In', 'Tokens Out', 'Cost', 'Duration (ms)', 'Status', 'Period Start', 'Period End', 'Transaction Count']];
+const headers = [['Timestamp', 'Email', 'Type', 'Model', 'Provider', 'Tokens In', 'Tokens Out', 'Cost', 'Duration (ms)', 'Status', 'Period Start', 'Period End', 'Transaction Count', 'Breakdown JSON']];
 ```
 
 #### Update Row Append Logic
@@ -646,7 +767,7 @@ const row = [
 ];
 ```
 
-**New Row Format** (add 3 empty columns for regular transactions):
+**New Row Format** (add 4 empty columns for regular transactions):
 ```javascript
 const row = [
     timestamp,
@@ -661,7 +782,8 @@ const row = [
     status || '',
     '', // periodStart (empty for regular transactions)
     '', // periodEnd (empty for regular transactions)
-    ''  // transactionCount (empty for regular transactions)
+    '', // transactionCount (empty for regular transactions)
+    ''  // breakdownJson (empty for regular transactions)
 ];
 ```
 
@@ -670,8 +792,8 @@ const row = [
 | Change | Location | Lines Modified |
 |--------|----------|----------------|
 | Update header array | Sheet creation function | 1 line |
-| Add 3 columns to row append | `logToGoogleSheets()` | 3 lines |
-| **Total** | | **4 lines** |
+| Add 4 columns to row append | `logToGoogleSheets()` | 4 lines |
+| **Total** | | **5 lines** |
 
 ---
 
@@ -683,12 +805,12 @@ const row = [
 |------|-------------|-------------|----------------|--------------|
 | `src/services/google-sheets-logger.js` | Add constants | +2 | 0 | +2 |
 | `src/services/google-sheets-logger.js` | Add sharding functions | +50 | 0 | +50 |
-| `src/services/google-sheets-logger.js` | Add summary functions | +260 | 0 | +260 |
+| `src/services/google-sheets-logger.js` | Add summary functions | +325 | 0 | +325 |
 | `src/services/google-sheets-logger.js` | Modify `getUserCreditBalance` | 0 | 4 | 4 |
-| `src/services/google-sheets-logger.js` | Update schema | 0 | 4 | 4 |
+| `src/services/google-sheets-logger.js` | Update schema | 0 | 5 | 5 |
 | `src/services/google-sheets-logger.js` | Replace spreadsheet ID calls | 0 | 6 | 6 |
 | `.env` | Update environment variable | 0 | 1 | 1 |
-| **TOTAL** | | **+312** | **15** | **+327 lines** |
+| **TOTAL** | | **+377** | **16** | **+393 lines** |
 
 ### Function Locations in google-sheets-logger.js
 
@@ -697,15 +819,15 @@ const row = [
 | `ARCHIVE_AFTER_DAYS` constant | ADD | ~50 | 2 |
 | `getShardSpreadsheetIds()` | ADD | ~60 | 20 |
 | `getShardSpreadsheetId()` | ADD | ~80 | 30 |
-| `summarizeOldTransactionsIfNeeded()` | ADD | ~1900 | 70 |
-| `appendSummaryToSheet()` | ADD | ~1970 | 30 |
-| `getSheetRows()` | ADD | ~2000 | 40 |
-| `deleteRowsFromSheet()` | ADD | ~2040 | 60 |
-| `sortSheetByTimestamp()` | ADD | ~2100 | 50 |
+| `summarizeOldTransactionsIfNeeded()` | ADD | ~1900 | 140 (includes breakdown aggregation) |
+| `appendSummaryToSheet()` | ADD | ~2040 | 40 |
+| `getSheetRows()` | ADD | ~2080 | 45 |
+| `deleteRowsFromSheet()` | ADD | ~2125 | 60 |
+| `sortSheetByTimestamp()` | ADD | ~2185 | 50 |
 | `getUserCreditBalance()` | MODIFY | 1931 | 4 changes |
 | `logToGoogleSheets()` | MODIFY | 1283 | 1 change (use sharding) |
 | Sheet header definition | MODIFY | ~1400 | 1 change |
-| Row append in `logToGoogleSheets()` | MODIFY | ~1283 | 3 changes |
+| Row append in `logToGoogleSheets()` | MODIFY | ~1283 | 4 changes |
 
 ### Environment Variables
 
@@ -1079,18 +1201,19 @@ const spreadsheetId = getShardSpreadsheetId(userEmail);
 
 - **New Constants**: 1 constant (2 lines)
 - **New Sharding Functions**: 2 functions (~50 lines)
-- **New Summary Functions**: 5 functions (~260 lines)
+- **New Summary Functions**: 5 functions (~325 lines) - includes breakdown aggregation logic
 - **Modified Functions**: 2 functions (5 line changes)
-- **Schema Updates**: 2 locations (4 line changes)
-- **Total Impact**: +327 lines
+- **Schema Updates**: 2 locations (5 line changes)
+- **Total Impact**: +393 lines
 
 ### Benefits
 
-- ✅ **76% cell reduction** per user
+- ✅ **75% cell reduction** per user
 - ✅ **Unlimited users** with sharding
 - ✅ **No environment variable bloat** (feature always on)
 - ✅ **Zero-downtime deployment**
 - ✅ **No manual migration** required
+- ✅ **Billing page breakdowns preserved** (provider/model totals remain accurate)
 
 ### Capacity Impact
 
