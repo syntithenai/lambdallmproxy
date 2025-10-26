@@ -5770,7 +5770,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                               modal.innerHTML = `
                                                                 <div class="bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col">
                                                                   <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Raw HTML (${result.rawHtml.length.toLocaleString()} chars)</h3>
+                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">${t('chat.rawHtml', { count: result.rawHtml.length.toLocaleString() })}</h3>
                                                                     <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" onclick="this.closest('.fixed').remove()">
                                                                       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -5807,7 +5807,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                               modal.innerHTML = `
                                                                 <div class="bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col">
                                                                   <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Raw Text (${result.rawText.length.toLocaleString()} chars)</h3>
+                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">${t('chat.rawText', { count: result.rawText.length.toLocaleString() })}</h3>
                                                                     <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" onclick="this.closest('.fixed').remove()">
                                                                       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -5882,7 +5882,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                       {/* Processing Summary */}
                                                       <div className="pt-2 border-t border-purple-200 dark:border-purple-800">
                                                         <div className="text-[10px] text-gray-600 dark:text-gray-400 space-y-1">
-                                                          <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Content Processing Pipeline:</div>
+                                                          <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">{t('chat.contentProcessingPipeline')}</div>
                                                           {result.rawHtml && <div>• Raw HTML: {result.rawHtml.length.toLocaleString()} chars</div>}
                                                           {result.rawText && <div>• Raw Text: {result.rawText.length.toLocaleString()} chars</div>}
                                                           {result.afterSmartExtraction && <div>• Smart Extraction: {result.afterSmartExtraction.length.toLocaleString()} chars</div>}
@@ -5943,7 +5943,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                 <tbody>
                                                   {scrapeResult.format && (
                                                     <tr className="border-b border-purple-200 dark:border-purple-800">
-                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">Format:</td>
+                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">{t('chat.format')}</td>
                                                       <td className="py-1 font-medium text-gray-900 dark:text-gray-100">
                                                         {scrapeResult.format === 'markdown' ? '📝 Markdown' : '📄 Plain Text'}
                                                       </td>
@@ -5951,7 +5951,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                   )}
                                                   {typeof scrapeResult.originalLength === 'number' && typeof scrapeResult.extractedLength === 'number' && (
                                                     <tr className="border-b border-purple-200 dark:border-purple-800">
-                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">Size:</td>
+                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">{t('chat.size')}</td>
                                                       <td className="py-1 font-medium text-gray-900 dark:text-gray-100">
                                                         {(scrapeResult.originalLength / 1024).toFixed(1)}KB → {(scrapeResult.extractedLength / 1024).toFixed(1)}KB
                                                       </td>
@@ -5959,7 +5959,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                   )}
                                                   {scrapeResult.compressionRatio && typeof scrapeResult.compressionRatio === 'number' && (
                                                     <tr className="border-b border-purple-200 dark:border-purple-800">
-                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">Compression:</td>
+                                                      <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">{t('chat.compression')}</td>
                                                       <td className="py-1 font-medium text-gray-900 dark:text-gray-100">
                                                         {scrapeResult.compressionRatio.toFixed(1)}x
                                                       </td>
@@ -6000,7 +6000,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                       showSuccess('Code copied to clipboard!');
                                                     }}
                                                     className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
-                                                    title="Copy code to clipboard"
+                                                    title={t('chat.copyCodeToClipboard')}
                                                   >
                                                     Copy
                                                   </button>
@@ -6009,7 +6009,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                       handleCaptureContent(jsCode, 'tool', 'JavaScript Code');
                                                     }}
                                                     className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
-                                                    title="Capture code to Swag"
+                                                    title={t('chat.captureCodeToSwag')}
                                                   >
                                                     Grab
                                                   </button>
@@ -6087,13 +6087,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                     <tbody>
                                                       {imageGeneration.prompt && (
                                                         <tr className="border-b border-purple-200 dark:border-purple-800">
-                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20 w-1/3">Title/Prompt</td>
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20 w-1/3">{t('chat.titlePrompt')}</td>
                                                           <td className="py-2 px-3">{imageGeneration.prompt}</td>
                                                         </tr>
                                                       )}
                                                       {imageGeneration.revisedPrompt && imageGeneration.revisedPrompt !== imageGeneration.prompt && (
                                                         <tr className="border-b border-purple-200 dark:border-purple-800">
-                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">Final Prompt</td>
+                                                          <td className="py-2 px-3 font-semibold bg-purple-50 dark:bg-purple-900/20">{t('chat.finalPrompt')}</td>
                                                           <td className="py-2 px-3">{imageGeneration.revisedPrompt}</td>
                                                         </tr>
                                                       )}
