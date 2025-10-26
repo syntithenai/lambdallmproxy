@@ -4554,7 +4554,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                         const isTavily = searchService === 'tavily';
                                         return (
                                           <div className="mt-2 pt-2 border-t border-purple-200 dark:border-purple-700">
-                                            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">Search Provider:</div>
+                                            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">{t('chat.searchProvider')}</div>
                                             <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${
                                               isTavily 
                                                 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
@@ -4573,7 +4573,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 </>
                               ) : (
                                 <>
-                                  <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">Function Call:</div>
+                                  <div className="font-semibold text-purple-700 dark:text-purple-300 mb-2">{t('chat.functionCall')}</div>
                                   <div className="font-mono text-xs mb-2">
                                     <span className="text-purple-900 dark:text-purple-100">{toolCall.function.name}</span>
                                   </div>
@@ -4587,7 +4587,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       if (parsed.code) {
                                         return (
                                           <div>
-                                            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">Code:</div>
+                                            <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">{t('chat.code')}</div>
                                             <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
                                               <pre className="whitespace-pre-wrap leading-relaxed">{parsed.code}</pre>
                                             </div>
@@ -4598,7 +4598,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       // For all other tools (including generate_chart), show JSON tree
                                       return (
                                         <div>
-                                          <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">Arguments:</div>
+                                          <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">{t('chat.arguments')}</div>
                                           <div className="bg-gray-900 dark:bg-gray-950 p-3 rounded font-mono text-xs overflow-x-auto max-h-96 overflow-y-auto">
                                             <JsonTree data={parsed} expandAll={true} />
                                           </div>
@@ -4616,14 +4616,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           {/* Hide Call ID for search_web tool */}
                           {msg.tool_call_id && msg.name !== 'search_web' && (
                             <div>
-                              <span className="font-semibold text-purple-700 dark:text-purple-300">Call ID:</span>
+                              <span className="font-semibold text-purple-700 dark:text-purple-300">{t('chat.callId')}</span>
                               <div className="font-mono text-xs bg-purple-50 dark:bg-purple-950 p-1 rounded mt-1 break-all">
                                 {msg.tool_call_id}
                               </div>
                             </div>
                           )}
                           <div>
-                            <span className="font-semibold text-purple-700 dark:text-purple-300">Result:</span>
+                            <span className="font-semibold text-purple-700 dark:text-purple-300">{t('chat.result')}</span>
                             <div className="bg-purple-50 dark:bg-purple-950 p-2 rounded mt-1 max-h-96 overflow-y-auto">
                               {searchResults ? (
                                 <SearchWebResults results={searchResults} />
@@ -4633,7 +4633,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   {scrapeResult.url && (
                                     <div className="flex items-start justify-between gap-2">
                                       <div className="flex-1 min-w-0">
-                                        <span className="font-semibold text-purple-800 dark:text-purple-200">URL:</span>
+                                        <span className="font-semibold text-purple-800 dark:text-purple-200">{t('chat.url')}</span>
                                         <a 
                                           href={scrapeResult.url} 
                                           target="_blank" 
@@ -4647,7 +4647,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                         <button
                                           onClick={() => setViewingRawHtml({ url: scrapeResult.url, html: scrapeResult.rawHtml })}
                                           className="flex-shrink-0 px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-700 text-white rounded transition-colors font-medium"
-                                          title="View raw uncompressed HTML"
+                                          title={t('chat.viewRawHtml')}
                                         >
                                           📄 Raw HTML
                                         </button>
@@ -4658,7 +4658,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   {/* Show error if present */}
                                   {scrapeResult.error && (
                                     <div className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded p-2">
-                                      <span className="font-semibold text-red-800 dark:text-red-200">Error:</span>
+                                      <span className="font-semibold text-red-800 dark:text-red-200">{t('chat.error')}</span>
                                       <p className="text-red-700 dark:text-red-300 text-xs mt-1">{scrapeResult.error}</p>
                                     </div>
                                   )}
@@ -4842,7 +4842,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                               showSuccess('Output copied to clipboard!');
                                             }}
                                             className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
-                                            title="Copy output to clipboard"
+                                            title={t('chat.copyOutputToClipboard')}
                                           >
                                             Copy
                                           </button>
@@ -4851,7 +4851,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                               handleCaptureContent(String(jsResult.result), 'tool', 'JavaScript Output');
                                             }}
                                             className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
-                                            title="Capture output to Swag"
+                                            title={t('chat.captureOutputToSwag')}
                                           >
                                             Grab
                                           </button>
@@ -4931,7 +4931,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                           </svg>
-                                          <span className="text-[10px]">No summarization</span>
+                                          <span className="text-[10px]">{t('chat.noSummarization')}</span>
                                         </>
                                       )}
                                     </button>
@@ -5298,7 +5298,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                         <button
                                           onClick={() => handleGrabImage(img.src, img.alt || `Image ${idx + 1}`)}
                                           className="absolute top-2 right-2 p-1.5 bg-white dark:bg-gray-800 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                                          title="Grab image"
+                                          title={t('chat.grabImage')}
                                         >
                                           <svg className="w-4 h-4 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -5495,7 +5495,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                   </span>
                                                 )}
                                                 {parsed.proxyUsed && (
-                                                  <span className="text-[10px] bg-green-200 dark:bg-green-800 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded" title="Using proxy for enhanced privacy and bot detection evasion">
+                                                  <span className="text-[10px] bg-green-200 dark:bg-green-800 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded" title={t('chat.usingProxy')}>
                                                     🔒 proxy
                                                   </span>
                                                 )}
@@ -5627,12 +5627,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                       </span>
                                                     )}
                                                     {result.intelligentlyExtracted && (
-                                                      <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded" title="Content intelligently extracted">
+                                                      <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded" title={t('chat.contentExtracted')}>
                                                         🧠 smart
                                                       </span>
                                                     )}
                                                     {result.truncated && (
-                                                      <span className="text-[10px] bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-1.5 py-0.5 rounded" title="Truncated to fit model">
+                                                      <span className="text-[10px] bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-1.5 py-0.5 rounded" title={t('chat.truncatedToFit')}>
                                                         ✂️ truncated
                                                       </span>
                                                     )}
@@ -5650,10 +5650,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
                                                         {/* Scrape Strategy */}
                                                         <div className="col-span-2">
-                                                          <span className="text-gray-500 dark:text-gray-400">Scrape Method:</span>{' '}
+                                                          <span className="text-gray-500 dark:text-gray-400">{t('chat.scrapeMethod')}</span>{' '}
                                                           <span className="font-semibold text-purple-600 dark:text-purple-400">
                                                             {result.tier !== undefined ? (
-                                                              <>Tier {result.tier} - {result.scrapeMethod || result.scrapeService}</>
+                                                              <>{t('chat.tier')} {result.tier} - {result.scrapeMethod || result.scrapeService}</>
                                                             ) : (
                                                               'Direct HTTP Fetch'
                                                             )}
@@ -5672,7 +5672,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         {/* Scrape Time (from tier orchestrator) */}
                                                         {result.responseTime !== undefined && (
                                                           <div>
-                                                            <span className="text-gray-500 dark:text-gray-400">Scrape Time:</span>{' '}
+                                                            <span className="text-gray-500 dark:text-gray-400">{t('chat.scrapeTime')}</span>{' '}
                                                             <span className="font-mono text-gray-700 dark:text-gray-300">
                                                               {result.responseTime}ms
                                                             </span>
@@ -5682,7 +5682,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         {/* Total Processing Time */}
                                                         {result.fetchTimeMs !== undefined && (
                                                           <div>
-                                                            <span className="text-gray-500 dark:text-gray-400">Total Time:</span>{' '}
+                                                            <span className="text-gray-500 dark:text-gray-400">{t('chat.totalTime')}</span>{' '}
                                                             <span className="font-mono text-gray-700 dark:text-gray-300">
                                                               {result.fetchTimeMs}ms
                                                             </span>
@@ -5692,7 +5692,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         {/* Content Format */}
                                                         {result.contentFormat && (
                                                           <div>
-                                                            <span className="text-gray-500 dark:text-gray-400">Format:</span>{' '}
+                                                            <span className="text-gray-500 dark:text-gray-400">{t('chat.format')}</span>{' '}
                                                             <span className="font-mono text-gray-700 dark:text-gray-300">
                                                               {result.contentFormat}
                                                             </span>
@@ -5702,7 +5702,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         {/* Original Size */}
                                                         {(result.originalLength || result.originalContentLength) && (
                                                           <div>
-                                                            <span className="text-gray-500 dark:text-gray-400">Original Size:</span>{' '}
+                                                            <span className="text-gray-500 dark:text-gray-400">{t('chat.originalSize')}</span>{' '}
                                                             <span className="font-mono text-gray-700 dark:text-gray-300">
                                                               {((result.originalLength || result.originalContentLength) / 1024).toFixed(1)}KB
                                                             </span>
@@ -5712,7 +5712,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         {/* Compressed Size */}
                                                         {actualContent && (
                                                           <div>
-                                                            <span className="text-gray-500 dark:text-gray-400">Compressed Size:</span>{' '}
+                                                            <span className="text-gray-500 dark:text-gray-400">{t('chat.compressedSize')}</span>{' '}
                                                             <span className="font-mono text-gray-700 dark:text-gray-300">
                                                               {(actualContent.length / 1024).toFixed(1)}KB
                                                             </span>
@@ -5722,7 +5722,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         {/* Compression Ratio */}
                                                         {result.compressionRatio && (
                                                           <div>
-                                                            <span className="text-gray-500 dark:text-gray-400">Compression:</span>{' '}
+                                                            <span className="text-gray-500 dark:text-gray-400">{t('chat.compression')}</span>{' '}
                                                             <span className="font-mono text-green-600 dark:text-green-400">
                                                               {result.compressionRatio.toFixed(2)}x
                                                             </span>
@@ -5731,7 +5731,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                         
                                                         {/* Compression Method */}
                                                         <div className="col-span-2">
-                                                          <span className="text-gray-500 dark:text-gray-400">Compression Strategy:</span>{' '}
+                                                          <span className="text-gray-500 dark:text-gray-400">{t('chat.compressionStrategy')}</span>{' '}
                                                           <span className="text-gray-700 dark:text-gray-300">
                                                             {result.intelligentlyExtracted ? (
                                                               <span>
@@ -5740,7 +5740,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                                 {result.truncated && ' → Truncated to model limits'}
                                                               </span>
                                                             ) : (
-                                                              <span>Basic extraction</span>
+                                                              <span>{t('chat.basicExtraction')}</span>
                                                             )}
                                                           </span>
                                                         </div>
