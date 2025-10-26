@@ -3889,7 +3889,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       }
       
       setShowLoadDialog(false);
-      showSuccess('Chat loaded successfully');
+      showSuccess(t('chat.loadChatSuccess'));
     } else {
       showError(t('chat.failedToLoadChat'));
     }
@@ -3941,7 +3941,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     setSelectedChatIds(new Set());
     setShowClearHistoryConfirm(false);
     setShowLoadDialog(false);
-    showSuccess('All chat history cleared');
+    showSuccess(t('chat.allChatHistoryCleared'));
   };
 
   const handleContinue = async () => {
@@ -6865,7 +6865,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                      📎 {selectedSnippetIds.size} {selectedSnippetIds.size === 1 ? 'snippet' : 'snippets'} attached
+                      {t('chat.snippetsAttached', { count: selectedSnippetIds.size, plural: selectedSnippetIds.size === 1 ? '' : 's' })}
                     </span>
                     <div className="flex flex-wrap gap-1 flex-1 min-w-0">
                       {Array.from(selectedSnippetIds).slice(0, 3).map(id => {
@@ -6957,7 +6957,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           <div className="card max-w-2xl w-full p-6">
             {/* Header with Select All/None buttons */}
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Chat History</h3>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">{t('chat.chatHistoryTitle')}</h3>
               {chatHistory.length > 0 && (
                 <div className="flex gap-2">
                   <button
@@ -7020,7 +7020,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               })}
               {chatHistory.length === 0 && (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                  No chat history found. Start a conversation to save it automatically.
+                  {t('chat.noChatHistory')}
                 </p>
               )}
             </div>
@@ -7545,7 +7545,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           <div className="h-full flex flex-col">
             <div className="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                � Attach Context Snippets
+                {t('chat.attachContextTitle')}
               </h2>
               <button
                 onClick={() => setShowSnippetsPanel(false)}

@@ -202,7 +202,17 @@
     "mcpServerUrlPlaceholder": "Server URL (e.g., http://localhost:3000)",
     "noMcpServers": "No MCP servers configured",
     "addServer": "Add Server",
-    "remove": "Remove"
+    "remove": "Remove",
+    "chatHistoryTitle": "Chat History",
+    "noChatHistory": "No chat history found. Start a conversation to save it automatically.",
+    "allChatHistoryCleared": "All chat history cleared",
+    "loadChatSuccess": "Chat loaded successfully",
+    "examplesTitle": "Chat Examples",
+    "tryExample": "Try this example",
+    "attachContextTitle": "Attach Context from Swag",
+    "snippetsAttached": "{{count}} snippet{{plural}} attached",
+    "attachSnippets": "Attach Snippets",
+    "searchSnippets": "Search snippets..."
   },
   "planning": {
     "title": "Research Planning",
