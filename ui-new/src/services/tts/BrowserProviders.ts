@@ -154,13 +154,13 @@ export class BrowserSpeechProvider implements TTSProvider {
     }
 
     this.utterance = new SpeechSynthesisUtterance(speakText);
-    this.utterance.rate = options.rate || 1.0;
-    this.utterance.pitch = options.pitch || 1.0;
-    this.utterance.volume = options.volume || 1.0;
+    this.utterance!.rate = options.rate || 1.0;
+    this.utterance!.pitch = options.pitch || 1.0;
+    this.utterance!.volume = options.volume || 1.0;
 
     if (options.voice) {
       const voices = this.synth.getVoices();
-      this.utterance.voice = voices.find(v => v.voiceURI === options.voice) || null;
+      this.utterance!.voice = voices.find(v => v.voiceURI === options.voice) || null;
     }
 
     return new Promise((resolve, reject) => {

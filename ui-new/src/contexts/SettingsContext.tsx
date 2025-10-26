@@ -52,7 +52,8 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     version: '2.0.0',
     providers: [],
     tavilyApiKey: '',
-    syncToGoogleDrive: true // Default to enabled for better user experience
+    syncToGoogleDrive: true, // Default to enabled for better user experience
+    language: 'en' // Default to English
   });
 
   const [isLoadingFromDrive, setIsLoadingFromDrive] = useState(false);

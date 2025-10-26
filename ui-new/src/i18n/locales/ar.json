@@ -1,0 +1,42 @@
+{
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "close": "إغلاق",
+    "loading": "جار التحميل...",
+    "error": "خطأ",
+    "success": "نجاح"
+  },
+  "auth": {
+    "signIn": "تسجيل الدخول باستخدام Google",
+    "signOut": "تسجيل الخروج",
+    "authRequired": "المصادقة مطلوبة",
+    "signInPrompt": "يرجى تسجيل الدخول باستخدام Google للمتابعة"
+  },
+  "chat": {
+    "placeholder": "اكتب رسالتك هنا...",
+    "send": "إرسال",
+    "stop": "إيقاف",
+    "thinking": "جاري التفكير..."
+  },
+  "planning": {
+    "title": "تخطيط البحث",
+    "generatePlan": "إنشاء خطة"
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "language": "اللغة",
+    "selectLanguage": "اختر اللغة"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "zh": "中文",
+    "ja": "日本語",
+    "ar": "العربية"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "close": "Cerrar",
+    "loading": "Cargando...",
+    "error": "Error",
+    "success": "Éxito",
+    "confirm": "Confirmar",
+    "back": "Atrás",
+    "next": "Siguiente",
+    "submit": "Enviar",
+    "clear": "Limpiar",
+    "search": "Buscar",
+    "filter": "Filtrar"
+  },
+  "auth": {
+    "signIn": "Iniciar sesión con Google",
+    "signOut": "Cerrar sesión",
+    "authRequired": "Autenticación requerida",
+    "tokenExpired": "Tu sesión ha expirado. Por favor inicia sesión nuevamente.",
+    "signInPrompt": "Por favor inicia sesión con Google para continuar"
+  },
+  "chat": {
+    "placeholder": "Escribe tu mensaje aquí...",
+    "send": "Enviar",
+    "retry": "Reintentar",
+    "stop": "Detener",
+    "thinking": "Pensando...",
+    "generating": "Generando respuesta..."
+  },
+  "planning": {
+    "title": "Planificación de Investigación",
+    "query": "Consulta de Investigación",
+    "generatePlan": "Generar Plan",
+    "savePlan": "Guardar Plan",
+    "transferToChat": "Transferir al Chat",
+    "clearAll": "Limpiar Todo"
+  },
+  "settings": {
+    "title": "Configuración",
+    "language": "Idioma",
+    "selectLanguage": "Seleccionar Idioma",
+    "providers": "Proveedores",
+    "cloudSync": "Sincronización en la Nube",
+    "billing": "Facturación"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "zh": "中文",
+    "ja": "日本語",
+    "ar": "العربية"
+  },
+  "billing": {
+    "title": "Facturación",
+    "balance": "Saldo",
+    "addCredits": "Agregar Créditos",
+    "usage": "Uso"
+  },
+  "errors": {
+    "generic": "Ocurrió un error",
+    "tryAgain": "Por favor intenta nuevamente"
+  }
+}

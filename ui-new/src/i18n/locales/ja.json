@@ -1,0 +1,42 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "edit": "編集",
+    "close": "閉じる",
+    "loading": "読み込み中...",
+    "error": "エラー",
+    "success": "成功"
+  },
+  "auth": {
+    "signIn": "Googleでサインイン",
+    "signOut": "サインアウト",
+    "authRequired": "認証が必要です",
+    "signInPrompt": "続行するにはGoogleでサインインしてください"
+  },
+  "chat": {
+    "placeholder": "ここにメッセージを入力...",
+    "send": "送信",
+    "stop": "停止",
+    "thinking": "考え中..."
+  },
+  "planning": {
+    "title": "研究計画",
+    "generatePlan": "計画を生成"
+  },
+  "settings": {
+    "title": "設定",
+    "language": "言語",
+    "selectLanguage": "言語を選択"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "zh": "中文",
+    "ja": "日本語",
+    "ar": "العربية"
+  }
+}

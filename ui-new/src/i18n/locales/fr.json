@@ -1,0 +1,42 @@
+{
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "close": "Fermer",
+    "loading": "Chargement...",
+    "error": "Erreur",
+    "success": "Succès"
+  },
+  "auth": {
+    "signIn": "Se connecter avec Google",
+    "signOut": "Se déconnecter",
+    "authRequired": "Authentification requise",
+    "signInPrompt": "Veuillez vous connecter avec Google pour continuer"
+  },
+  "chat": {
+    "placeholder": "Tapez votre message ici...",
+    "send": "Envoyer",
+    "stop": "Arrêter",
+    "thinking": "Réflexion..."
+  },
+  "planning": {
+    "title": "Planification de la Recherche",
+    "generatePlan": "Générer un Plan"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "language": "Langue",
+    "selectLanguage": "Sélectionner la Langue"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "zh": "中文",
+    "ja": "日本語",
+    "ar": "العربية"
+  }
+}

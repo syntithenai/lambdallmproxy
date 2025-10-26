@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SearchResultsProvider } from './contexts/SearchResultsContext';
@@ -37,6 +38,7 @@ function AppContent() {
   const { isAuthenticated, getToken } = useAuth();
   const { settings } = useSettings();
   const { usage, loading: usageLoading } = useUsage();
+  const { i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [showSettings, setShowSettings] = useState(false);
@@ -62,6 +64,18 @@ function AppContent() {
       console.error('❌ Background sync failed:', error.message);
     }
   });
+  
+  // Handle language changes and document direction
+  useEffect(() => {
+    if (settings.language && i18n.language !== settings.language) {
+      i18n.changeLanguage(settings.language);
+    }
+    
+    // Set document direction based on language
+    const direction = ['ar', 'he', 'fa'].includes(i18n.language) ? 'rtl' : 'ltr';
+    document.documentElement.dir = direction;
+    document.documentElement.lang = i18n.language;
+  }, [settings.language, i18n]);
   
   // Close mobile menu when route changes
   useEffect(() => {

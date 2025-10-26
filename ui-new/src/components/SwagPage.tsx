@@ -114,8 +114,6 @@ export const SwagPage: React.FC = () => {
   // Load RAG config for similarity threshold
   const [_ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
   
-  // Tag filter collapse state for mobile
-  const [showAllTags, setShowAllTags] = useState(false);
   // Recent tags for desktop quick filter
   const [recentTags, setRecentTags] = useState<string[]>(() => {
     try {
@@ -1604,7 +1602,7 @@ export const SwagPage: React.FC = () => {
                   <div className="flex gap-2 items-center">
                     {/* Embedding Status Button */}
                     {/* TTS Play Button */}
-                    <ReadButton text={snippet.content} variant="icon" className="p-1" title="Read snippet" />
+                    <ReadButton text={snippet.content} variant="icon" className="p-1" />
                     <button
                       onClick={async () => {
                         setCheckingEmbedding(true);

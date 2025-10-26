@@ -1,0 +1,42 @@
+{
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "close": "Schließen",
+    "loading": "Laden...",
+    "error": "Fehler",
+    "success": "Erfolg"
+  },
+  "auth": {
+    "signIn": "Mit Google anmelden",
+    "signOut": "Abmelden",
+    "authRequired": "Authentifizierung erforderlich",
+    "signInPrompt": "Bitte melden Sie sich mit Google an, um fortzufahren"
+  },
+  "chat": {
+    "placeholder": "Geben Sie Ihre Nachricht hier ein...",
+    "send": "Senden",
+    "stop": "Stoppen",
+    "thinking": "Denken..."
+  },
+  "planning": {
+    "title": "Forschungsplanung",
+    "generatePlan": "Plan Generieren"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language": "Sprache",
+    "selectLanguage": "Sprache Auswählen"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "zh": "中文",
+    "ja": "日本語",
+    "ar": "العربية"
+  }
+}

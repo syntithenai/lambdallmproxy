@@ -1,0 +1,42 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "close": "关闭",
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功"
+  },
+  "auth": {
+    "signIn": "使用 Google 登录",
+    "signOut": "退出登录",
+    "authRequired": "需要身份验证",
+    "signInPrompt": "请使用 Google 登录以继续"
+  },
+  "chat": {
+    "placeholder": "在此输入您的消息...",
+    "send": "发送",
+    "stop": "停止",
+    "thinking": "思考中..."
+  },
+  "planning": {
+    "title": "研究规划",
+    "generatePlan": "生成计划"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "selectLanguage": "选择语言"
+  },
+  "languages": {
+    "en": "English",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "zh": "中文",
+    "ja": "日本語",
+    "ar": "العربية"
+  }
+}

@@ -64,8 +64,10 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (ttsCapabilities?.groq && !allProviders.some(p => p.type === 'groq')) {
           console.log('🎙️ TTS: Adding Groq TTS from backend');
           allProviders.push({
+            id: 'backend-groq',
             type: 'groq',
             apiKey: '[BACKEND]', // Actual key is on backend
+            apiEndpoint: '',
             enabled: true
           });
         }
@@ -73,8 +75,10 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (ttsCapabilities?.openai && !allProviders.some(p => p.type === 'openai')) {
           console.log('🎙️ TTS: Adding OpenAI TTS from backend');
           allProviders.push({
+            id: 'backend-openai',
             type: 'openai',
             apiKey: '[BACKEND]',
+            apiEndpoint: '',
             enabled: true
           });
         }
@@ -82,8 +86,10 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (ttsCapabilities?.gemini && !allProviders.some(p => p.type === 'gemini')) {
           console.log('🎙️ TTS: Adding Gemini TTS from backend');
           allProviders.push({
+            id: 'backend-gemini',
             type: 'gemini',
             apiKey: '[BACKEND]',
+            apiEndpoint: '',
             enabled: true
           });
         }
@@ -91,8 +97,10 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (ttsCapabilities?.together && !allProviders.some(p => p.type === 'together')) {
           console.log('🎙️ TTS: Adding Together TTS from backend');
           allProviders.push({
+            id: 'backend-together',
             type: 'together',
             apiKey: '[BACKEND]',
+            apiEndpoint: '',
             enabled: true
           });
         }

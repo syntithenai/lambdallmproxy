@@ -10,7 +10,7 @@ import { useCast } from '../contexts/CastContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { useNavigate, useLocation as useRouterLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { ragDB } from '../utils/ragDB';
@@ -84,7 +84,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { accessToken, user, getToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const navigate = useNavigate();
-  const routerLocation = useRouterLocation();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracksToStart } = usePlaylist();
   const { addSnippet, snippets: swagSnippets, syncSnippetFromGoogleSheets } = useSwag();
