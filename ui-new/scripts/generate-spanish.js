@@ -1,4 +1,12 @@
-{
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Spanish translations for all namespaces
+const spanishTranslations = {
   "common": {
     "save": "Guardar",
     "cancel": "Cancelar",
@@ -600,4 +608,11 @@
     "generateChart": "Generar Gráfico",
     "generateImage": "Generar Imagen"
   }
-}
+};
+
+// Write to file
+const outputPath = path.join(__dirname, '..', 'src', 'i18n', 'locales', 'es.json');
+fs.writeFileSync(outputPath, JSON.stringify(spanishTranslations, null, 2), 'utf8');
+
+console.log('✅ Spanish translation file created successfully!');
+console.log(`📁 Output: ${outputPath}`);
