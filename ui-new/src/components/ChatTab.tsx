@@ -82,7 +82,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   setShowMCPDialog,
   onLoadingChange
 }) => {
-  const { t } = useTranslation();
+  // const { t } = useTranslation(); // Translation function for i18n - TODO: Convert UI strings
   const { accessToken, user, getToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const navigate = useNavigate();
