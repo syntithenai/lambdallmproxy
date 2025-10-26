@@ -118,6 +118,59 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 S3_KEY="functions/llmproxy-${TIMESTAMP}.zip"
 
 echo -e "${YELLOW}☁️  Uploading to S3...${NC}"
+
+# Check if S3 bucket exists, create if needed
+if ! aws s3 ls "s3://${S3_BUCKET}" 2>&1 | grep -q 'NoSuchBucket'; then
+    echo -e "${GREEN}✅ S3 bucket ${S3_BUCKET} exists${NC}"
+else
+    echo -e "${YELLOW}⚠️  S3 bucket ${S3_BUCKET} does not exist, creating...${NC}"
+    if aws s3 mb "s3://${S3_BUCKET}" --region "$REGION"; then
+        echo -e "${GREEN}✅ Created S3 bucket ${S3_BUCKET}${NC}"
+        
+        # Enable versioning for deployment history
+        aws s3api put-bucket-versioning \
+            --bucket "${S3_BUCKET}" \
+            --versioning-configuration Status=Enabled \
+            --region "$REGION" 2>/dev/null || true
+        
+        # Add lifecycle policy to clean up old versions after 30 days
+        cat > /tmp/s3-lifecycle-policy.json <<EOF
+{
+    "Rules": [
+        {
+            "Id": "DeleteOldVersions",
+            "Status": "Enabled",
+            "NoncurrentVersionExpiration": {
+                "NoncurrentDays": 30
+            }
+        },
+        {
+            "Id": "DeleteOldDeployments",
+            "Status": "Enabled",
+            "Filter": {
+                "Prefix": "functions/"
+            },
+            "Expiration": {
+                "Days": 90
+            }
+        }
+    ]
+}
+EOF
+        aws s3api put-bucket-lifecycle-configuration \
+            --bucket "${S3_BUCKET}" \
+            --lifecycle-configuration file:///tmp/s3-lifecycle-policy.json \
+            --region "$REGION" 2>/dev/null || true
+        rm -f /tmp/s3-lifecycle-policy.json
+        
+        echo -e "${GREEN}✅ Configured bucket versioning and lifecycle policies${NC}"
+    else
+        echo -e "${RED}❌ Failed to create S3 bucket ${S3_BUCKET}${NC}"
+        echo -e "${YELLOW}💡 You may need to choose a different bucket name (must be globally unique)${NC}"
+        exit 1
+    fi
+fi
+
 aws s3 cp "$ZIP_FILE" "s3://${S3_BUCKET}/${S3_KEY}"
 
 # Update Lambda function code from S3
