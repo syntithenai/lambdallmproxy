@@ -12,6 +12,7 @@ const { DEFAULT_REASONING_EFFORT, MAX_TOKENS_PLANNING } = require('../config/tok
 const { authenticateRequest, getAllowedEmails } = require('../auth');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const { buildProviderPool } = require('../credential-pool');
+const { getLanguageInstruction } = require('../utils/languageInstructions');
 const path = require('path');
 
 /**
@@ -73,9 +74,10 @@ function getRateLimitTracker() {
  * @param {string} requestedModel - Optional specific model to use
  * @param {Object} clarificationAnswers - Optional answers to previous clarification questions
  * @param {Object} previousContext - Optional context from previous clarification request
+ * @param {string} language - User's preferred language for responses (ISO 639-1 code)
  * @returns {Promise<Object>} Plan object with queryType, reasoning, persona, etc.
  */
-async function generatePlan(query, providers = {}, requestedModel = null, eventCallback = null, clarificationAnswers = null, previousContext = null, forcePlan = false) {
+async function generatePlan(query, providers = {}, requestedModel = null, eventCallback = null, clarificationAnswers = null, previousContext = null, forcePlan = false, language = 'en') {
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
         throw new Error('Query parameter is required and must be a non-empty string');
     }
@@ -83,6 +85,9 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
     if (!providers || Object.keys(providers).length === 0) {
         throw new Error('At least one provider with API key is required');
     }
+    
+    // Generate language instruction if not English
+    const languageInstruction = language && language !== 'en' ? getLanguageInstruction(language) : '';
     
     // Declare finalModel at function scope for error handling
     let finalModel = 'unknown';
@@ -646,6 +651,11 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
                 enhancedSystemPrompt = `${persona}. Provide a direct, factual answer to the user's question: "${query}". Be concise but complete.`;
             }
             
+            // Add language instruction if not English
+            if (languageInstruction) {
+                enhancedSystemPrompt += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
+            }
+            
             if (!enhancedUserPrompt || enhancedUserPrompt.length < 10) {
                 enhancedUserPrompt = simpleInstruction || query;
             }
@@ -856,6 +866,12 @@ Your FIRST response MUST include:
   ✅ Provide comprehensive answers from search results`;
             }
             
+            // Add language instruction to both prompts if not English
+            if (languageInstruction) {
+                enhancedSystemPrompt += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
+                enhancedUserPrompt += `\n\n**LANGUAGE**: ${languageInstruction}`;
+            }
+            
             return {
                 ...baseResult,
                 searchStrategies,
@@ -1046,6 +1062,12 @@ Use search_web for these queries:`;
 BEGIN EXECUTION NOW.`;
             }
             
+            // Add language instruction to both prompts if not English
+            if (languageInstruction) {
+                enhancedSystemPrompt += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
+                enhancedUserPrompt += `\n\n**LANGUAGE**: ${languageInstruction}`;
+            }
+            
             return {
                 ...baseResult,
                 documentSections,
@@ -1071,6 +1093,11 @@ BEGIN EXECUTION NOW.`;
                 if (clarificationQuestions.length > 0) {
                     enhancedUserPrompt += `\n\nPlease clarify:\n${clarificationQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
                 }
+            }
+            
+            // Add language instruction if not English
+            if (languageInstruction) {
+                enhancedSystemPrompt += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
             }
             
             return {
@@ -1115,6 +1142,11 @@ BEGIN EXECUTION NOW.`;
                 enhancedUserPrompt += `\n\nPlease guide me through this process step by step, using multiple iterations of research, planning, and execution.`;
             }
             
+            // Add language instruction if not English
+            if (languageInstruction) {
+                enhancedSystemPrompt += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
+            }
+            
             return {
                 ...baseResult,
                 guidanceQuestions,
@@ -1156,6 +1188,11 @@ BEGIN EXECUTION NOW.`;
                 }
                 
                 enhancedUserPrompt += '\n\nPlease research these topics thoroughly and provide a comprehensive analysis.';
+            }
+            
+            // Add language instruction if not English
+            if (languageInstruction) {
+                enhancedSystemPrompt += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
             }
             
             return {
@@ -1285,6 +1322,7 @@ async function handler(event, responseStream, context) {
         const clarificationAnswers = body.clarificationAnswers || null; // User's answers to clarification questions
         const previousContext = body.previousContext || null; // Context from previous clarification request
         const forcePlan = body.forcePlan || false; // Force plan generation even if guidance mode
+        const language = body.language || 'en'; // User's preferred language for responses
         
         console.log(`🎯 Planning request: forcePlan=${forcePlan}, hasClarificationAnswers=${!!clarificationAnswers}`);
         
@@ -1360,7 +1398,7 @@ async function handler(event, responseStream, context) {
         const plan = await generatePlan(query, providers, requestedModel, (eventType, eventData) => {
             // Forward events from generatePlan to SSE stream
             sseWriter.writeEvent(eventType, eventData);
-        }, clarificationAnswers, previousContext, forcePlan);
+        }, clarificationAnswers, previousContext, forcePlan, language);
         
         // Extract token usage, selected model, and raw response for transparency and logging
         const tokenUsage = plan._tokenUsage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
