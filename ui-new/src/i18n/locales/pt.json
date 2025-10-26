@@ -52,8 +52,8 @@
     "knowledgeBaseDesc": "Salve descobertas em sua base de conhecimento pessoal, crie trechos e construa documentos de pesquisa abrangentes ao longo do tempo",
     "advancedPlanning": "Planejamento Avançado",
     "advancedPlanningDesc": "Gere planos de pesquisa estruturados com personas especializadas, estratégias de busca e abordagens metodológicas",
-    "costEffective": "Custo-Efetivo",
-    "costEffectiveDesc": "Use suas próprias chaves API para custos de $0 de LLM, ou aproveite provedores gratuitos automaticamente",
+    "costEffective": "Seleção Inteligente de Modelos",
+    "costEffectiveDesc": "Seleção automática de modelos que fazem o trabalho de forma econômica ou poderosa com base na estratégia de seleção. Traga suas próprias chaves para economizar 25%",
     "transparency": "Transparência Total",
     "transparencyDesc": "Rastreie cada chamada de API, uso de tokens e custo no painel de cobrança em tempo real",
     "perfectFor": "Perfeito para: Pesquisa acadêmica, análise de mercado, criação de conteúdo, documentação técnica, inteligência competitiva e qualquer tarefa que exija investigação minuciosa."

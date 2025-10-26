@@ -52,8 +52,8 @@
     "knowledgeBaseDesc": "Speichern Sie Erkenntnisse in Ihrer persönlichen Wissensdatenbank, erstellen Sie Snippets und bauen Sie im Laufe der Zeit umfassende Forschungsdokumente auf",
     "advancedPlanning": "Erweiterte Planung",
     "advancedPlanningDesc": "Generieren Sie strukturierte Forschungspläne mit Experten-Personas, Suchstrategien und methodischen Ansätzen",
-    "costEffective": "Kostengünstig",
-    "costEffectiveDesc": "Verwenden Sie Ihre eigenen API-Schlüssel für 0 $ LLM-Kosten oder nutzen Sie automatisch kostenlose Anbieter",
+    "costEffective": "Intelligente Modellauswahl",
+    "costEffectiveDesc": "Automatische Auswahl von Modellen, die die Aufgabe wirtschaftlich oder leistungsstark erledigen, basierend auf der Auswahlstrategie. Verwenden Sie Ihre eigenen Schlüssel, um 25% zu sparen",
     "transparency": "Volle Transparenz",
     "transparencyDesc": "Verfolgen Sie jeden API-Aufruf, Token-Verbrauch und Kosten im Echtzeit-Abrechnungs-Dashboard",
     "perfectFor": "Perfekt für: Akademische Forschung, Marktanalyse, Content-Erstellung, technische Dokumentation, Competitive Intelligence und jede Aufgabe, die gründliche Untersuchungen erfordert."

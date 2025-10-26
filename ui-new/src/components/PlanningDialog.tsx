@@ -5,7 +5,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDialogClose } from '../hooks/useDialogClose';
-import { generatePlan } from '../utils/api';
+import { generatePlan, getCachedApiBase } from '../utils/api';
 import { 
   getAllCachedPlans, 
   saveCachedPlan, 
@@ -14,6 +14,7 @@ import {
 } from '../utils/planningCache';
 import type { CachedPlan } from '../utils/planningCache';
 import { LlmInfoDialog } from './LlmInfoDialog';
+import { VoiceInputDialog } from './VoiceInputDialog';
 
 interface PlanningDialogProps {
   isOpen: boolean;
@@ -24,7 +25,7 @@ interface PlanningDialogProps {
 export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose, onTransferToChat }) => {
   const { t } = useTranslation();
   const dialogRef = useDialogClose(isOpen, onClose);
-  const { getToken, isAuthenticated } = useAuth();
+  const { getToken, isAuthenticated, accessToken } = useAuth();
   const { settings } = useSettings();
   const { showError, showSuccess } = useToast();
   const [query, setQuery] = useLocalStorage<string>('planning_query', '');
@@ -33,6 +34,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const [statusMessage, setStatusMessage] = useState<string>(''); // New: track status messages
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [savedPlans, setSavedPlans] = useState<CachedPlan[]>([]);
+  const [apiEndpoint, setApiEndpoint] = useState<string>('');
   
   // Storage management
   const [storageInfo, setStorageInfo] = useState<{ usage: number; quota: number; percentage: number } | null>(null);
@@ -40,6 +42,11 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   // LLM transparency tracking
   const [llmInfo, setLlmInfo] = useState<any>(null);
   const [showLlmInfo, setShowLlmInfo] = useState(false);
+  
+  // Voice input
+  const [showVoiceInput, setShowVoiceInput] = useState(false);
+  const [lastFocusedTextarea, setLastFocusedTextarea] = useState<'query' | 'systemPrompt' | 'userQuery'>('query');
+  const [lastCursorPosition, setLastCursorPosition] = useState<number>(0);
   
   // Refs for auto-resizing textareas
   const queryTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -76,6 +83,14 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   useEffect(() => {
     autoResize(userQueryTextareaRef.current);
   }, [generatedUserQuery]);
+
+  // Set API endpoint on mount (auto-detect local vs remote)
+  useEffect(() => {
+    getCachedApiBase().then(url => {
+      setApiEndpoint(url);
+      console.log('🔗 API endpoint for planning voice input:', url);
+    });
+  }, []);
 
   // Load saved plans when dialog opens
   useEffect(() => {
@@ -376,6 +391,64 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
     console.log('Planning dialog cleared completely');
   };
 
+  // Handle voice input transcription - inject into last focused textarea
+  const handleVoiceTranscription = (text: string) => {
+    console.log('🎤 Voice transcription received for planning:', text);
+    
+    // Determine which textarea to inject into
+    let currentValue = '';
+    let setValue: (value: string) => void;
+    let textarea: HTMLTextAreaElement | null = null;
+    
+    switch (lastFocusedTextarea) {
+      case 'systemPrompt':
+        currentValue = generatedSystemPrompt;
+        setValue = setGeneratedSystemPrompt;
+        textarea = systemPromptTextareaRef.current;
+        break;
+      case 'userQuery':
+        currentValue = generatedUserQuery;
+        setValue = setGeneratedUserQuery;
+        textarea = userQueryTextareaRef.current;
+        break;
+      case 'query':
+      default:
+        currentValue = query;
+        setValue = setQuery;
+        textarea = queryTextareaRef.current;
+        break;
+    }
+    
+    // Insert text at last cursor position
+    const before = currentValue.substring(0, lastCursorPosition);
+    const after = currentValue.substring(lastCursorPosition);
+    const newValue = before + text + after;
+    
+    setValue(newValue);
+    
+    // Update cursor position and focus textarea
+    if (textarea) {
+      setTimeout(() => {
+        const newPosition = lastCursorPosition + text.length;
+        textarea.selectionStart = newPosition;
+        textarea.selectionEnd = newPosition;
+        textarea.focus();
+        setLastCursorPosition(newPosition);
+      }, 0);
+    }
+  };
+  
+  // Track textarea focus and cursor position
+  const handleTextareaFocus = (textareaType: 'query' | 'systemPrompt' | 'userQuery') => {
+    setLastFocusedTextarea(textareaType);
+  };
+  
+  const handleTextareaClick = (textarea: HTMLTextAreaElement | null) => {
+    if (textarea) {
+      setLastCursorPosition(textarea.selectionStart);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -413,6 +486,20 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 {t('planning.loadSaved')}
+              </button>
+              
+              {/* Voice Input Button */}
+              <button
+                onClick={() => setShowVoiceInput(true)}
+                disabled={!isAuthenticated}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
+                title={isAuthenticated ? "Voice input - transcribe speech into last selected field" : t('auth.signInRequired')}
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+                🎤
               </button>
             </div>
             
@@ -522,6 +609,9 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     ref={queryTextareaRef}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
+                    onFocus={() => handleTextareaFocus('query')}
+                    onClick={() => handleTextareaClick(queryTextareaRef.current)}
+                    onKeyUp={() => handleTextareaClick(queryTextareaRef.current)}
                     placeholder={t('planning.enterQuery')}
                     className="input-field resize-none overflow-hidden"
                     style={{ minHeight: '120px' }}
@@ -557,6 +647,9 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                       ref={systemPromptTextareaRef}
                       value={generatedSystemPrompt}
                       onChange={(e) => setGeneratedSystemPrompt(e.target.value)}
+                      onFocus={() => handleTextareaFocus('systemPrompt')}
+                      onClick={() => handleTextareaClick(systemPromptTextareaRef.current)}
+                      onKeyUp={() => handleTextareaClick(systemPromptTextareaRef.current)}
                       className="input-field resize-none overflow-hidden w-full"
                       style={{ minHeight: '96px' }}
                     />
@@ -572,6 +665,9 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                       ref={userQueryTextareaRef}
                       value={generatedUserQuery}
                       onChange={(e) => setGeneratedUserQuery(e.target.value)}
+                      onFocus={() => handleTextareaFocus('userQuery')}
+                      onClick={() => handleTextareaClick(userQueryTextareaRef.current)}
+                      onKeyUp={() => handleTextareaClick(userQueryTextareaRef.current)}
                       className="input-field resize-none overflow-hidden w-full"
                       style={{ minHeight: '96px' }}
                     />
@@ -1166,6 +1262,15 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
           onClose={() => setShowLlmInfo(false)}
         />
       )}
+
+      {/* Voice Input Dialog */}
+      <VoiceInputDialog
+        isOpen={showVoiceInput}
+        onClose={() => setShowVoiceInput(false)}
+        onTranscriptionComplete={handleVoiceTranscription}
+        accessToken={accessToken}
+        apiEndpoint={apiEndpoint}
+      />
 
       {/* Copy Debug Info Button */}
       <div className="flex justify-end mt-6">

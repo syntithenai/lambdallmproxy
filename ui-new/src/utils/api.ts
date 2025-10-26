@@ -40,21 +40,24 @@ console.log('🔧 API Configuration:', {
 
 /**
  * Check if local Lambda is available
+ * We try to make a simple request to test connectivity
  */
 async function isLocalLambdaAvailable(): Promise<boolean> {
   const localUrl = getLocalLambdaUrl();
   try {
-    console.log(`🔍 Checking if local Lambda is available at: ${localUrl}/health`);
+    console.log(`🔍 Checking if local Lambda is available at: ${localUrl}`);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 500); // 500ms timeout
     
-    const response = await fetch(`${localUrl}/health`, {
-      method: 'GET',
+    // Try a simple HEAD request or OPTIONS to check if server is responding
+    const response = await fetch(localUrl, {
+      method: 'OPTIONS',
       signal: controller.signal
     });
     
     clearTimeout(timeoutId);
-    const available = response.ok;
+    // Accept any response from the server (even errors) as it means server is running
+    const available = response.status !== undefined;
     console.log(`${available ? '✅' : '❌'} Local Lambda ${available ? 'available' : 'not available'} at ${localUrl}`);
     return available;
   } catch (error) {

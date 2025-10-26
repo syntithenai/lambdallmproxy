@@ -188,15 +188,6 @@ try {
   process.exit(1);
 }
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    service: 'local-lambda-server',
-    timestamp: new Date().toISOString()
-  });
-});
-
 // Transcription endpoint (uses multer for audio uploads)
 app.post('/transcribe', upload.fields([
   { name: 'audio', maxCount: 1 },
@@ -483,7 +474,6 @@ if (USE_HTTPS) {
     console.log('\n🚀 Local Lambda Development Server');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`📍 Listening on: https://localhost:${PORT}`);
-    console.log(`🏥 Health check: https://localhost:${PORT}/health`);
     console.log('⚠️  Using self-signed certificate - you may need to accept browser warning');
   });
 } else {
@@ -491,7 +481,6 @@ if (USE_HTTPS) {
     console.log('\n🚀 Local Lambda Development Server');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`📍 Listening on: http://localhost:${PORT}`);
-    console.log(`🏥 Health check: http://localhost:${PORT}/health`);
   });
 }
 

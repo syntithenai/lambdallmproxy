@@ -52,8 +52,8 @@
     "knowledgeBaseDesc": "Save findings to your personal knowledge base, create snippets, and build comprehensive research documents over time",
     "advancedPlanning": "Advanced Planning",
     "advancedPlanningDesc": "Generate structured research plans with expert personas, search strategies, and methodological approaches",
-    "costEffective": "Cost-Effective",
-    "costEffectiveDesc": "Use your own API keys for $0 LLM costs, or leverage free providers automatically",
+    "costEffective": "Smart Model Selection",
+    "costEffectiveDesc": "Automatic selection of models that do the job economically or powerfully based on selection strategy. Bring your own keys to save 25%",
     "transparency": "Full Transparency",
     "transparencyDesc": "Track every API call, token usage, and cost in real-time billing dashboard",
     "perfectFor": "Perfect for: Academic research, market analysis, content creation, technical documentation, competitive intelligence, and any task requiring thorough investigation."

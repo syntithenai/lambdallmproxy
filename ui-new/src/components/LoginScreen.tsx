@@ -111,9 +111,23 @@ export const LoginScreen: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             {t('auth.researchAgent')}
           </h1>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
             {t('auth.tagline')}
           </p>
+
+          {/* Google Sign-In Button - Moved to top */}
+          <div className="flex justify-center mb-4">
+            <div 
+              ref={buttonRef} 
+              id="login-screen-google-signin"
+              className="min-w-[300px] min-h-[44px]"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            ></div>
+          </div>
+
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {t('auth.secureAuth')}
+          </div>
         </div>
 
         {/* Marketing Copy */}
@@ -166,20 +180,6 @@ export const LoginScreen: React.FC = () => {
           <p className="text-gray-700 dark:text-gray-300 text-sm italic border-t border-gray-200 dark:border-gray-700 pt-3">
             {t('auth.perfectFor')}
           </p>
-        </div>
-
-        {/* Google Sign-In Button */}
-        <div className="flex justify-center mb-4">
-          <div 
-            ref={buttonRef} 
-            id="login-screen-google-signin"
-            className="min-w-[300px] min-h-[44px]"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          ></div>
-        </div>
-
-        <div className="mt-6 text-xs text-gray-500 dark:text-gray-400 text-center">
-          {t('auth.secureAuth')}
         </div>
       </div>
 

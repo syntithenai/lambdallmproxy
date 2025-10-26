@@ -481,11 +481,13 @@ const BillingPage: React.FC = () => {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       const localUrl = 'http://localhost:3000';
       try {
-        const response = await fetch(`${localUrl}/health`, { 
-          method: 'GET',
-          signal: AbortSignal.timeout(1000)
+        // Try a simple OPTIONS request to check if server is responding
+        const response = await fetch(localUrl, { 
+          method: 'OPTIONS',
+          signal: AbortSignal.timeout(500)
         });
-        if (response.ok) {
+        // Accept any response as indication server is running
+        if (response.status !== undefined) {
           return localUrl;
         }
       } catch (err) {
