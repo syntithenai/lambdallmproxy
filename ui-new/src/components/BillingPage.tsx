@@ -846,18 +846,18 @@ const BillingPage: React.FC = () => {
       <div className="billing-page">
         <div className="billing-header">
           <div className="billing-title">
-            <h1>💰 Billing Dashboard</h1>
+            <h1>{t('billing.title')}</h1>
           </div>
           <div className="billing-actions">
-            <button className="btn-secondary flex items-center gap-1.5" onClick={exportToCSV} title="Export CSV" aria-label="Export CSV">
+            <button className="btn-secondary flex items-center gap-1.5" onClick={exportToCSV} title={t('billing.exportCSV')} aria-label={t('billing.exportCSV')}>
               <span>📥</span>
-              <span className="hidden md:inline">Export CSV</span>
+              <span className="hidden md:inline">{t('billing.exportCSV')}</span>
             </button>
             {/* Only show Clear Data button if using personal sheet (not centralized service data) */}
             {billingData.source !== 'service' && (
-              <button className="btn-danger flex items-center gap-1.5" onClick={() => setIsClearModalOpen(true)} title="Clear Data" aria-label="Clear Data">
+              <button className="btn-danger flex items-center gap-1.5" onClick={() => setIsClearModalOpen(true)} title={t('billing.clearData')} aria-label={t('billing.clearData')}>
                 <span>🗑️</span>
-                <span className="hidden md:inline">Clear Data</span>
+                <span className="hidden md:inline">{t('billing.clearData')}</span>
               </button>
             )}
           </div>
@@ -866,51 +866,40 @@ const BillingPage: React.FC = () => {
       <div className="billing-filters">
         <div className="filter-group">
           <label>
-            📅 Start Date:
+            📅 {t('billing.startDate')}:
             <input 
               type="date" 
               value={startDate} 
               onChange={(e) => setStartDate(e.target.value)}
-              placeholder="Select start date"
+              placeholder={t('billing.startDate')}
               max={endDate || undefined}
             />
           </label>
           <label>
-            📅 End Date:
+            📅 {t('billing.endDate')}:
             <input 
               type="date" 
               value={endDate} 
               onChange={(e) => setEndDate(e.target.value)}
-              placeholder="Select end date"
+              placeholder={t('billing.endDate')}
               min={startDate || undefined}
             />
           </label>
           <label>
-            🏷️ Type:
+            🏷️ {t('billing.type')}:
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-              <option value="">All Types</option>
+              <option value="">{t('billing.allTypes')}</option>
               {uniqueTypes.map((type: string) => (
                 <option key={type} value={type}>
-                  {type === 'chat' ? 'Chat'
-                    : type === 'embedding' ? 'Embedding'
-                    : type === 'guardrail_input' ? 'Guardrail Input'
-                    : type === 'guardrail_output' ? 'Guardrail Output'
-                    : type === 'planning' ? 'Planning'
-                    : type === 'assessment' ? 'Assessment'
-                    : type === 'image_generation' ? 'Image Generation'
-                    : type === 'tts' ? 'Text-to-Speech'
-                    : type === 'chat_iteration' ? 'Chat Iteration'
-                    : typeof type === 'string'
-                      ? type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
-                      : String(type)}
+                  {t(`billing.types.${type}`, type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()))}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            🔌 Provider:
+            🔌 {t('billing.provider')}:
             <select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)}>
-              <option value="">All Providers</option>
+              <option value="">{t('billing.allProviders')}</option>
               {uniqueProviders.map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
@@ -926,7 +915,7 @@ const BillingPage: React.FC = () => {
                 setProviderFilter('');
               }}
             >
-              Clear Filters
+              {t('billing.clearFilters')}
             </button>
           )}
         </div>
@@ -941,7 +930,7 @@ const BillingPage: React.FC = () => {
           flexWrap: 'wrap',
           alignItems: 'center'
         }}>
-          <span style={{ fontSize: '0.85rem', color: '#666', fontWeight: 500 }}>Quick ranges:</span>
+          <span style={{ fontSize: '0.85rem', color: '#666', fontWeight: 500 }}>{t('billing.quickRanges')}</span>
           <button 
             className="btn-clear-filters"
             style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
@@ -951,7 +940,7 @@ const BillingPage: React.FC = () => {
               setEndDate(today.toISOString().split('T')[0]);
             }}
           >
-            Today
+            {t('billing.today')}
           </button>
           <button 
             className="btn-clear-filters"
@@ -964,7 +953,7 @@ const BillingPage: React.FC = () => {
               setEndDate(today.toISOString().split('T')[0]);
             }}
           >
-            Last 7 Days
+            {t('billing.last7Days')}
           </button>
           <button 
             className="btn-clear-filters"
@@ -977,7 +966,7 @@ const BillingPage: React.FC = () => {
               setEndDate(today.toISOString().split('T')[0]);
             }}
           >
-            Last 30 Days
+            {t('billing.last30Days')}
           </button>
           <button 
             className="btn-clear-filters"
@@ -989,7 +978,7 @@ const BillingPage: React.FC = () => {
               setEndDate(today.toISOString().split('T')[0]);
             }}
           >
-            This Month
+            {t('billing.thisMonth')}
           </button>
         </div>
       </div>
@@ -999,13 +988,13 @@ const BillingPage: React.FC = () => {
           className={activeTab === 'overview' ? 'active' : ''} 
           onClick={() => setActiveTab('overview')}
         >
-          Overview
+          {t('billing.overview')}
         </button>
         <button 
           className={activeTab === 'transactions' ? 'active' : ''} 
           onClick={() => setActiveTab('transactions')}
         >
-          Transactions ({filteredTransactions.length})
+          {t('billing.transactions')} ({filteredTransactions.length})
         </button>
       </div>
 
@@ -1019,10 +1008,10 @@ const BillingPage: React.FC = () => {
               boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
               border: '2px solid rgba(255,255,255,0.3)'
             }}>
-              <div className="summary-label" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '8px' }}>💳 Credit Balance</div>
+              <div className="summary-label" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '8px' }}>{t('billing.balance')}</div>
               <div className="summary-value" style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '12px' }}>${creditBalance.toFixed(2)}</div>
               <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
-                Total Credits: ${totalCredits.toFixed(2)}
+                {t('billing.totalCredits')}: ${totalCredits.toFixed(2)}
               </div>
               <button 
                 style={{
@@ -1039,45 +1028,45 @@ const BillingPage: React.FC = () => {
                 }}
                 onClick={() => setShowAddCreditModal(true)}
               >
-                ➕ Add Credit
+                {t('billing.purchaseCredits')}
               </button>
             </div>
             
             <div className="summary-card">
-              <div className="summary-label">Total Cost</div>
+              <div className="summary-label">{t('billing.totalCost')}</div>
               <div className="summary-value">${filteredTotals.totalCost.toFixed(4)}</div>
               <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
-                Usage only (excl. credits)
+                {t('billing.usageOnly')}
               </div>
             </div>
             <div className="summary-card">
-              <div className="summary-label">Total Tokens</div>
+              <div className="summary-label">{t('billing.totalTokens')}</div>
               <div className="summary-value">{filteredTotals.totalTokens.toLocaleString()}</div>
               <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
-                In: {filteredTotals.totalTokensIn.toLocaleString()} | Out: {filteredTotals.totalTokensOut.toLocaleString()}
+                {t('billing.tokensIn')}: {filteredTotals.totalTokensIn.toLocaleString()} | {t('billing.tokensOut')}: {filteredTotals.totalTokensOut.toLocaleString()}
               </div>
             </div>
             <div className="summary-card">
-              <div className="summary-label">Total Requests</div>
+              <div className="summary-label">{t('billing.totalRequests')}</div>
               <div className="summary-value">{filteredTotals.totalUserQueries} / {filteredTotals.totalLLMCalls}</div>
               <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
-                User Queries / LLM Calls
+                {t('billing.userQueriesLlmCalls')}
               </div>
             </div>
           </div>
 
           {filteredTotals.byType && Object.keys(filteredTotals.byType).length > 0 && (
             <div className="breakdown-section">
-              <h3>By Type</h3>
+              <h3>{t('billing.byType')}</h3>
               <table className="breakdown-table">
                 <thead>
                   <tr>
-                    <th>Type</th>
-                    <th>Requests</th>
-                    <th>Tokens In</th>
-                    <th>Tokens Out</th>
-                    <th>Total Tokens</th>
-                    <th>Cost</th>
+                    <th>{t('billing.type')}</th>
+                    <th>{t('billing.requests')}</th>
+                    <th>{t('billing.tokensIn')}</th>
+                    <th>{t('billing.tokensOut')}</th>
+                    <th>{t('billing.totalTokens')}</th>
+                    <th>{t('billing.cost')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1098,16 +1087,16 @@ const BillingPage: React.FC = () => {
 
           {filteredTotals.byProvider && Object.keys(filteredTotals.byProvider).length > 0 && (
             <div className="breakdown-section">
-              <h3>By Provider</h3>
+              <h3>{t('billing.byProvider')}</h3>
               <table className="breakdown-table">
                 <thead>
                   <tr>
-                    <th>Provider</th>
-                    <th>Requests</th>
-                    <th>Tokens In</th>
-                    <th>Tokens Out</th>
-                    <th>Total Tokens</th>
-                    <th>Cost</th>
+                    <th>{t('billing.provider')}</th>
+                    <th>{t('billing.requests')}</th>
+                    <th>{t('billing.tokensIn')}</th>
+                    <th>{t('billing.tokensOut')}</th>
+                    <th>{t('billing.totalTokens')}</th>
+                    <th>{t('billing.cost')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1128,17 +1117,17 @@ const BillingPage: React.FC = () => {
 
           {filteredTotals.byModel && Object.keys(filteredTotals.byModel).length > 0 && (
             <div className="breakdown-section">
-              <h3>By Model</h3>
+              <h3>{t('billing.byModel')}</h3>
               <table className="breakdown-table">
                 <thead>
                   <tr>
-                    <th>Provider</th>
-                    <th>Model</th>
-                    <th>Requests</th>
-                    <th>Tokens In</th>
-                    <th>Tokens Out</th>
-                    <th>Total Tokens</th>
-                    <th>Cost</th>
+                    <th>{t('billing.provider')}</th>
+                    <th>{t('billing.model')}</th>
+                    <th>{t('billing.requests')}</th>
+                    <th>{t('billing.tokensIn')}</th>
+                    <th>{t('billing.tokensOut')}</th>
+                    <th>{t('billing.totalTokens')}</th>
+                    <th>{t('billing.cost')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1189,7 +1178,7 @@ const BillingPage: React.FC = () => {
                 style={{ cursor: 'pointer' }}
               />
               <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                📦 Group by Request ID
+                {t('billing.groupByRequestId')}
               </span>
             </label>
             
@@ -1207,17 +1196,17 @@ const BillingPage: React.FC = () => {
                 fontSize: '0.85rem'
               }}
             >
-              <option value={50}>50 per page</option>
-              <option value={100}>100 per page</option>
-              <option value={250}>250 per page</option>
-              <option value={500}>500 per page</option>
-              <option value={1000}>1000 per page</option>
+              <option value={50}>50 {t('billing.perPage')}</option>
+              <option value={100}>100 {t('billing.perPage')}</option>
+              <option value={250}>250 {t('billing.perPage')}</option>
+              <option value={500}>500 {t('billing.perPage')}</option>
+              <option value={1000}>1000 {t('billing.perPage')}</option>
             </select>
             
             <span style={{ fontSize: '0.85rem', color: '#666', marginLeft: 'auto' }}>
               {groupByRequest 
-                ? `${allGrouped.size} total request groups (showing ${grouped.size}), ${allUngrouped.length} ungrouped`
-                : `${totalFilteredTransactions} total transactions (showing ${paginatedTransactions.length})`
+                ? t('billing.totalRequestGroups', { total: allGrouped.size, showing: grouped.size, ungrouped: allUngrouped.length })
+                : t('billing.totalTransactionsShowing', { total: totalFilteredTransactions, showing: paginatedTransactions.length })
               }
             </span>
           </div>
@@ -1227,14 +1216,14 @@ const BillingPage: React.FC = () => {
               <thead>
                 <tr>
                   {groupByRequest && <th style={{ width: '40px' }}>▶</th>}
-                  <th>Timestamp</th>
-                  <th>Type</th>
-                  <th>Provider</th>
-                  <th>Model</th>
-                  <th>Tokens</th>
-                  <th>Cost</th>
-                  <th>Duration</th>
-                  <th>Status</th>
+                  <th>{t('billing.timestamp')}</th>
+                  <th>{t('billing.type')}</th>
+                  <th>{t('billing.provider')}</th>
+                  <th>{t('billing.model')}</th>
+                  <th>{t('billing.tokens')}</th>
+                  <th>{t('billing.cost')}</th>
+                  <th>{t('billing.duration')}</th>
+                  <th>{t('billing.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1254,16 +1243,11 @@ const BillingPage: React.FC = () => {
                     >
                       <td>{new Date(tx.timestamp).toLocaleString()}</td>
                       <td>
-                        {String(tx.type) === 'guardrail_input' ? '🛡️ Guardrail Input'
-                          : String(tx.type) === 'guardrail_output' ? '🛡️ Guardrail Output'
-                          : String(tx.type) === 'image_generation' ? '🖼️ Image Generation'
-                          : String(tx.type) === 'tts' ? '🎙️ Text-to-Speech'
-                          : String(tx.type) === 'chat' ? 'Chat'
-                          : String(tx.type) === 'embedding' ? 'Embedding'
-                          : String(tx.type) === 'planning' ? 'Planning'
-                          : typeof tx.type === 'string'
+                        {t(`billing.types.${tx.type}`, {
+                          defaultValue: typeof tx.type === 'string'
                             ? String(tx.type).replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
-                            : String(tx.type)}
+                            : String(tx.type)
+                        })}
                       </td>
                       <td>{tx.provider}</td>
                       <td>{tx.model}</td>
@@ -1303,7 +1287,7 @@ const BillingPage: React.FC = () => {
                             <td>{new Date(firstTx.timestamp).toLocaleString()}</td>
                             <td colSpan={3}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <span>🔗 Request Group ({txs.length} transactions)</span>
+                                <span>{t('billing.requestGroup', { count: txs.length })}</span>
                                 <code style={{ 
                                   fontSize: '0.75rem', 
                                   background: '#fff', 
@@ -1383,16 +1367,11 @@ const BillingPage: React.FC = () => {
                         <td style={{ textAlign: 'center', color: '#ccc' }}>—</td>
                         <td>{new Date(tx.timestamp).toLocaleString()}</td>
                         <td>
-                          {String(tx.type) === 'guardrail_input' ? '🛡️ Guardrail Input'
-                            : String(tx.type) === 'guardrail_output' ? '🛡️ Guardrail Output'
-                            : String(tx.type) === 'image_generation' ? '🖼️ Image Generation'
-                            : String(tx.type) === 'tts' ? '🎙️ Text-to-Speech'
-                            : String(tx.type) === 'chat' ? 'Chat'
-                            : String(tx.type) === 'embedding' ? 'Embedding'
-                            : String(tx.type) === 'planning' ? 'Planning'
-                            : typeof tx.type === 'string'
+                          {t(`billing.types.${tx.type}`, {
+                            defaultValue: typeof tx.type === 'string'
                               ? String(tx.type).replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
-                              : String(tx.type)}
+                              : String(tx.type)
+                          })}
                         </td>
                         <td>{tx.provider}</td>
                         <td>{tx.model}</td>
@@ -1431,7 +1410,7 @@ const BillingPage: React.FC = () => {
                   fontSize: '0.85rem'
                 }}
               >
-                ⏮️ First
+                ⏮️ {t('billing.first')}
               </button>
               
               <button
@@ -1446,11 +1425,11 @@ const BillingPage: React.FC = () => {
                   fontSize: '0.85rem'
                 }}
               >
-                ◀️ Prev
+                ◀️ {t('billing.prev')}
               </button>
               
               <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
-                Page {currentPage} of {totalPages}
+                {t('billing.page')} {currentPage} {t('billing.of')} {totalPages}
               </span>
               
               <button
@@ -1465,7 +1444,7 @@ const BillingPage: React.FC = () => {
                   fontSize: '0.85rem'
                 }}
               >
-                Next ▶️
+                {t('billing.next')} ▶️
               </button>
               
               <button
@@ -1480,7 +1459,7 @@ const BillingPage: React.FC = () => {
                   fontSize: '0.85rem'
                 }}
               >
-                Last ⏭️
+                {t('billing.last')} ⏭️
               </button>
             </div>
           </div>
@@ -1499,18 +1478,18 @@ const BillingPage: React.FC = () => {
         <div className="modal-overlay" onClick={() => setShowAddCreditModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
             <div className="modal-header">
-              <h2>💳 Add Credits</h2>
+              <h2>{t('billing.addCreditsTitle')}</h2>
               <button className="modal-close" onClick={() => setShowAddCreditModal(false)}>×</button>
             </div>
             
             <div className="modal-body">
               <div style={{ marginBottom: '20px' }}>
-                <p>Purchase credits to use AI features. Minimum purchase: $5.00</p>
+                <p>{t('billing.purchaseCreditsDescription')}</p>
               </div>
               
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-                  Amount (USD):
+                  {t('billing.enterAmount')}
                 </label>
                 <input 
                   type="number" 
@@ -1525,7 +1504,7 @@ const BillingPage: React.FC = () => {
                     border: '1px solid #ddd',
                     borderRadius: '4px'
                   }}
-                  placeholder="Enter amount (min $5.00)"
+                  placeholder={t('billing.minimumPurchase')}
                 />
               </div>
               
@@ -1536,11 +1515,11 @@ const BillingPage: React.FC = () => {
                 marginBottom: '20px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span>Credits to add:</span>
+                  <span>{t('billing.creditsToAdd')}</span>
                   <strong>${parseFloat(creditAmount || '0').toFixed(2)}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#666' }}>
-                  <span>New balance:</span>
+                  <span>{t('billing.newBalance')}</span>
                   <span>${(creditBalance + parseFloat(creditAmount || '0')).toFixed(2)}</span>
                 </div>
               </div>
@@ -1552,9 +1531,7 @@ const BillingPage: React.FC = () => {
                 fontSize: '0.9rem',
                 marginBottom: '20px'
               }}>
-                <strong>💡 Tip:</strong> Add your own API keys in Settings for $0 LLM costs!
-                <br/>
-                Only infrastructure costs apply when using your own keys.
+                {t('billing.tipUseOwnKeys')}
               </div>
 
               {/* PayPal Buttons Container */}
@@ -1565,7 +1542,7 @@ const BillingPage: React.FC = () => {
               
               {paypalLoading && (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-                  Loading PayPal...
+                  {t('billing.loadingPayPal')}
                 </div>
               )}
               
@@ -1577,7 +1554,7 @@ const BillingPage: React.FC = () => {
                   borderRadius: '4px',
                   color: '#856404'
                 }}>
-                  ⚠️ PayPal SDK not loaded. Please refresh the page.
+                  {t('billing.paypalNotLoaded')}
                 </div>
               )}
             </div>
@@ -1587,7 +1564,7 @@ const BillingPage: React.FC = () => {
                 className="btn-secondary" 
                 onClick={() => setShowAddCreditModal(false)}
               >
-                Close
+                {t('common.close')}
               </button>
             </div>
           </div>
