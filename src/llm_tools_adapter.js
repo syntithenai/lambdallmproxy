@@ -330,17 +330,27 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     let modelName = normalizedModel.replace(/^gemini(-free)?:/, '');
     
     // Gemini API uses exact model names without modification
-    // Available models as of Oct 2025: gemini-1.5-pro, gemini-1.5-flash, gemini-1.5-pro-002, etc.
-    // Using v1 stable API (v1beta is being deprecated)
-    const path = `/v1/models/${modelName}:generateContent`;
+    // Available models as of Oct 2025: gemini-1.5-pro, gemini-1.5-flash, gemini-1.5-pro-002, gemini-2.0-flash, gemini-2.5-pro, etc.
+    // Using v1beta API (required for systemInstruction support on 1.5 models)
+    const path = `/v1beta/models/${modelName}:generateContent`;
     
-    console.log(`🔍 Gemini API: Using model "${modelName}", path: ${path}`);
+    // Detect if this is a Gemini 2.x model (systemInstruction not supported in v1beta for these models)
+    const isGemini2Model = modelName.startsWith('gemini-2.');
+    
+    console.log(`🔍 Gemini API: Using model "${modelName}", path: ${path}, isGemini2Model: ${isGemini2Model}`);
     
     // Convert OpenAI-style messages to Gemini format
     const contents = [];
     for (const block of input || []) {
       if (block.role === 'system') {
-        // System messages go in systemInstruction (separate from contents)
+        // For Gemini 2.x models: include system message in contents array
+        // For Gemini 1.5 models: will go in systemInstruction field
+        if (isGemini2Model) {
+          contents.push({
+            role: 'user',
+            parts: [{ text: block.content }]
+          });
+        }
         continue;
       }
       if (block.type === 'function_call_output') {
@@ -387,7 +397,8 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       }
     };
     
-    if (systemMessage) {
+    // Only use systemInstruction for Gemini 1.5 models (not 2.x models)
+    if (systemMessage && !isGemini2Model) {
       payload.systemInstruction = { parts: [{ text: systemMessage.content }] };
     }
     
@@ -466,6 +477,19 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
         }
       }
       
+      // CRITICAL: Check if we got any meaningful content
+      if (!textContent && toolCalls.length === 0) {
+        console.error('❌ Gemini returned parts but no text or tool calls:', {
+          partsCount: parts.length,
+          parts: JSON.stringify(parts, null, 2),
+          finishReason: candidate?.finishReason,
+          usageMetadata: geminiResponse.usageMetadata
+        });
+        
+        // This is likely a Gemini API bug - try to provide helpful context
+        throw new Error(`Gemini returned ${parts.length} parts but no text or tool calls. This may be a bug with ${modelName}. Try using gemini-1.5-flash or gemini-2.5-flash instead.`);
+      }
+      
       const result = {
         role: 'assistant',
         content: textContent || null,
@@ -479,6 +503,8 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
       if (toolCalls.length > 0) {
         result.tool_calls = toolCalls;
       }
+      
+      console.log(`✅ Gemini response parsed: ${textContent.length} chars, ${toolCalls.length} tool calls`);
       
       return result;
     } catch (error) {

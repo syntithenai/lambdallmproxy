@@ -487,7 +487,45 @@ const toolFunctions = [
     type: 'function',
     function: {
       name: 'execute_javascript',
-      description: '🧮 **PRIMARY TOOL FOR ALL CALCULATIONS AND MATH**: Execute JavaScript code in a secure sandbox environment with async/await support. **MANDATORY USE** when user asks for: calculations, math problems, compound interest, percentages, conversions, data processing, algorithms, or any numerical computation. Also use for demonstrations and code examples. **ALWAYS call this tool for math instead of trying to calculate in your response.** Returns the console output and execution result. Use console.log() to display results. **SUPPORTS**: async/await, Promises, setTimeout/clearTimeout. Example: For compound interest, use: "const principal = 10000; const rate = 0.07; const time = 15; const amount = principal * Math.pow(1 + rate, time); console.log(`Final amount: $${amount.toFixed(2)}`);". Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically.',
+      description: `🧮 Execute JavaScript code in a secure sandbox environment with async/await support.
+
+⚠️ **ONLY USE THIS TOOL WHEN**:
+1. User explicitly asks to "run code", "execute JavaScript", or "test this code"
+2. Problem requires COMPUTATION or DATA PROCESSING (calculate factorial, sort array, compute statistics, parse data)
+3. Demonstrating CODE BEHAVIOR or showing how code works with examples
+4. Mathematical CALCULATIONS that require variables or complex formulas
+
+❌ **ABSOLUTELY DO NOT USE FOR**:
+- General knowledge questions that can be answered with text
+- Creative writing, stories, articles, or prose content (NEVER use this to generate text content)
+- Comparisons of frameworks/technologies (React vs Vue, Python vs JavaScript)
+- Explaining concepts (how async/await works, what is a closure)
+- Performance benchmarks or theoretical comparisons (unless user provides specific benchmark code to run)
+- Questions that don't involve executing code
+- Generating or storing text strings as variables (if you're just creating string variables, YOU DON'T NEED THIS TOOL)
+- Any task where you're just assigning text to variables and logging them
+
+🚫 **CREATIVE CONTENT PROHIBITION**: This tool is for COMPUTATION ONLY. If you find yourself writing code that just creates string variables with prose/stories/articles and logs them, STOP. You can write that content directly in your response. This tool is NOT a text editor or content management system.
+
+**EXAMPLES OF WHEN TO USE**:
+✅ "Calculate compound interest for $10000 at 7% over 15 years"
+✅ "Run this code and tell me the output: console.log([1,2,3].map(x => x*2))"
+✅ "Sort this array of objects by price: [{name: 'A', price: 50}, {name: 'B', price: 30}]"
+✅ "Execute a quicksort algorithm on [5,2,8,1,9]"
+✅ "Calculate factorial of 10"
+
+**EXAMPLES OF WHEN NOT TO USE**:
+❌ "Compare React, Vue, and Angular" → Just explain the differences
+❌ "What is the performance of different sorting algorithms?" → Explain theoretically
+❌ "How does async/await work?" → Provide educational explanation
+❌ "Which framework is better for my use case?" → Give recommendations
+❌ "Write an introduction for my story" → JUST WRITE THE TEXT, don't wrap it in JavaScript!
+❌ "Generate content for my blog post" → WRITE THE CONTENT DIRECTLY, this is not a text editor!
+
+**TECHNICAL DETAILS**:
+Returns console output and execution result. Use console.log() to display results. Supports async/await, Promises, setTimeout/clearTimeout. Example: "const principal = 10000; const rate = 0.07; const time = 15; const amount = principal * Math.pow(1 + rate, time); console.log(\`Final amount: $\${amount.toFixed(2)}\`);"
+
+Call this tool with ONLY the code parameter - never include result, output, type, or executed_at fields as these are generated automatically.`,
       strict: true,
       parameters: {
         type: 'object',
@@ -2013,8 +2051,19 @@ Brief answer with URLs:`;
       // Extract user's Google Sheets OAuth token from context
       // Note: driveAccessToken is the Google OAuth token with Sheets API permissions
       // googleToken is the Firebase ID token (not sufficient for Sheets API)
-      const accessToken = context.driveAccessToken || context.googleToken || context.accessToken;
+      let accessToken = context.driveAccessToken || context.googleToken || context.accessToken;
+      const refreshToken = context.googleRefreshToken || context.driveRefreshToken;
       const userEmail = context.userEmail;
+      
+      console.log('🔍 manage_snippets token check:', {
+        hasDriveAccessToken: !!context.driveAccessToken,
+        hasGoogleToken: !!context.googleToken,
+        hasAccessToken: !!context.accessToken,
+        hasRefreshToken: !!refreshToken,
+        finalToken: !!accessToken,
+        userEmail: userEmail,
+        contextKeys: Object.keys(context)
+      });
       
       if (!accessToken) {
         console.error('❌ manage_snippets: No OAuth token available');
@@ -2022,7 +2071,7 @@ Brief answer with URLs:`;
         return JSON.stringify({
           success: false,
           error: 'Authentication required',
-          message: 'Please enable Google Drive sync in Settings to use snippets feature. The snippets tool requires Google Sheets API access.'
+          message: 'Google Drive connection required. Please go to Settings → Cloud Sync and click "Connect to Google Drive" to enable snippet management.'
         });
       }
       
@@ -2034,6 +2083,9 @@ Brief answer with URLs:`;
           message: 'Could not identify user'
         });
       }
+      
+      // Import token refresh utility
+      const { executeWithTokenRefresh } = require('./utils/google-oauth-refresh');
       
       try {
         switch (action) {
@@ -2149,21 +2201,61 @@ Brief answer with URLs:`;
           }
           
           case 'search': {
-            const results = await snippetsService.searchSnippets(
-              {
-                query: payload.query || '',
-                tags: payload.tags || []
+            console.log('🔍 manage_snippets SEARCH:', {
+              query: payload.query,
+              tags: payload.tags,
+              userEmail: userEmail,
+              hasAccessToken: !!accessToken,
+              hasRefreshToken: !!refreshToken
+            });
+            
+            // Execute with automatic token refresh on auth failure
+            const { result: results, newAccessToken } = await executeWithTokenRefresh(
+              async (token) => {
+                return await snippetsService.searchSnippets(
+                  {
+                    query: payload.query || '',
+                    tags: payload.tags || []
+                  },
+                  userEmail,
+                  token
+                );
               },
-              userEmail,
-              accessToken
+              accessToken,
+              refreshToken
             );
+            
+            // Update context with new token if refreshed
+            if (newAccessToken) {
+              console.log('🔄 Token was refreshed during search operation');
+              context.driveAccessToken = newAccessToken;
+              accessToken = newAccessToken;
+              
+              // Emit event to update UI token
+              if (context.writeEvent && typeof context.writeEvent === 'function') {
+                context.writeEvent('token_refreshed', {
+                  accessToken: newAccessToken,
+                  timestamp: new Date().toISOString()
+                });
+              }
+            }
+            
+            console.log(`📊 manage_snippets SEARCH RESULTS: Found ${results.length} snippets`);
+            if (results.length > 0) {
+              console.log('   First result:', {
+                title: results[0].title,
+                tags: results[0].tags,
+                content: results[0].content?.substring(0, 100)
+              });
+            }
             
             return JSON.stringify({
               success: true,
               action: 'search',
               data: results,
               count: results.length,
-              message: `Found ${results.length} snippet${results.length !== 1 ? 's' : ''}${payload.query ? ` matching "${payload.query}"` : ''}${payload.tags && payload.tags.length > 0 ? ` with tags [${payload.tags.join(', ')}]` : ''}`
+              message: `Found ${results.length} snippet${results.length !== 1 ? 's' : ''}${payload.query ? ` matching "${payload.query}"` : ''}${payload.tags && payload.tags.length > 0 ? ` with tags [${payload.tags.join(', ')}]` : ''}`,
+              tokenRefreshed: !!newAccessToken
             });
           }
           
@@ -2210,6 +2302,24 @@ Brief answer with URLs:`;
         }
       } catch (error) {
         console.error(`❌ manage_snippets (${action}) error:`, error.message);
+        
+        // Check if this is a Google OAuth authentication error
+        const isAuthError = error.message && (
+          error.message.includes('Expected OAuth 2 access token') ||
+          error.message.includes('invalid authentication credentials') ||
+          error.message.includes('Request had invalid authentication credentials') ||
+          error.message.includes('login cookie or other valid authentication credential')
+        );
+        
+        if (isAuthError) {
+          return JSON.stringify({
+            success: false,
+            error: 'cloud_sync_not_enabled',
+            action: action,
+            message: 'TELL USER: Snippets require Google Drive connection. Go to Settings → Cloud Sync and click "Connect to Google Drive".'
+          });
+        }
+        
         return JSON.stringify({
           success: false,
           error: error.message,
@@ -2917,9 +3027,11 @@ Summary:`;
                 
                 if (filteredDowngradedModels.length > 0) {
                   console.log(`✅ Found ${filteredDowngradedModels.length} models for downgraded quality tier ${effectiveQualityTier}`);
-                  // Replace matchingModels with downgraded filtered models
+                  // Replace matchingModels AND restrictedModels with downgraded filtered models
                   matchingModels.length = 0;
                   matchingModels.push(...filteredDowngradedModels);
+                  restrictedModels.length = 0;
+                  restrictedModels.push(...filteredDowngradedModels);
                 }
                 
                 break; // Use first provider's restriction
@@ -2928,7 +3040,8 @@ Summary:`;
           }
         }
         
-        const finalMatchingModels = restrictedModels.length > 0 ? restrictedModels : matchingModels;
+        // FIX: After quality downgrade, use matchingModels (which was updated), not restrictedModels (which is stale)
+        const finalMatchingModels = matchingModels;
         
         if (finalMatchingModels.length === 0) {
           return JSON.stringify({

@@ -132,7 +132,7 @@ function detectBotProtection(result) {
   // Quick heuristics
   const indicators = [];
 
-  // Known phrases (including Cloudflare, CAPTCHA challenges, login walls)
+  // Known phrases (including Cloudflare, CAPTCHA challenges, login walls, Google redirects)
   const gatePatterns = [
     'please verify',
     'verifying you',
@@ -153,7 +153,12 @@ function detectBotProtection(result) {
     'continue with',
     'captcha',
     'cloudflare',
-    'ray id:'
+    'ray id:',
+    'please click here if you are not redirected',  // Google redirect pattern
+    'enable javascript',  // Generic JavaScript requirement
+    'requires javascript',
+    'javascript is disabled',
+    'httpservice/retry/enablejs'  // Google-specific redirect URL
   ];
   
   gatePatterns.forEach(p => {

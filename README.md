@@ -1,10 +1,6 @@
 ````markdown
 # Lambda LLM Proxy - AI Research Agent with Deep Knowledge Integration
 
-[![Test](https://github.com/syntithenai/lambdallmproxy/actions/workflows/test.yml/badge.svg)](https://github.com/syntithenai/lambdallmproxy/actions/workflows/test.yml)
-[![Deploy UI](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-ui.yml/badge.svg)](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-ui.yml)
-[![Deploy Lambda](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-lambda.yml/badge.svg)](https://github.com/syntithenai/lambdallmproxy/actions/workflows/deploy-lambda.yml)
-
 An advanced AI research assistant that combines comprehensive web scraping, agentic workflows, and knowledge management to deliver quality referenced, fact-checked, broad and deep knowledge tailored to your needs. Built for building large structured documents with confidence.
 
 ## 🎯 Core Mission

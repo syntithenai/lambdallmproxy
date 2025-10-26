@@ -364,6 +364,10 @@ export const generatePlan = async (
     temperature?: number;
     maxTokens?: number;
     reasoningDepth?: number;
+    clarificationAnswers?: string; // User's answers to clarification questions
+    previousContext?: any; // Context from previous clarification request
+    signal?: AbortSignal; // Abort signal for cancellation
+    forcePlan?: boolean; // Force generation of system and user prompts even if more questions are needed
   }
 ): Promise<void> => {
   const apiBase = await getCachedApiBase();
@@ -398,10 +402,24 @@ export const generatePlan = async (
     requestBody.reasoning_depth = options.reasoningDepth;
   }
   
+  // Add clarification data if provided
+  if (options?.clarificationAnswers) {
+    requestBody.clarificationAnswers = options.clarificationAnswers;
+  }
+  if (options?.previousContext) {
+    requestBody.previousContext = options.previousContext;
+  }
+  
+  // Add force plan flag if provided
+  if (options?.forcePlan) {
+    requestBody.forcePlan = true;
+  }
+  
   const response = await createSSERequest(
     `${apiBase}/planning`,
     requestBody,
-    token
+    token,
+    options?.signal // Pass abort signal
   );
   
   await handleSSEResponse(response, onEvent, onComplete, onError);

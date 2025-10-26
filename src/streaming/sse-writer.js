@@ -37,8 +37,8 @@ function createSSEStreamAdapter(responseStream) {
     // Check for stale connection every 10 seconds
     checkInterval = setInterval(() => {
         const timeSinceWrite = Date.now() - lastWriteTime;
-        if (timeSinceWrite > 30000) { // 30 second timeout
-            console.warn('⚠️ No writes for 30s, client likely disconnected');
+        if (timeSinceWrite > 120000) { // 120 second timeout (increased for YouTube Selenium transcription)
+            console.warn('⚠️ No writes for 120s, client likely disconnected');
             isConnected = false;
             clearInterval(checkInterval);
         }

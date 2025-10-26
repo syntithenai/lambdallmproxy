@@ -14,7 +14,7 @@ declare global {
 interface Transaction {
   rowIndex: number;
   timestamp: string;
-  type: 'chat' | 'embedding' | 'guardrail_input' | 'guardrail_output' | 'planning' | 'image_generation' | 'tts' | 'assessment' | 'chat_iteration' | 'credit_added';
+  type: 'chat' | 'embedding' | 'guardrail_input' | 'guardrail_output' | 'planning' | 'image_generation' | 'tts' | 'assessment' | 'chat_iteration' | 'credit_added' | 'summary' | 'lambda_invocation';
   provider: string;
   model: string;
   tokensIn: number;
@@ -238,6 +238,19 @@ const BillingPage: React.FC = () => {
   const [creditAmount, setCreditAmount] = useState('5.00'); // Amount to purchase
   const [paypalLoading, setPaypalLoading] = useState(false); // PayPal button loading state
   const paypalButtonsRef = useRef<HTMLDivElement>(null); // Ref for PayPal buttons container
+  
+  // Pagination state for transaction list
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(100); // Default to 100 items per page
+
+  // Debug: Log auth state
+  useEffect(() => {
+    console.log('🔍 [BillingPage] Auth State:', {
+      isAuthenticated,
+      hasAccessToken: !!accessToken,
+      tokenLength: accessToken?.length || 0
+    });
+  }, [isAuthenticated, accessToken]);
 
   const fetchBillingData = async () => {
     setLoading(true);
@@ -380,12 +393,6 @@ const BillingPage: React.FC = () => {
         throw new Error('Not authenticated');
       }
 
-      // Get Google Drive access token (needed for Sheets API access)
-      const driveAccessToken = localStorage.getItem('google_drive_access_token');
-      if (!driveAccessToken) {
-        throw new Error('Google Drive access not granted. Please enable cloud sync in Swag page first.');
-      }
-
       const params = new URLSearchParams({ mode });
       if (mode === 'provider' && options.provider) {
         params.append('provider', options.provider);
@@ -400,7 +407,6 @@ const BillingPage: React.FC = () => {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'X-Google-Access-Token': driveAccessToken,
           'Content-Type': 'application/json'
         }
       });
@@ -571,7 +577,49 @@ const BillingPage: React.FC = () => {
     return () => clearInterval(waitForPayPal);
   }, [showAddCreditModal, creditAmount, accessToken]);
 
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [startDate, endDate, typeFilter, providerFilter]);
 
+
+
+  // Show not authenticated message if user isn't signed in
+  if (!isAuthenticated) {
+    return (
+      <div className="billing-page">
+        <div className="error-message">
+          <h3>🔐 Sign In Required</h3>
+          <p>Please sign in with Google to view your billing data.</p>
+          
+          <div className="info-box" style={{ marginTop: '20px', padding: '15px', background: '#e3f2fd', borderRadius: '8px', textAlign: 'left' }}>
+            <h4 style={{ marginTop: 0, color: '#1976d2' }}>📋 How to Access Billing Data:</h4>
+            <ol style={{ marginLeft: '20px', color: '#424242' }}>
+              <li>Click the <strong>"Sign in with Google"</strong> button in the top navigation bar</li>
+              <li>That's it! Your billing data will load automatically</li>
+            </ol>
+            <p style={{ marginTop: '15px', color: '#666', fontSize: '0.9em' }}>
+              💡 Your billing data is stored in a centralized service account Google Sheet and retrieved automatically.
+              No additional permissions or Drive access needed - just sign in with Google.
+            </p>
+            
+            {/* Debug info */}
+            <details style={{ marginTop: '15px', fontSize: '0.85em', color: '#888' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>🔧 Debug Info</summary>
+              <pre style={{ marginTop: '10px', padding: '10px', background: '#f5f5f5', borderRadius: '4px', overflow: 'auto' }}>
+                {JSON.stringify({
+                  isAuthenticated,
+                  hasAccessToken: !!accessToken,
+                  tokenLength: accessToken?.length || 0,
+                  currentPath: window.location.pathname
+                }, null, 2)}
+              </pre>
+            </details>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -582,29 +630,11 @@ const BillingPage: React.FC = () => {
   }
 
   if (error) {
-    const needsCloudSync = error.includes('Cloud sync not enabled') || error.includes('Google Drive access');
-    
     return (
       <div className="billing-page">
         <div className="error-message">
-          <h3>⚠️ {needsCloudSync ? 'Cloud Sync Required' : 'Error Loading Billing Data'}</h3>
+          <h3>⚠️ Error Loading Billing Data</h3>
           <p>{error}</p>
-          
-          {needsCloudSync && (
-            <div className="info-box" style={{ marginTop: '20px', padding: '15px', background: '#e3f2fd', borderRadius: '8px', textAlign: 'left' }}>
-              <h4 style={{ marginTop: 0, color: '#1976d2' }}>📋 How to Enable Cloud Sync:</h4>
-              <ol style={{ marginLeft: '20px', color: '#424242' }}>
-                <li>Go to the <strong>Swag</strong> page (button in top navigation)</li>
-                <li>Look for the "☁️ Enable Cloud Sync" button</li>
-                <li>Click it and authorize Google Drive & Sheets access</li>
-                <li>Come back to this Billing page - it will load automatically</li>
-              </ol>
-              <p style={{ marginTop: '15px', color: '#666', fontSize: '0.9em' }}>
-                💡 Cloud sync stores your billing data in a Google Sheet in your Google Drive (folder: "Research Agent").
-                This allows you to track API costs across devices and export data to other tools.
-              </p>
-            </div>
-          )}
           
           <button onClick={fetchBillingData} style={{ marginTop: '15px' }}>🔄 Retry</button>
         </div>
@@ -645,7 +675,12 @@ const BillingPage: React.FC = () => {
     if (startDate || endDate) {
       const txDate = new Date(tx.timestamp);
       if (startDate && txDate < new Date(startDate)) return false;
-      if (endDate && txDate > new Date(endDate)) return false;
+      // For endDate, include the entire day by setting time to end of day (23:59:59.999)
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        if (txDate > endDateTime) return false;
+      }
     }
     
     // Type filter
@@ -657,6 +692,13 @@ const BillingPage: React.FC = () => {
     return true;
   });
 
+  // Pagination logic for transactions
+  const totalFilteredTransactions = filteredTransactions.length;
+  const totalPages = Math.ceil(totalFilteredTransactions / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
   // Calculate totals from filtered data
   const calculateFilteredTotals = (transactions: Transaction[], excludeCredits: boolean = false) => {
     const byType: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number }> = {};
@@ -667,16 +709,27 @@ const BillingPage: React.FC = () => {
     let totalTokensIn = 0;
     let totalTokensOut = 0;
 
-    // Count unique request IDs for user queries
-    const uniqueRequestIds = new Set(
-      transactions
-        .filter(tx => tx.requestId && tx.requestId !== '')
-        .map(tx => tx.requestId)
+    // Count user queries vs LLM calls correctly:
+    // - User queries: Count only 'chat' type transactions (initial user requests)
+    // - LLM calls: Count all LLM API calls (chat, chat_iteration, guardrail, etc.)
+    const userTransactions = transactions.filter(tx => 
+      tx.type === 'chat'  // Only count initial user chat requests
     );
-    const totalUserQueries = uniqueRequestIds.size;
-    const totalLLMCalls = transactions.length;
+    const llmCalls = transactions.filter(tx => 
+      tx.type !== 'summary' && 
+      tx.type !== 'credit_added' && 
+      tx.type !== 'lambda_invocation'  // Exclude non-LLM transactions
+    );
+    const totalUserQueries = userTransactions.length;
+    const totalLLMCalls = llmCalls.length;
 
     transactions.forEach(tx => {
+      // Skip invalid transactions
+      if (!tx || !tx.model || !tx.provider) {
+        console.warn('Skipping invalid transaction:', tx);
+        return;
+      }
+      
       // Exclude credit transactions from totalCost if requested
       if (!excludeCredits || String(tx.type) !== 'credit_added') {
         totalCost += tx.cost;
@@ -769,7 +822,10 @@ const BillingPage: React.FC = () => {
     return { grouped: new Map(sortedGroupedArray), ungrouped };
   };
 
-  const { grouped, ungrouped } = groupTransactionsByRequest(filteredTransactions);
+  // Group transactions by request ID (use paginated transactions for display)
+  const { grouped, ungrouped } = groupTransactionsByRequest(paginatedTransactions);
+  // Also calculate totals from ALL filtered transactions (not just current page)
+  const { grouped: allGrouped, ungrouped: allUngrouped } = groupTransactionsByRequest(filteredTransactions);
 
   const toggleRequestGroup = (requestId: string) => {
     setExpandedRequests(prev => {
@@ -791,13 +847,15 @@ const BillingPage: React.FC = () => {
             <h1>💰 Billing Dashboard</h1>
           </div>
           <div className="billing-actions">
-            <button className="btn-secondary" onClick={exportToCSV}>
-              📥 Export CSV
+            <button className="btn-secondary flex items-center gap-1.5" onClick={exportToCSV} title="Export CSV" aria-label="Export CSV">
+              <span>📥</span>
+              <span className="hidden md:inline">Export CSV</span>
             </button>
             {/* Only show Clear Data button if using personal sheet (not centralized service data) */}
             {billingData.source !== 'service' && (
-              <button className="btn-danger" onClick={() => setIsClearModalOpen(true)}>
-                🗑️ Clear Data
+              <button className="btn-danger flex items-center gap-1.5" onClick={() => setIsClearModalOpen(true)} title="Clear Data" aria-label="Clear Data">
+                <span>🗑️</span>
+                <span className="hidden md:inline">Clear Data</span>
               </button>
             )}
           </div>
@@ -1084,6 +1142,7 @@ const BillingPage: React.FC = () => {
                 <tbody>
                   {/* Group models by provider and sort */}
                   {Object.entries(filteredTotals.byModel)
+                    .filter(([_, data]) => data && data.provider) // Filter out invalid entries
                     .sort((a, b) => {
                       // Sort by provider first, then by model name
                       const providerCompare = a[1].provider.localeCompare(b[1].provider);
@@ -1131,10 +1190,32 @@ const BillingPage: React.FC = () => {
                 📦 Group by Request ID
               </span>
             </label>
+            
+            {/* Items per page selector */}
+            <select 
+              value={itemsPerPage} 
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1); // Reset to first page
+              }}
+              style={{ 
+                padding: '0.4rem 0.6rem', 
+                border: '1px solid #ccc', 
+                borderRadius: '4px',
+                fontSize: '0.85rem'
+              }}
+            >
+              <option value={50}>50 per page</option>
+              <option value={100}>100 per page</option>
+              <option value={250}>250 per page</option>
+              <option value={500}>500 per page</option>
+              <option value={1000}>1000 per page</option>
+            </select>
+            
             <span style={{ fontSize: '0.85rem', color: '#666', marginLeft: 'auto' }}>
               {groupByRequest 
-                ? `${grouped.size} request groups, ${ungrouped.length} ungrouped`
-                : `${billingData.transactions.length} total transactions`
+                ? `${allGrouped.size} total request groups (showing ${grouped.size}), ${allUngrouped.length} ungrouped`
+                : `${totalFilteredTransactions} total transactions (showing ${paginatedTransactions.length})`
               }
             </span>
           </div>
@@ -1325,6 +1406,81 @@ const BillingPage: React.FC = () => {
                 )}
               </tbody>
             </table>
+            
+            {/* Pagination Controls */}
+            <div style={{ 
+              marginTop: '1rem', 
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center',
+              gap: '1rem',
+              padding: '1rem',
+              borderTop: '1px solid #eee'
+            }}>
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  background: currentPage === 1 ? '#f5f5f5' : 'white',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem'
+                }}
+              >
+                ⏮️ First
+              </button>
+              
+              <button
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  background: currentPage === 1 ? '#f5f5f5' : 'white',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem'
+                }}
+              >
+                ◀️ Prev
+              </button>
+              
+              <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
+                Page {currentPage} of {totalPages}
+              </span>
+              
+              <button
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  background: currentPage === totalPages ? '#f5f5f5' : 'white',
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem'
+                }}
+              >
+                Next ▶️
+              </button>
+              
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  background: currentPage === totalPages ? '#f5f5f5' : 'white',
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  fontSize: '0.85rem'
+                }}
+              >
+                Last ⏭️
+              </button>
+            </div>
           </div>
         </div>
       )}

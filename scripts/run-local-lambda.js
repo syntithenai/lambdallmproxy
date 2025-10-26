@@ -41,27 +41,36 @@ const allowedOrigins = [
   'https://syntithenai.github.io'
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      // For development, allow all localhost origins
-      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+// CORS middleware - but skip routes that handle CORS themselves
+app.use((req, res, next) => {
+  // Skip CORS middleware for routes that handle it internally
+  if (req.path === '/proxy-image') {
+    return next();
+  }
+  
+  // Apply CORS for other routes
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
-        console.warn(`⚠️  CORS: Blocked origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
+        // For development, allow all localhost origins
+        if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+          callback(null, true);
+        } else {
+          console.warn(`⚠️  CORS: Blocked origin: ${origin}`);
+          callback(new Error('Not allowed by CORS'));
+        }
       }
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id'],
-  credentials: true
-}));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id'],
+    credentials: true
+  })(req, res, next);
+});
 
 // Parse JSON bodies
 app.use(express.json({ limit: '10mb' }));

@@ -11,9 +11,16 @@ export const LoginScreen: React.FC = () => {
     if (buttonRef.current) {
       const initializeGoogleButton = () => {
         if (typeof google !== 'undefined' && google.accounts) {
+          const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+          
+          if (!clientId) {
+            console.error('❌ VITE_GOOGLE_CLIENT_ID not configured in ui-new/.env');
+            return;
+          }
+          
           console.log('LoginScreen: Initializing Google Sign-In');
           (google.accounts.id.initialize as any)({
-            client_id: '927667106833-7od90q7nh5oage0shc3kka5s9vtg2loj.apps.googleusercontent.com',
+            client_id: clientId,
             callback: (response: any) => {
               if (response.credential) {
                 console.log('LoginScreen: Login successful');
@@ -108,7 +115,7 @@ export const LoginScreen: React.FC = () => {
       </div>
 
       {/* GitHub Link */}
-      <GitHubLink />
+      <GitHubLink hideGitHub={true} />
     </div>
   );
 };

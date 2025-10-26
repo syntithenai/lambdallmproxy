@@ -19,6 +19,16 @@ const { getCachedCreditBalance, deductFromCache } = require('./credit-cache');
  */
 async function checkCreditBalance(userEmail, estimatedCost = 0.01, operationType = 'operation') {
     try {
+        // 🔧 DEVELOPMENT MODE: Bypass credit checks if DISABLE_CREDIT_CHECKS is set
+        if (process.env.DISABLE_CREDIT_CHECKS === 'true') {
+            console.log(`🔓 [DEV MODE] Credit check bypassed for ${userEmail} - DISABLE_CREDIT_CHECKS enabled`);
+            return {
+                allowed: true,
+                balance: 999999, // Fake large balance for dev
+                devMode: true
+            };
+        }
+        
         // Get current balance (from cache)
         const balance = await getCachedCreditBalance(userEmail);
         

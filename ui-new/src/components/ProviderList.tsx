@@ -13,6 +13,7 @@ import { useProviders } from '../hooks/useProviders';
 import { ProviderForm } from './ProviderForm';
 import { useSettings } from '../contexts/SettingsContext';
 import { useEffect } from 'react';
+import { isAuthenticated } from '../utils/googleDocs';
 
 interface ProviderListProps {
   onEditingChange?: (isEditing: boolean) => void;
@@ -23,7 +24,7 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
   // DEBUG: Log providers and enabled state
   // This must be placed after providers is defined, just before return
   const { providers, addProvider, updateProvider, deleteProvider } = useProviders();
-  const { settings, loadFromGoogleDrive, saveToGoogleDrive } = useSettings();
+  const { loadFromGoogleDrive, saveToGoogleDrive } = useSettings();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -136,10 +137,10 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
               Cloud Sync for Provider Credentials
             </div>
             <div className="text-sm text-blue-700 dark:text-blue-300 mb-3">
-              Manually load or save your provider settings, or enable automatic sync in the <strong>Cloud Sync</strong> tab.
-              {settings.syncToGoogleDrive && (
+              Connect to Google Drive in the <strong>Cloud Sync</strong> tab to enable automatic synchronization of your provider settings.
+              {isAuthenticated() && (
                 <span className="block mt-1 text-green-700 dark:text-green-400 font-medium">
-                  ✓ Auto-sync is enabled - changes are saved automatically
+                  ✓ Cloud sync is active - changes are saved automatically
                 </span>
               )}
             </div>

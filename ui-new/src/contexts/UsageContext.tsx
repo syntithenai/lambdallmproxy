@@ -2,6 +2,16 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { getCachedApiBase } from '../utils/api';
 
+interface TTSCapabilities {
+  openai: boolean;
+  groq: boolean;
+  gemini: boolean;
+  together: boolean;
+  elevenlabs: boolean;
+  browser: boolean;
+  speakjs: boolean;
+}
+
 interface UsageData {
   userEmail: string;
   totalCost: number;
@@ -9,6 +19,7 @@ interface UsageData {
   totalCredits: number;     // Total credit added
   exceeded: boolean;
   timestamp: string;
+  ttsCapabilities?: TTSCapabilities; // Server-side TTS capabilities
 }
 
 interface UsageContextType {
@@ -18,6 +29,7 @@ interface UsageContextType {
   refreshUsage: () => Promise<void>;
   addCost: (cost: number) => void;
   isLocked: boolean;
+  ttsCapabilities: TTSCapabilities | null;
 }
 
 const UsageContext = createContext<UsageContextType | undefined>(undefined);
@@ -27,6 +39,7 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ttsCapabilities, setTtsCapabilities] = useState<TTSCapabilities | null>(null);
 
   /**
    * Fetch usage data from billing endpoint
@@ -60,6 +73,12 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
       }
 
       const billingData = await response.json();
+      
+      // Extract TTS capabilities if provided by the server
+      if (billingData.ttsCapabilities) {
+        setTtsCapabilities(billingData.ttsCapabilities);
+        console.log('🎙️ Server TTS capabilities:', billingData.ttsCapabilities);
+      }
       
       // Calculate credit balance and total credits from transactions
       let totalCredits = 0;
@@ -148,7 +167,8 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
     error,
     refreshUsage: fetchUsage,
     addCost,
-    isLocked: usage?.exceeded || false
+    isLocked: usage?.exceeded || false,
+    ttsCapabilities
   };
 
   return (

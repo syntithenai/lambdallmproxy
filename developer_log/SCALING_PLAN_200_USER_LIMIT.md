@@ -135,11 +135,7 @@ Keep only the **most recent 90 days** of detailed transactions in each user's ta
 - ✅ Date range (period_start, period_end)
 - ✅ Transaction count (number aggregated)
 
-**What's Lost in Summaries**:
-- ❌ Individual transaction timestamps
-- ❌ Model-specific breakdown
-- ❌ Provider-specific breakdown
-- ❌ Individual transaction durations
+
 
 **Why This Works**:
 - Users only need accurate current balance (preserved ✅)

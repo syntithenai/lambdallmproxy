@@ -78,6 +78,21 @@ async function handleUsageRequest(event) {
         // User has exceeded limit if balance is zero or negative
         const exceeded = creditBalance <= 0;
 
+
+        // --- TTS Capabilities ---
+        // This block determines which TTS providers are available server-side
+        // and exposes their status to the frontend for UI display.
+        // This is a minimal, static implementation. For dynamic config, read from env or provider catalog.
+        const ttsCapabilities = {
+            openai: !!process.env.OPENAI_API_KEY,
+            groq: !!process.env.GROQ_API_KEY,
+            gemini: !!process.env.GEMINI_API_KEY,
+            together: !!process.env.TOGETHER_API_KEY,
+            elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+            browser: true, // Always available client-side
+            speakjs: true  // Always available client-side
+        };
+
         const response = {
             userEmail,
             totalSpent: parseFloat(totalSpent.toFixed(4)),
@@ -85,7 +100,8 @@ async function handleUsageRequest(event) {
             creditLimit: CREDIT_LIMIT, // Deprecated, kept for backward compatibility
             remaining: parseFloat(creditBalance.toFixed(4)), // Alias for creditBalance
             exceeded,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            ttsCapabilities
         };
 
         console.log(`💰 Usage for ${userEmail}: $${totalSpent.toFixed(4)} spent, $${creditBalance.toFixed(4)} remaining (${exceeded ? 'EXCEEDED' : 'OK'})`);

@@ -1,4 +1,4 @@
-# Google OAuth2 App Publishing Requirements
+make# Google OAuth2 App Publishing Requirements
 
 **Date**: October 25, 2025  
 **Status**: Currently using OAuth client from another project (testing mode)  
@@ -14,7 +14,7 @@
 - **Scopes Requested**:
   - `https://www.googleapis.com/auth/userinfo.email` - Get user's email
   - `https://www.googleapis.com/auth/userinfo.profile` - Get user's name
-  - `https://www.googleapis.com/auth/spreadsheets` - Read/write Google Sheets (for billing logs)
+  - `https://www.googleapis.com/auth/drive.file` - Read/write files created by this app (includes Google Sheets)
 
 ---
 
@@ -106,8 +106,8 @@ Once consent screen is configured, submit for verification:
 - **Why do you need these scopes?**
   - `userinfo.email`: "To identify users and authorize API requests"
   - `userinfo.profile`: "To display user's name in the UI"
-  - `spreadsheets`: "To log API usage data to the user's own Google Sheets for billing transparency"
-- **How do you use Google Sheets?** "We write API usage logs (timestamp, model, cost, tokens) to a Google Sheet that the user owns. This provides full transparency into their API usage and costs."
+  - `drive.file`: "To create and write usage logs to Google Sheets owned by the user. This scope only accesses files created by our app, not the user's existing Drive files."
+- **How do you use Google Drive?** "We create Google Sheets files to log API usage data (timestamp, model, tokens, cost) in the user's Drive. We only access files created by our application, not any existing files. This provides full transparency into their API usage and costs."
 
 ### 5. **Video Demonstration (REQUIRED)**
 
@@ -191,12 +191,13 @@ If you don't want to go through verification:
 - **Justification**: "Used to display the user's name in the application UI for personalization."
 - **Alternatives Considered**: Could be omitted, but degrades UX
 
-**`https://www.googleapis.com/auth/spreadsheets` (Restricted)**
-- **Justification**: "Required to provide transparent billing logs. The application writes API usage data (timestamp, model, tokens, cost) to a Google Sheet owned by the user. This ensures users have full visibility into their API usage and costs. We do not read or modify any other spreadsheets."
+**`https://www.googleapis.com/auth/drive.file` (Sensitive, not Restricted)**
+- **Justification**: "Required to create and write billing logs to Google Sheets. This scope only grants access to files created or opened by our application - it does NOT access the user's existing Drive files. We create a Google Sheet in the user's Drive to log API usage data (timestamp, model, tokens, cost). This ensures users have full visibility and ownership of their usage data."
+- **Why not use the broader `drive` or `spreadsheets` scope?**: "We deliberately use the most restrictive scope (`drive.file`) that only accesses app-created files. We do not need or want access to the user's existing files."
 - **Alternatives Considered**: 
-  - Database storage: Users prefer owning their own data
+  - Database storage: Users prefer owning their own data in their own Drive
   - Read-only access: Insufficient - need to write logs
-  - Limited scope: This is already the narrowest scope for Sheets writing
+  - Broader `spreadsheets` scope: Unnecessarily permissive - would grant access to ALL user spreadsheets
 
 ---
 

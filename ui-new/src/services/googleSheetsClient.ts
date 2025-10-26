@@ -46,7 +46,7 @@ export function initGoogleIdentity(clientId: string): void {
   try {
     gisTokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      scope: 'https://www.googleapis.com/auth/drive.file', // Only files created by this app
       callback: () => {
         // Callback is overridden per-request in getAccessToken()
         console.log('🔐 Token response received');

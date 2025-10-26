@@ -9,7 +9,7 @@
 
 const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { DEFAULT_REASONING_EFFORT, MAX_TOKENS_PLANNING } = require('../config/tokens');
-const { verifyGoogleToken, getAllowedEmails } = require('../auth');
+const { authenticateRequest, getAllowedEmails } = require('../auth');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const { buildProviderPool } = require('../credential-pool');
 const path = require('path');
@@ -71,9 +71,11 @@ function getRateLimitTracker() {
  * @param {string} query - User's query
  * @param {Object} providers - Available providers with API keys
  * @param {string} requestedModel - Optional specific model to use
+ * @param {Object} clarificationAnswers - Optional answers to previous clarification questions
+ * @param {Object} previousContext - Optional context from previous clarification request
  * @returns {Promise<Object>} Plan object with queryType, reasoning, persona, etc.
  */
-async function generatePlan(query, providers = {}, requestedModel = null, eventCallback = null) {
+async function generatePlan(query, providers = {}, requestedModel = null, eventCallback = null, clarificationAnswers = null, previousContext = null, forcePlan = false) {
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
         throw new Error('Query parameter is required and must be a non-empty string');
     }
@@ -127,9 +129,123 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
     
     console.log(`📊 Runtime catalog providers:`, Object.keys(runtimeCatalog.providers));
 
-    // Create messages for planning prompt
+    // Create messages for planning prompt with available tools
     const { generatePlanningPrompt } = require('../lambda_search_llm_handler');
-    const planningPrompt = generatePlanningPrompt(query);
+    
+    // Get default tools array (same as chat endpoint uses)
+    const defaultTools = [
+        {
+            type: 'function',
+            function: {
+                name: 'search_web',
+                description: 'Search the web using DuckDuckGo. Use for current events, recent information, research, fact-checking, or any query needing up-to-date information. Returns a list of search results with titles, URLs, and snippets.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: { type: 'string', description: 'The search query' },
+                        max_results: { type: 'number', description: 'Maximum number of results (default: 5)' }
+                    },
+                    required: ['query']
+                }
+            }
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'scrape_url',
+                description: 'Scrape and extract text content from a web URL. Use when you need the full content of a specific webpage.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        url: { type: 'string', description: 'The URL to scrape' }
+                    },
+                    required: ['url']
+                }
+            }
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'execute_javascript',
+                description: 'Execute JavaScript code in a sandboxed environment. Use for calculations, data processing, algorithms, or any computational task. Has access to common libraries.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        code: { type: 'string', description: 'JavaScript code to execute' }
+                    },
+                    required: ['code']
+                }
+            }
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'generate_chart',
+                description: 'Generate charts, diagrams, flowcharts using Mermaid syntax or Chart.js. Use for ANY visualization needs.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        type: { type: 'string', enum: ['mermaid', 'chartjs'], description: 'Chart type' },
+                        config: { type: 'object', description: 'Chart configuration' }
+                    },
+                    required: ['type', 'config']
+                }
+            }
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'manage_todos',
+                description: '📝 **MANAGE TODO LIST**: Add or delete todos that track progress through complex workflows. When todos exist, they auto-progress after each successful completion. **USE THIS when**: user requests a multi-step plan, breaking down complex tasks, tracking implementation progress, or managing sequential workflows. **DO NOT use for simple single-step tasks.** Keywords: plan, steps, todo list, break down task, multi-step workflow, implementation phases.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        add: { type: 'array', items: { type: 'string' }, description: 'Array of todo descriptions to add' },
+                        delete: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'number' }] }, description: 'Array of todo IDs or descriptions to remove' }
+                    }
+                }
+            }
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'manage_snippets',
+                description: '📝 **MANAGE KNOWLEDGE SNIPPETS**: Insert, retrieve, search, or delete knowledge snippets stored in your personal Google Sheet. Use to save important information, code examples, procedures, or any content you want to preserve and search later.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        action: { type: 'string', enum: ['insert', 'capture', 'get', 'search', 'delete'] },
+                        payload: { type: 'object', description: 'Action-specific parameters' }
+                    },
+                    required: ['action']
+                }
+            }
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'generate_image',
+                description: 'Generate images using AI models. Use for creating visuals, illustrations, or artwork.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        prompt: { type: 'string', description: 'Image generation prompt' }
+                    },
+                    required: ['prompt']
+                }
+            }
+        }
+    ];
+    
+    let planningPrompt = generatePlanningPrompt(query, defaultTools);
+    
+    // If user provided answers to clarification questions, append them to the prompt
+    if (clarificationAnswers && previousContext) {
+        planningPrompt += `\n\n**PREVIOUS CLARIFICATION:**\nThe user was previously asked clarification questions. Here are their answers:\n\n`;
+        planningPrompt += `Original Query: "${previousContext.originalQuery}"\n\n`;
+        planningPrompt += `User's Clarification Answers:\n${clarificationAnswers}\n\n`;
+        planningPrompt += `Based on these clarifications, please now provide a complete research plan with system and user prompts. Do NOT ask for more clarification - proceed with the plan.`;
+    }
     
     const messages = [
         { 
@@ -552,50 +668,192 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
             let enhancedSystemPrompt = parsed.enhancedSystemPrompt || parsed.enhanced_system_prompt || '';
             let enhancedUserPrompt = parsed.enhancedUserPrompt || parsed.enhanced_user_prompt || '';
             
-            // Generate fallback enhanced system prompt if missing or too short
-            if (!enhancedSystemPrompt || enhancedSystemPrompt.length < 50) {
-                enhancedSystemPrompt = `${persona || 'You are a research expert.'} Your task is to research and analyze "${query}" comprehensively.`;
+            // ALWAYS regenerate enhanced prompts with explicit tool instructions (override LLM's vague prompts)
+            if (true) {  // Always regenerate to ensure explicit tool-calling instructions
+                enhancedSystemPrompt = `${persona || 'You are a research expert.'} 
+
+**RESEARCH EXECUTION PLAN FOR: "${query}"**
+
+⚡ **YOU HAVE ACCESS TO THESE TOOLS - USE THEM IN YOUR FIRST RESPONSE:**
+
+**AVAILABLE TOOLS:**
+• manage_todos - Create a task list by adding multiple tasks at once
+• search_web - Search the web for information (call this multiple times with different queries)
+• manage_snippets - Save research findings with tags for later retrieval
+
+**STEP 1: Call manage_todos tool to create your complete task list**
+Add ALL of these tasks in one call to manage_todos:`;
                 
                 if (searchStrategies.length > 0) {
-                    enhancedSystemPrompt += ` Search for information using these terms: ${searchStrategies.join(', ')}.`;
+                    searchStrategies.slice(0, 6).forEach((term, i) => {
+                        enhancedSystemPrompt += `
+  ${i + 1}. Search for: "${term}"`;
+                    });
+                    if (searchStrategies.length > 6) {
+                        enhancedSystemPrompt += `
+  ... and ${searchStrategies.length - 6} more search tasks`;
+                    }
+                } else {
+                    enhancedSystemPrompt += `
+  1. Conduct research on ${query}
+  2. Analyze findings
+  3. Synthesize results`;
                 }
                 
+                enhancedSystemPrompt += `
+
+**STEP 2: Immediately call search_web tool multiple times**
+Execute these web searches right now (do NOT wait):`;
+                
+                if (searchStrategies.length > 0) {
+                    searchStrategies.slice(0, 5).forEach((term, i) => {
+                        enhancedSystemPrompt += `
+  ${i + 1}. Search query: "${term}"`;
+                    });
+                    if (searchStrategies.length > 5) {
+                        enhancedSystemPrompt += `
+  ... and ${searchStrategies.length - 5} more searches`;
+                    }
+                } else {
+                    enhancedSystemPrompt += `
+  1. Search for relevant information
+  2. Search for additional details
+  3. Search for supporting evidence`;
+                }
+                
+                enhancedSystemPrompt += `
+
+**STEP 3: Analyze and synthesize the search results**
+Answer these key research questions:`;
+                
                 if (researchQuestions.length > 0) {
-                    enhancedSystemPrompt += ` Focus on answering these key questions: ${researchQuestions.slice(0, 5).join(' ')} ${researchQuestions.length > 5 ? `and ${researchQuestions.length - 5} additional questions.` : ''}`;
+                    researchQuestions.slice(0, 5).forEach((q, i) => {
+                        enhancedSystemPrompt += `
+  ${i + 1}. ${q}`;
+                    });
+                    if (researchQuestions.length > 5) {
+                        enhancedSystemPrompt += `
+  ... and ${researchQuestions.length - 5} more questions`;
+                    }
                 }
                 
                 if (suggestedSources.length > 0) {
                     const sourceTypes = suggestedSources.map(s => s.type).join(', ');
-                    enhancedSystemPrompt += ` Consult diverse sources including: ${sourceTypes} sources.`;
+                    enhancedSystemPrompt += `\n\n**SOURCE PRIORITY**: ${sourceTypes} sources`;
                 }
                 
                 if (methodology) {
-                    enhancedSystemPrompt += ` Use a ${methodology} approach.`;
+                    enhancedSystemPrompt += `\n**METHODOLOGY**: ${methodology}`;
                 }
                 
-                enhancedSystemPrompt += ` Aim to find ${estimatedSources} high-quality sources and provide detailed, well-sourced analysis with proper citations.`;
+                enhancedSystemPrompt += `
+
+🚨 **CRITICAL**: Your FIRST response must include:
+  ✓ ONE call to manage_todos (add all tasks)
+  ✓ MULTIPLE calls to search_web (execute all searches immediately)
+  ✓ Do NOT just create todos and stop - execute the searches too!`;
             }
             
-            // Generate fallback enhanced user prompt if missing or too short  
-            if (!enhancedUserPrompt || enhancedUserPrompt.length < 30) {
-                enhancedUserPrompt = `Please research "${query}" comprehensively.`;
-                
+            // ALWAYS regenerate enhanced user prompt with explicit tool instructions (override LLM's vague prompts)
+            if (true) {  // Always regenerate to ensure explicit tool-calling instructions
+                enhancedUserPrompt = `📋 **RESEARCH EXECUTION INSTRUCTIONS**
+
+Original Query: "${query}"
+
+**YOU MUST USE THESE TOOLS IN YOUR FIRST RESPONSE:**
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**STEP 1: USE manage_todos TOOL**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Call manage_todos to add ALL of these tasks at once:`;
+
                 if (searchStrategies.length > 0) {
-                    enhancedUserPrompt += `\n\n**Search Terms:**\n${searchStrategies.map(s => `- "${s}"`).join('\n')}`;
+                    searchStrategies.slice(0, 6).forEach((term, i) => {
+                        enhancedUserPrompt += `
+  ${i + 1}. "Search for: ${term}"`;
+                    });
+                    if (searchStrategies.length > 6) {
+                        enhancedUserPrompt += `
+  ... and ${searchStrategies.length - 6} more tasks`;
+                    }
+                } else {
+                    enhancedUserPrompt += `
+  1. "Research ${query}"
+  2. "Analyze findings"
+  3. "Synthesize results"`;
                 }
                 
+                enhancedUserPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**STEP 2: USE search_web TOOL MULTIPLE TIMES**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Execute these web searches NOW (do not wait for confirmation):`;
+
+                if (searchStrategies.length > 0) {
+                    searchStrategies.slice(0, 5).forEach((term, i) => {
+                        enhancedUserPrompt += `
+  ${i + 1}. Query: "${term}"`;
+                    });
+                    if (searchStrategies.length > 5) {
+                        enhancedUserPrompt += `
+  ... and ${searchStrategies.length - 5} more searches`;
+                    }
+                } else {
+                    enhancedUserPrompt += `
+  1. Search for key information
+  2. Search for supporting evidence
+  3. Search for additional details`;
+                }
+                
+                enhancedUserPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**STEP 3: ANSWER RESEARCH QUESTIONS**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Based on search results, answer:`;
+                
                 if (researchQuestions.length > 0) {
-                    enhancedUserPrompt += `\n\n**Research Questions:**\n${researchQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
+                    researchQuestions.slice(0, 5).forEach((q, i) => {
+                        enhancedUserPrompt += `
+  ${i + 1}. ${q}`;
+                    });
+                    if (researchQuestions.length > 5) {
+                        enhancedUserPrompt += `
+  ... and ${researchQuestions.length - 5} more questions`;
+                    }
                 }
                 
                 if (suggestedSources.length > 0) {
-                    enhancedUserPrompt += `\n\n**Suggested Source Types:**`;
-                    suggestedSources.forEach(source => {
-                        enhancedUserPrompt += `\n- **${source.type.charAt(0).toUpperCase() + source.type.slice(1)}**: ${source.examples ? source.examples.join(', ') : 'Various relevant sources'}`;
-                    });
+                    enhancedUserPrompt += `
+
+📚 **SOURCE PRIORITY**: ${suggestedSources.map(s => s.type).join(', ')} sources`;
                 }
-                
-                enhancedUserPrompt += `\n\nProvide comprehensive analysis with proper citations from diverse, authoritative sources. Address all research questions thoroughly.`;
+
+                enhancedUserPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  **EXECUTION CHECKLIST** ⚠️
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Your FIRST response MUST include:
+  ☐ ONE manage_todos tool call (add all tasks)
+  ☐ MULTIPLE search_web tool calls (execute immediately)
+  ☐ Analysis of search results
+  ☐ Answers to questions
+
+**DO NOT**:
+  ❌ Just create todos and stop
+  ❌ Say "I will search..." without calling search_web
+  ❌ Wait for user confirmation
+
+**DO**:
+  ✅ Call manage_todos once with all tasks
+  ✅ Call search_web multiple times right away
+  ✅ Provide comprehensive answers from search results`;
             }
             
             return {
@@ -618,46 +876,174 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
             let enhancedSystemPrompt = parsed.enhancedSystemPrompt || parsed.enhanced_system_prompt || '';
             let enhancedUserPrompt = parsed.enhancedUserPrompt || parsed.enhanced_user_prompt || '';
             
-            if (!enhancedSystemPrompt || enhancedSystemPrompt.length < 50) {
-                enhancedSystemPrompt = `${persona || 'You are a research and writing expert.'} You will create a comprehensive document about "${query}".`;
+            // Extract search queries and research questions from planning result
+            const searchQueries = parsed.searchQueries || parsed.search_strategies || [];
+            const researchQuestions = parsed.researchQuestions || parsed.research_questions || [];
+            const todos = parsed.todos || [];
+            
+            // ALWAYS regenerate enhanced prompts with explicit tool instructions (override LLM's vague prompts)
+            if (true) {  // Always regenerate to ensure explicit tool-calling instructions
+                enhancedSystemPrompt = `${persona || 'You are a research and writing expert.'} 
+
+**YOUR TASK**: Create a comprehensive document about "${query}"
+
+**🚨 CRITICAL: Execute ALL steps in your FIRST response - do not wait for confirmation!**
+
+**STEP 1 - Create Complete Todo List:**
+Call manage_todos tool to add ALL these tasks at once:`;
                 
-                if (documentSections.length > 0) {
-                    const sectionTitles = documentSections.map(s => s.title).join(', ');
-                    enhancedSystemPrompt += ` The document should include these sections: ${sectionTitles}.`;
-                    enhancedSystemPrompt += ` For each section, research using the specified keywords and answer the associated questions.`;
+                // Add todos from planning result
+                if (todos.length > 0) {
+                    todos.slice(0, 8).forEach((todo, i) => {
+                        const taskTitle = typeof todo === 'string' ? todo : (todo.task || todo.title || 'Research task');
+                        enhancedSystemPrompt += `\n${i + 1}. ${taskTitle}`;
+                    });
+                    if (todos.length > 8) {
+                        enhancedSystemPrompt += `\n... ${todos.length - 8} more tasks`;
+                    }
+                } else if (documentSections.length > 0) {
+                    documentSections.slice(0, 6).forEach((section, i) => {
+                        enhancedSystemPrompt += `\n${i + 1}. Research section: ${section.title}`;
+                    });
+                } else {
+                    enhancedSystemPrompt += `\n1. Conduct comprehensive research on ${query}`;
                 }
                 
-                enhancedSystemPrompt += ` Follow a systematic approach to ensure comprehensive coverage.`;
+                enhancedSystemPrompt += `
+
+**STEP 2 - Execute Multiple Web Searches:**
+Immediately call search_web tool multiple times with these queries:`;
+                
+                if (searchQueries.length > 0) {
+                    searchQueries.slice(0, 6).forEach((query, i) => {
+                        enhancedSystemPrompt += `\n${i + 1}. "${query}"`;
+                    });
+                    if (searchQueries.length > 6) {
+                        enhancedSystemPrompt += `\n... ${searchQueries.length - 6} more searches`;
+                    }
+                } else {
+                    enhancedSystemPrompt += `\n1. [Relevant search term 1]\n2. [Relevant search term 2]\n3. [Continue with multiple searches]`;
+                }
+                
+                enhancedSystemPrompt += `
+
+**STEP 3 - Document Findings:**
+Synthesize search results into comprehensive content.`;
+                
+                if (researchQuestions.length > 0) {
+                    enhancedSystemPrompt += `\n\n**Answer these questions:**`;
+                    researchQuestions.slice(0, 5).forEach((q, i) => {
+                        enhancedSystemPrompt += `\n${i + 1}. ${q}`;
+                    });
+                }
+                
+                if (documentSections.length > 0) {
+                    const sectionTitles = documentSections.map(s => s.title).slice(0, 5).join(', ');
+                    enhancedSystemPrompt += `\n\n**Include sections:** ${sectionTitles}${documentSections.length > 5 ? '...' : ''}`;
+                }
+                
+                enhancedSystemPrompt += `
+
+**⚠️ EXECUTION REQUIREMENTS:**
+✅ Call manage_todos ONCE with all tasks
+✅ Call search_web MULTIPLE times (minimum 3-5 searches)
+✅ Do NOT stop after creating todos - execute searches immediately
+✅ Use manage_snippets to save findings with tag "als cures"
+
+Start executing NOW - your first response must include manage_todos + multiple search_web calls.`;
             }
             
-            if (!enhancedUserPrompt || enhancedUserPrompt.length < 30) {
-                enhancedUserPrompt = `Create a comprehensive document about "${query}".`;
+            // ALWAYS regenerate enhanced user prompt with explicit tool instructions (override LLM's vague prompts)
+            if (true) {  // Always regenerate to ensure explicit tool-calling instructions
+                enhancedUserPrompt = `**EXECUTE RESEARCH AND DOCUMENTATION TASK**
+
+Query: "${query}"
+
+**🚨 YOU MUST EXECUTE ALL THESE STEPS IN YOUR FIRST RESPONSE:**
+
+**STEP 1 - Add All Todos:**
+Use manage_todos to add this complete task list:`;
+
+                if (todos.length > 0) {
+                    todos.slice(0, 6).forEach((todo, i) => {
+                        const taskTitle = typeof todo === 'string' ? todo : (todo.task || todo.title || 'Research task');
+                        enhancedUserPrompt += `\n${i + 1}. ${taskTitle}`;
+                    });
+                    if (todos.length > 6) {
+                        enhancedUserPrompt += `\n... plus ${todos.length - 6} more tasks`;
+                    }
+                } else if (documentSections.length > 0) {
+                    documentSections.slice(0, 5).forEach((section, i) => {
+                        enhancedUserPrompt += `\n${i + 1}. Research: ${section.title}`;
+                    });
+                } else {
+                    enhancedUserPrompt += `\n1. Comprehensive research and documentation`;
+                }
+                
+                enhancedUserPrompt += `
+
+**STEP 2 - Execute Searches:**
+Use search_web for these queries:`;
+
+                if (searchQueries.length > 0) {
+                    searchQueries.slice(0, 5).forEach((query, i) => {
+                        enhancedUserPrompt += `\n${i + 1}. ${query}`;
+                    });
+                    if (searchQueries.length > 5) {
+                        enhancedUserPrompt += `\n... plus ${searchQueries.length - 5} more searches`;
+                    }
+                } else {
+                    enhancedUserPrompt += `\n1-3. Multiple relevant search queries`;
+                }
+                
+                enhancedUserPrompt += `
+
+**STEP 3 - Create Content:**`;
                 
                 if (snippetWorkflow) {
-                    enhancedUserPrompt += `\n\n**Workflow:**\n${snippetWorkflow}`;
+                    enhancedUserPrompt += `\nWorkflow: ${snippetWorkflow}`;
                 }
                 
                 if (documentSections.length > 0) {
-                    enhancedUserPrompt += `\n\n**Document Sections:**`;
-                    documentSections.forEach((section, i) => {
-                        enhancedUserPrompt += `\n\n${i + 1}. **${section.title}**`;
-                        if (section.keywords && section.keywords.length > 0) {
-                            enhancedUserPrompt += `\n   - Keywords: ${section.keywords.join(', ')}`;
-                        }
-                        if (section.questions && section.questions.length > 0) {
-                            enhancedUserPrompt += `\n   - Questions: ${section.questions.join('; ')}`;
-                        }
+                    enhancedUserPrompt += `\n\nRequired sections:`;
+                    documentSections.slice(0, 4).forEach((section, i) => {
+                        enhancedUserPrompt += `\n${i + 1}. ${section.title}`;
+                    });
+                    if (documentSections.length > 4) {
+                        enhancedUserPrompt += `\n... ${documentSections.length - 4} more`;
+                    }
+                }
+                
+                if (researchQuestions.length > 0) {
+                    enhancedUserPrompt += `\n\nAnswer these:`;
+                    researchQuestions.slice(0, 4).forEach((q, i) => {
+                        enhancedUserPrompt += `\n${i + 1}. ${q}`;
                     });
                 }
                 
                 if (suggestedSources.length > 0) {
-                    enhancedUserPrompt += `\n\n**Suggested Source Types:**`;
-                    suggestedSources.forEach(source => {
-                        enhancedUserPrompt += `\n- **${source.type.charAt(0).toUpperCase() + source.type.slice(1)}**: ${source.examples ? source.examples.join(', ') : 'Various relevant sources'}`;
-                    });
+                    enhancedUserPrompt += `\n\n📚 Prioritize: ${suggestedSources.map(s => s.type).join(', ')} sources`;
                 }
-                
-                enhancedUserPrompt += `\n\nResearch each section thoroughly using diverse sources and provide detailed, well-sourced content with proper citations.`;
+
+                enhancedUserPrompt += `
+
+**✅ CHECKLIST - Your response MUST include:**
+□ manage_todos call (add ALL tasks at once)
+□ search_web calls (minimum 3-5 searches)
+□ Begin documenting findings
+□ manage_snippets to save results (tag: "als cures")
+
+**❌ DO NOT:**
+- Create only ONE todo then stop
+- Say "I will do X" without calling the tool
+- Wait for user confirmation
+
+**✅ DO:**
+- Execute manage_todos + search_web in first response
+- Call search_web multiple times
+- Start documenting immediately
+
+BEGIN EXECUTION NOW.`;
             }
             
             return {
@@ -693,8 +1079,9 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
                 enhancedSystemPrompt,
                 enhancedUserPrompt
             };
-        } else if (queryType === 'guidance' || queryType === 'GUIDANCE') {
+        } else if ((queryType === 'guidance' || queryType === 'GUIDANCE') && !forcePlan) {
             // Handle guidance queries - complex multi-iteration projects needing workflow planning
+            // Note: If forcePlan is true, we skip guidance and treat it as OVERVIEW
             const guidanceQuestions = parsed.guidanceQuestions || parsed.guidance_questions || [];
             const workflow = parsed.workflow || [];
             const iterations = parsed.iterations || parsed.suggested_iterations || 3;
@@ -735,6 +1122,50 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
                 iterations,
                 enhancedSystemPrompt,
                 enhancedUserPrompt
+            };
+        } else if ((queryType === 'guidance' || queryType === 'GUIDANCE') && forcePlan) {
+            // Force plan mode - treat guidance as OVERVIEW and generate system/user prompts
+            console.log('⚡ Force plan mode enabled - treating guidance as OVERVIEW');
+            const searchQueries = parsed.searchQueries || parsed.search_queries || parsed.searchStrategies || [];
+            const researchQuestions = parsed.researchQuestions || parsed.research_questions || [];
+            const persona = parsed.expertPersona || parsed.optimal_persona || 'You are a knowledgeable research assistant';
+            
+            // Build enhanced prompts even though it's a guidance query
+            let enhancedSystemPrompt = parsed.enhancedSystemPrompt || parsed.enhanced_system_prompt || '';
+            let enhancedUserPrompt = parsed.enhancedUserPrompt || parsed.enhanced_user_prompt || '';
+            
+            if (!enhancedSystemPrompt || enhancedSystemPrompt.length < 30) {
+                enhancedSystemPrompt = `${persona}. You will conduct comprehensive research on "${query}". Use available tools to gather information from multiple sources.`;
+                
+                if (researchQuestions.length > 0) {
+                    enhancedSystemPrompt += ` Focus on answering these key questions: ${researchQuestions.join('; ')}.`;
+                }
+                
+                enhancedSystemPrompt += ' Synthesize findings into a coherent analysis.';
+            }
+            
+            if (!enhancedUserPrompt || enhancedUserPrompt.length < 30) {
+                enhancedUserPrompt = `I need comprehensive research on: "${query}".`;
+                
+                if (researchQuestions.length > 0) {
+                    enhancedUserPrompt += `\n\n**Research Questions:**\n${researchQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
+                }
+                
+                if (searchQueries.length > 0) {
+                    enhancedUserPrompt += `\n\n**Search Topics:**\n${searchQueries.map((sq, i) => `${i + 1}. ${sq}`).join('\n')}`;
+                }
+                
+                enhancedUserPrompt += '\n\nPlease research these topics thoroughly and provide a comprehensive analysis.';
+            }
+            
+            return {
+                ...baseResult,
+                queryType: 'OVERVIEW', // Override to OVERVIEW when forcing plan
+                searchQueries,
+                researchQuestions,
+                enhancedSystemPrompt,
+                enhancedUserPrompt,
+                forcedFromGuidance: true // Flag to indicate this was forced from guidance mode
             };
         } else {
             throw new Error(`Unknown query_type: ${queryType}`);
@@ -797,6 +1228,13 @@ async function handler(event, responseStream, context) {
             ? authHeader.substring(7) 
             : authHeader;
         
+        console.log('🔐 Planning endpoint authentication:', {
+            hasAuthHeader: !!authHeader,
+            tokenLength: token?.length,
+            tokenPrefix: token?.substring(0, 30) + '...',
+            startsWithBearer: authHeader?.startsWith('Bearer '),
+        });
+        
         // Store googleToken for billing logging
         const googleToken = token;
         
@@ -804,14 +1242,33 @@ async function handler(event, responseStream, context) {
         
         // Try to verify token if provided
         if (token) {
-            verifiedUser = await verifyGoogleToken(token);
+            console.log('🔍 Attempting to verify token...');
+            const authResult = await authenticateRequest(`Bearer ${token}`);
+            
+            if (!authResult.authenticated) {
+                console.error('❌ Token verification failed for planning endpoint');
+                sseWriter.writeEvent('error', {
+                    error: 'Authentication failed. Token is invalid or expired. Please sign out and sign in again.',
+                    code: 'TOKEN_INVALID',
+                    hint: 'Try logging out and back in to refresh your session'
+                });
+                responseStream.end();
+                return;
+            } else {
+                verifiedUser = authResult.user;
+                console.log('✅ Token verified successfully for user:', verifiedUser.email);
+            }
+        } else {
+            console.error('❌ No token provided in Authorization header');
         }
         
         // Require authentication
         if (!verifiedUser) {
+            console.error('❌ Authentication required but no verified user');
             sseWriter.writeEvent('error', {
-                error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
-                code: 'UNAUTHORIZED'
+                error: 'Authentication required. Please sign in with your Google account.',
+                code: 'UNAUTHORIZED',
+                hint: 'Click "Sign in with Google" at the top of the page'
             });
             responseStream.end();
             return;
@@ -825,6 +1282,11 @@ async function handler(event, responseStream, context) {
         query = body.query || '';
         const userProviders = body.providers || {};
         requestedModel = body.model || null;
+        const clarificationAnswers = body.clarificationAnswers || null; // User's answers to clarification questions
+        const previousContext = body.previousContext || null; // Context from previous clarification request
+        const forcePlan = body.forcePlan || false; // Force plan generation even if guidance mode
+        
+        console.log(`🎯 Planning request: forcePlan=${forcePlan}, hasClarificationAnswers=${!!clarificationAnswers}`);
         
         // Build provider pool (combines UI providers + environment providers)
         const providerPool = buildProviderPool(userProviders, true); // true = authorized user
@@ -898,7 +1360,7 @@ async function handler(event, responseStream, context) {
         const plan = await generatePlan(query, providers, requestedModel, (eventType, eventData) => {
             // Forward events from generatePlan to SSE stream
             sseWriter.writeEvent(eventType, eventData);
-        });
+        }, clarificationAnswers, previousContext, forcePlan);
         
         // Extract token usage, selected model, and raw response for transparency and logging
         const tokenUsage = plan._tokenUsage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -951,19 +1413,37 @@ async function handler(event, responseStream, context) {
         delete clientPlan._rawResponse;
         delete clientPlan._selectedModel;
         
-        // Send result event
-        sseWriter.writeEvent('result', clientPlan);
+        // Check if this is a clarification response (needs user input)
+        const needsClarification = plan.queryType === 'clarification' || 
+                                    plan.queryType === 'NEEDS_CLARIFICATION' ||
+                                    (plan.clarificationQuestions && plan.clarificationQuestions.length > 0);
+        
+        if (needsClarification) {
+            // Send clarification_needed event instead of result
+            sseWriter.writeEvent('clarification_needed', {
+                questions: plan.clarificationQuestions || [],
+                context: {
+                    originalQuery: query,
+                    persona: plan.expertPersona || 'You are a helpful research assistant',
+                    reasoning: plan.reasoning || ''
+                }
+            });
+        } else {
+            // Send result event for complete plans
+            sseWriter.writeEvent('result', clientPlan);
+        }
         
         // Send complete event
         sseWriter.writeEvent('complete', {
-            success: true
+            success: true,
+            needsClarification
         });
         
         // Log to Google Sheets (async, non-blocking)
         const durationMs = Date.now() - startTime;
         
         // Log the planning request with actual token counts and selected model
-        const providerInfo = runtimeCatalog.providers[selectedModel.providerType];
+        const providerInfo = providers[selectedModel.providerType];
         const isUserProvidedKey = providerInfo ? !providerInfo.isServerSideKey : false;
         const cost = calculateCost(selectedModel.name, tokenUsage.promptTokens, tokenUsage.completionTokens, null, isUserProvidedKey);
         logToBothSheets(googleToken, {

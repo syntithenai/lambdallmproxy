@@ -1,21 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import './CloudSyncSettings.css';
-import { useSettings } from '../contexts/SettingsContext';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 interface CloudSyncSettingsProps {
   onClose?: () => void;
 }
 
 const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose }) => {
-  const { settings, setSettings } = useSettings();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   
-  // Sync preferences
-  const [configSync, setConfigSync] = useState(false);
-  const [swagSync, setSwagSync] = useState(false);
+  // Sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const [syncMetadata, setSyncMetadata] = useState<{
+    plansCount: number;
+    playlistsCount: number;
+  }>({ plansCount: 0, playlistsCount: 0 });
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(
+    localStorage.getItem('auto_sync_enabled') === 'true'
+  );
 
   // Check authentication status on mount
   useEffect(() => {
@@ -25,17 +32,84 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
     if (accessToken && accessToken.length > 0) {
       setIsAuthenticated(true);
       setUserEmail(storedEmail);
+      loadSyncMetadata();
     }
+  }, []);
 
-    // Load sync preferences from SettingsContext and localStorage
-    // Config sync comes from SettingsContext.syncToGoogleDrive
-    setConfigSync(settings.syncToGoogleDrive || false);
+  // Load sync metadata
+  const loadSyncMetadata = async () => {
+    try {
+      const metadata = await googleDriveSync.getSyncMetadata();
+      setLastSyncTime(metadata.lastSyncTime);
+      setSyncMetadata({
+        plansCount: metadata.plansCount,
+        playlistsCount: metadata.playlistsCount
+      });
+    } catch (error) {
+      console.error('Failed to load sync metadata:', error);
+    }
+  };
+
+  // Handle manual sync
+  const handleSync = async () => {
+    setIsSyncing(true);
+    setSyncStatus(null);
+    setError(null);
+
+    try {
+      const result = await googleDriveSync.syncAll();
+      
+      // Format status message
+      const messages: string[] = [];
+      if (result.plans.action === 'uploaded') {
+        messages.push(`Uploaded ${result.plans.itemCount} plan(s)`);
+      } else if (result.plans.action === 'downloaded') {
+        messages.push(`Downloaded ${result.plans.itemCount} plan(s)`);
+      }
+      
+      if (result.playlists.action === 'uploaded') {
+        messages.push(`Uploaded ${result.playlists.itemCount} playlist(s)`);
+      } else if (result.playlists.action === 'downloaded') {
+        messages.push(`Downloaded ${result.playlists.itemCount} playlist(s)`);
+      }
+      
+      if (messages.length === 0) {
+        setSyncStatus('Everything is up to date');
+      } else {
+        setSyncStatus(messages.join(', '));
+      }
+      
+      // Reload metadata
+      await loadSyncMetadata();
+      
+      console.log('✅ Sync completed:', result);
+    } catch (err: any) {
+      setError(err.message || 'Sync failed');
+      console.error('Sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Toggle auto-sync
+  const handleAutoSyncToggle = () => {
+    const newValue = !autoSyncEnabled;
+    setAutoSyncEnabled(newValue);
+    localStorage.setItem('auto_sync_enabled', String(newValue));
+  };
+
+  // Format last sync time
+  const formatLastSyncTime = (timestamp: number): string => {
+    if (timestamp === 0) return 'Never';
     
-    // Swag sync comes from localStorage
-    const swagPref = localStorage.getItem('cloud_sync_swag');
+    const now = Date.now();
+    const diff = now - timestamp;
     
-    setSwagSync(swagPref !== 'false'); // Default true
-  }, [settings.syncToGoogleDrive]);
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} minutes ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
+    return `${Math.floor(diff / 86400000)} days ago`;
+  };
 
   const handleGoogleAuth = async () => {
     setIsLoading(true);
@@ -47,12 +121,16 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
         throw new Error('Google Identity Services not loaded. Please refresh the page.');
       }
 
-      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '927667106833-7od90q7nh5oage0shc3kka5s9vtg2loj.apps.googleusercontent.com';
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      
+      if (!clientId) {
+        throw new Error('Google Client ID not configured. Please set VITE_GOOGLE_CLIENT_ID in ui-new/.env');
+      }
       
       // Initialize the token client
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
+        scope: 'https://www.googleapis.com/auth/drive.file', // Only files created by this app
         callback: (response: any) => {
           if (response.error) {
             setError(`Authentication failed: ${response.error}`);
@@ -61,8 +139,11 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
           }
 
           if (response.access_token) {
+            // Sanitize token: remove whitespace and newlines before storing
+            const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
+            
             // Store the access token
-            localStorage.setItem('google_drive_access_token', response.access_token);
+            localStorage.setItem('google_drive_access_token', sanitizedToken);
             
             // Decode the ID token if present to get user email
             if (response.id_token) {
@@ -111,27 +192,10 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
     // Clear all Google-related data
     localStorage.removeItem('google_drive_access_token');
     localStorage.removeItem('user_email');
-    localStorage.removeItem('cloud_sync_swag');
-    
-    // Disable config sync in SettingsContext
-    setSettings({ ...settings, syncToGoogleDrive: false });
     
     setIsAuthenticated(false);
     setUserEmail(null);
-    setConfigSync(false);
-    setSwagSync(false);
     setError(null);
-  };
-
-  const handleConfigSyncChange = (enabled: boolean) => {
-    setConfigSync(enabled);
-    // Update SettingsContext which handles the actual sync
-    setSettings({ ...settings, syncToGoogleDrive: enabled });
-  };
-
-  const handleSwagSyncChange = (enabled: boolean) => {
-    setSwagSync(enabled);
-    localStorage.setItem('cloud_sync_swag', enabled.toString());
   };
 
   return (
@@ -143,7 +207,10 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
         
         {!isAuthenticated ? (
           <div className="auth-prompt">
-            <p>Connect your Google account to enable cloud synchronization of your settings, API keys, and usage logs.</p>
+            <p>Connect your Google account to enable automatic cloud synchronization of your settings, API keys, SWAG content, and usage logs.</p>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              <strong>Note:</strong> All sync features are automatically enabled when you connect your Google account. No additional configuration needed!
+            </p>
             <button 
               onClick={handleGoogleAuth}
               disabled={isLoading}
@@ -190,45 +257,91 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
       </div>
 
       {isAuthenticated && (
-        <div className="sync-options">
-          <h3>Sync Options</h3>
-          <p className="sync-description">
-            Choose which data to synchronize with your Google Drive. Each option can be enabled independently.
-          </p>
-
-          <div className="sync-option">
-            <label>
-              <input
-                type="checkbox"
-                checked={configSync}
-                onChange={(e) => handleConfigSyncChange(e.target.checked)}
-              />
-              <div className="option-content">
-                <strong>Configuration Sync</strong>
-                <span className="option-description">
-                  Sync app settings, preferences, and UI state across devices
-                </span>
+        <>
+          <div className="card p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 mt-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">☁️</span>
+              <div className="flex-1">
+                <div className="font-semibold text-blue-900 dark:text-blue-100 mb-3">
+                  Plans & Playlists Sync
+                </div>
+                
+                <div className="text-sm text-blue-700 dark:text-blue-300 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span>Last synced:</span>
+                    <strong>{formatLastSyncTime(lastSyncTime)}</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Saved plans:</span>
+                    <strong>{syncMetadata.plansCount} items</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Saved playlists:</span>
+                    <strong>{syncMetadata.playlistsCount} items</strong>
+                  </div>
+                  
+                  {syncStatus && (
+                    <div className="p-2 bg-green-100 dark:bg-green-800 rounded text-green-800 dark:text-green-100">
+                      ✓ {syncStatus}
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleSync}
+                      disabled={isSyncing}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSyncing ? (
+                        <>
+                          <span className="inline-block animate-spin mr-2">🔄</span>
+                          Syncing...
+                        </>
+                      ) : (
+                        <>🔄 Sync Now</>
+                      )}
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mt-3 p-2 bg-blue-100 dark:bg-blue-800 rounded">
+                    <input
+                      type="checkbox"
+                      id="auto-sync"
+                      checked={autoSyncEnabled}
+                      onChange={handleAutoSyncToggle}
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor="auto-sync" className="cursor-pointer">
+                      Auto-sync every 5 minutes
+                    </label>
+                  </div>
+                </div>
               </div>
-            </label>
+            </div>
           </div>
-
-          <div className="sync-option">
-            <label>
-              <input
-                type="checkbox"
-                checked={swagSync}
-                onChange={(e) => handleSwagSyncChange(e.target.checked)}
-              />
-              <div className="option-content">
-                <strong>API Keys Sync (SWAG)</strong>
-                <span className="option-description">
-                  Sync provider API keys securely to your Google Drive
-                </span>
+          
+          <div className="card p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 mt-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">✅</span>
+              <div className="flex-1">
+                <div className="font-semibold text-green-900 dark:text-green-100 mb-2">
+                  Cloud Sync Enabled
+                </div>
+                <div className="text-sm text-green-700 dark:text-green-300 space-y-1">
+                  <p>All sync features are now active:</p>
+                  <ul className="list-disc ml-5 mt-2 space-y-1">
+                    <li><strong>Settings & Preferences:</strong> Automatically synced across devices</li>
+                    <li><strong>API Keys (SWAG):</strong> Securely backed up to your Google Drive</li>
+                    <li><strong>RAG Content:</strong> Snippets and embeddings synced to Google Sheets</li>
+                    <li><strong>Usage Logs:</strong> Billing and transaction history backed up</li>
+                  </ul>
+                </div>
               </div>
-            </label>
+            </div>
           </div>
-
-        </div>
+        </>
       )}
     </div>
   );

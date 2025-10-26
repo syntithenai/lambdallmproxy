@@ -262,15 +262,24 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                       return (
                         <div
                           key={track.id}
-                          className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-all ${
+                          onClick={() => {
+                            // If clicking on current track, toggle play/pause
+                            if (trackIndex === currentTrackIndex) {
+                              togglePlayPause();
+                            } else {
+                              // Otherwise, play the clicked track
+                              playTrack(trackIndex);
+                            }
+                          }}
+                          className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-all cursor-pointer ${
                             isCurrentTrack
                               ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500'
                               : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border-2 border-transparent'
                           }`}
                         >
-                          <button
-                            onClick={() => playTrack(trackIndex)}
-                            className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-gray-800 transition-colors"
+                          <div
+                            className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full transition-colors"
+                            title={isCurrentTrack ? (isPlaying ? "Pause" : "Play") : "Play this track"}
                           >
                             {isCurrentTrack && isPlaying ? (
                               <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
@@ -281,7 +290,7 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                                 <path d="M8 5v14l11-7z"/>
                               </svg>
                             )}
-                          </button>
+                          </div>
                           {track.thumbnail && (
                             <img src={track.thumbnail} alt="" className="w-16 h-12 object-cover rounded flex-shrink-0" />
                           )}
@@ -295,7 +304,8 @@ export const MediaPlayerDialog: React.FC<MediaPlayerDialogProps> = ({ isOpen, on
                             <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">{track.duration}</span>
                           )}
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevent triggering the row's play/pause
                               if (confirm(`Remove "${track.title}" from playlist?`)) {
                                 removeTrack(track.id);
                               }

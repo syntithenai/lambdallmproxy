@@ -21,6 +21,7 @@ import { PlaylistButton } from './components/PlaylistButton';
 import { BackgroundPlayer } from './components/BackgroundPlayer';
 import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
+import { PlanningPage } from './components/PlanningPage';
 import { SwagPage } from './components/SwagPage';
 import BillingPage from './components/BillingPage';
 import { HelpPage } from './components/HelpPage';
@@ -29,6 +30,7 @@ import ProviderSetupGate from './components/ProviderSetupGate';
 import { GlobalTTSStopButton } from './components/ReadButton';
 import { GitHubLink } from './components/GitHubLink';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useBackgroundSync } from './hooks/useBackgroundSync';
 
 // Create a wrapper component that can access auth context
 function AppContent() {
@@ -45,6 +47,21 @@ function AppContent() {
   const [showNavigationWarning, setShowNavigationWarning] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  // Background sync for plans and playlists
+  const autoSyncEnabled = localStorage.getItem('auto_sync_enabled') === 'true';
+  useBackgroundSync({
+    enabled: autoSyncEnabled,
+    onSyncComplete: (result) => {
+      // Only log if something actually synced
+      if (result.plans.action !== 'no-change' || result.playlists.action !== 'no-change') {
+        console.log('✅ Background sync completed');
+      }
+    },
+    onSyncError: (error) => {
+      console.error('❌ Background sync failed:', error.message);
+    }
+  });
   
   // Close mobile menu when route changes
   useEffect(() => {
@@ -78,6 +95,14 @@ function AppContent() {
     setShowNavigationWarning(false);
     setPendingNavigation(null);
   };
+  
+  // Auto-dismiss navigation warning when loading completes
+  useEffect(() => {
+    if (!isChatLoading && showNavigationWarning) {
+      setShowNavigationWarning(false);
+      setPendingNavigation(null);
+    }
+  }, [isChatLoading, showNavigationWarning]);
   
   // Handle Settings with loading check
   const handleOpenSettings = () => {
@@ -253,25 +278,37 @@ function AppContent() {
   // Show full app UI only when authenticated
   return (
     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Skip to main content link - Accessibility */}
+      <a 
+        href="#main-content" 
+        className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-50 focus:p-4 focus:bg-blue-600 focus:text-white focus:rounded-br-lg focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
+
       {/* Header - Only visible when authenticated */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <div className="flex justify-between items-center max-w-screen-2xl mx-auto">
+      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex justify-between items-center px-1 md:px-4 py-3 max-w-screen-2xl md:mx-auto">
+          {/* Logo */}
           <img 
             src={`${import.meta.env.BASE_URL}agent.png`}
             alt="Research Agent" 
-            className="h-12 w-auto object-contain"
+            className="h-10 sm:h-12 w-auto object-contain"
           />
-          <div className="flex items-center gap-3">
+          
+          {/* Desktop Navigation - Hidden on mobile */}
+          <div className="hidden md:flex items-center gap-3">
             <PlaylistButton />
             
             {/* Billing Button with Credit Info - Hide on billing page */}
             {location.pathname !== '/billing' && (
               <button
                 onClick={() => handleNavigate('/billing')}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 min-h-11 touch-target"
                 title={usage ? `You have $${usage.creditBalance.toFixed(2)} remaining of $${usage.totalCredits.toFixed(2)} total credits` : 'View billing and usage details'}
+                aria-label="Billing and credits"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
                 {usage && !usageLoading && typeof usage.creditBalance === 'number' && typeof usage.totalCredits === 'number' && (
@@ -286,82 +323,245 @@ function AppContent() {
               </button>
             )}
             
-            {location.pathname === '/billing' ? (
+            {location.pathname === '/billing' || location.pathname === '/planning' ? (
+              <button
+                onClick={() => navigate('/')}
+                className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
+                title="Back to Chat"
+                aria-label="Back to Chat"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                <span className="text-sm hidden md:inline">Back to Chat</span>
+              </button>
+            ) : location.pathname === '/help' || location.pathname === '/privacy' ? (
               <>
                 <button
                   onClick={() => navigate('/')}
-                  className="flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium"
+                  className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
                   title="Back to Chat"
+                  aria-label="Back to Chat"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                   </svg>
-                  <span className="text-sm">Back to Chat</span>
+                  <span className="text-sm hidden md:inline">Back to Chat</span>
                 </button>
                 <button
                   onClick={() => handleNavigate('/swag')}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
-                  title="Content Swag - Save and manage snippets"
+                  className="flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white min-h-11 touch-target"
+                  title="Swag - Save and manage snippets"
+                  aria-label="Swag"
                 >
-                  {/* Sack/bag icon */}
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
+                  </svg>
+                  <span className="text-sm hidden md:inline">Swag</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleNavigate('/swag')}
+                  className="flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white min-h-11 touch-target"
+                  title="Swag - Save and manage snippets"
+                  aria-label="Swag"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
+                  </svg>
+                  <span className="text-sm hidden md:inline">Swag</span>
+                </button>
+              </>
+            )}
+            
+            <GoogleLoginButton />
+          </div>
+          
+          {/* Mobile Navigation - Visible only on mobile */}
+          <div className="flex md:hidden items-center gap-2">
+            {/* Quick Billing on Mobile */}
+            {location.pathname !== '/billing' && usage && !usageLoading && typeof usage.creditBalance === 'number' && (
+              <div className={`text-xs font-medium px-2 py-1 rounded ${
+                usage.exceeded 
+                  ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20' 
+                  : 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
+              }`}>
+                ${usage.creditBalance.toFixed(2)}
+              </div>
+            )}
+            
+            {/* Back to Chat button on Swag/Billing pages, Swag button elsewhere */}
+            {location.pathname === '/swag' || location.pathname === '/billing' || location.pathname === '/planning' ? (
+              <button
+                onClick={() => handleNavigate('/')}
+                className="px-3 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2"
+                title="Back to Chat"
+                aria-label="Back to Chat"
+              >
+                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                <span className="hidden md:inline text-sm font-medium text-gray-700 dark:text-gray-300">Back to Chat</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleNavigate('/swag')}
+                  className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  title="Swag"
+                  aria-label="Swag"
+                >
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
                   </svg>
-                  <span className="text-sm">Swag</span>
                 </button>
               </>
-            ) : location.pathname === '/swag' ? (
-              <button
-                onClick={() => navigate('/')}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium"
-                title="Back to Chat"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                <span className="text-sm">Back to Chat</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => handleNavigate('/swag')}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
-                title="Content Swag - Save and manage snippets"
-              >
-                {/* Sack/bag icon */}
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
-                </svg>
-                <span className="text-sm">Swag</span>
-              </button>
             )}
             
-            {/* Help Button - Always visible */}
-            {(location.pathname === '/help' || location.pathname === '/privacy') ? null : (
-              <button
-                onClick={() => handleNavigate('/help')}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-purple-600 hover:bg-purple-700 text-white"
-                title="Help & Documentation"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-sm">Help</span>
-              </button>
-            )}
-            
+            {/* Hamburger Menu Button */}
             <button
-              onClick={handleOpenSettings}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              title="Settings"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="icon-button"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileMenuOpen}
             >
-              <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              {mobileMenuOpen ? (
+                <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
             </button>
-            <GoogleLoginButton />
           </div>
         </div>
+        
+        {/* Mobile Menu Dropdown */}
+        {mobileMenuOpen && (
+          <nav 
+            className="md:hidden border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+            role="navigation"
+            aria-label="Mobile navigation"
+          >
+            <div className="px-4 py-2 space-y-1">
+              {location.pathname !== '/' && (
+                <button
+                  onClick={() => {
+                    navigate('/');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Chat</span>
+                </button>
+              )}
+              
+              {location.pathname !== '/billing' && (
+                <button
+                  onClick={() => {
+                    handleNavigate('/billing');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-700 dark:text-gray-300">Billing</div>
+                    {usage && !usageLoading && typeof usage.creditBalance === 'number' && typeof usage.totalCredits === 'number' && (
+                      <div className={`text-xs ${usage.exceeded ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                        ${usage.creditBalance.toFixed(2)} / ${usage.totalCredits.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              )}
+              
+              {location.pathname !== '/swag' && (
+                <button
+                  onClick={() => {
+                    handleNavigate('/swag');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
+                  </svg>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Swag</span>
+                </button>
+              )}
+              
+              <button
+                onClick={() => {
+                  handleOpenSettings();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="font-medium text-gray-700 dark:text-gray-300">Settings</span>
+              </button>
+
+              {/* Help Link */}
+              <button
+                onClick={() => {
+                  handleNavigate('/help');
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="font-medium text-gray-700 dark:text-gray-300">Help</span>
+              </button>
+
+              {/* Privacy Policy Link */}
+              <button
+                onClick={() => {
+                  handleNavigate('/privacy');
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span className="font-medium text-gray-700 dark:text-gray-300">Privacy Policy</span>
+              </button>
+
+              {/* GitHub Link */}
+              <a
+                href="https://github.com/syntithenai/lambdallmproxy"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                <span className="font-medium text-gray-700 dark:text-gray-300">GitHub</span>
+              </a>
+              
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <GoogleLoginButton />
+              </div>
+            </div>
+          </nav>
+        )}
       </header>
 
       {/* Global TTS Stop Button */}
@@ -371,8 +571,8 @@ function AppContent() {
       <BackgroundPlayer />
 
       {/* Main Content - Only visible when authenticated */}
-      <main className="flex-1 overflow-hidden">
-        <div className="h-full max-w-screen-2xl mx-auto">
+      <main id="main-content" className="flex-1 overflow-hidden">
+        <div className="h-full max-w-screen-2xl md:mx-auto">
           <Routes>
             <Route 
               path="/" 
@@ -386,6 +586,7 @@ function AppContent() {
                 />
               } 
             />
+            <Route path="/planning" element={<PlanningPage />} />
             <Route path="/swag" element={<SwagPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/help" element={<HelpPage />} />
@@ -434,8 +635,8 @@ function AppContent() {
         </div>
       )}
 
-      {/* GitHub Link - Fixed bottom right */}
-      <GitHubLink />
+      {/* Bottom Right Action Buttons - Fixed bottom right */}
+      <GitHubLink onOpenSettings={handleOpenSettings} />
     </div>
   );
 }

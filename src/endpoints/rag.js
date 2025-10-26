@@ -240,23 +240,66 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
     
     const { snippets, force = false, providers: userProviders = [], embeddingModel: requestedModel = null } = body;
     
-    // Extract user email for logging and authorization
+    // Authenticate user - REQUIRED
     let userEmail = 'unknown';
     let googleToken = null;
     let isAuthorized = false;
+    
+    const authHeader = event.headers?.authorization || event.headers?.Authorization;
+    if (!authHeader) {
+        const metadata = {
+            statusCode: 401,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({ 
+            success: false,
+            error: 'Authentication required',
+            code: 'UNAUTHORIZED'
+        }));
+        responseStream.end();
+        return;
+    }
+    
     try {
-        const authHeader = event.headers?.authorization || event.headers?.Authorization;
-        if (authHeader) {
-            const authResult = await authenticateRequest(authHeader);
-            userEmail = authResult.email || 'unknown';
-            isAuthorized = authResult.authorized || false;
-            // Extract OAuth token
-            if (authHeader.startsWith('Bearer ')) {
-                googleToken = authHeader.substring(7);
-            }
+        const authResult = await authenticateRequest(authHeader);
+        if (!authResult.success) {
+            const metadata = {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ 
+                success: false,
+                error: authResult.error || 'Authentication failed',
+                code: 'UNAUTHORIZED'
+            }));
+            responseStream.end();
+            return;
+        }
+        
+        userEmail = authResult.email || 'unknown';
+        isAuthorized = authResult.authorized || false;
+        
+        // Extract OAuth token
+        if (authHeader.startsWith('Bearer ')) {
+            googleToken = authHeader.substring(7);
         }
     } catch (authError) {
-        console.log('⚠️ Could not authenticate for logging:', authError.message);
+        console.error('❌ Authentication error:', authError.message);
+        const metadata = {
+            statusCode: 401,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({ 
+            success: false,
+            error: 'Authentication failed',
+            code: 'UNAUTHORIZED',
+            details: authError.message
+        }));
+        responseStream.end();
+        return;
     }
     
     if (!Array.isArray(snippets) || snippets.length === 0) {
@@ -299,8 +342,9 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
                 success: false,
-                error: 'No embedding provider available. Please configure an OpenAI, Together.AI, Cohere, or Voyage provider in Settings.',
-                hint: 'Go to Settings → Providers → Add Provider → OpenAI and enable the "🔗 Embeddings" capability.'
+                error: 'No embedding provider available. Swag embeddings require a provider with embedding capabilities.',
+                hint: 'Go to Settings → Providers → Add a provider (OpenAI, Together.AI, Cohere, or Voyage) and ensure the "🔗 Embeddings" capability is enabled. Swag embeddings work independently of the RAG system - you only need an embedding-capable provider configured.',
+                requiredAction: 'CONFIGURE_EMBEDDING_PROVIDER'
             }));
             responseStream.end();
             return;
@@ -659,21 +703,61 @@ async function handleGetUserSpreadsheet(event, responseStream) {
 async function handleEmbedQuery(event, body, responseStream) {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') ? globalThis.awslambda : require('aws-lambda');
     
-    // Extract user email and token for logging
+    // Authenticate user - REQUIRED
     let userEmail = 'unknown';
     let googleToken = null;
+    
+    const authHeader = event.headers?.authorization || event.headers?.Authorization;
+    if (!authHeader) {
+        const metadata = {
+            statusCode: 401,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({ 
+            error: 'Authentication required',
+            code: 'UNAUTHORIZED'
+        }));
+        responseStream.end();
+        return;
+    }
+    
     try {
-        const authHeader = event.headers?.authorization || event.headers?.Authorization;
-        if (authHeader) {
-            const authResult = await authenticateRequest(authHeader);
-            userEmail = authResult.email || 'unknown';
-            // Extract OAuth token
-            if (authHeader.startsWith('Bearer ')) {
-                googleToken = authHeader.substring(7);
-            }
+        const authResult = await authenticateRequest(authHeader);
+        if (!authResult.success) {
+            const metadata = {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ 
+                error: authResult.error || 'Authentication failed',
+                code: 'UNAUTHORIZED'
+            }));
+            responseStream.end();
+            return;
+        }
+        
+        userEmail = authResult.email || 'unknown';
+        
+        // Extract OAuth token
+        if (authHeader.startsWith('Bearer ')) {
+            googleToken = authHeader.substring(7);
         }
     } catch (authError) {
-        console.log('⚠️ Could not authenticate for logging:', authError.message);
+        console.error('❌ Authentication error:', authError.message);
+        const metadata = {
+            statusCode: 401,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        responseStream.write(JSON.stringify({ 
+            error: 'Authentication failed',
+            code: 'UNAUTHORIZED',
+            details: authError.message
+        }));
+        responseStream.end();
+        return;
     }
     
     try {

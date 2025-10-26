@@ -343,6 +343,94 @@ class PlaylistDatabase {
   }
 
   /**
+   * Export all saved playlists for sync
+   */
+  async exportAllPlaylists(): Promise<Array<{
+    id: number;
+    name: string;
+    tracks: PlaylistTrack[];
+    createdAt: number;
+    updatedAt: number;
+  }>> {
+    await this.init();
+    return await this.db!.getAll('savedPlaylists');
+  }
+
+  /**
+   * Import and merge playlists from cloud
+   * Deduplicates by name, keeps newer timestamp
+   */
+  async importAndMergePlaylists(remotePlaylists: Array<{
+    id: number;
+    name: string;
+    tracks: PlaylistTrack[];
+    createdAt: number;
+    updatedAt: number;
+  }>): Promise<number> {
+    await this.init();
+    
+    const localPlaylists = await this.db!.getAll('savedPlaylists');
+    const localByName = new Map(localPlaylists.map(p => [p.name.toLowerCase(), p]));
+    
+    let importedCount = 0;
+    
+    for (const remotePlaylist of remotePlaylists) {
+      const key = remotePlaylist.name.toLowerCase();
+      const localPlaylist = localByName.get(key);
+      
+      if (!localPlaylist) {
+        // New playlist - add it
+        await this.db!.add('savedPlaylists', {
+          id: 0, // Will be auto-incremented
+          name: remotePlaylist.name,
+          tracks: remotePlaylist.tracks,
+          createdAt: remotePlaylist.createdAt,
+          updatedAt: remotePlaylist.updatedAt
+        });
+        importedCount++;
+      } else if (remotePlaylist.updatedAt > localPlaylist.updatedAt) {
+        // Remote is newer - update local
+        await this.db!.put('savedPlaylists', {
+          id: localPlaylist.id,
+          name: remotePlaylist.name,
+          tracks: remotePlaylist.tracks,
+          createdAt: localPlaylist.createdAt, // Keep original creation time
+          updatedAt: remotePlaylist.updatedAt
+        });
+        importedCount++;
+      }
+      // If local is newer or same, skip (local wins)
+    }
+    
+    return importedCount;
+  }
+
+  /**
+   * Get playlists modified after timestamp
+   */
+  async getPlaylistsModifiedSince(timestamp: number): Promise<Array<{
+    id: number;
+    name: string;
+    tracks: PlaylistTrack[];
+    createdAt: number;
+    updatedAt: number;
+  }>> {
+    await this.init();
+    const allPlaylists = await this.db!.getAll('savedPlaylists');
+    return allPlaylists.filter(p => p.updatedAt > timestamp);
+  }
+
+  /**
+   * Get last modified timestamp
+   */
+  async getLastModified(): Promise<number> {
+    await this.init();
+    const playlists = await this.db!.getAll('savedPlaylists');
+    if (playlists.length === 0) return 0;
+    return Math.max(...playlists.map(p => p.updatedAt));
+  }
+
+  /**
    * Close database connection
    */
   close(): void {

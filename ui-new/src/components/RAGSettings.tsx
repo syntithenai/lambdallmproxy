@@ -13,7 +13,6 @@ interface RAGConfig {
   chunkOverlap: number;
   topK: number;
   similarityThreshold: number;
-  syncEnabled: boolean; // Renamed from sheetsBackupEnabled
 }
 
 const DEFAULT_RAG_CONFIG: RAGConfig = {
@@ -25,7 +24,6 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
   chunkOverlap: 200,
   topK: 5,
   similarityThreshold: 0.3, // Lowered from 0.5 for better recall (semantic search can have lower scores for exact matches)
-  syncEnabled: true, // Renamed from sheetsBackupEnabled
 };
 
 const EMBEDDING_MODELS = [
@@ -86,16 +84,16 @@ export const RAGSettings: React.FC = () => {
       // Dispatch custom event to notify other components (like SwagPage)
       window.dispatchEvent(new Event('rag_config_updated'));
       
-      // If sync is enabled, ensure spreadsheet is created
-      if (config.syncEnabled && user) {
-        console.log('📊 Sync enabled - ensuring spreadsheet exists...');
+      // If user is authenticated, ensure spreadsheet is created
+      if (user) {
+        console.log('📊 User authenticated - ensuring spreadsheet exists...');
         const spreadsheetId = await getUserRagSpreadsheet();
         if (spreadsheetId) {
           console.log('✅ Spreadsheet ready:', spreadsheetId);
-          showSuccess('RAG settings saved! Your embeddings will sync to Google Sheets.');
+          showSuccess('RAG settings saved! Your embeddings will sync to Google Sheets when you connect Google Drive.');
         } else {
           console.warn('⚠️ Failed to get spreadsheet ID');
-          showWarning('Settings saved but could not access Google Sheets. Check your authentication.');
+          showWarning('Settings saved. Connect Google Drive in Cloud Sync tab to enable automatic backup.');
         }
       } else {
         showSuccess('RAG settings saved successfully');
@@ -286,20 +284,6 @@ export const RAGSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* Cloud Sync Notice */}
-      <div className="card p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">☁️</span>
-          <div className="flex-1">
-            <div className="font-medium text-blue-900 dark:text-blue-100">
-              Cloud Sync Settings
-            </div>
-            <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-              Configure cloud synchronization for your Swag and Snippets in the <strong>Cloud Sync</strong> tab.
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Action Buttons */}
       <div className="flex gap-3">

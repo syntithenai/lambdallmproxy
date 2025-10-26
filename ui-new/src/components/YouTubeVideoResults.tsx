@@ -63,16 +63,23 @@ export const YouTubeVideoResults: React.FC<YouTubeVideoResultsProps> = ({
       {videos.map((video, idx) => (
         <div
           key={video.videoId || idx}
-          className="flex gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors"
+          onClick={() => handlePlayVideo(video)}
+          className="flex gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors cursor-pointer"
         >
           {/* Thumbnail */}
           {video.thumbnail && (
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 relative">
               <img
                 src={video.thumbnail}
                 alt={video.title}
                 className="w-32 h-20 object-cover rounded"
               />
+              {/* Play icon overlay on thumbnail */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="bg-black bg-opacity-60 rounded-full p-2">
+                  <span className="text-white text-2xl">▶️</span>
+                </div>
+              </div>
             </div>
           )}
           
@@ -104,7 +111,10 @@ export const YouTubeVideoResults: React.FC<YouTubeVideoResultsProps> = ({
           {/* Play Button */}
           <div className="flex-shrink-0 flex items-center">
             <button
-              onClick={() => handlePlayVideo(video)}
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent card click when clicking button
+                handlePlayVideo(video);
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
               title="Play video"
             >

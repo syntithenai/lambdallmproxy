@@ -6,7 +6,9 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 // - documents: Create and edit Google Docs
 // - drive.file: ONLY access files created by this app (not all user files)
 // - spreadsheets: Access spreadsheets for snippets management and billing logging
-const SCOPES = 'https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets';
+// Google OAuth scopes - request minimal permissions
+// drive.file: Only access files created or opened by this app (not all Drive files)
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 export interface GoogleDoc {
   id: string;
@@ -53,8 +55,10 @@ export const initGoogleAuth = () => {
               error: response.error 
             });
             if (response.access_token) {
-              accessToken = response.access_token;
-              localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+              // Sanitize token: remove whitespace and newlines before storing
+              const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
+              accessToken = sanitizedToken;
+              localStorage.setItem(TOKEN_STORAGE_KEY, sanitizedToken);
               
               // Store expiration time if provided
               if (response.expires_in) {
@@ -62,8 +66,8 @@ export const initGoogleAuth = () => {
                 localStorage.setItem('google_token_expiration', expirationTime.toString());
               }
               
-              console.log('✅ Access token received and stored:', response.access_token.substring(0, 20) + '...');
-              resolve(response.access_token);
+              console.log('✅ Access token received and stored:', sanitizedToken.substring(0, 20) + '...');
+              resolve(sanitizedToken);
             } else {
               console.error('❌ No access token in response:', response);
               reject(new Error('Failed to get access token'));
@@ -92,8 +96,10 @@ export const initGoogleAuth = () => {
             error: response.error 
           });
           if (response.access_token) {
-            accessToken = response.access_token;
-            localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
+            // Sanitize token: remove whitespace and newlines before storing
+            const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
+            accessToken = sanitizedToken;
+            localStorage.setItem(TOKEN_STORAGE_KEY, sanitizedToken);
             
             // Store expiration time if provided
             if (response.expires_in) {
@@ -101,8 +107,8 @@ export const initGoogleAuth = () => {
               localStorage.setItem('google_token_expiration', expirationTime.toString());
             }
             
-            console.log('✅ Access token received and stored:', response.access_token.substring(0, 20) + '...');
-            resolve(response.access_token);
+            console.log('✅ Access token received and stored:', sanitizedToken.substring(0, 20) + '...');
+            resolve(sanitizedToken);
           } else {
             console.error('❌ No access token in response:', response);
             reject(new Error('Failed to get access token'));

@@ -131,26 +131,6 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         
         // Route to appropriate endpoint with responseStream
         
-        // Health check endpoint for local development
-        if (method === 'GET' && path === '/health') {
-            console.log('Health check request');
-            const metadata = {
-                statusCode: 200,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                }
-            };
-            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-            responseStream.write(JSON.stringify({ 
-                status: 'ok', 
-                timestamp: new Date().toISOString(),
-                env: process.env.NODE_ENV || 'development'
-            }));
-            responseStream.end();
-            return;
-        }
-        
         if (method === 'POST' && path === '/planning') {
             console.log('Routing to planning endpoint');
             await planningEndpoint.handler(event, responseStream, context);

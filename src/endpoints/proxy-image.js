@@ -132,6 +132,9 @@ function fetchImage(imageUrl, proxyAgent) {
 async function handler(event) {
   console.log('proxy-image endpoint called');
   
+  // Get origin for CORS
+  const origin = event.headers?.origin || event.headers?.Origin || '*';
+  
   try {
     // Authenticate request
     const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
@@ -142,7 +145,8 @@ async function handler(event) {
         statusCode: 401,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true'
         },
         body: JSON.stringify({
           error: 'Authentication required. Please provide a valid token.',
@@ -162,7 +166,11 @@ async function handler(event) {
     if (!body || !body.url) {
       return {
         statusCode: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true'
+        },
         body: JSON.stringify({ error: 'Missing url parameter' })
       };
     }
@@ -176,7 +184,11 @@ async function handler(event) {
     } catch (err) {
       return {
         statusCode: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true'
+        },
         body: JSON.stringify({ error: 'Invalid URL format' })
       };
     }
@@ -195,7 +207,9 @@ async function handler(event) {
         headers: {
           'Content-Type': imageData.contentType,
           'Content-Length': imageData.data.length.toString(),
-          'Cache-Control': 'public, max-age=3600'
+          'Cache-Control': 'public, max-age=3600',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true'
         },
         isBase64Encoded: true,
         body: imageData.data.toString('base64')
@@ -209,7 +223,9 @@ async function handler(event) {
         statusCode: 200,
         headers: {
           'Content-Type': 'application/json',
-          'Cache-Control': 'public, max-age=3600'
+          'Cache-Control': 'public, max-age=3600',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true'
         },
         body: JSON.stringify({
           success: true,
@@ -225,7 +241,11 @@ async function handler(event) {
     console.error('proxy-image error:', error);
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Credentials': 'true'
+      },
       body: JSON.stringify({
         error: 'Failed to fetch image',
         message: error.message

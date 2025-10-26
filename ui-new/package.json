@@ -26,7 +26,8 @@
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "speak-tts": "^2.0.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

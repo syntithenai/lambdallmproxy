@@ -199,7 +199,11 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
         // Render mermaid chart
         const { svg } = await mermaid.render(id, currentChart);
         
-        // Insert SVG
+        // Insert SVG (check if container still exists - component may have unmounted)
+        if (!containerRef.current) {
+          console.warn('⚠️ MermaidChart container ref is null - component may have unmounted');
+          return;
+        }
         containerRef.current.innerHTML = svg;
         
         // Clean up any error messages that Mermaid might have inserted into the DOM

@@ -66,7 +66,9 @@ async function getVideoInfo(videoId) {
         if (errorMsg.includes('410') || errorMsg.includes('Gone')) {
             throw new Error(`Video unavailable (410 Gone). This video may be: deleted, private, region-blocked, or age-restricted. YouTube URL: https://youtube.com/watch?v=${videoId}`);
         } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
-            throw new Error(`Access forbidden (403). YouTube may be blocking automated access. Try: 1) Check if video exists at https://youtube.com/watch?v=${videoId}, 2) Video may be region-locked or require sign-in`);
+            const err = new Error(`Access forbidden (403). YouTube may be blocking automated access. Try: 1) Check if video exists at https://youtube.com/watch?v=${videoId}, 2) Video may be region-locked or require sign-in`);
+            err.code = 'YOUTUBE_403';
+            throw err;
         } else if (errorMsg.includes('404')) {
             throw new Error(`Video not found (404). The video ID may be invalid: https://youtube.com/watch?v=${videoId}`);
         } else if (errorMsg.includes('429') || errorMsg.includes('Too Many Requests')) {
@@ -126,7 +128,9 @@ async function downloadAudio(videoId, onProgress) {
                 if (errorMsg.includes('410') || errorMsg.includes('Gone')) {
                     reject(new Error(`Video stream unavailable. The video may have been deleted or made private during download.`));
                 } else if (errorMsg.includes('403')) {
-                    reject(new Error(`YouTube blocked the download request. The video may require authentication or be region-locked.`));
+                    const err = new Error(`YouTube blocked the download request. The video may require authentication or be region-locked.`);
+                    err.code = 'YOUTUBE_403';
+                    reject(err);
                 } else {
                     reject(new Error(`Audio stream error: ${error.message}`));
                 }

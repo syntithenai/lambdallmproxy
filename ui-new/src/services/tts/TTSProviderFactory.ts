@@ -57,7 +57,7 @@ export class TTSProviderFactory {
    */
   private async initializeLLMProviders(): Promise<void> {
     // OpenAI TTS
-    const openaiProvider = this.llmProviders.find(p => p.type === 'openai' && p.enabled !== false && p.apiKey);
+    const openaiProvider = this.llmProviders.find(p => p.type === 'openai' && p.enabled !== false);
     if (openaiProvider) {
       const openaiTTS = new LLMProviderTTSProvider(openaiProvider);
       if (await openaiTTS.isAvailable()) {
@@ -66,7 +66,7 @@ export class TTSProviderFactory {
     }
 
     // Groq TTS
-    const groqProvider = this.llmProviders.find(p => p.type === 'groq' && p.enabled !== false && p.apiKey);
+    const groqProvider = this.llmProviders.find(p => p.type === 'groq' && p.enabled !== false);
     if (groqProvider) {
       const groqTTS = new LLMProviderTTSProvider(groqProvider);
       if (await groqTTS.isAvailable()) {
@@ -76,7 +76,7 @@ export class TTSProviderFactory {
 
     // Gemini TTS
     const geminiProvider = this.llmProviders.find(p => 
-      p.type === 'gemini' && p.enabled !== false && p.apiKey
+      p.type === 'gemini' && p.enabled !== false
     );
     if (geminiProvider) {
       const geminiTTS = new LLMProviderTTSProvider(geminiProvider);
@@ -86,7 +86,7 @@ export class TTSProviderFactory {
     }
 
     // Together AI TTS
-    const togetherProvider = this.llmProviders.find(p => p.type === 'together' && p.enabled !== false && p.apiKey);
+    const togetherProvider = this.llmProviders.find(p => p.type === 'together' && p.enabled !== false);
     if (togetherProvider) {
       const togetherTTS = new LLMProviderTTSProvider(togetherProvider);
       if (await togetherTTS.isAvailable()) {
@@ -110,8 +110,7 @@ export class TTSProviderFactory {
     for (const providerType of ttsProviderPriority) {
       const provider = this.llmProviders.find(p => 
         p.type === providerType && 
-        p.enabled !== false && 
-        p.apiKey
+        p.enabled !== false
       );
       if (provider) {
         return provider;
@@ -152,8 +151,7 @@ export class TTSProviderFactory {
   getAvailableLLMProviders(): { type: string; name: string; }[] {
     return this.llmProviders
       .filter(provider => 
-        provider.enabled !== false && 
-        provider.apiKey &&
+        provider.enabled !== false &&
         ['openai', 'gemini', 'groq', 'together'].includes(provider.type)
       )
       .map(provider => ({
@@ -168,8 +166,7 @@ export class TTSProviderFactory {
   getLLMProviderByType(providerType: string): ProviderConfig | null {
     return this.llmProviders.find(p => 
       p.type === providerType && 
-      p.enabled !== false && 
-      p.apiKey
+      p.enabled !== false
     ) || null;
   }
 

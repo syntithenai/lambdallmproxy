@@ -78,7 +78,7 @@ interface YouTubeLinkProps {
 }
 
 function YouTubeLink({ href, children }: YouTubeLinkProps) {
-  const { addTracksToStart, playTrackByVideoId } = usePlaylist();
+  const { addTracksToStart, playTrack } = usePlaylist();
   const videoId = extractYouTubeId(href);
   
   const handlePlay = (e: React.MouseEvent) => {
@@ -87,15 +87,18 @@ function YouTubeLink({ href, children }: YouTubeLinkProps) {
       // Extract title from children if it's a string
       const title = typeof children === 'string' ? children : `YouTube Video ${videoId}`;
       
-      // Add track to playlist (addTracksToStart will generate id and addedAt)
+      // Add track to playlist start (addTracksToStart will move existing or add new)
       addTracksToStart([{
         videoId,
         title: title,
         url: href
       }]);
       
-      // Play the track
-      playTrackByVideoId(videoId);
+      // Play index 0 since addTracksToStart places the track at the start
+      // Use setTimeout to ensure state update has been processed
+      setTimeout(() => {
+        playTrack(0);
+      }, 0);
     }
   };
   

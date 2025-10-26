@@ -127,9 +127,12 @@ export async function createSSERequest(
   initialRetryDelay: number = 1000,
   requestId?: string | null  // Optional request ID for grouping logs
 ): Promise<Response> {
+  // Sanitize token: remove whitespace and newlines
+  const sanitizedToken = token.trim().replace(/[\r\n]/g, '');
+  
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    'Authorization': `Bearer ${sanitizedToken}`,
     'Accept': 'text/event-stream'
   };
 
@@ -158,14 +161,19 @@ export async function createSSERequest(
   for (const source of tokenSources) {
     const token = localStorage.getItem(source);
     if (token) {
-      driveAccessToken = token;
+      // Trim whitespace and remove newlines from token
+      driveAccessToken = token.trim().replace(/[\r\n]/g, '');
       tokenSource = source;
       break;
     }
   }
   
+  // Also get refresh token for automatic token refresh
+  const refreshToken = localStorage.getItem('google_refresh_token');
+  
   console.log('🔐 Drive token check:', {
     hasDriveToken: !!driveAccessToken,
+    hasRefreshToken: !!refreshToken,
     tokenLength: driveAccessToken?.length || 0,
     source: tokenSource,
     availableKeys: tokenSources.filter(k => !!localStorage.getItem(k))
@@ -178,6 +186,12 @@ export async function createSSERequest(
   } else {
     console.log('⚠️ No Drive access token available - snippet management will not work');
     console.log('   Checked keys:', tokenSources);
+  }
+  
+  // Send refresh token for automatic token refresh on backend
+  if (refreshToken) {
+    headers['X-Google-Refresh-Token'] = refreshToken.trim().replace(/[\r\n]/g, '');
+    console.log('✅ Including Google refresh token for automatic token refresh');
   }
 
   let lastError: Error | null = null;

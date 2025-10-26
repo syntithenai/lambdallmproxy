@@ -18,6 +18,7 @@ export interface ChatHistoryEntry {
   generatedSystemPrompt?: string;   // Generated system prompt from planning
   generatedUserQuery?: string;      // Generated user query from planning
   selectedSnippetIds?: string[];   // Selected SWAG snippet IDs for context
+  todosState?: any;                // Persisted todos state
 }
 
 class ChatHistoryDB {
@@ -71,6 +72,8 @@ class ChatHistoryDB {
       planningQuery?: string;
       generatedSystemPrompt?: string;
       generatedUserQuery?: string;
+      selectedSnippetIds?: string[];
+      todosState?: any;
     }
   ): Promise<void> {
     try {
@@ -87,7 +90,9 @@ class ChatHistoryDB {
         ...(metadata?.systemPrompt && { systemPrompt: metadata.systemPrompt }),
         ...(metadata?.planningQuery && { planningQuery: metadata.planningQuery }),
         ...(metadata?.generatedSystemPrompt && { generatedSystemPrompt: metadata.generatedSystemPrompt }),
-        ...(metadata?.generatedUserQuery && { generatedUserQuery: metadata.generatedUserQuery })
+        ...(metadata?.generatedUserQuery && { generatedUserQuery: metadata.generatedUserQuery }),
+        ...(metadata?.selectedSnippetIds && { selectedSnippetIds: metadata.selectedSnippetIds }),
+        ...(metadata?.todosState && { todosState: metadata.todosState })
       };
 
       await new Promise<void>((resolve, reject) => {
@@ -96,7 +101,7 @@ class ChatHistoryDB {
         request.onerror = () => reject(request.error);
       });
 
-      console.log(`Saved chat ${id} to IndexedDB with planning metadata`);
+      console.log(`Saved chat ${id} to IndexedDB with planning/todos metadata`);
     } catch (error) {
       console.error('Error saving chat to IndexedDB:', error);
       throw error;

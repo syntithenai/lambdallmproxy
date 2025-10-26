@@ -2,6 +2,14 @@ import React, { useRef, useEffect } from 'react';
 import { usePlaylist } from '../contexts/PlaylistContext';
 import { useDialogClose } from '../hooks/useDialogClose';
 
+// Declare YouTube IFrame API types
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: () => void;
+  }
+}
+
 interface PlaylistDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -16,18 +24,104 @@ export const PlaylistDialog: React.FC<PlaylistDialogProps> = ({ isOpen, onClose 
     playTrack, 
     removeTrack, 
     clearPlaylist,
-    currentTrack
+    currentTrack,
+    togglePlayPause,
+    pause,
+    play
   } = usePlaylist();
 
-  const playerRef = useRef<HTMLIFrameElement>(null);
+  const playerRef = useRef<any>(null);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
 
   // Load YouTube IFrame API
   useEffect(() => {
-    if (!isOpen || !currentTrack) return;
+    // Load the IFrame Player API code asynchronously
+    if (!window.YT) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    }
+  }, []);
 
-    // The YouTube player will be embedded via iframe
-    // The iframe src will be updated based on current track
-  }, [isOpen, currentTrack]);
+  // Initialize player when dialog opens and track changes
+  useEffect(() => {
+    if (!isOpen || !currentTrack || !playerContainerRef.current) {
+      return;
+    }
+
+    const initPlayer = () => {
+      if (!window.YT || !window.YT.Player) {
+        return;
+      }
+
+      // Destroy existing player if any
+      if (playerRef.current) {
+        playerRef.current.destroy();
+      }
+
+      // Clear the container
+      if (playerContainerRef.current) {
+        playerContainerRef.current.innerHTML = '';
+      }
+
+      // Create new player
+      playerRef.current = new window.YT.Player(playerContainerRef.current, {
+        videoId: currentTrack.videoId,
+        width: '100%',
+        height: '100%',
+        playerVars: {
+          autoplay: isPlaying ? 1 : 0,
+          rel: 0,
+          modestbranding: 1,
+          controls: 1,
+        },
+        events: {
+          onStateChange: (event: any) => {
+            // Sync YouTube player state with our app state
+            if (event.data === window.YT.PlayerState.PLAYING && !isPlaying) {
+              play();
+            } else if (event.data === window.YT.PlayerState.PAUSED && isPlaying) {
+              pause();
+            }
+          },
+        },
+      });
+    };
+
+    // Wait for API to be ready
+    if (window.YT && window.YT.Player) {
+      initPlayer();
+    } else {
+      window.onYouTubeIframeAPIReady = initPlayer;
+    }
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
+    };
+  }, [isOpen, currentTrack?.videoId]);
+
+  // Sync isPlaying state with YouTube player
+  useEffect(() => {
+    if (!playerRef.current || !playerRef.current.getPlayerState) {
+      return;
+    }
+
+    try {
+      const playerState = playerRef.current.getPlayerState();
+      
+      if (isPlaying && playerState !== window.YT?.PlayerState.PLAYING) {
+        playerRef.current.playVideo();
+      } else if (!isPlaying && playerState === window.YT?.PlayerState.PLAYING) {
+        playerRef.current.pauseVideo();
+      }
+    } catch (error) {
+      // Player not ready yet, ignore
+    }
+  }, [isPlaying]);
 
   if (!isOpen) return null;
 
@@ -67,15 +161,8 @@ export const PlaylistDialog: React.FC<PlaylistDialogProps> = ({ isOpen, onClose 
         {currentTrack && (
           <div className="w-full bg-black">
             <div className="aspect-video w-full">
-              <iframe
-                ref={playerRef}
-                width="100%"
-                height="100%"
-                src={`https://www.youtube.com/embed/${currentTrack.videoId}?${isPlaying ? 'autoplay=1&' : ''}rel=0&modestbranding=1`}
-                title={currentTrack.title}
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
+              <div 
+                ref={playerContainerRef}
                 className="w-full h-full"
               />
             </div>
@@ -103,28 +190,40 @@ export const PlaylistDialog: React.FC<PlaylistDialogProps> = ({ isOpen, onClose 
               {playlist.map((track, index) => (
                 <div
                   key={track.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
+                  onClick={() => {
+                    // If clicking on current track, toggle play/pause
+                    if (index === currentTrackIndex) {
+                      togglePlayPause();
+                    } else {
+                      // Otherwise, play the clicked track
+                      playTrack(index);
+                    }
+                  }}
+                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer ${
                     index === currentTrackIndex
                       ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500'
                       : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
                   }`}
                 >
                   {/* Track Number / Play Button */}
-                  <button
-                    onClick={() => playTrack(index)}
-                    className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full hover:bg-white dark:hover:bg-gray-800 transition-colors"
-                    title="Play this track"
+                  <div
+                    className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full transition-colors"
+                    title={index === currentTrackIndex ? (isPlaying ? "Pause" : "Play") : "Play this track"}
                   >
                     {index === currentTrackIndex && isPlaying ? (
                       <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                      </svg>
+                    ) : index === currentTrackIndex && !isPlaying ? (
+                      <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
                       </svg>
                     ) : (
                       <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
                         {index + 1}
                       </span>
                     )}
-                  </button>
+                  </div>
 
                   {/* Thumbnail */}
                   {track.thumbnail && (
@@ -153,7 +252,10 @@ export const PlaylistDialog: React.FC<PlaylistDialogProps> = ({ isOpen, onClose 
 
                   {/* Delete Button */}
                   <button
-                    onClick={() => removeTrack(track.id)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent triggering the row's play/pause
+                      removeTrack(track.id);
+                    }}
                     className="flex-shrink-0 p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                     title="Remove from playlist"
                   >

@@ -1,5 +1,6 @@
 // Google OAuth types and constants
-export const GOOGLE_CLIENT_ID = '927667106833-7od90q7nh5oage0shc3kka5s9vtg2loj.apps.googleusercontent.com';
+// Use environment variable - configured in ui-new/.env
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export interface GoogleUser {
   email: string;
@@ -17,6 +18,10 @@ export interface AuthState {
 // Initialize Google OAuth
 export const initializeGoogleOAuth = (callback: (response: any) => void) => {
   if (typeof google !== 'undefined' && google.accounts) {
+    if (!GOOGLE_CLIENT_ID) {
+      console.error('❌ VITE_GOOGLE_CLIENT_ID not configured in ui-new/.env');
+      return;
+    }
     google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
       callback: callback
@@ -41,10 +46,14 @@ export const renderGoogleButton = (elementId: string) => {
 
 // Save auth state to localStorage
 export const saveAuthState = (user: GoogleUser, token: string, refreshToken?: string, expiresIn?: number) => {
+  // Sanitize tokens: remove whitespace and newlines before storing
+  const sanitizedToken = token.trim().replace(/[\r\n]/g, '');
+  const sanitizedRefreshToken = refreshToken?.trim().replace(/[\r\n]/g, '');
+  
   localStorage.setItem('google_user', JSON.stringify(user));
-  localStorage.setItem('google_access_token', token);
-  if (refreshToken) {
-    localStorage.setItem('google_refresh_token', refreshToken);
+  localStorage.setItem('google_access_token', sanitizedToken);
+  if (sanitizedRefreshToken) {
+    localStorage.setItem('google_refresh_token', sanitizedRefreshToken);
   }
   
   // Store expiration time if provided (for access tokens)
@@ -54,7 +63,7 @@ export const saveAuthState = (user: GoogleUser, token: string, refreshToken?: st
   } else {
     // Try to extract from JWT (for ID tokens)
     try {
-      const decoded = decodeJWT(token);
+      const decoded = decodeJWT(sanitizedToken);
       if (decoded?.exp) {
         localStorage.setItem('google_token_expiration', (decoded.exp * 1000).toString());
       }

@@ -1,7 +1,7 @@
 /**
  * Custom hook for managing planning generation logic
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { generatePlan } from '../utils/api';
 import { saveCachedPlan } from '../utils/planningCache';
 
@@ -11,6 +11,9 @@ interface UsePlanningGenerationProps {
   enabledProviders: any[];
   onSuccess: (systemPrompt: string, userQuery: string, result: any) => void;
   onError: (error: string) => void;
+  onClarificationNeeded?: (questions: string[], context: any) => void; // New callback for clarification
+  clarificationAnswers?: string; // User's answers to clarification questions
+  previousContext?: any; // Context from previous clarification request
 }
 
 export const usePlanningGeneration = ({
@@ -18,9 +21,13 @@ export const usePlanningGeneration = ({
   getToken,
   enabledProviders,
   onSuccess,
-  onError
+  onError,
+  onClarificationNeeded,
+  clarificationAnswers,
+  previousContext
 }: UsePlanningGenerationProps) => {
   const [isLoading, setIsLoading] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const transformResultToPrompts = useCallback((data: any, originalQuery: string) => {
     // Build system prompt from plan fields
@@ -81,6 +88,8 @@ export const usePlanningGeneration = ({
   const generateResearchPlan = useCallback(async () => {
     if (!query.trim() || isLoading) return;
 
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
     setIsLoading(true);
     
     try {
@@ -103,7 +112,13 @@ export const usePlanningGeneration = ({
         enabledProviders,
         undefined,
         (event: string, data: any) => {
-          if (event === 'result') {
+          if (event === 'clarification_needed') {
+            // Handle clarification request from backend
+            if (onClarificationNeeded) {
+              onClarificationNeeded(data.questions || [], data.context || {});
+            }
+            setIsLoading(false);
+          } else if (event === 'result') {
             const { systemPrompt, userQuery } = transformResultToPrompts(data, query);
             onSuccess(systemPrompt, userQuery, data);
             // Save with both system and user prompts
@@ -133,23 +148,47 @@ export const usePlanningGeneration = ({
         () => {
           console.log('Planning stream complete');
           setIsLoading(false);
+          abortControllerRef.current = null;
         },
         (error: Error) => {
           console.error('Planning stream error:', error);
-          onError(error.message);
+          // Don't show error if it was aborted intentionally
+          if (error.name !== 'AbortError') {
+            onError(error.message);
+          }
           setIsLoading(false);
+          abortControllerRef.current = null;
+        },
+        {
+          clarificationAnswers,
+          previousContext,
+          signal: abortControllerRef.current.signal
         }
       );
     } catch (error) {
       console.error('Planning error:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      onError(errorMsg);
+      // Don't show error if it was aborted intentionally
+      if (error instanceof Error && error.name !== 'AbortError') {
+        onError(errorMsg);
+      }
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   }, [query, isLoading, getToken, enabledProviders, onSuccess, onError, transformResultToPrompts]);
 
+  const stopGeneration = useCallback(() => {
+    if (abortControllerRef.current) {
+      console.log('🛑 Stopping planning generation...');
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
+  }, []);
+
   return {
     isLoading,
-    generateResearchPlan
+    generateResearchPlan,
+    stopGeneration
   };
 };

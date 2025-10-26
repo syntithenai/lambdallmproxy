@@ -1,9 +1,17 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export function HelpPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'features' | 'planning' | 'tools' | 'rag' | 'pricing' | 'privacy'>('features');
+  const [activeTab, setActiveTab] = useState<'features' | 'planning' | 'tools' | 'rag' | 'pricing'>('features');
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Reset scroll to top when tab changes
+  useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0;
+    }
+  }, [activeTab]);
 
   const tabs = [
     { id: 'features' as const, label: 'Features & Advantages', icon: '✨' },
@@ -11,25 +19,20 @@ export function HelpPage() {
     { id: 'tools' as const, label: 'Backend LLM Tools', icon: '🔧' },
     { id: 'rag' as const, label: 'Browser RAG', icon: '🧠' },
     { id: 'pricing' as const, label: 'Pricing', icon: '💰' },
-    { id: 'privacy' as const, label: 'Privacy Policy', icon: '🔒' },
   ];
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-            title="Back to Chat"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-          </button>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Help & Documentation</h1>
-        </div>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Help & Documentation</h1>
+        <button
+          onClick={() => navigate('/privacy')}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+        >
+          <span>🔒</span>
+          <span className="text-sm font-medium">Privacy Policy</span>
+        </button>
       </div>
 
       {/* Tabs */}
@@ -51,14 +54,13 @@ export function HelpPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div ref={contentRef} className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl text-left">
           {activeTab === 'features' && <FeaturesContent />}
           {activeTab === 'planning' && <PlanningContent />}
           {activeTab === 'tools' && <ToolsContent />}
           {activeTab === 'rag' && <RAGContent />}
           {activeTab === 'pricing' && <PricingContent />}
-          {activeTab === 'privacy' && <PrivacyContent />}
         </div>
       </div>
     </div>
@@ -82,7 +84,14 @@ function FeaturesContent() {
             <div className="border-l-4 border-green-500 pl-4">
               <p className="font-semibold text-green-700 dark:text-green-300">✅ Access Multiple AI Providers</p>
               <p className="text-sm">Choose from OpenAI, Google Gemini, Groq, Together AI, and custom endpoints - not locked into a single provider. 
-              Switch between models seamlessly to find the best fit for each task.</p>
+              Switch between models seamlessly to find the best fit for each task. Distribute the load among providers to minimise rate limits and costs.</p>
+            </div>
+            
+            <div className="border-l-4 border-teal-500 pl-4">
+              <p className="font-semibold text-teal-700 dark:text-teal-300">✅ Automatic Model Selection</p>
+              <p className="text-sm">The system intelligently decides what kind of model is a suitable balance between cost and effectiveness 
+              for your query. No point in paying Einstein to do basic maths - simple questions get fast, cheap models while complex reasoning 
+              tasks get more powerful models.</p>
             </div>
             
             <div className="border-l-4 border-blue-500 pl-4">
@@ -95,6 +104,12 @@ function FeaturesContent() {
               <p className="font-semibold text-purple-700 dark:text-purple-300">✅ Advanced Planning & Research Tools</p>
               <p className="text-sm">Built-in planning mode breaks complex questions into steps. Integrated web search (DuckDuckGo, Tavily), 
               advanced web scraping (Puppeteer, Playwright, Selenium), and YouTube integration for comprehensive research.</p>
+            </div>
+            
+            <div className="border-l-4 border-amber-500 pl-4">
+              <p className="font-semibold text-amber-700 dark:text-amber-300">✅ Persistent Iteration</p>
+              <p className="text-sm">The agent is prompted to be generous with calling tools and generating responses to make sure you get 
+              the answers you want. An assessor call is made before giving up on your request, ensuring thorough and complete responses.</p>
             </div>
             
             <div className="border-l-4 border-orange-500 pl-4">
@@ -910,61 +925,124 @@ function PricingContent() {
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📊 Simple Pricing Table</h3>
-        <p className="mb-3">Understanding your costs is straightforward:</p>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📊 Complete Pricing Breakdown</h3>
+        <p className="mb-3">Understanding your costs is straightforward - we charge for two things:</p>
         
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-5 rounded-lg border-2 border-blue-300 dark:border-blue-700 mb-4">
+          <h4 className="font-bold text-lg mb-3">1. AWS Infrastructure Costs (Always Charged)</h4>
+          <p className="text-sm mb-3">
+            Every request incurs a small infrastructure fee to cover AWS Lambda hosting. We charge a <strong>6x markup</strong> on 
+            total AWS costs (industry standard is 3-10x).
+          </p>
+          
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-blue-200 dark:border-blue-700 mb-3">
+            <p className="font-semibold mb-2 text-sm">AWS Cost Components (Example: 512MB, 800ms execution):</p>
+            <div className="space-y-1 text-xs font-mono">
+              <div className="flex justify-between border-b dark:border-gray-600 pb-1">
+                <span>Lambda Compute:</span>
+                <span>$0.00000667</span>
+              </div>
+              <div className="flex justify-between border-b dark:border-gray-600 pb-1">
+                <span>Lambda Request:</span>
+                <span>$0.00000020</span>
+              </div>
+              <div className="flex justify-between border-b dark:border-gray-600 pb-1">
+                <span>CloudWatch Logs:</span>
+                <span>$0.00000102</span>
+              </div>
+              <div className="flex justify-between border-b dark:border-gray-600 pb-1">
+                <span>Data Transfer Out:</span>
+                <span>$0.00000036</span>
+              </div>
+              <div className="flex justify-between border-b dark:border-gray-600 pb-1">
+                <span>S3 Storage:</span>
+                <span>$0.00000003</span>
+              </div>
+              <div className="flex justify-between font-bold text-sm pt-2 border-t-2 dark:border-gray-500">
+                <span>Total AWS Cost:</span>
+                <span>$0.00001087</span>
+              </div>
+              <div className="flex justify-between text-blue-600 dark:text-blue-400 font-bold text-sm pt-1">
+                <span>With 6x markup:</span>
+                <span>$0.00006522</span>
+              </div>
+            </div>
+          </div>
+          
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            <strong>Per 1,000 requests:</strong> $0.065 infrastructure cost<br/>
+            <strong>Why 6x?</strong> Industry competitive: AWS API Gateway (3-6x), Twilio (1.3x), SendGrid (3x), Stripe (1.6x)
+          </p>
+        </div>
+
+        <div className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 p-5 rounded-lg border-2 border-orange-300 dark:border-orange-700 mb-4">
+          <h4 className="font-bold text-lg mb-3">2. LLM API Costs (Depends on Configuration)</h4>
+          
+          <div className="space-y-3">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-orange-200 dark:border-orange-700">
+              <p className="font-semibold text-orange-700 dark:text-orange-300 mb-2">Option A: Server-Provided Keys</p>
+              <p className="text-sm mb-2">Convenient for occasional use, no setup required.</p>
+              <p className="text-sm font-mono">
+                <strong>Cost:</strong> Provider pricing + 25% surcharge<br/>
+                <strong>Example:</strong> $0.10 LLM call → <span className="text-orange-600 dark:text-orange-400 font-bold">$0.125 charged</span>
+              </p>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-green-500 dark:border-green-600">
+              <p className="font-semibold text-green-700 dark:text-green-300 mb-2">Option B: Bring Your Own Keys (BYOK) - RECOMMENDED ⭐</p>
+              <p className="text-sm mb-2">Regular users, cost-conscious users, access to free tiers.</p>
+              <p className="text-sm font-mono">
+                <strong>Cost:</strong> <span className="text-green-600 dark:text-green-400 font-bold text-lg">$0.00</span> (you pay provider directly!)<br/>
+                <strong>Only Pay:</strong> Infrastructure fee (~$0.00007/request)
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full border-2 dark:border-gray-600 text-sm">
             <thead className="bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900 dark:to-purple-900">
               <tr>
-                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Cost Component</th>
-                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Server-Provided Keys</th>
-                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Your API Keys (BYOK)</th>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Configuration</th>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">LLM Cost (100 requests)</th>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Infrastructure</th>
+                <th className="border dark:border-gray-600 px-4 py-3 text-left font-bold">Total</th>
               </tr>
             </thead>
             <tbody>
               <tr className="bg-white dark:bg-gray-800">
-                <td className="border dark:border-gray-600 px-4 py-3 font-semibold">LLM API Calls</td>
-                <td className="border dark:border-gray-600 px-4 py-3 text-orange-600 dark:text-orange-400">
-                  Provider cost <strong>+ 25% surcharge</strong><br/>
-                  <span className="text-xs">(Example: $0.10 → $0.125)</span>
-                </td>
-                <td className="border dark:border-gray-600 px-4 py-3 text-green-600 dark:text-green-400 font-bold">
-                  $0.00<br/>
-                  <span className="text-xs font-normal">(You pay provider directly)</span>
-                </td>
-              </tr>
-              <tr className="bg-gray-50 dark:bg-gray-700">
-                <td className="border dark:border-gray-600 px-4 py-3 font-semibold">Lambda Infrastructure</td>
-                <td className="border dark:border-gray-600 px-4 py-3" colSpan={2}>
-                  <strong>4x markup</strong> on AWS Lambda hosting costs<br/>
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
-                    (Typical: $0.0001 AWS charge → $0.0004 billed)<br/>
-                    Covers execution time, storage, networking, operational overhead
-                  </span>
-                </td>
-              </tr>
-              <tr className="bg-blue-50 dark:bg-blue-900/30">
-                <td className="border dark:border-gray-600 px-4 py-3 font-bold">Example Total Cost</td>
+                <td className="border dark:border-gray-600 px-4 py-3 font-semibold">Server Keys</td>
                 <td className="border dark:border-gray-600 px-4 py-3">
-                  <span className="text-blue-600 dark:text-blue-400 font-bold">$0.1254</span><br/>
-                  <span className="text-xs">($0.10 LLM + $0.025 surcharge + $0.0004 infra)</span>
+                  $10.00 + 25% = <strong className="text-orange-600 dark:text-orange-400">$12.50</strong>
                 </td>
+                <td className="border dark:border-gray-600 px-4 py-3">$0.0065</td>
+                <td className="border dark:border-gray-600 px-4 py-3 font-bold text-orange-600 dark:text-orange-400">$12.51</td>
+              </tr>
+              <tr className="bg-green-50 dark:bg-green-900/20">
+                <td className="border dark:border-gray-600 px-4 py-3 font-semibold">BYOK (OpenAI)</td>
                 <td className="border dark:border-gray-600 px-4 py-3">
-                  <span className="text-green-600 dark:text-green-400 font-bold">$0.0004</span><br/>
-                  <span className="text-xs">(Infrastructure only)</span>
+                  <strong className="text-green-600 dark:text-green-400">$0.00</strong> (paid direct)
                 </td>
+                <td className="border dark:border-gray-600 px-4 py-3">$0.0065</td>
+                <td className="border dark:border-gray-600 px-4 py-3 font-bold text-green-600 dark:text-green-400">$0.0065</td>
+              </tr>
+              <tr className="bg-gradient-to-r from-green-100 to-blue-100 dark:from-green-900/30 dark:to-blue-900/30">
+                <td className="border dark:border-gray-600 px-4 py-3 font-semibold">BYOK (Groq Free Tier)</td>
+                <td className="border dark:border-gray-600 px-4 py-3">
+                  <strong className="text-green-600 dark:text-green-400">$0.00</strong> (free tier!)
+                </td>
+                <td className="border dark:border-gray-600 px-4 py-3">$0.0065</td>
+                <td className="border dark:border-gray-600 px-4 py-3 font-bold text-green-600 dark:text-green-400">$0.0065</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800 mt-4">
-          <p className="font-semibold mb-2">💡 Key Takeaway:</p>
+          <p className="font-semibold mb-2">💡 Massive Savings with BYOK:</p>
           <p className="text-sm">
-            Bring Your Own Key (BYOK) users pay <strong>~99.6% less</strong> for LLM operations! The only charge is 
-            the minimal Lambda infrastructure fee. You pay your LLM provider directly (often free with generous quotas) 
-            and avoid the 25% surcharge entirely.
+            Bring Your Own Key (BYOK) users save <strong>99.5%</strong> on total costs! Pay only the minimal infrastructure fee 
+            (~$0.07 per 1,000 requests). Use free tier providers like Groq or Gemini and your LLM costs are literally $0.
           </p>
         </div>
       </section>
@@ -1082,6 +1160,57 @@ function PricingContent() {
             </li>
           </ul>
         </div>
+        
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 mt-4">
+          <p className="font-semibold mb-2">📊 How Infrastructure Costs Are Calculated</p>
+          <p className="text-sm mb-3">
+            Every Lambda request incurs costs from 5 AWS services. We apply a <strong>6x markup</strong> to cover 
+            operational overhead and ensure service sustainability:
+          </p>
+          <div className="space-y-2 text-sm pl-4">
+            <div className="border-l-4 border-blue-500 pl-3">
+              <p className="font-medium">1. Lambda Compute</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Memory allocation × execution time × $0.0000166667 per GB-second<br/>
+                <em>Example: 512MB × 0.8s = $0.00000667</em>
+              </p>
+            </div>
+            <div className="border-l-4 border-purple-500 pl-3">
+              <p className="font-medium">2. Lambda Requests</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                $0.20 per million requests ($0.0000002 per request)
+              </p>
+            </div>
+            <div className="border-l-4 border-green-500 pl-3">
+              <p className="font-medium">3. CloudWatch Logs</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                ~2KB per request × ($0.50/GB ingestion + $0.03/GB storage/month)<br/>
+                <em>Example: ~$0.00000102 per request</em>
+              </p>
+            </div>
+            <div className="border-l-4 border-orange-500 pl-3">
+              <p className="font-medium">4. Data Transfer Out</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                ~4KB response size × $0.09/GB (first 10TB/month)<br/>
+                <em>Example: ~$0.00000036 per request</em>
+              </p>
+            </div>
+            <div className="border-l-4 border-pink-500 pl-3">
+              <p className="font-medium">5. S3 Storage</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Deployment packages (~700MB) × $0.023/GB/month, averaged across requests<br/>
+                <em>Example: ~$0.00000003 per request</em>
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border border-blue-300 dark:border-blue-700">
+            <p className="text-xs font-mono">
+              <strong>Total AWS Cost:</strong> $0.00001087 per request<br/>
+              <strong>With 6x markup:</strong> $0.00006522 per request<br/>
+              <strong>Profit margin:</strong> 83% (industry competitive)
+            </p>
+          </div>
+        </div>
       </section>
 
       <section className="space-y-4">
@@ -1138,243 +1267,6 @@ function PricingContent() {
           </details>
         </div>
       </section>
-    </div>
-  );
-}
-
-function PrivacyContent() {
-  return (
-    <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
-      <h2 className="text-3xl font-bold mb-4 text-left">Privacy Policy</h2>
-      
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📅 Last Updated</h3>
-        <p>October 24, 2025</p>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔒 Information We Collect</h3>
-        <p className="mb-3">
-          When you use Research Agent, we collect several types of information to provide and improve our service. 
-          This includes your authentication credentials obtained through Google OAuth, such as your email address 
-          and profile information, which we use to identify you and secure your account.
-        </p>
-        <p className="mb-3">
-          We track your usage of the service including the API requests you make, which models you select, token 
-          counts for billing purposes, associated costs, and timestamps of your activity. Your chat history—the 
-          messages you send to and receive from LLM providers—is stored locally in your browser's storage for your 
-          convenience and privacy.
-        </p>
-        <p className="mb-3">
-          For billing purposes, we maintain records of your PayPal transactions including transaction IDs, purchase 
-          amounts, and your current credit balance. If you use the content management features, your SWAG snippets, 
-          embeddings, and organizational tags are stored locally in your browser's IndexedDB. You have the option 
-          to sync this content to your personal Google Drive for backup and cross-device access.
-        </p>
-        <p>
-          Additionally, certain optional data may be collected if you grant permission, such as your location information 
-          for location-based features, or access to your Google Drive files if you choose to enable cloud synchronization 
-          features.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎯 How We Use Your Information</h3>
-        <p className="mb-3">
-          Your information serves several critical functions within our service. We use your authentication data to verify 
-          your identity and provide secure access to your account and personalized settings. When you make requests, we route 
-          them to the LLM providers you've selected, passing along necessary context to fulfill your queries.
-        </p>
-        <p className="mb-3">
-          For billing operations, we track your credit usage against your available balance, process payments through PayPal 
-          when you add credits, and generate detailed transaction records so you can monitor your spending. This financial 
-          transparency is important for managing your budget and understanding service costs.
-        </p>
-        <p>
-          We also use aggregated usage data to improve the service—monitoring performance metrics, debugging technical issues, 
-          and optimizing our infrastructure for better reliability and speed. When necessary, we may use your contact information 
-          to send important service updates or respond to your support requests.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🤝 Data Sharing</h3>
-        <p className="mb-3">
-          To provide our service effectively, we share certain information with trusted third parties. When you send prompts 
-          to generate responses, your queries and chat history are transmitted to the LLM providers you've selected—such as 
-          OpenAI, Google, Groq, or others. Each of these providers has their own privacy policies governing how they handle 
-          your data, and we encourage you to review their terms.
-        </p>
-        <p className="mb-3">
-          Payment processing is handled entirely by PayPal, which means your financial information and transaction details 
-          are subject to PayPal's privacy policy rather than ours. We never see or store your credit card numbers or banking 
-          information directly. Our backend infrastructure runs on AWS Lambda cloud services, which hosts the application code 
-          that processes your requests.
-        </p>
-        <p className="mb-3">
-          If you enable synchronization features, your content is saved directly to your personal Google Drive account. This 
-          means the data goes from your browser to your own Drive storage—we don't maintain a copy on our servers.
-        </p>
-        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
-          <p className="font-semibold text-red-800 dark:text-red-200 mb-2">⚠️ Important Privacy Commitment</p>
-          <p className="text-sm">
-            We do NOT sell or rent your personal information to third parties for marketing purposes. We do NOT share your 
-            data with advertisers or data brokers. Your information is used solely to provide the service you've signed up for.
-          </p>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔐 Data Storage & Security</h3>
-        <p className="mb-3">
-          We take a privacy-first approach to data storage. The majority of your personal content—including your full chat 
-          history, SWAG snippets, and generated embeddings—is stored exclusively in your browser's local IndexedDB database. 
-          This means the data stays on your device and is not transmitted to our servers unless you explicitly choose to sync 
-          it to your Google Drive.
-        </p>
-        <p className="mb-3">
-          The only information we store on our backend infrastructure is billing-related data: your transaction history, 
-          credit purchases, and usage logs for accounting purposes. This financial data is stored securely on our cloud 
-          infrastructure with appropriate access controls.
-        </p>
-        <p className="mb-3">
-          All data transmitted between your browser and our servers is encrypted using industry-standard HTTPS protocol. 
-          Authentication is handled through secure OAuth2 flows with Google, ensuring your credentials are never exposed 
-          to our application directly. Access to your personal data is restricted exclusively to you through your authenticated 
-          Google account—no other users or administrators can access your information.
-        </p>
-        <p>
-          We retain billing logs for accounting and tax compliance purposes as required by law. Your chat history, being stored 
-          locally in your browser, is under your control—you can delete it at any time through your browser's storage management 
-          tools or the application's clear data features.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🛡️ Your Privacy Rights</h3>
-        <p className="mb-3">
-          You maintain significant control over your data within our service. You can access your billing transactions and 
-          detailed usage data at any time through the Billing page, which provides complete transparency into how your credits 
-          have been used and what you've been charged for.
-        </p>
-        <p className="mb-3">
-          Because your chat history and content are stored locally in your browser, you have the ability to delete this 
-          information whenever you choose. The application provides clear options to clear your local data, and you can 
-          also use your browser's built-in storage management to remove IndexedDB data if preferred.
-        </p>
-        <p className="mb-3">
-          Your data is portable—you can export your transaction history and usage data for your own records or to migrate 
-          to another service. You also have granular control over optional features: disconnect Google Drive synchronization 
-          to stop cloud backups, revoke location access permissions, or close your account entirely if you no longer wish 
-          to use the service.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">⚠️ Disclaimer of Liability</h3>
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 p-5 rounded-lg border-2 border-yellow-300 dark:border-yellow-700">
-          <p className="font-bold mb-3 text-lg text-yellow-900 dark:text-yellow-100">IMPORTANT - PLEASE READ CAREFULLY</p>
-          
-          <p className="mb-4">
-            <strong className="text-yellow-800 dark:text-yellow-200">Artificial Intelligence Content:</strong> The responses 
-            generated by LLM providers are produced by artificial intelligence systems that, while sophisticated, are not 
-            infallible. These AI-generated outputs may contain factual errors, exhibit biases present in their training data, 
-            include inappropriate or offensive content, or provide information that is outdated or incorrect. AI systems can 
-            also "hallucinate" information—presenting fabricated details with apparent confidence.
-          </p>
-
-          <p className="mb-4">
-            <strong className="text-yellow-800 dark:text-yellow-200">No Warranties or Guarantees:</strong> We provide this 
-            service "AS IS" and "AS AVAILABLE" without any warranties of any kind, whether express or implied. This includes 
-            but is not limited to implied warranties of merchantability, fitness for a particular purpose, or non-infringement. 
-            We make no guarantees about the accuracy, reliability, completeness, or timeliness of any information provided 
-            through the service.
-          </p>
-
-          <p className="mb-4">
-            <strong className="text-yellow-800 dark:text-yellow-200">Your Responsibility:</strong> You acknowledge and agree 
-            that YOU are solely responsible for verifying any information obtained through this service before relying on it 
-            for any purpose. This is especially critical for decisions involving health, legal matters, financial planning, 
-            safety, or any other consequential actions. We strongly recommend consulting appropriate professionals for important 
-            decisions rather than relying solely on AI-generated content.
-          </p>
-
-          <p className="mb-4">
-            <strong className="text-yellow-800 dark:text-yellow-200">Third-Party Services:</strong> We are not responsible 
-            for the performance, availability, accuracy, or policies of third-party services including OpenAI, Google AI, 
-            Groq, Together AI, PayPal, Google Drive, or any other integrated service. Issues arising from these services 
-            are governed by their respective terms of service and privacy policies.
-          </p>
-
-          <p className="mb-4">
-            <strong className="text-yellow-800 dark:text-yellow-200">Data Loss:</strong> While we implement reasonable measures 
-            to protect your data, we cannot guarantee against data loss. We are not liable for any loss of local data including 
-            chat history, SWAG content, or other browser-stored information due to browser cache clearing, device failure, 
-            software conflicts, or any other cause. We strongly recommend regularly backing up important content to external 
-            storage or cloud services.
-          </p>
-
-          <p>
-            <strong className="text-yellow-800 dark:text-yellow-200">Limitation of Liability:</strong> To the maximum extent 
-            permitted by law, our total aggregate liability to you for all claims arising out of or related to your use of 
-            the service shall not exceed the amount you have paid us for credits in the thirty (30) days immediately preceding 
-            the event giving rise to the claim. In no event shall we be liable for any indirect, incidental, special, 
-            consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly.
-          </p>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🔄 Changes to This Policy</h3>
-        <p>
-          We reserve the right to modify this privacy policy at any time as our service evolves or in response to legal 
-          or regulatory requirements. When we make significant changes that materially affect your rights or how we handle 
-          your data, we will notify you by posting a prominent notice within the application or by updating the "Last Updated" 
-          date at the top of this document. We encourage you to review this policy periodically to stay informed about how 
-          we're protecting your information. Your continued use of the service after any modifications indicates your acceptance 
-          of the updated terms.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">📧 Contact Us</h3>
-        <p className="mb-3">
-          If you have questions, concerns, or requests regarding this privacy policy, your personal data, or how we handle 
-          your information, we want to hear from you:
-        </p>
-        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 space-y-3">
-          <div className="border-l-4 border-blue-500 pl-4">
-            <p className="font-semibold text-blue-700 dark:text-blue-300">Email Support</p>
-            <p className="text-sm mb-1">For general inquiries, privacy questions, or billing issues:</p>
-            <a href="mailto:stever@syntithenai.com" className="text-blue-600 dark:text-blue-400 hover:underline text-sm">
-              stever@syntithenai.com
-            </a>
-          </div>
-          
-          <div className="border-l-4 border-purple-500 pl-4">
-            <p className="font-semibold text-purple-700 dark:text-purple-300">Bug Reports & Feature Requests</p>
-            <p className="text-sm mb-1">For technical issues, bug reports, or feature suggestions:</p>
-            <a href="https://github.com/syntithenai/lambdallmproxy/issues" target="_blank" rel="noopener noreferrer" className="text-purple-600 dark:text-purple-400 hover:underline text-sm">
-              GitHub Issues →
-            </a>
-          </div>
-        </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
-          We review and respond to inquiries as promptly as possible, typically within a few business days. For urgent 
-          issues affecting your account or billing, please indicate "URGENT" in the subject line.
-        </p>
-      </section>
-
-      <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-lg border-2 border-blue-300 dark:border-blue-700 mt-6">
-        <p className="font-semibold text-lg mb-2 text-blue-900 dark:text-blue-100">Acknowledgment and Consent</p>
-        <p className="text-sm">
-          By accessing or using Research Agent, you acknowledge that you have read this privacy policy in its entirety, 
-          understand its terms and implications, and agree to be bound by it along with the disclaimer of liability. 
-          You also acknowledge that you understand the nature of AI-generated content and the inherent limitations and 
-          risks associated with using such technology. If you do not agree with any part of this policy, please discontinue 
-          use of the service immediately.
-        </p>
-      </div>
     </div>
   );
 }

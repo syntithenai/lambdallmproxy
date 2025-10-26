@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useDialogClose } from '../hooks/useDialogClose';
 import { formatCost } from '../utils/pricing';
 import { JsonTreeViewer } from './JsonTreeViewer';
+import { useToast } from './ToastManager';
 
 interface LlmApiCall {
   phase: string;
@@ -238,6 +239,8 @@ const ApiCallCard: React.FC<{ call: LlmApiCall; index: number }> = ({ call, inde
 
 export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose }) => {
   const dialogRef = useDialogClose(true, onClose);
+  const [copiedAll, setCopiedAll] = useState(false);
+  const { showSuccess } = useToast();
 
   // Calculate totals
   const totalPromptTokens = apiCalls.reduce((sum, call) => 
@@ -249,6 +252,31 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
   const totalTokens = totalPromptTokens + totalCompletionTokens;
   const totalCost = apiCalls.reduce((sum, call) => sum + (call.cost || 0), 0);
   const totalDuration = apiCalls.reduce((sum, call) => sum + (call.durationMs || 0), 0);
+
+  // Copy all API calls data combined
+  const handleCopyAll = () => {
+    const combinedData = apiCalls.map((call, index) => ({
+      callNumber: index + 1,
+      type: call.type || 'chat',
+      provider: call.provider,
+      model: call.model,
+      timestamp: call.timestamp,
+      request: call.request,
+      response: call.response,
+      httpHeaders: call.httpHeaders,
+      httpStatus: call.httpStatus,
+      cost: call.cost,
+      durationMs: call.durationMs,
+      metadata: call.metadata
+    }));
+
+    navigator.clipboard.writeText(JSON.stringify(combinedData, null, 2));
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 2000);
+    
+    // Show toast notification
+    showSuccess(`📋 Copied ${apiCalls.length} LLM API call${apiCalls.length !== 1 ? 's' : ''} to clipboard`);
+  };
 
   return (
     <div 
@@ -269,15 +297,33 @@ export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose 
               {apiCalls.length} API call{apiCalls.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            aria-label="Close"
-          >
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCopyAll}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2 shadow-sm hover:shadow-md"
+            >
+              {copiedAll ? (
+                <>
+                  <span>✓</span>
+                  <span>Copied All!</span>
+                </>
+              ) : (
+                <>
+                  <span>📋</span>
+                  <span>Copy All JSON</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+              aria-label="Close"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content */}

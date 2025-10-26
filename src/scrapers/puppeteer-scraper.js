@@ -94,6 +94,55 @@ async function scrapePage(url, options = {}) {
     const navigationTime = Date.now() - navigationStart;
     console.log(`✅ [Puppeteer] Page loaded in ${navigationTime}ms`);
 
+    // Check for simple redirect/button click scenarios (e.g., Google JavaScript requirement)
+    try {
+      const pageText = await page.evaluate(() => document.body.innerText || '');
+      const pageTextLower = pageText.toLowerCase();
+      
+      // Detect redirect pages with simple instructions
+      const isRedirectPage = 
+        (pageTextLower.includes('click') && pageTextLower.includes('not redirected')) ||
+        (pageTextLower.includes('enable javascript') && pageText.length < 500) ||
+        pageTextLower.includes('httpservice/retry/enablejs');
+      
+      if (isRedirectPage) {
+        console.log(`🔄 [Puppeteer] Detected redirect page, looking for clickable elements...`);
+        
+        // Try to find and click a link/button (look for <a> tags or buttons with "here", "click", "continue")
+        const clicked = await page.evaluate(() => {
+          const candidates = Array.from(document.querySelectorAll('a, button'));
+          for (const el of candidates) {
+            const text = (el.textContent || '').toLowerCase();
+            if (text.includes('here') || text.includes('click') || text.includes('continue')) {
+              el.click();
+              return true;
+            }
+          }
+          return false;
+        });
+        
+        if (clicked) {
+          console.log(`✅ [Puppeteer] Clicked redirect element, waiting for navigation...`);
+          // Wait for navigation after click (with timeout)
+          await page.waitForNavigation({ 
+            timeout: 15000, 
+            waitUntil: 'networkidle2' 
+          }).catch(() => {
+            console.warn(`⚠️ [Puppeteer] Navigation after click timed out, continuing anyway`);
+          });
+          // Give extra time for page to settle
+          await page.waitForTimeout(2000);
+        } else {
+          console.log(`⏳ [Puppeteer] No clickable element found, waiting for auto-redirect...`);
+          // Wait a bit for automatic redirect (meta refresh, JavaScript redirect)
+          await page.waitForTimeout(3000);
+        }
+      }
+    } catch (redirectErr) {
+      console.warn(`⚠️ [Puppeteer] Redirect handling error:`, redirectErr.message);
+      // Continue anyway - redirect handling is best-effort
+    }
+
     // Wait for specific selector if provided
     if (waitForSelector) {
       console.log(`⏳ [Puppeteer] Waiting for selector: ${waitForSelector}`);

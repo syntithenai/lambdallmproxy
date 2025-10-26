@@ -9,6 +9,8 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 import type { ReactNode } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useSettings } from './SettingsContext';
+import { useUsage } from './UsageContext';
+import type { ProviderConfig } from '../types/provider';
 import type { 
   TTSContextValue, 
   TTSState, 
@@ -25,6 +27,7 @@ const TTSContext = createContext<TTSContextValue | undefined>(undefined);
 
 export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { settings } = useSettings();
+  const { ttsCapabilities } = useUsage(); // Get backend TTS capabilities
   const [ttsSettings, setTTSSettings] = useLocalStorage<TTSSettings>('tts_settings', DEFAULT_TTS_SETTINGS);
   
   const [providerFactory] = useState(() => new TTSProviderFactory());
@@ -47,17 +50,58 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     elevenlabsApiKey: ttsSettings.elevenlabsApiKey
   });
 
-  // Initialize providers when settings change
+  // Initialize providers when settings or backend capabilities change
   useEffect(() => {
     const initializeProviders = async () => {
       try {
         // Clean up existing providers first
         providerFactory.cleanup();
         
-        await providerFactory.initializeProviders(settings.providers, ttsSettings.elevenlabsApiKey);
+        // Merge frontend settings with backend capabilities
+        const allProviders: ProviderConfig[] = [...settings.providers];
+        
+        // Add backend providers if available
+        if (ttsCapabilities?.groq && !allProviders.some(p => p.type === 'groq')) {
+          console.log('🎙️ TTS: Adding Groq TTS from backend');
+          allProviders.push({
+            type: 'groq',
+            apiKey: '[BACKEND]', // Actual key is on backend
+            enabled: true
+          });
+        }
+        
+        if (ttsCapabilities?.openai && !allProviders.some(p => p.type === 'openai')) {
+          console.log('🎙️ TTS: Adding OpenAI TTS from backend');
+          allProviders.push({
+            type: 'openai',
+            apiKey: '[BACKEND]',
+            enabled: true
+          });
+        }
+        
+        if (ttsCapabilities?.gemini && !allProviders.some(p => p.type === 'gemini')) {
+          console.log('🎙️ TTS: Adding Gemini TTS from backend');
+          allProviders.push({
+            type: 'gemini',
+            apiKey: '[BACKEND]',
+            enabled: true
+          });
+        }
+        
+        if (ttsCapabilities?.together && !allProviders.some(p => p.type === 'together')) {
+          console.log('🎙️ TTS: Adding Together TTS from backend');
+          allProviders.push({
+            type: 'together',
+            apiKey: '[BACKEND]',
+            enabled: true
+          });
+        }
+        
+        await providerFactory.initializeProviders(allProviders, ttsSettings.elevenlabsApiKey);
         
         // Update available providers
         const availableProviders = providerFactory.getAvailableProviders();
+        console.log('🎙️ TTS: Available providers:', availableProviders);
         
         // Set default provider if current one is not available
         let currentProvider = ttsSettings.currentProvider;
@@ -91,7 +135,7 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => {
       providerFactory.cleanup();
     };
-  }, [settings.providers, ttsSettings.elevenlabsApiKey]); // Remove currentProvider to prevent infinite loop
+  }, [settings.providers, ttsSettings.elevenlabsApiKey, ttsCapabilities]); // Added ttsCapabilities
 
   // Update voices when provider changes
   useEffect(() => {
@@ -157,20 +201,20 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 30000); // 30 second fallback
     setFallbackTimeoutId(timeoutId);
 
-    // Define fallback hierarchy
+    // Define fallback hierarchy - browser TTS only falls back to speakjs
     const getFallbackHierarchy = (selectedProvider: TTSProviderType): TTSProviderType[] => {
-      const baseFallbacks: TTSProviderType[] = ['browser', 'speakjs'];
+      // Special case: browser TTS only falls back to speakjs
+      if (selectedProvider === 'browser') {
+        return ['browser', 'speakjs'];
+      }
       
-      // If user selected a specific provider, start with that
-      const hierarchy = [selectedProvider];
+      // Special case: speakjs has no fallback (it's the last resort)
+      if (selectedProvider === 'speakjs') {
+        return ['speakjs'];
+      }
       
-      // Add other available providers as fallbacks (excluding the selected one)
-      const availableProviders = providerFactory.getAvailableProviders()
-        .filter(p => p !== selectedProvider && !baseFallbacks.includes(p));
-      
-      hierarchy.push(...availableProviders, ...baseFallbacks);
-      
-      return hierarchy;
+      // For other providers: no fallback (they should work or fail cleanly)
+      return [selectedProvider];
     };
 
     const fallbackHierarchy = getFallbackHierarchy(state.currentProvider);
@@ -236,10 +280,13 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         // If we're using a fallback provider, log it
         if (providerType !== state.currentProvider) {
           console.warn(`TTS: ${state.currentProvider} failed, falling back to ${providerType}`);
+        } else {
+          console.log(`TTS: Using primary provider ${providerType}`);
         }
 
         await provider.speak(speakableText, speakOptions);
         usedProvider = providerType;
+        console.log(`TTS: Successfully used provider ${providerType}`);
         break; // Success - exit the loop
       } catch (error) {
         console.warn(`TTS provider ${providerType} failed:`, error);

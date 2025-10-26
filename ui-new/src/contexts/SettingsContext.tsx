@@ -52,7 +52,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     version: '2.0.0',
     providers: [],
     tavilyApiKey: '',
-    syncToGoogleDrive: false
+    syncToGoogleDrive: true // Default to enabled for better user experience
   });
 
   const [isLoadingFromDrive, setIsLoadingFromDrive] = useState(false);
@@ -67,10 +67,10 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   }, [rawSettings, settings, setRawSettings]);
 
-  // Auto-load from Google Drive on mount if sync is enabled and user is authenticated
+  // Auto-load from Google Drive on mount if user is authenticated
   useEffect(() => {
     const autoLoadFromDrive = async () => {
-      if (settings.syncToGoogleDrive && isAuthenticated() && !isLoadingFromDrive) {
+      if (isAuthenticated() && !isLoadingFromDrive) {
         try {
           setIsLoadingFromDrive(true);
           console.log('🔄 Auto-loading settings from Google Drive...');
@@ -90,13 +90,13 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     autoLoadFromDrive();
-  }, [settings.syncToGoogleDrive]); // Only run when sync setting changes
+  }, []); // Run once on mount
 
   const setSettings = (newSettings: Settings) => {
     setRawSettings(newSettings);
     
-    // Auto-save to Google Drive if sync is enabled
-    if (newSettings.syncToGoogleDrive) {
+    // Auto-save to Google Drive if user is authenticated
+    if (isAuthenticated()) {
       saveSettingsToDrive(JSON.stringify(newSettings, null, 2)).catch((error) => {
         console.error('❌ Failed to auto-save settings to Google Drive:', error);
         // Don't throw - settings are still saved locally

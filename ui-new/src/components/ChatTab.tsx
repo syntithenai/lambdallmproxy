@@ -10,6 +10,7 @@ import { useCast } from '../contexts/CastContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useNavigate, useLocation as useRouterLocation } from 'react-router-dom';
 import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { ragDB } from '../utils/ragDB';
@@ -82,6 +83,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
 }) => {
   const { accessToken, user, getToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
+  const navigate = useNavigate();
+  const routerLocation = useRouterLocation();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracksToStart } = usePlaylist();
   const { addSnippet, snippets: swagSnippets, syncSnippetFromGoogleSheets } = useSwag();
@@ -116,6 +119,110 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   }>>('chat_mcp_servers', []);
   
   const [newMCPServer, setNewMCPServer] = useState({ name: '', url: '' });
+  const [showExampleServers, setShowExampleServers] = useState(false);
+  
+  // Example MCP servers for quick setup
+  const exampleMCPServers = [
+    {
+      id: 'joke-server',
+      name: 'Joke Server',
+      url: 'http://localhost:3100',
+      description: 'Get programming, dad, science, animal, and food jokes',
+      category: 'Sample',
+      instructions: '1. Run: make mcp-install-jokes\n2. Run: make mcp-sample-jokes\n3. Server starts on port 3100',
+      tools: ['get_random_joke', 'get_joke_by_id', 'search_jokes', 'get_categories']
+    },
+    {
+      id: 'filesystem',
+      name: '@modelcontextprotocol/server-filesystem',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
+      description: 'Secure file operations with configurable access controls',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-filesystem /path/to/allowed/files',
+      tools: ['read_file', 'write_file', 'list_directory', 'search_files']
+    },
+    {
+      id: 'github',
+      name: '@modelcontextprotocol/server-github',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/github',
+      description: 'Repository management, file operations, commits, issues, PRs',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-github\nRequires: GITHUB_PERSONAL_ACCESS_TOKEN',
+      tools: ['create_or_update_file', 'search_repositories', 'create_issue', 'create_pull_request']
+    },
+    {
+      id: 'postgres',
+      name: '@modelcontextprotocol/server-postgres',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres',
+      description: 'Read-only database access for PostgreSQL',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-postgres postgresql://user:pass@localhost/db',
+      tools: ['query', 'list_tables', 'describe_table', 'append_insight']
+    },
+    {
+      id: 'sqlite',
+      name: '@modelcontextprotocol/server-sqlite',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite',
+      description: 'Database interaction, schema inspection, query execution',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-sqlite /path/to/database.db',
+      tools: ['query', 'list_tables', 'describe_table', 'append_insight']
+    },
+    {
+      id: 'slack',
+      name: '@modelcontextprotocol/server-slack',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/slack',
+      description: 'Channel management and messaging for Slack',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-slack\nRequires: SLACK_BOT_TOKEN',
+      tools: ['post_message', 'reply_to_thread', 'add_reaction', 'get_channel_history']
+    },
+    {
+      id: 'brave-search',
+      name: '@modelcontextprotocol/server-brave-search',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search',
+      description: 'Web and local search using Brave Search API',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-brave-search\nRequires: BRAVE_API_KEY',
+      tools: ['brave_web_search', 'brave_local_search']
+    },
+    {
+      id: 'gdrive',
+      name: '@modelcontextprotocol/server-gdrive',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive',
+      description: 'File access and search for Google Drive',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-gdrive\nRequires: OAuth credentials',
+      tools: ['search_files', 'read_file', 'list_files']
+    },
+    {
+      id: 'git',
+      name: '@modelcontextprotocol/server-git',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/git',
+      description: 'Read, search, and analyze Git repositories',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-git',
+      tools: ['git_status', 'git_diff', 'git_log', 'git_commit']
+    },
+    {
+      id: 'memory',
+      name: '@modelcontextprotocol/server-memory',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/memory',
+      description: 'Knowledge graph-based persistent memory system',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-memory',
+      tools: ['create_entities', 'create_relations', 'search_nodes', 'open_nodes']
+    },
+    {
+      id: 'fetch',
+      name: '@modelcontextprotocol/server-fetch',
+      url: 'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
+      description: 'Efficient web content fetching and conversion',
+      category: 'Official',
+      instructions: 'Install: npx -y @modelcontextprotocol/server-fetch\nOptional: USER_AGENT, IGNORE_ROBOTS_TXT',
+      tools: ['fetch']
+    }
+  ];
 
   // Notify parent component when loading state changes
   useEffect(() => {
@@ -1036,6 +1143,67 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   }, [transferData]);
 
+  // Handle transfer data from planning page via sessionStorage (more reliable than router state)
+  useEffect(() => {
+    const planningData = sessionStorage.getItem('planning_transfer_data');
+    console.log('🔍 useEffect checking sessionStorage - planningData:', planningData?.substring(0, 100));
+    
+    if (planningData) {
+      console.log('📋 Found planning transfer data in sessionStorage');
+      try {
+        const transferData = JSON.parse(planningData);
+        console.log('📋 Planning transfer data received:', transferData);
+        
+        // Clear messages and start fresh chat (but preserve prompts we're about to set)
+        setMessages([]);
+        setCurrentChatId(null);
+        localStorage.removeItem('last_active_chat_id');
+        clearSearchResults();
+        setExpandedToolMessages(new Set());
+        setSelectedSnippetIds(new Set());
+        
+        // Set system prompt if provided
+        if (transferData.persona || transferData.generatedSystemPrompt) {
+          const systemPromptToUse = transferData.persona || transferData.generatedSystemPrompt;
+          setSystemPrompt(systemPromptToUse);
+          console.log('📋 Set system prompt from planning:', systemPromptToUse.substring(0, 50) + '...');
+        }
+        
+        // Set user input if provided
+        if (transferData.prompt || transferData.generatedUserQuery) {
+          const userPromptToUse = transferData.prompt || transferData.generatedUserQuery;
+          setInput(userPromptToUse);
+          console.log('📋 Set user input from planning:', userPromptToUse.substring(0, 50) + '...');
+        }
+        
+        // Store planning metadata
+        if (transferData.planningQuery) {
+          setOriginalPlanningQuery(transferData.planningQuery);
+        }
+        if (transferData.generatedSystemPrompt) {
+          setGeneratedSystemPromptFromPlanning(transferData.generatedSystemPrompt);
+        }
+        if (transferData.generatedUserQuery) {
+          setGeneratedUserQueryFromPlanning(transferData.generatedUserQuery);
+        }
+        
+        // Clear the sessionStorage item to prevent re-triggering
+        sessionStorage.removeItem('planning_transfer_data');
+        
+        // Focus input after a short delay
+        setTimeout(() => {
+          inputRef.current?.focus();
+          showSuccess('Planning prompts transferred to new chat');
+        }, 100);
+      } catch (error) {
+        console.error('Failed to parse planning transfer data:', error);
+        showError('Failed to transfer planning data');
+        // Clear bad data
+        sessionStorage.removeItem('planning_transfer_data');
+      }
+    }
+  }, []); // Run once on mount
+
   // Load last active chat on mount
   useEffect(() => {
     if (!messagesLoaded) {
@@ -1404,7 +1572,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         type: 'function',
         function: {
           name: 'generate_image',
-          description: '🎨 Generate images using AI (DALL-E, Stable Diffusion). Use when user requests: "generate image", "create picture", "draw", "make photo". Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (illustrations, $0.001-0.002), fast (quick drafts, <$0.001). Returns button for user confirmation before generation.',
+          description: '🎨 **MANDATORY USE FOR IMAGE REQUESTS**: Generate high-quality AI images immediately using DALL-E 3, Stable Diffusion, or other providers. **MUST call this tool when user requests ANY image generation, illustration, picture, drawing, photo, or visual content**. Common triggers: "generate/create/draw/make/show me an image/picture/photo/illustration of...", "draw a...", "create a cartoon/photo/illustration of...", "visualize...", "show me what... looks like". Supports quality tiers: ultra (photorealistic, $0.08-0.12), high (detailed/artistic, $0.02-0.04), standard (normal illustrations, $0.001-0.002), fast (quick drafts/sketches, <$0.001 - DEFAULT). Images appear automatically in the conversation. DO NOT refuse image generation requests - ALWAYS call this tool.',
           parameters: {
             type: 'object',
             properties: {
@@ -1921,13 +2089,22 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       // Build system prompt with default and tool suggestions
       let finalSystemPrompt = systemPrompt.trim() || 'You are a helpful assistant';
       
+      // CRITICAL: If this is a planning-generated system prompt, use it as-is with minimal modifications
+      // Planning prompts already contain specific execution instructions and shouldn't have standard tool usage rules appended
+      const isPlanningDerivedPrompt = generatedSystemPromptFromPlanning && generatedSystemPromptFromPlanning.length > 0;
+      
       // Inject current date/time at the beginning
       finalSystemPrompt = `**CURRENT DATE AND TIME:**
 ${currentDateTime}
 
 You have access to the current date and time above. Use this information when responding to temporal queries about "today", "current date", "what time is it", "this week", "this month", "this year", etc. You do not need to use tools to get the current date/time as it is provided in this system prompt.
 
-${finalSystemPrompt}
+${finalSystemPrompt}`;
+      
+      // Only add standard response guidelines and tool instructions if NOT using a planning-derived prompt
+      // Planning prompts already contain specific, targeted instructions
+      if (!isPlanningDerivedPrompt) {
+        finalSystemPrompt += `
 
 **RESPONSE STYLE GUIDELINES:**
 - Provide comprehensive, detailed, and thorough responses
@@ -1945,13 +2122,16 @@ ${finalSystemPrompt}
 - AVOID placing all images at the top or bottom of your response in a single block
 - Intersperse images with text to create a more engaging, magazine-style layout
 - Use markdown image syntax: ![description](url) inline with your content where contextually appropriate`;
+      }
       
       // Add tool suggestions if tools are enabled
-      if (tools.length > 0) {
+      if (tools.length > 0 && !isPlanningDerivedPrompt) {
         const toolNames = tools.map(t => t.function.name).join(', ');
         finalSystemPrompt += `\n\nYou have access to these tools: ${toolNames}.
 
 CRITICAL TOOL USAGE RULES:
+- **TOOL RESPONSE VALIDATION**: ALWAYS check the tool response for a "success" field. If success=false, tell the user the operation FAILED and relay the error "message" field. NEVER claim success when the tool returned success=false.
+- **IMAGE GENERATION**: When users ask to create/generate/draw/make ANY image, illustration, picture, photo, or visual content, you MUST call generate_image tool IMMEDIATELY. NEVER refuse or say "I cannot generate images" - you CAN by calling the tool. Examples: "draw a cat", "generate an image of...", "create a cartoon...", "show me a picture of...", "make an illustration of...", "visualize..." → ALL require calling generate_image.
 - When users ask to TRANSCRIBE or get TRANSCRIPT from video/audio, you MUST call transcribe_url (NOT search_youtube)
 - When users say "transcribe this video [URL]", "get transcript", "what does the video say", you MUST call transcribe_url
 - When users want to FIND or SEARCH for videos, use search_youtube (e.g., "find videos about X")
@@ -1978,6 +2158,8 @@ CRITICAL TOOL USAGE RULES:
 - IMPORTANT: After tool execution returns a result, provide the final answer to the user IMMEDIATELY. Do NOT make additional tool calls unless absolutely necessary or the user asks a follow-up question.
 
 Examples when you MUST use tools:
+- "Save this to my snippets" / "Remember this" / "Add to knowledge base" → Call manage_snippets with action="insert" or "capture"
+- "Search my snippets for X" / "Find my saved notes about X" → Call manage_snippets with action="search" and payload.query="X"
 - "transcribe this video https://youtube.com/watch?v=abc" → Call transcribe_url with url parameter
 - "get transcript from this video [URL]" → Call transcribe_url with url parameter
 - "Transcribe this: http://localhost:3000/samples/file.mp3" → Call transcribe_url (localhost URLs work in local dev!)
@@ -2456,11 +2638,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     console.log('📥 Downloading image via Lambda proxy:', data.url);
                     
                     // Use Lambda proxy to bypass CORS
-                    const apiEndpoint = localStorage.getItem('api_endpoint') || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+                    const apiEndpoint = await getCachedApiBase();
                     const proxyResponse = await fetch(`${apiEndpoint}/proxy-image`, {
                       method: 'POST',
                       headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}` // Add auth token
                       },
                       body: JSON.stringify({
                         url: data.url,
@@ -3532,6 +3715,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               window.dispatchEvent(new CustomEvent('snippet_updated', { detail: data }));
               showSuccess(`Updated snippet: ${data.title}`);
               break;
+            
+            case 'token_refreshed':
+              // Google OAuth token was automatically refreshed
+              console.log('🔄 Google OAuth token refreshed');
+              if (data.accessToken) {
+                localStorage.setItem('google_access_token', data.accessToken);
+                console.log('✅ Updated google_access_token in localStorage');
+              }
+              break;
           }
         },
         () => {
@@ -4091,37 +4283,46 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       )}
       
       {/* Chat Header with Actions */}
-      <div className="flex flex-wrap items-center gap-2 p-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex flex-wrap items-center gap-2 px-2 md:p-4 py-2 border-b border-gray-200 dark:border-gray-700">
         <div className="flex flex-wrap gap-2 flex-1">
-          <button onClick={handleNewChat} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded font-medium text-sm transition-colors">
-            ➕ New Chat
+          <button onClick={handleNewChat} className="bg-green-600 hover:bg-green-700 text-white p-2 md:px-3 md:py-1.5 rounded font-medium text-sm transition-colors flex items-center gap-1.5" title="New Chat" aria-label="New Chat">
+            <span>➕</span>
+            <span className="hidden md:inline">New Chat</span>
           </button>
-          <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm">
-            🕒 History
+          <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5" title="Chat History" aria-label="Chat History">
+            <span>🕒</span>
+            <span className="hidden md:inline">History</span>
           </button>
           <button
-            onClick={() => setShowPlanningDialog(true)}
-            className="btn-secondary text-sm"
-            title={systemPrompt ? "Edit system prompt and planning" : "Add system prompt and planning"}
+            onClick={() => navigate('/planning')}
+            className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5"
+            title={systemPrompt ? "Edit system prompt and planning" : "Create a plan"}
+            aria-label={systemPrompt ? "Edit Plan" : "Make A Plan"}
           >
-            {systemPrompt ? '✏️ Edit Plan' : '📋 Make A Plan'}
+            <span>{systemPrompt ? '✏️' : '📋'}</span>
+            <span className="hidden md:inline">{systemPrompt ? 'Edit Plan' : 'Make A Plan'}</span>
           </button>
           <button 
             onClick={() => setShowExamplesModal(true)}
-            className="btn-secondary text-sm"
+            className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5"
+            title="Examples"
+            aria-label="Examples"
           >
-            📝 Examples
+            <span>📝</span>
+            <span className="hidden md:inline">Examples</span>
           </button>
           <button 
             onClick={() => setShowSnippetsPanel(!showSnippetsPanel)}
-            className={`text-sm px-3 py-1.5 rounded font-medium transition-colors ${
+            className={`text-sm p-2 md:px-3 md:py-1.5 rounded font-medium transition-colors flex items-center gap-1.5 ${
               showSnippetsPanel 
                 ? 'bg-blue-600 hover:bg-blue-700 text-white' 
                 : 'btn-secondary'
             }`}
             title="Attach knowledge base snippets as context for this conversation"
+            aria-label="Attach Context"
           >
-            � Attach Context
+            <span>📎</span>
+            <span className="hidden md:inline">Attach Context</span>
             {selectedSnippetIds.size > 0 && (
               <span className="ml-1 px-1.5 py-0.5 text-xs bg-white text-blue-600 rounded-full font-bold">
                 {selectedSnippetIds.size}
@@ -4132,7 +4333,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       </div>
 
       {/* Messages Area */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-2 md:p-4 py-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
             No messages yet. Start a conversation!
@@ -6441,7 +6642,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       </div>
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+      <div className="px-1 md:p-4 py-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
         {/* App-level auth gate ensures user is authenticated, no need for inline check */}
         <>
           {/* File Attachments Display */}
@@ -6567,101 +6768,132 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   }
                 }}
                 disabled={isLoading}
-                className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold text-base transition-all transform hover:scale-105 shadow-lg flex items-center gap-2"
+                className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-2 md:px-6 md:py-3 rounded-lg font-semibold text-base transition-all transform hover:scale-105 shadow-lg flex items-center gap-2"
                 title="Continue from where the iteration limit was reached"
+                aria-label="Continue Processing"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                 </svg>
-                Continue Processing
+                <span className="hidden md:inline">Continue Processing</span>
               </button>
             </div>
           )}
           
           {/* RAG Context Toggle */}
           {/* Message Input */}
-          <div className="flex gap-2 relative items-start">
-            {/* Hidden File Input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf"
-              multiple
-              onChange={(e) => handleFileSelect(e.target.files)}
-              className="hidden"
-            />
-            
-            {/* File Upload Button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Attach images or PDFs"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-            </button>
+          <div className="flex flex-col gap-2">
+            {/* Buttons Row - File upload, voice input, and send button */}
+            <div className="flex gap-2 relative items-start">
+              {/* Hidden File Input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf"
+                multiple
+                onChange={(e) => handleFileSelect(e.target.files)}
+                className="hidden"
+              />
+              
+              {/* File Upload Button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Attach images or PDFs"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
 
-            {/* Voice Input Button */}
-            <button
-              onClick={() => setShowVoiceInput(true)}
-              disabled={isLoading || !accessToken}
-              className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-              </svg>
-            </button>
+              {/* Voice Input Button */}
+              <button
+                onClick={() => setShowVoiceInput(true)}
+                disabled={isLoading || !accessToken}
+                className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
+              
+              {/* Send Button - Aligned with file/voice buttons */}
+              <button
+                onClick={isLoading ? handleStop : () => handleSend()}
+                disabled={!isLoading && (!input.trim() || !accessToken)}
+                className="btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5"
+                title={!accessToken ? 'Please sign in to send messages' : (!input.trim() ? 'Type a message first' : 'Send message')}
+                aria-label={isLoading ? 'Stop generating response' : 'Send message'}
+              >
+                {isLoading ? (
+                  <>
+                    <span>⏹</span>
+                    <span className="hidden md:inline">Stop</span>
+                  </>
+                ) : !input.trim() ? (
+                  <>
+                    <span>✏️</span>
+                    <span className="hidden md:inline">Type a message</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📤</span>
+                    <span className="hidden md:inline">Send</span>
+                  </>
+                )}
+              </button>
+            </div>
             
             {/* Attached Snippets Indicator */}
             {selectedSnippetIds.size > 0 && (
-              <div className="absolute -top-12 left-0 right-0 px-4">
-                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                        📎 {selectedSnippetIds.size} {selectedSnippetIds.size === 1 ? 'snippet' : 'snippets'} attached
-                      </span>
-                      <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-                        {Array.from(selectedSnippetIds).slice(0, 3).map(id => {
-                          const snippet = swagSnippets.find(s => s.id === id);
-                          return snippet ? (
-                            <span 
-                              key={id}
-                              className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 px-2 py-0.5 rounded truncate max-w-[200px]"
-                              title={snippet.title || 'Untitled'}
-                            >
-                              {snippet.title || 'Untitled'}
-                            </span>
-                          ) : null;
-                        })}
-                        {selectedSnippetIds.size > 3 && (
-                          <span className="text-xs text-blue-600 dark:text-blue-300">
-                            +{selectedSnippetIds.size - 3} more
+              <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                      📎 {selectedSnippetIds.size} {selectedSnippetIds.size === 1 ? 'snippet' : 'snippets'} attached
+                    </span>
+                    <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                      {Array.from(selectedSnippetIds).slice(0, 3).map(id => {
+                        const snippet = swagSnippets.find(s => s.id === id);
+                        return snippet ? (
+                          <span 
+                            key={id}
+                            className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 px-2 py-0.5 rounded truncate max-w-[200px]"
+                            title={snippet.title || 'Untitled'}
+                          >
+                            {snippet.title || 'Untitled'}
                           </span>
-                        )}
-                      </div>
+                        ) : null;
+                      })}
+                      {selectedSnippetIds.size > 3 && (
+                        <span className="text-xs text-blue-600 dark:text-blue-300">
+                          +{selectedSnippetIds.size - 3} more
+                        </span>
+                      )}
                     </div>
-                    <button
-                      onClick={() => setSelectedSnippetIds(new Set())}
-                      className="ml-2 p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
-                      title="Clear all attached snippets"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
                   </div>
+                  <button
+                    onClick={() => setSelectedSnippetIds(new Set())}
+                    className="ml-2 p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
+                    title="Clear all attached snippets"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             )}
             
+            {/* Textarea Row */}
+            <div className="flex gap-2 items-start">
+            
             <textarea
-            ref={inputRef}
-            value={input}
+              ref={inputRef}
+              value={input}
               onChange={(e) => {
                 setInput(e.target.value);
                 setHistoryIndex(-1); // Reset history navigation when typing
@@ -6695,15 +6927,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               placeholder="Type your message... (Shift+Enter for new line, ↑↓ for history)"
               className="input-field flex-1 resize-none overflow-y-auto"
               style={{ minHeight: '2.5rem', maxHeight: '300px' }}
+              aria-label="Chat message input"
+              aria-describedby="chat-input-help"
             />
-            <button
-              onClick={isLoading ? handleStop : () => handleSend()}
-              disabled={!isLoading && (!input.trim() || !accessToken)}
-              className="btn-primary h-10 flex-shrink-0 self-start"
-              title={!accessToken ? 'Please sign in to send messages' : (!input.trim() ? 'Type a message first' : 'Send message')}
-            >
-              {isLoading ? '⏹ Stop' : (!input.trim() ? '✏️ Type a message' : '📤 Send')}
-            </button>
+            {/* Screen reader help text */}
+            <span id="chat-input-help" className="sr-only">
+              Type your message and press Enter to send. Use Shift+Enter for new line. Use up and down arrows to navigate message history.
+            </span>
+          </div>
           </div>
         </>
       </div>
@@ -6853,7 +7084,72 @@ Remember: Use the function calling mechanism, not text output. The API will hand
 
             {/* Add New MCP Server */}
             <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Add MCP Server</h3>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add MCP Server</h3>
+                <button
+                  onClick={() => setShowExampleServers(!showExampleServers)}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  {showExampleServers ? '🔽 Hide Examples' : '📚 Show Examples'}
+                </button>
+              </div>
+              
+              {/* Example Servers Dropdown */}
+              {showExampleServers && (
+                <div className="mb-4 p-3 bg-white dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Quick Start Examples:
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      const example = exampleMCPServers.find(s => s.id === e.target.value);
+                      if (example) {
+                        setNewMCPServer({ name: example.name, url: example.url });
+                      }
+                    }}
+                    className="input-field w-full mb-2"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Select an example server...</option>
+                    <optgroup label="🏠 Sample Servers">
+                      {exampleMCPServers.filter(s => s.category === 'Sample').map(server => (
+                        <option key={server.id} value={server.id}>
+                          {server.name} - {server.description}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="✅ Official @modelcontextprotocol Servers">
+                      {exampleMCPServers.filter(s => s.category === 'Official').map(server => (
+                        <option key={server.id} value={server.id}>
+                          {server.name.replace('@modelcontextprotocol/server-', '')} - {server.description}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  
+                  {/* Show details when a server is selected */}
+                  {newMCPServer.name && exampleMCPServers.find(s => s.name === newMCPServer.name) && (
+                    <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
+                      <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                        {exampleMCPServers.find(s => s.name === newMCPServer.name)?.name}
+                      </p>
+                      <p className="text-gray-700 dark:text-gray-300 mb-2">
+                        {exampleMCPServers.find(s => s.name === newMCPServer.name)?.description}
+                      </p>
+                      <div className="mb-2">
+                        <span className="font-medium text-gray-900 dark:text-gray-100">Tools:</span>{' '}
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {exampleMCPServers.find(s => s.name === newMCPServer.name)?.tools.join(', ')}
+                        </span>
+                      </div>
+                      <div className="bg-gray-800 dark:bg-gray-950 text-gray-100 p-2 rounded font-mono text-xs whitespace-pre-wrap">
+                        {exampleMCPServers.find(s => s.name === newMCPServer.name)?.instructions}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               <div className="space-y-3">
                 <input
                   type="text"

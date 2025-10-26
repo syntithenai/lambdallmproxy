@@ -21,7 +21,9 @@ export const BackgroundPlayer: React.FC = () => {
   const {
     currentTrack,
     isPlaying,
-    nextTrack
+    nextTrack,
+    play,
+    pause
   } = usePlaylist();  const { registerPlayer, unregisterPlayer, setIsLoading, setCurrentTime, setDuration } = usePlayer();
   
   const { isCastingVideo } = useCast();
@@ -127,7 +129,11 @@ export const BackgroundPlayer: React.FC = () => {
         }
       }}
       onPlay={() => {
-        console.log('[BackgroundPlayer] Playback started');
+        console.log('[BackgroundPlayer] Playback started - syncing play state');
+        // Sync with PlaylistContext when user clicks play on the video
+        if (!isPlaying) {
+          play();
+        }
         setTimeout(() => setIsLoading(false), 500);
       }}
       onStart={() => {
@@ -154,7 +160,11 @@ export const BackgroundPlayer: React.FC = () => {
         setTimeout(() => setIsLoading(false), 500);
       }}
       onPause={() => {
-        console.error('[BackgroundPlayer] ⏸ PLAYBACK PAUSED - isPlaying:', isPlaying);
+        console.log('[BackgroundPlayer] ⏸ PLAYBACK PAUSED - syncing pause state, isPlaying:', isPlaying);
+        // Sync with PlaylistContext when user clicks pause on the video
+        if (isPlaying) {
+          pause();
+        }
       }}
       onEnded={nextTrack}
       onError={(error) => {

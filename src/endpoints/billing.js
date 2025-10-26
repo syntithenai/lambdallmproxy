@@ -174,6 +174,20 @@ async function handleGetBilling(event, responseStream) {
         const transactions = await getUserBillingData(userEmail, filters);
         const totals = calculateTotals(transactions);
         
+        // --- TTS Capabilities ---
+        // This block determines which TTS providers are available server-side
+        // and exposes their status to the frontend for UI display.
+        // NOTE: OPENAI_API_KEY is for RAG embeddings only, NOT for TTS/chat
+        const ttsCapabilities = {
+            // openai: Disabled - OPENAI_API_KEY is reserved for RAG embeddings only
+            groq: !!process.env.GROQ_API_KEY,
+            gemini: !!process.env.GEMINI_API_KEY,
+            together: !!process.env.TOGETHER_API_KEY,
+            elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+            browser: true, // Always available client-side
+            speakjs: true  // Always available client-side
+        };
+        
         const metadata = {
             statusCode: 200,
             headers: getResponseHeaders()
@@ -184,7 +198,8 @@ async function handleGetBilling(event, responseStream) {
             source: 'service',
             transactions,
             totals,
-            count: transactions.length
+            count: transactions.length,
+            ttsCapabilities
         }));
         responseStream.end();
 
@@ -405,75 +420,6 @@ async function handleGetTransactions(event, responseStream) {
 }
 
 /**
- * Handle GET /billing/balance - Get user's current credit balance
- * @param {Object} event - Lambda event
- * @param {Object} responseStream - Response stream
- */
-async function handleGetBalance(event, responseStream) {
-    const awslambda = (typeof globalThis.awslambda !== 'undefined') 
-        ? globalThis.awslambda 
-        : require('aws-lambda');
-
-    console.log('💳 [BILLING] handleGetBalance called');
-
-    try {
-        // Authenticate request
-        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
-        const authResult = await authenticateRequest(authHeader);
-
-        if (!authResult.authenticated) {
-            const metadata = {
-                statusCode: 401,
-                headers: getResponseHeaders()
-            };
-            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-            responseStream.write(JSON.stringify({
-                error: 'Authentication required',
-                code: 'UNAUTHORIZED'
-            }));
-            responseStream.end();
-            return;
-        }
-
-        const userEmail = authResult.email || 'unknown';
-        
-        // Check for force refresh parameter
-        const forceRefresh = event.queryStringParameters?.refresh === 'true';
-        
-        // Get balance from cache
-        const balance = await getCachedCreditBalance(userEmail, forceRefresh);
-        
-        console.log(`💳 Credit balance for ${userEmail}: $${balance.toFixed(4)}`);
-
-        const metadata = {
-            statusCode: 200,
-            headers: getResponseHeaders()
-        };
-        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-        responseStream.write(JSON.stringify({
-            creditBalance: balance,
-            userEmail: userEmail
-        }));
-        responseStream.end();
-
-    } catch (error) {
-        console.error('❌ [BILLING] Error getting balance:', error);
-
-        const metadata = {
-            statusCode: 500,
-            headers: getResponseHeaders()
-        };
-        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-        responseStream.write(JSON.stringify({
-            error: 'Failed to retrieve balance',
-            message: error.message,
-            code: 'READ_ERROR'
-        }));
-        responseStream.end();
-    }
-}
-
-/**
  * Main billing endpoint handler
  * @param {Object} event - Lambda event
  * @param {Object} responseStream - Response stream
@@ -490,12 +436,7 @@ async function handler(event, responseStream, context) {
         return await handleGetTransactions(event, responseStream);
     }
 
-    // GET /billing/balance - Get current credit balance
-    if (path === '/billing/balance' && method === 'GET') {
-        return await handleGetBalance(event, responseStream);
-    }
-
-    // GET /billing - Read billing data
+    // GET /billing - Read billing data (includes TTS capabilities)
     if (path === '/billing' && method === 'GET') {
         return await handleGetBilling(event, responseStream);
     }

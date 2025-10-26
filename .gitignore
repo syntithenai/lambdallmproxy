@@ -83,3 +83,7 @@ coverage/
 .env.lambda
 .env.lambda
 *.env.backup.*
+.env.example.backup
+deploy_output.txt
+layer_output.txt
+layer_output.txt

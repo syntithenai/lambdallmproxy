@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { ProviderConfig } from '../types/provider';
@@ -17,6 +18,7 @@ interface ProviderSetupGateProps {
 const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnblock }) => {
   const { settings } = useSettings();
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (isBlocked) {
@@ -96,8 +98,9 @@ const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnbl
               <button 
                 className="btn-primary btn-large"
                 onClick={() => {
-                  console.log('Opening billing tab');
+                  console.log('Navigating to billing page');
                   onUnblock();
+                  navigate('/settings?tab=billing');
                 }}
               >
                 Buy Credits Now

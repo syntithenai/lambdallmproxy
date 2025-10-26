@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python docker-build docker-build-dev docker-up docker-up-dev docker-down docker-logs docker-logs-dev docker-shell docker-shell-dev docker-clean
+.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python docker-build docker-build-dev docker-up docker-up-dev docker-down docker-logs docker-logs-dev docker-shell docker-shell-dev docker-clean mcp-list-examples mcp-install-jokes mcp-sample-jokes mcp-test-jokes credit-add
 
 # Default target - Show help
 help:
@@ -59,6 +59,12 @@ help:
 	@echo "  make test-tier-3         - Test Tier 3 (Selenium + undetected-chromedriver)"
 	@echo "  make test-tier-4         - Test Tier 4 (Interactive mode)"
 	@echo ""
+	@echo "MCP Sample Servers:"
+	@echo "  make mcp-list-examples   - List all available MCP sample servers"
+	@echo "  make mcp-install-jokes   - Install dependencies for joke server"
+	@echo "  make mcp-sample-jokes    - Start joke server on port 3100"
+	@echo "  make mcp-test-jokes      - Test joke server (must be running)"
+	@echo ""
 	@echo "UI/Documentation:"
 	@echo "  make build-ui            - Build React UI to docs/"
 	@echo "  make deploy-ui           - Build and push UI to GitHub Pages"
@@ -83,6 +89,8 @@ help:
 	@echo "  make sheets-list         - List all billing sheets and check for duplicates"
 	@echo "  make sheets-merge        - Merge duplicate sheets (dry-run mode)"
 	@echo "  make sheets-merge-live   - Merge duplicate sheets (live mode)"
+	@echo "  make credit-add EMAIL='user@example.com' AMOUNT='1000.00'"
+	@echo "                           - Add development credit to user account"
 
 # ================================================================
 # Installation & Setup
@@ -623,6 +631,52 @@ test-tier-4:
 	@echo "⚠️  Tier 4 requires manual interaction - use test-scraping instead"
 
 # ================================================================
+# MCP (Model Context Protocol) Sample Servers
+# ================================================================
+
+# List all available MCP sample servers
+mcp-list-examples:
+	@echo "🔌 Available MCP Sample Servers:"
+	@echo ""
+	@echo "1. Joke Server (samples/mcp-servers/joke-server)"
+	@echo "   - Get jokes by category, search, or ID"
+	@echo "   - Port: 3100"
+	@echo "   - Commands: make mcp-install-jokes, make mcp-sample-jokes"
+	@echo ""
+	@if [ -d "samples/mcp-servers" ]; then \
+		for dir in samples/mcp-servers/*/; do \
+			if [ -f "$$dir/package.json" ]; then \
+				SERVER_NAME=$$(basename "$$dir"); \
+				echo "Found: $$SERVER_NAME"; \
+			fi; \
+		done; \
+	fi
+
+# Install dependencies for joke server
+mcp-install-jokes:
+	@echo "📦 Installing dependencies for MCP Joke Server..."
+	@cd samples/mcp-servers/joke-server && npm install
+	@echo "✅ Joke server dependencies installed"
+
+# Run joke server
+mcp-sample-jokes:
+	@echo "🃏 Starting MCP Joke Server on port 3100..."
+	@echo "📊 Loaded 100 jokes across 5 categories"
+	@echo "🏥 Health check: http://localhost:3100/health"
+	@echo "📚 API docs: samples/mcp-servers/joke-server/README.md"
+	@echo ""
+	@cd samples/mcp-servers/joke-server && npm start
+
+# Test joke server
+mcp-test-jokes:
+	@echo "🧪 Testing MCP Joke Server..."
+	@if ! lsof -i :3100 > /dev/null 2>&1; then \
+		echo "❌ Server not running. Start with: make mcp-sample-jokes"; \
+		exit 1; \
+	fi
+	@cd samples/mcp-servers/joke-server && npm test
+
+# ================================================================
 # Google Sheets Management
 # ================================================================
 
@@ -646,6 +700,16 @@ sheets-merge-live:
 	@echo "🔄 Merging duplicate sheets..."
 	@chmod +x scripts/merge-duplicate-sheets.js
 	@node scripts/merge-duplicate-sheets.js
+
+# Add development credit to user account
+credit-add:
+	@if [ -z "$(EMAIL)" ] || [ -z "$(AMOUNT)" ]; then \
+		echo "⚠️  Error: EMAIL and AMOUNT parameters required"; \
+		echo "Usage: make credit-add EMAIL='user@example.com' AMOUNT='1000.00'"; \
+		exit 1; \
+	fi
+	@chmod +x scripts/add-dev-credit.js
+	@node scripts/add-dev-credit.js "$(EMAIL)" "$(AMOUNT)"
 	@if [ -z "$(ID)" ]; then \
 		echo "⚠️  Error: ID parameter required"; \
 		echo "Usage: make rag-delete ID='snippet-id'"; \

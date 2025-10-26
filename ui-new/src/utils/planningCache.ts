@@ -115,6 +115,55 @@ export function clearAllCachedPlans(): void {
 }
 
 /**
+ * Replace all plans (used for sync from cloud)
+ */
+export function replacePlans(plans: CachedPlan[]): void {
+  try {
+    localStorage.setItem(PLANNING_CACHE_KEY, JSON.stringify(plans));
+    console.log(`Replaced all plans with ${plans.length} items from sync`);
+  } catch (error) {
+    console.error('Error replacing plans:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get plans modified after timestamp
+ */
+export function getPlansModifiedSince(timestamp: number): CachedPlan[] {
+  const allPlans = getAllCachedPlans();
+  return allPlans.filter(p => p.timestamp > timestamp);
+}
+
+/**
+ * Merge local and remote plans (deduplicates by query, keeps newer timestamp)
+ */
+export function mergePlans(local: CachedPlan[], remote: CachedPlan[]): CachedPlan[] {
+  const mergedMap = new Map<string, CachedPlan>();
+
+  // Add local plans to map
+  local.forEach(plan => {
+    const key = plan.query.trim().toLowerCase();
+    mergedMap.set(key, plan);
+  });
+
+  // Merge remote plans (replace if newer)
+  remote.forEach(remotePlan => {
+    const key = remotePlan.query.trim().toLowerCase();
+    const existingPlan = mergedMap.get(key);
+    
+    if (!existingPlan || remotePlan.timestamp > existingPlan.timestamp) {
+      mergedMap.set(key, remotePlan);
+    }
+  });
+
+  // Convert back to array and sort by timestamp (newest first)
+  return Array.from(mergedMap.values())
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 50); // Limit to 50 most recent
+}
+
+/**
  * Request persistent storage to prevent automatic eviction
  * Returns true if persistent storage is granted
  */

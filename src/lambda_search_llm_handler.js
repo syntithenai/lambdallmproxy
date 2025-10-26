@@ -1487,161 +1487,68 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
  * @param {string} query - The user query to analyze
  * @returns {string} - Formatted planning prompt
  */
-function generatePlanningPrompt(query) {
-    return `Analyze this research query and provide a comprehensive planning response.
+function generatePlanningPrompt(query, availableTools = []) {
+    // Build concise tools list
+    let toolsSection = '';
+    if (availableTools && availableTools.length > 0) {
+        const toolNames = availableTools.map(tool => tool.function?.name || tool.name || 'unknown');
+        toolsSection = `\n\n**Available tools:** ${toolNames.join(', ')}
+Use these in your research plan when appropriate (search_web for research, manage_todos for multi-step workflows, manage_snippets to save findings, etc.)`;
+    }
 
-**Query to analyze:** "${query}"
+    return `You are analyzing the research query: "${query}"
+${toolsSection}
 
-Please provide your analysis in the following JSON format based on the query type:
+Your task is to create a comprehensive research plan. 
 
-**For overview queries:**
+**Requirements:**
+1. Choose queryType from ONLY these values: "overview" (general research), "long-form" (document creation), "minimal" (quick answer), "clarification" (needs more info), "guidance" (help with approach)
+2. Generate 8-12 SPECIFIC search terms about "${query}" - use actual keywords, drug names, technical terms, NOT "search term 1" or "general term"
+3. Generate 8-15 SPECIFIC research questions about "${query}" - ask real questions about the topic, NOT "What are the key aspects?"
+4. Create a research plan with concrete todos (what to search, what to analyze, how to synthesize)
+5. Choose an appropriate expert persona for this topic
+6. Determine query complexity and research approach
+
+**Example for query "ALS cure":**
+- Search terms: "ALS clinical trials 2024", "riluzole edaravone drugs", "SOD1 gene therapy ALS", "stem cell ALS treatment"
+- Questions: "What FDA-approved drugs exist for ALS?", "Which gene therapies are in clinical trials?", "What is the success rate of current treatments?"
+
+**Example for query "React performance optimization":**
+- Search terms: "React useMemo useCallback", "React.memo performance", "virtual DOM optimization", "React lazy loading"
+- Questions: "When should I use useMemo vs useCallback?", "How does React.memo improve performance?", "What are common React performance bottlenecks?"
+
+Respond with valid JSON in this exact structure (fill ALL fields with query-specific content):
+
 {
   "queryType": "overview",
+  "_comment_queryType": "MUST be one of: overview, long-form, minimal, clarification, guidance",
   "complexity": "simple|moderate|complex",
-  "researchApproach": "direct|search-based|comprehensive",
-  "searchQueries": [
-    "primary search term 1", "primary search term 2", "primary search term 3",
-    "alternative phrasing 1", "alternative phrasing 2", "alternative phrasing 3",
-    "technical term 1", "technical term 2", "specific subtopic 1", "specific subtopic 2"
-  ],
-  "researchQuestions": [
-    "What is the fundamental question about X?", "How does Y relate to Z?", "What are the key factors affecting A?",
-    "What are the current trends in B?", "What are the main challenges with C?", "How do experts view D?",
-    "What evidence supports E?", "What are the implications of F?", "How does this compare to G?", "What future developments are expected?"
-  ],
-  "suggestedSources": [
-    {"type": "academic", "examples": ["PubMed", "Google Scholar", "ResearchGate", "JSTOR", "specific academic databases"]},
-    {"type": "government", "examples": ["CDC", "NIH", "FDA", "specific government agencies"]},
-    {"type": "professional", "examples": ["professional associations", "industry organizations", "certification bodies"]},
-    {"type": "news", "examples": ["Reuters", "Associated Press", "BBC", "specialized trade publications"]},
-    {"type": "specialized", "examples": ["domain-specific databases", "specialized websites", "expert blogs", "conference proceedings"]}
-  ],
-  "expertPersona": "You are a [specific expert type] with expertise in [specific area]. You have [specific qualifications/experience].",
-  "enhancedSystemPrompt": "You are a [expert persona]. Your task is to research and analyze [topic] by searching for information about: [list key areas]. Focus on answering: [research questions]. Use a [methodology] approach and aim to find [estimatedSources] high-quality sources from suggested source types.",
-  "enhancedUserPrompt": "Please research [topic] comprehensively. Search for: [searchQueries]. Answer these key questions: [researchQuestions]. Consult these types of sources: [suggestedSources]. Provide detailed analysis based on your findings.",
-  "estimatedSources": 8-15,
-  "methodology": "description of specific research approach and analysis method"
-}
-
-**For long-form queries:**
-{
-  "queryType": "long-form",
-  "complexity": "simple|moderate|complex", 
-  "researchApproach": "comprehensive",
-  "documentSections": [
-    {"title": "Section 1 Title", "keywords": ["keyword1", "keyword2", "keyword3", "related term1", "alternative term1"], "questions": ["Primary question?", "Secondary question?", "Supporting question?"]},
-    {"title": "Section 2 Title", "keywords": ["keyword4", "keyword5", "keyword6", "related term2", "alternative term2"], "questions": ["Primary question?", "Secondary question?", "Supporting question?"]},
-    {"title": "Section 3 Title", "keywords": ["keyword7", "keyword8", "keyword9", "related term3", "alternative term3"], "questions": ["Primary question?", "Secondary question?", "Supporting question?"]}
+  "researchApproach": "search-based|analytical|creative",
+  "researchPlan": {
+    "phase1": "specific first step for this topic",
+    "phase2": "specific second step for this topic",
+    "phase3": "specific third step for this topic",
+    "phase4": "specific final step for this topic"
+  },
+  "searchQueries": ["actual search term 1", "actual search term 2", "actual search term 3", "actual search term 4", "actual search term 5", "actual search term 6", "actual search term 7", "actual search term 8"],
+  "researchQuestions": ["specific question 1?", "specific question 2?", "specific question 3?", "specific question 4?", "specific question 5?", "specific question 6?", "specific question 7?", "specific question 8?"],
+  "todos": [
+    {"task": "specific task for this query", "tools": ["search_web"], "output": "what you'll find"},
+    {"task": "another specific task", "tools": ["search_web", "scrape_url"], "output": "what you'll analyze"},
+    {"task": "synthesis task", "tools": [], "output": "final deliverable"}
   ],
   "suggestedSources": [
-    {"type": "academic", "examples": ["relevant academic databases", "peer-reviewed journals", "research institutions"]},
-    {"type": "authoritative", "examples": ["government agencies", "official organizations", "expert institutions"]},
-    {"type": "current", "examples": ["recent publications", "industry reports", "current news sources"]},
-    {"type": "specialized", "examples": ["domain-specific resources", "professional publications", "expert interviews"]}
+    {"type": "academic", "examples": ["specific databases for this topic"]},
+    {"type": "professional", "examples": ["specific organizations for this topic"]}
   ],
-  "expertPersona": "You are a [specific expert type] specializing in [area].",
-  "snippetWorkflow": "1. Research Section 1 using keywords [keywords] from [suggestedSources] and answer [questions]\n2. Research Section 2 using keywords [keywords] from [suggestedSources] and answer [questions]\n3. Research Section 3 using keywords [keywords] from [suggestedSources] and answer [questions]\n4. Synthesize findings into comprehensive document",
-  "enhancedSystemPrompt": "You are a [expert persona]. You will create a comprehensive document about [topic] with sections: [section titles]. For each section, research using the specified keywords from suggested source types and answer the associated questions.",
-  "enhancedUserPrompt": "Create a comprehensive document about [topic]. Follow this workflow: [snippetWorkflow]. Research each section thoroughly using the provided keywords from these source types: [suggestedSources]. Answer all associated questions.",
-  "estimatedSources": 12-25,
-  "methodology": "Section-by-section research and synthesis approach with diverse source consultation"
+  "expertPersona": "You are a [specific expert for this topic] with expertise in [specific area].",
+  "enhancedSystemPrompt": "You are a [expert]. Research ${query} by searching for: [list the actual search terms]. Answer these questions: [list actual questions]. Use [methodology] approach.",
+  "enhancedUserPrompt": "Research ${query}. Search terms: [actual terms]. Questions: [actual questions]. Provide detailed analysis with citations.",
+  "estimatedSources": 12,
+  "methodology": "specific methodology for this topic"
 }
 
-**For minimal queries:**
-{
-  "queryType": "minimal",
-  "complexity": "simple",
-  "researchApproach": "direct",
-  "simpleInstruction": "Brief, direct answer to the query",
-  "expertPersona": "You are a knowledgeable assistant.",
-  "enhancedSystemPrompt": "Provide a direct, factual answer to the user's question.",
-  "enhancedUserPrompt": "[original query]"
-}
-
-**For clarification queries:**
-{
-  "queryType": "clarification", 
-  "complexity": "unknown",
-  "clarificationQuestions": ["What specifically do you mean by X?", "Are you looking for Y or Z?"],
-  "expertPersona": "You are a helpful research assistant.",
-  "enhancedSystemPrompt": "Ask clarifying questions to better understand the user's research needs.",
-  "enhancedUserPrompt": "I need clarification on your request. [clarificationQuestions]"
-}
-
-**For guidance-seeking queries (complex multi-iteration plans):**
-{
-  "queryType": "guidance",
-  "complexity": "complex",
-  "planType": "deep-research|document-building|story-creation|software-development|custom",
-  "guidanceQuestions": [
-    "What is the specific goal/outcome?",
-    "What level of detail? (brief vs comprehensive)",
-    "What format for final output?",
-    "Specific aspects to emphasize?",
-    "Source priorities?",
-    "Constraints? (length, style, technical level, timeline)"
-  ],
-  "detectedPatterns": ["multi-stage workflow", "requires iteration", "uses tools extensively"],
-  "suggestedWorkflow": "Brief recommended approach",
-  "estimatedIterations": 5-20,
-  "toolsRequired": ["create_todo", "search_web", "create_snippet", "execute_javascript", "generate_chart"],
-  "expertPersona": "You are a project planning specialist.",
-  "enhancedSystemPrompt": "Guide user through complex multi-iteration project. Ask clarifying questions before detailed plan.",
-  "enhancedUserPrompt": "Need guidance on: [query]. Answer these questions for optimal plan: [guidanceQuestions]"
-}
-
-**CRITICAL JSON Requirements:**
-- Response MUST be valid JSON only - no additional text before or after
-- All strings must use double quotes, not single quotes
-- No trailing commas in arrays or objects
-- Escape quotes inside strings with backslashes
-- Arrays must be properly closed with ]
-- Objects must be properly closed with }
-
-**Guidelines:**
-- **searchQueries**: 8-12 diverse terms (primary, alternatives, technical, related, specific)
-- **researchQuestions**: 8-15 comprehensive questions (fundamentals, relationships, trends, challenges, perspectives, evidence, implications, comparisons, future)
-- **suggestedSources**: 4-6 categories with specific examples
-- **enhancedSystemPrompt**: Detailed prompt with expert persona, search queries, questions, sources, methodology
-- **enhancedUserPrompt**: Detailed prompt referencing queries, questions, sources, expected analysis
-- **expertPersona**: Specific expert role with credentials
-- **methodology**: Research/analysis approach with source diversification
-
-**JSON Validation Checklist:**
-✓ Valid JSON structure with proper opening and closing braces
-✓ All property names in double quotes
-✓ All string values in double quotes with escaped internal quotes
-✓ No trailing commas before closing braces or brackets
-✓ Proper array syntax with square brackets
-✓ Consistent formatting throughout
-
-Determine the optimal research strategy:
-- **minimal**: Simple factual queries needing brief answers
-- **overview**: Broad topics needing comprehensive coverage with multiple sources
-- **long-form**: Complex analysis requiring structured document creation  
-- **clarification**: Ambiguous queries needing clarification
-- **guidance**: Complex multi-iteration projects that need clarification and detailed workflow planning
-
-**Guidance Query Detection:** Use "guidance" queryType when query involves:
-1. Deep research: "research X by asking 20+ questions, capture in snippets"
-2. Document building: "create document researching sections separately then combining"
-3. Story creation: "write story with chapter outlines then fill each chapter"
-4. Software development: "build app by planning functions, write/test each, then combine"
-5. Multi-stage: tasks needing todos → tools → snippets → synthesize
-6. Iterative refinement: tasks clearly needing many iterations with tool calls
-
-**Few-Shot Workflow Examples for Guidance Responses:**
-
-Example - Multi-Iteration Workflow:
-enhancedUserPrompt: "Follow this workflow for [task]:
-1. Create todos for major components/sections/topics using create_todo
-2. For each todo: execute relevant tools (search_web, execute_javascript, etc.)
-3. Save outputs to snippets using create_snippet or update_snippet
-4. Mark todos complete using update_todo as you finish each one
-5. Synthesize: combine snippets into final deliverable
-Expected: 3-5 tool calls per iteration. Continue until all todos complete."
-
-IMPORTANT: The enhancedSystemPrompt and enhancedUserPrompt must incorporate planning details (searchQueries, researchQuestions, methodology) to guide research. For guidance queries, include workflow showing multiple tool calls per iteration and use of todos/snippets.`;
+CRITICAL: Replace ALL placeholder text with content specific to "${query}". Do not output generic terms.`;
 }
 
 // Export the handler and utility functions

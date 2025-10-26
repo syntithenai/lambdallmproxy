@@ -48,6 +48,11 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   const [generatedSystemPrompt, setGeneratedSystemPrompt] = useLocalStorage('planning_dialog_generated_system_prompt', '');
   const [generatedUserQuery, setGeneratedUserQuery] = useLocalStorage('planning_dialog_generated_user_query', '');
 
+  // Store original values when entering guidance mode (to restore when exiting)
+  const [savedQuery, setSavedQuery] = useState<string>('');
+  const [savedSystemPrompt, setSavedSystemPrompt] = useState<string>('');
+  const [savedUserQuery, setSavedUserQuery] = useState<string>('');
+
   // Auto-resize function for textareas
   const autoResize = (textarea: HTMLTextAreaElement | null) => {
     if (textarea) {
@@ -84,8 +89,46 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
     setStorageInfo(estimate);
   };
 
+  // Monitor result changes to save/restore values when entering/exiting guidance mode
+  useEffect(() => {
+    if (result && result.queryType === 'guidance') {
+      // Entering guidance mode - save current values and hide them
+      if (query) setSavedQuery(query);
+      if (generatedSystemPrompt) setSavedSystemPrompt(generatedSystemPrompt);
+      if (generatedUserQuery) setSavedUserQuery(generatedUserQuery);
+      
+      // Clear the displayed prompts (but not the query - user needs to edit it)
+      setGeneratedSystemPrompt('');
+      setGeneratedUserQuery('');
+    } else if (result && result.queryType !== 'guidance' && savedQuery) {
+      // Exiting guidance mode - restore saved values
+      if (savedSystemPrompt) setGeneratedSystemPrompt(savedSystemPrompt);
+      if (savedUserQuery) setGeneratedUserQuery(savedUserQuery);
+      
+      // Clear saved values
+      setSavedQuery('');
+      setSavedSystemPrompt('');
+      setSavedUserQuery('');
+    }
+  }, [result]);
+
   const handleSubmit = async () => {
-    if (!query.trim() || isLoading) return;
+    // Check authentication FIRST
+    if (!isAuthenticated) {
+      console.error('User not authenticated');
+      showError('Please sign in with Google to use the planning feature');
+      setResult({ 
+        error: 'Authentication required. Please sign in with Google to continue.' 
+      });
+      return;
+    }
+
+    if (!query.trim()) {
+      showError('Please enter a research question');
+      return;
+    }
+
+    if (isLoading) return;
 
     setIsLoading(true);
     setResult(null);
@@ -95,6 +138,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
       const token = await getToken();
       if (!token) {
         console.error('No valid token available');
+        showError('Authentication expired. Please sign out and sign in again to continue.');
         setResult({ 
           error: 'Authentication expired. Please sign out and sign in again to continue.' 
         });
@@ -102,15 +146,18 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
         return;
       }
 
+      console.log('🔐 Planning with token:', {
+        tokenLength: token.length,
+        tokenPrefix: token.substring(0, 20) + '...',
+        isAuthenticated,
+        hasProviders: settings.providers.length
+      });
+
       // Get enabled providers from settings
-      // IMPORTANT: Only send providers that are explicitly enabled (enabled === true)
+      // NOTE: Even if user has no providers, server may have server-side credentials
       const enabledProviders = settings.providers.filter((p: any) => p.enabled === true);
       
-      if (enabledProviders.length === 0) {
-        setResult({ error: 'No providers configured. Please set up at least one provider in Settings.' });
-        setIsLoading(false);
-        return;
-      }
+      console.log(`📋 Enabled providers: ${enabledProviders.length} (server may have additional credentials)`);
 
       await generatePlan(
         query,
@@ -211,8 +258,49 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
       generatedUserQuery: generatedUserQuery
     };
     
-    onTransferToChat(JSON.stringify(transferData));
+    console.log('🎯 PlanningDialog - Creating transfer data:', transferData);
+    const jsonString = JSON.stringify(transferData);
+    console.log('🎯 PlanningDialog - JSON string length:', jsonString.length);
+    onTransferToChat(jsonString);
     onClose();
+  };
+
+  // Copy debug info to clipboard for Copilot debugging
+  const handleCopyDebugInfo = () => {
+    const debugInfo = {
+      query: query,
+      result: result,
+      generatedSystemPrompt: generatedSystemPrompt,
+      generatedUserPrompt: generatedUserQuery,
+      llmInfo: llmInfo,
+      timestamp: new Date().toISOString()
+    };
+    
+    const debugText = `=== Planning Debug Info for Copilot ===
+Generated at: ${debugInfo.timestamp}
+
+--- User Query ---
+${debugInfo.query || '(none)'}
+
+--- Planning Result (Full Response) ---
+${JSON.stringify(debugInfo.result, null, 2)}
+
+--- Generated System Prompt ---
+${debugInfo.generatedSystemPrompt || '(none)'}
+
+--- Generated User Query ---
+${debugInfo.generatedUserPrompt || '(none)'}
+
+--- LLM Request/Response Details ---
+${JSON.stringify(debugInfo.llmInfo, null, 2)}
+
+=== End Debug Info ===`;
+
+    navigator.clipboard.writeText(debugText).then(() => {
+      showSuccess('Debug info copied to clipboard!');
+    }, () => {
+      showError('Failed to copy debug info');
+    });
   };
 
   const handleLoadPlan = (plan: CachedPlan) => {
@@ -324,6 +412,19 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
             </div>
             
             <div className="flex items-center gap-2">
+              {/* Copy Debug Info Button */}
+              <button
+                onClick={handleCopyDebugInfo}
+                disabled={!query && !result}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
+                title="Copy debug info for Copilot troubleshooting"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Debug
+              </button>
+              
               {/* Transfer to Chat - Far Right */}
               {onTransferToChat && (
                 <button
@@ -369,23 +470,27 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
             )}
 
             {/* Query Input */}
-            <div className="card p-4">
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Research Query
-                </label>
-                
-                {/* Generate Plan Button (Green) - Below right of label */}
-                <div className="flex items-center gap-2">
+            {!(result && result.queryType === 'guidance') && (
+              <div className="card p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Research Query
+                  </label>
+                  
+                  {/* Generate Plan Button (Green) - Below right of label */}
+                  <div className="flex items-center gap-2">
                   <button 
                     onClick={handleSubmit}
-                    disabled={isLoading || !query.trim() || !isAuthenticated}
-                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
+                    disabled={isLoading || !query.trim()}
+                    title={!isAuthenticated ? 'Please sign in with Google first' : 
+                           !query.trim() ? 'Please enter a research question' : 
+                           isLoading ? 'Generating plan...' : 'Generate research plan'}
+                    className={`${!isAuthenticated ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                     </svg>
-                    {isLoading ? 'Generating...' : 'Generate Plan'}
+                    {isLoading ? 'Generating...' : !isAuthenticated ? 'Sign in to Generate Plan' : 'Generate Plan'}
                   </button>
                   
                   {/* Clear All Button (Red with Bin Icon) */}
@@ -418,9 +523,10 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
                 </>
               )}
             </div>
+            )}
 
             {/* Generated Prompts - Three Auto-Resizing Textareas */}
-            {generatedSystemPrompt && (
+            {generatedSystemPrompt && !(result && result.queryType === 'guidance') && (
               <div className="card p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
@@ -744,7 +850,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
                     {result.queryType === 'guidance' && (
                       <div className="card p-4 space-y-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
                         <h3 className="font-semibold text-purple-900 dark:text-purple-100 flex items-center gap-2">
-                          <span className="text-2xl">🎯</span> Seeking Guidance - Complex Multi-Iteration Plan
+                          <span className="text-2xl">📋</span> More Info Required
                         </h3>
                         
                         {/* Plan Type Badge */}
@@ -847,12 +953,123 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
 
 Please create a detailed plan with few-shot examples showing how to use create_todo, search_web, create_snippet, and generate_chart together in each iteration..."
                             />
-                            <button
-                              onClick={handleSubmit}
-                              className="btn-primary mt-2 w-full"
-                            >
-                              🎯 Generate Detailed Execution Plan
-                            </button>
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                onClick={handleSubmit}
+                                className="btn-primary flex-1"
+                              >
+                                🎯 Generate Detailed Execution Plan
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  // Force plan - generate answers to questions and force plan generation
+                                  if (!isAuthenticated) {
+                                    showError('Please sign in to use planning');
+                                    return;
+                                  }
+                                  
+                                  if (isLoading) return;
+                                  
+                                  setIsLoading(true);
+                                  setStatusMessage('Forcing plan generation...');
+                                  
+                                  try {
+                                    const token = await getToken();
+                                    if (!token) {
+                                      showError('Authentication expired. Please sign out and sign in again.');
+                                      setIsLoading(false);
+                                      return;
+                                    }
+                                    
+                                    const enabledProviders = settings.providers.filter((p: any) => p.enabled === true);
+                                    
+                                    // Generate automatic answers to guidance questions
+                                    const autoAnswers = result.guidanceQuestions?.map((q: string, idx: number) => 
+                                      `Q${idx + 1}: ${q}\nA${idx + 1}: Please use your best judgment based on the original query.`
+                                    ).join('\n\n') || '';
+                                    
+                                    await generatePlan(
+                                      query,
+                                      token,
+                                      enabledProviders,
+                                      undefined,
+                                      (event: string, data: any) => {
+                                        console.log('Force Plan SSE event:', event, data);
+                                        
+                                        switch (event) {
+                                          case 'status':
+                                            setStatusMessage(data.message || 'Processing...');
+                                            break;
+                                          case 'result':
+                                            setResult(data);
+                                            if (data.enhancedSystemPrompt) {
+                                              setGeneratedSystemPrompt(data.enhancedSystemPrompt);
+                                            }
+                                            if (data.enhancedUserPrompt) {
+                                              setGeneratedUserQuery(data.enhancedUserPrompt);
+                                            }
+                                            break;
+                                          case 'llm_response':
+                                            setLlmInfo(data);
+                                            break;
+                                          case 'error':
+                                            const errorMsg = data.error || 'Unknown error';
+                                            setResult({ error: errorMsg });
+                                            showError(`Force plan error: ${errorMsg}`);
+                                            break;
+                                        }
+                                      },
+                                      () => {
+                                        console.log('Force plan complete');
+                                        setIsLoading(false);
+                                        setStatusMessage('');
+                                      },
+                                      (error: Error) => {
+                                        console.error('Force plan error:', error);
+                                        setResult({ error: error.message });
+                                        showError(`Force plan failed: ${error.message}`);
+                                        setIsLoading(false);
+                                        setStatusMessage('');
+                                      },
+                                      {
+                                        clarificationAnswers: autoAnswers,
+                                        previousContext: result,
+                                        forcePlan: true
+                                      }
+                                    );
+                                  } catch (error) {
+                                    console.error('Force plan error:', error);
+                                    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+                                    setResult({ error: errorMsg });
+                                    showError(`Force plan error: ${errorMsg}`);
+                                    setIsLoading(false);
+                                    setStatusMessage('');
+                                  }
+                                }}
+                                disabled={isLoading}
+                                className="btn-secondary flex-1"
+                                title="Let AI answer the questions and force plan generation"
+                              >
+                                ⚡ Force Plan
+                              </button>
+                              <button
+                                onClick={() => {
+                                  // Reset - clear guidance mode and restore original state
+                                  setResult(null);
+                                  setStatusMessage('');
+                                  // Restore saved values if they exist
+                                  if (savedSystemPrompt) setGeneratedSystemPrompt(savedSystemPrompt);
+                                  if (savedUserQuery) setGeneratedUserQuery(savedUserQuery);
+                                  setSavedQuery('');
+                                  setSavedSystemPrompt('');
+                                  setSavedUserQuery('');
+                                }}
+                                className="btn-secondary"
+                                title="Clear guidance mode and return to previous state"
+                              >
+                                🔄 Reset
+                              </button>
+                            </div>
                           </div>
                         </div>
                         
@@ -907,15 +1124,15 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                   return (
                     <div key={plan.id} className="border border-gray-300 dark:border-gray-600 rounded-lg p-3">
                       <div className="flex justify-between items-start gap-2 mb-2">
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm text-gray-900 dark:text-gray-100 mb-1">
-                            {plan.query}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm text-gray-900 dark:text-gray-100 mb-1 truncate" title={plan.query}>
+                            {plan.query.length > 100 ? plan.query.substring(0, 100) + '...' : plan.query}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
                             Saved: {date}
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-shrink-0">
                           <button
                             onClick={() => handleLoadPlan(plan)}
                             className="btn-primary text-xs"
@@ -952,6 +1169,17 @@ Please create a detailed plan with few-shot examples showing how to use create_t
           onClose={() => setShowLlmInfo(false)}
         />
       )}
+
+      {/* Copy Debug Info Button */}
+      <div className="flex justify-end mt-6">
+        <button
+          className="btn-secondary text-xs"
+          onClick={handleCopyDebugInfo}
+          title="Copy conversation, LLM, and tool debug info for Copilot support"
+        >
+          🐞 Copy Debug Info
+        </button>
+      </div>
     </>
   );
 };

@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* WCAG AA Compliant Color Variables */
+:root {
+  /* Light mode - already compliant */
+  --text-primary: rgb(17 24 39); /* gray-900: 16.1:1 contrast */
+  --text-secondary: rgb(55 65 81); /* gray-700: 9.3:1 contrast */
+  --text-tertiary: rgb(107 114 128); /* gray-500: 4.6:1 contrast (AA) */
+  
+  /* Dark mode - improved contrast */
+  --dark-bg: rgb(17 24 39); /* gray-900 */
+  --dark-text-primary: rgb(243 244 246); /* gray-100: 15.8:1 contrast (AAA) */
+  --dark-text-secondary: rgb(229 231 235); /* gray-200: 13.6:1 contrast (AAA) */
+  --dark-text-tertiary: rgb(209 213 219); /* gray-300: 10.4:1 contrast (AAA) */
+  --dark-text-muted: rgb(156 163 175); /* gray-400: 5.7:1 contrast (AA) */
+}
+
 /* Custom utility classes */
 .btn-primary {
   background-color: rgb(37 99 235);

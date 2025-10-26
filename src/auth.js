@@ -175,10 +175,10 @@ async function authenticateRequest(authHeader) {
         };
     }
     
-    // Extract token from Bearer scheme
-    const token = authHeader.startsWith('Bearer ') 
+    // Extract token from Bearer scheme and trim whitespace/newlines
+    const token = (authHeader.startsWith('Bearer ') 
         ? authHeader.substring(7) 
-        : authHeader;
+        : authHeader).trim().replace(/[\r\n]/g, '');
     
     // Try to verify as JWT ID token first
     let user = await verifyGoogleToken(token);

@@ -131,16 +131,13 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     saveSnippets();
   }, [snippets, isLoaded, showError, showWarning]);
 
-  // Helper to check if RAG sync is enabled
+  // Helper to check if cloud sync is available (user is authenticated)
   const isSyncEnabled = () => {
     try {
-      const ragConfig = localStorage.getItem('rag_config');
-      if (ragConfig) {
-        const config = JSON.parse(ragConfig);
-        return config.enabled && config.syncEnabled;
-      }
+      const accessToken = localStorage.getItem('google_drive_access_token');
+      return !!accessToken && accessToken.length > 0;
     } catch (error) {
-      console.error('Failed to check RAG sync config:', error);
+      console.error('Failed to check authentication:', error);
     }
     return false;
   };
@@ -175,12 +172,14 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         try {
           // Use Google Identity Services OAuth2 token client
-          const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+          const tokenClient = window.google.accounts.oauth2.initTokenClient({
             client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
-            callback: (response: any) => {
-              if (response.access_token) {
-                localStorage.setItem('google_drive_access_token', response.access_token);
+            scope: 'https://www.googleapis.com/auth/drive.file', // Only files created by this app
+            callback: async (tokenResponse: any) => {
+              if (tokenResponse.access_token) {
+                // Sanitize token: remove whitespace and newlines before storing
+                const sanitizedToken = tokenResponse.access_token.trim().replace(/[\r\n]/g, '');
+                localStorage.setItem('google_drive_access_token', sanitizedToken);
                 console.log('✅ Got Drive API access token');
               }
             },
@@ -192,15 +191,17 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           // Request access token - this will prompt user if needed
           await new Promise<void>((resolve, reject) => {
-            tokenClient.callback = (response: any) => {
+            (tokenClient as any).callback = (response: any) => {
               if (response.error) {
                 console.error('OAuth error:', response.error);
                 reject(new Error(`OAuth error: ${response.error}`));
                 return;
               }
               if (response.access_token) {
-                authToken = response.access_token;
-                localStorage.setItem('google_drive_access_token', response.access_token);
+                // Sanitize token: remove whitespace and newlines before storing
+                const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
+                authToken = sanitizedToken;
+                localStorage.setItem('google_drive_access_token', sanitizedToken);
                 console.log('✅ Got Drive API access token');
                 resolve();
               } else {
@@ -285,8 +286,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const spreadsheetId = await getUserRagSpreadsheet();
         if (!spreadsheetId) {
           console.warn('Could not get user RAG spreadsheet - sync disabled');
-          // Show helpful message if sync is enabled but spreadsheet couldn't be accessed
-          showWarning('Cloud sync enabled but cannot access Google Sheets. Please check permissions in Settings > RAG.');
+          // Show helpful message if user is authenticated but spreadsheet couldn't be accessed
+          showWarning('Cannot access Google Sheets. Please check your Google Drive connection in Settings > Cloud Sync.');
           return;
         }
 
@@ -355,8 +356,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('✅ RAG sync initialized and auto-sync started');
       } catch (error) {
         console.error('Failed to initialize sync:', error);
-        // Show error if sync is enabled but failing
-        showError('Cloud sync failed to initialize. Check Settings > RAG for details.');
+        // Show error if authentication present but sync failing
+        showError('Cloud sync failed to initialize. Check your Google Drive connection in Settings > Cloud Sync.');
       }
     };
 
@@ -756,6 +757,29 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (!response || !response.ok) {
         const errorText = await response?.text() || 'No response';
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        
+        // Check for specific error about missing embedding provider
+        if (errorData.requiredAction === 'CONFIGURE_EMBEDDING_PROVIDER' || 
+            (errorData.error && errorData.error.includes('No embedding provider'))) {
+          throw new Error(
+            `⚙️ Embedding Provider Required\n\n` +
+            `To use Swag embeddings and vector search, you need to configure a provider that supports embeddings.\n\n` +
+            `📝 Steps:\n` +
+            `1. Go to Settings (gear icon)\n` +
+            `2. Click "Providers" tab\n` +
+            `3. Add a provider: OpenAI, Together.AI, Cohere, or Voyage\n` +
+            `4. Enable the "🔗 Embeddings" capability\n` +
+            `5. Save and try again\n\n` +
+            `💡 Note: Swag embeddings work independently of the RAG system. You just need one embedding-capable provider configured.`
+          );
+        }
+        
         throw new Error(`Failed to generate embeddings: ${response?.status} ${response?.statusText}. ${errorText}`);
       }
 
@@ -850,8 +874,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
           if (!spreadsheetId) {
             console.warn('⚠️ No spreadsheet ID found. Skipping Google Sheets sync.');
-            console.log('💡 To enable sync: Go to Settings > RAG and configure cloud sync');
-            showWarning('⚠️ Embeddings saved locally. Enable cloud sync in Settings to backup to Google Sheets.');
+            console.log('💡 To enable sync: Go to Settings > Cloud Sync and connect Google Drive');
+            showWarning('⚠️ Embeddings saved locally. Connect Google Drive in Cloud Sync settings to enable automatic backup.');
           } else {
             const googleLinked = localStorage.getItem('rag_google_linked') === 'true';
             const canUseClientSync = googleLinked && isGoogleIdentityAvailable();
@@ -934,7 +958,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (!isSyncEnabled()) {
-      showWarning('Cloud sync is not enabled. Enable it in RAG Settings first.');
+      showWarning('Cloud sync requires Google Drive connection. Go to Settings > Cloud Sync to connect.');
       return;
     }
 

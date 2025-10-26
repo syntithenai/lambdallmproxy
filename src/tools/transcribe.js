@@ -8,6 +8,99 @@ const { downloadYouTubeAudio, isYouTubeUrl, extractVideoId } = require('./youtub
 const { splitAudioIntoChunks, mergeTranscriptions } = require('./audio-chunker');
 const { checkStopSignal, clearStopSignal } = require('../utils/stop-signal');
 
+const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+/**
+ * Get YouTube captions via Selenium as fallback when ytdl-core fails
+ * This extracts existing YouTube captions instead of transcribing audio
+ */
+async function getYouTubeCaptionsViaSelenium(videoId, onProgress) {
+    if (IS_LAMBDA) {
+        console.log('⚠️ Selenium not available on Lambda, skipping caption fallback');
+        return null;
+    }
+
+    try {
+        console.log(`🤖 Attempting Selenium caption extraction for video: ${videoId}`);
+        
+        const { scrapeYouTubeCaptions } = require('../scrapers/youtube-caption-scraper');
+        
+        if (onProgress) {
+            onProgress({
+                type: 'selenium_caption_start',
+                videoId,
+                message: 'YouTube blocked direct download - using Selenium to extract captions (this may take 30-90 seconds)...',
+                phase: 'selenium_init'
+            });
+        }
+
+        // Send periodic progress updates during extraction
+        let progressInterval;
+        let progressSeconds = 0;
+        if (onProgress) {
+            progressInterval = setInterval(() => {
+                progressSeconds += 5;
+                onProgress({
+                    type: 'selenium_caption_progress',
+                    videoId,
+                    message: `Extracting captions via browser automation... (${progressSeconds}s elapsed)`,
+                    phase: 'selenium_extracting',
+                    elapsed: progressSeconds
+                });
+            }, 5000); // Update every 5 seconds
+        }
+
+        const result = await scrapeYouTubeCaptions(videoId, {
+            includeTimestamps: true,
+            language: 'en',
+            interactive: false,
+            timeout: 60 // Increase timeout to 60s
+        });
+
+        // Clear progress interval
+        if (progressInterval) {
+            clearInterval(progressInterval);
+        }
+
+        if (result && result.success) {
+            console.log(`✅ Selenium caption extraction successful: ${result.captionCount} segments`);
+            
+            if (onProgress) {
+                onProgress({
+                    type: 'selenium_caption_complete',
+                    captionCount: result.captionCount,
+                    message: `Successfully extracted ${result.captionCount} caption segments via Selenium`,
+                    phase: 'selenium_complete'
+                });
+            }
+
+            return {
+                text: result.text,
+                segments: result.segments,
+                method: 'selenium-captions',
+                videoId: result.videoId,
+                title: result.title,
+                language: result.language || 'en'
+            };
+        } else if (result && result.error) {
+            console.log(`⚠️ Selenium caption extraction failed: ${result.error}`);
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+            return null;
+        }
+
+        if (progressInterval) {
+            clearInterval(progressInterval);
+        }
+        return null;
+
+    } catch (error) {
+        console.log(`⚠️ Selenium caption fallback failed: ${error.message}`);
+        return null;
+    }
+}
+
 // Supported audio/video formats (flexible matching)
 const SUPPORTED_FORMATS = [
     'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/wav',
@@ -425,26 +518,115 @@ async function transcribeUrl(params) {
                 };
             }
 
-            // Download audio from YouTube
-            const result = await downloadYouTubeAudio({
-                url,
-                onProgress: (event) => {
-                    if (onProgress) {
-                        onProgress(event);
+            // Try to download audio from YouTube
+            try {
+                const result = await downloadYouTubeAudio({
+                    url,
+                    onProgress: (event) => {
+                        if (onProgress) {
+                            onProgress(event);
+                        }
                     }
-                }
-            });
-
-            audioData = result;
-            metadata = result.metadata;
-            filename = `${videoId}.wav`;
-
-            if (onProgress) {
-                onProgress({
-                    type: 'youtube_download_complete',
-                    size: result.size,
-                    metadata
                 });
+
+                audioData = result;
+                metadata = result.metadata;
+                filename = `${videoId}.wav`;
+
+                if (onProgress) {
+                    onProgress({
+                        type: 'youtube_download_complete',
+                        size: result.size,
+                        metadata
+                    });
+                }
+            } catch (downloadError) {
+                // Check if this is a 403 error that could be bypassed with Selenium captions
+                console.log(`❌ YouTube download error: ${downloadError.message}`);
+                console.log(`   Error code: ${downloadError.code}`);
+                console.log(`   Is Lambda: ${IS_LAMBDA}`);
+                
+                if (downloadError.code === 'YOUTUBE_403' || downloadError.message.includes('403')) {
+                    console.log(`⚠️ ytdl-core failed with 403, attempting Selenium caption fallback...`);
+                    
+                    const captionResult = await getYouTubeCaptionsViaSelenium(videoId, onProgress);
+                    
+                    if (captionResult && captionResult.text) {
+                        // Successfully got captions via Selenium
+                        console.log(`✅ Using Selenium captions instead of Whisper transcription`);
+                        
+                        // Clear stop signal on successful completion
+                        if (toolCallId) {
+                            clearStopSignal(toolCallId);
+                        }
+
+                        if (onProgress) {
+                            onProgress({
+                                type: 'transcribe_complete',
+                                text: captionResult.text,
+                                method: 'selenium-captions'
+                            });
+                        }
+
+                        return {
+                            url,
+                            text: captionResult.text,
+                            language: captionResult.language,
+                            model: 'selenium-captions',
+                            method: 'selenium-captions',
+                            videoId: captionResult.videoId,
+                            title: captionResult.title,
+                            segments: captionResult.segments,
+                            message: '⚠️ Note: This transcript was extracted from YouTube captions (not Whisper) due to download restrictions.'
+                        };
+                    } else {
+                        // Selenium caption extraction also failed
+                        console.log(`❌ Both ytdl-core and Selenium caption extraction failed`);
+                        
+                        // Return error instead of throwing (to bypass outer catch block formatting)
+                        return {
+                            error: `YouTube blocked the download request. The video may require authentication or be region-locked. Selenium caption fallback also failed (only available on local dev server, not Lambda).`,
+                            url,
+                            source: 'whisper'
+                        };
+                    }
+                } else {
+                    // Different error, not a 403 - could still try Selenium as last resort
+                    console.log(`⚠️ YouTube download failed with non-403 error, attempting Selenium as fallback...`);
+                    
+                    const captionResult = await getYouTubeCaptionsViaSelenium(videoId, onProgress);
+                    
+                    if (captionResult && captionResult.text) {
+                        console.log(`✅ Using Selenium captions as fallback`);
+                        
+                        if (toolCallId) {
+                            clearStopSignal(toolCallId);
+                        }
+
+                        if (onProgress) {
+                            onProgress({
+                                type: 'transcribe_complete',
+                                text: captionResult.text,
+                                method: 'selenium-captions'
+                            });
+                        }
+
+                        return {
+                            url,
+                            text: captionResult.text,
+                            language: captionResult.language,
+                            model: 'selenium-captions',
+                            method: 'selenium-captions',
+                            videoId: captionResult.videoId,
+                            title: captionResult.title,
+                            segments: captionResult.segments,
+                            message: '⚠️ Note: This transcript was extracted from YouTube captions via Selenium fallback.'
+                        };
+                    }
+                    
+                    // Selenium also failed, throw original error
+                    throw downloadError;
+                }
             }
         } else {
             // Download from direct URL

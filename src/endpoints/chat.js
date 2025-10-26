@@ -107,8 +107,9 @@ function enrichCatalogWithPriority(catalog, providerPool) {
         return catalog;
     }
     
-    // Build priority map: providerType -> lowest priority number
+    // Build priority map and allowedModels filter: providerType -> { priority, allowedModels }
     const priorityMap = {};
+    const allowedModelsMap = {};
     for (const provider of providerPool) {
         const priority = provider.priority !== undefined ? provider.priority : 100;
         const providerType = provider.type;
@@ -117,19 +118,50 @@ function enrichCatalogWithPriority(catalog, providerPool) {
         if (priorityMap[providerType] === undefined || priority < priorityMap[providerType]) {
             priorityMap[providerType] = priority;
         }
+        
+        // Track allowedModels filter (if any provider of this type has a filter, use it)
+        if (provider.allowedModels && !allowedModelsMap[providerType]) {
+            allowedModelsMap[providerType] = provider.allowedModels;
+        }
     }
     
-    // Apply priorities to all models in catalog
+    // Apply priorities and filter models by allowedModels
     for (const [providerType, providerInfo] of Object.entries(catalog.chat.providers)) {
         if (priorityMap[providerType] !== undefined && providerInfo.models) {
             const priority = priorityMap[providerType];
+            const allowedModels = allowedModelsMap[providerType];
             
-            for (const [modelId, modelInfo] of Object.entries(providerInfo.models)) {
-                modelInfo.priority = priority;
-            }
-            
-            if (Object.keys(providerInfo.models).length > 0) {
-                console.log(`   🎯 Applied priority ${priority} to ${providerType} models`);
+            // Filter models if allowedModels is set
+            if (allowedModels && Array.isArray(allowedModels) && allowedModels.length > 0) {
+                const originalCount = Object.keys(providerInfo.models).length;
+                const filteredModels = {};
+                
+                for (const [modelId, modelInfo] of Object.entries(providerInfo.models)) {
+                    // Check if model is in allowedModels list
+                    if (allowedModels.includes(modelId) || allowedModels.includes(modelInfo.name)) {
+                        filteredModels[modelId] = modelInfo;
+                        filteredModels[modelId].priority = priority;
+                    }
+                }
+                
+                providerInfo.models = filteredModels;
+                const filteredCount = Object.keys(filteredModels).length;
+                
+                if (filteredCount > 0) {
+                    console.log(`   🔒 ${providerType}: Filtered ${originalCount} → ${filteredCount} models (allowed: ${allowedModels.join(', ')})`);
+                    console.log(`   🎯 Applied priority ${priority} to ${providerType} models`);
+                } else {
+                    console.warn(`   ⚠️ ${providerType}: No models match allowedModels filter! All ${originalCount} models blocked.`);
+                }
+            } else {
+                // No filter - apply priority to all models
+                for (const [modelId, modelInfo] of Object.entries(providerInfo.models)) {
+                    modelInfo.priority = priority;
+                }
+                
+                if (Object.keys(providerInfo.models).length > 0) {
+                    console.log(`   🎯 Applied priority ${priority} to ${providerType} models (no filter)`);
+                }
             }
         }
     }
@@ -1324,6 +1356,12 @@ async function handler(event, responseStream, context) {
             console.log('Google Drive access token detected for billing sheet logging');
         }
         
+        // Extract Google refresh token for automatic token refresh
+        const googleRefreshToken = event.headers['x-google-refresh-token'] || event.headers['X-Google-Refresh-Token'] || null;
+        if (googleRefreshToken) {
+            console.log('Google refresh token detected for automatic token refresh');
+        }
+        
         // Set verified user from auth result
         const verifiedUser = authResult.user;
         userEmail = verifiedUser?.email || authResult.email || 'unknown';
@@ -1784,6 +1822,7 @@ async function handler(event, responseStream, context) {
             providerPool, // Pass full provider pool for tools to select from (supports multiple keys per type)
             googleToken,
             driveAccessToken, // Pass Google Sheets OAuth token for snippets/billing
+            googleRefreshToken, // Pass Google refresh token for automatic token refresh
             youtubeAccessToken: youtubeToken, // Pass YouTube OAuth token for transcript access
             tavilyApiKey,
             mcpServers, // Pass MCP servers for tool routing
@@ -3989,15 +4028,15 @@ async function handler(event, responseStream, context) {
     } catch (error) {
         console.error('Chat endpoint error:', error);
         
-        // Handle SHEET_LIMIT_REACHED error (system at capacity)
-        if (error.code === 'SHEET_LIMIT_REACHED') {
-            console.error('❌ CRITICAL: System at capacity - cannot accept new users');
+        // Handle GOOGLE_SHEETS_LIMIT error (Google's hard 200-sheet limit reached)
+        if (error.code === 'GOOGLE_SHEETS_LIMIT' || error.code === 'SHEET_LIMIT_REACHED') {
+            console.error('❌ CRITICAL: Google Sheets hard limit reached - cannot create new user sheets');
             
             const capacityError = {
-                error: error.userMessage || 'System at full capacity. Unable to create new user account. Please try again later.',
-                code: 'SYSTEM_CAPACITY_REACHED',
+                error: error.userMessage || 'Google Sheets capacity limit reached. Contact administrator.',
+                code: 'GOOGLE_SHEETS_LIMIT',
                 timestamp: new Date().toISOString(),
-                message: 'The system has reached its maximum user capacity (200 users). Please try again later or contact support.'
+                message: 'Google Sheets workbook has reached its 200-sheet limit. Contact administrator for capacity expansion.'
             };
             
             if (sseWriter) {

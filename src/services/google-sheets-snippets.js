@@ -653,7 +653,16 @@ async function getSnippet({ id, title }, userEmail, accessToken) {
  */
 async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
   try {
+    console.log('🔍 Snippets: Starting search...', {
+      query: query,
+      tags: tags,
+      userEmail: userEmail,
+      hasAccessToken: !!accessToken
+    });
+    
     const { spreadsheetId } = await getOrCreateSnippetsSheet(userEmail, accessToken);
+    console.log('📊 Snippets: Using spreadsheet:', spreadsheetId);
+    
     const sheets = google.sheets({
       version: 'v4',
       auth: new google.auth.OAuth2()
@@ -666,38 +675,101 @@ async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
       range: 'Snippets!A:H'
     });
     
+    console.log('📊 Snippets: Raw response:', {
+      hasValues: !!response.data.values,
+      rowCount: response.data.values?.length || 0
+    });
+    
     if (!response.data.values || response.data.values.length < 2) {
+      console.log('⚠️ Snippets: No data rows found (only header or empty)');
       return [];
     }
     
     const rows = response.data.values.slice(1);
+    console.log(`📊 Snippets: Processing ${rows.length} data rows`);
+    
+    // Log first 3 rows as examples
+    if (rows.length > 0) {
+      console.log('📝 Example rows (first 3):');
+      rows.slice(0, 3).forEach((row, idx) => {
+        console.log(`  Row ${idx + 1}:`, {
+          id: row[0],
+          title: row[3],
+          tags_raw: row[5],
+          source: row[6]
+        });
+      });
+    }
     
     // Normalize search params
     const queryLower = query ? query.toLowerCase() : '';
     const tagsLower = tags.map(t => t.toLowerCase());
     
+    console.log('🔍 Search parameters:', {
+      queryLower: queryLower,
+      tagsLower: tagsLower
+    });
+    
     const results = rows
-      .map(row => ({
-        id: parseInt(row[0], 10),
-        created_at: row[1],
-        updated_at: row[2],
-        title: row[3] || '',
-        content: row[4] || '',
-        tags: row[5] ? row[5].split(', ').filter(Boolean) : [],
-        source: row[6] || 'manual',
-        url: row[7] || ''
-      }))
+      .map(row => {
+        // Handle tags in both formats:
+        // 1. Comma-separated string: "tag1, tag2, tag3"
+        // 2. JSON array (from Swag UI): ["tag1","tag2","tag3"]
+        // 3. Comma-separated without spaces: "tag1,tag2,tag3"
+        let tags = [];
+        if (row[5]) {
+          const tagValue = row[5].trim();
+          if (tagValue.startsWith('[')) {
+            // JSON array format
+            try {
+              tags = JSON.parse(tagValue);
+            } catch (e) {
+              console.warn('Failed to parse tags JSON:', tagValue);
+              tags = [];
+            }
+          } else {
+            // Comma-separated format - split by comma and trim each tag
+            tags = tagValue.split(',').map(t => t.trim()).filter(Boolean);
+          }
+        }
+        
+        return {
+          id: parseInt(row[0], 10),
+          created_at: row[1],
+          updated_at: row[2],
+          title: row[3] || '',
+          content: row[4] || '',
+          tags: tags,
+          source: row[6] || 'manual',
+          url: row[7] || ''
+        };
+      })
       .filter(snippet => {
         // Text query match (title or content contains query)
         const textMatch = !queryLower || 
           snippet.title.toLowerCase().includes(queryLower) ||
           snippet.content.toLowerCase().includes(queryLower);
         
-        // Tags match (all specified tags must be present)
+        // Tags match (all specified tags must be present) - case-insensitive
+        const snippetTagsLower = snippet.tags.map(t => String(t).toLowerCase());
         const tagsMatch = tagsLower.length === 0 ||
-          tagsLower.every(tag => snippet.tags.includes(tag));
+          tagsLower.every(tag => snippetTagsLower.includes(tag));
         
-        return textMatch && tagsMatch;
+        const matches = textMatch && tagsMatch;
+        
+        // Debug log for all searches to help troubleshoot
+        if (queryLower || tagsLower.length > 0) {
+          console.log(`🔍 Snippet "${snippet.title}":`, {
+            tags: snippet.tags,
+            tagsLower: snippetTagsLower,
+            searchingFor: tagsLower,
+            textMatch: textMatch,
+            tagsMatch: tagsMatch,
+            finalMatch: matches
+          });
+        }
+        
+        return matches;
       });
     
     console.log(`🔍 Snippets: Search found ${results.length} results (query: "${query}", tags: [${tags.join(', ')}])`);
@@ -705,6 +777,7 @@ async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
     return results;
   } catch (error) {
     console.error('❌ Snippets: Error searching snippets:', error.message);
+    console.error('❌ Snippets: Error stack:', error.stack);
     return [];
   }
 }

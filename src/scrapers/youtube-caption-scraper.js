@@ -13,6 +13,9 @@
  * Tier: 3 (Selenium) or 4 (Interactive with login)
  */
 
+const path = require('path');
+const { spawn } = require('child_process');
+
 const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 
 if (IS_LAMBDA) {
@@ -27,7 +30,7 @@ if (IS_LAMBDA) {
  * @param {boolean} options.includeTimestamps - Return timestamps with captions (default: false)
  * @param {string} options.language - Preferred caption language (default: 'en')
  * @param {boolean} options.interactive - Keep browser open for manual intervention (default: false)
- * @param {number} options.timeout - Maximum wait time in ms (default: 30000)
+ * @param {number} options.timeout - Maximum wait time in seconds (default: 30)
  * @returns {Promise<Object>} - Transcript data with text, timestamps, and metadata
  */
 async function scrapeYouTubeCaptions(videoId, options = {}) {
@@ -63,6 +66,53 @@ async function scrapeYouTubeCaptions(videoId, options = {}) {
         console.log('🤖 [Selenium] Spawning Python script:', pythonCommand, args.join(' '));
 
         const pythonProcess = spawn(pythonCommand, args, {
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+            stdout += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+            // Log stderr in real-time for debugging
+            console.log('🤖 [Selenium stderr]:', data.toString().trim());
+        });
+
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+                console.error('❌ Python script failed with code:', code);
+                console.error('❌ stderr:', stderr);
+                reject(new Error(`Python script exited with code ${code}: ${stderr}`));
+                return;
+            }
+
+            try {
+                // Parse JSON output from Python script
+                const result = JSON.parse(stdout);
+                
+                if (result.error) {
+                    console.log('⚠️ Selenium returned error:', result.error);
+                    resolve(result); // Return error object
+                } else {
+                    console.log('✅ Selenium caption extraction successful');
+                    resolve(result);
+                }
+            } catch (parseError) {
+                console.error('❌ Failed to parse Python output:', stdout);
+                reject(new Error(`Failed to parse output: ${parseError.message}`));
+            }
+        });
+
+        pythonProcess.on('error', (error) => {
+            console.error('❌ Failed to spawn Python process:', error);
+            reject(new Error(`Failed to spawn Python process: ${error.message}`));
+        });
+    });
+}
 
 /**
  * Check if Selenium dependencies are installed
