@@ -31,13 +31,16 @@
   "auth": {
     "signIn": "Entrar com Google",
     "signOut": "Sair",
-    "authRequired": "Autenticação necessária",
+    "authRequired": "A autenticação é necessária para usar este aplicativo",
     "tokenExpired": "Sua sessão expirou. Por favor, entre novamente.",
     "welcomeBack": "Bem-vindo de volta!",
-    "signInPrompt": "Por favor, entre com Google para continuar",
+    "signInPrompt": "Entrar para continuar",
     "signInRequired": "Você deve entrar para usar este recurso",
     "signingIn": "Entrando...",
-    "signingOut": "Saindo..."
+    "signingOut": "Saindo...",
+    "researchAgent": "Agente de Pesquisa",
+    "tagline": "Assistente de pesquisa com IA",
+    "secureAuth": "Autenticação segura fornecida pelo Google"
   },
   "chat": {
     "placeholder": "Digite sua mensagem aqui...",

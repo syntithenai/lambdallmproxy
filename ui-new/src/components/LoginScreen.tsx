@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { GitHubLink } from './GitHubLink';
 
 export const LoginScreen: React.FC = () => {
+  const { t } = useTranslation();
   const { login } = useAuth();
   const buttonRef = useRef<HTMLDivElement>(null);
   const [hasAttemptedOneTap, setHasAttemptedOneTap] = useState(false);
@@ -77,25 +79,25 @@ export const LoginScreen: React.FC = () => {
           <div className="inline-flex items-center justify-center mb-4">
             <img 
               src={`${import.meta.env.BASE_URL}agent.png`}
-              alt="Research Agent" 
+              alt={t('auth.researchAgent')}
               className="w-24 h-24 object-contain"
             />
           </div>
           
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Research Agent
+            {t('auth.researchAgent')}
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            AI-powered research assistant
+            {t('auth.tagline')}
           </p>
         </div>
 
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4 text-center">
-            Sign in to continue
+            {t('auth.signInPrompt')}
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-6">
-            Authentication is required to use this application
+            {t('auth.authRequired')}
           </p>
         </div>
 
@@ -110,7 +112,7 @@ export const LoginScreen: React.FC = () => {
         </div>
 
         <div className="mt-6 text-xs text-gray-500 dark:text-gray-400 text-center">
-          Secure authentication powered by Google
+          {t('auth.secureAuth')}
         </div>
       </div>
 

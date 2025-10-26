@@ -12,8 +12,16 @@
   "auth": {
     "signIn": "Mit Google anmelden",
     "signOut": "Abmelden",
-    "authRequired": "Authentifizierung erforderlich",
-    "signInPrompt": "Bitte melden Sie sich mit Google an, um fortzufahren"
+    "authRequired": "Authentifizierung ist erforderlich, um diese Anwendung zu verwenden",
+    "tokenExpired": "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
+    "welcomeBack": "Willkommen zurück!",
+    "signInPrompt": "Anmelden, um fortzufahren",
+    "signInRequired": "Sie müssen sich anmelden, um diese Funktion zu nutzen",
+    "signingIn": "Anmelden...",
+    "signingOut": "Abmelden...",
+    "researchAgent": "Forschungsagent",
+    "tagline": "KI-gestützter Forschungsassistent",
+    "secureAuth": "Sichere Authentifizierung von Google"
   },
   "chat": {
     "placeholder": "Geben Sie Ihre Nachricht hier ein...",

@@ -12,8 +12,16 @@
   "auth": {
     "signIn": "使用 Google 登录",
     "signOut": "退出登录",
-    "authRequired": "需要身份验证",
-    "signInPrompt": "请使用 Google 登录以继续"
+    "authRequired": "使用此应用程序需要身份验证",
+    "tokenExpired": "您的会话已过期。请重新登录。",
+    "welcomeBack": "欢迎回来！",
+    "signInPrompt": "登录以继续",
+    "signInRequired": "您必须登录才能使用此功能",
+    "signingIn": "登录中...",
+    "signingOut": "退出登录中...",
+    "researchAgent": "研究助手",
+    "tagline": "AI驱动的研究助手",
+    "secureAuth": "由 Google 提供的安全身份验证"
   },
   "chat": {
     "placeholder": "在此输入您的消息...",

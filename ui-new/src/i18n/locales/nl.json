@@ -31,13 +31,16 @@
   "auth": {
     "signIn": "Inloggen met Google",
     "signOut": "Uitloggen",
-    "authRequired": "Authenticatie vereist",
+    "authRequired": "Authenticatie is vereist om deze applicatie te gebruiken",
     "tokenExpired": "Uw sessie is verlopen. Log opnieuw in.",
     "welcomeBack": "Welkom terug!",
-    "signInPrompt": "Log in met Google om door te gaan",
+    "signInPrompt": "Inloggen om door te gaan",
     "signInRequired": "U moet inloggen om deze functie te gebruiken",
     "signingIn": "Inloggen...",
-    "signingOut": "Uitloggen..."
+    "signingOut": "Uitloggen...",
+    "researchAgent": "Onderzoeksagent",
+    "tagline": "AI-aangedreven onderzoeksassistent",
+    "secureAuth": "Veilige authenticatie mogelijk gemaakt door Google"
   },
   "chat": {
     "placeholder": "Typ hier uw bericht...",

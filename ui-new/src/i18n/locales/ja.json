@@ -12,8 +12,16 @@
   "auth": {
     "signIn": "Googleでサインイン",
     "signOut": "サインアウト",
-    "authRequired": "認証が必要です",
-    "signInPrompt": "続行するにはGoogleでサインインしてください"
+    "authRequired": "このアプリケーションを使用するには認証が必要です",
+    "tokenExpired": "セッションの有効期限が切れました。再度サインインしてください。",
+    "welcomeBack": "おかえりなさい！",
+    "signInPrompt": "続行するにはサインインしてください",
+    "signInRequired": "この機能を使用するにはサインインが必要です",
+    "signingIn": "サインイン中...",
+    "signingOut": "サインアウト中...",
+    "researchAgent": "研究エージェント",
+    "tagline": "AI搭載の研究アシスタント",
+    "secureAuth": "Googleによる安全な認証"
   },
   "chat": {
     "placeholder": "ここにメッセージを入力...",

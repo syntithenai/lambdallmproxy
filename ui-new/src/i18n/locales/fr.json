@@ -12,8 +12,16 @@
   "auth": {
     "signIn": "Se connecter avec Google",
     "signOut": "Se déconnecter",
-    "authRequired": "Authentification requise",
-    "signInPrompt": "Veuillez vous connecter avec Google pour continuer"
+    "authRequired": "L'authentification est requise pour utiliser cette application",
+    "tokenExpired": "Votre session a expiré. Veuillez vous reconnecter.",
+    "welcomeBack": "Content de vous revoir !",
+    "signInPrompt": "Se connecter pour continuer",
+    "signInRequired": "Vous devez vous connecter pour utiliser cette fonctionnalité",
+    "signingIn": "Connexion...",
+    "signingOut": "Déconnexion...",
+    "researchAgent": "Agent de Recherche",
+    "tagline": "Assistant de recherche alimenté par l'IA",
+    "secureAuth": "Authentification sécurisée par Google"
   },
   "chat": {
     "placeholder": "Tapez votre message ici...",

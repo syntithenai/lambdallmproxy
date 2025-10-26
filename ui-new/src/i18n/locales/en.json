@@ -31,13 +31,16 @@
   "auth": {
     "signIn": "Sign in with Google",
     "signOut": "Sign Out",
-    "authRequired": "Authentication required",
+    "authRequired": "Authentication is required to use this application",
     "tokenExpired": "Your session has expired. Please sign in again.",
     "welcomeBack": "Welcome back!",
-    "signInPrompt": "Please sign in with Google to continue",
+    "signInPrompt": "Sign in to continue",
     "signInRequired": "You must sign in to use this feature",
     "signingIn": "Signing in...",
-    "signingOut": "Signing out..."
+    "signingOut": "Signing out...",
+    "researchAgent": "Research Agent",
+    "tagline": "AI-powered research assistant",
+    "secureAuth": "Secure authentication powered by Google"
   },
   "chat": {
     "placeholder": "Type your message here...",

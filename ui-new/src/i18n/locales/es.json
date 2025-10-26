@@ -19,9 +19,16 @@
   "auth": {
     "signIn": "Iniciar sesión con Google",
     "signOut": "Cerrar sesión",
-    "authRequired": "Autenticación requerida",
+    "authRequired": "Se requiere autenticación para usar esta aplicación",
     "tokenExpired": "Tu sesión ha expirado. Por favor inicia sesión nuevamente.",
-    "signInPrompt": "Por favor inicia sesión con Google para continuar"
+    "welcomeBack": "¡Bienvenido de nuevo!",
+    "signInPrompt": "Iniciar sesión para continuar",
+    "signInRequired": "Debes iniciar sesión para usar esta función",
+    "signingIn": "Iniciando sesión...",
+    "signingOut": "Cerrando sesión...",
+    "researchAgent": "Agente de Investigación",
+    "tagline": "Asistente de investigación con IA",
+    "secureAuth": "Autenticación segura con tecnología de Google"
   },
   "chat": {
     "placeholder": "Escribe tu mensaje aquí...",
