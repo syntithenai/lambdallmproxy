@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchResults } from '../contexts/SearchResultsContext';
 import { usePlaylist } from '../contexts/PlaylistContext';
@@ -81,6 +82,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   setShowMCPDialog,
   onLoadingChange
 }) => {
+  const { t } = useTranslation();
   const { accessToken, user, getToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const navigate = useNavigate();
