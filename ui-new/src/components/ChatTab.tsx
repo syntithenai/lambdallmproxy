@@ -6837,23 +6837,23 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 onClick={isLoading ? handleStop : () => handleSend()}
                 disabled={!isLoading && (!input.trim() || !accessToken)}
                 className="btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5"
-                title={!accessToken ? 'Please sign in to send messages' : (!input.trim() ? 'Type a message first' : 'Send message')}
+                title={!accessToken ? t('chat.signInToSend') : (!input.trim() ? t('chat.typeMessageFirst') : t('chat.sendMessage'))}
                 aria-label={isLoading ? t('chat.stopGenerating') : t('chat.sendMessage')}
               >
                 {isLoading ? (
                   <>
                     <span>⏹</span>
-                    <span className="hidden md:inline">Stop</span>
+                    <span className="hidden md:inline">{t('chat.stop')}</span>
                   </>
                 ) : !input.trim() ? (
                   <>
                     <span>✏️</span>
-                    <span className="hidden md:inline">Type a message</span>
+                    <span className="hidden md:inline">{t('chat.typeMessage')}</span>
                   </>
                 ) : (
                   <>
                     <span>📤</span>
-                    <span className="hidden md:inline">Send</span>
+                    <span className="hidden md:inline">{t('chat.send')}</span>
                   </>
                 )}
               </button>
@@ -6890,7 +6890,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   <button
                     onClick={() => setSelectedSnippetIds(new Set())}
                     className="ml-2 p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
-                    title="Clear all attached snippets"
+                    title={t('chat.clearAttachedSnippets')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -6964,13 +6964,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     onClick={handleSelectAllChats}
                     className="btn-secondary text-xs px-3 py-1"
                   >
-                    ☑️ Select All
+                    ☑️ {t('chat.selectAll')}
                   </button>
                   <button
                     onClick={handleSelectNoneChats}
                     className="btn-secondary text-xs px-3 py-1"
                   >
-                    ☐ Select None
+                    ☐ {t('chat.selectNone')}
                   </button>
                 </div>
               )}
@@ -7005,13 +7005,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           onClick={() => handleLoadChat(entry)}
                           className="btn-primary text-xs px-3 py-1"
                         >
-                          Load
+                          {t('chat.load')}
                         </button>
                         <button
                           onClick={() => handleDeleteChat(entry.id)}
                           className="btn-secondary text-red-500 text-xs px-3 py-1"
                         >
-                          Delete
+                          {t('chat.delete')}
                         </button>
                       </div>
                     </div>
@@ -7032,7 +7032,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   onClick={handleDeleteSelectedChats}
                   className="btn-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                 >
-                  🗑️ Delete Selected ({selectedChatIds.size})
+                  🗑️ {t('chat.deleteSelected')} ({selectedChatIds.size})
                 </button>
               )}
               {chatHistory.length > 0 && (
@@ -7040,14 +7040,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   onClick={() => setShowClearHistoryConfirm(true)}
                   className="btn-secondary text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                 >
-                  🗑️ Clear All History
+                  🗑️ {t('chat.clearHistory')}
                 </button>
               )}
               <button
                 onClick={() => setShowLoadDialog(false)}
                 className="btn-primary flex-1"
               >
-                Close
+                {t('chat.close')}
               </button>
             </div>
           </div>
@@ -7058,22 +7058,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {showClearHistoryConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="card max-w-md w-full p-6">
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Clear All History?</h3>
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">{t('chat.clearHistory')}?</h3>
             <p className="text-gray-700 dark:text-gray-300 mb-6">
-              Are you sure you want to delete all {chatHistory.length} chat{chatHistory.length !== 1 ? 's' : ''} from history? This action cannot be undone.
+              {t('chat.confirmClearHistory')}
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowClearHistoryConfirm(false)}
                 className="btn-secondary flex-1"
               >
-                Cancel
+                {t('chat.cancel')}
               </button>
               <button
                 onClick={handleClearAllHistory}
                 className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
               >
-                Clear All
+                {t('chat.clearHistory')}
               </button>
             </div>
           </div>
@@ -7085,7 +7085,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
           <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">MCP Server Configuration</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('chat.mcpServerConfiguration')}</h2>
               <button
                 onClick={() => setShowMCPDialog(false)}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
@@ -7097,7 +7097,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             {/* Add New MCP Server */}
             <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add MCP Server</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('chat.addMCPServer')}</h3>
                 <button
                   onClick={() => setShowExampleServers(!showExampleServers)}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -7182,7 +7182,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   disabled={!newMCPServer.name.trim() || !newMCPServer.url.trim()}
                   className="btn-primary w-full"
                 >
-                  ➕ Add Server
+                  ➕ {t('chat.addServer')}
                 </button>
               </div>
             </div>
@@ -7190,7 +7190,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             {/* Existing MCP Servers */}
             <div>
               <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">
-                Configured Servers ({mcpServers.length})
+                {t('chat.mcpServers')} ({mcpServers.length})
               </h3>
               <div className="space-y-2">
                 {mcpServers.map((server) => (
@@ -7211,6 +7211,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     <button
                       onClick={() => handleDeleteMCPServer(server.id)}
                       className="text-red-500 hover:text-red-700 px-3 py-1"
+                      title={t('chat.remove')}
                     >
                       🗑️
                     </button>
@@ -7218,7 +7219,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 ))}
                 {mcpServers.length === 0 && (
                   <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                    No MCP servers configured
+                    {t('chat.noMcpServers')}
                   </p>
                 )}
               </div>
@@ -7226,7 +7227,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
 
             <div className="mt-6 flex gap-2">
               <button onClick={() => setShowMCPDialog(false)} className="btn-primary flex-1">
-                Done
+                {t('common.done')}
               </button>
             </div>
           </div>
