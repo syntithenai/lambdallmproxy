@@ -1096,9 +1096,14 @@ async function handler(event, responseStream, context) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        let { messages, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location } = body;
+        let { messages, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location, language } = body;
         model = body.model; // Assign to function-scoped variable
         const tavilyApiKey = body.tavilyApiKey || '';
+        
+        // Extract user's preferred language for LLM responses
+        const userLanguage = language || 'en';
+        const { getLanguageInstruction } = require('../utils/languageInstructions');
+        const languageInstruction = getLanguageInstruction(userLanguage);
         
         // INTELLIGENT MODEL ROUTING: Upgrade Together AI models based on query complexity
         // If user selected Together AI 8B model, analyze query and upgrade to 70B or 405B if needed
@@ -1183,7 +1188,7 @@ async function handler(event, responseStream, context) {
                 location.address?.city || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
         }
         
-        // Merge all system messages and inject location context
+        // Merge all system messages and inject location context and language instruction
         // This prevents duplicate system messages which confuse the LLM
         if (messages && messages.length > 0) {
             // Find all system messages
@@ -1192,7 +1197,14 @@ async function handler(event, responseStream, context) {
             
             if (systemMessages.length > 0) {
                 // Merge all system messages into one
-                const mergedSystemContent = systemMessages.map(m => m.content).join('\n\n');
+                let mergedSystemContent = systemMessages.map(m => m.content).join('\n\n');
+                
+                // Add language instruction
+                if (languageInstruction && userLanguage !== 'en') {
+                    mergedSystemContent += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
+                }
+                
+                // Add location context if available
                 const finalSystemContent = locationContext 
                     ? mergedSystemContent + locationContext 
                     : mergedSystemContent;
@@ -1204,14 +1216,27 @@ async function handler(event, responseStream, context) {
                 ];
                 
                 console.log(`📍 Merged ${systemMessages.length} system message(s)` + 
-                    (locationContext ? ' and added location context' : ''));
-            } else if (locationContext) {
-                // No system message exists, prepend one with location context
+                    (locationContext ? ' and added location context' : '') +
+                    (userLanguage !== 'en' ? ` with ${userLanguage} language instruction` : ''));
+            } else if (locationContext || userLanguage !== 'en') {
+                // No system message exists, create one with location context and/or language instruction
+                let systemContent = 'You are a helpful AI assistant with access to powerful tools. **MANDATORY TOOL USE**: (1) For calculations, math problems, or data processing, use execute_javascript. (2) For current events, news, recent information after your knowledge cutoff, facts needing citations, or any research query, use search_web. (3) For ANY diagrams, charts, flowcharts, or visualizations, use generate_chart - NEVER use execute_javascript for charts. **CRITICAL**: Always cite sources with URLs when using search_web. Use tools proactively - they provide better answers than relying solely on training data.';
+                
+                if (languageInstruction && userLanguage !== 'en') {
+                    systemContent += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
+                }
+                
+                if (locationContext) {
+                    systemContent += locationContext;
+                }
+                
                 messages.unshift({
                     role: 'system',
-                    content: 'You are a helpful AI assistant with access to powerful tools. **MANDATORY TOOL USE**: (1) For calculations, math problems, or data processing, use execute_javascript. (2) For current events, news, recent information after your knowledge cutoff, facts needing citations, or any research query, use search_web. (3) For ANY diagrams, charts, flowcharts, or visualizations, use generate_chart - NEVER use execute_javascript for charts. **CRITICAL**: Always cite sources with URLs when using search_web. Use tools proactively - they provide better answers than relying solely on training data.' + locationContext
+                    content: systemContent
                 });
-                console.log('📍 Location context added as new system message');
+                console.log('📍 Added system message' + 
+                    (locationContext ? ' with location context' : '') +
+                    (userLanguage !== 'en' ? ` and ${userLanguage} language instruction` : ''));
             } else {
                 // No system message at all, add default with tool guidance
                 messages.unshift({
