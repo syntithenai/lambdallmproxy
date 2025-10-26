@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-// import { useTranslation } from 'react-i18next'; // TODO: Uncomment when converting UI strings
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchResults } from '../contexts/SearchResultsContext';
 import { usePlaylist } from '../contexts/PlaylistContext';
@@ -82,7 +82,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   setShowMCPDialog,
   onLoadingChange
 }) => {
-  // const { t } = useTranslation(); // Translation function for i18n - TODO: Convert UI strings
+  const { t } = useTranslation();
   const { accessToken, user, getToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
   const navigate = useNavigate();
@@ -4290,13 +4290,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {/* Chat Header with Actions */}
       <div className="flex flex-wrap items-center gap-2 px-2 md:p-4 py-2 border-b border-gray-200 dark:border-gray-700">
         <div className="flex flex-wrap gap-2 flex-1">
-          <button onClick={handleNewChat} className="bg-green-600 hover:bg-green-700 text-white p-2 md:px-3 md:py-1.5 rounded font-medium text-sm transition-colors flex items-center gap-1.5" title="New Chat" aria-label="New Chat">
+          <button onClick={handleNewChat} className="bg-green-600 hover:bg-green-700 text-white p-2 md:px-3 md:py-1.5 rounded font-medium text-sm transition-colors flex items-center gap-1.5" title={t('chat.newChat')} aria-label={t('chat.newChat')}>
             <span>➕</span>
-            <span className="hidden md:inline">New Chat</span>
+            <span className="hidden md:inline">{t('chat.newChat')}</span>
           </button>
-          <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5" title="Chat History" aria-label="Chat History">
+          <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5" title={t('chat.chatHistory')} aria-label={t('chat.chatHistory')}>
             <span>🕒</span>
-            <span className="hidden md:inline">History</span>
+            <span className="hidden md:inline">{t('chat.history')}</span>
           </button>
           <button
             onClick={() => navigate('/planning')}
@@ -4310,11 +4310,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           <button 
             onClick={() => setShowExamplesModal(true)}
             className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5"
-            title="Examples"
-            aria-label="Examples"
+            title={t('chat.examples')}
+            aria-label={t('chat.examples')}
           >
             <span>📝</span>
-            <span className="hidden md:inline">Examples</span>
+            <span className="hidden md:inline">{t('chat.examples')}</span>
           </button>
           <button 
             onClick={() => setShowSnippetsPanel(!showSnippetsPanel)}
@@ -4323,11 +4323,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 ? 'bg-blue-600 hover:bg-blue-700 text-white' 
                 : 'btn-secondary'
             }`}
-            title="Attach knowledge base snippets as context for this conversation"
-            aria-label="Attach Context"
+            title={t('chat.attachContextTooltip')}
+            aria-label={t('chat.attachContext')}
           >
             <span>📎</span>
-            <span className="hidden md:inline">Attach Context</span>
+            <span className="hidden md:inline">{t('chat.attachContext')}</span>
             {selectedSnippetIds.size > 0 && (
               <span className="ml-1 px-1.5 py-0.5 text-xs bg-white text-blue-600 rounded-full font-bold">
                 {selectedSnippetIds.size}
