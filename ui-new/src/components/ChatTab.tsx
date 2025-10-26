@@ -690,14 +690,14 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       // Create HTML with base64 image
       const imageHtml = `<img src="${base64Image}" alt="${title}" style="max-width: 100%; height: auto;" />`;
       await addSnippet(imageHtml, 'assistant', title);
-      showSuccess('Image added to Swag!');
+      showSuccess(t('chat.imageAddedToSwag'));
     } catch (error) {
       console.error('Failed to grab image:', error);
       // Fallback to original URL if conversion fails
       const title = description || 'Image';
       const imageHtml = `<img src="${imageUrl}" alt="${title}" style="max-width: 100%; height: auto;" />`;
       await addSnippet(imageHtml, 'assistant', title);
-      showSuccess('Image added to Swag (without conversion)!');
+      showSuccess(t('chat.imageAddedWithoutConversion'));
     }
   };
 
@@ -748,13 +748,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       const contentWithBase64Images = await convertHtmlImagesToBase64(formattedContent);
       
       await addSnippet(contentWithBase64Images, sourceType, title);
-      showSuccess('Content captured to Swag!');
+      showSuccess(t('chat.contentCapturedToSwag'));
     } catch (error) {
       console.error('Failed to capture content with base64 conversion:', error);
       // Fallback to original behavior
       const fullContent = formatContentWithMedia(content, extractedContent);
       await addSnippet(fullContent, sourceType, title);
-      showSuccess('Content captured to Swag (without image conversion)!');
+      showSuccess(t('chat.contentCapturedWithoutConversion'));
     }
   };
 
@@ -1194,11 +1194,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         // Focus input after a short delay
         setTimeout(() => {
           inputRef.current?.focus();
-          showSuccess('Planning prompts transferred to new chat');
+          showSuccess(t('chat.planningTransferred'));
         }, 100);
       } catch (error) {
         console.error('Failed to parse planning transfer data:', error);
-        showError('Failed to transfer planning data');
+        showError(t('chat.failedToTransfer'));
         // Clear bad data
         sessionStorage.removeItem('planning_transfer_data');
       }
@@ -1391,7 +1391,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
           tr.name === 'search_youtube' && !processedToolResultsRef.current.has(tr.tool_call_id || '')
         );
         if (lastMessageHasNewYouTube) {
-          showSuccess(`Added ${tracks.length} video${tracks.length !== 1 ? 's' : ''} to playlist`);
+          showSuccess(t('chat.addedToPlaylist', { count: tracks.length, plural: tracks.length !== 1 ? 's' : '' }));
         }
       }
     }
@@ -1751,11 +1751,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         throw new Error(error.error || 'Failed to stop transcription');
       }
 
-      showSuccess('Transcription stopped');
+      showSuccess(t('chat.transcriptionStopped'));
       console.log('Transcription stopped:', toolCallId);
     } catch (error) {
       console.error('Failed to stop transcription:', error);
-      showError('Failed to stop transcription: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      showError(t('chat.failedToStopTranscription'));
     }
   };
 
@@ -1808,14 +1808,18 @@ export const ChatTab: React.FC<ChatTabProps> = ({
 
       // Validate file type
       if (!SUPPORTED_TYPES.includes(file.type)) {
-        showWarning(`File type not supported: ${file.name}. Supported types: JPEG, PNG, GIF, WebP, PDF`);
+        showWarning(t('chat.fileTypeNotSupported', { name: file.name }));
         continue;
       }
 
       // Validate file size
       const maxSize = file.type === 'application/pdf' ? MAX_PDF_SIZE : MAX_IMAGE_SIZE;
       if (file.size > maxSize) {
-        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB). Max size: ${maxSize / 1024 / 1024}MB`);
+        showWarning(t('chat.fileTooLarge', { 
+          name: file.name, 
+          size: (file.size / 1024 / 1024).toFixed(2), 
+          maxSize: maxSize / 1024 / 1024 
+        }));
         continue;
       }
 
@@ -1831,7 +1835,10 @@ export const ChatTab: React.FC<ChatTabProps> = ({
           // Check token estimate (rough: 1 image ≈ 765 tokens for low detail, 2000+ for high detail)
           const estimatedTokens = base64Data.length / 1000; // Very rough estimate
           if (estimatedTokens > 20000) {
-            showWarning(`Image ${file.name} may use many tokens (~${Math.round(estimatedTokens / 1000)}k). Consider using a smaller image.`);
+            showWarning(t('chat.imageTokenWarning', { 
+              name: file.name, 
+              tokens: Math.round(estimatedTokens / 1000) 
+            }));
           }
         } else {
           // PDF - read as base64
@@ -1854,10 +1861,10 @@ export const ChatTab: React.FC<ChatTabProps> = ({
           preview
         }]);
 
-        showSuccess(`Added ${file.name}`);
+        showSuccess(t('chat.fileAdded', { name: file.name }));
       } catch (error) {
         console.error('Error processing file:', error);
-        showError(`Failed to process ${file.name}`);
+        showError(t('chat.failedToProcess', { name: file.name }));
       }
     }
   };
@@ -1873,7 +1880,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     
     // Check authentication before sending
     if (!accessToken) {
-      showError('Please sign in to send messages');
+      showError(t('chat.signInToSendMessages'));
       return;
     }
 
@@ -2039,14 +2046,14 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               content: contextText
             };
             
-            showSuccess(`🔍 Found ${results.length} relevant chunks from knowledge base`);
+            showSuccess(t('chat.foundRelevantChunks', { count: results.length }));
           } else {
-            showWarning('No relevant context found in knowledge base');
+            showWarning(t('chat.noRelevantContext'));
           }
         }
       } catch (error) {
         console.error('RAG context error:', error);
-        showWarning('Failed to retrieve RAG context, continuing without it');
+        showWarning(t('chat.failedToRetrieveRag'));
       } finally {
         setRagSearching(false);
       }
@@ -3514,7 +3521,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // Check if authentication error - auto-logout
               if (errorMsg.includes('Authentication') || errorMsg.includes('UNAUTHORIZED') || data.code === 'UNAUTHORIZED') {
                 console.warn('⚠️ Authentication error detected, logging out...');
-                showWarning('Your session has expired. Please sign in again.');
+                showWarning(t('chat.sessionExpired'));
                 // The AuthContext will handle logout via useAuth
               }
               
@@ -3689,7 +3696,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               console.log('📝 Snippet inserted:', data);
               // Dispatch custom event for SnippetsPanel
               window.dispatchEvent(new CustomEvent('snippet_inserted', { detail: data }));
-              showSuccess(`Saved snippet: ${data.title}`);
+              showSuccess(t('chat.snippetSaved', { title: data.title }));
               
               // Sync the newly created snippet from Google Sheets to localStorage
               if (data.id) {
@@ -3709,7 +3716,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // Snippet was deleted
               console.log('🗑️ Snippet deleted:', data);
               window.dispatchEvent(new CustomEvent('snippet_deleted', { detail: data }));
-              showSuccess(`Deleted snippet: ${data.title}`);
+              showSuccess(t('chat.snippetDeleted', { title: data.title }));
               break;
             
             case 'snippet_updated':
@@ -3884,7 +3891,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       setShowLoadDialog(false);
       showSuccess('Chat loaded successfully');
     } else {
-      showError('Failed to load chat');
+      showError(t('chat.failedToLoadChat'));
     }
   };
 
@@ -4302,10 +4309,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             onClick={() => navigate('/planning')}
             className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5"
             title={systemPrompt ? "Edit system prompt and planning" : "Create a plan"}
-            aria-label={systemPrompt ? "Edit Plan" : "Make A Plan"}
+            aria-label={systemPrompt ? t('chat.editPlan') : t('chat.makeAPlan')}
           >
             <span>{systemPrompt ? '✏️' : '📋'}</span>
-            <span className="hidden md:inline">{systemPrompt ? 'Edit Plan' : 'Make A Plan'}</span>
+            <span className="hidden md:inline">{systemPrompt ? t('chat.editPlan') : t('chat.makeAPlan')}</span>
           </button>
           <button 
             onClick={() => setShowExamplesModal(true)}
@@ -4839,7 +4846,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                           <button
                                             onClick={() => {
                                               navigator.clipboard.writeText(String(jsResult.result));
-                                              showSuccess('Output copied to clipboard!');
+                                              showSuccess(t('chat.outputCopied'));
                                             }}
                                             className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
                                             title={t('chat.copyOutputToClipboard')}
@@ -5997,7 +6004,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                   <button
                                                     onClick={() => {
                                                       navigator.clipboard.writeText(jsCode);
-                                                      showSuccess('Code copied to clipboard!');
+                                                      showSuccess(t('chat.codeCopied'));
                                                     }}
                                                     className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
                                                     title={t('chat.copyCodeToClipboard')}
@@ -6038,7 +6045,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                   <button
                                                     onClick={() => {
                                                       navigator.clipboard.writeText(String(jsResult.result));
-                                                      showSuccess('Output copied to clipboard!');
+                                                      showSuccess(t('chat.outputCopied'));
                                                     }}
                                                     className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
                                                     title="Copy output to clipboard"
@@ -6278,7 +6285,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                             <button
                                               onClick={() => {
                                                 navigator.clipboard.writeText(imgSrc || '');
-                                                showSuccess('Image copied to clipboard');
+                                                showSuccess(t('chat.copiedToClipboard'));
                                               }}
                                               className="p-1.5 bg-white/90 dark:bg-gray-800/90 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                               title="Copy image data URL"
@@ -6389,14 +6396,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                 providerApiKeys={providerApiKeys}
                                 onCopy={(text) => {
                                   navigator.clipboard.writeText(text).then(() => {
-                                    showSuccess('Image URL copied to clipboard!');
+                                    showSuccess(t('chat.copiedToClipboard'));
                                   }).catch(() => {
                                     showError('Failed to copy');
                                   });
                                 }}
                                 onGrab={(markdown) => {
                                   navigator.clipboard.writeText(markdown).then(() => {
-                                    showSuccess('Markdown copied to clipboard!');
+                                    showSuccess(t('chat.copiedToClipboard'));
                                   }).catch(() => {
                                     showError('Failed to copy');
                                   });
@@ -6456,7 +6463,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                           onClick={() => {
                             const textContent = getMessageText(msg.content);
                             navigator.clipboard.writeText(textContent).then(() => {
-                              showSuccess('Copied to clipboard!');
+                              showSuccess(t('chat.copiedToClipboard'));
                             }).catch(() => {
                               showError('Failed to copy');
                             });
@@ -6775,12 +6782,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 disabled={isLoading}
                 className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-2 md:px-6 md:py-3 rounded-lg font-semibold text-base transition-all transform hover:scale-105 shadow-lg flex items-center gap-2"
                 title="Continue from where the iteration limit was reached"
-                aria-label="Continue Processing"
+                aria-label={t('chat.continueProcessing')}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                 </svg>
-                <span className="hidden md:inline">Continue Processing</span>
+                <span className="hidden md:inline">{t('chat.continueProcessing')}</span>
               </button>
             </div>
           )}
@@ -6831,7 +6838,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 disabled={!isLoading && (!input.trim() || !accessToken)}
                 className="btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5"
                 title={!accessToken ? 'Please sign in to send messages' : (!input.trim() ? 'Type a message first' : 'Send message')}
-                aria-label={isLoading ? 'Stop generating response' : 'Send message'}
+                aria-label={isLoading ? t('chat.stopGenerating') : t('chat.sendMessage')}
               >
                 {isLoading ? (
                   <>
@@ -6929,10 +6936,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   }
                 }
               }}
-              placeholder="Type your message... (Shift+Enter for new line, ↑↓ for history)"
+              placeholder={t('chat.inputPlaceholder')}
               className="input-field flex-1 resize-none overflow-y-auto"
               style={{ minHeight: '2.5rem', maxHeight: '300px' }}
-              aria-label="Chat message input"
+              aria-label={t('chat.chatMessageInput')}
               aria-describedby="chat-input-help"
             />
             {/* Screen reader help text */}
@@ -7160,14 +7167,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   type="text"
                   value={newMCPServer.name}
                   onChange={(e) => setNewMCPServer({ ...newMCPServer, name: e.target.value })}
-                  placeholder="Server Name (e.g., filesystem, github)"
+                  placeholder={t('chat.mcpServerNamePlaceholder')}
                   className="input-field w-full"
                 />
                 <input
                   type="text"
                   value={newMCPServer.url}
                   onChange={(e) => setNewMCPServer({ ...newMCPServer, url: e.target.value })}
-                  placeholder="Server URL (e.g., http://localhost:3000)"
+                  placeholder={t('chat.mcpServerUrlPlaceholder')}
                   className="input-field w-full"
                 />
                 <button
@@ -7298,7 +7305,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               <button
                 onClick={() => setViewingSearchResult(null)}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-3xl leading-none"
-                aria-label="Close"
+                aria-label={t('chat.close')}
               >
                 ×
               </button>
@@ -7458,7 +7465,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               <button
                 onClick={() => setViewingRawHtml(null)}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-3xl leading-none"
-                aria-label="Close"
+                aria-label={t('chat.close')}
               >
                 ×
               </button>
