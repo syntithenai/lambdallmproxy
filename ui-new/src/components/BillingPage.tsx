@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import './BillingPage.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useUsage } from '../contexts/UsageContext';
@@ -70,6 +71,7 @@ interface ClearDataModalProps {
 }
 
 const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConfirm, providers }) => {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<'all' | 'provider' | 'dateRange'>('all');
   const [selectedProvider, setSelectedProvider] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -104,13 +106,13 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Clear Billing Data</h2>
+          <h2>{t('billing.clearBillingData')}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         
         <div className="modal-body">
           <div className="warning-banner">
-            ⚠️ <strong>Warning:</strong> This action cannot be undone. Your billing data will be permanently deleted.
+            {t('billing.clearDataWarning')}
           </div>
 
           <div className="clear-mode-tabs">
@@ -118,46 +120,46 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
               className={mode === 'all' ? 'active' : ''} 
               onClick={() => setMode('all')}
             >
-              Clear All
+              {t('billing.clearAll')}
             </button>
             <button 
               className={mode === 'provider' ? 'active' : ''} 
               onClick={() => setMode('provider')}
             >
-              Clear by Provider
+              {t('billing.clearByProvider')}
             </button>
             <button 
               className={mode === 'dateRange' ? 'active' : ''} 
               onClick={() => setMode('dateRange')}
             >
-              Clear by Date Range
+              {t('billing.clearByDateRange')}
             </button>
           </div>
 
           <div className="clear-mode-content">
             {mode === 'all' && (
               <div className="clear-mode-description">
-                <p>This will delete <strong>all</strong> transactions from your billing sheet.</p>
-                <p>Consider exporting to CSV first for your records.</p>
+                <p>{t('billing.clearAllDescription')}</p>
+                <p>{t('billing.considerExportFirst')}</p>
               </div>
             )}
 
             {mode === 'provider' && (
               <div className="clear-mode-options">
                 <label>
-                  Select Provider:
+                  {t('billing.selectProvider')}
                   <select 
                     value={selectedProvider} 
                     onChange={(e) => setSelectedProvider(e.target.value)}
                   >
-                    <option value="">-- Select Provider --</option>
+                    <option value="">{t('billing.selectProviderPlaceholder')}</option>
                     {providers.map(p => (
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </select>
                 </label>
                 <p className="hint">
-                  Useful for aligning with provider billing cycles (e.g., clear monthly).
+                  {t('billing.clearProviderHint')}
                 </p>
               </div>
             )}
@@ -165,7 +167,7 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
             {mode === 'dateRange' && (
               <div className="clear-mode-options">
                 <label>
-                  Start Date:
+                  {t('billing.startDate')}:
                   <input 
                     type="date" 
                     value={startDate} 
@@ -173,7 +175,7 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
                   />
                 </label>
                 <label>
-                  End Date:
+                  {t('billing.endDate')}:
                   <input 
                     type="date" 
                     value={endDate} 
@@ -181,7 +183,7 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
                   />
                 </label>
                 <p className="hint">
-                  Leave blank to clear from beginning/to end. Both can be used together.
+                  {t('billing.clearDateRangeHint')}
                 </p>
               </div>
             )}
@@ -193,7 +195,7 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
                   checked={confirmed} 
                   onChange={(e) => setConfirmed(e.target.checked)}
                 />
-                <span>I understand this action cannot be undone</span>
+                <span>{t('billing.confirmUndoCheckbox')}</span>
               </label>
             </div>
           </div>
@@ -201,14 +203,14 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
 
         <div className="modal-footer">
           <button className="btn-secondary" onClick={onClose}>
-            Cancel
+            {t('billing.cancel')}
           </button>
           <button 
             className="btn-danger" 
             onClick={handleSubmit}
             disabled={!isValid()}
           >
-            Clear Data
+            {t('billing.clearData')}
           </button>
         </div>
       </div>
@@ -217,6 +219,7 @@ const ClearDataModal: React.FC<ClearDataModalProps> = ({ isOpen, onClose, onConf
 };
 
 const BillingPage: React.FC = () => {
+  const { t } = useTranslation();
   const { accessToken, isAuthenticated } = useAuth();
   const { refreshUsage } = useUsage(); // Get refresh function from UsageContext
   const [billingData, setBillingData] = useState<BillingData | null>(null);
@@ -417,19 +420,19 @@ const BillingPage: React.FC = () => {
       }
 
       const result = await response.json();
-      alert(`✅ Success: Cleared ${result.deletedCount} transactions. ${result.remainingCount} remaining.`);
+      alert(t('billing.dataClearedSuccess', { count: result.deletedCount, remaining: result.remainingCount }));
       
       // Refresh data
       fetchBillingData();
     } catch (err: any) {
       console.error('Error clearing data:', err);
-      alert(`❌ Error: ${err.message}`);
+      alert(t('billing.dataClearError', { message: err.message }));
     }
   };
 
   const exportToCSV = () => {
     if (!billingData || filteredTransactions.length === 0) {
-      alert('No data to export');
+      alert(t('billing.noDataToExport'));
       return;
     }
 
@@ -589,23 +592,22 @@ const BillingPage: React.FC = () => {
     return (
       <div className="billing-page">
         <div className="error-message">
-          <h3>🔐 Sign In Required</h3>
-          <p>Please sign in with Google to view your billing data.</p>
+          <h3>{t('billing.signInRequired')}</h3>
+          <p>{t('billing.signInToViewBilling')}</p>
           
           <div className="info-box" style={{ marginTop: '20px', padding: '15px', background: '#e3f2fd', borderRadius: '8px', textAlign: 'left' }}>
-            <h4 style={{ marginTop: 0, color: '#1976d2' }}>📋 How to Access Billing Data:</h4>
+            <h4 style={{ marginTop: 0, color: '#1976d2' }}>{t('billing.howToAccessBilling')}</h4>
             <ol style={{ marginLeft: '20px', color: '#424242' }}>
-              <li>Click the <strong>"Sign in with Google"</strong> button in the top navigation bar</li>
-              <li>That's it! Your billing data will load automatically</li>
+              <li>{t('billing.signInStep1')}</li>
+              <li>{t('billing.signInStep2')}</li>
             </ol>
             <p style={{ marginTop: '15px', color: '#666', fontSize: '0.9em' }}>
-              💡 Your billing data is stored in a centralized service account Google Sheet and retrieved automatically.
-              No additional permissions or Drive access needed - just sign in with Google.
+              {t('billing.billingDataNote')}
             </p>
             
             {/* Debug info */}
             <details style={{ marginTop: '15px', fontSize: '0.85em', color: '#888' }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>🔧 Debug Info</summary>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>{t('billing.debugInfo')}</summary>
               <pre style={{ marginTop: '10px', padding: '10px', background: '#f5f5f5', borderRadius: '4px', overflow: 'auto' }}>
                 {JSON.stringify({
                   isAuthenticated,
@@ -624,7 +626,7 @@ const BillingPage: React.FC = () => {
   if (loading) {
     return (
       <div className="billing-page">
-        <div className="loading">Loading billing data...</div>
+        <div className="loading">{t('billing.loading')}</div>
       </div>
     );
   }
@@ -633,10 +635,10 @@ const BillingPage: React.FC = () => {
     return (
       <div className="billing-page">
         <div className="error-message">
-          <h3>⚠️ Error Loading Billing Data</h3>
+          <h3>{t('billing.errorLoading')}</h3>
           <p>{error}</p>
           
-          <button onClick={fetchBillingData} style={{ marginTop: '15px' }}>🔄 Retry</button>
+          <button onClick={fetchBillingData} style={{ marginTop: '15px' }}>{t('billing.retry')}</button>
         </div>
       </div>
     );
@@ -645,7 +647,7 @@ const BillingPage: React.FC = () => {
   if (!billingData) {
     return (
       <div className="billing-page">
-        <div className="loading">No billing data available. Please wait...</div>
+        <div className="loading">{t('billing.noBillingData')}</div>
       </div>
     );
   }
@@ -655,15 +657,15 @@ const BillingPage: React.FC = () => {
     return (
       <div className="billing-page">
         <div className="billing-header">
-          <h1>💰 Billing Dashboard</h1>
+          <h1>{t('billing.title')}</h1>
           <p style={{ color: '#666', marginTop: '8px' }}>
-            {billingData.message || 'No transactions found'}
+            {billingData.message || t('billing.noTransactionsMessage')}
           </p>
         </div>
         <div className="info-box" style={{ marginTop: '20px', padding: '20px', background: '#f5f5f5', borderRadius: '8px' }}>
-          <h3 style={{ marginTop: 0 }}>📊 No Billing Data Yet</h3>
-          <p>Start using the chat to generate billing records. All API usage is automatically tracked.</p>
-          <button onClick={fetchBillingData} style={{ marginTop: '15px' }}>🔄 Refresh</button>
+          <h3 style={{ marginTop: 0 }}>{t('billing.noBillingDataYet')}</h3>
+          <p>{t('billing.startUsingChat')}</p>
+          <button onClick={fetchBillingData} style={{ marginTop: '15px' }}>{t('billing.refresh')}</button>
         </div>
       </div>
     );
