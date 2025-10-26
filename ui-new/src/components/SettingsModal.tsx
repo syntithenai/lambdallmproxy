@@ -249,10 +249,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {!isEditingProvider && (
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              🎯 Model Selection Strategy
+              🎯 {t('settings.modelSelectionStrategy')}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Choose how the system selects models for your requests. This balances cost, quality, and performance.
+              {t('settings.modelStrategyDescription')}
             </p>
             
             <div className="space-y-3">
@@ -267,10 +267,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
-                    💰 Cheap (Recommended)
+                    💰 {t('settings.cheap')}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-300">
-                    Prioritize free providers (Groq, Gemini) and smallest capable models. Falls back to paid providers only when rate-limited. Best for most use cases.
+                    {t('settings.cheapDescription')}
                   </div>
                 </div>
               </label>
@@ -286,10 +286,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
-                    ⚖️ Balanced
+                    ⚖️ {t('settings.balanced')}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-300">
-                    Choose models that reliably do the job without compromising quality. Uses free tier when quality is equivalent, paid models when quality matters. Balances cost vs. capability.
+                    {t('settings.balancedDescription')}
                   </div>
                 </div>
               </label>
@@ -305,10 +305,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
-                    💪 Powerful
+                    💪 {t('settings.powerful')}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-300">
-                    Use the best available models (GPT-4o, Gemini 2.5 Pro, o1) for maximum capability. Prioritizes quality over cost. Uses reasoning models for complex analysis.
+                    {t('settings.powerfulDescription')}
                   </div>
                 </div>
               </label>
@@ -324,10 +324,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
-                    ⚡ Fastest
+                    ⚡ {t('settings.fastest')}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-300">
-                    Prioritize low-latency models (Groq) for quick responses. May sacrifice some quality for speed in simple requests. Great for interactive sessions.
+                    {t('settings.fastestDescription')}
                   </div>
                 </div>
               </label>
@@ -343,24 +343,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Tavily API Key */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Tavily API Key (Optional)
+              {t('settings.tavilyApiKey')}
             </label>
             <input
               type="password"
               value={settings.tavilyApiKey}
               onChange={(e) => setSettings({ ...settings, tavilyApiKey: e.target.value })}
               className="input-field"
-              placeholder="tvly-..."
+              placeholder={t('settings.tavilyPlaceholder')}
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Enables enhanced web search and scraping via Tavily API. Falls back to DuckDuckGo if not provided.
+              {t('settings.tavilyHelp')}
             </p>
           </div>
 
           {/* Tool Configuration */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Enabled Tools
+              {t('settings.enabledTools')}
             </h3>
             <div className="space-y-3">
               <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
@@ -372,10 +372,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    🔍 Web Search
+                    🔍 {t('settings.webSearch')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Search the web for current information, news, and articles
+                    {t('settings.webSearchDescription')}
                   </div>
                 </div>
               </label>
@@ -389,10 +389,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    ⚡ JavaScript Execution
+                    ⚡ {t('settings.executeJs')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Execute JavaScript code for calculations and data processing
+                    {t('settings.executeJsDescription')}
                   </div>
                 </div>
               </label>
@@ -406,10 +406,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    🌐 Web Scraping
+                    🌐 {t('settings.scrapeUrl')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Extract content from specific URLs and websites
+                    {t('settings.scrapeUrlDescription')}
                   </div>
                 </div>
               </label>
@@ -423,10 +423,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    🎬 YouTube Search
+                    🎬 {t('settings.youtubeSearch')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Search YouTube for videos with transcript support
+                    {t('settings.youtubeDescription')}
                   </div>
                 </div>
               </label>
@@ -440,10 +440,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    🎙️ Transcribe Audio/Video
+                    🎙️ {t('settings.transcribe')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Transcribe audio/video from URLs (YouTube, MP3, MP4, etc.) using Whisper
+                    {t('settings.transcribeDescription')}
                   </div>
                 </div>
               </label>
@@ -457,10 +457,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    📊 Generate Charts & Diagrams
+                    📊 {t('settings.generateChart')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Create interactive flowcharts, sequence diagrams, ER diagrams, Gantt charts, and more
+                    {t('settings.chartDescription')}
                   </div>
                 </div>
               </label>
@@ -474,10 +474,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    🎨 Generate Images (AI)
+                    🎨 {t('settings.generateImage')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Create images using DALL-E, Stable Diffusion, and other AI models with quality tier selection
+                    {t('settings.imageDescription')}
                   </div>
                 </div>
               </label>
@@ -491,10 +491,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    📚 Search Knowledge Base (Server-Side)
+                    📚 {t('settings.searchKnowledgeBase')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Server-side RAG tool for searching project documentation and ingested content
+                    {t('settings.ragDescription')}
                   </div>
                 </div>
               </label>
@@ -508,10 +508,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    ✅ Manage Todos (Backend Queue)
+                    ✅ {t('settings.manageTodos')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Backend todo queue management with auto-progression for multi-step workflows
+                    {t('settings.todosDescription')}
                   </div>
                 </div>
               </label>
@@ -525,15 +525,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">
-                    📝 Manage Snippets (Google Sheets)
+                    📝 {t('settings.manageSnippets')}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Save and search code snippets and knowledge in your personal Google Sheet
+                    {t('settings.snippetsDescription')}
                   </div>
                 </div>
               </label>
 
-              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-2 border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10">
+              <label className="flex items-center gap-3 cursor-pointer p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-2 border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10">
                 <input
                   type="checkbox"
                   checked={enabledTools.ask_llm}
@@ -542,13 +542,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                    🤖 Recursive LLM Agent
+                    🤖 {t('settings.askLlm')}
                     <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-200 dark:bg-amber-900/50 dark:text-amber-400 rounded-full">
                       ⚠️ HIGH TOKEN USAGE
                     </span>
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-300 font-medium mb-1">
-                    Spawn sub-agent with full tool access for complex multi-step queries
+                    {t('settings.askLlmDescription')}
                   </div>
                   <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 p-2 rounded border border-amber-300 dark:border-amber-800">
                     <strong>WARNING:</strong> This tool creates complete recursive conversations with all available tools and multiple iterations. 
@@ -558,7 +558,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </label>
 
-              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors border-3 border-red-400 dark:border-red-900 bg-red-50 dark:bg-red-950/20 shadow-md">
+              <label className="flex items-center gap-3 cursor-pointer p-4 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors border-3 border-red-400 dark:border-red-900 bg-red-50 dark:bg-red-950/20 shadow-md">
                 <input
                   type="checkbox"
                   checked={enabledTools.generate_reasoning_chain}
@@ -567,13 +567,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                    🧠 Deep Reasoning Chain
+                    🧠 {t('settings.generateReasoning')}
                     <span className="inline-flex items-center px-2 py-0.5 text-xs font-bold text-red-800 bg-red-300 dark:bg-red-900/70 dark:text-red-300 rounded-full animate-pulse">
                       ⚠️⚠️ EXTREME TOKEN USAGE
                     </span>
                   </div>
                   <div className="text-sm text-gray-700 dark:text-gray-200 font-semibold mb-1">
-                    Generate transparent reasoning chains with advanced reasoning models (o1, DeepSeek-R1)
+                    {t('settings.reasoningDescription')}
                   </div>
                   <div className="text-xs text-red-800 dark:text-red-300 bg-red-100 dark:bg-red-950/50 p-3 rounded border-2 border-red-400 dark:border-red-800 space-y-1">
                     <div className="font-bold text-sm mb-2">🚨 CRITICAL WARNINGS:</div>
@@ -695,16 +695,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="space-y-6">
           <div>
             <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">
-              Webshare Proxy Configuration
+              {t('settings.proxySettings')}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Configure residential proxy for YouTube, DuckDuckGo, and content scraping to avoid rate limiting
+              {t('settings.proxyDescription')}
             </p>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
-                  Username
+                  {t('settings.proxyUsername')}
                 </label>
                 <input
                   type="text"
@@ -721,7 +721,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
-                  Password
+                  {t('settings.proxyPassword')}
                 </label>
                 <input
                   type="password"
@@ -769,10 +769,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="space-y-6">
           <div>
             <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">
-              📍 Location Services
+              📍 {t('settings.locationServices')}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Enable location services to provide context-aware responses for local queries (weather, restaurants, directions, etc.)
+              {t('settings.locationDescription')}
             </p>
             
             {/* Location Status Card */}
