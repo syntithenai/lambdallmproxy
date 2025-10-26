@@ -2334,10 +2334,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         messages: cleanedMessages,
         temperature: 0.7,
         stream: true,  // Always use streaming
-        optimization: settings.optimization || 'cheap'  // Model selection strategy
+        optimization: settings.optimization || 'cheap',  // Model selection strategy
+        language: settings.language || 'en'  // User's preferred language for responses
       };
       
       console.log(`🎯 Model selection optimization: ${requestPayload.optimization}`);
+      console.log(`🌐 Response language: ${requestPayload.language}`);
       
       // Add location data if available
       if (location) {
@@ -4008,10 +4010,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       temperature: 0.7,
       stream: true,
       isContinuation: true,  // Critical: Flag to bypass message filtering
-      optimization: settings.optimization || 'cheap'  // Model selection strategy
+      optimization: settings.optimization || 'cheap',  // Model selection strategy
+      language: settings.language || 'en'  // User's preferred language for responses
     };
     
     console.log(`🎯 Continuation request with optimization: ${requestPayload.optimization}`);
+    console.log(`🌐 Response language: ${requestPayload.language}`);
     
     // Add location data if available (same as initial request)
     if (location) {

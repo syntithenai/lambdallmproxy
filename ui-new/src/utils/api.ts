@@ -368,6 +368,7 @@ export const generatePlan = async (
     previousContext?: any; // Context from previous clarification request
     signal?: AbortSignal; // Abort signal for cancellation
     forcePlan?: boolean; // Force generation of system and user prompts even if more questions are needed
+    language?: string; // User's preferred language for responses (ISO 639-1 code)
   }
 ): Promise<void> => {
   const apiBase = await getCachedApiBase();
@@ -413,6 +414,11 @@ export const generatePlan = async (
   // Add force plan flag if provided
   if (options?.forcePlan) {
     requestBody.forcePlan = true;
+  }
+  
+  // Add language preference
+  if (options?.language) {
+    requestBody.language = options.language;
   }
   
   const response = await createSSERequest(

@@ -14,6 +14,7 @@ interface UsePlanningGenerationProps {
   onClarificationNeeded?: (questions: string[], context: any) => void; // New callback for clarification
   clarificationAnswers?: string; // User's answers to clarification questions
   previousContext?: any; // Context from previous clarification request
+  language?: string; // User's preferred language for responses
 }
 
 export const usePlanningGeneration = ({
@@ -24,7 +25,8 @@ export const usePlanningGeneration = ({
   onError,
   onClarificationNeeded,
   clarificationAnswers,
-  previousContext
+  previousContext,
+  language = 'en'
 }: UsePlanningGenerationProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -162,7 +164,8 @@ export const usePlanningGeneration = ({
         {
           clarificationAnswers,
           previousContext,
-          signal: abortControllerRef.current.signal
+          signal: abortControllerRef.current.signal,
+          language
         }
       );
     } catch (error) {

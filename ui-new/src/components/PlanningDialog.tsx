@@ -233,6 +233,9 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
           showError(`Planning failed: ${error.message}`);
           setIsLoading(false);
           setStatusMessage(''); // Clear status message on error
+        },
+        {
+          language: settings.language || 'en'
         }
       );
     } catch (error) {
@@ -1034,7 +1037,8 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                                       {
                                         clarificationAnswers: autoAnswers,
                                         previousContext: result,
-                                        forcePlan: true
+                                        forcePlan: true,
+                                        language: settings.language || 'en'
                                       }
                                     );
                                   } catch (error) {
