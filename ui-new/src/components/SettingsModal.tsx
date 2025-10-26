@@ -92,10 +92,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
       <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('settings.title')}</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            aria-label={t('common.close')}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -113,7 +114,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            ⚙️ General
+            ⚙️ {t('settings.tabs.general')}
           </button>
           <button
             onClick={() => setActiveTab('provider')}
@@ -123,7 +124,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🔌 Provider
+            🔌 {t('settings.tabs.provider')}
           </button>
           <button
             onClick={() => setActiveTab('cloud')}
@@ -133,7 +134,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            ☁️ Cloud Sync
+            ☁️ {t('settings.tabs.cloud')}
           </button>
           <button
             onClick={() => setActiveTab('tools')}
@@ -143,7 +144,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🛠️ Tools
+            🛠️ {t('settings.tabs.tools')}
           </button>
           <button
             onClick={() => setActiveTab('proxy')}
@@ -153,7 +154,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🌐 Proxy
+            🌐 {t('settings.tabs.proxy')}
           </button>
           <button
             onClick={() => setActiveTab('location')}
@@ -163,7 +164,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            📍 Location
+            📍 {t('settings.tabs.location')}
           </button>
           {TTS_FEATURE_ENABLED && (
             <button
@@ -174,7 +175,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
               }`}
             >
-              🔊 TTS
+              🔊 {t('settings.tabs.tts')}
             </button>
           )}
           <button
@@ -185,7 +186,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🧠 RAG
+            🧠 {t('settings.tabs.rag')}
           </button>
         </div>
 
@@ -197,7 +198,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {t('settings.general')}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Configure general application settings including language and display preferences.
+              {t('settings.generalDescription')}
             </p>
           </div>
           
@@ -223,7 +224,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <option value="ar">{t('languages.ar')} - Arabic</option>
             </select>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Changes the interface language and instructs the AI to respond in your selected language.
+              {t('settings.languageHelp')}
             </p>
           </div>
         </div>
@@ -234,10 +235,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="space-y-6">
           <div className="mb-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              ⚡ Provider Credentials
+              ⚡ {t('settings.providerCredentials')}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Configure your LLM provider API keys. The backend automatically selects the best model for each request.
+              {t('settings.providerDescription')}
             </p>
           </div>
           
