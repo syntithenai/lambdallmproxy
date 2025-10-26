@@ -11,6 +11,9 @@ function getLanguageInstruction(langCode) {
     'es': 'Siempre responde en español.',
     'fr': 'Répondez toujours en français.',
     'de': 'Antworte immer auf Deutsch.',
+    'nl': 'Antwoord altijd in het Nederlands.',
+    'pt': 'Sempre responda em português.',
+    'ru': 'Всегда отвечайте на русском языке.',
     'zh': '始终用中文回复。',
     'ja': '常に日本語で応答してください。',
     'ar': 'قم دائمًا بالرد باللغة العربية.'
@@ -25,6 +28,9 @@ function getLanguageName(langCode) {
     'es': 'Spanish',
     'fr': 'French',
     'de': 'German',
+    'nl': 'Dutch',
+    'pt': 'Portuguese',
+    'ru': 'Russian',
     'zh': 'Chinese',
     'ja': 'Japanese',
     'ar': 'Arabic'

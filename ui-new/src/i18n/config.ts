@@ -10,6 +10,9 @@ import deTranslations from './locales/de.json';
 import zhTranslations from './locales/zh.json';
 import jaTranslations from './locales/ja.json';
 import arTranslations from './locales/ar.json';
+import nlTranslations from './locales/nl.json';
+import ptTranslations from './locales/pt.json';
+import ruTranslations from './locales/ru.json';
 
 i18n
   .use(LanguageDetector) // Auto-detect user language
@@ -22,7 +25,10 @@ i18n
       de: { translation: deTranslations },
       zh: { translation: zhTranslations },
       ja: { translation: jaTranslations },
-      ar: { translation: arTranslations }
+      ar: { translation: arTranslations },
+      nl: { translation: nlTranslations },
+      pt: { translation: ptTranslations },
+      ru: { translation: ruTranslations }
     },
     fallbackLng: 'en',
     interpolation: {

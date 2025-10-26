@@ -53,7 +53,7 @@ export interface Settings {
   tavilyApiKey: string;        // Unchanged - for search functionality
   syncToGoogleDrive?: boolean; // Enable automatic sync to Google Drive (default: false)
   optimization?: OptimizationPreference; // Model selection strategy (default: 'cheap')
-  language?: string;           // User's preferred UI language (ISO 639-1 code: en, es, fr, de, zh, ja, ar)
+  language?: string;           // User's preferred UI language (ISO 639-1 code: en, es, fr, de, zh, ja, ar, nl, pt, ru)
 }
 
 /**

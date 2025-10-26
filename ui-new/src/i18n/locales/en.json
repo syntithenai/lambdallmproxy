@@ -152,7 +152,10 @@
     "de": "Deutsch",
     "zh": "中文",
     "ja": "日本語",
-    "ar": "العربية"
+    "ar": "العربية",
+    "nl": "Nederlands",
+    "pt": "Português",
+    "ru": "Русский"
   },
   "billing": {
     "title": "Billing",
