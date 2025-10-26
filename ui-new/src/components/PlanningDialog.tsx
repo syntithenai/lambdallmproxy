@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from './ToastManager';
@@ -21,6 +22,7 @@ interface PlanningDialogProps {
 }
 
 export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose, onTransferToChat }) => {
+  const { t } = useTranslation();
   const dialogRef = useDialogClose(isOpen, onClose);
   const { getToken, isAuthenticated } = useAuth();
   const { settings } = useSettings();
@@ -116,15 +118,15 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
     // Check authentication FIRST
     if (!isAuthenticated) {
       console.error('User not authenticated');
-      showError('Please sign in with Google to use the planning feature');
+      showError(t('planning.signInRequired'));
       setResult({ 
-        error: 'Authentication required. Please sign in with Google to continue.' 
+        error: t('planning.authRequired')
       });
       return;
     }
 
     if (!query.trim()) {
-      showError('Please enter a research question');
+      showError(t('planning.enterResearchQuestion'));
       return;
     }
 
@@ -132,15 +134,15 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
 
     setIsLoading(true);
     setResult(null);
-    setStatusMessage('Initializing...'); // Show immediate feedback
+    setStatusMessage(t('planning.initializing')); // Show immediate feedback
     
     try {
       const token = await getToken();
       if (!token) {
         console.error('No valid token available');
-        showError('Authentication expired. Please sign out and sign in again to continue.');
+        showError(t('planning.authExpired'));
         setResult({ 
-          error: 'Authentication expired. Please sign out and sign in again to continue.' 
+          error: t('planning.authExpired')
         });
         setIsLoading(false);
         return;
@@ -300,9 +302,9 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
 === End Debug Info ===`;
 
     navigator.clipboard.writeText(debugText).then(() => {
-      showSuccess('Debug info copied to clipboard!');
+      showSuccess(t('planning.debugCopied'));
     }, () => {
-      showError('Failed to copy debug info');
+      showError(t('planning.debugCopyFailed'));
     });
   };
 
@@ -335,7 +337,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
 
   const handleSavePlan = () => {
     if (!result || result.error) {
-      showError('Cannot save plan: No valid plan generated');
+      showError(t('planning.cannotSavePlan'));
       return;
     }
     
@@ -347,10 +349,10 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
         result.enhancedSystemPrompt || generatedSystemPrompt || '',
         result.enhancedUserPrompt || generatedUserQuery || ''
       );
-      showSuccess('Plan saved successfully');
+      showSuccess(t('planning.planSavedSuccess'));
       console.log('Plan manually saved to cache with system and user prompts');
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Failed to save plan');
+      showError(error instanceof Error ? error.message : t('planning.planSaveFailed'));
     }
   };
 
@@ -385,7 +387,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
           <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                Research Planning
+                {t('planning.title')}
               </h2>
               
               {/* Left side buttons */}
@@ -394,12 +396,12 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                   onClick={handleSavePlan}
                   disabled={!result || result.error}
                   className="btn-primary text-sm flex items-center gap-1.5"
-                  title="Save the current plan to your saved plans list"
+                  title={t('planning.savePlanTooltip')}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                   </svg>
-                  Save Plan
+                  {t('planning.savePlan')}
                 </button>
               </div>
               
@@ -410,7 +412,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                Load Saved
+                {t('planning.loadSaved')}
               </button>
             </div>
             
@@ -420,12 +422,12 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                 onClick={handleCopyDebugInfo}
                 disabled={!query && !result}
                 className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
-                title="Copy debug info for Copilot troubleshooting"
+                title={t('planning.debugTooltip')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-                Debug
+                {t('planning.debug')}
               </button>
               
               {/* Transfer to Chat - Far Right */}
@@ -438,13 +440,14 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
-                  Transfer to Chat
+                  {t('planning.transferToChat')}
                 </button>
               )}
               
               <button
                 onClick={onClose}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                aria-label={t('common.close')}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -477,7 +480,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
               <div className="card p-4">
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Research Query
+                    {t('planning.query')}
                   </label>
                   
                   {/* Generate Plan Button (Green) - Below right of label */}
@@ -485,33 +488,33 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                   <button 
                     onClick={handleSubmit}
                     disabled={isLoading || !query.trim()}
-                    title={!isAuthenticated ? 'Please sign in with Google first' : 
-                           !query.trim() ? 'Please enter a research question' : 
-                           isLoading ? 'Generating plan...' : 'Generate research plan'}
+                    title={!isAuthenticated ? t('planning.signInRequired') : 
+                           !query.trim() ? t('planning.enterResearchQuestion') : 
+                           isLoading ? t('planning.planning') : t('planning.generatePlan')}
                     className={`${!isAuthenticated ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                     </svg>
-                    {isLoading ? 'Generating...' : !isAuthenticated ? 'Sign in to Generate Plan' : 'Generate Plan'}
+                    {isLoading ? t('planning.generating') : !isAuthenticated ? t('planning.signInToGenerate') : t('planning.generatePlan')}
                   </button>
                   
                   {/* Clear All Button (Red with Bin Icon) */}
                   <button 
                     onClick={handleClear}
                     className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
-                    title="Clear all planning data and start fresh"
+                    title={t('planning.clearAllTooltip')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
-                    Clear All
+                    {t('planning.clearAll')}
                   </button>
                 </div>
               </div>
               {!isAuthenticated ? (
                 <div className="text-center text-red-500 py-4">
-                  Please sign in to use planning
+                  {t('planning.signInToUsePlanning')}
                 </div>
               ) : (
                 <>
@@ -519,7 +522,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     ref={queryTextareaRef}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Enter your research question or topic..."
+                    placeholder={t('planning.enterQuery')}
                     className="input-field resize-none overflow-hidden"
                     style={{ minHeight: '120px' }}
                   />
@@ -533,23 +536,23 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
               <div className="card p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                    Generated Prompts
+                    {t('planning.generatedPrompts')}
                   </h3>
                   {/* LLM Transparency Info Button */}
                   {llmInfo && (
                     <button
                       onClick={() => setShowLlmInfo(true)}
                       className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1"
-                      title="View LLM transparency info (model, tokens, cost)"
+                      title={t('planning.llmInfoTooltip')}
                     >
-                      💰 ${(llmInfo.cost || 0).toFixed(4)} • {llmInfo.calls || 1} call{llmInfo.calls > 1 ? 's' : ''} ℹ️
+                      💰 ${(llmInfo.cost || 0).toFixed(4)} • {llmInfo.calls || 1} {llmInfo.calls > 1 ? t('planning.llmCallsPlural') : t('planning.llmCalls')} ℹ️
                     </button>
                   )}
                 </div>
                 <div className="space-y-4">
                   {/* Generated System Prompt */}
                   <div>
-                    <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">Generated System Prompt (Editable):</h4>
+                    <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">{t('planning.systemPromptEditable')}</h4>
                     <textarea
                       ref={systemPromptTextareaRef}
                       value={generatedSystemPrompt}
@@ -558,13 +561,13 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                       style={{ minHeight: '96px' }}
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      This defines the AI's role and behavior. Edit as needed before transferring to chat.
+                      {t('planning.systemPromptHelp')}
                     </p>
                   </div>
 
                   {/* Generated User Query */}
                   <div>
-                    <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">Generated User Query (Editable):</h4>
+                    <h4 className="font-semibold mb-2 text-gray-900 dark:text-gray-100">{t('planning.userQueryEditable')}</h4>
                     <textarea
                       ref={userQueryTextareaRef}
                       value={generatedUserQuery}
@@ -573,7 +576,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                       style={{ minHeight: '96px' }}
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      This is the message that will be sent to the chat. Edit to refine your query.
+                      {t('planning.userQueryHelp')}
                     </p>
                   </div>
                 </div>
@@ -588,13 +591,13 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     {result.queryType === 'SIMPLE' && (
                       <div className="card p-4 bg-blue-50 dark:bg-blue-900/20">
                         <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                          Simple Query Detected
+                          {t('planning.simpleQueryDetected')}
                         </h3>
                         <p className="text-sm text-gray-700 dark:text-gray-300">
                           {result.simpleInstruction}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          This query can be answered directly without extensive planning.
+                          {t('planning.simpleQueryHelp')}
                         </p>
                       </div>
                     )}
@@ -603,33 +606,33 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     {result.queryType === 'OVERVIEW' && (
                       <div className="card p-4 space-y-4">
                         <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-                          📚 Comprehensive Research Plan
+                          {t('planning.comprehensiveResearchPlan')}
                         </h3>
 
                         {/* Analysis Summary */}
                         <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
-                          <h4 className="text-sm font-medium mb-2 text-gray-800 dark:text-gray-200">📊 Analysis Summary</h4>
+                          <h4 className="text-sm font-medium mb-2 text-gray-800 dark:text-gray-200">{t('planning.analysisSummary')}</h4>
                           <div className="grid grid-cols-2 gap-4 text-xs">
                             <div>
-                              <span className="font-medium text-gray-600 dark:text-gray-400">Query Type:</span>
+                              <span className="font-medium text-gray-600 dark:text-gray-400">{t('planning.queryType')}</span>
                               <span className="ml-2 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
                                 {result.queryType}
                               </span>
                             </div>
                             <div>
-                              <span className="font-medium text-gray-600 dark:text-gray-400">Complexity:</span>
+                              <span className="font-medium text-gray-600 dark:text-gray-400">{t('planning.complexity')}</span>
                               <span className="ml-2 px-2 py-1 bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded">
                                 {result.complexityAssessment}
                               </span>
                             </div>
                             <div>
-                              <span className="font-medium text-gray-600 dark:text-gray-400">Research Approach:</span>
+                              <span className="font-medium text-gray-600 dark:text-gray-400">{t('planning.researchApproach')}</span>
                               <span className="ml-2 px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded">
                                 {result.researchApproach}
                               </span>
                             </div>
                             <div>
-                              <span className="font-medium text-gray-600 dark:text-gray-400">Estimated Sources:</span>
+                              <span className="font-medium text-gray-600 dark:text-gray-400">{t('planning.estimatedSources')}</span>
                               <span className="ml-2 px-2 py-1 bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 rounded">
                                 {result.estimatedSources || 'N/A'}
                               </span>
@@ -637,7 +640,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                           </div>
                           {result.reasoning && (
                             <div className="mt-2">
-                              <span className="font-medium text-gray-600 dark:text-gray-400">Reasoning:</span>
+                              <span className="font-medium text-gray-600 dark:text-gray-400">{t('planning.reasoning')}</span>
                               <p className="text-gray-700 dark:text-gray-300 mt-1">{result.reasoning}</p>
                             </div>
                           )}
@@ -646,7 +649,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Expert Persona */}
                         {result.persona && (
                           <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-                            <h4 className="text-sm font-medium mb-2 text-blue-800 dark:text-blue-200">🎭 Expert Persona</h4>
+                            <h4 className="text-sm font-medium mb-2 text-blue-800 dark:text-blue-200">{t('planning.expertPersona')}</h4>
                             <p className="text-sm text-blue-700 dark:text-blue-300">{result.persona}</p>
                           </div>
                         )}
@@ -654,7 +657,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Search Strategies */}
                         {result.searchStrategies?.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">🔍 Search Queries:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.searchQueries')}</h4>
                             <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg">
                               <ul className="space-y-1">
                                 {result.searchStrategies.map((query: string, idx: number) => (
@@ -671,7 +674,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Research Questions */}
                         {result.researchQuestions?.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">📋 Research Questions:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.researchQuestions')}</h4>
                             <div className="bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg">
                               <ul className="list-decimal list-inside space-y-1 text-sm">
                                 {result.researchQuestions.map((q: string, idx: number) => (
@@ -685,16 +688,16 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Suggested Sources */}
                         {result.suggestedSources?.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">🌐 Suggested Sources:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.suggestedSources')}</h4>
                             <div className="bg-teal-50 dark:bg-teal-900/20 p-3 rounded-lg">
                               <div className="space-y-2">
                                 {result.suggestedSources.map((source: any, idx: number) => (
                                   <div key={idx} className="text-sm">
                                     <div className="font-medium text-teal-800 dark:text-teal-200 capitalize">
-                                      {source.type} Sources:
+                                      {source.type} {t('planning.sources')}
                                     </div>
                                     <div className="text-teal-700 dark:text-teal-300 ml-2">
-                                      {source.examples ? source.examples.join(', ') : 'Various relevant sources'}
+                                      {source.examples ? source.examples.join(', ') : t('planning.variousRelevantSources')}
                                     </div>
                                   </div>
                                 ))}
@@ -706,7 +709,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Methodology */}
                         {result.methodology && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">⚙️ Research Methodology:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.researchMethodology')}</h4>
                             <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg">
                               <p className="text-sm text-yellow-700 dark:text-yellow-300">{result.methodology}</p>
                             </div>
@@ -768,23 +771,22 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     {result.queryType === 'LONG_FORM' && (
                       <div className="card p-4 space-y-4">
                         <h3 className="font-semibold text-purple-900 dark:text-purple-100">
-                          📝 Long-Form Document Plan
+                          {t('planning.longFormDocumentPlan')}
                         </h3>
                         <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded text-sm">
-                          <strong>Note:</strong> This will be built in stages using snippets. Each section
-                          will be researched and written separately, then combined into a final document.
+                          <strong>Note:</strong> {t('planning.longFormNote')}
                         </div>
                         {/* Document Sections */}
                         {result.documentSections?.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">📑 Document Structure:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.documentStructure')}</h4>
                             {result.documentSections.map((section: any, idx: number) => (
                               <div key={idx} className="ml-4 mb-3 p-2 bg-gray-50 dark:bg-gray-900 rounded">
                                 <div className="font-medium text-purple-600 dark:text-purple-400">
                                   {idx + 1}. {section.title}
                                 </div>
                                 <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                  Keywords: {section.keywords.join(', ')}
+                                  {t('planning.keywords')}: {section.keywords.join(', ')}
                                 </div>
                                 {section.questions?.length > 0 && (
                                   <ul className="text-xs mt-1 ml-4 list-disc list-inside">
@@ -800,7 +802,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Workflow */}
                         {result.snippetWorkflow && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">⚙️ Workflow:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.workflow')}</h4>
                             <div className="text-xs bg-gray-50 dark:bg-gray-900 p-2 rounded whitespace-pre-wrap">
                               {result.snippetWorkflow}
                             </div>
@@ -813,14 +815,14 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     {result.queryType === 'NEEDS_CLARIFICATION' && (
                       <div className="card p-4 space-y-4 bg-orange-50 dark:bg-orange-900/20">
                         <h3 className="font-semibold text-orange-900 dark:text-orange-100">
-                          ❓ Need More Information
+                          {t('planning.needMoreInfo')}
                         </h3>
                         <p className="text-sm text-gray-700 dark:text-gray-300">
                           {result.reasoning}
                         </p>
                         {result.clarificationQuestions?.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">Please clarify:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.pleaseClarify')}</h4>
                             <ul className="list-disc list-inside space-y-1 text-sm ml-4">
                               {result.clarificationQuestions.map((q: string, idx: number) => (
                                 <li key={idx} className="text-gray-700 dark:text-gray-300">{q}</li>
@@ -830,20 +832,20 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         )}
                         <div className="mt-4">
                           <label className="block text-sm font-medium mb-2">
-                            Update your query with more details:
+                            {t('planning.updateQueryDetails')}
                           </label>
                           <textarea
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             className="input-field"
                             rows={4}
-                            placeholder="Provide more specific details..."
+                            placeholder={t('planning.provideMoreDetails')}
                           />
                           <button
                             onClick={handleSubmit}
                             className="btn-primary mt-2 w-full"
                           >
-                            Regenerate Plan with Clarifications
+                            {t('planning.regeneratePlanWithClarifications')}
                           </button>
                         </div>
                       </div>
@@ -853,13 +855,13 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     {result.queryType === 'guidance' && (
                       <div className="card p-4 space-y-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
                         <h3 className="font-semibold text-purple-900 dark:text-purple-100 flex items-center gap-2">
-                          <span className="text-2xl">📋</span> More Info Required
+                          <span className="text-2xl">📋</span> {t('planning.moreInfoRequired')}
                         </h3>
                         
                         {/* Plan Type Badge */}
                         {result.planType && (
                           <div className="flex gap-2 items-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Plan Type:</span>
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{t('planning.planType')}</span>
                             <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded-full text-sm font-medium">
                               {result.planType.replace(/-/g, ' ').toUpperCase()}
                             </span>
@@ -870,7 +872,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {result.detectedPatterns?.length > 0 && (
                           <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-purple-200 dark:border-purple-700">
                             <h4 className="text-sm font-medium mb-2 text-purple-800 dark:text-purple-200">
-                              🔍 Detected Complexity Patterns:
+                              {t('planning.detectedComplexityPatterns')}
                             </h4>
                             <div className="flex flex-wrap gap-2">
                               {result.detectedPatterns.map((pattern: string, idx: number) => (
@@ -886,13 +888,13 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           {result.estimatedIterations && (
                             <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
-                              <div className="font-medium text-blue-700 dark:text-blue-300">Estimated Iterations</div>
+                              <div className="font-medium text-blue-700 dark:text-blue-300">{t('planning.estimatedIterations')}</div>
                               <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{result.estimatedIterations}</div>
                             </div>
                           )}
                           {result.toolsRequired?.length > 0 && (
                             <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
-                              <div className="font-medium text-blue-700 dark:text-blue-300">Tools Required</div>
+                              <div className="font-medium text-blue-700 dark:text-blue-300">{t('planning.toolsRequired')}</div>
                               <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{result.toolsRequired.length}</div>
                             </div>
                           )}
@@ -902,7 +904,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {result.suggestedWorkflow && (
                           <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
                             <h4 className="text-sm font-medium mb-2 text-blue-800 dark:text-blue-200">
-                              ⚙️ Suggested Workflow:
+                              {t('planning.suggestedWorkflow')}
                             </h4>
                             <p className="text-sm text-blue-700 dark:text-blue-300">{result.suggestedWorkflow}</p>
                           </div>
@@ -911,7 +913,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Tools Required */}
                         {result.toolsRequired?.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium mb-2">🛠️ Required Tools:</h4>
+                            <h4 className="text-sm font-medium mb-2">{t('planning.requiredTools')}</h4>
                             <div className="flex flex-wrap gap-2">
                               {result.toolsRequired.map((tool: string, idx: number) => (
                                 <span key={idx} className="px-3 py-1 bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 text-blue-800 dark:text-blue-200 rounded-lg text-sm font-mono">
@@ -925,7 +927,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                         {/* Guidance Questions */}
                         <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 p-4 rounded-lg border-2 border-yellow-300 dark:border-yellow-700">
                           <h4 className="text-sm font-medium mb-3 text-yellow-900 dark:text-yellow-100 flex items-center gap-2">
-                            <span className="text-lg">💡</span> Please answer these questions to refine your plan:
+                            <span className="text-lg">💡</span> {t('planning.guidanceQuestions')}
                           </h4>
                           {result.guidanceQuestions?.length > 0 && (
                             <ol className="list-decimal list-inside space-y-2 text-sm mb-4">
@@ -937,49 +939,42 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                           
                           <div className="mt-4 space-y-2">
                             <label className="block text-sm font-semibold text-yellow-900 dark:text-yellow-100">
-                              Update your research prompt with answers:
+                              {t('planning.updatePromptWithAnswers')}
                             </label>
                             <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-2">
-                              💡 Tip: Include answers to the questions above in your updated query. The more specific you are, 
-                              the better the AI can create an effective multi-iteration plan with proper tool usage and few-shot examples.
+                              {t('planning.guidanceTip')}
                             </p>
                             <textarea
                               value={query}
                               onChange={(e) => setQuery(e.target.value)}
                               className="input-field"
                               rows={6}
-                              placeholder="Example: I want to build a comprehensive research report on climate change by:
-1. Creating 25 todos for different sub-topics (policy, science, economics, etc.)
-2. Searching the web for each topic and saving results to snippets
-3. Generating charts to visualize key data points
-4. Combining all snippets into a master analysis
-
-Please create a detailed plan with few-shot examples showing how to use create_todo, search_web, create_snippet, and generate_chart together in each iteration..."
+                              placeholder={t('planning.guidanceExamplePlaceholder')}
                             />
                             <div className="flex gap-2 mt-2">
                               <button
                                 onClick={handleSubmit}
                                 className="btn-primary flex-1"
                               >
-                                🎯 Generate Detailed Execution Plan
+                                {t('planning.generateDetailedExecutionPlan')}
                               </button>
                               <button
                                 onClick={async () => {
                                   // Force plan - generate answers to questions and force plan generation
                                   if (!isAuthenticated) {
-                                    showError('Please sign in to use planning');
+                                    showError(t('planning.signInRequired'));
                                     return;
                                   }
                                   
                                   if (isLoading) return;
                                   
                                   setIsLoading(true);
-                                  setStatusMessage('Forcing plan generation...');
+                                  setStatusMessage(t('planning.forcingPlan'));
                                   
                                   try {
                                     const token = await getToken();
                                     if (!token) {
-                                      showError('Authentication expired. Please sign out and sign in again.');
+                                      showError(t('planning.authExpired'));
                                       setIsLoading(false);
                                       return;
                                     }
@@ -988,7 +983,7 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                                     
                                     // Generate automatic answers to guidance questions
                                     const autoAnswers = result.guidanceQuestions?.map((q: string, idx: number) => 
-                                      `Q${idx + 1}: ${q}\nA${idx + 1}: Please use your best judgment based on the original query.`
+                                      `Q${idx + 1}: ${q}\nA${idx + 1}: ${t('planning.clarificationAnswer')}`
                                     ).join('\n\n') || '';
                                     
                                     await generatePlan(
@@ -1001,7 +996,7 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                                         
                                         switch (event) {
                                           case 'status':
-                                            setStatusMessage(data.message || 'Processing...');
+                                            setStatusMessage(data.message || t('planning.processing'));
                                             break;
                                           case 'result':
                                             setResult(data);
@@ -1018,7 +1013,7 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                                           case 'error':
                                             const errorMsg = data.error || 'Unknown error';
                                             setResult({ error: errorMsg });
-                                            showError(`Force plan error: ${errorMsg}`);
+                                            showError(`${t('planning.forcePlanError')}: ${errorMsg}`);
                                             break;
                                         }
                                       },
@@ -1030,7 +1025,7 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                                       (error: Error) => {
                                         console.error('Force plan error:', error);
                                         setResult({ error: error.message });
-                                        showError(`Force plan failed: ${error.message}`);
+                                        showError(`${t('planning.forcePlanFailed')}: ${error.message}`);
                                         setIsLoading(false);
                                         setStatusMessage('');
                                       },
@@ -1045,16 +1040,16 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                                     console.error('Force plan error:', error);
                                     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
                                     setResult({ error: errorMsg });
-                                    showError(`Force plan error: ${errorMsg}`);
+                                    showError(`${t('planning.forcePlanError')}: ${errorMsg}`);
                                     setIsLoading(false);
                                     setStatusMessage('');
                                   }
                                 }}
                                 disabled={isLoading}
                                 className="btn-secondary flex-1"
-                                title="Let AI answer the questions and force plan generation"
+                                title={t('planning.forcePlanTooltip')}
                               >
-                                ⚡ Force Plan
+                                {t('planning.forcePlan')}
                               </button>
                               <button
                                 onClick={() => {
@@ -1069,9 +1064,9 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                                   setSavedUserQuery('');
                                 }}
                                 className="btn-secondary"
-                                title="Clear guidance mode and return to previous state"
+                                title={t('planning.resetTooltip')}
                               >
-                                🔄 Reset
+                                {t('planning.reset')}
                               </button>
                             </div>
                           </div>
@@ -1080,9 +1075,7 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                         {/* Info Box */}
                         <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-300 dark:border-blue-700">
                           <p className="text-xs text-blue-800 dark:text-blue-200">
-                            <strong>About Guidance Mode:</strong> This mode detects complex projects that require multiple iterations 
-                            and extensive tool usage. Answer the questions above to help create a detailed execution plan with 
-                            few-shot examples showing how to use todos, snippets, and multiple tool calls per iteration.
+                            <strong>{t('planning.aboutGuidanceMode')}</strong> {t('planning.guidanceModeHelp')}
                           </p>
                         </div>
                       </div>
@@ -1099,10 +1092,10 @@ Please create a detailed plan with few-shot examples showing how to use create_t
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
           <div className="card p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">Load Saved Plan</h3>
+              <h3 className="text-lg font-bold">{t('planning.loadSavedPlan')}</h3>
               {storageInfo && (
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Storage: {(storageInfo.usage / (1024 * 1024)).toFixed(2)} MB / {(storageInfo.quota / (1024 * 1024)).toFixed(0)} MB ({storageInfo.percentage.toFixed(1)}%)
+                  {t('planning.storage')}: {(storageInfo.usage / (1024 * 1024)).toFixed(2)} MB / {(storageInfo.quota / (1024 * 1024)).toFixed(0)} MB ({storageInfo.percentage.toFixed(1)}%)
                 </div>
               )}
             </div>
@@ -1111,16 +1104,16 @@ Please create a detailed plan with few-shot examples showing how to use create_t
             {storageInfo && storageInfo.percentage > 80 && (
               <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <div className="text-sm text-yellow-800 dark:text-yellow-200 font-semibold mb-2">
-                  ⚠️ Storage is {storageInfo.percentage.toFixed(1)}% full
+                  ⚠️ {t('planning.storageWarning', { percentage: storageInfo.percentage.toFixed(1) })}
                 </div>
                 <div className="text-xs text-yellow-700 dark:text-yellow-300">
-                  Consider deleting old plans to free up space.
+                  {t('planning.storageWarningHelp')}
                 </div>
               </div>
             )}
             
             {savedPlans.length === 0 ? (
-              <p className="text-gray-500">No saved plans found</p>
+              <p className="text-gray-500">{t('planning.noSavedPlans')}</p>
             ) : (
               <div className="space-y-3">
                 {savedPlans.map((plan) => {
@@ -1133,7 +1126,7 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                             {plan.query.length > 100 ? plan.query.substring(0, 100) + '...' : plan.query}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            Saved: {date}
+                            {t('planning.saved')}: {date}
                           </div>
                         </div>
                         <div className="flex gap-2 flex-shrink-0">
@@ -1141,13 +1134,13 @@ Please create a detailed plan with few-shot examples showing how to use create_t
                             onClick={() => handleLoadPlan(plan)}
                             className="btn-primary text-xs"
                           >
-                            Load
+                            {t('planning.load')}
                           </button>
                           <button
                             onClick={() => handleDeletePlan(plan.id)}
                             className="btn-secondary text-red-500 text-xs"
                           >
-                            Delete
+                            {t('common.delete')}
                           </button>
                         </div>
                       </div>
@@ -1160,7 +1153,7 @@ Please create a detailed plan with few-shot examples showing how to use create_t
               onClick={() => setShowLoadDialog(false)}
               className="btn-primary w-full mt-4"
             >
-              Close
+              {t('common.close')}
             </button>
           </div>
         </div>
