@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python docker-build docker-build-dev docker-up docker-up-dev docker-down docker-logs docker-logs-dev docker-shell docker-shell-dev docker-clean mcp-list-examples mcp-install-jokes mcp-sample-jokes mcp-test-jokes credit-add
+.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python docker-build docker-build-dev docker-up docker-up-dev docker-down docker-logs docker-logs-dev docker-shell docker-shell-dev docker-clean mcp-list-examples mcp-install-jokes mcp-sample-jokes mcp-test-jokes credit-add lint lint-fix security-scan check-secrets
 
 # Default target - Show help
 help:
@@ -720,3 +720,26 @@ credit-add:
 	fi
 	@chmod +x scripts/delete-document.js
 	@LIBSQL_URL="file:///$$(pwd)/rag-kb.db" node scripts/delete-document.js "$(ID)"
+
+# Security and Code Quality
+lint:
+	@echo "🔍 Running ESLint on backend code..."
+	@npm run lint
+
+lint-fix:
+	@echo "🔧 Running ESLint with auto-fix..."
+	@npm run lint:fix
+
+check-secrets:
+	@echo "🔐 Scanning for hard-coded secrets..."
+	@npm run check-secrets
+
+security-scan:
+	@echo "🛡️  Running comprehensive security scan..."
+	@echo "1️⃣  Checking for hard-coded secrets..."
+	@npm run check-secrets
+	@echo ""
+	@echo "2️⃣  Running ESLint security checks..."
+	@npm run lint:security || true
+	@echo ""
+	@echo "✅ Security scan complete!"

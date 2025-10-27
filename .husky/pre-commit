@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Pre-commit security checks
+echo "🔒 Running pre-commit security checks..."
+
+# Run lint-staged (ESLint + secret detection)
+npx lint-staged
+
+# Additional secret scan (excluding config files)
+echo "🔍 Scanning for hard-coded secrets..."
+if git diff --cached --name-only | \
+   grep -v -E '\.(md|yml|yaml|config\.js)$' | \
+   xargs -r grep -l "sk-[a-zA-Z0-9]{20,}|gsk_[a-zA-Z0-9]{32,}|AIza[a-zA-Z0-9]{35}|AKIA[A-Z0-9]{16}|ya29\.[a-zA-Z0-9_-]+" 2>/dev/null; then
+  echo "❌ ERROR: Hard-coded secret detected in staged files!"
+  echo "Please remove secrets and use environment variables instead."
+  exit 1
+fi
+
+# Check for console.log in production code (warning only)
+if git diff --cached --name-only | grep -E 'src/.*\.js$' | xargs grep -n "console\.log" 2>/dev/null; then
+  echo "⚠️  WARNING: console.log detected in production code"
+  echo "Consider using proper logging or removing debug statements"
+  # Don't exit - this is just a warning
+fi
+
+echo "✅ Pre-commit checks passed!"

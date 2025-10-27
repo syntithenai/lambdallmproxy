@@ -1188,6 +1188,23 @@ The function provides detailed error responses:
 
 ## Development
 
+### Security
+
+See [SECURITY_SETUP.md](SECURITY_SETUP.md) for comprehensive security tooling documentation.
+
+**Quick Security Commands**:
+```bash
+make security-scan      # Run full security scan
+make check-secrets      # Check for hard-coded API keys
+make lint               # Run ESLint on backend code
+make lint-fix           # Auto-fix ESLint issues
+```
+
+**Automated Protection**:
+- Pre-commit hooks block hard-coded secrets
+- CI/CD security scans run on every push
+- Daily scheduled vulnerability scans
+
 ### Local Testing
 
 ```bash

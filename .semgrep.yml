@@ -1,0 +1,123 @@
+# Semgrep Security Scanning Configuration
+# Auto-detects common security vulnerabilities in JavaScript/TypeScript code
+
+rules:
+  # Detect hard-coded secrets
+  - id: hardcoded-api-key
+    patterns:
+      - pattern-either:
+          - pattern: |
+              const $KEY = "$VALUE"
+          - pattern: |
+              let $KEY = "$VALUE"
+          - pattern: |
+              var $KEY = "$VALUE"
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (api[_-]?key|secret|password|token|auth)
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: ^(sk-|gsk_|AIza|AKIA|ya29\.|ghp_|gho_|[A-Za-z0-9]{32,})
+    message: Hard-coded secret detected. Use environment variables instead.
+    severity: ERROR
+    languages: [javascript, typescript]
+    
+  # Detect eval usage
+  - id: dangerous-eval
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
+    message: Dangerous eval-like function detected. Avoid dynamic code execution.
+    severity: WARNING
+    languages: [javascript, typescript]
+    
+  # Detect command injection
+  - id: command-injection
+    pattern-either:
+      - pattern: child_process.exec($ARG, ...)
+      - pattern: child_process.execSync($ARG, ...)
+    message: Potential command injection. Validate and sanitize user input.
+    severity: ERROR
+    languages: [javascript, typescript]
+    
+  # Detect SQL injection (for raw queries)
+  - id: sql-injection
+    pattern-either:
+      - pattern: |
+          $DB.query("..." + $INPUT + "...")
+      - pattern: |
+          $DB.execute("..." + $INPUT + "...")
+    message: Potential SQL injection. Use parameterized queries.
+    severity: ERROR
+    languages: [javascript, typescript]
+    
+  # Detect missing error handling
+  - id: unhandled-promise
+    pattern: |
+      $PROMISE.then(...)
+    pattern-not: |
+      $PROMISE.then(...).catch(...)
+    message: Promise without catch handler. Add error handling.
+    severity: WARNING
+    languages: [javascript, typescript]
+    
+  # Detect XSS via innerHTML
+  - id: xss-innerhtml
+    pattern-either:
+      - pattern: $EL.innerHTML = $INPUT
+      - pattern: |
+          dangerouslySetInnerHTML={{ __html: $INPUT }}
+    message: Potential XSS vulnerability. Sanitize HTML content.
+    severity: ERROR
+    languages: [javascript, typescript]
+    
+  # Detect path traversal
+  - id: path-traversal
+    pattern-either:
+      - pattern: fs.readFile($PATH, ...)
+      - pattern: fs.readFileSync($PATH, ...)
+      - pattern: fs.writeFile($PATH, ...)
+      - pattern: fs.writeFileSync($PATH, ...)
+    pattern-not-inside: |
+      if ($PATH.startsWith(...)) { ... }
+    message: Potential path traversal. Validate file paths.
+    severity: WARNING
+    languages: [javascript, typescript]
+    
+  # Detect missing input validation
+  - id: missing-input-validation
+    pattern: |
+      function $FUNC($PARAM) {
+        ...
+        $DB.execute(...)
+        ...
+      }
+    pattern-not-inside: |
+      function $FUNC($PARAM) {
+        if (!$PARAM || ...) { ... }
+        ...
+      }
+    message: Missing input validation in database function.
+    severity: WARNING
+    languages: [javascript, typescript]
+    
+  # Detect weak crypto
+  - id: weak-crypto
+    pattern-either:
+      - pattern: crypto.createHash("md5")
+      - pattern: crypto.createHash("sha1")
+    message: Weak cryptographic algorithm. Use SHA-256 or stronger.
+    severity: WARNING
+    languages: [javascript, typescript]
+    
+  # Detect missing HTTPS
+  - id: insecure-http
+    pattern: |
+      http.request($URL, ...)
+    pattern-not: |
+      https.request($URL, ...)
+    message: Insecure HTTP request. Use HTTPS.
+    severity: WARNING
+    languages: [javascript, typescript]
