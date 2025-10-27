@@ -13,10 +13,12 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@types/dompurify": "^3.0.5",
     "@types/qrcode.react": "^1.0.5",
     "@uiw/react-markdown-preview": "^5.1.5",
     "@uiw/react-md-editor": "^4.0.8",
+    "canvas-confetti": "^1.9.4",
     "dompurify": "^3.3.0",
     "highlight.js": "^11.11.1",
     "i18next": "^25.6.0",

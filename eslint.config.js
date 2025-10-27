@@ -30,7 +30,8 @@ export default [
       sourceType: 'module',
       globals: {
         ...globals.node,
-        ...globals.es2021
+        ...globals.es2021,
+        awslambda: 'readonly'  // AWS Lambda runtime global
       }
     },
     plugins: {

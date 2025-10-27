@@ -62,6 +62,7 @@ const planningEndpoint = require('./endpoints/planning');
 const searchEndpoint = require('./endpoints/search');
 const proxyEndpoint = require('./endpoints/proxy');
 const chatEndpoint = require('./endpoints/chat');
+const quizEndpoint = require('./endpoints/quiz');
 const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
@@ -192,6 +193,25 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'POST' && path === '/chat') {
             console.log('Routing to chat endpoint');
             await chatEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        if (method === 'POST' && path === '/quiz/generate') {
+            console.log('Routing to quiz generation endpoint');
+            const response = await quizEndpoint.handleQuizGenerate(event);
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: {
+                    ...response.headers,
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
             return;
         }
         

@@ -360,9 +360,9 @@ export const generatePlan = async (
     [key: string]: any;
   }>,
   model: string | undefined,
-  onEvent: (event: string, data: any) => void,
+  onEvent: (_event: string, _data: any) => void,
   onComplete?: () => void,
-  onError?: (error: Error) => void,
+  onError?: (_error: Error) => void,
   options?: {
     temperature?: number;
     maxTokens?: number;
@@ -439,9 +439,9 @@ export const performSearch = async (
   queries: string[],
   token: string,
   options: { maxResults?: number; includeContent?: boolean } = {},
-  onEvent: (event: string, data: any) => void,
+  onEvent: (_event: string, _data: any) => void,
   onComplete?: () => void,
-  onError?: (error: Error) => void
+  onError?: (_error: Error) => void
 ): Promise<void> => {
   const apiBase = await getCachedApiBase();
   
@@ -471,9 +471,9 @@ export const sendChatMessageStreaming = async (
     };
   },
   token: string,
-  onEvent: (event: string, data: any) => void,
+  onEvent: (_event: string, _data: any) => void,
   onComplete?: () => void,
-  onError?: (error: Error) => void,
+  onError?: (_error: Error) => void,
   signal?: AbortSignal,
   youtubeToken?: string | null,
   requestId?: string | null  // Optional request ID for grouping logs (e.g., from voice transcription)
@@ -693,3 +693,55 @@ export const capturePayPalOrder = async (orderId: string, token: string): Promis
     };
   }
 };
+
+/**
+ * Generate quiz from content
+ */
+export interface QuizChoice {
+  id: string;
+  text: string;
+}
+
+export interface QuizQuestion {
+  id: string;
+  prompt: string;
+  choices: QuizChoice[];
+  answerId: string;
+  explanation?: string;
+}
+
+export interface Quiz {
+  title: string;
+  questions: QuizQuestion[];
+}
+
+export const generateQuiz = async (
+  content: string,
+  enrichment: boolean,
+  providers: Record<string, any>,
+  token: string
+): Promise<Quiz> => {
+  const apiBase = await getCachedApiBase();
+  
+  const response = await fetch(`${apiBase}/quiz/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      content,
+      enrichment,
+      providers
+    }),
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+  
+  return await response.json();
+};
+
