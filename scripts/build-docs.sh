@@ -24,17 +24,39 @@ fi
 if [ -n "$LAMBDA_URL" ]; then
     log_step "Updating .env.production with Lambda URL: $LAMBDA_URL"
     
-    # Update VITE_API_BASE in .env.production
+    # Get Google Client ID from .env as source of truth
+    GOOGLE_CLIENT_ID=$(grep '^VITE_GOOGLE_CLIENT_ID=' ui-new/.env 2>/dev/null | cut -d'=' -f2 || echo "548179877633-cfvhlc5roj9prus33jlarcm540i495qi.apps.googleusercontent.com")
+    
+    # Update or create .env.production
     if [ -f ui-new/.env.production ]; then
+        # Update VITE_API_BASE
         sed -i "s|^VITE_API_BASE=.*|VITE_API_BASE=$LAMBDA_URL|" ui-new/.env.production
+        
+        # Update or add VITE_GOOGLE_CLIENT_ID
+        if grep -q '^VITE_GOOGLE_CLIENT_ID=' ui-new/.env.production; then
+            sed -i "s|^VITE_GOOGLE_CLIENT_ID=.*|VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|" ui-new/.env.production
+        else
+            echo "" >> ui-new/.env.production
+            echo "# Google Client ID for OAuth authentication" >> ui-new/.env.production
+            echo "VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> ui-new/.env.production
+        fi
+        
         log_info "Updated ui-new/.env.production"
     else
         log_warn ".env.production not found, creating it..."
         cat > ui-new/.env.production << EOF
 # Production Environment Configuration
-# Auto-updated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+# ================================================================
+# This file is used when running: npm run build
+# ================================================================
+
+# API ENDPOINT - Production Lambda URL
+# This is automatically set by the deploy script
 VITE_API_BASE=$LAMBDA_URL
-VITE_GOOGLE_CLIENT_ID=927667106833-7od90q7nh5oage0shc3kka5s9vtg2loj.apps.googleusercontent.com
+
+# Google Client ID for OAuth authentication
+VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+
 EOF
         log_info "Created ui-new/.env.production"
     fi
