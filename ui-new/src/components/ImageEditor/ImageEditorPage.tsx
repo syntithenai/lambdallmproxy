@@ -11,10 +11,14 @@ import type { ImageData, ProcessingStatus, BulkOperation } from './types';
 export const ImageEditorPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { addSnippet } = useSwag();
+  const { addSnippet, updateSnippet, snippets: swagSnippets } = useSwag();
 
   // Get images from navigation state
   const initialImages = (location.state as { images?: ImageData[] })?.images || [];
+  
+  // Determine if this is inline editing (single image from markdown renderer)
+  const isInlineEdit = initialImages.length === 1 && initialImages[0].snippetId;
+  const sourceSnippetId = isInlineEdit ? initialImages[0].snippetId : null;
 
   const [images] = useState<ImageData[]>(initialImages);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
@@ -163,17 +167,70 @@ export const ImageEditorPage: React.FC = () => {
     setIsProcessing(true);
 
     try {
+      // INLINE EDITING: Replace image in source snippet with base64 data
+      if (isInlineEdit && sourceSnippetId) {
+        const imageId = Array.from(processedImageUrls.keys())[0];
+        const newUrl = processedImageUrls.get(imageId);
+        const originalImage = allImages.find((img) => img.id === imageId);
+        
+        if (newUrl && originalImage) {
+          // The newUrl is already a base64 data URL from the backend
+          const base64 = newUrl;
+          
+          // Get the source snippet
+          const sourceSnippet = swagSnippets.find(s => s.id === sourceSnippetId);
+          if (!sourceSnippet) {
+            throw new Error('Source snippet not found');
+          }
+          
+          // Replace the original image URL with base64 data URL
+          let updatedContent = sourceSnippet.content;
+          const oldUrl = originalImage.url;
+          
+          // Replace in markdown syntax: ![alt](url)
+          updatedContent = updatedContent.replace(
+            new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(oldUrl)}\\)`, 'g'),
+            `![$1](${base64})`
+          );
+          
+          // Replace in HTML img tags: <img src="url" ...>
+          updatedContent = updatedContent.replace(
+            new RegExp(`<img([^>]*?)src="${escapeRegex(oldUrl)}"`, 'g'),
+            `<img$1src="${base64}"`
+          );
+          updatedContent = updatedContent.replace(
+            new RegExp(`<img([^>]*?)src='${escapeRegex(oldUrl)}'`, 'g'),
+            `<img$1src='${base64}'`
+          );
+          
+          // If content is just the image URL (base64 or otherwise), replace entirely
+          if (updatedContent.trim() === oldUrl || updatedContent.trim() === `![](${oldUrl})`) {
+            updatedContent = base64;
+          }
+          
+          // Update the snippet
+          await updateSnippet(sourceSnippetId, { content: updatedContent });
+          
+          alert('Image updated inline in snippet');
+          navigate('/swag');
+          return;
+        }
+      }
+      
+      // BULK EDITING or NEW IMAGES: Save as new snippets with base64
       let savedCount = 0;
       
-      // Save each processed image as a new snippet
       for (const [imageId, newUrl] of processedImageUrls.entries()) {
         const image = allImages.find((img) => img.id === imageId);
         if (!image) continue;
 
         try {
-          // Create markdown content with the new image
+          // The newUrl is already a base64 data URL from the backend
+          const base64 = newUrl;
+          
+          // Create markdown content with base64 data URL
           const title = `Edited Image - ${new Date().toLocaleString()}`;
-          const content = `![${image.name || 'Edited image'}](${newUrl})`;
+          const content = `![${image.name || 'Edited image'}](${base64})`;
           
           // Add as new snippet to swag
           await addSnippet(content, 'user', title);
@@ -197,6 +254,11 @@ export const ImageEditorPage: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // Helper function to escape special regex characters
+  const escapeRegex = (str: string): string => {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 
   const handleCommandSubmit = async () => {
@@ -258,7 +320,7 @@ export const ImageEditorPage: React.FC = () => {
             Back to Swag
           </button>
           <h1 className="text-xl font-bold text-gray-900">
-            Image Editor
+            {isInlineEdit ? 'Edit Inline Image' : 'Image Editor'}
             {selectedImages.size > 0 && ` (${selectedImages.size} selected)`}
           </h1>
           <button
@@ -270,7 +332,12 @@ export const ImageEditorPage: React.FC = () => {
                 : 'bg-green-600 text-white hover:bg-green-700'
             }`}
           >
-            {isProcessing ? 'Saving...' : `Save to Swag (${processedImageUrls.size})`}
+            {isProcessing 
+              ? 'Saving...' 
+              : isInlineEdit 
+                ? 'Update in Snippet'
+                : `Save to Swag (${processedImageUrls.size})`
+            }
           </button>
         </div>
       </header>
