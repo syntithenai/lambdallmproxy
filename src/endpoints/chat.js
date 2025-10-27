@@ -17,21 +17,10 @@ const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
 const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
 const { loadGuardrailConfig } = require('../guardrails/config');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
+const { loadProviderCatalog } = require('../utils/catalog-loader');
 
-// Load provider catalog with fallback
-let providerCatalog;
-try {
-    providerCatalog = require('../../PROVIDER_CATALOG.json');
-} catch (error) {
-    try {
-        providerCatalog = require('/var/task/PROVIDER_CATALOG.json');
-    } catch (error2) {
-        const path = require('path');
-        const catalogPath = path.join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
-        const fs = require('fs');
-        providerCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
-    }
-}
+// Load provider catalog using centralized loader
+const providerCatalog = loadProviderCatalog();
 
 // Enrich catalog with rate limit information from provider-specific modules
 const { GROQ_RATE_LIMITS } = require('../groq-rate-limits');

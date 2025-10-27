@@ -3347,8 +3347,15 @@ Summary:`;
         // Only YouTube transcripts use proxy (see youtube-api.js)
         console.log(`🔧 YouTube API search - Proxy: DISABLED (direct connection)`);
         
-        // Use YouTube Data API v3 with API key
-        const apiKey = 'AIzaSyDFLprO5B-qKsoHprb8BooVmVTT0B5Mnus';
+        // Use YouTube Data API v3 with API key from environment
+        const apiKey = process.env.YOUTUBE_API_KEY;
+        if (!apiKey) {
+          return JSON.stringify({ 
+            error: 'YouTube API key not configured. Please set YOUTUBE_API_KEY environment variable.',
+            code: 'YOUTUBE_API_KEY_MISSING'
+          });
+        }
+        
         const apiUrl = `https://www.googleapis.com/youtube/v3/search?${querystring.stringify({
           part: 'snippet',
           q: query,

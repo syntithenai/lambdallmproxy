@@ -5799,23 +5799,38 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                           </div>
                                                           <button
                                                             onClick={() => {
+                                                              // Create modal with safe DOM manipulation (XSS-protected)
                                                               const modal = document.createElement('div');
                                                               modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50';
-                                                              modal.innerHTML = `
-                                                                <div class="bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col">
-                                                                  <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">${t('chat.rawHtml', { count: result.rawHtml.length.toLocaleString() })}</h3>
-                                                                    <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" onclick="this.closest('.fixed').remove()">
-                                                                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                                                      </svg>
-                                                                    </button>
-                                                                  </div>
-                                                                  <div class="flex-1 overflow-auto p-4">
-                                                                    <pre class="text-xs text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap">${result.rawHtml.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-                                                                  </div>
-                                                                </div>
-                                                              `;
+                                                              
+                                                              const modalContent = document.createElement('div');
+                                                              modalContent.className = 'bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col';
+                                                              
+                                                              const header = document.createElement('div');
+                                                              header.className = 'flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700';
+                                                              
+                                                              const title = document.createElement('h3');
+                                                              title.className = 'text-lg font-semibold text-gray-900 dark:text-gray-100';
+                                                              title.textContent = t('chat.rawHtml', { count: result.rawHtml.length.toLocaleString() });
+                                                              
+                                                              const closeBtn = document.createElement('button');
+                                                              closeBtn.className = 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300';
+                                                              closeBtn.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>';
+                                                              closeBtn.onclick = () => modal.remove();
+                                                              
+                                                              const body = document.createElement('div');
+                                                              body.className = 'flex-1 overflow-auto p-4';
+                                                              
+                                                              const pre = document.createElement('pre');
+                                                              pre.className = 'text-xs text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap';
+                                                              pre.textContent = result.rawHtml; // textContent auto-escapes
+                                                              
+                                                              body.appendChild(pre);
+                                                              header.appendChild(title);
+                                                              header.appendChild(closeBtn);
+                                                              modalContent.appendChild(header);
+                                                              modalContent.appendChild(body);
+                                                              modal.appendChild(modalContent);
                                                               document.body.appendChild(modal);
                                                             }}
                                                             className="px-3 py-1 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-800"
@@ -5836,13 +5851,42 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                           </div>
                                                           <button
                                                             onClick={() => {
+                                                              // Create modal with safe DOM manipulation (XSS-protected)
                                                               const modal = document.createElement('div');
                                                               modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50';
-                                                              modal.innerHTML = `
-                                                                <div class="bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col">
-                                                                  <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">${t('chat.rawText', { count: result.rawText.length.toLocaleString() })}</h3>
-                                                                    <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" onclick="this.closest('.fixed').remove()">
+                                                              
+                                                              const modalContent = document.createElement('div');
+                                                              modalContent.className = 'bg-white dark:bg-gray-800 w-11/12 h-5/6 rounded-lg shadow-xl flex flex-col';
+                                                              
+                                                              const header = document.createElement('div');
+                                                              header.className = 'flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700';
+                                                              
+                                                              const title = document.createElement('h3');
+                                                              title.className = 'text-lg font-semibold text-gray-900 dark:text-gray-100';
+                                                              title.textContent = t('chat.rawText', { count: result.rawText.length.toLocaleString() });
+                                                              
+                                                              const closeBtn = document.createElement('button');
+                                                              closeBtn.className = 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300';
+                                                              closeBtn.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>';
+                                                              closeBtn.onclick = () => modal.remove();
+                                                              
+                                                              const body = document.createElement('div');
+                                                              body.className = 'flex-1 overflow-auto p-4';
+                                                              
+                                                              const pre = document.createElement('pre');
+                                                              pre.className = 'text-xs text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap';
+                                                              pre.textContent = result.rawText; // textContent auto-escapes
+                                                              
+                                                              body.appendChild(pre);
+                                                              header.appendChild(title);
+                                                              header.appendChild(closeBtn);
+                                                              modalContent.appendChild(header);
+                                                              modalContent.appendChild(body);
+                                                              modal.appendChild(modalContent);
+                                                              document.body.appendChild(modal);
+                                                            }}
+                                                            className="px-3 py-1 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-800"
+                                                          >>
                                                                       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                                                       </svg>

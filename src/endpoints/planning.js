@@ -29,21 +29,10 @@ async function logToBothSheets(accessToken, logData) {
     }
 }
 
-// Load provider catalog (try multiple locations)
-let providerCatalog;
-try {
-    // First try the relative path (for development)
-    providerCatalog = require('../../PROVIDER_CATALOG.json');
-} catch (e) {
-    try {
-        // Then try the Lambda deployment path
-        providerCatalog = require('/var/task/PROVIDER_CATALOG.json');
-    } catch (e2) {
-        // Finally try the same directory as this file
-        const catalogPath = path.join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
-        providerCatalog = require(catalogPath);
-    }
-}
+// Load provider catalog using centralized loader
+const { loadProviderCatalog } = require('../utils/catalog-loader');
+const providerCatalog = loadProviderCatalog();
+
 const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
 const { selectModel, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
 

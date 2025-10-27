@@ -13,6 +13,48 @@
  * Uses AWS Lambda Response Streaming for Server-Sent Events (SSE)
  */
 
+// ============================================================================
+// GLOBAL ERROR HANDLERS
+// ============================================================================
+// These handlers prevent crashes from unhandled async errors
+// and provide visibility into production issues via CloudWatch logs
+
+/**
+ * Handle unhandled promise rejections
+ * Prevents Lambda crashes from async errors
+ */
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 UNHANDLED PROMISE REJECTION:');
+  console.error('Reason:', reason);
+  console.error('Promise:', promise);
+  
+  // Log stack trace if available
+  if (reason instanceof Error) {
+    console.error('Stack:', reason.stack);
+  }
+  
+  // In Lambda, don't exit process - let current request complete
+  // Lambda will recycle container automatically on next invocation
+  // This prevents cascading failures
+});
+
+/**
+ * Handle uncaught exceptions
+ * Last resort error handling for synchronous errors
+ */
+process.on('uncaughtException', (error) => {
+  console.error('🚨 UNCAUGHT EXCEPTION:');
+  console.error('Error:', error);
+  console.error('Stack:', error.stack);
+  
+  // In Lambda, allow current request to complete
+  // Don't call process.exit() as Lambda manages lifecycle
+});
+
+// ============================================================================
+// MODULE IMPORTS
+// ============================================================================
+
 // Note: awslambda is a global object provided by Lambda runtime when using Response Streaming
 // No import needed - it's automatically available
 

@@ -11,6 +11,7 @@ import {
   saveCurrentSearches,
   loadCurrentSearches
 } from '../utils/searchCache';
+import { highlightKeywordsSafe } from '../utils/sanitize';
 
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
@@ -27,24 +28,12 @@ export const SearchTab: React.FC = () => {
   const [cachedQueries, setCachedQueries] = useState<string[]>([]);
   const [searchFilter, setSearchFilter] = useState<string>('');
 
-  // Helper function to highlight keywords in text
+  // Helper function to highlight keywords in text safely (XSS-protected)
   const highlightKeywords = (text: string | undefined): string => {
     if (!text || !searchFilter.trim()) return text || '';
     
     const keywords = searchFilter.trim().toLowerCase().split(/\s+/);
-    let highlightedText = text;
-    
-    keywords.forEach(keyword => {
-      if (keyword.length > 0) {
-        const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-        highlightedText = highlightedText.replace(
-          regex,
-          '<mark class="bg-yellow-200 dark:bg-yellow-600 px-1">$1</mark>'
-        );
-      }
-    });
-    
-    return highlightedText;
+    return highlightKeywordsSafe(text, keywords);
   };
 
   // Load current searches on mount
