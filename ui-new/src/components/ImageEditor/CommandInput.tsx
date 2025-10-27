@@ -17,10 +17,115 @@ export const CommandInput: React.FC<CommandInputProps> = ({
 }) => {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasDetectedSpeechRef = useRef(false);
   const interimTranscriptRef = useRef('');
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Initialize audio analyzer for frequency visualization
+  const setupAudioAnalyzer = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = audioContext;
+
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+      analyserRef.current = analyser;
+
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      dataArrayRef.current = dataArray;
+
+      drawFrequencyBars();
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+    }
+  };
+
+  // Draw frequency visualization
+  const drawFrequencyBars = () => {
+    if (!analyserRef.current || !dataArrayRef.current || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const canvasCtx = canvas.getContext('2d');
+    if (!canvasCtx) return;
+
+    const analyser = analyserRef.current;
+    const dataArray = dataArrayRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+
+    const draw = () => {
+      if (!isListening) return;
+
+      animationFrameRef.current = requestAnimationFrame(draw);
+      // @ts-ignore - TypeScript has issues with Web Audio API types
+      analyser.getByteFrequencyData(dataArray);
+
+      // Clear canvas with dark background
+      canvasCtx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let barHeight;
+      let x = 0;
+
+      // Draw frequency bars
+      for (let i = 0; i < bufferLength; i++) {
+        barHeight = (dataArray[i] / 255) * canvas.height * 0.8;
+
+        // Color gradient based on frequency intensity
+        const intensity = dataArray[i] / 255;
+        const hue = 200; // Blue-ish hue
+        const saturation = 50 + intensity * 30; // More saturated when louder
+        const lightness = 40 + intensity * 30; // Brighter when louder
+        
+        canvasCtx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+        x += barWidth + 1;
+      }
+
+      // Draw center line for reference
+      canvasCtx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+      canvasCtx.lineWidth = 1;
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(0, canvas.height / 2);
+      canvasCtx.lineTo(canvas.width, canvas.height / 2);
+      canvasCtx.stroke();
+    };
+
+    draw();
+  };
+
+  // Cleanup audio resources
+  const cleanupAudio = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+  };
 
   // Check for browser support on mount
   useEffect(() => {
@@ -106,11 +211,13 @@ export const CommandInput: React.FC<CommandInputProps> = ({
       recognitionRef.current.onend = () => {
         console.log('🎤 Recognition ended');
         setIsListening(false);
+        setShowOverlay(false);
         hasDetectedSpeechRef.current = false;
         interimTranscriptRef.current = '';
         if (silenceTimerRef.current) {
           clearTimeout(silenceTimerRef.current);
         }
+        cleanupAudio();
       };
     }
 
@@ -121,25 +228,44 @@ export const CommandInput: React.FC<CommandInputProps> = ({
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
       }
+      cleanupAudio();
     };
   }, [onChange, value, isListening]);
 
-  const handleVoiceInput = () => {
+  const handleVoiceInput = async () => {
     if (!recognitionRef.current) return;
 
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
+      setShowOverlay(false);
+      cleanupAudio();
     } else {
       try {
+        setShowOverlay(true);
+        await setupAudioAnalyzer();
         recognitionRef.current.start();
         setIsListening(true);
       } catch (error) {
         console.error('Error starting speech recognition:', error);
         setIsListening(false);
+        setShowOverlay(false);
+        cleanupAudio();
       }
     }
   };
+
+  // Handle ESC key to close overlay
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showOverlay) {
+        handleVoiceInput();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showOverlay]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,7 +304,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
                 className={`
                   absolute right-2 top-2 p-2 rounded-full transition-all
                   ${isListening 
-                    ? 'bg-red-500 text-white animate-pulse' 
+                    ? 'bg-blue-500 text-white' 
                     : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                   }
                   ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
@@ -186,18 +312,11 @@ export const CommandInput: React.FC<CommandInputProps> = ({
                 title={isListening ? 'Listening... Click to stop' : 'Click to speak command'}
                 aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
               >
-                {isListening ? (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    {/* Recording animation - pulsing circle */}
-                    <circle cx="10" cy="10" r="8" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    {/* Microphone icon */}
-                    <path d="M7 4a3 3 0 016 0v6a3 3 0 11-6 0V4z" />
-                    <path d="M5.5 9.643a.75.75 0 00-1.5 0V10c0 3.06 2.29 5.585 5.25 5.954V17.5h-1.5a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-1.5v-1.546A6.001 6.001 0 0016 10v-.357a.75.75 0 00-1.5 0V10a4.5 4.5 0 01-9 0v-.357z" />
-                  </svg>
-                )}
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  {/* Microphone icon */}
+                  <path d="M7 4a3 3 0 016 0v6a3 3 0 11-6 0V4z" />
+                  <path d="M5.5 9.643a.75.75 0 00-1.5 0V10c0 3.06 2.29 5.585 5.25 5.954V17.5h-1.5a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-1.5v-1.546A6.001 6.001 0 0016 10v-.357a.75.75 0 00-1.5 0V10a4.5 4.5 0 01-9 0v-.357z" />
+                </svg>
               </button>
             )}
           </div>
@@ -228,6 +347,79 @@ export const CommandInput: React.FC<CommandInputProps> = ({
           {' '}• Press <kbd className="px-1 py-0.5 bg-gray-200 rounded">Ctrl+Enter</kbd> to apply
         </div>
       </form>
+
+      {/* Voice Input Overlay with Frequency Analyzer */}
+      {showOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm">
+          <div className="relative bg-slate-900 rounded-2xl shadow-2xl p-8 max-w-2xl w-full mx-4">
+            {/* Close button */}
+            <button
+              onClick={handleVoiceInput}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Header */}
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 mb-4 rounded-full bg-blue-500 bg-opacity-20">
+                <svg className="w-8 h-8 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M7 4a3 3 0 016 0v6a3 3 0 11-6 0V4z" />
+                  <path d="M5.5 9.643a.75.75 0 00-1.5 0V10c0 3.06 2.29 5.585 5.25 5.954V17.5h-1.5a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-1.5v-1.546A6.001 6.001 0 0016 10v-.357a.75.75 0 00-1.5 0V10a4.5 4.5 0 01-9 0v-.357z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-semibold text-white mb-2">
+                {hasDetectedSpeechRef.current ? 'Listening...' : 'Speak your command'}
+              </h3>
+              <p className="text-slate-400 text-sm">
+                {hasDetectedSpeechRef.current 
+                  ? 'Processing your voice input...' 
+                  : 'Try: "resize to 800 pixels" or "convert to grayscale"'
+                }
+              </p>
+            </div>
+
+            {/* Frequency Analyzer Canvas */}
+            <div className="mb-6 rounded-xl overflow-hidden border border-slate-700 shadow-inner">
+              <canvas
+                ref={canvasRef}
+                width={600}
+                height={200}
+                className="w-full h-48"
+              />
+            </div>
+
+            {/* Status indicator */}
+            <div className="flex items-center justify-center gap-3 text-slate-300">
+              <div className="flex gap-1">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+              </div>
+              <span className="text-sm font-medium">
+                {hasDetectedSpeechRef.current ? 'Speech detected' : 'Ready to listen'}
+              </span>
+            </div>
+
+            {/* Transcript preview */}
+            {interimTranscriptRef.current && (
+              <div className="mt-4 p-3 bg-slate-800 rounded-lg border border-slate-700">
+                <p className="text-slate-300 text-sm italic">
+                  "{interimTranscriptRef.current}"
+                </p>
+              </div>
+            )}
+
+            {/* Help text */}
+            <div className="mt-6 text-center text-xs text-slate-500">
+              Click outside or press ESC to cancel • Stops automatically after 2 seconds of silence
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
