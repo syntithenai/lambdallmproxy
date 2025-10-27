@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
 import { useCast } from '../contexts/CastContext';
@@ -31,6 +31,7 @@ import '../styles/markdown-editor.css';
 
 export const SwagPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { showSuccess, showError, showWarning } = useToast();
   const { getToken } = useAuth();
   
@@ -47,9 +48,11 @@ export const SwagPage: React.FC = () => {
     size?: number;
   }) => {
     // Navigate to image editor with single image
+    // Pass editingSnippet.id if currently editing a snippet
     navigate('/image-editor', { 
       state: { 
-        images: [imageData] 
+        images: [imageData],
+        editingSnippetId: editingSnippet?.id // Pass the editing snippet ID if exists
       } 
     });
   };
@@ -195,6 +198,23 @@ export const SwagPage: React.FC = () => {
   }, []);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [snippetToEdit, setSnippetToEdit] = useState<string | null>(null);
+
+  // Handle returning from image editor - restore editing dialog if needed
+  useEffect(() => {
+    const state = location.state as { editingSnippetId?: string } | null;
+    if (state?.editingSnippetId) {
+      // Find and restore the editing snippet
+      const snippet = snippets.find(s => s.id === state.editingSnippetId);
+      if (snippet) {
+        setEditingSnippet(snippet);
+        setEditContent(snippet.content);
+        setEditTitle(snippet.title || '');
+        setEditTags(snippet.tags || []);
+      }
+      // Clear the state to prevent re-triggering on subsequent renders
+      navigate('/swag', { replace: true, state: {} });
+    }
+  }, [location.state, snippets, navigate]);
   
   // Embedding status tracking
   const [embeddingStatusMap, setEmbeddingStatusMap] = useState<Record<string, boolean>>({});

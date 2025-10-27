@@ -13,8 +13,14 @@ export const ImageEditorPage: React.FC = () => {
   const location = useLocation();
   const { addSnippet, updateSnippet, snippets: swagSnippets } = useSwag();
 
-  // Get images from navigation state
-  const initialImages = (location.state as { images?: ImageData[] })?.images || [];
+  // Get images and editing context from navigation state
+  const locationState = location.state as { 
+    images?: ImageData[]; 
+    editingSnippetId?: string;
+  } | null;
+  
+  const initialImages = locationState?.images || [];
+  const editingSnippetId = locationState?.editingSnippetId; // ID of snippet being edited (if from markdown editor)
   
   // Determine if this is inline editing (single image from markdown renderer)
   const isInlineEdit = initialImages.length === 1 && initialImages[0].snippetId;
@@ -301,7 +307,14 @@ export const ImageEditorPage: React.FC = () => {
       <header className="bg-white border-b border-gray-200 p-4 sticky top-0 z-20 shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <button
-            onClick={() => navigate('/swag')}
+            onClick={() => {
+              // If we came from editing a snippet, restore that editing dialog
+              if (editingSnippetId) {
+                navigate('/swag', { state: { editingSnippetId } });
+              } else {
+                navigate('/swag');
+              }
+            }}
             className="flex items-center gap-2 text-gray-700 hover:text-gray-900 font-medium transition-colors"
           >
             <svg
