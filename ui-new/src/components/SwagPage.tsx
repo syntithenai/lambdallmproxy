@@ -31,6 +31,7 @@ import { getCachedApiBase, generateQuiz } from '../utils/api';
 import { extractImagesFromSnippets, snippetHasImages } from './ImageEditor/extractImages';
 import { quizDB } from '../db/quizDb';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
+import { ErrorBoundary } from './ErrorBoundary';
 import '../styles/markdown-editor.css';
 
 export const SwagPage: React.FC = () => {
@@ -141,6 +142,7 @@ export const SwagPage: React.FC = () => {
   
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [_dragCounter, setDragCounter] = useState(0);
   
   // Confirmation dialog state for tag deletion
@@ -157,8 +159,10 @@ export const SwagPage: React.FC = () => {
     startTime: number;
     enrichment: boolean;
   } | null>(null);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   
   // Load RAG config for similarity threshold
+  // eslint-disable-next-line no-unused-vars
   const [_ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
   
   // Recent tags for desktop quick filter
@@ -630,7 +634,7 @@ export const SwagPage: React.FC = () => {
     }
 
     try {
-      setLoading(true);
+      setIsGeneratingQuiz(true);
       const token = await getToken();
       if (!token) {
         showError('Authentication required. Please sign in.');
@@ -638,11 +642,21 @@ export const SwagPage: React.FC = () => {
       }
       
       const enabledProviders = settings.providers.filter(p => p.enabled === true);
+      
+      if (enabledProviders.length === 0) {
+        showError('No LLM providers enabled. Please enable at least one provider in Settings.');
+        return;
+      }
 
       // Combine snippet content
       const content = selected
         .map(s => `## ${s.title}\n\n${s.content}`)
         .join('\n\n');
+      
+      if (content.trim().length === 0) {
+        showWarning('Selected snippets are empty. Please select snippets with content.');
+        return;
+      }
 
       console.log(`🎯 Generating quiz from ${selected.length} snippet(s), ${content.length} characters`);
 
@@ -669,7 +683,7 @@ export const SwagPage: React.FC = () => {
       console.error('Quiz generation error:', error);
       showError(error instanceof Error ? error.message : 'Failed to generate quiz');
     } finally {
-      setLoading(false);
+      setIsGeneratingQuiz(false);
     }
   };
 
@@ -2363,14 +2377,21 @@ export const SwagPage: React.FC = () => {
           </button>
           <button
             onClick={() => handleBulkOperation('generate-quiz')}
-            disabled={loading}
+            disabled={isGeneratingQuiz}
             className="px-2 md:px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 whitespace-nowrap"
             title="Generate Quiz (Ctrl+Q)"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-            <span className="hidden md:inline">Quiz</span>
+            {isGeneratingQuiz ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+            )}
+            <span className="hidden md:inline">{isGeneratingQuiz ? 'Generating...' : 'Quiz'}</span>
           </button>
           <button
             onClick={() => {
@@ -2626,14 +2647,25 @@ export const SwagPage: React.FC = () => {
       {/* Quiz Modal */}
       {showQuizModal && currentQuiz && quizMetadata && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <QuizCard
-            quiz={currentQuiz}
-            onClose={() => {
+          <ErrorBoundary
+            onError={(error, errorInfo) => {
+              // Log error for debugging (error boundary callback)
+              // eslint-disable-next-line no-console
+              console.error('Quiz error:', error, errorInfo);
+              showError('Quiz encountered an error. Please try again.');
               setShowQuizModal(false);
               setCurrentQuiz(null);
               setQuizMetadata(null);
             }}
-            onComplete={async (score, total, answers) => {
+          >
+            <QuizCard
+              quiz={currentQuiz}
+              onClose={() => {
+                setShowQuizModal(false);
+                setCurrentQuiz(null);
+                setQuizMetadata(null);
+              }}
+              onComplete={async (score, total, answers) => {
               const percentage = Math.round((score / total) * 100);
               const timeTaken = Date.now() - quizMetadata.startTime;
               
@@ -2674,6 +2706,7 @@ export const SwagPage: React.FC = () => {
               }
             }}
           />
+          </ErrorBoundary>
         </div>
       )}
     </div>
