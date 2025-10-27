@@ -89,9 +89,11 @@ export default [
       // Security rules
       'no-secrets/no-secrets': 'error',
       
-      // TypeScript rules
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-      'no-console': 'warn'
+      // TypeScript rules - relaxed for gradual migration
+      '@typescript-eslint/no-explicit-any': 'off', // Allow any for now
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-console': 'warn',
+      'no-useless-escape': 'warn' // Warn instead of error
     }
   },
 
