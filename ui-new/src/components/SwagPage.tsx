@@ -5,6 +5,7 @@ import { useToast } from './ToastManager';
 import { useCast } from '../contexts/CastContext';
 import { useTTS } from '../contexts/TTSContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { MarkdownEditor } from './MarkdownEditor';
@@ -15,6 +16,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { ReadButton } from './ReadButton';
 import { FileUploadDialog } from './FileUploadDialog';
 import SnippetShareDialog from './SnippetShareDialog';
+import { QuizCard } from './QuizCard';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
   createGoogleDocInFolder, 
@@ -25,7 +27,7 @@ import {
 import type { GoogleDoc } from '../utils/googleDocs';
 import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
-import { getCachedApiBase } from '../utils/api';
+import { getCachedApiBase, generateQuiz } from '../utils/api';
 import { extractImagesFromSnippets, snippetHasImages } from './ImageEditor/extractImages';
 import '../styles/markdown-editor.css';
 
@@ -34,6 +36,7 @@ export const SwagPage: React.FC = () => {
   const location = useLocation();
   const { showSuccess, showError, showWarning } = useToast();
   const { getToken } = useAuth();
+  const { settings } = useSettings();
   
   // Handler for when user clicks edit button on an individual image
   const handleImageEdit = (imageData: {
@@ -143,6 +146,10 @@ export const SwagPage: React.FC = () => {
   
   // Share dialog state
   const [sharingSnippet, setSharingSnippet] = useState<ContentSnippet | null>(null);
+  
+  // Quiz state
+  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [currentQuiz, setCurrentQuiz] = useState<any | null>(null);
   
   // Load RAG config for similarity threshold
   const [_ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
@@ -349,6 +356,12 @@ export const SwagPage: React.FC = () => {
         e.preventDefault();
         handleBulkOperation('generate-embeddings');
       }
+
+      // Ctrl/Cmd + Q: Generate quiz from selected
+      if ((e.ctrlKey || e.metaKey) && e.key === 'q' && getSelectedSnippets().length > 0) {
+        e.preventDefault();
+        handleBulkOperation('generate-quiz');
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -541,6 +554,14 @@ export const SwagPage: React.FC = () => {
           setShowTagDialog(true);
         }, 100);
         break;
+      case 'generate-quiz':
+        console.log('🎯 Generate quiz case triggered');
+        if (selected.length === 0) {
+          showWarning('No snippets selected');
+          return;
+        }
+        await handleGenerateQuiz();
+        break;
       default:
         console.warn('⚠️ Unknown operation:', operation);
     }
@@ -591,6 +612,47 @@ export const SwagPage: React.FC = () => {
     } finally {
       setIsEmbedding(false);
       setEmbeddingProgress(null);
+    }
+  };
+
+  const handleGenerateQuiz = async () => {
+    const selected = getSelectedSnippets();
+    if (selected.length === 0) {
+      showWarning('No snippets selected');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const token = await getToken();
+      if (!token) {
+        showError('Authentication required. Please sign in.');
+        return;
+      }
+      
+      const enabledProviders = settings.providers.filter(p => p.enabled === true);
+
+      // Combine snippet content
+      const content = selected
+        .map(s => `## ${s.title}\n\n${s.content}`)
+        .join('\n\n');
+
+      console.log(`🎯 Generating quiz from ${selected.length} snippet(s), ${content.length} characters`);
+
+      // Generate quiz with enrichment enabled
+      const quiz = await generateQuiz(content, true, enabledProviders, token);
+
+      console.log('✅ Quiz generated:', quiz.title);
+      
+      // Show quiz modal
+      setCurrentQuiz(quiz);
+      setShowQuizModal(true);
+      
+    } catch (error) {
+      console.error('Quiz generation error:', error);
+      showError(error instanceof Error ? error.message : 'Failed to generate quiz');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2283,6 +2345,17 @@ export const SwagPage: React.FC = () => {
             <span className="hidden md:inline">Index</span>
           </button>
           <button
+            onClick={() => handleBulkOperation('generate-quiz')}
+            disabled={loading}
+            className="px-2 md:px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 whitespace-nowrap"
+            title="Generate Quiz (Ctrl+Q)"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <span className="hidden md:inline">Quiz</span>
+          </button>
+          <button
             onClick={() => {
               setShowTagDialog(true);
               setTagDialogMode('add');
@@ -2531,6 +2604,25 @@ export const SwagPage: React.FC = () => {
           sourceType={sharingSnippet.sourceType}
           onClose={() => setSharingSnippet(null)}
         />
+      )}
+
+      {/* Quiz Modal */}
+      {showQuizModal && currentQuiz && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <QuizCard
+            quiz={currentQuiz}
+            onClose={() => {
+              setShowQuizModal(false);
+              setCurrentQuiz(null);
+            }}
+            onComplete={(score, total) => {
+              // TODO: Save to IndexedDB (task 5)
+              // TODO: Sync to Google Sheets (task 5)
+              const percentage = Math.round((score / total) * 100);
+              showSuccess(`Quiz completed! Score: ${score}/${total} (${percentage}%)`);
+            }}
+          />
+        </div>
       )}
     </div>
   );
