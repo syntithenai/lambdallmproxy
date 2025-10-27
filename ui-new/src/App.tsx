@@ -24,6 +24,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
 import { PlanningPage } from './components/PlanningPage';
 import { SwagPage } from './components/SwagPage';
+import { QuizPage } from './components/QuizPage';
 import BillingPage from './components/BillingPage';
 import { HelpPage } from './components/HelpPage';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
@@ -656,6 +657,7 @@ function AppContent() {
             />
             <Route path="/planning" element={<PlanningPage />} />
             <Route path="/swag" element={<SwagPage />} />
+            <Route path="/quiz" element={<QuizPage />} />
             <Route path="/image-editor" element={<ImageEditorPage />} />
             <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
             <Route path="/billing" element={<BillingPage />} />
