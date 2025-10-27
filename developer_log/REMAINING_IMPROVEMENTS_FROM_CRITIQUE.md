@@ -95,7 +95,7 @@ From the Accessibility Improvement Plan, we implemented:
 **What It Would Add**:
 - Install prompt ("Add to Home Screen")
 - Offline support (service worker caching)
-- App-like experience (standalone mode)
+- App-like experience (standalone mode) with access to snippets but no chat or image editing if offline
 - Push notifications
 
 **Effort**: 1 week  
