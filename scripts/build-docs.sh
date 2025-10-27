@@ -27,6 +27,9 @@ if [ -n "$LAMBDA_URL" ]; then
     # Get Google Client ID from .env as source of truth
     GOOGLE_CLIENT_ID=$(grep '^VITE_GOOGLE_CLIENT_ID=' ui-new/.env 2>/dev/null | cut -d'=' -f2 || echo "548179877633-cfvhlc5roj9prus33jlarcm540i495qi.apps.googleusercontent.com")
     
+    # Get PayPal Client ID from .env as source of truth
+    PAYPAL_CLIENT_ID=$(grep '^VITE_PAYPAL_CLIENT_ID=' ui-new/.env 2>/dev/null | cut -d'=' -f2 || echo "AU9cY15vsAcz4tWwm5U0O-nMBqYTP3cT0dOHTpHqPCCD1n9fwdcD-xNcuzMv_eP-UtaB3PFHTuHoXeCW")
+    
     # Update or create .env.production
     if [ -f ui-new/.env.production ]; then
         # Update VITE_API_BASE
@@ -41,7 +44,16 @@ if [ -n "$LAMBDA_URL" ]; then
             echo "VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> ui-new/.env.production
         fi
         
-        log_info "Updated ui-new/.env.production"
+        # Update or add VITE_PAYPAL_CLIENT_ID
+        if grep -q '^VITE_PAYPAL_CLIENT_ID=' ui-new/.env.production; then
+            sed -i "s|^VITE_PAYPAL_CLIENT_ID=.*|VITE_PAYPAL_CLIENT_ID=$PAYPAL_CLIENT_ID|" ui-new/.env.production
+        else
+            echo "" >> ui-new/.env.production
+            echo "# PayPal Client ID for payment integration" >> ui-new/.env.production
+            echo "VITE_PAYPAL_CLIENT_ID=$PAYPAL_CLIENT_ID" >> ui-new/.env.production
+        fi
+        
+        log_info "Updated ui-new/.env.production with Lambda URL, Google Client ID, and PayPal Client ID"
     else
         log_warn ".env.production not found, creating it..."
         cat > ui-new/.env.production << EOF
@@ -56,6 +68,9 @@ VITE_API_BASE=$LAMBDA_URL
 
 # Google Client ID for OAuth authentication
 VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+
+# PayPal Client ID for payment integration
+VITE_PAYPAL_CLIENT_ID=$PAYPAL_CLIENT_ID
 
 EOF
         log_info "Created ui-new/.env.production"
