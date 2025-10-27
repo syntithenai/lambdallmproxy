@@ -36,11 +36,13 @@ jobs:
       - name: Scan for hard-coded secrets
         run: |
           echo "🔍 Scanning for hard-coded API keys and secrets..."
-          if grep -r "sk-\|gsk_\|AIza\|AKIA\|ya29\." src/ ui-new/src/ 2>/dev/null; then
+          # Use more precise patterns to avoid false positives from comments/docs
+          if grep -rE "sk-[a-zA-Z0-9]{20,}|gsk_[a-zA-Z0-9]{32,}|AIza[a-zA-Z0-9]{35}|AKIA[A-Z0-9]{16}|ya29\.[a-zA-Z0-9_-]{50,}" src/ ui-new/src/ 2>/dev/null; then
             echo "❌ ERROR: Hard-coded secrets detected!"
+            echo "Secrets must be stored in environment variables, not in source code."
             exit 1
           else
-            echo "✅ No secrets found in source code"
+            echo "✅ No actual API keys found in source code"
           fi
       
       - name: Install Semgrep
