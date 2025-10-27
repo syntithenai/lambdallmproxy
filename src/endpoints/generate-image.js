@@ -255,7 +255,7 @@ async function handleGenerateImage(event) {
       
       // Extract request ID and Lambda metrics from context
       const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
       const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
       
       // Log image generation request
@@ -321,7 +321,7 @@ async function handleGenerateImage(event) {
         error: error.message || 'Image generation failed',
         provider: error.provider,
         model: error.model,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        stack: process.env.ENV === 'development' ? error.stack : undefined
       })
     };
   }
@@ -420,10 +420,10 @@ function getApiKeyForProvider(provider, contextKeys = {}) {
   
   // Fallback to environment variables
   const envVarMap = {
-    'openai': 'OPENAI_API_KEY',
-    'together': 'TOGETHER_API_KEY',
-    'gemini': 'GEMINI_API_KEY',
-    'replicate': 'REPLICATE_API_TOKEN'
+    'openai': 'OPENAI_KEY',
+    'together': 'TOGETHER_KEY',
+    'gemini': 'GEMINI_KEY',
+    'replicate': 'REPLICATE_KEY'
   };
   
   const envVar = envVarMap[provider.toLowerCase()];
@@ -618,7 +618,7 @@ async function generateImageDirect(params) {
       
       // Extract request ID and Lambda metrics from context
       const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
       const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
       
       logToGoogleSheets({

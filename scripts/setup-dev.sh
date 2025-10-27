@@ -55,7 +55,7 @@ if [ ! -f .env ]; then
     echo "📝 Creating .env file..."
     cat > .env << 'ENVEOF'
 # Development mode (enables local-only tiers)
-NODE_ENV=development
+ENV=development
 
 # Scraping settings
 HEADLESS=true

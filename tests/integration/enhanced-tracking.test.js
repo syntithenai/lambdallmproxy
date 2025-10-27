@@ -60,7 +60,7 @@ describe.skip('Enhanced Lambda Handler Tracking (Streaming)', () => {
     };
 
     process.env.ACCESS_SECRET = 'test-secret';
-    process.env.GROQ_API_KEY = 'test-groq-key';
+    process.env.GROQ_KEY = 'test-groq-key';
 
     baseEvent = {
       httpMethod: 'POST',
@@ -116,7 +116,7 @@ describe.skip('Enhanced Lambda Handler Tracking (Streaming)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     delete process.env.ACCESS_SECRET;
-    delete process.env.GROQ_API_KEY;
+    delete process.env.GROQ_KEY;
   });
 
   test('streams planning and synthesis events with completion metadata', async () => {

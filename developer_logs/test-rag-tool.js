@@ -4,7 +4,7 @@ async function test() {
   console.log('Testing RAG search tool...\n');
   
   const context = {
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_KEY,
     writeEvent: (event, data) => {
       console.log(`[Event: ${event}]`, JSON.stringify(data, null, 2));
     }

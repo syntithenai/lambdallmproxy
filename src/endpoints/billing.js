@@ -177,13 +177,13 @@ async function handleGetBilling(event, responseStream) {
         // --- TTS Capabilities ---
         // This block determines which TTS providers are available server-side
         // and exposes their status to the frontend for UI display.
-        // NOTE: OPENAI_API_KEY is for RAG embeddings only, NOT for TTS/chat
+        // NOTE: OPENAI_KEY is for RAG embeddings only, NOT for TTS/chat
         const ttsCapabilities = {
-            // openai: Disabled - OPENAI_API_KEY is reserved for RAG embeddings only
-            groq: !!process.env.GROQ_API_KEY,
-            gemini: !!process.env.GEMINI_API_KEY,
-            together: !!process.env.TOGETHER_API_KEY,
-            elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+            // openai: Disabled - OPENAI_KEY is reserved for RAG embeddings only
+            groq: !!process.env.GROQ_KEY,
+            gemini: !!process.env.GEMINI_KEY,
+            together: !!process.env.TOGETHER_KEY,
+            elevenlabs: !!process.env.ELEVENLABS_KEY,
             browser: true, // Always available client-side
             speakjs: true  // Always available client-side
         };

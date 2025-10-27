@@ -102,7 +102,7 @@ async function scrapePage(url, options = {}) {
     screenshot = false,
     headless = process.env.HEADLESS !== 'false',
     devtools = process.env.DEVTOOLS === 'true' || options.devtools || false,
-    slowMo = parseInt(process.env.SLOW_MO || '0') || options.slowMo || 0,
+    slowMo = parseInt(process.env.SLOWMO || '0') || options.slowMo || 0,
     onProgress = null,
     proxyServer = null,
     proxyUsername = null,

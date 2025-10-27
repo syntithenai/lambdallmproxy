@@ -19,7 +19,7 @@ export async function imageUrlToBase64(url: string, maxSize: number = 1200): Pro
 
     // Try backend proxy first (uses Webshare proxy if available)
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+      const backendUrl = import.meta.env.VITE_BACK || '';
       const proxyResponse = await fetch(`${backendUrl}/proxy-image`, {
         method: 'POST',
         headers: {

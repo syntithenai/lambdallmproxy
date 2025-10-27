@@ -51,8 +51,8 @@ async function refreshAccessToken(refreshToken) {
   try {
     // Use Google's OAuth2 client to refresh the token
     const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GGL_CID,
+      process.env.GGL_SEC,
       process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback'
     );
     

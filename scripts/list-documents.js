@@ -28,7 +28,7 @@ const path = require('path');
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    dbPath: process.env.LIBSQL_URL || 'file:///' + path.resolve('./rag-kb.db'),
+    dbPath: process.env.DB_URL || 'file:///' + path.resolve('./rag-kb.db'),
     type: null,
     format: 'table',
     limit: null,
@@ -170,7 +170,7 @@ async function main() {
     // Create client
     const client = storageModule.createLibsqlClient({
       url: options.dbPath,
-      authToken: process.env.LIBSQL_AUTH_TOKEN,
+      authToken: process.env.DB_TOKEN,
     });
 
     // Build query

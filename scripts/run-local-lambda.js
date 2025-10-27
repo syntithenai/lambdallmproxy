@@ -23,7 +23,7 @@ const https = require('https');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.LOCAL_LAMBDA_PORT || 3000;
+const PORT = process.env.LOCAL_PORT || 3000;
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({ 
@@ -446,7 +446,7 @@ const handleRequest = async (req, res) => {
     res.status(500).json({ 
       error: 'Internal server error',
       message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      stack: process.env.ENV === 'development' ? error.stack : undefined
     });
   }
 };

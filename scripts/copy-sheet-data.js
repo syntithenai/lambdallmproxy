@@ -142,9 +142,9 @@ async function main() {
         process.exit(1);
     }
     
-    const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID || process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_IDS;
-    const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-    const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const spreadsheetId = process.env.GS_SHEET_ID || process.env.GS_SHEET_IDS;
+    const serviceAccountEmail = process.env.GS_EMAIL;
+    const privateKey = process.env.GS_KEY?.replace(/\\n/g, '\n');
     
     console.log(`\n📋 Copying data from "${sourceSheet}" to "${targetSheet}"\n`);
     

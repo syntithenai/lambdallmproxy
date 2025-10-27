@@ -341,7 +341,7 @@ async function testPuppeteer() {
  * @returns {boolean} True if Puppeteer should be used
  */
 function shouldUsePuppeteer() {
-  const usePuppeteer = process.env.USE_PUPPETEER;
+  const usePuppeteer = process.env.USE_PPT;
   
   // Check if explicitly disabled
   if (usePuppeteer === 'false' || usePuppeteer === '0') {

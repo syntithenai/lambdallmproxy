@@ -8,8 +8,8 @@
  * Usage: node scripts/collect-provider-data.js
  * 
  * Environment variables required:
- * - GROQ_API_KEY (optional)
- * - OPENAI_API_KEY (optional)
+ * - GROQ_KEY (optional)
+ * - OPENAI_KEY (optional)
  * - GEMINI_API_KEY (optional)
  * - COHERE_API_KEY (optional)
  * - MISTRAL_API_KEY (optional)
@@ -70,8 +70,8 @@ function httpsRequest(hostname, path, headers = {}) {
 async function fetchGroqModels() {
     console.log('📡 Fetching Groq models...');
     
-    if (!process.env.GROQ_API_KEY) {
-        console.log('⚠️  GROQ_API_KEY not set, using static data');
+    if (!process.env.GROQ_KEY) {
+        console.log('⚠️  GROQ_KEY not set, using static data');
         return getStaticGroqData();
     }
 
@@ -79,7 +79,7 @@ async function fetchGroqModels() {
         const response = await httpsRequest(
             'api.groq.com',
             '/openai/v1/models',
-            { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` }
+            { 'Authorization': `Bearer ${process.env.GROQ_KEY}` }
         );
 
         if (response.data && Array.isArray(response.data)) {
@@ -297,8 +297,8 @@ function getStaticGroqData() {
 async function fetchOpenAIModels() {
     console.log('📡 Fetching OpenAI models...');
     
-    if (!process.env.OPENAI_API_KEY) {
-        console.log('⚠️  OPENAI_API_KEY not set, using static data');
+    if (!process.env.OPENAI_KEY) {
+        console.log('⚠️  OPENAI_KEY not set, using static data');
         return getStaticOpenAIData();
     }
 
@@ -306,7 +306,7 @@ async function fetchOpenAIModels() {
         const response = await httpsRequest(
             'api.openai.com',
             '/v1/models',
-            { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` }
+            { 'Authorization': `Bearer ${process.env.OPENAI_KEY}` }
         );
 
         if (response.data && Array.isArray(response.data)) {

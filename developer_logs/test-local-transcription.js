@@ -11,13 +11,13 @@ async function test() {
     console.log('🧪 Testing local transcription...\n');
     
     const url = 'http://localhost:3000/samples/long-form-ai-speech.mp3';
-    const apiKey = process.env.OPENAI_API_KEY || 'test-key';
+    const apiKey = process.env.OPENAI_KEY || 'test-key';
     
     console.log(`URL: ${url}`);
     console.log(`API Key: ${apiKey ? '✅ Set' : '❌ Not set'}\n`);
     
-    if (!process.env.OPENAI_API_KEY) {
-        console.log('⚠️  Warning: OPENAI_API_KEY not set in environment');
+    if (!process.env.OPENAI_KEY) {
+        console.log('⚠️  Warning: OPENAI_KEY not set in environment');
         console.log('   The transcription will fail at the Whisper API call,');
         console.log('   but we can still test if local file detection works.\n');
     }

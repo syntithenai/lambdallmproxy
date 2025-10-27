@@ -20,7 +20,7 @@ const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
 let lambdaClient = null;
 function getLambdaClient() {
   if (!lambdaClient) {
-    lambdaClient = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+    lambdaClient = new LambdaClient({ region: process.env.AWS_RGN || 'us-east-1' });
   }
   return lambdaClient;
 }
@@ -75,12 +75,12 @@ async function cachedSearch(query, service, maxResults, searchFunction) {
 
 // Puppeteer invocation helper with local development support
 async function invokePuppeteerLambda(url, options = {}) {
-  const puppeteerLambdaArn = process.env.PUPPETEER_LAMBDA_ARN;
-  const isLocalDev = process.env.NODE_ENV === 'development' || !puppeteerLambdaArn;
+  const puppeteerLambdaArn = process.env.PPT_ARN;
+  const isLocalDev = process.env.ENV === 'development' || !puppeteerLambdaArn;
   
   // Get proxy configuration from environment
-  const proxyUsername = process.env.WEBSHARE_PROXY_USERNAME;
-  const proxyPassword = process.env.WEBSHARE_PROXY_PASSWORD;
+  const proxyUsername = process.env.PXY_USER;
+  const proxyPassword = process.env.PXY_PASS;
   const proxyEnabled = proxyUsername && proxyPassword;
   
   // LOCAL DEVELOPMENT: Use local Puppeteer scraper
@@ -1193,7 +1193,7 @@ Brief answer with URLs:`;
                   
                   // Extract request ID and Lambda metrics from context
                   const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                  const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                  const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
                   const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                   
                   logToGoogleSheets({
@@ -1348,7 +1348,7 @@ ${result.content.substring(0, maxContentChars)}
                     
                     // Extract request ID and Lambda metrics from context
                     const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                    const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                    const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
                     const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                     
                     logToGoogleSheets({
@@ -1471,7 +1471,7 @@ Brief answer with URLs:`;
                 
                 // Extract request ID and Lambda metrics from context
                 const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
                 const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                 
                 logToGoogleSheets({
@@ -1509,7 +1509,7 @@ Brief answer with URLs:`;
               const prompt = buildSummaryPrompt(query, enhancedResults, loadContent);
               
               const summaryInput = [
-                { role: 'system', content: process.env.SYSTEM_PROMPT_DIGEST_ANALYST || 'You are a thorough research analyst. Provide concise, accurate summaries based on search results.' },
+                { role: 'system', content: process.env.SYS_DIGEST || 'You are a thorough research analyst. Provide concise, accurate summaries based on search results.' },
                 { role: 'user', content: prompt }
               ];
               
@@ -1761,8 +1761,8 @@ Brief answer with URLs:`;
       
       try {
         // Set environment for libSQL
-        if (!process.env.LIBSQL_URL) {
-          process.env.LIBSQL_URL = 'file:///' + require('path').resolve('./rag-kb.db');
+        if (!process.env.DB_URL) {
+          process.env.DB_URL = 'file:///' + require('path').resolve('./rag-kb.db');
         }
         
         // Import RAG modules
@@ -1770,11 +1770,11 @@ Brief answer with URLs:`;
         const embeddings = require('./rag/embeddings');
         
         // Check for embedding API key
-        const embeddingApiKey = process.env.OPENAI_API_KEY || context.apiKey;
+        const embeddingApiKey = process.env.OPENAI_KEY || context.apiKey;
         if (!embeddingApiKey) {
           return JSON.stringify({
             error: 'OpenAI API key required for knowledge base search',
-            message: 'Set OPENAI_API_KEY environment variable or provide API key in context'
+            message: 'Set OPENAI_KEY environment variable or provide API key in context'
           });
         }
         
@@ -1797,14 +1797,14 @@ Brief answer with URLs:`;
             // Generate embedding for query (with separate embedding cache)
             console.log('📚 Generating query embedding...');
             
-            const embeddingModel = process.env.RAG_EMBEDDING_MODEL || 'text-embedding-3-small';
+            const embeddingModel = process.env.RAG_MDL || 'text-embedding-3-small';
             
             // Cache embeddings separately for reuse across different search parameters
             const embeddingResult = await getCachedOrFetch(
               'rag_embeddings',
               { text: query, model: embeddingModel },
               async () => {
-                const embeddingProvider = process.env.RAG_EMBEDDING_PROVIDER || 'openai';
+                const embeddingProvider = process.env.RAG_PROV || 'openai';
                 
                 // Try to find provider config from context for model filtering
                 let providerConfig = null;
@@ -2474,7 +2474,7 @@ Brief answer with URLs:`;
 
         // Check if Whisper transcription is disabled via environment variable
         // NOTE: This only disables WHISPER for YouTube, not YouTube API transcripts
-        const disableYouTubeWhisper = process.env.DISABLE_YOUTUBE_TRANSCRIPTION === 'true';
+        const disableYouTubeWhisper = process.env.NO_YT_TRANS === 'true';
 
         // Prioritize YouTube Transcript API if token available
         // YouTube API transcripts work regardless of DISABLE_YOUTUBE_TRANSCRIPTION flag
@@ -2769,7 +2769,7 @@ Summary:`;
               
               // Extract request ID and Lambda metrics from context
               const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-              const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+              const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
               const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
               
               logToGoogleSheets({
@@ -3567,8 +3567,8 @@ Summary:`;
         // Get proxy credentials from context (posted from UI) or environment variables
         // NOTE: Proxy is ONLY used for YouTube transcripts to avoid Google blocking
         // All other tools (search_youtube, search_web) use direct connections
-        const proxyUsername = context.proxyUsername || process.env.WEBSHARE_PROXY_USERNAME;
-        const proxyPassword = context.proxyPassword || process.env.WEBSHARE_PROXY_PASSWORD;
+        const proxyUsername = context.proxyUsername || process.env.PXY_USER;
+        const proxyPassword = context.proxyPassword || process.env.PXY_PASS;
         console.log(`🔧 YouTube transcript - Proxy: ${proxyUsername && proxyPassword ? 'ENABLED' : 'DISABLED'}`);
         
         // Try InnerTube API first (works for all public videos)
@@ -3599,7 +3599,7 @@ Summary:`;
               console.log(`❌ OAuth API also failed: ${oauthError.message}`);
               
               // Final fallback: Selenium (local only)
-              const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+              const IS_LAMBDA = !!process.env.AWS_FN;
               if (!IS_LAMBDA) {
                 console.log('🔄 Falling back to Selenium caption scraper (local only)...');
                 try {
@@ -3620,7 +3620,7 @@ Summary:`;
             }
           } else {
             // No OAuth token, try Selenium fallback (local only)
-            const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+            const IS_LAMBDA = !!process.env.AWS_FN;
             if (!IS_LAMBDA) {
               console.log('🔄 Falling back to Selenium caption scraper (local only)...');
               try {
@@ -3717,7 +3717,7 @@ Summary:`;
                 
                 // Extract request ID and Lambda metrics from context
                 const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
                 const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                 
                 logToGoogleSheets({
@@ -3877,7 +3877,7 @@ Summary:`;
                 
                 // Extract request ID and Lambda metrics from context
                 const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
                 const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                 
                 logToGoogleSheets({
@@ -4477,8 +4477,8 @@ function getToolFunctions() {
   
   // If YouTube Whisper transcription is disabled, update the transcribe_url description
   // NOTE: This only affects Whisper transcription, not YouTube API transcripts (OAuth)
-  const disableYouTubeWhisper = process.env.DISABLE_YOUTUBE_TRANSCRIPTION === 'true';
-  console.log(`🎬 getToolFunctions: DISABLE_YOUTUBE_TRANSCRIPTION=${process.env.DISABLE_YOUTUBE_TRANSCRIPTION}, whisperDisabled=${disableYouTubeWhisper}`);
+  const disableYouTubeWhisper = process.env.NO_YT_TRANS === 'true';
+  console.log(`🎬 getToolFunctions: DISABLE_YOUTUBE_TRANSCRIPTION=${process.env.NO_YT_TRANS}, whisperDisabled=${disableYouTubeWhisper}`);
   
   if (disableYouTubeWhisper) {
     const transcribeToolIndex = tools.findIndex(t => t.function.name === 'transcribe_url');

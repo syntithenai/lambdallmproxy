@@ -28,7 +28,7 @@ async function testLLMEventsInTools() {
             generate_summary: true
         }, {
             model: 'groq:llama-3.1-8b-instant',
-            apiKey: process.env.GROQ_API_KEY,
+            apiKey: process.env.GROQ_KEY,
             writeEvent: mockWriteEvent
         });
         

@@ -27,9 +27,9 @@ async function testLibSQLSearch() {
     try {
       // Generate embedding wrapper
       const generateEmbeddingFn = async (text) => {
-        const apiKey = process.env.OPENAI_API_KEY;
+        const apiKey = process.env.OPENAI_KEY;
         if (!apiKey) {
-          throw new Error('OPENAI_API_KEY environment variable is required');
+          throw new Error('OPENAI_KEY environment variable is required');
         }
         
         const result = await generateEmbedding(

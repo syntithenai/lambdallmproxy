@@ -2,7 +2,7 @@
 import { createSSERequest, handleSSEResponse } from './streaming';
 
 // Constants
-const REMOTE_LAMBDA_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_LAMBDA_URL || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+const REMOTE_LAMBDA_URL = import.meta.env.VITE_API || import.meta.env.VITE_LAM || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
 
 console.log('🚀 API Module Loading - Version: 2024-10-22-DYNAMIC-HOSTNAME');
 
@@ -19,8 +19,8 @@ function getLocalLambdaUrl(): string {
   console.log('🔍 getLocalLambdaUrl() called:', { protocol, hostname, port });
   
   // If VITE_LOCAL_LAMBDA_URL is explicitly set, use it
-  if (import.meta.env.VITE_LOCAL_LAMBDA_URL) {
-    return import.meta.env.VITE_LOCAL_LAMBDA_URL;
+  if (import.meta.env.VITE_LOCAL) {
+    return import.meta.env.VITE_LOCAL;
   }
   
   // Lambda dev server runs on same protocol as UI to avoid mixed content issues
@@ -35,7 +35,7 @@ console.log('🔧 API Configuration:', {
   hostname: window.location.hostname,
   remote: REMOTE_LAMBDA_URL,
   local: getLocalLambdaUrl(),
-  source: import.meta.env.VITE_API_BASE ? 'env' : 'fallback'
+  source: import.meta.env.VITE_API ? 'env' : 'fallback'
 });
 
 /**
@@ -74,9 +74,9 @@ async function isLocalLambdaAvailable(): Promise<boolean> {
  */
 async function getApiBase(): Promise<string> {
   // If environment variable is set, always use it (production build)
-  if (import.meta.env.VITE_API_BASE) {
-    console.log('🌐 Using VITE_API_BASE:', import.meta.env.VITE_API_BASE);
-    return import.meta.env.VITE_API_BASE;
+  if (import.meta.env.VITE_API) {
+    console.log('🌐 Using VITE_API_BASE:', import.meta.env.VITE_API);
+    return import.meta.env.VITE_API;
   }
   
   // Check if local Lambda is available (on any hostname: localhost, LAN IP, or domain)

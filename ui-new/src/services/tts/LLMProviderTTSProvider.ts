@@ -195,7 +195,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
       }
     }
     // Use remote Lambda
-    return import.meta.env.VITE_API_BASE || 
+    return import.meta.env.VITE_API || 
            'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
   }
 

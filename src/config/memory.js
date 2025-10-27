@@ -5,8 +5,8 @@
 
 // Memory management constants
 // Infer memory limit from environment when possible
-const LAMBDA_MEMORY_LIMIT_MB = (process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE && parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE, 10))
-    || (process.env.LAMBDA_MEMORY && parseInt(process.env.LAMBDA_MEMORY, 10))
+const LAMBDA_MEMORY_LIMIT_MB = (process.env.AWS_MEM && parseInt(process.env.AWS_MEM, 10))
+    || (process.env.LAM_MEM && parseInt(process.env.LAM_MEM, 10))
     || 128;
 
 const MEMORY_SAFETY_BUFFER_MB = 16; // Reserve 16MB for other operations

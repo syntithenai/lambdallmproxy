@@ -3,7 +3,7 @@ const https = require('https');
 // Test the Lambda function with a simple query
 const testData = JSON.stringify({
     query: "What is 2+2?",
-    apiKey: process.env.OPENAI_API_KEY || "test-key-to-trigger-processing"
+    apiKey: process.env.OPENAI_KEY || "test-key-to-trigger-processing"
 });
 
 const options = {

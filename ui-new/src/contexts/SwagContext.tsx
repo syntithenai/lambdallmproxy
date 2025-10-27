@@ -173,7 +173,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           // Use Google Identity Services OAuth2 token client
           const tokenClient = window.google.accounts.oauth2.initTokenClient({
-            client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+            client_id: import.meta.env.VITE_GGL_CID,
             scope: 'https://www.googleapis.com/auth/drive.file', // Only files created by this app
             callback: async (tokenResponse: any) => {
               if (tokenResponse.access_token) {

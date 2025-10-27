@@ -1,6 +1,6 @@
 // Google OAuth types and constants
 // Use environment variable - configured in ui-new/.env
-export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GGL_CID;
 
 export interface GoogleUser {
   email: string;
@@ -250,7 +250,7 @@ export const refreshGoogleToken = async (currentAccessToken: string): Promise<{a
       // Use backend OAuth refresh endpoint
       console.log('🔄 Refreshing token via OAuth refresh endpoint...');
       
-      const API_BASE = import.meta.env.VITE_API_BASE || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
+      const API_BASE = import.meta.env.VITE_API || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
       const response = await fetch(`${API_BASE}/oauth/refresh`, {
         method: 'POST',
         headers: {
@@ -350,4 +350,58 @@ export const getValidToken = async (currentToken: string | null): Promise<string
   console.error('Token refresh failed, clearing auth state');
   clearAuthState();
   return null;
+};
+
+// Welcome Wizard State Management
+// These functions track whether a user has seen the welcome wizard
+
+/**
+ * Check if user has already completed the welcome wizard
+ * @returns true if user has seen the wizard, false otherwise
+ */
+export const hasSeenWelcomeWizard = (): boolean => {
+  try {
+    const completed = localStorage.getItem('has_completed_welcome_wizard');
+    return completed === 'true';
+  } catch (e) {
+    console.error('Failed to check welcome wizard status:', e);
+    return false; // Show wizard if we can't determine status
+  }
+};
+
+/**
+ * Mark the welcome wizard as completed
+ * Stores timestamp for analytics/debugging
+ */
+export const markWelcomeWizardComplete = (): void => {
+  try {
+    localStorage.setItem('has_completed_welcome_wizard', 'true');
+    localStorage.setItem('welcome_wizard_completed_at', new Date().toISOString());
+  } catch (e) {
+    console.error('Failed to mark welcome wizard as complete:', e);
+  }
+};
+
+/**
+ * Reset welcome wizard state (for testing)
+ */
+export const resetWelcomeWizard = (): void => {
+  try {
+    localStorage.removeItem('has_completed_welcome_wizard');
+    localStorage.removeItem('welcome_wizard_completed_at');
+  } catch (e) {
+    console.error('Failed to reset welcome wizard:', e);
+  }
+};
+
+/**
+ * Check if welcome wizard should be shown
+ * @param isAuthenticated - Whether user is logged in
+ * @returns true if wizard should be displayed
+ */
+export const shouldShowWelcomeWizard = (isAuthenticated: boolean): boolean => {
+  // Only show if:
+  // 1. User is authenticated
+  // 2. User hasn't seen the wizard before
+  return isAuthenticated && !hasSeenWelcomeWizard();
 };

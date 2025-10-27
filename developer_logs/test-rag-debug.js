@@ -15,7 +15,7 @@ async function test() {
     
     // Generate embedding
     const embeddingModel = 'text-embedding-3-small';
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.OPENAI_KEY;
     
     console.log('Generating embedding...');
     const result = await embeddings.generateEmbedding(

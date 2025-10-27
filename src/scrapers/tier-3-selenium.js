@@ -19,7 +19,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
-const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const IS_LAMBDA = !!process.env.AWS_FN;
 
 // Prevent loading on Lambda
 if (IS_LAMBDA) {
@@ -39,8 +39,8 @@ function getPythonExecutable() {
   }
   
   // Check environment variable
-  if (process.env.PYTHON_VENV_PATH) {
-    const venvPython = path.join(process.env.PYTHON_VENV_PATH, 'bin', 'python3');
+  if (process.env.PYTHON_VENV) {
+    const venvPython = path.join(process.env.PYTHON_VENV, 'bin', 'python3');
     if (fs.existsSync(venvPython)) {
       return venvPython;
     }

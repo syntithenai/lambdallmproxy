@@ -723,7 +723,7 @@ async function getPublicYouTubeTranscript(videoId, language = 'en') {
  * @returns {Promise<string|Object>} - Transcript text or structured data
  */
 async function getYouTubeTranscriptViaSelenium(videoId, options = {}) {
-  const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const IS_LAMBDA = !!process.env.AWS_FN;
   
   if (IS_LAMBDA) {
     throw new Error('Selenium caption scraping is not available on AWS Lambda. Use InnerTube or OAuth API instead.');

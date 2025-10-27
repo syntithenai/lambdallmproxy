@@ -105,16 +105,16 @@ describe('Guardrails Auto-Detection', () => {
     delete process.env.GUARDRAIL_OUTPUT_MODEL;
     
     // Clear provider API keys
-    delete process.env.GROQ_API_KEY;
+    delete process.env.GROQ_KEY;
     delete process.env.GEMINI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.TOGETHER_API_KEY;
     
     // Clear indexed provider env vars
     for (let i = 0; i < 10; i++) {
-      delete process.env[`LLAMDA_LLM_PROXY_PROVIDER_TYPE_${i}`];
-      delete process.env[`LLAMDA_LLM_PROXY_PROVIDER_KEY_${i}`];
+      delete process.env[`P_T${i}`];
+      delete process.env[`P_K${i}`];
     }
   });
 
@@ -220,8 +220,8 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should use groq-free from indexed provider env vars', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'indexed-groq-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'indexed-groq-key';
       
       const config = loadGuardrailConfig();
       
@@ -230,8 +230,8 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should use gemini-free from indexed provider env vars', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'gemini-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'indexed-gemini-key';
+      process.env.P_T0 = 'gemini-free';
+      process.env.P_K0 = 'indexed-gemini-key';
       
       const config = loadGuardrailConfig();
       
@@ -240,10 +240,10 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should skip providers without API keys in indexed format', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = ''; // Empty key
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_1 = 'openai';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_1 = 'indexed-openai-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = ''; // Empty key
+      process.env.P_T1 = 'openai';
+      process.env.P_K1 = 'indexed-openai-key';
       
       const config = loadGuardrailConfig();
       
@@ -258,8 +258,8 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should prefer context keys over indexed env vars', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'openai';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'indexed-openai-key';
+      process.env.P_T0 = 'openai';
+      process.env.P_K0 = 'indexed-openai-key';
       const context = { groqApiKey: 'context-groq-key' };
       
       const config = loadGuardrailConfig(context);
@@ -315,8 +315,8 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should handle empty context object when indexed provider available', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'test-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'test-key';
       const config = loadGuardrailConfig({});
       
       expect(config).not.toBeNull();
@@ -324,8 +324,8 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should handle undefined context when indexed provider available', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'test-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'test-key';
       const config = loadGuardrailConfig();
       
       expect(config).not.toBeNull();
@@ -333,8 +333,8 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should handle context with null values', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'test-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'test-key';
       const context = { groqApiKey: null, openaiApiKey: null };
       const config = loadGuardrailConfig(context);
       
@@ -343,10 +343,10 @@ describe('Guardrails Auto-Detection', () => {
     });
 
     test('should handle whitespace-only API keys in indexed providers', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = '   '; // Whitespace only
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_1 = 'openai';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_1 = 'test-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = '   '; // Whitespace only
+      process.env.P_T1 = 'openai';
+      process.env.P_K1 = 'test-key';
       const config = loadGuardrailConfig();
       
       expect(config).not.toBeNull();

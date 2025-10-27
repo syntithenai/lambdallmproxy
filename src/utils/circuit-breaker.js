@@ -19,8 +19,8 @@ const CircuitState = {
 class CircuitBreaker {
   constructor(options = {}) {
     // Configuration
-    this.failureThreshold = options.failureThreshold || parseInt(process.env.CIRCUIT_BREAKER_FAILURE_THRESHOLD) || 5;
-    this.timeoutMs = options.timeoutMs || parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT_MS) || 600000; // 10 minutes
+    this.failureThreshold = options.failureThreshold || parseInt(process.env.CB_THRESH) || 5;
+    this.timeoutMs = options.timeoutMs || parseInt(process.env.CB_TIMEOUT) || 600000; // 10 minutes
     this.halfOpenRequests = options.halfOpenRequests || 1; // Number of test requests in HALF_OPEN
     
     // State tracking per provider

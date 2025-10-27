@@ -20,7 +20,7 @@ const { getCachedCreditBalance, deductFromCache } = require('./credit-cache');
 async function checkCreditBalance(userEmail, estimatedCost = 0.01, operationType = 'operation') {
     try {
         // 🔧 DEVELOPMENT MODE: Bypass credit checks if DISABLE_CREDIT_CHECKS is set
-        if (process.env.DISABLE_CREDIT_CHECKS === 'true') {
+        if (process.env.NO_CREDIT_CHK === 'true') {
             console.log(`🔓 [DEV MODE] Credit check bypassed for ${userEmail} - DISABLE_CREDIT_CHECKS enabled`);
             return {
                 allowed: true,
@@ -140,8 +140,8 @@ function estimateChatCost(messages, model) {
                     (estimatedOutputTokens / 1000000) * pricing.output;
     
     // Lambda cost (4x markup)
-    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAMBDA_PROFIT_MARGIN) || 4;
-    const memoryGB = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '256') / 1024;
+    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAM_MARGIN) || 4;
+    const memoryGB = parseInt(process.env.AWS_MEM || '256') / 1024;
     const estimatedDuration = 3000; // 3 seconds conservative estimate
     const lambdaCost = (memoryGB * (estimatedDuration / 1000) * 0.0000166667) + 0.0000002;
     const lambdaCostWithMargin = lambdaCost * LAMBDA_PROFIT_MARGIN;
@@ -188,8 +188,8 @@ function estimateImageCost(model, quality = 'standard', size = '1024x1024') {
     }
     
     // Lambda cost (4x markup)
-    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAMBDA_PROFIT_MARGIN) || 4;
-    const memoryGB = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '256') / 1024;
+    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAM_MARGIN) || 4;
+    const memoryGB = parseInt(process.env.AWS_MEM || '256') / 1024;
     const estimatedDuration = 10000; // 10 seconds for image generation
     const lambdaCost = (memoryGB * (estimatedDuration / 1000) * 0.0000166667) + 0.0000002;
     const lambdaCostWithMargin = lambdaCost * LAMBDA_PROFIT_MARGIN;
@@ -210,8 +210,8 @@ function estimateTTSCost(text, model = 'tts-1') {
     const llmCost = (charCount / 1000000) * 15.00;
     
     // Lambda cost (4x markup)
-    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAMBDA_PROFIT_MARGIN) || 4;
-    const memoryGB = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '256') / 1024;
+    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAM_MARGIN) || 4;
+    const memoryGB = parseInt(process.env.AWS_MEM || '256') / 1024;
     const estimatedDuration = 5000; // 5 seconds
     const lambdaCost = (memoryGB * (estimatedDuration / 1000) * 0.0000166667) + 0.0000002;
     const lambdaCostWithMargin = lambdaCost * LAMBDA_PROFIT_MARGIN;
@@ -230,8 +230,8 @@ function estimateTranscriptionCost(durationMinutes) {
     const llmCost = durationMinutes * 0.006;
     
     // Lambda cost (4x markup)
-    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAMBDA_PROFIT_MARGIN) || 4;
-    const memoryGB = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '256') / 1024;
+    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAM_MARGIN) || 4;
+    const memoryGB = parseInt(process.env.AWS_MEM || '256') / 1024;
     const estimatedDuration = durationMinutes * 60 * 1000; // Duration in ms
     const lambdaCost = (memoryGB * (estimatedDuration / 1000) * 0.0000166667) + 0.0000002;
     const lambdaCostWithMargin = lambdaCost * LAMBDA_PROFIT_MARGIN;
@@ -258,8 +258,8 @@ function estimateEmbeddingCost(tokenCount, model = 'text-embedding-3-small') {
     const llmCost = (tokenCount / 1000000) * pricePerMillion;
     
     // Lambda cost (4x markup)
-    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAMBDA_PROFIT_MARGIN) || 4;
-    const memoryGB = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '256') / 1024;
+    const LAMBDA_PROFIT_MARGIN = parseFloat(process.env.LAM_MARGIN) || 4;
+    const memoryGB = parseInt(process.env.AWS_MEM || '256') / 1024;
     const estimatedDuration = 2000; // 2 seconds
     const lambdaCost = (memoryGB * (estimatedDuration / 1000) * 0.0000166667) + 0.0000002;
     const lambdaCostWithMargin = lambdaCost * LAMBDA_PROFIT_MARGIN;

@@ -1,6 +1,6 @@
 // Google Docs API integration for Swag feature with comprehensive debugging
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GGL_CID;
 
 // Minimal scopes for privacy:
 // - documents: Create and edit Google Docs

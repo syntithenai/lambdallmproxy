@@ -123,14 +123,17 @@ export const usePlanningGeneration = ({
           } else if (event === 'result') {
             const { systemPrompt, userQuery } = transformResultToPrompts(data, query);
             onSuccess(systemPrompt, userQuery, data);
-            // Save with both system and user prompts
+            // Save with both system and user prompts (async, but don't wait)
             saveCachedPlan(
               query, 
               data,
               data.enhancedSystemPrompt || systemPrompt || '',
               data.enhancedUserPrompt || userQuery || ''
-            );
-            console.log('Plan auto-saved to cache with prompts');
+            ).then(() => {
+              console.log('Plan auto-saved to cache with prompts');
+            }).catch(error => {
+              console.error('Failed to auto-save plan:', error);
+            });
           } else if (event === 'error') {
             const errorMsg = data.error || 'Unknown error';
             const providerInfo = data.provider && data.model 

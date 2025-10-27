@@ -181,7 +181,7 @@ describe('Planning Endpoint', () => {
         });
         
         it('should use env API key when available', async () => {
-            process.env.GROQ_API_KEY = 'env-api-key';
+            process.env.GROQ_KEY = 'env-api-key';
             verifyGoogleToken.mockReturnValue({ email: 'allowed@example.com' });
             getAllowedEmails.mockReturnValue(['allowed@example.com']);
             
@@ -214,7 +214,7 @@ describe('Planning Endpoint', () => {
                 })
             );
             
-            delete process.env.GROQ_API_KEY;
+            delete process.env.GROQ_KEY;
         });
         
         it('should return 500 for internal errors', async () => {

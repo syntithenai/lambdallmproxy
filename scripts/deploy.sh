@@ -133,24 +133,24 @@ if [ -f "$OLDPWD/.env" ]; then
 
     # Get critical variables
     # Use last occurrence if duplicated; trim CR
-    ACCESS_SECRET=$(grep '^ACCESS_SECRET=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    OPENAI_API_KEY=$(grep '^OPENAI_API_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    GROQ_API_KEY=$(grep '^GROQ_API_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    OPENAI_API_BASE_ENV=$(grep '^OPENAI_API_BASE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    OPENAI_MODEL_ENV=$(grep '^OPENAI_MODEL=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    GROQ_MODEL_ENV=$(grep '^GROQ_MODEL=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    LAMBDA_MEMORY_ENV=$(grep '^LAMBDA_MEMORY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    ACCESS_SECRET=$(grep '^ACC_SEC=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    OPENAI_KEY=$(grep '^OPENAI_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GROQ_KEY=$(grep '^GROQ_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    OPENAI_API_BASE_ENV=$(grep '^OPENAI_BASE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    OPENAI_MODEL_ENV=$(grep '^OPENAI_MDL=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GROQ_MODEL_ENV=$(grep '^GROQ_MDL=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    LAMBDA_MEMORY_ENV=$(grep '^LAM_MEM=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
     LAMBDA_TIMEOUT_ENV=$(grep '^LAMBDA_TIMEOUT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    ALLOWED_EMAILS_ENV=$(grep '^ALLOWED_EMAILS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    GOOGLE_CLIENT_ID=$(grep '^GOOGLE_CLIENT_ID=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    REASONING_EFFORT_ENV=$(grep '^REASONING_EFFORT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    MAX_TOOL_ITERATIONS_ENV=$(grep '^MAX_TOOL_ITERATIONS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-    GROQ_REASONING_MODELS_ENV=$(grep '^GROQ_REASONING_MODELS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    ALLOWED_EMAILS_ENV=$(grep '^ALLOW_EM=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GOOGLE_CLIENT_ID=$(grep '^GGL_CID=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    REASONING_EFFORT_ENV=$(grep '^REASON_EFF=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    MAX_TOOL_ITERATIONS_ENV=$(grep '^MAX_ITER=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+    GROQ_REASONING_MODELS_ENV=$(grep '^GROQ_REASON=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
 
     # Simple system prompts - use defaults in Lambda if these fail
     SYSTEM_PROMPT_DECISION=$(grep '^SYSTEM_PROMPT_DECISION=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
     SYSTEM_PROMPT_DIRECT=$(grep '^SYSTEM_PROMPT_DIRECT=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
-    SYSTEM_PROMPT_SEARCH=$(grep '^SYSTEM_PROMPT_SEARCH=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
+    SYSTEM_PROMPT_SEARCH=$(grep '^SYS_SRCH=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
 
     # Get template variables too
     DECISION_TEMPLATE=$(grep '^DECISION_TEMPLATE=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | sed 's/^"//;s/"$//' | tr -d '\r')
@@ -166,39 +166,39 @@ if [ -f "$OLDPWD/.env" ]; then
     # If jq is available, build JSON robustly; otherwise, skip env var update gracefully
     if command -v jq >/dev/null 2>&1; then
         ENV_VARS_JSON=$(jq -n \
-            --arg ACCESS_SECRET "$ACCESS_SECRET" \
-            --arg OPENAI_API_KEY "$OPENAI_API_KEY" \
-            --arg GROQ_API_KEY "$GROQ_API_KEY" \
+            --arg ACCESS_SECRET "$ACC_SEC" \
+            --arg OPENAI_KEY "$OPENAI_KEY" \
+            --arg GROQ_KEY "$GROQ_KEY" \
             --arg OPENAI_API_BASE "$OPENAI_API_BASE_ENV" \
             --arg OPENAI_MODEL "$OPENAI_MODEL_ENV" \
             --arg GROQ_MODEL "$GROQ_MODEL_ENV" \
             --arg SYSTEM_PROMPT_DECISION "$SYSTEM_PROMPT_DECISION" \
             --arg SYSTEM_PROMPT_DIRECT "$SYSTEM_PROMPT_DIRECT" \
-            --arg SYSTEM_PROMPT_SEARCH "$SYSTEM_PROMPT_SEARCH" \
+            --arg SYSTEM_PROMPT_SEARCH "$SYS_SRCH" \
             --arg DECISION_TEMPLATE "$DECISION_TEMPLATE" \
             --arg SEARCH_TEMPLATE "$SEARCH_TEMPLATE" \
             --arg ALLOWED_EMAILS "$ALLOWED_EMAILS_ENV" \
-            --arg GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID" \
+            --arg GOOGLE_CLIENT_ID "$GGL_CID" \
             --arg REASONING_EFFORT "$REASONING_EFFORT_ENV" \
             --arg MAX_TOOL_ITERATIONS "$MAX_TOOL_ITERATIONS_ENV" \
             --arg GROQ_REASONING_MODELS "$GROQ_REASONING_MODELS_ENV" \
             '{Variables: ({}
-                + (if $ACCESS_SECRET != "" then {ACCESS_SECRET:$ACCESS_SECRET} else {} end)
-                + (if $OPENAI_API_KEY != "" then {OPENAI_API_KEY:$OPENAI_API_KEY} else {} end)
-                + (if $GROQ_API_KEY != "" then {GROQ_API_KEY:$GROQ_API_KEY} else {} end)
-                + (if $OPENAI_API_BASE != "" then {OPENAI_API_BASE:$OPENAI_API_BASE} else {} end)
-                + (if $OPENAI_MODEL != "" then {OPENAI_MODEL:$OPENAI_MODEL} else {} end)
-                + (if $GROQ_MODEL != "" then {GROQ_MODEL:$GROQ_MODEL} else {} end)
+                + (if $ACC_SEC != "" then {ACC_SEC:$ACC_SEC} else {} end)
+                + (if $OPENAI_KEY != "" then {OPENAI_KEY:$OPENAI_KEY} else {} end)
+                + (if $GROQ_KEY != "" then {GROQ_KEY:$GROQ_KEY} else {} end)
+                + (if $OPENAI_BASE != "" then {OPENAI_BASE:$OPENAI_BASE} else {} end)
+                + (if $OPENAI_MDL != "" then {OPENAI_MDL:$OPENAI_MDL} else {} end)
+                + (if $GROQ_MDL != "" then {GROQ_MDL:$GROQ_MDL} else {} end)
                 + (if $SYSTEM_PROMPT_DECISION != "" then {SYSTEM_PROMPT_DECISION:$SYSTEM_PROMPT_DECISION} else {} end)
                 + (if $SYSTEM_PROMPT_DIRECT != "" then {SYSTEM_PROMPT_DIRECT:$SYSTEM_PROMPT_DIRECT} else {} end)
-                + (if $SYSTEM_PROMPT_SEARCH != "" then {SYSTEM_PROMPT_SEARCH:$SYSTEM_PROMPT_SEARCH} else {} end)
+                + (if $SYS_SRCH != "" then {SYS_SRCH:$SYS_SRCH} else {} end)
                 + (if $DECISION_TEMPLATE != "" then {DECISION_TEMPLATE:$DECISION_TEMPLATE} else {} end)
                 + (if $SEARCH_TEMPLATE != "" then {SEARCH_TEMPLATE:$SEARCH_TEMPLATE} else {} end)
-                + {ALLOWED_EMAILS:$ALLOWED_EMAILS}
-                + (if $GOOGLE_CLIENT_ID != "" then {GOOGLE_CLIENT_ID:$GOOGLE_CLIENT_ID} else {} end)
-                + (if $REASONING_EFFORT != "" then {REASONING_EFFORT:$REASONING_EFFORT} else {} end)
-                + (if $MAX_TOOL_ITERATIONS != "" then {MAX_TOOL_ITERATIONS:$MAX_TOOL_ITERATIONS} else {} end)
-                + (if $GROQ_REASONING_MODELS != "" then {GROQ_REASONING_MODELS:$GROQ_REASONING_MODELS} else {} end)
+                + {ALLOWED_EMAILS:$ALLOW_EM}
+                + (if $GGL_CID != "" then {GOOGLE_CLIENT_ID:$GGL_CID} else {} end)
+                + (if $REASON_EFF != "" then {REASONING_EFFORT:$REASON_EFF} else {} end)
+                + (if $MAX_ITER != "" then {MAX_TOOL_ITERATIONS:$MAX_ITER} else {} end)
+                + (if $GROQ_REASON != "" then {GROQ_REASONING_MODELS:$GROQ_REASON} else {} end)
             )}' )
 
         aws lambda update-function-configuration \
@@ -234,8 +234,8 @@ else
     if ! echo "$CURRENT_ENV_JSON" | jq -e '.OPENAI_API_HOSTNAME' > /dev/null 2>&1; then
         # Get current ACCESS_SECRET and add OPENAI_API_HOSTNAME
         ACCESS_SECRET=$(echo "$CURRENT_ENV_JSON" | jq -r '.ACCESS_SECRET // empty')
-        if [ -n "$ACCESS_SECRET" ]; then
-            ENV_VARS="Variables={ACCESS_SECRET=$ACCESS_SECRET,OPENAI_API_HOSTNAME=api.openai.com}"
+        if [ -n "$ACC_SEC" ]; then
+            ENV_VARS="Variables={ACCESS_SECRET=$ACC_SEC,OPENAI_API_HOSTNAME=api.openai.com}"
         else
             ENV_VARS="Variables={OPENAI_API_HOSTNAME=api.openai.com}"
         fi

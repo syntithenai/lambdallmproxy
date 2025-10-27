@@ -2,11 +2,11 @@
 const { loadGuardrailConfig } = require('../src/guardrails/config');
 
 function runTest(context) {
-  process.env.ENABLE_GUARDRAILS = 'true';
+  process.env.EN_GUARD = 'true';
   // Clear indexed provider env vars for deterministic behavior
   for (let i = 0; i < 10; i++) {
-    delete process.env[`LLAMDA_LLM_PROXY_PROVIDER_TYPE_${i}`];
-    delete process.env[`LLAMDA_LLM_PROXY_PROVIDER_KEY_${i}`];
+    delete process.env[`P_T${i}`];
+    delete process.env[`P_K${i}`];
   }
 
   // Inject any context into the call

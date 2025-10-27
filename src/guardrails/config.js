@@ -32,7 +32,7 @@ function loadProviderCatalog() {
 
 /**
  * Check if a provider has an available API key
- * Only checks indexed provider format (LLAMDA_LLM_PROXY_PROVIDER_*)
+ * Only checks indexed provider format (P_*)
  * @param {string} providerType - Provider type (e.g., 'groq-free', 'gemini-free')
  * @param {Object} context - Request context with API keys
  * @returns {boolean} True if API key available
@@ -177,7 +177,7 @@ function autoDetectGuardrailProvider(context = {}) {
  * @returns {Object|null} Configuration object or null if disabled
  */
 function loadGuardrailConfig(context = {}) {
-  const enabled = process.env.ENABLE_GUARDRAILS === 'true';
+  const enabled = process.env.EN_GUARD === 'true';
   
   if (!enabled) {
     console.log('🛡️ Content guardrails: DISABLED');

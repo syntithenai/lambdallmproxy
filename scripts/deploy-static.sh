@@ -174,20 +174,20 @@ fi
 echo -e "${BLUE}📁 Setting environment variables...${NC}"
 
 # Get critical variables
-ACCESS_SECRET=$(grep '^ACCESS_SECRET=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-OPENAI_API_KEY=$(grep '^OPENAI_API_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-GROQ_API_KEY=$(grep '^GROQ_API_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-ALLOWED_EMAILS_ENV=$(grep '^ALLOWED_EMAILS=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
-GOOGLE_CLIENT_ID=$(grep '^GOOGLE_CLIENT_ID=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+ACC_SEC=$(grep '^ACC_SEC=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+OPENAI_KEY=$(grep '^OPENAI_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+GROQ_KEY=$(grep '^GROQ_KEY=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+ALLOW_EM=$(grep '^ALLOW_EM=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
+GGL_CID=$(grep '^GGL_CID=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
 OPENAI_API_URL=$(grep '^OPENAI_API_URL=' "$OLDPWD/.env" | tail -n1 | cut -d'=' -f2- | tr -d '\r')
 
 # Build environment variables JSON
 ENV_VARS="{"
-[ -n "$ACCESS_SECRET" ] && ENV_VARS="${ENV_VARS}\"ACCESS_SECRET\":\"$ACCESS_SECRET\","
-[ -n "$OPENAI_API_KEY" ] && ENV_VARS="${ENV_VARS}\"OPENAI_API_KEY\":\"$OPENAI_API_KEY\","
-[ -n "$GROQ_API_KEY" ] && ENV_VARS="${ENV_VARS}\"GROQ_API_KEY\":\"$GROQ_API_KEY\","
-[ -n "$ALLOWED_EMAILS_ENV" ] && ENV_VARS="${ENV_VARS}\"ALLOWED_EMAILS\":\"$ALLOWED_EMAILS_ENV\","
-[ -n "$GOOGLE_CLIENT_ID" ] && ENV_VARS="${ENV_VARS}\"GOOGLE_CLIENT_ID\":\"$GOOGLE_CLIENT_ID\","
+[ -n "$ACC_SEC" ] && ENV_VARS="${ENV_VARS}\"ACC_SEC\":\"$ACC_SEC\","
+[ -n "$OPENAI_KEY" ] && ENV_VARS="${ENV_VARS}\"OPENAI_KEY\":\"$OPENAI_KEY\","
+[ -n "$GROQ_KEY" ] && ENV_VARS="${ENV_VARS}\"GROQ_KEY\":\"$GROQ_KEY\","
+[ -n "$ALLOW_EM" ] && ENV_VARS="${ENV_VARS}\"ALLOW_EM\":\"$ALLOW_EM\","
+[ -n "$GGL_CID" ] && ENV_VARS="${ENV_VARS}\"GGL_CID\":\"$GGL_CID\","
 [ -n "$OPENAI_API_URL" ] && ENV_VARS="${ENV_VARS}\"OPENAI_API_URL\":\"$OPENAI_API_URL\","
 
 # Remove trailing comma and close JSON

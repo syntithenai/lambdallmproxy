@@ -10,6 +10,18 @@ const { authenticateRequest } = require('../auth');
 const { buildProviderPool } = require('../credential-pool');
 
 /**
+ * Get CORS headers for responses
+ * @returns {object} CORS headers
+ */
+function getCORSHeaders() {
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+    };
+}
+
+/**
  * Log transaction to service account sheet
  * @param {string} accessToken - User's OAuth access token (unused, for backward compatibility)
  * @param {object} logData - Transaction data
@@ -211,7 +223,10 @@ exports.handler = async (event, responseStream, context) => {
         // If no route matched
         const metadata = {
             statusCode: 404,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ error: 'Not found' }));
@@ -222,7 +237,10 @@ exports.handler = async (event, responseStream, context) => {
         const awslambda = (typeof globalThis.awslambda !== 'undefined') ? globalThis.awslambda : require('aws-lambda');
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ error: error.message }));
@@ -249,7 +267,10 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
     if (!authHeader) {
         const metadata = {
             statusCode: 401,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -263,15 +284,18 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
     
     try {
         const authResult = await authenticateRequest(authHeader);
-        if (!authResult.success) {
+        if (!authResult.authenticated) {
             const metadata = {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
                 success: false,
-                error: authResult.error || 'Authentication failed',
+                error: 'Authentication failed',
                 code: 'UNAUTHORIZED'
             }));
             responseStream.end();
@@ -289,7 +313,10 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
         console.error('❌ Authentication error:', authError.message);
         const metadata = {
             statusCode: 401,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -305,7 +332,10 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
     if (!Array.isArray(snippets) || snippets.length === 0) {
         const metadata = {
             statusCode: 400,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -325,7 +355,7 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
         
         // Determine which embedding model to use
         // Priority: 1. UI request, 2. Environment variable, 3. Automatic selection
-        const embeddingModelToUse = requestedModel || process.env.RAG_EMBEDDING_MODEL || null;
+        const embeddingModelToUse = requestedModel || process.env.RAG_MDL || null;
         if (embeddingModelToUse) {
             console.log(`🎯 Embedding model preference: ${embeddingModelToUse} (source: ${requestedModel ? 'UI request' : 'environment variable'})`);
         } else {
@@ -337,7 +367,10 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
         if (!embeddingSelection) {
             const metadata = {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
@@ -485,7 +518,8 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
             statusCode: 200,
             headers: { 
                 'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'no-cache',
+                ...getCORSHeaders()
             }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
@@ -499,7 +533,10 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
         console.error('Error embedding snippets:', error);
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -521,7 +558,10 @@ async function handleIngest(body, writeEvent, responseStream) {
     if (!content && !url) {
         const responseMeta = {
             statusCode: 400,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, responseMeta);
         writeEvent('error', { error: 'Either content or url is required' });
@@ -534,7 +574,8 @@ async function handleIngest(body, writeEvent, responseStream) {
         headers: { 
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
+            'Connection': 'keep-alive',
+            ...getCORSHeaders()
         }
     };
     responseStream = awslambda.HttpResponseStream.from(responseStream, responseMeta);
@@ -569,7 +610,10 @@ async function handleEmbeddingStatus(snippetId, responseStream) {
         
         const metadata = {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -581,7 +625,10 @@ async function handleEmbeddingStatus(snippetId, responseStream) {
         console.error('Error checking embedding status:', error);
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -604,7 +651,10 @@ async function handleEmbeddingDetails(body, responseStream) {
         if (!snippetIds || !Array.isArray(snippetIds)) {
             const metadata = {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
@@ -618,7 +668,10 @@ async function handleEmbeddingDetails(body, responseStream) {
         
         const metadata = {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify(details));
@@ -627,7 +680,10 @@ async function handleEmbeddingDetails(body, responseStream) {
         console.error('Error getting embedding details:', error);
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -652,7 +708,10 @@ async function handleGetUserSpreadsheet(event, responseStream) {
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             const metadata = {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
@@ -711,7 +770,10 @@ async function handleEmbedQuery(event, body, responseStream) {
     if (!authHeader) {
         const metadata = {
             statusCode: 401,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -724,14 +786,17 @@ async function handleEmbedQuery(event, body, responseStream) {
     
     try {
         const authResult = await authenticateRequest(authHeader);
-        if (!authResult.success) {
+        if (!authResult.authenticated) {
             const metadata = {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
-                error: authResult.error || 'Authentication failed',
+                error: 'Authentication failed',
                 code: 'UNAUTHORIZED'
             }));
             responseStream.end();
@@ -748,7 +813,10 @@ async function handleEmbedQuery(event, body, responseStream) {
         console.error('❌ Authentication error:', authError.message);
         const metadata = {
             statusCode: 401,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -766,7 +834,10 @@ async function handleEmbedQuery(event, body, responseStream) {
         if (!query || typeof query !== 'string') {
             const metadata = {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
@@ -782,7 +853,7 @@ async function handleEmbedQuery(event, body, responseStream) {
             query,
             'text-embedding-3-small',
             'openai',
-            process.env.OPENAI_API_KEY
+            process.env.OPENAI_KEY
         );
         const duration = Date.now() - startTime;
         
@@ -838,7 +909,10 @@ async function handleEmbedQuery(event, body, responseStream) {
         
         const metadata = {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({
@@ -855,7 +929,10 @@ async function handleEmbedQuery(event, body, responseStream) {
         console.error('Error generating query embedding:', error);
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 
@@ -879,7 +956,10 @@ async function handleSyncEmbeddings(event, body, responseStream) {
         if (!operation || !spreadsheetId) {
             const metadata = {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
@@ -894,7 +974,10 @@ async function handleSyncEmbeddings(event, body, responseStream) {
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             const metadata = {
                 statusCode: 401,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
@@ -910,7 +993,10 @@ async function handleSyncEmbeddings(event, body, responseStream) {
             if (!chunks || !Array.isArray(chunks)) {
                 const metadata = {
                     statusCode: 400,
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
                 };
                 responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                 responseStream.write(JSON.stringify({ 
@@ -924,7 +1010,10 @@ async function handleSyncEmbeddings(event, body, responseStream) {
             
             const metadata = {
                 statusCode: 200,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -942,7 +1031,10 @@ async function handleSyncEmbeddings(event, body, responseStream) {
             
             const metadata = {
                 statusCode: 200,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
@@ -954,7 +1046,10 @@ async function handleSyncEmbeddings(event, body, responseStream) {
         } else {
             const metadata = {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
@@ -967,7 +1062,10 @@ async function handleSyncEmbeddings(event, body, responseStream) {
         console.error('Error syncing embeddings:', error);
         const metadata = {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
         };
         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
         responseStream.write(JSON.stringify({ 

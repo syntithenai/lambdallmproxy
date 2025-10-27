@@ -11,7 +11,6 @@ import { useCast } from '../contexts/CastContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { useNavigate } from 'react-router-dom';
 import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { ragDB } from '../utils/ragDB';
@@ -26,8 +25,9 @@ import { JavaScriptExecutionProgress } from './JavaScriptExecutionProgress';
 import { ImageGenerationProgress } from './ImageGenerationProgress';
 import { ChartGenerationProgress } from './ChartGenerationProgress';
 import { ExtractionSummary } from './ExtractionSummary';
-import { LlmInfoDialog as LlmInfoDialogNew } from './LlmInfoDialogNew';
+import { LlmInfoDialogNew } from './LlmInfoDialogNew';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
+import { FixResponseDialog } from './FixResponseDialog';
 import { VoiceInputDialog } from './VoiceInputDialog';
 import { GeneratedImageBlock } from './GeneratedImageBlock';
 import { JsonTree } from './JsonTree';
@@ -41,6 +41,12 @@ import { GenerateChartDisplay } from './GenerateChartDisplay';
 import { YouTubeVideoResults } from './YouTubeVideoResults';
 import { SearchWebResults } from './SearchWebResults';
 import { ExamplesModal } from './ExamplesModal';
+import { SystemPromptDisplay } from './chat/SystemPromptDisplay';
+import { ChatHeader } from './chat/ChatHeader';
+import { FileAttachmentsDisplay } from './chat/FileAttachmentsDisplay';
+import { DragDropOverlay } from './chat/DragDropOverlay';
+import ShareDialog from './ShareDialog';
+import { hasShareData, getShareDataFromUrl, clearShareDataFromUrl } from '../utils/shareUtils';
 import { 
   saveChatToHistory, 
   loadChatWithMetadata,
@@ -85,7 +91,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { t } = useTranslation();
   const { accessToken, user, getToken } = useAuth();
   const { getAccessToken: getYouTubeToken } = useYouTubeAuth();
-  const navigate = useNavigate();
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracksToStart } = usePlaylist();
   const { addSnippet, snippets: swagSnippets, syncSnippetFromGoogleSheets } = useSwag();
@@ -240,9 +245,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   const [streamingContent, setStreamingContent] = useState<string>('');
   const [expandedToolMessages, setExpandedToolMessages] = useState<Set<number>>(new Set());
-  const [systemPromptExpanded, setSystemPromptExpanded] = useState(false);
   const [currentStreamingBlockIndex, setCurrentStreamingBlockIndex] = useState<number | null>(null);
   const [showExamplesModal, setShowExamplesModal] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   
   // Chat history tracking
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -363,6 +368,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Error Info dialog tracking
   const [showErrorInfo, setShowErrorInfo] = useState<number | null>(null);
+  
+  // Feedback dialog tracking
+  const [showFixDialog, setShowFixDialog] = useState<number | null>(null);
   
   // Raw HTML dialog for scrape results
   const [showRawHtml, setShowRawHtml] = useState<{ html: string; url: string } | null>(null);
@@ -890,6 +898,48 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     return '';
   };
 
+  // Feedback handlers
+  const handlePositiveFeedback = async (messageIndex: number) => {
+    try {
+      const message = messages[messageIndex];
+      const accessToken = await getToken();
+      const apiBase = await getCachedApiBase();
+      
+      const response = await fetch(`${apiBase}/report-error`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          userEmail: user?.email,
+          feedbackType: 'positive',
+          explanation: '',
+          messageData: {
+            messageContent: getMessageText(message.content),
+            llmApiCalls: message.llmApiCalls || [],
+            evaluations: (message as any).evaluations || [],
+            conversationThread: messages
+          },
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to submit feedback');
+      }
+
+      showSuccess('👍 Thank you for the feedback!');
+    } catch (error) {
+      console.error('Error submitting positive feedback:', error);
+      showError('Failed to submit feedback');
+    }
+  };
+
+  const handleNegativeFeedback = (messageIndex: number) => {
+    setShowFixDialog(messageIndex);
+  };
+
   // Helper to extract Mermaid code from message content
   const extractMermaidCode = (content: ChatMessage['content']): string | null => {
     const text = getMessageText(content);
@@ -1201,6 +1251,52 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         showError(t('chat.failedToTransfer'));
         // Clear bad data
         sessionStorage.removeItem('planning_transfer_data');
+      }
+    }
+  }, []); // Run once on mount
+
+  // Restore shared conversation from URL
+  useEffect(() => {
+    if (hasShareData()) {
+      const shareData = getShareDataFromUrl();
+      if (shareData) {
+        console.log('🔗 Restoring shared conversation from URL');
+        
+        // Clear any existing chat
+        setMessages([]);
+        setCurrentChatId(null);
+        localStorage.removeItem('last_active_chat_id');
+        clearSearchResults();
+        setExpandedToolMessages(new Set());
+        setSelectedSnippetIds(new Set());
+        
+        // Restore messages
+        const restoredMessages: ChatMessage[] = shareData.messages.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp
+        }));
+        
+        setMessages(restoredMessages);
+        
+        // Restore system prompt if available
+        if (shareData.metadata.title) {
+          setSystemPrompt(shareData.metadata.title);
+        }
+        
+        // Show truncation warning if applicable
+        if (shareData.metadata.truncated) {
+          showWarning(
+            `This conversation was truncated to fit URL limits. ` +
+            `Showing ${shareData.metadata.includedMessageCount} of ${shareData.metadata.originalMessageCount} messages.`
+          );
+        }
+        
+        // Clear share data from URL
+        clearShareDataFromUrl();
+        
+        showSuccess('Shared conversation loaded!');
+        console.log(`✅ Restored ${restoredMessages.length} messages from share URL`);
       }
     }
   }, []); // Run once on mount
@@ -4257,95 +4353,26 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Drag and Drop Overlay */}
-      {isDragging && (
-        <div className="absolute inset-0 z-50 bg-blue-500/20 dark:bg-blue-400/20 backdrop-blur-sm flex items-center justify-center border-4 border-dashed border-blue-500 dark:border-blue-400">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-2xl">
-            <div className="text-center">
-              <svg className="w-16 h-16 mx-auto mb-4 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                Drop files here
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Images (JPEG, PNG, GIF, WebP) and PDFs supported
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
-                Max: 5MB for images, 10MB for PDFs
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <DragDropOverlay isDragging={isDragging} />
       
       {/* System Prompt Display */}
-      {systemPrompt && (
-        <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-          <div className="flex items-center gap-2 max-w-screen-2xl mx-auto">
-            <div 
-              className="flex-1 text-sm text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded transition-colors"
-              onClick={() => setSystemPromptExpanded(!systemPromptExpanded)}
-              title={systemPromptExpanded ? "Click to collapse" : "Click to expand"}
-            >
-              {systemPromptExpanded ? systemPrompt : (systemPrompt.length > 200 ? systemPrompt.substring(0, 200) + '...' : systemPrompt)}
-            </div>
-          </div>
-        </div>
-      )}
+      <SystemPromptDisplay systemPrompt={systemPrompt} setSystemPrompt={setSystemPrompt} />
       
       {/* Chat Header with Actions */}
-      <div className="flex flex-wrap items-center gap-2 px-2 md:p-4 py-2 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex flex-wrap gap-2 flex-1">
-          <button onClick={handleNewChat} className="bg-green-600 hover:bg-green-700 text-white p-2 md:px-3 md:py-1.5 rounded font-medium text-sm transition-colors flex items-center gap-1.5" title={t('chat.newChat')} aria-label={t('chat.newChat')}>
-            <span>➕</span>
-            <span className="hidden md:inline">{t('chat.newChat')}</span>
-          </button>
-          <button onClick={() => setShowLoadDialog(true)} className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5" title={t('chat.chatHistory')} aria-label={t('chat.chatHistory')}>
-            <span>🕒</span>
-            <span className="hidden md:inline">{t('chat.history')}</span>
-          </button>
-          <button
-            onClick={() => navigate('/planning')}
-            className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5"
-            title={systemPrompt ? "Edit system prompt and planning" : "Create a plan"}
-            aria-label={systemPrompt ? t('chat.editPlan') : t('chat.makeAPlan')}
-          >
-            <span>{systemPrompt ? '✏️' : '📋'}</span>
-            <span className="hidden md:inline">{systemPrompt ? t('chat.editPlan') : t('chat.makeAPlan')}</span>
-          </button>
-          <button 
-            onClick={() => setShowExamplesModal(true)}
-            className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5"
-            title={t('chat.examples')}
-            aria-label={t('chat.examples')}
-          >
-            <span>📝</span>
-            <span className="hidden md:inline">{t('chat.examples')}</span>
-          </button>
-          <button 
-            onClick={() => setShowSnippetsPanel(!showSnippetsPanel)}
-            className={`text-sm p-2 md:px-3 md:py-1.5 rounded font-medium transition-colors flex items-center gap-1.5 ${
-              showSnippetsPanel 
-                ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                : 'btn-secondary'
-            }`}
-            title={t('chat.attachContextTooltip')}
-            aria-label={t('chat.attachContext')}
-          >
-            <span>📎</span>
-            <span className="hidden md:inline">{t('chat.attachContext')}</span>
-            {selectedSnippetIds.size > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-xs bg-white text-blue-600 rounded-full font-bold">
-                {selectedSnippetIds.size}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
+      <ChatHeader
+        systemPrompt={systemPrompt}
+        selectedSnippetIds={selectedSnippetIds}
+        showSnippetsPanel={showSnippetsPanel}
+        messageCount={messages.length}
+        onNewChat={handleNewChat}
+        onShowLoadDialog={() => setShowLoadDialog(true)}
+        onToggleSnippetsPanel={() => setShowSnippetsPanel(!showSnippetsPanel)}
+        onShowExamplesModal={() => setShowExamplesModal(true)}
+        onShowShareDialog={() => setShowShareDialog(true)}
+      />
 
       {/* Messages Area */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-2 md:p-4 py-4 space-y-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto md:px-4 py-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
             No messages yet. Start a conversation!
@@ -6531,6 +6558,27 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             </button>
                           );
                         })()}
+                        
+                        {/* Feedback buttons (thumbs up/down) */}
+                        {!msg.isStreaming && (
+                          <>
+                            <button
+                              onClick={() => handlePositiveFeedback(idx)}
+                              className="text-xs px-2 py-1 rounded bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50 flex items-center gap-1 transition-colors"
+                              title="Good response"
+                            >
+                              👍
+                            </button>
+                            <button
+                              onClick={() => handleNegativeFeedback(idx)}
+                              className="text-xs px-2 py-1 rounded bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 flex items-center gap-1 transition-colors"
+                              title="Bad response - report issue"
+                            >
+                              👎
+                            </button>
+                          </>
+                        )}
+                        
                         {/* Error Info button for error messages (but NOT for guardrail failures) */}
                         {msg.errorData && getMessageText(msg.content).startsWith('❌ Error:') && !msg.guardrailFailed && (
                           <button
@@ -6654,54 +6702,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       </div>
 
       {/* Input Area */}
-      <div className="px-1 md:p-4 py-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+      <div className="md:px-4 py-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
         {/* App-level auth gate ensures user is authenticated, no need for inline check */}
         <>
           {/* File Attachments Display */}
-          {attachedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              {attachedFiles.map((file, idx) => (
-                <div 
-                  key={idx} 
-                  className="relative group bg-white dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 p-2 flex items-center gap-2"
-                >
-                  {/* Preview or Icon */}
-                  {file.preview ? (
-                    <img 
-                      src={file.preview} 
-                      alt={file.name} 
-                      className="w-12 h-12 object-cover rounded"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 flex items-center justify-center bg-red-100 dark:bg-red-900/30 rounded">
-                      <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                  )}
-                  
-                  {/* File Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate max-w-[150px]">
-                      {file.name}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {(file.size / 1024).toFixed(1)} KB
-                    </div>
-                  </div>
-                  
-                  {/* Remove Button */}
-                  <button
-                    onClick={() => removeAttachment(idx)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
-                    title="Remove file"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          <FileAttachmentsDisplay attachedFiles={attachedFiles} onRemoveAttachment={removeAttachment} />
           
           {/* Todos Panel - Backend-managed multi-step workflows */}
           {todosState && todosState.total > 0 && (
@@ -6795,70 +6800,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           {/* RAG Context Toggle */}
           {/* Message Input */}
           <div className="flex flex-col gap-2">
-            {/* Buttons Row - File upload, voice input, and send button */}
-            <div className="flex gap-2 relative items-start">
-              {/* Hidden File Input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf"
-                multiple
-                onChange={(e) => handleFileSelect(e.target.files)}
-                className="hidden"
-              />
-              
-              {/* File Upload Button */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isLoading}
-                className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Attach images or PDFs"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
-              </button>
-
-              {/* Voice Input Button */}
-              <button
-                onClick={() => setShowVoiceInput(true)}
-                disabled={isLoading || !accessToken}
-                className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                </svg>
-              </button>
-              
-              {/* Send Button - Aligned with file/voice buttons */}
-              <button
-                onClick={isLoading ? handleStop : () => handleSend()}
-                disabled={!isLoading && (!input.trim() || !accessToken)}
-                className="btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5"
-                title={!accessToken ? t('chat.signInToSend') : (!input.trim() ? t('chat.typeMessageFirst') : t('chat.sendMessage'))}
-                aria-label={isLoading ? t('chat.stopGenerating') : t('chat.sendMessage')}
-              >
-                {isLoading ? (
-                  <>
-                    <span>⏹</span>
-                    <span className="hidden md:inline">{t('chat.stop')}</span>
-                  </>
-                ) : !input.trim() ? (
-                  <>
-                    <span>✏️</span>
-                    <span className="hidden md:inline">{t('chat.typeMessage')}</span>
-                  </>
-                ) : (
-                  <>
-                    <span>📤</span>
-                    <span className="hidden md:inline">{t('chat.send')}</span>
-                  </>
-                )}
-              </button>
-            </div>
-            
             {/* Attached Snippets Indicator */}
             {selectedSnippetIds.size > 0 && (
               <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2">
@@ -6900,9 +6841,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               </div>
             )}
             
-            {/* Textarea Row */}
-            <div className="flex gap-2 items-start">
-            
+            {/* Textarea */}
             <textarea
               ref={inputRef}
               value={input}
@@ -6946,7 +6885,82 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             <span id="chat-input-help" className="sr-only">
               Type your message and press Enter to send. Use Shift+Enter for new line. Use up and down arrows to navigate message history.
             </span>
-          </div>
+            
+            {/* Buttons Row - Below textarea */}
+            <div className="flex gap-2 justify-between items-center">
+              {/* Left side buttons */}
+              <div className="flex gap-2">
+                {/* Hidden File Input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf"
+                  multiple
+                  onChange={(e) => handleFileSelect(e.target.files)}
+                  className="hidden"
+                />
+                
+                {/* File Upload Button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading}
+                  className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Attach images or PDFs"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                </button>
+
+                {/* Voice Input Button */}
+                <button
+                  onClick={() => setShowVoiceInput(true)}
+                  disabled={isLoading || !accessToken}
+                  className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Right side - Send Button */}
+              <button
+                onClick={() => {
+                  if (isLoading) {
+                    handleStop();
+                  } else if (!input.trim()) {
+                    // Focus textarea when empty submit is clicked
+                    inputRef.current?.focus();
+                  } else {
+                    handleSend();
+                  }
+                }}
+                disabled={!isLoading && !accessToken}
+                className="btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5"
+                title={!accessToken ? t('chat.signInToSend') : (!input.trim() ? t('chat.typeMessageFirst') : t('chat.sendMessage'))}
+                aria-label={isLoading ? t('chat.stopGenerating') : t('chat.sendMessage')}
+              >
+                {isLoading ? (
+                  <>
+                    <span>⏹</span>
+                    <span className="hidden md:inline">{t('chat.stop')}</span>
+                  </>
+                ) : !input.trim() ? (
+                  <>
+                    <span>✏️</span>
+                    <span className="hidden md:inline">{t('chat.typeMessage')}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📤</span>
+                    <span className="hidden md:inline">{t('chat.send')}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </>
       </div>
@@ -7506,7 +7520,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {showLlmInfo !== null && messages[showLlmInfo]?.llmApiCalls && (
         <LlmInfoDialogNew 
           apiCalls={messages[showLlmInfo].llmApiCalls}
-          evaluations={(messages[showLlmInfo] as any).evaluations}
           onClose={() => setShowLlmInfo(null)}
         />
       )}
@@ -7517,6 +7530,21 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           errorData={messages[showErrorInfo].errorData}
           llmApiCalls={messages[showErrorInfo].llmApiCalls}
           onClose={() => setShowErrorInfo(null)}
+        />
+      )}
+
+      {/* Fix Response Dialog */}
+      {showFixDialog !== null && (
+        <FixResponseDialog
+          isOpen={true}
+          onClose={() => setShowFixDialog(null)}
+          messageData={{
+            messageId: `message-${showFixDialog}`,
+            messageContent: getMessageText(messages[showFixDialog].content),
+            llmApiCalls: messages[showFixDialog].llmApiCalls || [],
+            evaluations: (messages[showFixDialog] as any).evaluations || [],
+            conversationThread: messages
+          }}
         />
       )}
 
@@ -7539,6 +7567,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         requestLocation={requestLocation}
         clearLocation={clearLocation}
       />
+
+      {/* Share Dialog */}
+      {showShareDialog && (
+        <ShareDialog
+          messages={messages.map(msg => ({
+            role: msg.role as 'user' | 'assistant' | 'system',
+            content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+            timestamp: Date.now()
+          }))}
+          onClose={() => setShowShareDialog(false)}
+          title={systemPrompt || undefined}
+        />
+      )}
 
       {/* Snippets Panel - Collapsible */}
       {showSnippetsPanel && (

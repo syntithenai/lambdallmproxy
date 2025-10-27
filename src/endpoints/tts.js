@@ -305,17 +305,17 @@ async function handleTTS(event, responseStream, context) {
         let apiKey;
         switch (provider) {
             case 'openai':
-                apiKey = clientApiKey || process.env.OPENAI_API_KEY;
+                apiKey = clientApiKey || process.env.OPENAI_KEY;
                 break;
             case 'google':
             case 'gemini':
-                apiKey = clientApiKey || process.env.GEMINI_API_KEY;
+                apiKey = clientApiKey || process.env.GEMINI_KEY;
                 break;
             case 'groq':
-                apiKey = clientApiKey || process.env.GROQ_API_KEY;
+                apiKey = clientApiKey || process.env.GROQ_KEY;
                 break;
             case 'elevenlabs':
-                apiKey = clientApiKey || process.env.ELEVENLABS_API_KEY;
+                apiKey = clientApiKey || process.env.ELEVENLABS_KEY;
                 break;
             default:
                 const metadata = {
@@ -374,7 +374,7 @@ async function handleTTS(event, responseStream, context) {
             const os = require('os');
             
             const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+            const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
             const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
             
             const logData = {

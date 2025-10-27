@@ -847,6 +847,130 @@
           }
         }
       },
+      "cohere": {
+        "name": "Cohere",
+        "type": "cohere",
+        "apiBase": "https://api.cohere.ai/v1",
+        "supportsStreaming": true,
+        "supportsTools": true,
+        "freeTier": {
+          "available": false,
+          "limits": {
+            "note": "Trial credits available for new users, then pay-as-you-go"
+          }
+        },
+        "rateLimitHeaders": {
+          "format": "custom",
+          "note": "Rate limits in headers may vary"
+        },
+        "models": {
+          "command-r7b-12-2024": {
+            "id": "command-r7b-12-2024",
+            "category": "small",
+            "contextWindow": 128000,
+            "maxOutput": 4096,
+            "pricing": {
+              "input": 0.075,
+              "output": 0.30,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 10000,
+              "requestsPerMinute": 100
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Cohere Command R7B - Lightweight and cost-effective"
+          },
+          "command-r-08-2024": {
+            "id": "command-r-08-2024",
+            "category": "large",
+            "contextWindow": 128000,
+            "maxOutput": 4096,
+            "pricing": {
+              "input": 0.15,
+              "output": 0.60,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 10000,
+              "requestsPerMinute": 100
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Cohere Command R - Balanced performance and cost"
+          },
+          "command-r-plus-08-2024": {
+            "id": "command-r-plus-08-2024",
+            "category": "large",
+            "contextWindow": 128000,
+            "maxOutput": 4096,
+            "pricing": {
+              "input": 2.50,
+              "output": 10.00,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 10000,
+              "requestsPerMinute": 100
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Cohere Command R Plus - Premium model for complex tasks"
+          },
+          "command-r": {
+            "id": "command-r",
+            "category": "large",
+            "contextWindow": 128000,
+            "maxOutput": 4096,
+            "pricing": {
+              "input": 0.15,
+              "output": 0.60,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 10000,
+              "requestsPerMinute": 100
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Cohere Command R - Latest stable version"
+          },
+          "command-r-plus": {
+            "id": "command-r-plus",
+            "category": "large",
+            "contextWindow": 128000,
+            "maxOutput": 4096,
+            "pricing": {
+              "input": 2.50,
+              "output": 10.00,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 10000,
+              "requestsPerMinute": 100
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Cohere Command R Plus - Latest stable premium version"
+          }
+        }
+      },
       "together": {
         "name": "Together AI",
         "type": "together",

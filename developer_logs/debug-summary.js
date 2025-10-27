@@ -17,7 +17,7 @@ async function debugSummaryGeneration() {
             generate_summary: true
         }, {
             model: 'groq:llama-3.1-8b-instant',
-            apiKey: process.env.GROQ_API_KEY
+            apiKey: process.env.GROQ_KEY
         });
         
         const response = JSON.parse(result);
@@ -33,8 +33,8 @@ async function debugSummaryGeneration() {
         
         // Check environment
         console.log('\n🔧 Environment check:');
-        console.log('- GROQ_API_KEY exists:', !!process.env.GROQ_API_KEY);
-        console.log('- API key length:', process.env.GROQ_API_KEY?.length || 0);
+        console.log('- GROQ_KEY exists:', !!process.env.GROQ_KEY);
+        console.log('- API key length:', process.env.GROQ_KEY?.length || 0);
         
     } catch (error) {
         console.error('❌ Test failed:', error.message);

@@ -18,7 +18,7 @@
  * Environment:
  *   LIBSQL_URL         Database URL
  *   LIBSQL_AUTH_TOKEN  Optional auth token
- *   OPENAI_API_KEY     Required for generating query embeddings
+ *   OPENAI_KEY     Required for generating query embeddings
  */
 
 // Load environment variables from .env file
@@ -30,7 +30,7 @@ const path = require('path');
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    dbPath: process.env.LIBSQL_URL || 'file:///' + path.resolve('./rag-kb.db'),
+    dbPath: process.env.DB_URL || 'file:///' + path.resolve('./rag-kb.db'),
     topK: 5,
     threshold: 0.3, // Lowered from 0.5 for more relaxed matching
     type: null,
@@ -72,7 +72,7 @@ Options:
 Environment Variables:
   LIBSQL_URL         Database URL (file:/// or libsql://)
   LIBSQL_AUTH_TOKEN  Auth token for remote databases
-  OPENAI_API_KEY     Required for generating embeddings
+  OPENAI_KEY     Required for generating embeddings
 
 Examples:
   node scripts/search-documents.js "How does RAG work?"
@@ -166,16 +166,16 @@ async function main() {
     process.exit(1);
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('\nError: OPENAI_API_KEY environment variable is required\n');
+  if (!process.env.OPENAI_KEY) {
+    console.error('\nError: OPENAI_KEY environment variable is required\n');
     console.error('Set it with:');
-    console.error('  export OPENAI_API_KEY="your-key-here"\n');
+    console.error('  export OPENAI_KEY="your-key-here"\n');
     process.exit(1);
   }
 
   try {
     // Set environment for search.js
-    process.env.LIBSQL_URL = options.dbPath;
+    process.env.DB_URL = options.dbPath;
 
     // Import search module
     const search = require('../src/rag/search');
@@ -189,7 +189,7 @@ async function main() {
         text,
         'text-embedding-3-small',
         'openai',
-        process.env.OPENAI_API_KEY
+        process.env.OPENAI_KEY
       );
       return { embedding: result.embedding };
     };

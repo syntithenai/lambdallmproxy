@@ -5,7 +5,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useUsage } from '../contexts/UsageContext';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
-import { LlmInfoDialog as LlmInfoDialogNew } from './LlmInfoDialogNew';
+import { LlmInfoDialogNew } from './LlmInfoDialogNew';
 
 interface MermaidChartProps {
   chart: string;

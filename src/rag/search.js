@@ -12,7 +12,7 @@
 
 // Detect environment and storage backend
 const isNode = typeof window === 'undefined';
-const useLibSQL = isNode && (process.env.LIBSQL_URL || process.env.USE_LIBSQL === 'true');
+const useLibSQL = isNode && (process.env.DB_URL || process.env.USE_DB === 'true');
 
 let storageBackend;
 let libsqlClient = null;
@@ -23,8 +23,8 @@ if (useLibSQL) {
   storageBackend = require('./libsql-storage');
   // Initialize libSQL client singleton
   libsqlClient = storageBackend.createLibsqlClient({
-    url: process.env.LIBSQL_URL,
-    authToken: process.env.LIBSQL_AUTH_TOKEN,
+    url: process.env.DB_URL,
+    authToken: process.env.DB_TOKEN,
   });
   
   // Initialize database schema (create tables if they don't exist)

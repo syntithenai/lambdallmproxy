@@ -20,8 +20,8 @@
  * @returns {Object} Environment configuration
  */
 function getEnvironmentConstraints() {
-  const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-  const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+  const IS_LAMBDA = !!process.env.AWS_FN;
+  const IS_DEVELOPMENT = process.env.ENV === 'development';
   const MAX_TIER = IS_LAMBDA ? 1 : 4;
   
   return {

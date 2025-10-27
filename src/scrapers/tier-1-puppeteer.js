@@ -21,7 +21,7 @@ const chromium = require('@sparticuz/chromium');
 // 🔒 CRITICAL: Add stealth plugin to evade bot detection
 puppeteer.use(StealthPlugin());
 
-const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const IS_LAMBDA = !!process.env.AWS_FN;
 
 /**
  * Get Puppeteer launch options for current environment

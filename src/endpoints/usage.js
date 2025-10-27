@@ -84,11 +84,11 @@ async function handleUsageRequest(event) {
         // and exposes their status to the frontend for UI display.
         // This is a minimal, static implementation. For dynamic config, read from env or provider catalog.
         const ttsCapabilities = {
-            openai: !!process.env.OPENAI_API_KEY,
-            groq: !!process.env.GROQ_API_KEY,
-            gemini: !!process.env.GEMINI_API_KEY,
-            together: !!process.env.TOGETHER_API_KEY,
-            elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+            openai: !!process.env.OPENAI_KEY,
+            groq: !!process.env.GROQ_KEY,
+            gemini: !!process.env.GEMINI_KEY,
+            together: !!process.env.TOGETHER_KEY,
+            elevenlabs: !!process.env.ELEVENLABS_KEY,
             browser: true, // Always available client-side
             speakjs: true  // Always available client-side
         };

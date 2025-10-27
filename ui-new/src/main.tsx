@@ -13,7 +13,7 @@ if (typeof window !== 'undefined') {
 
 // Load PayPal SDK dynamically with client ID from environment
 const loadPayPalSDK = () => {
-  const clientId = import.meta.env.VITE_PAYPAL_CLIENT_ID;
+  const clientId = import.meta.env.VITE_PP_CID;
   if (!clientId) {
     console.warn('⚠️ VITE_PAYPAL_CLIENT_ID not found in environment - PayPal integration disabled');
     return;

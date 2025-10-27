@@ -40,8 +40,8 @@ exports.handler = async (event) => {
     }
     
     // Initialize Google Sheets client
-    const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS || '{}');
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    const credentials = JSON.parse(process.env.GS_CREDS || '{}');
+    const spreadsheetId = process.env.GS_ID;
     
     if (!credentials.client_email || !spreadsheetId) {
       return {

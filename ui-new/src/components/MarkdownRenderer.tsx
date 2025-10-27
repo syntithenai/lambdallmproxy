@@ -49,6 +49,19 @@ interface MarkdownRendererProps {
     duration_ms: number;
     purpose: string;
   }) => void;
+  snippetId?: string; // Optional snippet ID for image editing
+  snippetTags?: string[]; // Optional snippet tags for image editing
+  onImageEdit?: (imageData: {
+    id: string;
+    url: string;
+    name: string;
+    tags: string[];
+    snippetId?: string;
+    width?: number;
+    height?: number;
+    format?: string;
+    size?: number;
+  }) => void; // Callback when user clicks edit on an image
 }
 
 interface ImageGalleryProps {
@@ -178,7 +191,8 @@ function ImageGallery({ images }: ImageGalleryProps) {
   );
 }
 
-export function MarkdownRenderer({ content, className = '', chartDescription, onLlmApiCall }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className = '', chartDescription, onLlmApiCall, snippetId, snippetTags = [], onImageEdit }: MarkdownRendererProps) {
+  const [imageCounter, setImageCounter] = useState(0);
   // Special handling for pure HTML img tags with data URLs
   // This is for chart images saved from the Grab button
   const isHtmlImage = /^<img\s+[^>]*src="data:image\/[^"]+"/i.test(content.trim());
@@ -434,6 +448,72 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
               return null;
             }
             
+            // Increment counter and generate ID for this image
+            const currentCounter = imageCounter;
+            setImageCounter(prev => prev + 1);
+            const imageId = snippetId ? `${snippetId}-img-${currentCounter}` : `img-${currentCounter}`;
+            
+            // Extract format from URL or data URL
+            const getFormat = (url: string): string => {
+              if (url.startsWith('data:image/')) {
+                const match = url.match(/^data:image\/([^;,]+)/);
+                return match ? match[1].toUpperCase() : 'Unknown';
+              }
+              const ext = url.split('.').pop()?.toLowerCase();
+              if (ext === 'jpg' || ext === 'jpeg') return 'JPG';
+              if (ext === 'png') return 'PNG';
+              if (ext === 'gif') return 'GIF';
+              if (ext === 'webp') return 'WebP';
+              if (ext === 'svg') return 'SVG';
+              return 'Unknown';
+            };
+            
+            const handleEditClick = (e: React.MouseEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              if (onImageEdit) {
+                onImageEdit({
+                  id: imageId,
+                  url: imgSrc,
+                  name: alt || `Image ${currentCounter + 1}`,
+                  tags: snippetTags,
+                  snippetId: snippetId,
+                  format: getFormat(imgSrc),
+                });
+              }
+            };
+            
+            // If edit button is enabled (onImageEdit provided), wrap in container with overlay
+            if (onImageEdit) {
+              return (
+                <div className="relative inline-block group my-4">
+                  <img
+                    src={imgSrc}
+                    alt={alt || ''}
+                    className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-700"
+                    loading="lazy"
+                    onError={(e) => {
+                      console.error('Image failed to load:', { src: imgSrc, alt });
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                  {/* Edit button overlay */}
+                  <button
+                    onClick={handleEditClick}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-orange-600 hover:bg-orange-700 text-white rounded-full p-2 shadow-lg"
+                    title="Edit image"
+                    aria-label="Edit image"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            }
+            
+            // Default rendering without edit button
             return (
               <img
                 src={imgSrc}

@@ -7,7 +7,7 @@ echo "════════════════════════�
 echo ""
 
 # Check if running in Lambda
-if [ -n "$AWS_LAMBDA_FUNCTION_NAME" ]; then
+if [ -n "$AWS_FN" ]; then
     echo "🌐 Environment: AWS Lambda (Production)"
     echo "   Available Tiers: 0, 1"
 else

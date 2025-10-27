@@ -93,9 +93,9 @@ async function generateEmbedding(text, model, provider, apiKey, options = {}) {
       );
       
       // Calculate cost (0 if running locally)
-      const isLocal = process.env.LOCAL_LAMBDA === 'true' || 
-                     process.env.NODE_ENV === 'development' ||
-                     process.env.AWS_EXECUTION_ENV === undefined;
+      const isLocal = process.env.LOCAL === 'true' || 
+                     process.env.ENV === 'development' ||
+                     process.env.AWS_EXEC === undefined;
       const cost = isLocal ? 0 : (result.tokens / 1000000) * modelInfo.pricePerMillionTokens;
       
       return {

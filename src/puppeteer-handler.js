@@ -262,7 +262,7 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         success: false,
         error: error.message || 'Unknown error occurred',
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        stack: process.env.ENV === 'development' ? error.stack : undefined
       })
     };
   } finally {
@@ -270,7 +270,7 @@ exports.handler = async (event, context) => {
     try {
       const { logLambdaInvocation } = require('./services/google-sheets-logger');
       const durationMs = Date.now() - startTime;
-      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 1024;
+      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 1024;
       const memoryUsedMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
       const requestId = context?.requestId || context?.awsRequestId || 'local-' + Date.now();
       

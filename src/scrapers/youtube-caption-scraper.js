@@ -16,7 +16,7 @@
 const path = require('path');
 const { spawn } = require('child_process');
 
-const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const IS_LAMBDA = !!process.env.AWS_FN;
 
 if (IS_LAMBDA) {
   throw new Error('YouTube caption scraping via Selenium is not available on Lambda. Use InnerTube API or OAuth API instead.');

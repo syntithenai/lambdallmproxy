@@ -30,7 +30,7 @@ async function testRagCache() {
     const result1 = await tools.callFunction(
       'search_knowledge_base',
       { query: testQuery, top_k: 3, threshold: 0.5 },
-      { apiKey: process.env.OPENAI_API_KEY }
+      { apiKey: process.env.OPENAI_KEY }
     );
     const time1 = Date.now() - start1;
     
@@ -52,7 +52,7 @@ async function testRagCache() {
     const result2 = await tools.callFunction(
       'search_knowledge_base',
       { query: testQuery, top_k: 3, threshold: 0.5 },
-      { apiKey: process.env.OPENAI_API_KEY }
+      { apiKey: process.env.OPENAI_KEY }
     );
     const time2 = Date.now() - start2;
     
@@ -70,7 +70,7 @@ async function testRagCache() {
     const result3 = await tools.callFunction(
       'search_knowledge_base',
       { query: testQuery, top_k: 5, threshold: 0.5 },
-      { apiKey: process.env.OPENAI_API_KEY }
+      { apiKey: process.env.OPENAI_KEY }
     );
     const time3 = Date.now() - start3;
     
@@ -89,7 +89,7 @@ async function testRagCache() {
     const result4 = await tools.callFunction(
       'search_knowledge_base',
       { query: testQuery2, top_k: 3, threshold: 0.5 },
-      { apiKey: process.env.OPENAI_API_KEY }
+      { apiKey: process.env.OPENAI_KEY }
     );
     const time4 = Date.now() - start4;
     

@@ -1,7 +1,11 @@
 /**
  * Planning Cache Utility
- * Caches completed planning requests in localStorage
+ * Now using IndexedDB via planningDB module for better capacity
+ * This file maintains backward-compatible API
  */
+
+import { planningDB, generatePlanId as dbGeneratePlanId } from './planningDB';
+import { unifiedSync } from '../services/unifiedSync';
 
 export interface CachedPlan {
   id: string;
@@ -12,25 +16,20 @@ export interface CachedPlan {
   timestamp: number;
 }
 
-const PLANNING_CACHE_KEY = 'llm_proxy_planning_cache';
-
 /**
  * Generate a unique ID for a plan
  */
 function generatePlanId(): string {
-  return `plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return dbGeneratePlanId();
 }
 
 /**
  * Get all cached plans
+ * Now reads from IndexedDB instead of localStorage
  */
-export function getAllCachedPlans(): CachedPlan[] {
+export async function getAllCachedPlans(): Promise<CachedPlan[]> {
   try {
-    const cached = localStorage.getItem(PLANNING_CACHE_KEY);
-    if (!cached) return [];
-    
-    const plans = JSON.parse(cached);
-    return Array.isArray(plans) ? plans : [];
+    return await planningDB.getAllPlans();
   } catch (error) {
     console.error('Error reading planning cache:', error);
     return [];
@@ -40,17 +39,18 @@ export function getAllCachedPlans(): CachedPlan[] {
 /**
  * Save a new plan to the cache
  * Avoids duplicates by replacing any existing plan with the same query
+ * Now saves to IndexedDB instead of localStorage
  */
-export function saveCachedPlan(query: string, plan: any, systemPrompt?: string, userPrompt?: string): void {
+export async function saveCachedPlan(query: string, plan: any, systemPrompt?: string, userPrompt?: string): Promise<void> {
   try {
-    const plans = getAllCachedPlans();
+    const plans = await getAllCachedPlans();
     const normalizedQuery = query.trim().toLowerCase();
     
-    // Remove any existing plans with the same query (case-insensitive)
-    const filteredPlans = plans.filter(p => p.query.trim().toLowerCase() !== normalizedQuery);
+    // Check if plan with same query already exists
+    const existingPlan = plans.find(p => p.query.trim().toLowerCase() === normalizedQuery);
     
     const newPlan: CachedPlan = {
-      id: generatePlanId(),
+      id: existingPlan?.id || generatePlanId(), // Reuse ID if updating existing plan
       query: query.trim(),
       plan,
       systemPrompt,
@@ -58,14 +58,15 @@ export function saveCachedPlan(query: string, plan: any, systemPrompt?: string, 
       timestamp: Date.now()
     };
     
-    // Add to beginning of array (most recent first)
-    filteredPlans.unshift(newPlan);
+    await planningDB.savePlan(newPlan);
     
-    // Limit to 50 most recent plans
-    const limitedPlans = filteredPlans.slice(0, 50);
+    console.log(`Plan saved ${existingPlan ? '(replaced duplicate)' : '(new)'}:`, query.trim());
     
-    localStorage.setItem(PLANNING_CACHE_KEY, JSON.stringify(limitedPlans));
-    console.log(`Plan saved (${filteredPlans.length > plans.length ? 'new' : 'replaced duplicate'}):`, query.trim());
+    // Trigger immediate sync if unified sync is enabled
+    if (unifiedSync.isEnabled()) {
+      unifiedSync.queueSync('plans', 'high');
+    }
+    
   } catch (error) {
     console.error('Error saving plan to cache:', error);
     
@@ -85,41 +86,51 @@ export function saveCachedPlan(query: string, plan: any, systemPrompt?: string, 
 /**
  * Delete a cached plan by ID
  */
-export function deleteCachedPlan(planId: string): void {
+export async function deleteCachedPlan(planId: string): Promise<void> {
   try {
-    const plans = getAllCachedPlans();
-    const filtered = plans.filter(p => p.id !== planId);
-    localStorage.setItem(PLANNING_CACHE_KEY, JSON.stringify(filtered));
+    await planningDB.deletePlan(planId);
+    
+    // Trigger immediate sync if unified sync is enabled
+    if (unifiedSync.isEnabled()) {
+      unifiedSync.queueSync('plans', 'high');
+    }
   } catch (error) {
     console.error('Error deleting cached plan:', error);
+    throw error;
   }
 }
 
 /**
  * Get a specific cached plan by ID
  */
-export function getCachedPlan(planId: string): CachedPlan | null {
-  const plans = getAllCachedPlans();
-  return plans.find(p => p.id === planId) || null;
+export async function getCachedPlan(planId: string): Promise<CachedPlan | null> {
+  try {
+    const plan = await planningDB.getPlan(planId);
+    return plan || null;
+  } catch (error) {
+    console.error('Error getting cached plan:', error);
+    return null;
+  }
 }
 
 /**
  * Clear all cached plans
  */
-export function clearAllCachedPlans(): void {
+export async function clearAllCachedPlans(): Promise<void> {
   try {
-    localStorage.removeItem(PLANNING_CACHE_KEY);
+    await planningDB.clear();
   } catch (error) {
     console.error('Error clearing planning cache:', error);
+    throw error;
   }
 }
 
 /**
  * Replace all plans (used for sync from cloud)
  */
-export function replacePlans(plans: CachedPlan[]): void {
+export async function replacePlans(plans: CachedPlan[]): Promise<void> {
   try {
-    localStorage.setItem(PLANNING_CACHE_KEY, JSON.stringify(plans));
+    await planningDB.replacePlans(plans);
     console.log(`Replaced all plans with ${plans.length} items from sync`);
   } catch (error) {
     console.error('Error replacing plans:', error);
@@ -130,37 +141,20 @@ export function replacePlans(plans: CachedPlan[]): void {
 /**
  * Get plans modified after timestamp
  */
-export function getPlansModifiedSince(timestamp: number): CachedPlan[] {
-  const allPlans = getAllCachedPlans();
-  return allPlans.filter(p => p.timestamp > timestamp);
+export async function getPlansModifiedSince(timestamp: number): Promise<CachedPlan[]> {
+  try {
+    return await planningDB.getPlansModifiedSince(timestamp);
+  } catch (error) {
+    console.error('Error getting modified plans:', error);
+    return [];
+  }
 }
 
 /**
  * Merge local and remote plans (deduplicates by query, keeps newer timestamp)
  */
 export function mergePlans(local: CachedPlan[], remote: CachedPlan[]): CachedPlan[] {
-  const mergedMap = new Map<string, CachedPlan>();
-
-  // Add local plans to map
-  local.forEach(plan => {
-    const key = plan.query.trim().toLowerCase();
-    mergedMap.set(key, plan);
-  });
-
-  // Merge remote plans (replace if newer)
-  remote.forEach(remotePlan => {
-    const key = remotePlan.query.trim().toLowerCase();
-    const existingPlan = mergedMap.get(key);
-    
-    if (!existingPlan || remotePlan.timestamp > existingPlan.timestamp) {
-      mergedMap.set(key, remotePlan);
-    }
-  });
-
-  // Convert back to array and sort by timestamp (newest first)
-  return Array.from(mergedMap.values())
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 50); // Limit to 50 most recent
+  return planningDB.mergePlans(local, remote);
 }
 
 /**
@@ -168,45 +162,12 @@ export function mergePlans(local: CachedPlan[], remote: CachedPlan[]): CachedPla
  * Returns true if persistent storage is granted
  */
 export async function requestPersistentStorage(): Promise<boolean> {
-  if ('storage' in navigator && 'persist' in navigator.storage) {
-    try {
-      const isPersisted = await navigator.storage.persisted();
-      if (!isPersisted) {
-        const granted = await navigator.storage.persist();
-        console.log('Persistent storage request:', granted ? 'granted' : 'denied');
-        return granted;
-      }
-      console.log('Storage is already persistent');
-      return true;
-    } catch (error) {
-      console.error('Error requesting persistent storage:', error);
-      return false;
-    }
-  }
-  console.warn('Persistent storage API not available');
-  return false;
+  return await planningDB.requestPersistentStorage();
 }
 
 /**
  * Check storage usage and estimate
  */
 export async function getStorageEstimate(): Promise<{ usage: number; quota: number; percentage: number } | null> {
-  if ('storage' in navigator && 'estimate' in navigator.storage) {
-    try {
-      const estimate = await navigator.storage.estimate();
-      const usage = estimate.usage || 0;
-      const quota = estimate.quota || 0;
-      const percentage = quota > 0 ? (usage / quota) * 100 : 0;
-      
-      return {
-        usage,
-        quota,
-        percentage
-      };
-    } catch (error) {
-      console.error('Error getting storage estimate:', error);
-      return null;
-    }
-  }
-  return null;
+  return await planningDB.getStorageEstimate();
 }

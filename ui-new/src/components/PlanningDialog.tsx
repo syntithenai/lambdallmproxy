@@ -95,7 +95,9 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
   // Load saved plans when dialog opens
   useEffect(() => {
     if (showLoadDialog) {
-      setSavedPlans(getAllCachedPlans());
+      getAllCachedPlans().then(plans => {
+        setSavedPlans(plans);
+      });
       updateStorageInfo();
     }
   }, [showLoadDialog]);
@@ -345,12 +347,13 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
     setShowLoadDialog(false);
   };
 
-  const handleDeletePlan = (planId: string) => {
-    deleteCachedPlan(planId);
-    setSavedPlans(getAllCachedPlans());
+  const handleDeletePlan = async (planId: string) => {
+    await deleteCachedPlan(planId);
+    const plans = await getAllCachedPlans();
+    setSavedPlans(plans);
   };
 
-  const handleSavePlan = () => {
+  const handleSavePlan = async () => {
     if (!result || result.error) {
       showError(t('planning.cannotSavePlan'));
       return;
@@ -358,7 +361,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
     
     try {
       // Save with both system and user prompts
-      saveCachedPlan(
+      await saveCachedPlan(
         query, 
         result, 
         result.enhancedSystemPrompt || generatedSystemPrompt || '',

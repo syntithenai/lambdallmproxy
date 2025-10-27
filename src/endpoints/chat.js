@@ -191,9 +191,9 @@ let globalRateLimitTracker = null;
 
 // Detect if running in local development mode
 const isLocalDevelopment = () => {
-    return process.env.LOCAL_LAMBDA === 'true' || 
-           process.env.NODE_ENV === 'development' ||
-           process.env.AWS_EXECUTION_ENV === undefined;
+    return process.env.LOCAL === 'true' || 
+           process.env.ENV === 'development' ||
+           process.env.AWS_EXEC === undefined;
 };
 
 // Calculate cost, but return 0 if running locally
@@ -1878,12 +1878,12 @@ async function handler(event, responseStream, context) {
         
         currentMessages = [...messages]; // Assignment to function-scoped variable
         let iterationCount = 0;
-        const maxIterations = parseInt(process.env.MAX_TOOL_ITERATIONS) || 15;
+        const maxIterations = parseInt(process.env.MAX_ITER) || 15;
         let jsonToolCallReminderCount = 0;
         
         // Todo auto-resubmission tracking
         let todoAutoIterations = 0;
-        const MAX_TODO_AUTO_ITERATIONS = parseInt(process.env.MAX_TODO_AUTO_ITERATIONS) || 5;
+        const MAX_TODO_AUTO_ITERATIONS = parseInt(process.env.MAX_TODO) || 5;
         
         // Track all LLM API calls across iterations
         const allLlmApiCalls = [];

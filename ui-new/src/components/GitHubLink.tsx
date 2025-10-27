@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { ImageEditorNavButton } from './ImageEditorNavButton';
 
 interface GitHubLinkProps {
   onOpenSettings?: () => void;
@@ -13,6 +14,11 @@ export const GitHubLink: React.FC<GitHubLinkProps> = ({ onOpenSettings, hideGitH
 
   return (
     <div className="hidden md:flex fixed bottom-4 right-4 flex-col gap-2 z-50" style={{ zIndex: 9999 }}>
+      {/* Image Editor Button */}
+      {onOpenSettings && (
+        <ImageEditorNavButton className="p-3 bg-orange-600 hover:bg-orange-500 dark:bg-orange-700 dark:hover:bg-orange-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center" />
+      )}
+      
       {/* Settings Button */}
       {onOpenSettings && (
         <button

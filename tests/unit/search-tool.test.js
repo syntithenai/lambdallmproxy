@@ -88,7 +88,7 @@ describe.skip('Search Tool Updates', () => {
                 generate_summary: true
             }, {
                 model: 'groq:llama-3.1-8b-instant',
-                apiKey: process.env.GROQ_API_KEY || 'test-key'
+                apiKey: process.env.GROQ_KEY || 'test-key'
             });
             
             const response = JSON.parse(result);

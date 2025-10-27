@@ -24,8 +24,8 @@ const { getUserCreditBalance } = require('../services/google-sheets-logger');
 const creditCache = new Map();
 
 // Cache configuration
-const CACHE_TTL_MS = parseInt(process.env.CREDIT_CACHE_TTL_MS) || 60000; // 60 seconds default
-const CACHE_MAX_SIZE = parseInt(process.env.CREDIT_CACHE_MAX_SIZE) || 1000; // Max 1000 users
+const CACHE_TTL_MS = parseInt(process.env.CR_TTL) || 60000; // 60 seconds default
+const CACHE_MAX_SIZE = parseInt(process.env.CR_MAX) || 1000; // Max 1000 users
 
 /**
  * Cache entry structure

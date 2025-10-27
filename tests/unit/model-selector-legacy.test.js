@@ -5,7 +5,7 @@
 const path = require('path');
 
 // Ensure environment variable exists for Groq API calls
-process.env.GROQ_API_KEY = process.env.GROQ_API_KEY || 'test-key';
+process.env.GROQ_KEY = process.env.GROQ_KEY || 'test-key';
 
 // Mock Groq rate limits to keep test deterministic
 jest.mock('../../src/groq-rate-limits', () => ({

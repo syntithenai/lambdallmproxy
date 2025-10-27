@@ -35,9 +35,9 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
     directory: null,
-    dbPath: process.env.LIBSQL_URL?.replace('file://', '') || './rag-kb.db',
-    embeddingModel: process.env.RAG_EMBEDDING_MODEL || 'text-embedding-3-small',
-    embeddingProvider: process.env.RAG_EMBEDDING_PROVIDER || 'openai',
+    dbPath: process.env.DB_URL?.replace('file://', '') || './rag-kb.db',
+    embeddingModel: process.env.RAG_MDL || 'text-embedding-3-small',
+    embeddingProvider: process.env.RAG_PROV || 'openai',
     chunkSize: 512,
     chunkOverlap: 50,
     batchSize: 100,
@@ -196,9 +196,9 @@ async function processDocument(filePath, options, client) {
     const chunkTexts = chunks.map(chunk => chunk.chunk_text || chunk.text);
     
     // Get API key from environment
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.OPENAI_KEY;
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY environment variable is required');
+      throw new Error('OPENAI_KEY environment variable is required');
     }
     
     const embeddingResults = await batchGenerateEmbeddings(

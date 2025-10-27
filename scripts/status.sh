@@ -50,7 +50,7 @@ if [ -f ".env" ]; then
     echo -e "${GREEN}✅ .env file exists${NC}"
     
     # Check for required variables
-    if grep -q "OPENAI_API_KEY" .env; then
+    if grep -q "OPENAI_KEY" .env; then
         echo -e "${GREEN}✅ OpenAI API key configured${NC}"
     else
         echo -e "${RED}❌ OpenAI API key missing in .env${NC}"

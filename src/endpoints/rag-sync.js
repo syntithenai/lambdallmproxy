@@ -79,8 +79,8 @@ exports.handler = async (event, responseStream) => {
     }
 
     // Initialize Google Sheets client
-    const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS || '{}');
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    const credentials = JSON.parse(process.env.GS_CREDS || '{}');
+    const spreadsheetId = process.env.GS_ID;
     
     if (!credentials.client_email || !spreadsheetId) {
       const errorResponse = {
@@ -150,7 +150,7 @@ exports.handler = async (event, responseStream) => {
       },
       body: JSON.stringify({
         error: error.message || 'Internal server error',
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        stack: process.env.ENV === 'development' ? error.stack : undefined,
       }),
     };
     

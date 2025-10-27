@@ -1,0 +1,920 @@
+[
+  {
+    "oldVar": "ALLOWED_EMAILS",
+    "newVar": "ALLOW_EM",
+    "files": [
+      "src/auth.js",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "ACCESS_SECRET",
+    "newVar": "ACC_SEC",
+    "files": [
+      "src/lambda_search_llm_handler.js",
+      "scripts/deploy-static.sh",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 10
+  },
+  {
+    "oldVar": "GOOGLE_CLIENT_ID",
+    "newVar": "GGL_CID",
+    "files": [
+      "src/auth.js",
+      "src/endpoints/oauth.js",
+      "src/utils/google-oauth-refresh.js",
+      "scripts/deploy-static.sh",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 11
+  },
+  {
+    "oldVar": "GOOGLE_CLIENT_SECRET",
+    "newVar": "GGL_SEC",
+    "files": [
+      "src/endpoints/oauth.js",
+      "src/utils/google-oauth-refresh.js",
+      ".env.example"
+    ],
+    "occurrences": 5
+  },
+  {
+    "oldVar": "OAUTH_REDIRECT_URI",
+    "newVar": "OAUTH_URI",
+    "files": [
+      "src/endpoints/oauth.js",
+      ".env.example"
+    ],
+    "occurrences": 4
+  },
+  {
+    "oldVar": "WEBSHARE_PROXY_USERNAME",
+    "newVar": "PXY_USER",
+    "files": [
+      "src/tools.js",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "WEBSHARE_PROXY_PASSWORD",
+    "newVar": "PXY_PASS",
+    "files": [
+      "src/tools.js",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "MAX_TOOL_ITERATIONS",
+    "newVar": "MAX_ITER",
+    "files": [
+      "src/config/prompts.js",
+      "src/endpoints/chat.js",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 5
+  },
+  {
+    "oldVar": "DISABLE_YOUTUBE_TRANSCRIPTION",
+    "newVar": "NO_YT_TRANS",
+    "files": [
+      "src/tools.js",
+      ".env.example"
+    ],
+    "occurrences": 4
+  },
+  {
+    "oldVar": "MEDIA_DOWNLOAD_TIMEOUT",
+    "newVar": "MED_TIMEOUT",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "ENABLE_GUARDRAILS",
+    "newVar": "EN_GUARD",
+    "files": [
+      "src/guardrails/config.js",
+      "scripts/test-guardrails-auto-detect.js",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "USE_PUPPETEER",
+    "newVar": "USE_PPT",
+    "files": [
+      "src/scrapers/puppeteer-scraper.js",
+      ".env.example"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "PUPPETEER_LAMBDA_ARN",
+    "newVar": "PPT_ARN",
+    "files": [
+      "src/tools.js",
+      ".env.example"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "GROQ_MODEL",
+    "newVar": "GROQ_MDL",
+    "files": [
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "OPENAI_MODEL",
+    "newVar": "OPENAI_MDL",
+    "files": [
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "GROQ_REASONING_MODELS",
+    "newVar": "GROQ_REASON",
+    "files": [
+      "src/llm_tools_adapter.js",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "REASONING_EFFORT",
+    "newVar": "REASON_EFF",
+    "files": [
+      "src/config/prompts.js",
+      "src/llm_tools_adapter.js",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 6
+  },
+  {
+    "oldVar": "OPENAI_API_BASE",
+    "newVar": "OPENAI_BASE",
+    "files": [
+      "src/llm_tools_adapter.js",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "OPENAI_API_KEY",
+    "newVar": "OPENAI_KEY",
+    "files": [
+      "src/endpoints/rag.js",
+      "src/endpoints/tts.js",
+      "src/endpoints/usage.js",
+      "src/tools.js",
+      "scripts/collect-provider-data.js",
+      "scripts/deploy-static.sh",
+      "scripts/deploy.sh",
+      "scripts/ingest-documents.js",
+      "scripts/search-documents.js",
+      ".env.example"
+    ],
+    "occurrences": 15
+  },
+  {
+    "oldVar": "GROQ_API_KEY",
+    "newVar": "GROQ_KEY",
+    "files": [
+      "src/endpoints/billing.js",
+      "src/endpoints/tts.js",
+      "src/endpoints/usage.js",
+      "scripts/collect-provider-data.js",
+      "scripts/deploy-static.sh",
+      "scripts/deploy.sh"
+    ],
+    "occurrences": 10
+  },
+  {
+    "oldVar": "GEMINI_API_KEY",
+    "newVar": "GEMINI_KEY",
+    "files": [
+      "src/endpoints/billing.js",
+      "src/endpoints/tts.js",
+      "src/endpoints/usage.js",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "TOGETHER_API_KEY",
+    "newVar": "TOGETHER_KEY",
+    "files": [
+      "src/endpoints/billing.js",
+      "src/endpoints/usage.js",
+      ".env.example"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "REPLICATE_API_TOKEN",
+    "newVar": "REPLICATE_KEY",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "ELEVENLABS_API_KEY",
+    "newVar": "ELEVENLABS_KEY",
+    "files": [
+      "src/endpoints/billing.js",
+      "src/endpoints/tts.js",
+      "src/endpoints/usage.js"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "ENABLE_IMAGE_GENERATION_OPENAI",
+    "newVar": "IMG_OPENAI",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "ENABLE_IMAGE_GENERATION_TOGETHER",
+    "newVar": "IMG_TOGETHER",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "ENABLE_IMAGE_GENERATION_REPLICATE",
+    "newVar": "IMG_REPLICATE",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "ENABLE_IMAGE_GENERATION_GEMINI",
+    "newVar": "IMG_GEMINI",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+    "newVar": "CB_THRESH",
+    "files": [
+      "src/utils/circuit-breaker.js",
+      ".env.example"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "CIRCUIT_BREAKER_TIMEOUT_MS",
+    "newVar": "CB_TIMEOUT",
+    "files": [
+      "src/utils/circuit-breaker.js",
+      ".env.example"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "GOOGLE_SHEETS_LOG_SPREADSHEET_ID",
+    "newVar": "GS_SHEET_ID",
+    "files": [
+      "src/services/google-sheets-logger.js",
+      "scripts/clear-logs-sheet.js",
+      "scripts/clear-user-data.js",
+      "scripts/copy-sheet-data.js",
+      "scripts/list-sheets.js",
+      "scripts/merge-duplicate-sheets.js",
+      "scripts/migrate-billing-sheet.js",
+      ".env.example"
+    ],
+    "occurrences": 9
+  },
+  {
+    "oldVar": "GOOGLE_SHEETS_LOG_SPREADSHEET_IDS",
+    "newVar": "GS_SHEET_IDS",
+    "files": [
+      "src/services/google-sheets-logger.js",
+      "scripts/clear-user-data.js",
+      "scripts/copy-sheet-data.js",
+      "scripts/migrate-billing-sheet.js"
+    ],
+    "occurrences": 4
+  },
+  {
+    "oldVar": "GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL",
+    "newVar": "GS_EMAIL",
+    "files": [
+      "src/services/google-sheets-logger.js",
+      "scripts/add-dev-credit.js",
+      "scripts/clear-logs-sheet.js",
+      "scripts/clear-user-data.js",
+      "scripts/copy-sheet-data.js",
+      "scripts/list-sheets.js",
+      "scripts/merge-duplicate-sheets.js",
+      "scripts/migrate-billing-sheet.js",
+      ".env.example"
+    ],
+    "occurrences": 13
+  },
+  {
+    "oldVar": "GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY",
+    "newVar": "GS_KEY",
+    "files": [
+      "src/services/google-sheets-logger.js",
+      "scripts/add-dev-credit.js",
+      "scripts/clear-logs-sheet.js",
+      "scripts/clear-user-data.js",
+      "scripts/copy-sheet-data.js",
+      "scripts/list-sheets.js",
+      "scripts/merge-duplicate-sheets.js",
+      "scripts/migrate-billing-sheet.js",
+      ".env.example"
+    ],
+    "occurrences": 13
+  },
+  {
+    "oldVar": "GOOGLE_SHEETS_LOG_SHEET_NAME",
+    "newVar": "GS_NAME",
+    "files": [
+      "src/services/google-sheets-logger.js",
+      "scripts/clear-logs-sheet.js",
+      ".env.example"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "GOOGLE_SHEETS_CREDENTIALS",
+    "newVar": "GS_CREDS",
+    "files": [
+      "src/endpoints/file.js",
+      "src/endpoints/rag-sync.js"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "GOOGLE_SHEETS_SPREADSHEET_ID",
+    "newVar": "GS_ID",
+    "files": [
+      "src/endpoints/file.js",
+      "src/endpoints/rag-sync.js"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "PAYPAL_CLIENT_ID",
+    "newVar": "PP_CID",
+    "files": [
+      "src/endpoints/paypal.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "PAYPAL_CLIENT_SECRET",
+    "newVar": "PP_SEC",
+    "files": [
+      "src/endpoints/paypal.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "PAYPAL_MODE",
+    "newVar": "PP_MODE",
+    "files": [
+      "src/endpoints/paypal.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MIN_CREDIT_PURCHASE",
+    "newVar": "MIN_CREDIT",
+    "files": [
+      "src/endpoints/paypal.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "PAYPAL_SUCCESS_URL",
+    "newVar": "PP_SUCCESS",
+    "files": [
+      "src/endpoints/paypal.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "PAYPAL_CANCEL_URL",
+    "newVar": "PP_CANCEL",
+    "files": [
+      "src/endpoints/paypal.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "AWS_LAMBDA_FUNCTION_MEMORY_SIZE",
+    "newVar": "AWS_MEM",
+    "files": [
+      "src/config/memory.js",
+      "src/endpoints/generate-image.js",
+      "src/endpoints/transcribe.js",
+      "src/endpoints/tts.js",
+      "src/index.js",
+      "src/memory-tracker.js",
+      "src/puppeteer-handler.js",
+      "src/tools.js",
+      "src/utils/credit-check.js",
+      "src/utils/memory-tracker.js",
+      ".env.example"
+    ],
+    "occurrences": 22
+  },
+  {
+    "oldVar": "AWS_LAMBDA_FUNCTION_NAME",
+    "newVar": "AWS_FN",
+    "files": [
+      "src/scrapers/tier-1-puppeteer.js",
+      "src/scrapers/tier-3-selenium.js",
+      "src/scrapers/tier-4-interactive.js",
+      "src/scrapers/tier-orchestrator.js",
+      "src/scrapers/youtube-caption-scraper.js",
+      "src/services/google-sheets-logger.js",
+      "src/tools.js",
+      "src/tools/transcribe.js",
+      "src/youtube-api.js",
+      "scripts/verify-implementation.sh"
+    ],
+    "occurrences": 11
+  },
+  {
+    "oldVar": "AWS_EXECUTION_ENV",
+    "newVar": "AWS_EXEC",
+    "files": [
+      "src/endpoints/chat.js",
+      "src/endpoints/transcribe.js",
+      "src/rag/embeddings.js"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "AWS_REGION",
+    "newVar": "AWS_RGN",
+    "files": [
+      "src/tools.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LIBSQL_URL",
+    "newVar": "DB_URL",
+    "files": [
+      "src/rag/libsql-storage.js",
+      "src/rag/search.js",
+      "src/tools.js",
+      "scripts/db-stats.js",
+      "scripts/delete-document.js",
+      "scripts/ingest-documents.js",
+      "scripts/list-documents.js",
+      "scripts/search-documents.js"
+    ],
+    "occurrences": 11
+  },
+  {
+    "oldVar": "LIBSQL_AUTH_TOKEN",
+    "newVar": "DB_TOKEN",
+    "files": [
+      "src/rag/libsql-storage.js",
+      "src/rag/search.js",
+      "scripts/db-stats.js",
+      "scripts/delete-document.js",
+      "scripts/list-documents.js"
+    ],
+    "occurrences": 5
+  },
+  {
+    "oldVar": "USE_LIBSQL",
+    "newVar": "USE_DB",
+    "files": [
+      "src/rag/search.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "RAG_EMBEDDING_MODEL",
+    "newVar": "RAG_MDL",
+    "files": [
+      "src/endpoints/rag.js",
+      "src/tools.js",
+      "scripts/ingest-documents.js"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "RAG_EMBEDDING_PROVIDER",
+    "newVar": "RAG_PROV",
+    "files": [
+      "src/tools.js",
+      "scripts/ingest-documents.js"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "MAX_TOKENS_PLANNING",
+    "newVar": "TOK_PLAN",
+    "files": [
+      "src/config/tokens.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MAX_TOKENS_TOOL_SYNTHESIS",
+    "newVar": "TOK_SYNTH",
+    "files": [
+      "src/config/tokens.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MAX_TOKENS_LOW_COMPLEXITY",
+    "newVar": "TOK_LOW",
+    "files": [
+      "src/config/tokens.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MAX_TOKENS_MEDIUM_COMPLEXITY",
+    "newVar": "TOK_MED",
+    "files": [
+      "src/config/tokens.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MAX_TOKENS_HIGH_COMPLEXITY",
+    "newVar": "TOK_HIGH",
+    "files": [
+      "src/config/tokens.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MAX_TOKENS_MATH_RESPONSE",
+    "newVar": "TOK_MATH",
+    "files": [
+      "src/config/tokens.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MAX_TOKENS_FINAL_RESPONSE",
+    "newVar": "TOK_FINAL",
+    "files": [
+      "src/config/tokens.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CACHE_TTL_SEARCH",
+    "newVar": "CACHE_SRCH",
+    "files": [
+      "src/utils/cache.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CACHE_TTL_TRANSCRIPTIONS",
+    "newVar": "CACHE_TRANS",
+    "files": [
+      "src/utils/cache.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CACHE_TTL_SCRAPES",
+    "newVar": "CACHE_SCRP",
+    "files": [
+      "src/utils/cache.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CACHE_TTL_RAG_QUERIES",
+    "newVar": "CACHE_RAG",
+    "files": [
+      "src/utils/cache.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CACHE_TTL_RAG_EMBEDDINGS",
+    "newVar": "CACHE_EMB",
+    "files": [
+      "src/utils/cache.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLM_PROFIT_MARGIN",
+    "newVar": "LLM_MARGIN",
+    "files": [
+      "src/services/google-sheets-logger.js"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "LAMBDA_PROFIT_MARGIN",
+    "newVar": "LAM_MARGIN",
+    "files": [
+      "src/services/google-sheets-logger.js",
+      "src/utils/credit-check.js"
+    ],
+    "occurrences": 6
+  },
+  {
+    "oldVar": "DISABLE_CREDIT_CHECKS",
+    "newVar": "NO_CREDIT_CHK",
+    "files": [
+      "src/utils/credit-check.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LOCAL_LAMBDA",
+    "newVar": "LOCAL",
+    "files": [
+      "src/endpoints/chat.js",
+      "src/endpoints/transcribe.js",
+      "src/rag/embeddings.js"
+    ],
+    "occurrences": 3
+  },
+  {
+    "oldVar": "LOCAL_LAMBDA_PORT",
+    "newVar": "LOCAL_PORT",
+    "files": [
+      "scripts/run-local-lambda.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "NODE_ENV",
+    "newVar": "ENV",
+    "files": [
+      "src/endpoints/chat.js",
+      "src/endpoints/convert.js",
+      "src/endpoints/generate-image.js",
+      "src/endpoints/rag-sync.js",
+      "src/endpoints/transcribe.js",
+      "src/lambda_search_llm_handler.js",
+      "src/puppeteer-handler.js",
+      "src/rag/embeddings.js",
+      "src/scrapers/tier-orchestrator.js",
+      "src/tools.js",
+      "scripts/run-local-lambda.js"
+    ],
+    "occurrences": 11
+  },
+  {
+    "oldVar": "SYSTEM_PROMPT_SEARCH",
+    "newVar": "SYS_SRCH",
+    "files": [
+      "src/config/prompts.js",
+      "scripts/deploy.sh",
+      ".env.example"
+    ],
+    "occurrences": 4
+  },
+  {
+    "oldVar": "SYSTEM_PROMPT_DIGEST_ANALYST",
+    "newVar": "SYS_DIGEST",
+    "files": [
+      "src/tools.js",
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "FINAL_TEMPLATE",
+    "newVar": "TPL_FINAL",
+    "files": [
+      "src/lambda_search_llm_handler.js",
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "TAVILY_API_KEY",
+    "newVar": "TAVILY_KEY",
+    "files": [
+      "src/scrapers/tier-0-direct.js"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "PYTHON_VENV_PATH",
+    "newVar": "PYTHON_VENV",
+    "files": [
+      "src/scrapers/tier-3-selenium.js"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "SLOW_MO",
+    "newVar": "SLOWMO",
+    "files": [
+      "src/scrapers/puppeteer-local.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CREDIT_CACHE_TTL_MS",
+    "newVar": "CR_TTL",
+    "files": [
+      "src/utils/credit-cache.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "CREDIT_CACHE_MAX_SIZE",
+    "newVar": "CR_MAX",
+    "files": [
+      "src/utils/credit-cache.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "MAX_TODO_AUTO_ITERATIONS",
+    "newVar": "MAX_TODO",
+    "files": [
+      "src/endpoints/chat.js"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LAMBDA_MEMORY",
+    "newVar": "LAM_MEM",
+    "files": [
+      "src/config/memory.js",
+      "src/memory-tracker.js"
+    ],
+    "occurrences": 4
+  },
+  {
+    "oldVar": "VITE_API_BASE",
+    "newVar": "VITE_API",
+    "files": [
+      "ui-new/src/components/BillingPage.tsx",
+      "ui-new/src/contexts/YouTubeAuthContext.tsx",
+      "ui-new/src/services/tts/ElevenLabsProvider.ts",
+      "ui-new/src/services/tts/LLMProviderTTSProvider.ts",
+      "ui-new/src/utils/api.ts",
+      "ui-new/src/utils/auth.ts"
+    ],
+    "occurrences": 10
+  },
+  {
+    "oldVar": "VITE_LAMBDA_URL",
+    "newVar": "VITE_LAM",
+    "files": [
+      "ui-new/src/components/SwagPage.tsx",
+      "ui-new/src/utils/api.ts"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "VITE_LOCAL_LAMBDA_URL",
+    "newVar": "VITE_LOCAL",
+    "files": [
+      "ui-new/src/utils/api.ts"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "VITE_GOOGLE_CLIENT_ID",
+    "newVar": "VITE_GGL_CID",
+    "files": [
+      "ui-new/src/App.tsx",
+      "ui-new/src/components/CloudSyncSettings.tsx",
+      "ui-new/src/components/LoginScreen.tsx",
+      "ui-new/src/contexts/SwagContext.tsx",
+      "ui-new/src/contexts/YouTubeAuthContext.tsx",
+      "ui-new/src/utils/auth.ts",
+      "ui-new/src/utils/googleDocs.ts"
+    ],
+    "occurrences": 7
+  },
+  {
+    "oldVar": "VITE_PAYPAL_CLIENT_ID",
+    "newVar": "VITE_PP_CID",
+    "files": [
+      "ui-new/src/main.tsx"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "VITE_API_ENDPOINT",
+    "newVar": "VITE_EP",
+    "files": [
+      "ui-new/src/contexts/YouTubeAuthContext.tsx"
+    ],
+    "occurrences": 2
+  },
+  {
+    "oldVar": "VITE_BACKEND_URL",
+    "newVar": "VITE_BACK",
+    "files": [
+      "ui-new/src/utils/imageUtils.ts"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_TYPE_0",
+    "newVar": "P_T0",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_TYPE_1",
+    "newVar": "P_T1",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_TYPE_2",
+    "newVar": "P_T2",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_KEY_0",
+    "newVar": "P_K0",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_KEY_1",
+    "newVar": "P_K1",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_KEY_2",
+    "newVar": "P_K2",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_PRIORITY_0",
+    "newVar": "P_P0",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_PRIORITY_1",
+    "newVar": "P_P1",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  },
+  {
+    "oldVar": "LLAMDA_LLM_PROXY_PROVIDER_PRIORITY_2",
+    "newVar": "P_P2",
+    "files": [
+      ".env.example"
+    ],
+    "occurrences": 1
+  }
+]

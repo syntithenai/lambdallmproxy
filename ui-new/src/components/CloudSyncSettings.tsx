@@ -121,7 +121,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
         throw new Error('Google Identity Services not loaded. Please refresh the page.');
       }
 
-      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const clientId = import.meta.env.VITE_GGL_CID;
       
       if (!clientId) {
         throw new Error('Google Client ID not configured. Please set VITE_GOOGLE_CLIENT_ID in ui-new/.env');

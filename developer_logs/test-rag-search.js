@@ -27,7 +27,7 @@ async function testSearch() {
       const result = await tools.callFunction(
         'search_knowledge_base',
         { query, top_k: 3, threshold },
-        { apiKey: process.env.OPENAI_API_KEY }
+        { apiKey: process.env.OPENAI_KEY }
       );
       
       const parsed = JSON.parse(result);

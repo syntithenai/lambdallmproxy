@@ -16,7 +16,7 @@
  * Availability: Local development only (requires interactive environment)
  */
 
-const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const IS_LAMBDA = !!process.env.AWS_FN;
 
 // Prevent loading on Lambda
 if (IS_LAMBDA) {

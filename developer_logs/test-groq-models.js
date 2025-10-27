@@ -10,7 +10,7 @@ const axios = require('axios');
 
 dotenv.config();
 
-const GROQ_API_KEY = process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0;
+const GROQ_KEY = process.env.P_K0;
 
 // Chat completion models to test (excluding TTS, Whisper, Prompt Guard)
 const MODELS_TO_TEST = [
@@ -43,7 +43,7 @@ async function testModel(model) {
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${GROQ_API_KEY}`,
+                    'Authorization': `Bearer ${GROQ_KEY}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 10000
@@ -120,9 +120,9 @@ async function main() {
     if (successful.length > 0) {
         successful.forEach((r, idx) => {
             const providerNum = idx + 1;
-            console.log(`LLAMDA_LLM_PROXY_PROVIDER_TYPE_${providerNum}=groq-free`);
-            console.log(`LLAMDA_LLM_PROXY_PROVIDER_KEY_${providerNum}=${GROQ_API_KEY}`);
-            console.log(`LLAMDA_LLM_PROXY_PROVIDER_MODEL_${providerNum}=${r.model}`);
+            console.log(`P_T${providerNum}=groq-free`);
+            console.log(`P_K${providerNum}=${GROQ_KEY}`);
+            console.log(`P_M${providerNum}=${r.model}`);
             console.log('');
         });
     }

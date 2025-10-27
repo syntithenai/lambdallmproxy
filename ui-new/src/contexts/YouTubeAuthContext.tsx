@@ -36,8 +36,8 @@ const YouTubeAuthContext = createContext<YouTubeAuthContextValue | undefined>(un
 // OAuth configuration
 // Uses VITE_GOOGLE_CLIENT_ID from ui-new/.env
 const OAUTH_CONFIG = {
-  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-  redirectUri: `${import.meta.env.VITE_API_BASE}/oauth/callback`,
+  clientId: import.meta.env.VITE_GGL_CID,
+  redirectUri: `${import.meta.env.VITE_API}/oauth/callback`,
   scope: 'https://www.googleapis.com/auth/youtube.force-ssl', // Required for captions.list API
   authUrl: 'https://accounts.google.com/o/oauth2/v2/auth'
 };
@@ -209,7 +209,7 @@ export const YouTubeAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
         return;
       }
 
-      const apiEndpoint = import.meta.env.VITE_API_ENDPOINT || 
+      const apiEndpoint = import.meta.env.VITE_EP || 
         'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
 
       console.log('Refreshing YouTube OAuth tokens...');
@@ -286,7 +286,7 @@ export const YouTubeAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
     try {
       const jwtToken = getJwtToken();
       if (jwtToken) {
-        const apiEndpoint = import.meta.env.VITE_API_ENDPOINT || 
+        const apiEndpoint = import.meta.env.VITE_EP || 
           'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
 
         console.log('Revoking YouTube OAuth tokens...');

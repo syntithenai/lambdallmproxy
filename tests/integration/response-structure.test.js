@@ -61,7 +61,7 @@ describe.skip('Lambda Response Structure (Streaming)', () => {
     };
 
     process.env.ACCESS_SECRET = 'structure-secret';
-    process.env.GROQ_API_KEY = 'structure-api-key';
+    process.env.GROQ_KEY = 'structure-api-key';
 
     baseEvent = {
       httpMethod: 'POST',
@@ -102,7 +102,7 @@ describe.skip('Lambda Response Structure (Streaming)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     delete process.env.ACCESS_SECRET;
-    delete process.env.GROQ_API_KEY;
+    delete process.env.GROQ_KEY;
   });
 
   test('emits init, llm events, and completion metadata', async () => {

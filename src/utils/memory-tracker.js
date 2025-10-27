@@ -43,7 +43,7 @@ class MemoryTracker {
     constructor() {
         this.snapshots = [];
         this.startTime = Date.now();
-        this.lambdaMemoryLimit = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 256;
+        this.lambdaMemoryLimit = parseInt(process.env.AWS_MEM) || 256;
         
         // Take initial snapshot
         this.snapshot('init');

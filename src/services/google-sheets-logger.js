@@ -133,13 +133,13 @@ const ARCHIVE_AFTER_DAYS = 90;  // Days before summarizing transactions
  */
 function getShardSpreadsheetIds() {
     // Try new format first (comma-separated list)
-    const newFormat = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_IDS;
+    const newFormat = process.env.GS_SHEET_IDS;
     if (newFormat) {
         return newFormat.split(',').map(id => id.trim()).filter(id => id.length > 0);
     }
     
     // Fallback to old format (single ID)
-    const oldFormat = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+    const oldFormat = process.env.GS_SHEET_ID;
     if (oldFormat) {
         return [oldFormat];
     }
@@ -220,7 +220,7 @@ function calculateCost(model, promptTokens, completionTokens, fixedCost = null, 
     
     // If fixed cost provided (e.g., image generation), apply surcharge
     if (fixedCost !== null && fixedCost !== undefined) {
-        const surcharge = parseFloat(process.env.LLM_PROFIT_MARGIN || '25') / 100;
+        const surcharge = parseFloat(process.env.LLM_MARGIN || '25') / 100;
         const totalCost = fixedCost * (1 + surcharge);
         console.log(`💰 Cost calculation: $${fixedCost.toFixed(6)} + ${(surcharge * 100).toFixed(0)}% surcharge = $${totalCost.toFixed(6)} (server-side key, fixed cost)`);
         return totalCost;
@@ -241,7 +241,7 @@ function calculateCost(model, promptTokens, completionTokens, fixedCost = null, 
     const baseCost = inputCost + outputCost;
     
     // Apply surcharge for server-side keys
-    const surcharge = parseFloat(process.env.LLM_PROFIT_MARGIN || '25') / 100;
+    const surcharge = parseFloat(process.env.LLM_MARGIN || '25') / 100;
     const totalCost = baseCost * (1 + surcharge);
     
     console.log(`💰 Cost calculation: $${baseCost.toFixed(6)} + ${(surcharge * 100).toFixed(0)}% surcharge = $${totalCost.toFixed(6)} (server-side key)`);
@@ -313,7 +313,7 @@ function calculateLambdaCost(memoryMB, durationMs) {
     
     // Apply profit margin (default 6x, configurable via env var)
     // Note: 6x is industry standard for infrastructure (AWS API Gateway uses 3-6x)
-    const profitMargin = parseFloat(process.env.LAMBDA_PROFIT_MARGIN) || 6;
+    const profitMargin = parseFloat(process.env.LAM_MARGIN) || 6;
     const totalCost = awsCost * profitMargin;
     
     return totalCost;
@@ -1372,8 +1372,8 @@ async function appendToSheet(spreadsheetId, range, values, accessToken) {
  */
 async function logToGoogleSheets(logData) {
     // Check if Google Sheets logging is configured
-    const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-    const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+    const serviceAccountEmail = process.env.GS_EMAIL;
+    const privateKey = process.env.GS_KEY;
     
     // Get user-specific sheet name (each user gets their own tab)
     const userEmail = logData.userEmail || 'unknown';
@@ -1530,10 +1530,10 @@ async function logToGoogleSheets(logData) {
  */
 async function initializeSheet() {
     try {
-        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
-        const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
+        const spreadsheetId = process.env.GS_SHEET_ID;
+        const serviceAccountEmail = process.env.GS_EMAIL;
+        const privateKey = process.env.GS_KEY;
+        const sheetName = process.env.GS_NAME || 'LLM Usage Log';
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             console.log('ℹ️ Google Sheets logging not configured');
@@ -1666,9 +1666,9 @@ async function getSheetData(spreadsheetId, range, accessToken) {
 async function getUserTotalCost(userEmail) {
     try {
         // Check if Google Sheets logging is configured
-        const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const spreadsheetId = process.env.GS_SHEET_ID;
+        const serviceAccountEmail = process.env.GS_EMAIL;
+        const privateKey = process.env.GS_KEY;
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             console.log('ℹ️ Google Sheets logging not configured - returning 0 cost');
@@ -1759,8 +1759,8 @@ async function getUserTotalCost(userEmail) {
 async function getUserBillingData(userEmail, filters = {}) {
     try {
         // Check if Google Sheets logging is configured
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const serviceAccountEmail = process.env.GS_EMAIL;
+        const privateKey = process.env.GS_KEY;
         
         // ⚡ SHARDING: Get user-specific spreadsheet ID
         const spreadsheetId = getShardSpreadsheetId(userEmail);
@@ -1892,8 +1892,8 @@ async function getUserBillingData(userEmail, filters = {}) {
 async function logLambdaInvocation(logData) {
     try {
         // Check if Google Sheets logging is configured
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const serviceAccountEmail = process.env.GS_EMAIL;
+        const privateKey = process.env.GS_KEY;
         
         // Get user-specific spreadsheet ID (supports sharding)
         const userEmail = logData.userEmail || 'unknown';
@@ -1962,7 +1962,7 @@ async function logLambdaInvocation(logData) {
         
         // Get hostname
         const os = require('os');
-        const hostname = logData.hostname || process.env.AWS_LAMBDA_FUNCTION_NAME || os.hostname() || 'unknown';
+        const hostname = logData.hostname || process.env.AWS_FN || os.hostname() || 'unknown';
         
         // Prepare row data - use same schema as LLM logs but with lambda_invocation type
         const rowData = [
@@ -2405,8 +2405,8 @@ async function summarizeOldTransactionsIfNeeded(userEmail, spreadsheetId, access
 async function getUserCreditBalance(userEmail) {
     try {
         const spreadsheetId = getShardSpreadsheetId(userEmail);  // ⚡ SHARDING: User-specific spreadsheet
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const serviceAccountEmail = process.env.GS_EMAIL;
+        const privateKey = process.env.GS_KEY;
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             console.log('❌ Google Sheets logging not configured - cannot calculate balance');

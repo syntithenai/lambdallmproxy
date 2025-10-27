@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { GitHubLink } from './GitHubLink';
+import { Link } from 'react-router-dom';
 
 export const LoginScreen: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -17,7 +18,7 @@ export const LoginScreen: React.FC = () => {
     if (buttonRef.current) {
       const initializeGoogleButton = () => {
         if (typeof google !== 'undefined' && google.accounts) {
-          const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+          const clientId = import.meta.env.VITE_GGL_CID;
           
           if (!clientId) {
             console.error('❌ VITE_GOOGLE_CLIENT_ID not configured in ui-new/.env');
@@ -85,16 +86,16 @@ export const LoginScreen: React.FC = () => {
             onChange={(e) => handleLanguageChange(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="en">{t('languages.en')}</option>
-            <option value="es">{t('languages.es')}</option>
-            <option value="fr">{t('languages.fr')}</option>
-            <option value="de">{t('languages.de')}</option>
-            <option value="nl">{t('languages.nl')}</option>
-            <option value="pt">{t('languages.pt')}</option>
-            <option value="ru">{t('languages.ru')}</option>
-            <option value="zh">{t('languages.zh')}</option>
-            <option value="ja">{t('languages.ja')}</option>
-            <option value="ar">{t('languages.ar')}</option>
+            <option value="en">🇬🇧 {t('languages.en')}</option>
+            <option value="es">🇪🇸 {t('languages.es')}</option>
+            <option value="fr">🇫🇷 {t('languages.fr')}</option>
+            <option value="de">🇩🇪 {t('languages.de')}</option>
+            <option value="nl">🇳🇱 {t('languages.nl')}</option>
+            <option value="pt">🇵🇹 {t('languages.pt')}</option>
+            <option value="ru">🇷🇺 {t('languages.ru')}</option>
+            <option value="zh">🇨🇳 {t('languages.zh')}</option>
+            <option value="ja">🇯🇵 {t('languages.ja')}</option>
+            <option value="ar">🇸🇦 {t('languages.ar')}</option>
           </select>
         </div>
 
@@ -127,6 +128,16 @@ export const LoginScreen: React.FC = () => {
 
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {t('auth.secureAuth')}
+          </div>
+
+          {/* Privacy Link */}
+          <div className="mt-3">
+            <Link 
+              to="/privacy" 
+              className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            >
+              🔒 Privacy Policy
+            </Link>
           </div>
         </div>
 

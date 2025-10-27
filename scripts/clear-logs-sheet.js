@@ -13,10 +13,10 @@ async function main() {
     console.log('🧹 Clearing Google Sheets log...\n');
     
     // Check environment variables
-    const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
-    const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-    const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
-    const sheetName = process.env.GOOGLE_SHEETS_LOG_SHEET_NAME || 'LLM Usage Log';
+    const spreadsheetId = process.env.GS_SHEET_ID;
+    const serviceAccountEmail = process.env.GS_EMAIL;
+    const privateKey = process.env.GS_KEY;
+    const sheetName = process.env.GS_NAME || 'LLM Usage Log';
     
     if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
         console.error('❌ Missing required environment variables:');

@@ -4,8 +4,8 @@
  */
 
 // Tools flow configuration
-const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS) || 15;
-const DEFAULT_REASONING_EFFORT = process.env.REASONING_EFFORT || 'medium';
+const MAX_TOOL_ITERATIONS = Number(process.env.MAX_ITER) || 15;
+const DEFAULT_REASONING_EFFORT = process.env.REASON_EFF || 'medium';
 
 // Helper function to get current date/time string
 function getCurrentDateTime() {
@@ -31,7 +31,7 @@ function getCurrentDateTime() {
 function getComprehensiveResearchSystemPrompt() {
     const currentDateTime = getCurrentDateTime();
     
-    return process.env.SYSTEM_PROMPT_SEARCH || `You are a highly knowledgeable AI research assistant with computational tools. Provide comprehensive, structured responses with proper citations.
+    return process.env.SYS_SRCH || `You are a highly knowledgeable AI research assistant with computational tools. Provide comprehensive, structured responses with proper citations.
 
 **CURRENT DATE/TIME:**
 ${currentDateTime}

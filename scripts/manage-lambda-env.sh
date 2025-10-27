@@ -44,7 +44,7 @@ print_error() {
 clear_provider_keys() {
     print_header "Clearing Provider Keys for Pure Client Mode"
     
-    echo "This will remove OPENAI_API_KEY and GROQ_API_KEY from Lambda"
+    echo "This will remove OPENAI_KEY and GROQ_KEY from Lambda"
     echo "Users will need to provide their own API keys"
     echo ""
     read -p "Continue? (y/n) " -n 1 -r
@@ -63,7 +63,7 @@ clear_provider_keys() {
         --output json)
     
     # Remove provider keys
-    UPDATED_ENV=$(echo "$CURRENT_ENV" | jq 'del(.OPENAI_API_KEY, .GROQ_API_KEY)')
+    UPDATED_ENV=$(echo "$CURRENT_ENV" | jq 'del(.OPENAI_KEY, .GROQ_KEY)')
     
     # Update Lambda
     echo "🔄 Updating Lambda function..."
@@ -111,10 +111,10 @@ set_legacy_keys() {
     # Add provider keys
     UPDATED_ENV="$CURRENT_ENV"
     if [ -n "$OPENAI_KEY" ]; then
-        UPDATED_ENV=$(echo "$UPDATED_ENV" | jq --arg key "$OPENAI_KEY" '. + {OPENAI_API_KEY: $key}')
+        UPDATED_ENV=$(echo "$UPDATED_ENV" | jq --arg key "$OPENAI_KEY" '. + {OPENAI_KEY: $key}')
     fi
     if [ -n "$GROQ_KEY" ]; then
-        UPDATED_ENV=$(echo "$UPDATED_ENV" | jq --arg key "$GROQ_KEY" '. + {GROQ_API_KEY: $key}')
+        UPDATED_ENV=$(echo "$UPDATED_ENV" | jq --arg key "$GROQ_KEY" '. + {GROQ_KEY: $key}')
     fi
     
     # Update Lambda
@@ -136,8 +136,8 @@ set_new_format_providers() {
     print_header "Setting New Format Provider Keys"
     
     echo "This will set provider keys in the new indexed format:"
-    echo "  - LLAMDA_LLM_PROXY_PROVIDER_TYPE_N"
-    echo "  - LLAMDA_LLM_PROXY_PROVIDER_KEY_N"
+    echo "  - P_T<N>"
+    echo "  - P_K<N>"
     echo ""
     
     # Read from .env file
@@ -156,7 +156,7 @@ set_new_format_providers() {
         --output json)
     
     # Extract provider variables from .env
-    PROVIDER_VARS=$(grep "^LLAMDA_LLM_PROXY_PROVIDER_" .env | grep -v "^#")
+    PROVIDER_VARS=$(grep "^P_" .env | grep -v "^#")
     
     if [ -z "$PROVIDER_VARS" ]; then
         print_warning "No uncommented provider variables found in .env"
@@ -207,7 +207,7 @@ show_menu() {
     echo "====================================="
     echo "1) Show current environment variables"
     echo "2) Clear provider keys (pure client mode)"
-    echo "3) Set legacy provider keys (OPENAI_API_KEY, GROQ_API_KEY)"
+    echo "3) Set legacy provider keys (OPENAI_KEY, GROQ_KEY)"
     echo "4) Set new format providers (from .env file)"
     echo "5) Exit"
     echo ""

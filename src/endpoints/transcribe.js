@@ -207,7 +207,10 @@ async function handler(event, context) {
             return {
                 statusCode: 401,
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
                 },
                 body: JSON.stringify({
                     error: 'Missing or invalid authorization header'
@@ -225,7 +228,10 @@ async function handler(event, context) {
             return {
                 statusCode: 401,
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
                 },
                 body: JSON.stringify({
                     error: 'Invalid or expired token'
@@ -256,6 +262,9 @@ async function handler(event, context) {
                 statusCode: 400,
                 headers: {
                     'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
                 },
                 body: JSON.stringify({
                     error: `Failed to parse form data: ${e.message}`
@@ -272,6 +281,9 @@ async function handler(event, context) {
                 statusCode: 400,
                 headers: {
                     'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
                 },
                 body: JSON.stringify({
                     error: 'No audio file provided'
@@ -292,7 +304,12 @@ async function handler(event, context) {
             console.log(`💳 Insufficient credit for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
             return {
                 statusCode: creditCheck.error.statusCode,
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+                },
                 body: JSON.stringify(creditCheck.error)
             };
         }
@@ -342,6 +359,9 @@ async function handler(event, context) {
                 statusCode: 500,
                 headers: {
                     'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
                 },
                 body: JSON.stringify({
                     error: 'Whisper API key not configured. Please add a Groq or OpenAI API key in the Providers page (Settings → Providers). Groq provides FREE transcription.'
@@ -378,9 +398,9 @@ async function handler(event, context) {
                 // Calculate cost - Groq is FREE, OpenAI is $0.006/minute
                 // Estimate duration from audio size: ~1MB = ~1 minute (rough estimate)
                 // Local development is also FREE
-                const isLocal = process.env.LOCAL_LAMBDA === 'true' || 
-                               process.env.NODE_ENV === 'development' ||
-                               process.env.AWS_EXECUTION_ENV === undefined;
+                const isLocal = process.env.LOCAL === 'true' || 
+                               process.env.ENV === 'development' ||
+                               process.env.AWS_EXEC === undefined;
                 const estimatedMinutes = audioPart.data.length / (1024 * 1024);
                 const cost = (isLocal || whisperProvider === 'groq') ? 0 : estimatedMinutes * 0.006;
                 
@@ -416,7 +436,7 @@ async function handler(event, context) {
                     
                     // Use custom request ID if provided, otherwise generate from context
                     const requestId = customRequestId || context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                    const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
+                    const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
                     const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
                     
                     logToGoogleSheets({
@@ -470,6 +490,9 @@ async function handler(event, context) {
                     statusCode: 500,
                     headers: {
                         'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*',
+                        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
                     },
                     body: JSON.stringify({
                         error: `Transcription failed: ${e.message}`
@@ -483,6 +506,9 @@ async function handler(event, context) {
             statusCode: 200,
             headers: {
                 'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
             },
             body: JSON.stringify({
                 text: transcribedText,
@@ -499,6 +525,9 @@ async function handler(event, context) {
             statusCode: 500,
             headers: {
                 'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
             },
             body: JSON.stringify({
                 error: error.message || 'Internal server error'

@@ -8,7 +8,7 @@ const { downloadYouTubeAudio, isYouTubeUrl, extractVideoId } = require('./youtub
 const { splitAudioIntoChunks, mergeTranscriptions } = require('./audio-chunker');
 const { checkStopSignal, clearStopSignal } = require('../utils/stop-signal');
 
-const IS_LAMBDA = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const IS_LAMBDA = !!process.env.AWS_FN;
 
 /**
  * Get YouTube captions via Selenium as fallback when ytdl-core fails

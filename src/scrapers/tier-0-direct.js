@@ -206,7 +206,7 @@ async function scrapeViaDDGProxy(url, options = {}) {
  * @returns {Promise<Object>} Scraped content
  */
 async function scrapeViaTavily(url, options = {}) {
-  const apiKey = process.env.TAVILY_API_KEY;
+  const apiKey = process.env.TAVILY_KEY;
   
   if (!apiKey) {
     throw new Error('TAVILY_API_KEY not configured');
@@ -279,7 +279,7 @@ async function scrapeTier0(url, options = {}) {
   }
 
   // Try 3: Tavily API (if configured)
-  if (process.env.TAVILY_API_KEY) {
+  if (process.env.TAVILY_KEY) {
     try {
       return await scrapeViaTavily(url, options);
     } catch (error) {

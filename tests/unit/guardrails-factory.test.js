@@ -87,8 +87,8 @@ describe('Guardrails Factory', () => {
     });
 
     test('should create validator with indexed env var API key', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'indexed-groq-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'indexed-groq-key';
       const config = {
         enabled: true,
         provider: 'groq-free',
@@ -386,8 +386,8 @@ describe('Guardrails Factory', () => {
 
   describe('Context Priority', () => {
     test('should prefer context key over indexed env var', () => {
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'indexed-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'indexed-key';
       const config = {
         enabled: true,
         provider: 'groq-free',

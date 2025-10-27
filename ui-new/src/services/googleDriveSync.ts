@@ -265,7 +265,7 @@ class GoogleDriveSync {
    */
   async syncPlans(): Promise<SyncResult> {
     try {
-      const localPlans = getAllCachedPlans();
+      const localPlans = await getAllCachedPlans();
       const localTimestamp = localPlans.length > 0 
         ? Math.max(...localPlans.map(p => p.timestamp))
         : 0;
@@ -303,7 +303,7 @@ class GoogleDriveSync {
       // Determine sync action
       if (remoteTimestamp > localTimestamp) {
         // Remote is newer - download and merge
-        this.mergePlans(remotePlans);
+        await this.mergePlans(remotePlans);
         await this.updateSyncMetadata('plans', remotePlans.length);
         return {
           success: true,
@@ -363,8 +363,8 @@ class GoogleDriveSync {
    * Merge remote plans into local storage
    * Deduplicates by query (case-insensitive), keeps newer timestamp
    */
-  private mergePlans(remotePlans: CachedPlan[]): void {
-    const localPlans = getAllCachedPlans();
+  private async mergePlans(remotePlans: CachedPlan[]): Promise<void> {
+    const localPlans = await getAllCachedPlans();
     const mergedMap = new Map<string, CachedPlan>();
 
     // Add local plans to map
@@ -389,10 +389,10 @@ class GoogleDriveSync {
       .slice(0, 50); // Limit to 50 most recent
 
     // Clear and repopulate local storage
-    clearAllCachedPlans();
-    mergedPlans.forEach(plan => {
-      saveCachedPlan(plan.query, plan.plan, plan.systemPrompt, plan.userPrompt);
-    });
+    await clearAllCachedPlans();
+    for (const plan of mergedPlans) {
+      await saveCachedPlan(plan.query, plan.plan, plan.systemPrompt, plan.userPrompt);
+    }
   }
 
   /**

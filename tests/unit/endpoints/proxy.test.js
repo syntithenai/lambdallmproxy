@@ -12,8 +12,8 @@ jest.mock('../../../src/auth');
 describe.skip('Proxy Endpoint', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        delete process.env.GROQ_API_KEY;
-        delete process.env.OPENAI_API_KEY;
+        delete process.env.GROQ_KEY;
+        delete process.env.OPENAI_KEY;
     });
     
     describe('validateOpenAIRequest', () => {
@@ -237,7 +237,7 @@ describe.skip('Proxy Endpoint', () => {
         });
         
         it('should use env API key for verified user', async () => {
-            process.env.OPENAI_API_KEY = 'env-api-key';
+            process.env.OPENAI_KEY = 'env-api-key';
             
             const mockUser = { email: 'user@example.com', name: 'Test User' };
             verifyGoogleToken.mockReturnValue(mockUser);

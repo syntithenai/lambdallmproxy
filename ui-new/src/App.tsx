@@ -27,17 +27,28 @@ import { SwagPage } from './components/SwagPage';
 import BillingPage from './components/BillingPage';
 import { HelpPage } from './components/HelpPage';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
+import { SharedSnippetViewer } from './components/SharedSnippetViewer';
+import { ImageEditorPage } from './components/ImageEditor/ImageEditorPage';
 import ProviderSetupGate from './components/ProviderSetupGate';
 import { GlobalTTSStopButton } from './components/ReadButton';
 import { GitHubLink } from './components/GitHubLink';
+import { WelcomeWizard } from './components/WelcomeWizard';
+import { shouldShowWelcomeWizard } from './utils/auth';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { useBackgroundSync } from './hooks/useBackgroundSync';
+import { unifiedSync } from './services/unifiedSync';
+import { plansAdapter, playlistsAdapter } from './services/adapters';
+import { SyncStatusProvider } from './contexts/SyncStatusContext';
+import { GlobalSyncIndicator } from './components/GlobalSyncIndicator';
+import { AgentProvider, useAgents } from './contexts/AgentContext';
+import { GlobalAgentIndicator } from './components/GlobalAgentIndicator';
+import { AgentManager } from './components/AgentManager';
 
 // Create a wrapper component that can access auth context
 function AppContent() {
   const { isAuthenticated, getToken } = useAuth();
   const { settings } = useSettings();
   const { usage, loading: usageLoading } = useUsage();
+  const { showAgentManager, setShowAgentManager } = useAgents();
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -49,21 +60,30 @@ function AppContent() {
   const [showNavigationWarning, setShowNavigationWarning] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showWelcomeWizard, setShowWelcomeWizard] = useState(false);
   
-  // Background sync for plans and playlists
-  const autoSyncEnabled = localStorage.getItem('auto_sync_enabled') === 'true';
-  useBackgroundSync({
-    enabled: autoSyncEnabled,
-    onSyncComplete: (result) => {
-      // Only log if something actually synced
-      if (result.plans.action !== 'no-change' || result.playlists.action !== 'no-change') {
-        console.log('✅ Background sync completed');
-      }
-    },
-    onSyncError: (error) => {
-      console.error('❌ Background sync failed:', error.message);
+  // Initialize unified sync system
+  useEffect(() => {
+    // Register sync adapters
+    unifiedSync.registerAdapter(plansAdapter);
+    unifiedSync.registerAdapter(playlistsAdapter);
+    
+    // Check if auto-sync is enabled (default to enabled, opt-out)
+    const autoSyncEnabled = localStorage.getItem('auto_sync_enabled') !== 'false';
+    
+    if (autoSyncEnabled) {
+      // Start automatic periodic sync (every 5 minutes)
+      unifiedSync.start(5 * 60 * 1000);
+      console.log('✅ Unified sync started');
+    } else {
+      console.log('⚠️ Auto-sync disabled by user');
     }
-  });
+    
+    // Cleanup on unmount
+    return () => {
+      unifiedSync.stop();
+    };
+  }, []);
   
   // Handle language changes and document direction
   useEffect(() => {
@@ -197,7 +217,7 @@ function AppContent() {
 
   // Initialize Google Identity Services for client-side Sheets API
   useEffect(() => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const clientId = import.meta.env.VITE_GGL_CID;
     if (clientId && (window as any).google) {
       initGoogleIdentity(clientId);
     } else if (clientId) {
@@ -262,6 +282,23 @@ function AppContent() {
       checkAuthAndProviders();
     }
   }, [isAuthenticated, getToken, settings.providers, hasCheckedAuth]);
+
+  // Check if we should show the welcome wizard
+  useEffect(() => {
+    if (hasCheckedAuth && isAuthenticated && shouldShowWelcomeWizard(isAuthenticated)) {
+      // Small delay to let the UI finish rendering
+      const timer = setTimeout(() => setShowWelcomeWizard(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [hasCheckedAuth, isAuthenticated]);
+
+  // Check if we're on the shared snippet viewer route (public route)
+  const isPublicRoute = location.pathname.startsWith('/snippet/shared') || location.hash.includes('/snippet/shared');
+  
+  // Show shared snippet viewer without authentication if on that route
+  if (isPublicRoute) {
+    return <SharedSnippetViewer />;
+  }
 
   // Show login screen if not authenticated
   if (!isAuthenticated) {
@@ -390,6 +427,9 @@ function AppContent() {
               </>
             )}
             
+            <GlobalSyncIndicator />
+            <GlobalAgentIndicator />
+            
             <GoogleLoginButton />
           </div>
           
@@ -514,6 +554,20 @@ function AppContent() {
                 </button>
               )}
               
+              {/* Image Editor Link */}
+              <button
+                onClick={() => {
+                  handleNavigate('/image-editor');
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+                <span className="font-medium text-gray-700 dark:text-gray-300">Image Editor</span>
+              </button>
+              
               <button
                 onClick={() => {
                   handleOpenSettings();
@@ -602,6 +656,8 @@ function AppContent() {
             />
             <Route path="/planning" element={<PlanningPage />} />
             <Route path="/swag" element={<SwagPage />} />
+            <Route path="/image-editor" element={<ImageEditorPage />} />
+            <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -617,6 +673,23 @@ function AppContent() {
         setEnabledTools={setEnabledTools}
         onOpenMCPDialog={() => setShowMCPDialog(true)}
       />
+
+      {/* Agent Manager Modal */}
+      {showAgentManager && (
+        <AgentManager
+          onSwitchToAgent={(_agentId, _chatId) => {
+            // Navigate to chat and load the agent's chat
+            handleNavigate('/');
+            setShowAgentManager(false);
+            // TODO: Load chat by chatId in ChatTab
+          }}
+          onCreateNewAgent={() => {
+            handleNavigate('/');
+            setShowAgentManager(false);
+          }}
+          onClose={() => setShowAgentManager(false)}
+        />
+      )}
 
       {/* Navigation Warning Dialog */}
       {showNavigationWarning && (
@@ -651,6 +724,12 @@ function AppContent() {
 
       {/* Bottom Right Action Buttons - Fixed bottom right */}
       <GitHubLink onOpenSettings={handleOpenSettings} />
+
+      {/* Welcome Wizard - Show once on first login */}
+      <WelcomeWizard 
+        isOpen={showWelcomeWizard}
+        onClose={() => setShowWelcomeWizard(false)}
+      />
     </div>
   );
 }
@@ -666,37 +745,41 @@ function App() {
           <UsageProvider>
             <SettingsProvider>
               <LocationProvider>
-                {TTS_FEATURE_ENABLED ? (
-                  <TTSProvider>
-                    <CastProvider>
-                      <YouTubeAuthProvider>
-                        <PlaylistProvider>
-                          <PlayerProvider>
-                            <SearchResultsProvider>
-                              <SwagProvider>
-                                <AppContent />
-                              </SwagProvider>
-                            </SearchResultsProvider>
-                          </PlayerProvider>
-                        </PlaylistProvider>
-                      </YouTubeAuthProvider>
-                    </CastProvider>
-                  </TTSProvider>
-                ) : (
-                  <CastProvider>
-                    <YouTubeAuthProvider>
-                      <PlaylistProvider>
-                        <PlayerProvider>
-                          <SearchResultsProvider>
-                            <SwagProvider>
-                              <AppContent />
-                            </SwagProvider>
-                          </SearchResultsProvider>
-                        </PlayerProvider>
-                      </PlaylistProvider>
-                    </YouTubeAuthProvider>
-                  </CastProvider>
-                )}
+                <SyncStatusProvider>
+                  <AgentProvider>
+                    {TTS_FEATURE_ENABLED ? (
+                      <TTSProvider>
+                        <CastProvider>
+                          <YouTubeAuthProvider>
+                            <PlaylistProvider>
+                              <PlayerProvider>
+                                <SearchResultsProvider>
+                                  <SwagProvider>
+                                    <AppContent />
+                                  </SwagProvider>
+                                </SearchResultsProvider>
+                              </PlayerProvider>
+                            </PlaylistProvider>
+                          </YouTubeAuthProvider>
+                        </CastProvider>
+                      </TTSProvider>
+                    ) : (
+                      <CastProvider>
+                        <YouTubeAuthProvider>
+                          <PlaylistProvider>
+                            <PlayerProvider>
+                              <SearchResultsProvider>
+                                <SwagProvider>
+                                  <AppContent />
+                                </SwagProvider>
+                              </SearchResultsProvider>
+                            </PlayerProvider>
+                          </PlaylistProvider>
+                        </YouTubeAuthProvider>
+                      </CastProvider>
+                    )}
+                  </AgentProvider>
+                </SyncStatusProvider>
               </LocationProvider>
             </SettingsProvider>
           </UsageProvider>

@@ -121,8 +121,8 @@ class MockResponseStream {
 describe.skip('Chat Endpoint', () => {
     beforeEach(() => {
         // Set environment variables
-        process.env.OPENAI_API_KEY = 'test-key';
-        process.env.GROQ_API_KEY = 'test-key';
+        process.env.OPENAI_KEY = 'test-key';
+        process.env.GROQ_KEY = 'test-key';
         process.env.MAX_TOOL_ITERATIONS = '5';
         
         // Clear mocks
@@ -173,8 +173,8 @@ describe.skip('Chat Endpoint', () => {
     });
     
     test('should handle missing API key', async () => {
-        delete process.env.OPENAI_API_KEY;
-        delete process.env.GROQ_API_KEY;
+        delete process.env.OPENAI_KEY;
+        delete process.env.GROQ_KEY;
         
         const event = {
             body: JSON.stringify({

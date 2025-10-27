@@ -140,9 +140,10 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
     showSuccess('Plan loaded');
   };
 
-  const handleDeletePlan = (planId: string) => {
-    deleteCachedPlan(planId);
-    setSavedPlans(getAllCachedPlans());
+  const handleDeletePlan = async (planId: string) => {
+    await deleteCachedPlan(planId);
+    const plans = await getAllCachedPlans();
+    setSavedPlans(plans);
     showSuccess('Plan deleted');
   };
 
@@ -156,7 +157,9 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
   // Load saved plans when dialog opens
   useEffect(() => {
     if (showLoadDialog) {
-      setSavedPlans(getAllCachedPlans());
+      getAllCachedPlans().then(plans => {
+        setSavedPlans(plans);
+      });
     }
   }, [showLoadDialog]);
 

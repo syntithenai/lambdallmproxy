@@ -6,7 +6,7 @@ const { OAuth2Client } = require('google-auth-library');
 
 // Google OAuth configuration: derive allowed emails from env on-demand, so warm containers pick up changes
 function getAllowedEmails() {
-    const raw = process.env.ALLOWED_EMAILS || '';
+    const raw = process.env.ALLOW_EM || '';
     return raw
         .split(',')
         .map(s => s.trim())
@@ -24,7 +24,7 @@ async function verifyGoogleToken(token) {
         console.log(`🔒 Verifying Google token with signature verification (length: ${token?.length})`);
         
         // Get Google Client ID from environment
-        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const clientId = process.env.GGL_CID;
         if (!clientId) {
             console.error('❌ GOOGLE_CLIENT_ID not set in environment variables');
             return null;

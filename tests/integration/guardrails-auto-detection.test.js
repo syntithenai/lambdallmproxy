@@ -98,13 +98,13 @@ describe('Guardrails Integration', () => {
     
     // Clear all environment variables
     delete process.env.ENABLE_GUARDRAILS;
-    delete process.env.GROQ_API_KEY;
+    delete process.env.GROQ_KEY;
     delete process.env.GEMINI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_KEY;
     
     for (let i = 0; i < 10; i++) {
-      delete process.env[`LLAMDA_LLM_PROXY_PROVIDER_TYPE_${i}`];
-      delete process.env[`LLAMDA_LLM_PROXY_PROVIDER_KEY_${i}`];
+      delete process.env[`P_T${i}`];
+      delete process.env[`P_K${i}`];
     }
   });
 
@@ -138,8 +138,8 @@ describe('Guardrails Integration', () => {
 
     test('should work with indexed provider format', () => {
       process.env.ENABLE_GUARDRAILS = 'true';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'indexed-groq-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'indexed-groq-key';
       
       const config = loadGuardrailConfig();
       expect(config).not.toBeNull();
@@ -173,7 +173,7 @@ describe('Guardrails Integration', () => {
 
     test('should prefer context over environment variables', async () => {
       process.env.ENABLE_GUARDRAILS = 'true';
-      process.env.OPENAI_API_KEY = 'env-openai-key';
+      process.env.OPENAI_KEY = 'env-openai-key';
       
       // Context should override env
       const context = { groqApiKey: 'context-groq-key' };
@@ -261,8 +261,8 @@ describe('Guardrails Integration', () => {
   describe('Indexed Provider Format', () => {
     test('should work with indexed provider environment variables', async () => {
       process.env.ENABLE_GUARDRAILS = 'true';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 = 'groq-free';
-      process.env.LLAMDA_LLM_PROXY_PROVIDER_KEY_0 = 'indexed-key';
+      process.env.P_T0 = 'groq-free';
+      process.env.P_K0 = 'indexed-key';
       
       const config = loadGuardrailConfig();
       expect(config).not.toBeNull();

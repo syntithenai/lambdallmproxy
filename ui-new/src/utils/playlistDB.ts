@@ -1,6 +1,7 @@
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 import type { PlaylistTrack } from '../contexts/PlaylistContext';
+import { unifiedSync } from '../services/unifiedSync';
 
 /**
  * IndexedDB schema for playlist storage
@@ -159,6 +160,11 @@ class PlaylistDatabase {
       updatedAt: Date.now()
     });
     
+    // Trigger immediate sync if unified sync is enabled
+    if (unifiedSync.isEnabled()) {
+      unifiedSync.queueSync('playlists', 'high');
+    }
+    
     return id;
   }
 
@@ -179,6 +185,11 @@ class PlaylistDatabase {
       tracks,
       updatedAt: Date.now()
     });
+    
+    // Trigger immediate sync if unified sync is enabled
+    if (unifiedSync.isEnabled()) {
+      unifiedSync.queueSync('playlists', 'high');
+    }
   }
 
   /**
@@ -222,6 +233,11 @@ class PlaylistDatabase {
   async deletePlaylist(id: number): Promise<void> {
     await this.init();
     await this.db!.delete('savedPlaylists', id);
+    
+    // Trigger immediate sync if unified sync is enabled
+    if (unifiedSync.isEnabled()) {
+      unifiedSync.queueSync('playlists', 'high');
+    }
   }
 
   /**

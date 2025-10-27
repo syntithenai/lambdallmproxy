@@ -1,0 +1,143 @@
+[34m🔧 ENV Variable Compression Tool[0m
+[34m=================================
+[0m
+[34m
+📦 Creating backup...[0m
+[32m✅ Backup created: .backup-env-2025-10-27T02-48-43 (303 files)[0m
+[34m
+📝 Renaming regular variables...[0m
+[32m   ✅ ALLOWED_EMAILS → ALLOW_EM: 3 occurrences in 3 files[0m
+[32m   ✅ ACCESS_SECRET → ACC_SEC: 10 occurrences in 4 files[0m
+[32m   ✅ GOOGLE_CLIENT_ID → GGL_CID: 11 occurrences in 6 files[0m
+[32m   ✅ GOOGLE_CLIENT_SECRET → GGL_SEC: 5 occurrences in 3 files[0m
+[32m   ✅ OAUTH_REDIRECT_URI → OAUTH_URI: 4 occurrences in 2 files[0m
+[32m   ✅ WEBSHARE_PROXY_USERNAME → PXY_USER: 3 occurrences in 2 files[0m
+[32m   ✅ WEBSHARE_PROXY_PASSWORD → PXY_PASS: 3 occurrences in 2 files[0m
+[32m   ✅ MAX_TOOL_ITERATIONS → MAX_ITER: 5 occurrences in 4 files[0m
+[32m   ✅ DISABLE_YOUTUBE_TRANSCRIPTION → NO_YT_TRANS: 4 occurrences in 2 files[0m
+[32m   ✅ MEDIA_DOWNLOAD_TIMEOUT → MED_TIMEOUT: 1 occurrences in 1 files[0m
+[32m   ✅ ENABLE_GUARDRAILS → EN_GUARD: 3 occurrences in 3 files[0m
+[32m   ✅ USE_PUPPETEER → USE_PPT: 2 occurrences in 2 files[0m
+[32m   ✅ PUPPETEER_LAMBDA_ARN → PPT_ARN: 2 occurrences in 2 files[0m
+[32m   ✅ GROQ_MODEL → GROQ_MDL: 3 occurrences in 2 files[0m
+[32m   ✅ OPENAI_MODEL → OPENAI_MDL: 2 occurrences in 2 files[0m
+[32m   ✅ GROQ_REASONING_MODELS → GROQ_REASON: 3 occurrences in 3 files[0m
+[32m   ✅ REASONING_EFFORT → REASON_EFF: 6 occurrences in 4 files[0m
+[32m   ✅ OPENAI_API_BASE → OPENAI_BASE: 3 occurrences in 3 files[0m
+[32m   ✅ OPENAI_API_KEY → OPENAI_KEY: 15 occurrences in 10 files[0m
+[32m   ✅ GROQ_API_KEY → GROQ_KEY: 10 occurrences in 6 files[0m
+[32m   ✅ GEMINI_API_KEY → GEMINI_KEY: 3 occurrences in 4 files[0m
+[32m   ✅ TOGETHER_API_KEY → TOGETHER_KEY: 3 occurrences in 3 files[0m
+[32m   ✅ REPLICATE_API_TOKEN → REPLICATE_KEY: 1 occurrences in 1 files[0m
+[32m   ✅ ELEVENLABS_API_KEY → ELEVENLABS_KEY: 3 occurrences in 3 files[0m
+[32m   ✅ ENABLE_IMAGE_GENERATION_OPENAI → IMG_OPENAI: 1 occurrences in 1 files[0m
+[32m   ✅ ENABLE_IMAGE_GENERATION_TOGETHER → IMG_TOGETHER: 1 occurrences in 1 files[0m
+[32m   ✅ ENABLE_IMAGE_GENERATION_REPLICATE → IMG_REPLICATE: 1 occurrences in 1 files[0m
+[32m   ✅ ENABLE_IMAGE_GENERATION_GEMINI → IMG_GEMINI: 1 occurrences in 1 files[0m
+[32m   ✅ CIRCUIT_BREAKER_FAILURE_THRESHOLD → CB_THRESH: 2 occurrences in 2 files[0m
+[32m   ✅ CIRCUIT_BREAKER_TIMEOUT_MS → CB_TIMEOUT: 2 occurrences in 2 files[0m
+[32m   ✅ GOOGLE_SHEETS_LOG_SPREADSHEET_ID → GS_SHEET_ID: 9 occurrences in 8 files[0m
+[32m   ✅ GOOGLE_SHEETS_LOG_SPREADSHEET_IDS → GS_SHEET_IDS: 4 occurrences in 4 files[0m
+[32m   ✅ GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL → GS_EMAIL: 13 occurrences in 9 files[0m
+[32m   ✅ GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY → GS_KEY: 13 occurrences in 9 files[0m
+[32m   ✅ GOOGLE_SHEETS_LOG_SHEET_NAME → GS_NAME: 2 occurrences in 3 files[0m
+[32m   ✅ GOOGLE_SHEETS_CREDENTIALS → GS_CREDS: 2 occurrences in 2 files[0m
+[32m   ✅ GOOGLE_SHEETS_SPREADSHEET_ID → GS_ID: 2 occurrences in 2 files[0m
+[32m   ✅ PAYPAL_CLIENT_ID → PP_CID: 1 occurrences in 1 files[0m
+[32m   ✅ PAYPAL_CLIENT_SECRET → PP_SEC: 1 occurrences in 1 files[0m
+[32m   ✅ PAYPAL_MODE → PP_MODE: 1 occurrences in 1 files[0m
+[32m   ✅ MIN_CREDIT_PURCHASE → MIN_CREDIT: 1 occurrences in 1 files[0m
+[32m   ✅ PAYPAL_SUCCESS_URL → PP_SUCCESS: 1 occurrences in 1 files[0m
+[32m   ✅ PAYPAL_CANCEL_URL → PP_CANCEL: 1 occurrences in 1 files[0m
+[32m   ✅ AWS_LAMBDA_FUNCTION_MEMORY_SIZE → AWS_MEM: 22 occurrences in 11 files[0m
+[32m   ✅ AWS_LAMBDA_FUNCTION_NAME → AWS_FN: 11 occurrences in 10 files[0m
+[32m   ✅ AWS_EXECUTION_ENV → AWS_EXEC: 3 occurrences in 3 files[0m
+[32m   ✅ AWS_REGION → AWS_RGN: 1 occurrences in 1 files[0m
+[32m   ✅ LIBSQL_URL → DB_URL: 11 occurrences in 8 files[0m
+[32m   ✅ LIBSQL_AUTH_TOKEN → DB_TOKEN: 5 occurrences in 5 files[0m
+[32m   ✅ USE_LIBSQL → USE_DB: 1 occurrences in 1 files[0m
+[32m   ✅ RAG_EMBEDDING_MODEL → RAG_MDL: 3 occurrences in 3 files[0m
+[32m   ✅ RAG_EMBEDDING_PROVIDER → RAG_PROV: 2 occurrences in 2 files[0m
+[32m   ✅ MAX_TOKENS_PLANNING → TOK_PLAN: 1 occurrences in 1 files[0m
+[32m   ✅ MAX_TOKENS_TOOL_SYNTHESIS → TOK_SYNTH: 1 occurrences in 1 files[0m
+[32m   ✅ MAX_TOKENS_LOW_COMPLEXITY → TOK_LOW: 1 occurrences in 1 files[0m
+[32m   ✅ MAX_TOKENS_MEDIUM_COMPLEXITY → TOK_MED: 1 occurrences in 1 files[0m
+[32m   ✅ MAX_TOKENS_HIGH_COMPLEXITY → TOK_HIGH: 1 occurrences in 1 files[0m
+[32m   ✅ MAX_TOKENS_MATH_RESPONSE → TOK_MATH: 1 occurrences in 1 files[0m
+[32m   ✅ MAX_TOKENS_FINAL_RESPONSE → TOK_FINAL: 1 occurrences in 1 files[0m
+[32m   ✅ CACHE_TTL_SEARCH → CACHE_SRCH: 1 occurrences in 1 files[0m
+[32m   ✅ CACHE_TTL_TRANSCRIPTIONS → CACHE_TRANS: 1 occurrences in 1 files[0m
+[32m   ✅ CACHE_TTL_SCRAPES → CACHE_SCRP: 1 occurrences in 1 files[0m
+[32m   ✅ CACHE_TTL_RAG_QUERIES → CACHE_RAG: 1 occurrences in 1 files[0m
+[32m   ✅ CACHE_TTL_RAG_EMBEDDINGS → CACHE_EMB: 1 occurrences in 1 files[0m
+[32m   ✅ LLM_PROFIT_MARGIN → LLM_MARGIN: 2 occurrences in 1 files[0m
+[32m   ✅ LAMBDA_PROFIT_MARGIN → LAM_MARGIN: 6 occurrences in 2 files[0m
+[32m   ✅ DISABLE_CREDIT_CHECKS → NO_CREDIT_CHK: 1 occurrences in 1 files[0m
+[32m   ✅ LOCAL_LAMBDA → LOCAL: 3 occurrences in 3 files[0m
+[32m   ✅ LOCAL_LAMBDA_PORT → LOCAL_PORT: 1 occurrences in 1 files[0m
+[32m   ✅ NODE_ENV → ENV: 11 occurrences in 11 files[0m
+[32m   ✅ SYSTEM_PROMPT_SEARCH → SYS_SRCH: 4 occurrences in 3 files[0m
+[32m   ✅ SYSTEM_PROMPT_DIGEST_ANALYST → SYS_DIGEST: 1 occurrences in 2 files[0m
+[32m   ✅ FINAL_TEMPLATE → TPL_FINAL: 1 occurrences in 2 files[0m
+[32m   ✅ TAVILY_API_KEY → TAVILY_KEY: 2 occurrences in 1 files[0m
+[32m   ✅ PYTHON_VENV_PATH → PYTHON_VENV: 2 occurrences in 1 files[0m
+[90m   ⚠️  HEADLESS → HEADLESS: No occurrences found[0m
+[90m   ⚠️  DEVTOOLS → DEVTOOLS: No occurrences found[0m
+[32m   ✅ SLOW_MO → SLOWMO: 1 occurrences in 1 files[0m
+[32m   ✅ CREDIT_CACHE_TTL_MS → CR_TTL: 1 occurrences in 1 files[0m
+[32m   ✅ CREDIT_CACHE_MAX_SIZE → CR_MAX: 1 occurrences in 1 files[0m
+[32m   ✅ MAX_TODO_AUTO_ITERATIONS → MAX_TODO: 1 occurrences in 1 files[0m
+[32m   ✅ LAMBDA_MEMORY → LAM_MEM: 4 occurrences in 2 files[0m
+[32m   ✅ VITE_API_BASE → VITE_API: 10 occurrences in 6 files[0m
+[32m   ✅ VITE_LAMBDA_URL → VITE_LAM: 2 occurrences in 2 files[0m
+[32m   ✅ VITE_LOCAL_LAMBDA_URL → VITE_LOCAL: 2 occurrences in 1 files[0m
+[32m   ✅ VITE_GOOGLE_CLIENT_ID → VITE_GGL_CID: 7 occurrences in 7 files[0m
+[32m   ✅ VITE_PAYPAL_CLIENT_ID → VITE_PP_CID: 1 occurrences in 1 files[0m
+[32m   ✅ VITE_API_ENDPOINT → VITE_EP: 2 occurrences in 1 files[0m
+[32m   ✅ VITE_BACKEND_URL → VITE_BACK: 1 occurrences in 1 files[0m
+[34m
+🔧 Processing indexed provider variables...[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_TYPE_0 → P_T0: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_TYPE_1 → P_T1: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_TYPE_2 → P_T2: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_KEY_0 → P_K0: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_KEY_1 → P_K1: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_KEY_2 → P_K2: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_PRIORITY_0 → P_P0: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_PRIORITY_1 → P_P1: 1 occurrences in 1 files[0m
+[32m   ✅ LLAMDA_LLM_PROXY_PROVIDER_PRIORITY_2 → P_P2: 1 occurrences in 1 files[0m
+[34m
+📊 Summary Report[0m
+[34m=================[0m
+[32mTotal Variables Renamed: 96[0m
+[32mTotal Files Modified: 76[0m
+[32mTotal Occurrences Replaced: 314[0m
+[33mBackup Directory: .backup-env-2025-10-27T02-48-43[0m
+[32m
+📄 Detailed report saved: env-compression-report-1761533337459.json[0m
+[34m
+🔍 Running verification...[0m
+[31m❌ Verification failed! Old variables still found:[0m
+[33m   scripts/deploy-static.sh: ALLOWED_EMAILS[0m
+[33m   scripts/deploy.sh: ALLOWED_EMAILS[0m
+[33m   scripts/deploy-static.sh: ACCESS_SECRET[0m
+[33m   scripts/deploy-static.sh: GOOGLE_CLIENT_ID[0m
+[33m   scripts/deploy.sh: MAX_TOOL_ITERATIONS[0m
+[33m   scripts/setup-dev.sh: USE_PUPPETEER[0m
+[33m   scripts/deploy.sh: GROQ_MODEL[0m
+[33m   scripts/deploy.sh: OPENAI_MODEL[0m
+[33m   scripts/deploy.sh: GROQ_REASONING_MODELS[0m
+[33m   scripts/deploy.sh: REASONING_EFFORT[0m
+[33m   scripts/deploy.sh: OPENAI_API_BASE[0m
+[33m   scripts/deploy-static.sh: OPENAI_API_KEY[0m
+[33m   scripts/deploy-static.sh: GROQ_API_KEY[0m
+[33m   scripts/upload-rag-db.sh: AWS_REGION[0m
+[33m   scripts/setup-dev.sh: NODE_ENV[0m
+[33m   scripts/setup-dev.sh: PYTHON_VENV_PATH[0m
+[33m   src/scrapers/puppeteer-local.js: HEADLESS[0m
+[33m   scripts/setup-dev.sh: HEADLESS[0m
+[33m   src/scrapers/puppeteer-local.js: DEVTOOLS[0m
+[33m   src/endpoints/chat.js: MAX_TODO_AUTO_ITERATIONS[0m
+[33m   scripts/deploy.sh: LAMBDA_MEMORY[0m
+[33m
+⚠️  Compression completed with warnings. Please review verification errors.[0m

@@ -233,9 +233,9 @@ async function migrate(userEmail) {
     console.log('\n🔄 Starting billing sheet migration...\n');
     
     // Get configuration
-    const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID || process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_IDS;
-    const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-    const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const spreadsheetId = process.env.GS_SHEET_ID || process.env.GS_SHEET_IDS;
+    const serviceAccountEmail = process.env.GS_EMAIL;
+    const privateKey = process.env.GS_KEY?.replace(/\\n/g, '\n');
     
     if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
         console.error('❌ Missing Google Sheets configuration in .env file');

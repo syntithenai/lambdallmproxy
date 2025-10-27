@@ -38,11 +38,11 @@ const CACHE_CONFIG = {
   
   // TTL by cache type (seconds)
   ttl: {
-    search: parseInt(process.env.CACHE_TTL_SEARCH || '3600'), // 1 hour
-    transcriptions: parseInt(process.env.CACHE_TTL_TRANSCRIPTIONS || '86400'), // 24 hours
-    scrapes: parseInt(process.env.CACHE_TTL_SCRAPES || '3600'), // 1 hour
-    rag_queries: parseInt(process.env.CACHE_TTL_RAG_QUERIES || '3600'), // 1 hour
-    rag_embeddings: parseInt(process.env.CACHE_TTL_RAG_EMBEDDINGS || '86400'), // 24 hours
+    search: parseInt(process.env.CACHE_SRCH || '3600'), // 1 hour
+    transcriptions: parseInt(process.env.CACHE_TRANS || '86400'), // 24 hours
+    scrapes: parseInt(process.env.CACHE_SCRP || '3600'), // 1 hour
+    rag_queries: parseInt(process.env.CACHE_RAG || '3600'), // 1 hour
+    rag_embeddings: parseInt(process.env.CACHE_EMB || '86400'), // 24 hours
   },
   
   // Cache subdirectories by type

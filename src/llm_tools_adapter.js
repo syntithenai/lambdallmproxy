@@ -8,6 +8,7 @@ const { PROVIDERS } = require('./providers');
 function isOpenAIModel(model) { return typeof model === 'string' && model.startsWith('openai:'); }
 function isGroqModel(model) { return typeof model === 'string' && (model.startsWith('groq:') || model.startsWith('groq-free:')); }
 function isGeminiModel(model) { return typeof model === 'string' && (model.startsWith('gemini:') || model.startsWith('gemini-free:')); }
+function isCohereModel(model) { return typeof model === 'string' && model.startsWith('cohere:'); }
 
 // Check if model name (without prefix) is a known model by provider
 function isKnownOpenAIModel(modelName) {
@@ -15,6 +16,9 @@ function isKnownOpenAIModel(modelName) {
 }
 function isKnownGeminiModel(modelName) {
   return PROVIDERS.gemini.models.includes(modelName);
+}
+function isKnownCohereModel(modelName) {
+  return PROVIDERS.cohere?.models?.includes(modelName) || false;
 }
 
 function openAISupportsReasoning(model) {
@@ -25,7 +29,7 @@ function openAISupportsReasoning(model) {
 function groqSupportsReasoning(model) {
   const m = String(model || '').replace(/^groq(-free)?:/, '');
   // Strict allowlist via env: GROQ_REASONING_MODELS="modelA,modelB"
-  const list = (process.env.GROQ_REASONING_MODELS || '')
+  const list = (process.env.GROQ_REASON || '')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
@@ -41,13 +45,13 @@ function geminiSupportsReasoning(model) {
 
 function mapReasoningForOpenAI(model, options) {
   if (!openAISupportsReasoning(model)) return {};
-  const effort = options?.reasoningEffort || process.env.REASONING_EFFORT || 'low';
+  const effort = options?.reasoningEffort || process.env.REASON_EFF || 'low';
   return { reasoning: { effort } };
 }
 
 function mapReasoningForGroq(model, options) {
   if (!groqSupportsReasoning(model)) return {};
-  const effort = options?.reasoningEffort || process.env.REASONING_EFFORT || 'low';
+  const effort = options?.reasoningEffort || process.env.REASON_EFF || 'low';
   return { include_reasoning: true, reasoning_effort: effort, reasoning_format: 'raw' };
 }
 
@@ -136,6 +140,120 @@ function normalizeFromResponsesAPI(data) {
   return { output, text };
 }
 
+// Convert OpenAI messages to Cohere format
+function convertToCohereMessages(input) {
+  const chatHistory = [];
+  let currentMessage = '';
+  let preamble = '';
+  let toolResults = [];
+  
+  for (const block of input || []) {
+    // System message becomes preamble
+    if (block.role === 'system') {
+      preamble = block.content;
+      continue;
+    }
+    
+    // Tool results
+    if (block.type === 'function_call_output') {
+      toolResults.push({
+        call: {
+          name: block.call_id || 'unknown',
+          parameters: {}
+        },
+        outputs: [{ result: block.output }]
+      });
+      continue;
+    }
+    
+    // User messages
+    if (block.role === 'user') {
+      currentMessage = block.content;
+      continue;
+    }
+    
+    // Assistant messages with tool calls
+    if (block.role === 'assistant') {
+      const historyEntry = {
+        role: 'CHATBOT',
+        message: block.content || ''
+      };
+      
+      // Add tool calls to history
+      if (block.tool_calls && block.tool_calls.length > 0) {
+        historyEntry.tool_calls = block.tool_calls.map(tc => ({
+          name: tc.function.name,
+          parameters: JSON.parse(tc.function.arguments || '{}')
+        }));
+      }
+      
+      chatHistory.push(historyEntry);
+    }
+  }
+  
+  return { chatHistory, currentMessage, preamble, toolResults };
+}
+
+// Convert OpenAI tool schema to Cohere parameter_definitions
+function convertToCohereTools(tools) {
+  if (!tools || tools.length === 0) return [];
+  
+  return tools.map(tool => ({
+    name: tool.function.name,
+    description: tool.function.description,
+    parameter_definitions: convertParameterSchema(tool.function.parameters)
+  }));
+}
+
+// Convert JSON Schema to Cohere parameter_definitions
+function convertParameterSchema(schema) {
+  if (!schema || !schema.properties) return {};
+  
+  const paramDefs = {};
+  const properties = schema.properties;
+  const required = schema.required || [];
+  
+  for (const [key, value] of Object.entries(properties)) {
+    paramDefs[key] = {
+      description: value.description || '',
+      type: value.type?.toUpperCase() || 'STRING',
+      required: required.includes(key)
+    };
+  }
+  
+  return paramDefs;
+}
+
+// Normalize Cohere response to OpenAI format
+function normalizeFromCohere(data) {
+  const cohereResponse = data?.data || data;
+  const text = cohereResponse.text || '';
+  const toolCalls = [];
+  
+  // Convert Cohere tool_calls to OpenAI format
+  if (cohereResponse.tool_calls && cohereResponse.tool_calls.length > 0) {
+    for (let i = 0; i < cohereResponse.tool_calls.length; i++) {
+      const tc = cohereResponse.tool_calls[i];
+      toolCalls.push({
+        id: `call_cohere_${Date.now()}_${i}`,  // Generate synthetic ID
+        type: 'function',
+        function: {
+          name: tc.name,
+          arguments: JSON.stringify(tc.parameters || {})
+        }
+      });
+    }
+  }
+  
+  return {
+    output: toolCalls,
+    text: text,
+    rawResponse: cohereResponse,
+    httpHeaders: data?.headers || {},
+    httpStatus: data?.status
+  };
+}
+
 // Normalize OpenAI-compatible chat.completions tool_calls
 function normalizeFromChat(responseWithHeaders) {
   // Handle both old format (just data) and new format (data + headers)
@@ -197,7 +315,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
 
   // Auto-detect and add provider prefix if missing
   let normalizedModel = model;
-  if (!isOpenAIModel(model) && !isGroqModel(model) && !isGeminiModel(model)) {
+  if (!isOpenAIModel(model) && !isGroqModel(model) && !isGeminiModel(model) && !isCohereModel(model)) {
     // Check if it's a known model name from any provider
     if (isKnownOpenAIModel(model)) {
       console.log(`⚠️ Model "${model}" is an OpenAI model, adding openai: prefix`);
@@ -205,6 +323,9 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     } else if (isKnownGeminiModel(model)) {
       console.log(`⚠️ Model "${model}" is a Gemini model, adding gemini: prefix`);
       normalizedModel = `gemini:${model}`;
+    } else if (isKnownCohereModel(model)) {
+      console.log(`⚠️ Model "${model}" is a Cohere model, adding cohere: prefix`);
+      normalizedModel = `cohere:${model}`;
     } else {
       // If no prefix and not a known model, assume groq
       console.log(`⚠️ Model "${model}" missing provider prefix, assuming groq:${model}`);
@@ -213,7 +334,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
   }
 
   if (isOpenAIModel(normalizedModel)) {
-    const hostname = process.env.OPENAI_API_BASE?.replace('https://', '') || 'api.openai.com';
+    const hostname = process.env.OPENAI_BASE?.replace('https://', '') || 'api.openai.com';
     const path = '/v1/chat/completions';
     const messages = (input || []).map(block => {
       if (block.type === 'function_call_output') {
@@ -510,6 +631,80 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     } catch (error) {
       // Enhance error with provider context
       error.provider = 'gemini';
+      error.model = normalizedModel;
+      error.endpoint = `https://${hostname}${path}`;
+      throw error;
+    }
+  }
+
+  if (isCohereModel(normalizedModel)) {
+    // Cohere Chat API
+    const hostname = 'api.cohere.ai';
+    const path = '/v1/chat';
+    const modelName = normalizedModel.replace(/^cohere:/, '');
+    
+    console.log(`🔍 Cohere API: Using model "${modelName}"`);
+    
+    // Convert OpenAI-style messages to Cohere format
+    const { chatHistory, currentMessage, preamble, toolResults } = convertToCohereMessages(input);
+    
+    // Build payload
+    const payload = {
+      model: modelName,
+      message: currentMessage,
+      temperature,
+      max_tokens,
+      p: top_p,  // Cohere uses 'p' instead of 'top_p'
+      frequency_penalty,
+    };
+    
+    // Add preamble if present
+    if (preamble) {
+      payload.preamble = preamble;
+    }
+    
+    // Add chat history if present
+    if (chatHistory.length > 0) {
+      payload.chat_history = chatHistory;
+    }
+    
+    // Add tools if present
+    if (tools && tools.length > 0) {
+      payload.tools = convertToCohereTools(tools);
+    }
+    
+    // Add tool results if present
+    if (toolResults.length > 0) {
+      payload.tool_results = toolResults;
+    }
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${options?.apiKey}`
+    };
+    
+    try {
+      const data = await httpsRequestJson({ 
+        hostname, 
+        path, 
+        method: 'POST', 
+        headers, 
+        bodyObj: payload, 
+        timeoutMs: options?.timeoutMs || 30000 
+      });
+      
+      const result = normalizeFromCohere(data);
+      
+      // Add provider context to successful response
+      result.provider = 'cohere';
+      result.model = normalizedModel;
+      
+      console.log(`✅ Cohere response: ${result.text.length} chars, ${result.output.length} tool calls`);
+      
+      return result;
+    } catch (error) {
+      // Enhance error with provider context
+      error.provider = 'cohere';
       error.model = normalizedModel;
       error.endpoint = `https://${hostname}${path}`;
       throw error;

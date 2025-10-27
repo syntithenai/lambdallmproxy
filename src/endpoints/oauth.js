@@ -63,9 +63,9 @@ async function oauthCallbackEndpoint(event) {
 
     // Exchange authorization code for tokens
     const oauth2Client = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.OAUTH_REDIRECT_URI
+      process.env.GGL_CID,
+      process.env.GGL_SEC,
+      process.env.OAUTH_URI
     );
 
     console.log('Exchanging code for tokens...');
@@ -153,9 +153,9 @@ async function oauthRefreshEndpoint(event) {
 
     // Use OAuth2Client to refresh tokens
     const oauth2Client = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.OAUTH_REDIRECT_URI
+      process.env.GGL_CID,
+      process.env.GGL_SEC,
+      process.env.OAUTH_URI
     );
     
     oauth2Client.setCredentials({ refresh_token: refreshToken });
@@ -249,9 +249,9 @@ async function oauthRevokeEndpoint(event) {
 
     // Revoke token with Google
     const oauth2Client = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.OAUTH_REDIRECT_URI
+      process.env.GGL_CID,
+      process.env.GGL_SEC,
+      process.env.OAUTH_URI
     );
 
     console.log('Revoking token for user:', auth.email);

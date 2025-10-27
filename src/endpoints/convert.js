@@ -144,7 +144,7 @@ exports.handler = async (event, responseStream) => {
       },
       body: JSON.stringify({
         error: error.message || 'Failed to convert document',
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        stack: process.env.ENV === 'development' ? error.stack : undefined
       })
     };
 

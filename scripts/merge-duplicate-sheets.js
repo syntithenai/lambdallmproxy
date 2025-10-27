@@ -38,8 +38,8 @@ function sheetNameToEmail(sheetName) {
 async function getAuthClient() {
   return new google.auth.GoogleAuth({
     credentials: {
-      client_email: process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
+      client_email: process.env.GS_EMAIL,
+      private_key: process.env.GS_KEY?.replace(/\\n/g, '\n')
     },
     scopes: ['https://www.googleapis.com/auth/spreadsheets']
   });
@@ -48,7 +48,7 @@ async function getAuthClient() {
 async function mergeDuplicateSheets() {
   const auth = await getAuthClient();
   const sheets = google.sheets({ version: 'v4', auth });
-  const spreadsheetId = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+  const spreadsheetId = process.env.GS_SHEET_ID;
   
   console.log('📊 Fetching spreadsheet metadata...\n');
   

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
 import { useCast } from '../contexts/CastContext';
@@ -6,12 +7,14 @@ import { useTTS } from '../contexts/TTSContext';
 import { useAuth } from '../contexts/AuthContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { MarkdownEditor } from './MarkdownEditor';
 // import { StorageStats } from './StorageStats';
 import { TagAutocomplete } from './TagAutocomplete';
 import { TagAutosuggest } from './TagAutosuggest';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ReadButton } from './ReadButton';
 import { FileUploadDialog } from './FileUploadDialog';
+import SnippetShareDialog from './SnippetShareDialog';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
   createGoogleDocInFolder, 
@@ -23,10 +26,34 @@ import type { GoogleDoc } from '../utils/googleDocs';
 import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
 import { getCachedApiBase } from '../utils/api';
+import { extractImagesFromSnippets, snippetHasImages } from './ImageEditor/extractImages';
+import '../styles/markdown-editor.css';
 
 export const SwagPage: React.FC = () => {
+  const navigate = useNavigate();
   const { showSuccess, showError, showWarning } = useToast();
   const { getToken } = useAuth();
+  
+  // Handler for when user clicks edit button on an individual image
+  const handleImageEdit = (imageData: {
+    id: string;
+    url: string;
+    name: string;
+    tags: string[];
+    snippetId?: string;
+    width?: number;
+    height?: number;
+    format?: string;
+    size?: number;
+  }) => {
+    // Navigate to image editor with single image
+    navigate('/image-editor', { 
+      state: { 
+        images: [imageData] 
+      } 
+    });
+  };
+  
   const { 
     snippets,
     addSnippet,
@@ -110,6 +137,9 @@ export const SwagPage: React.FC = () => {
   
   // Confirmation dialog state for tag deletion
   const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState(false);
+  
+  // Share dialog state
+  const [sharingSnippet, setSharingSnippet] = useState<ContentSnippet | null>(null);
   
   // Load RAG config for similarity threshold
   const [_ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
@@ -198,21 +228,25 @@ export const SwagPage: React.FC = () => {
     const checkAllEmbeddings = async () => {
       if (snippets.length === 0) return;
       
+      console.log('🔍 Checking embedding status for', snippets.length, 'snippets');
       const statusMap: Record<string, boolean> = {};
       for (const snippet of snippets) {
         try {
           const details = await getEmbeddingDetails(snippet.id);
           statusMap[snippet.id] = details.hasEmbedding;
+          const title = snippet.title || 'Untitled';
+          console.log(`  Snippet "${title.substring(0, 30)}": ${details.hasEmbedding ? '✅ indexed' : '❌ not indexed'}`);
         } catch (error) {
           console.error(`Failed to check embedding for snippet ${snippet.id}:`, error);
           // Don't set status if check fails
         }
       }
+      console.log('✅ Embedding status loaded:', Object.keys(statusMap).length, 'snippets checked');
       setEmbeddingStatusMap(statusMap);
     };
 
     checkAllEmbeddings();
-  }, [snippets.length]); // Re-check when snippets are added/removed
+  }, [snippets, getEmbeddingDetails]); // Re-check when snippets change
 
   // Auto-cast snippet to Chromecast when viewing if already connected
   useEffect(() => {
@@ -553,7 +587,7 @@ export const SwagPage: React.FC = () => {
       const WARN_FILE_SIZE = 10 * 1024 * 1024; // 10MB warning threshold
       
       // Get API URL safely
-      const apiUrl = import.meta.env.VITE_LAMBDA_URL || 'http://localhost:3000';
+      const apiUrl = import.meta.env.VITE_LAM || 'http://localhost:3000';
       
       // Check for oversized files
       const oversizedFiles = files.filter(f => f.size > MAX_FILE_SIZE);
@@ -1594,15 +1628,36 @@ export const SwagPage: React.FC = () => {
                     onClick={() => setViewingSnippet(snippet)}
                   >
                     <div className="line-clamp-6">
-                      <MarkdownRenderer content={snippet.content} />
+                      <MarkdownRenderer 
+                        content={snippet.content} 
+                        snippetId={snippet.id}
+                        snippetTags={snippet.tags || []}
+                        onImageEdit={handleImageEdit}
+                      />
                     </div>
                   </div>
 
                   {/* Action Buttons */}
                   <div className="flex gap-2 items-center">
-                    {/* Embedding Status Button */}
                     {/* TTS Play Button */}
                     <ReadButton text={snippet.content} variant="icon" className="p-1" />
+                    
+                    {/* Share Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSharingSnippet(snippet);
+                      }}
+                      className="p-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                      title="Share snippet"
+                      aria-label="Share"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                      </svg>
+                    </button>
+                    
+                    {/* Embedding Status Button */}
                     <button
                       onClick={async () => {
                         setCheckingEmbedding(true);
@@ -1732,15 +1787,65 @@ export const SwagPage: React.FC = () => {
                     {new Date(snippet.timestamp).toLocaleDateString()}
                   </span>
                   
-                  {/* Embedding Status Indicator */}
-                  <div
-                    className={`w-2 h-2 rounded-full ${
+                  {/* Embedding Status Button */}
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setCheckingEmbedding(true);
+                      try {
+                        const details = await getEmbeddingDetails(snippet.id);
+                        setEmbeddingStatusMap(prev => ({
+                          ...prev,
+                          [snippet.id]: details.hasEmbedding
+                        }));
+                        
+                        if (details.hasEmbedding) {
+                          const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
+                          showSuccess(message);
+                        } else {
+                          showWarning('No embeddings found. Use "Add to Search Index" to create them.');
+                        }
+                      } catch (error) {
+                        console.error('Failed to check embedding status:', error);
+                        showError('Failed to check embedding status');
+                      } finally {
+                        setCheckingEmbedding(false);
+                      }
+                    }}
+                    className={`p-1.5 text-sm rounded transition-colors ${
                       embeddingStatusMap[snippet.id] === true
-                        ? 'bg-green-500'
-                        : 'bg-gray-300 dark:bg-gray-600'
+                        ? 'bg-green-500 text-white hover:bg-green-600' 
+                        : embeddingStatusMap[snippet.id] === false
+                        ? 'bg-gray-400 text-white hover:bg-gray-500'
+                        : 'bg-blue-500 text-white hover:bg-blue-600'
                     }`}
-                    title={embeddingStatusMap[snippet.id] === true ? 'Indexed' : 'Not indexed'}
-                  />
+                    title={
+                      embeddingStatusMap[snippet.id] === true
+                        ? 'Has embeddings (click for details)'
+                        : embeddingStatusMap[snippet.id] === false
+                        ? 'No embeddings (click to check)'
+                        : 'Check embedding status'
+                    }
+                    disabled={checkingEmbedding}
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
+                    </svg>
+                  </button>
+
+                  {/* Share Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSharingSnippet(snippet);
+                    }}
+                    className="p-1.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                    title="Share snippet"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                  </button>
 
                   {/* Actions Menu */}
                   <button
@@ -1834,11 +1939,21 @@ export const SwagPage: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Content
                 </label>
-                <textarea
+                <MarkdownEditor
                   value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full h-[calc(100vh-28rem)] min-h-[400px] px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm resize-none"
-                  placeholder="Enter content..."
+                  onChange={setEditContent}
+                  height="calc(100vh - 28rem)"
+                  placeholder="Enter markdown content..."
+                  preview="live"
+                  onImageUpload={async (file: File): Promise<string> => {
+                    // Convert image to base64 data URL
+                    return new Promise((resolve, reject) => {
+                      const reader = new FileReader();
+                      reader.onload = () => resolve(reader.result as string);
+                      reader.onerror = reject;
+                      reader.readAsDataURL(file);
+                    });
+                  }}
                 />
               </div>
             </div>
@@ -2023,7 +2138,12 @@ export const SwagPage: React.FC = () => {
                   
                   // Otherwise, always render as markdown
                   // Markdown handles plain text gracefully, so this is safe
-                  return <MarkdownRenderer content={content} />;
+                  return <MarkdownRenderer 
+                    content={content} 
+                    snippetId={viewingSnippet.id}
+                    snippetTags={viewingSnippet.tags || []}
+                    onImageEdit={handleImageEdit}
+                  />;
                 })()}
               </div>
             </div>
@@ -2155,6 +2275,25 @@ export const SwagPage: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
             </svg>
             <span className="hidden md:inline">Tag</span>
+          </button>
+          <button
+            onClick={() => {
+              const selected = getSelectedSnippets();
+              const images = extractImagesFromSnippets(selected);
+              if (images.length === 0) {
+                showWarning('No images found in selected snippets');
+                return;
+              }
+              navigate('/image-editor', { state: { images } });
+            }}
+            disabled={getSelectedSnippets().filter(snippetHasImages).length === 0}
+            className="px-2 md:px-3 py-1.5 text-sm rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 whitespace-nowrap"
+            title="Edit Images"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            <span className="hidden md:inline">Edit Images</span>
           </button>
           <button
             onClick={() => handleBulkOperation('merge')}
@@ -2359,6 +2498,18 @@ export const SwagPage: React.FC = () => {
           isOpen={showUploadDialog}
           onClose={() => setShowUploadDialog(false)}
           onUpload={handleSingleUpload}
+        />
+      )}
+
+      {/* Snippet Share Dialog */}
+      {sharingSnippet && (
+        <SnippetShareDialog
+          snippetId={sharingSnippet.id}
+          content={sharingSnippet.content}
+          title={sharingSnippet.title}
+          tags={sharingSnippet.tags}
+          sourceType={sharingSnippet.sourceType}
+          onClose={() => setSharingSnippet(null)}
         />
       )}
     </div>

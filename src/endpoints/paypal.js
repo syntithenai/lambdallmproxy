@@ -12,9 +12,9 @@ const { invalidateCreditCache } = require('../utils/credit-cache');
  * Get PayPal client configured for sandbox or live environment
  */
 function getPayPalClient() {
-    const clientId = process.env.PAYPAL_CLIENT_ID;
-    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-    const mode = process.env.PAYPAL_MODE || 'sandbox';
+    const clientId = process.env.PP_CID;
+    const clientSecret = process.env.PP_SEC;
+    const mode = process.env.PP_MODE || 'sandbox';
     
     if (!clientId || !clientSecret) {
         throw new Error('PayPal credentials not configured');
@@ -79,7 +79,7 @@ async function handleCreateOrder(event) {
         const { amount } = body;
         
         // Validate amount
-        const minPurchase = parseFloat(process.env.MIN_CREDIT_PURCHASE || '5.00');
+        const minPurchase = parseFloat(process.env.MIN_CREDIT || '5.00');
         const purchaseAmount = parseFloat(amount);
         
         if (isNaN(purchaseAmount) || purchaseAmount < minPurchase) {
@@ -110,8 +110,8 @@ async function handleCreateOrder(event) {
             application_context: {
                 brand_name: 'Syntithenai AI',
                 user_action: 'PAY_NOW',
-                return_url: process.env.PAYPAL_SUCCESS_URL,
-                cancel_url: process.env.PAYPAL_CANCEL_URL
+                return_url: process.env.PP_SUCCESS,
+                cancel_url: process.env.PP_CANCEL
             }
         });
         

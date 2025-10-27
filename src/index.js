@@ -6,6 +6,8 @@
  * - POST /planning - Generate research plan using Groq reasoning model
  * - POST /search - Perform DuckDuckGo search with content extraction
  * - POST /proxy - Forward requests to OpenAI-compatible endpoints
+ * - POST /image-edit - Process images with resize, rotate, flip, format, filter operations
+ * - POST /parse-image-command - Parse natural language image editing commands using LLM
  * - GET /* - Serve static files from docs directory
  * 
  * Uses AWS Lambda Response Streaming for Server-Sent Events (SSE)
@@ -22,6 +24,8 @@ const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
 const proxyImageEndpoint = require('./endpoints/proxy-image');
+const imageEditEndpoint = require('./endpoints/image-edit');
+const parseImageCommandEndpoint = require('./endpoints/parse-image-command');
 // Lazy-load convert endpoint (requires heavy dependencies like mammoth)
 // const convertEndpoint = require('./endpoints/convert');
 // Lazy-load rag-sync endpoint (requires googleapis)
@@ -165,6 +169,26 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
 
+        // RAG endpoints OPTIONS handler
+        if (method === 'OPTIONS' && path.startsWith('/rag/')) {
+            console.log('Handling CORS preflight for RAG endpoint');
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+                    'Access-Control-Max-Age': '86400'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ message: 'CORS preflight OK' }));
+            responseStream.end();
+            return;
+        }
+
         // RAG endpoints (embed-snippets, embed-query, user-spreadsheet, sync-embeddings, ingest, embedding-status, embedding-details)
         if (method === 'POST' && (path === '/rag/embed-snippets' || path === '/rag/embed-query' || path === '/rag/ingest' || path === '/rag/embedding-details')) {
             console.log(`Routing to rag endpoint: ${path}`);
@@ -212,6 +236,152 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'DELETE' && path === '/billing/clear') {
             console.log('Routing to billing endpoint: DELETE /billing/clear');
             await billingEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        // Report error endpoint (for user feedback on bad LLM responses)
+        if (method === 'POST' && path === '/report-error') {
+            console.log('Routing to report-error endpoint');
+            const { verifyGoogleToken } = require('./auth');
+            const { logErrorReport } = require('./services/error-reporter');
+            
+            try {
+                // Parse request body
+                const body = JSON.parse(event.body || '{}');
+                
+                // Validate required fields (explanation optional for positive feedback)
+                if (!body.userEmail || !body.messageData || !body.feedbackType) {
+                    const errorResponse = {
+                        statusCode: 400,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        body: JSON.stringify({
+                            error: 'Missing required fields: userEmail, messageData, feedbackType'
+                        })
+                    };
+                    const metadata = {
+                        statusCode: errorResponse.statusCode,
+                        headers: errorResponse.headers
+                    };
+                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                    responseStream.write(errorResponse.body);
+                    responseStream.end();
+                    return;
+                }
+                
+                // Validate feedbackType
+                if (!['positive', 'negative'].includes(body.feedbackType)) {
+                    const errorResponse = {
+                        statusCode: 400,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        body: JSON.stringify({
+                            error: 'feedbackType must be "positive" or "negative"'
+                        })
+                    };
+                    const metadata = {
+                        statusCode: errorResponse.statusCode,
+                        headers: errorResponse.headers
+                    };
+                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                    responseStream.write(errorResponse.body);
+                    responseStream.end();
+                    return;
+                }
+                
+                // Get OAuth token from Authorization header
+                const authHeader = event.headers.authorization || event.headers.Authorization;
+                if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                    const errorResponse = {
+                        statusCode: 401,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        body: JSON.stringify({ error: 'Missing or invalid authorization' })
+                    };
+                    const metadata = {
+                        statusCode: errorResponse.statusCode,
+                        headers: errorResponse.headers
+                    };
+                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                    responseStream.write(errorResponse.body);
+                    responseStream.end();
+                    return;
+                }
+                
+                const accessToken = authHeader.substring(7);
+                
+                // Verify token
+                const userData = await verifyGoogleToken(accessToken);
+                
+                // Ensure user email matches (prevent spoofing)
+                if (userData.email !== body.userEmail) {
+                    const errorResponse = {
+                        statusCode: 403,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        body: JSON.stringify({ error: 'User email mismatch' })
+                    };
+                    const metadata = {
+                        statusCode: errorResponse.statusCode,
+                        headers: errorResponse.headers
+                    };
+                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                    responseStream.write(errorResponse.body);
+                    responseStream.end();
+                    return;
+                }
+                
+                // Log to Google Sheets
+                await logErrorReport(body, accessToken);
+                
+                const successResponse = {
+                    statusCode: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    body: JSON.stringify({
+                        success: true,
+                        message: 'Error report logged successfully'
+                    })
+                };
+                const metadata = {
+                    statusCode: successResponse.statusCode,
+                    headers: successResponse.headers
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(successResponse.body);
+                responseStream.end();
+                
+            } catch (error) {
+                console.error('Error logging report:', error);
+                const errorResponse = {
+                    statusCode: 500,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    body: JSON.stringify({
+                        error: 'Failed to log error report',
+                        details: error.message
+                    })
+                };
+                const metadata = {
+                    statusCode: errorResponse.statusCode,
+                    headers: errorResponse.headers
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(errorResponse.body);
+                responseStream.end();
+            }
             return;
         }
         
@@ -271,6 +441,26 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(stopResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Handle CORS preflight for transcribe endpoint
+        if (method === 'OPTIONS' && path === '/transcribe') {
+            console.log('Handling CORS preflight for transcribe endpoint');
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+                    'Access-Control-Max-Age': '86400'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ message: 'CORS preflight OK' }));
             responseStream.end();
             return;
         }
@@ -348,6 +538,20 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(imageResponse.body);
             responseStream.end();
+            return;
+        }
+        
+        // Image editing endpoint (SSE streaming response)
+        if (method === 'POST' && path === '/image-edit') {
+            console.log('Routing to image-edit endpoint');
+            await imageEditEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        // Parse image command endpoint (LLM-based natural language parsing)
+        if (method === 'POST' && path === '/parse-image-command') {
+            console.log('Routing to parse-image-command endpoint');
+            await parseImageCommandEndpoint.handler(event, responseStream, context);
             return;
         }
         
@@ -588,7 +792,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             
             // Get Lambda context info
             const memoryLimitMB = context.memoryLimitInMB || 
-                                 parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 
+                                 parseInt(process.env.AWS_MEM) || 
                                  256;
             const memoryUsedMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
             // Use the same requestId that was generated at the start

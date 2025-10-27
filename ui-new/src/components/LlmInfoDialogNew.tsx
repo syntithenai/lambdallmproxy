@@ -20,15 +20,8 @@ interface LlmApiCall {
   success?: boolean;
 }
 
-interface Evaluation {
-  attempt: number;
-  comprehensive: boolean;
-  reason: string;
-}
-
-interface LlmInfoDialogProps {
+interface LlmInfoDialogNewProps {
   apiCalls: LlmApiCall[];
-  evaluations?: Evaluation[];
   onClose: () => void;
 }
 
@@ -237,7 +230,10 @@ const ApiCallCard: React.FC<{ call: LlmApiCall; index: number }> = ({ call, inde
   );
 };
 
-export const LlmInfoDialog: React.FC<LlmInfoDialogProps> = ({ apiCalls, onClose }) => {
+export function LlmInfoDialogNew({
+  apiCalls,
+  onClose
+}: LlmInfoDialogNewProps) {
   const dialogRef = useDialogClose(true, onClose);
   const [copiedAll, setCopiedAll] = useState(false);
   const { showSuccess } = useToast();

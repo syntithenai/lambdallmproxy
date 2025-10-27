@@ -856,7 +856,7 @@ IMPORTANT: Only include fields relevant to the query_type. Be decisive in classi
         
         // Use the comprehensive final template from environment variables
         // Enhanced template that emphasizes query-context relationship
-        const finalTemplate = process.env.FINAL_TEMPLATE || `User Question: {{ORIGINAL_QUERY}}
+        const finalTemplate = process.env.TPL_FINAL || `User Question: {{ORIGINAL_QUERY}}
 
 Research Findings:
 {{ALL_INFORMATION}}
@@ -1091,7 +1091,7 @@ async function handleConvertToMarkdown(event, responseStream, context) {
             body: JSON.stringify({ 
                 error: 'Failed to convert document',
                 details: error.message,
-                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+                stack: process.env.ENV === 'development' ? error.stack : undefined
             })
         }));
     }
@@ -1392,8 +1392,8 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         console.log('🔑 Final googleToken exists:', !!googleToken);
 
         // Authentication check
-        if (process.env.ACCESS_SECRET) {
-            if (!accessSecret || accessSecret !== process.env.ACCESS_SECRET) {
+        if (process.env.ACC_SEC) {
+            if (!accessSecret || accessSecret !== process.env.ACC_SEC) {
                 writeEvent('error', { error: 'Invalid or missing accessSecret', code: 'INVALID_ACCESS_SECRET' });
                 responseStream.end();
                 return;
@@ -1449,7 +1449,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         
         const toolsRun = await runToolLoop({
             model, // Optional - will auto-select if not provided
-            apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY'] || '') : ''),
+            apiKey: apiKey || (allowEnvFallback ? (process.env[parseProviderModel(model).provider === 'openai' ? 'OPENAI_KEY' : 'GROQ_KEY'] || '') : ''),
             userQuery: query,
             systemPrompt: getComprehensiveResearchSystemPrompt(), // Get fresh prompt with current date/time
             stream: streamObject,

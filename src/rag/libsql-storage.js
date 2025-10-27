@@ -83,8 +83,8 @@ CREATE TABLE IF NOT EXISTS metadata (
  */
 function createLibsqlClient(options = {}) {
   const {
-    url = process.env.LIBSQL_URL || 'file:///tmp/rag.db',
-    authToken = process.env.LIBSQL_AUTH_TOKEN,
+    url = process.env.DB_URL || 'file:///tmp/rag.db',
+    authToken = process.env.DB_TOKEN,
   } = options;
 
   return createClient({

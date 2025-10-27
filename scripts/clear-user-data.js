@@ -54,14 +54,14 @@ async function clearUserData(email) {
         console.log(`\n🗑️  Clearing all data for: ${email}\n`);
         
         // Get spreadsheet ID from environment
-        const spreadsheetIds = process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_IDS || process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_ID;
+        const spreadsheetIds = process.env.GS_SHEET_IDS || process.env.GS_SHEET_ID;
         if (!spreadsheetIds) {
             throw new Error('GOOGLE_SHEETS_LOG_SPREADSHEET_IDS not configured in .env');
         }
         
         const spreadsheetId = spreadsheetIds.split(',')[0].trim(); // Use first shard
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const serviceAccountEmail = process.env.GS_EMAIL;
+        const privateKey = process.env.GS_KEY;
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             throw new Error('Google Sheets not configured. Check .env file.');

@@ -65,6 +65,7 @@
     "puppeteer": "^23.11.1",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "sharp": "^0.33.5",
     "turndown": "^7.2.1"
   }
 }

@@ -13,8 +13,8 @@ async function addDevCredit(userEmail, amount) {
         console.log(`💰 Adding $${amount} development credit to ${userEmail}...`);
         
         const spreadsheetId = getShardSpreadsheetId(userEmail);
-        const serviceAccountEmail = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY;
+        const serviceAccountEmail = process.env.GS_EMAIL;
+        const privateKey = process.env.GS_KEY;
         
         if (!spreadsheetId || !serviceAccountEmail || !privateKey) {
             throw new Error('Google Sheets not configured. Check .env file.');
