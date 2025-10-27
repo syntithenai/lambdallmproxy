@@ -18,7 +18,7 @@
  */
 
 const sharp = require('sharp');
-const { verifyGoogleToken } = require('../utils/auth');
+const { verifyGoogleToken } = require('../auth');
 
 /**
  * Process image with sharp library

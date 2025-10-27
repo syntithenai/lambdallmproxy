@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import MDEditor, { commands } from '@uiw/react-md-editor';
 import rehypeSanitize from 'rehype-sanitize';
+import { ImagePicker } from './ImagePicker';
 
 interface MarkdownEditorProps {
   value: string;
@@ -20,6 +21,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onImageUpload
 }) => {
   const [isDark, setIsDark] = useState(false);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [editorApi, setEditorApi] = useState<any>(null);
 
   // Detect dark mode from document
   useEffect(() => {
@@ -56,6 +59,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         return;
       }
 
+      // Store API reference for later use
+      setEditorApi(api);
+
       // Trigger file input
       const input = document.createElement('input');
       input.type = 'file';
@@ -74,6 +80,30 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       };
       input.click();
     }
+  };
+
+  // Custom image picker command (select from swag)
+  const imagePickerCommand = {
+    name: 'image-picker',
+    keyCommand: 'image-picker',
+    buttonProps: { 'aria-label': 'Select image from Swag', title: 'Select from Swag' },
+    icon: (
+      <svg viewBox="0 0 24 24" width="12" height="12">
+        <path fill="currentColor" d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+        <circle fill="currentColor" cx="8" cy="9" r="1.5" />
+      </svg>
+    ),
+    execute: async (_state: any, api: any) => {
+      setEditorApi(api);
+      setShowImagePicker(true);
+    }
+  };
+
+  const handleImageSelected = (imageUrl: string, altText: string) => {
+    if (editorApi) {
+      editorApi.replaceSelection(`![${altText}](${imageUrl})`);
+    }
+    setShowImagePicker(false);
   };
 
   return (
@@ -103,6 +133,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           commands.divider,
           commands.link,
           onImageUpload ? imageUploadCommand : commands.image,
+          imagePickerCommand,
           commands.divider,
           commands.unorderedListCommand,
           commands.orderedListCommand,
@@ -117,6 +148,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           commands.help
         ]}
       />
+
+      {/* Image Picker Modal */}
+      {showImagePicker && (
+        <ImagePicker
+          onSelectImage={handleImageSelected}
+          onClose={() => setShowImagePicker(false)}
+        />
+      )}
     </div>
   );
 };

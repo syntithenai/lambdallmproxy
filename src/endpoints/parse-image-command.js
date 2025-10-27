@@ -17,7 +17,7 @@
  * }
  */
 
-const { verifyGoogleToken } = require('../utils/auth');
+const { verifyGoogleToken } = require('../auth');
 const { imageEditTools, parseImageEditCommand } = require('../tools/image-edit-tools');
 
 /**

@@ -11,7 +11,7 @@ import type { ImageData, ProcessingStatus, BulkOperation } from './types';
 export const ImageEditorPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { updateSnippet, snippets: swagSnippets } = useSwag();
+  const { addSnippet } = useSwag();
 
   // Get images from navigation state
   const initialImages = (location.state as { images?: ImageData[] })?.images || [];
@@ -163,60 +163,27 @@ export const ImageEditorPage: React.FC = () => {
     setIsProcessing(true);
 
     try {
-      // Group images by snippet ID
-      const snippetUpdates = new Map<string, Array<{ oldUrl: string; newUrl: string }>>();
+      let savedCount = 0;
       
+      // Save each processed image as a new snippet
       for (const [imageId, newUrl] of processedImageUrls.entries()) {
         const image = allImages.find((img) => img.id === imageId);
-        if (image && image.snippetId) {
-          if (!snippetUpdates.has(image.snippetId)) {
-            snippetUpdates.set(image.snippetId, []);
-          }
-          snippetUpdates.get(image.snippetId)!.push({
-            oldUrl: image.url,
-            newUrl: newUrl,
-          });
-        }
-      }
+        if (!image) continue;
 
-      // Update each snippet
-      let updatedCount = 0;
-      for (const [snippetId, replacements] of snippetUpdates.entries()) {
         try {
-          // Get snippet from swag context
-          const snippet = swagSnippets.find(s => s.id === snippetId);
-          if (!snippet) {
-            console.error(`Snippet ${snippetId} not found`);
-            continue;
-          }
-
-          // Replace image URLs in content
-          let updatedContent = snippet.content;
-          for (const { oldUrl, newUrl } of replacements) {
-            // Replace in HTML img tags
-            updatedContent = updatedContent.replace(
-              new RegExp(`<img([^>]*) src="${oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'g'),
-              `<img$1 src="${newUrl}"`
-            );
-            // Replace in markdown image syntax
-            updatedContent = updatedContent.replace(
-              new RegExp(`!\\[([^\\]]*)\\]\\(${oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'g'),
-              `![$1](${newUrl})`
-            );
-          }
-
-          // Update snippet if content changed
-          if (updatedContent !== snippet.content) {
-            await updateSnippet(snippetId, { content: updatedContent });
-            updatedCount++;
-          }
+          // Create markdown content with the new image
+          const title = `Edited Image - ${new Date().toLocaleString()}`;
+          const content = `![${image.name || 'Edited image'}](${newUrl})`;
           
+          // Add as new snippet to swag
+          await addSnippet(content, 'user', title);
+          savedCount++;
         } catch (error) {
-          console.error(`Failed to update snippet ${snippetId}:`, error);
+          console.error(`Failed to save image ${imageId}:`, error);
         }
       }
 
-      alert(`Successfully updated ${updatedCount} snippet(s) with processed images`);
+      alert(`Successfully saved ${savedCount} edited image(s) to Swag as new snippets`);
       
       // Clear processed images
       setProcessedImageUrls(new Map());
