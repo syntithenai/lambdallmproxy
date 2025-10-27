@@ -5886,20 +5886,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                                               document.body.appendChild(modal);
                                                             }}
                                                             className="px-3 py-1 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-800"
-                                                          >>
-                                                                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                                                      </svg>
-                                                                    </button>
-                                                                  </div>
-                                                                  <div class="flex-1 overflow-auto p-4">
-                                                                    <pre class="text-xs text-gray-900 dark:text-gray-100 font-mono whitespace-pre-wrap">${result.rawText}</pre>
-                                                                  </div>
-                                                                </div>
-                                                              `;
-                                                              document.body.appendChild(modal);
-                                                            }}
-                                                            className="px-3 py-1 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-800"
                                                           >
                                                             Show Full Text
                                                           </button>
