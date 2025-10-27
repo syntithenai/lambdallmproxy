@@ -29,6 +29,8 @@ import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
 import { getCachedApiBase, generateQuiz } from '../utils/api';
 import { extractImagesFromSnippets, snippetHasImages } from './ImageEditor/extractImages';
+import { quizDB } from '../db/quizDb';
+import { syncSingleQuizStatistic } from '../utils/quizSync';
 import '../styles/markdown-editor.css';
 
 export const SwagPage: React.FC = () => {
@@ -150,6 +152,11 @@ export const SwagPage: React.FC = () => {
   // Quiz state
   const [showQuizModal, setShowQuizModal] = useState(false);
   const [currentQuiz, setCurrentQuiz] = useState<any | null>(null);
+  const [quizMetadata, setQuizMetadata] = useState<{
+    snippetIds: string[];
+    startTime: number;
+    enrichment: boolean;
+  } | null>(null);
   
   // Load RAG config for similarity threshold
   const [_ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
@@ -639,10 +646,20 @@ export const SwagPage: React.FC = () => {
 
       console.log(`🎯 Generating quiz from ${selected.length} snippet(s), ${content.length} characters`);
 
+      const enrichment = true;
+      const startTime = Date.now();
+      
       // Generate quiz with enrichment enabled
-      const quiz = await generateQuiz(content, true, enabledProviders, token);
+      const quiz = await generateQuiz(content, enrichment, enabledProviders, token);
 
       console.log('✅ Quiz generated:', quiz.title);
+      
+      // Store metadata for saving statistics later
+      setQuizMetadata({
+        snippetIds: selected.map(s => s.id),
+        startTime,
+        enrichment
+      });
       
       // Show quiz modal
       setCurrentQuiz(quiz);
@@ -2607,19 +2624,54 @@ export const SwagPage: React.FC = () => {
       )}
 
       {/* Quiz Modal */}
-      {showQuizModal && currentQuiz && (
+      {showQuizModal && currentQuiz && quizMetadata && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <QuizCard
             quiz={currentQuiz}
             onClose={() => {
               setShowQuizModal(false);
               setCurrentQuiz(null);
+              setQuizMetadata(null);
             }}
-            onComplete={(score, total) => {
-              // TODO: Save to IndexedDB (task 5)
-              // TODO: Sync to Google Sheets (task 5)
+            onComplete={async (score, total, answers) => {
               const percentage = Math.round((score / total) * 100);
-              showSuccess(`Quiz completed! Score: ${score}/${total} (${percentage}%)`);
+              const timeTaken = Date.now() - quizMetadata.startTime;
+              
+              try {
+                // Save to IndexedDB
+                const statisticId = await quizDB.saveQuizStatistic({
+                  quizTitle: currentQuiz.title,
+                  snippetIds: quizMetadata.snippetIds,
+                  score,
+                  totalQuestions: total,
+                  timeTaken,
+                  completedAt: new Date().toISOString(),
+                  answers,
+                  enrichment: quizMetadata.enrichment
+                });
+                
+                console.log('✅ Quiz statistic saved to IndexedDB:', statisticId);
+                
+                // Sync to Google Sheets (async, don't block UI)
+                const token = await getToken();
+                if (token) {
+                  syncSingleQuizStatistic(statisticId, token)
+                    .then(synced => {
+                      if (synced) {
+                        console.log('✅ Quiz statistic synced to Google Sheets');
+                      }
+                    })
+                    .catch(error => {
+                      console.error('Failed to sync quiz statistic:', error);
+                      // Will retry on next background sync
+                    });
+                }
+                
+                showSuccess(`Quiz completed! Score: ${score}/${total} (${percentage}%)`);
+              } catch (error) {
+                console.error('Failed to save quiz statistic:', error);
+                showWarning(`Quiz completed! Score: ${score}/${total} (${percentage}%) - Statistics not saved`);
+              }
             }}
           />
         </div>

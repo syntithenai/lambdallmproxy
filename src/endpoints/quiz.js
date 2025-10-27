@@ -273,7 +273,86 @@ async function handleQuizGenerate(event) {
     }
 }
 
+/**
+ * Handle quiz statistics sync request
+ * Syncs quiz statistics from frontend IndexedDB to Google Sheets
+ */
+async function handleQuizSyncStatistics(event) {
+    try {
+        // Authenticate request
+        const { user } = await authenticateRequest(event);
+        
+        // Parse request body
+        const body = JSON.parse(event.body || '{}');
+        const { statistics } = body;
+        
+        if (!statistics || !Array.isArray(statistics)) {
+            return {
+                statusCode: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'statistics parameter is required and must be an array'
+                })
+            };
+        }
+        
+        console.log(`📊 Syncing ${statistics.length} quiz statistics for user ${user.email}`);
+        
+        // Log each statistic to Google Sheets
+        let synced = 0;
+        let failed = 0;
+        
+        for (const stat of statistics) {
+            try {
+                await logToGoogleSheets({
+                    timestamp: new Date(stat.completedAt).toISOString(),
+                    user_email: user.email,
+                    endpoint: 'quiz-statistics',
+                    operation: 'quiz-completion',
+                    quiz_title: stat.quizTitle,
+                    quiz_id: stat.id,
+                    score: stat.score,
+                    total_questions: stat.totalQuestions,
+                    percentage: stat.percentage,
+                    time_taken_ms: stat.timeTaken,
+                    enrichment_used: stat.enrichment,
+                    snippet_ids: stat.snippetIds.join(','),
+                    answers: JSON.stringify(stat.answers)
+                });
+                synced++;
+            } catch (error) {
+                console.error(`Failed to sync quiz ${stat.id}:`, error);
+                failed++;
+            }
+        }
+        
+        console.log(`✅ Quiz statistics sync complete: ${synced} synced, ${failed} failed`);
+        
+        return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                synced,
+                failed,
+                message: `Successfully synced ${synced} quiz statistics`
+            })
+        };
+        
+    } catch (error) {
+        console.error('Error syncing quiz statistics:', error);
+        return {
+            statusCode: 500,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                error: error.message || 'Failed to sync quiz statistics',
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            })
+        };
+    }
+}
+
 module.exports = {
     handleQuizGenerate,
+    handleQuizSyncStatistics,
     generateQuiz
 };

@@ -20,10 +20,19 @@ export interface Quiz {
   questions: QuizQuestion[];
 }
 
+export interface QuizAnswer {
+  questionId: string;
+  questionPrompt: string;
+  selectedChoiceId: string;
+  correctChoiceId: string;
+  correct: boolean;
+  explanation: string;
+}
+
 interface QuizCardProps {
   quiz: Quiz;
   onClose: () => void;
-  onComplete?: (_score: number, _totalQuestions: number) => void;
+  onComplete?: (_score: number, _totalQuestions: number, _answers: QuizAnswer[]) => void;
 }
 
 type QuizState = 'question' | 'answered' | 'completed';
@@ -33,7 +42,7 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [state, setState] = useState<QuizState>('question');
   const [score, setScore] = useState(0);
-  const [answers, setAnswers] = useState<{ questionId: string; selectedId: string; correct: boolean }[]>([]);
+  const [answers, setAnswers] = useState<QuizAnswer[]>([]);
 
   const currentQuestion = quiz.questions[currentQuestionIndex];
   const progress = currentQuestionIndex + 1;
@@ -51,8 +60,11 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
 
     setAnswers([...answers, {
       questionId: currentQuestion.id,
-      selectedId: choiceId,
-      correct: isCorrect
+      questionPrompt: currentQuestion.prompt,
+      selectedChoiceId: choiceId,
+      correctChoiceId: currentQuestion.answerId,
+      correct: isCorrect,
+      explanation: currentQuestion.explanation || ''
     }]);
 
     setState('answered');
@@ -80,7 +92,7 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
 
       // Call onComplete callback
       if (onComplete) {
-        onComplete(score, quiz.questions.length);
+        onComplete(score, quiz.questions.length, answers);
       }
     }
   };

@@ -215,6 +215,25 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        if (method === 'POST' && path === '/quiz/sync-statistics') {
+            console.log('Routing to quiz statistics sync endpoint');
+            const response = await quizEndpoint.handleQuizSyncStatistics(event);
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: {
+                    ...response.headers,
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
         if (method === 'POST' && path === '/convert-to-markdown') {
             console.log('Routing to convert-to-markdown endpoint');
             // Lazy-load convert endpoint
