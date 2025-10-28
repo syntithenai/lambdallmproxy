@@ -34,8 +34,8 @@ fi
 mkdir -p "$TEMP_DIR/nodejs"
 cd "$TEMP_DIR/nodejs"
 
-# Create minimal package.json with ONLY production-critical dependencies
-# Note: google-spreadsheet (lighter than googleapis), @paypal/checkout-server-sdk needed
+# Create package.json with only CRITICAL dependencies that must be in layer
+# (Keep this minimal - only native modules and large packages)
 cat > package.json << 'EOF'
 {
   "name": "llmproxy-dependencies",
@@ -43,12 +43,11 @@ cat > package.json << 'EOF'
   "dependencies": {
     "@distube/ytdl-core": "^4.14.4",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@paypal/checkout-server-sdk": "^1.0.3",
-    "fluent-ffmpeg": "^2.1.2",
+    "fluent-ffmpeg": "^2.1.3",
     "form-data": "^4.0.0",
-    "google-auth-library": "^10.4.0",
-    "google-spreadsheet": "4.1.5",
-    "jsonwebtoken": "^9.0.2"
+    "google-spreadsheet": "^4.1.5",
+    "natural": "^6.12.0",
+    "sharp": "^0.33.5"
   }
 }
 EOF
