@@ -67,6 +67,7 @@ temp/
 
 # AWS credentials (if any)
 .aws/
+/aws/
 
 # Deployment artifacts
 *.zip
@@ -87,3 +88,4 @@ coverage/
 deploy_output.txt
 layer_output.txt
 layer_output.txt
+aws/dist/aws
