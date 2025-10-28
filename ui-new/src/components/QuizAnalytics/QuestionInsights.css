@@ -1,0 +1,130 @@
+.question-insights {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.question-insights.loading,
+.question-insights.empty {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.question-insights h2 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0 0 0.5rem 0;
+}
+
+.question-insights .subtitle {
+  color: #666;
+  font-size: 0.875rem;
+  margin: 0 0 1.5rem 0;
+}
+
+.insights-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.insights-table thead {
+  background: #f5f5f5;
+}
+
+.insights-table th {
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
+.insights-table tbody tr {
+  border-bottom: 1px solid #e0e0e0;
+  transition: background 0.2s;
+}
+
+.insights-table tbody tr:hover {
+  background: #f9f9f9;
+}
+
+.insights-table td {
+  padding: 0.75rem;
+}
+
+.question-text {
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background: #E3F2FD;
+  color: #1565C0;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.success-rate {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.success-rate.poor {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.success-rate.ok {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .question-insights {
+    background: #1a1a1a;
+    border-color: #333;
+  }
+
+  .question-insights h2 {
+    color: #fff;
+  }
+
+  .question-insights .subtitle {
+    color: #999;
+  }
+
+  .insights-table thead {
+    background: #2a2a2a;
+  }
+
+  .insights-table th {
+    color: #999;
+  }
+
+  .insights-table tbody tr {
+    border-color: #333;
+  }
+
+  .insights-table tbody tr:hover {
+    background: #2a2a2a;
+  }
+
+  .topic-badge {
+    background: #1E3A5F;
+    color: #64B5F6;
+  }
+}

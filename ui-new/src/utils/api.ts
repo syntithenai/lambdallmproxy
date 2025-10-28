@@ -1,5 +1,6 @@
 // API client for Lambda endpoints
 import { createSSERequest, handleSSEResponse } from './streaming';
+import { cache } from '../services/cache';
 
 // Constants
 const REMOTE_LAMBDA_URL = import.meta.env.VITE_API || import.meta.env.VITE_LAM || 'https://nrw7pperjjdswbmqgmigbwsbyi0rwdqf.lambda-url.us-east-1.on.aws';
@@ -443,6 +444,27 @@ export const performSearch = async (
   onComplete?: () => void,
   onError?: (_error: Error) => void
 ): Promise<void> => {
+  // Check cache for each query
+  if (cache.isEnabled() && queries.length === 1) {
+    try {
+      const cachedResults = await cache.getSearchResults(queries[0]);
+      
+      if (cachedResults) {
+        // Send cached results through event handler
+        onEvent('search_results', { results: cachedResults });
+        onEvent('complete', { cached: true });
+        
+        if (onComplete) {
+          onComplete();
+        }
+        
+        return; // Return early with cached results
+      }
+    } catch (error) {
+      console.error('Cache lookup failed for search, continuing with API call:', error);
+    }
+  }
+  
   const apiBase = await getCachedApiBase();
   
   const response = await createSSERequest(
@@ -455,7 +477,36 @@ export const performSearch = async (
     token
   );
   
-  await handleSSEResponse(response, onEvent, onComplete, onError);
+  // Collect search results for caching
+  let collectedResults: any[] = [];
+  
+  const wrappedOnEvent = (event: string, data: any) => {
+    // Collect search results for caching
+    if (cache.isEnabled() && event === 'search_results') {
+      collectedResults = data.results || [];
+    }
+    
+    // Call original event handler
+    onEvent(event, data);
+  };
+  
+  const wrappedOnComplete = async () => {
+    // Cache the search results (async, don't block)
+    if (cache.isEnabled() && queries.length === 1 && collectedResults.length > 0) {
+      try {
+        await cache.setSearchResults(queries[0], collectedResults);
+      } catch (error) {
+        console.error('Failed to cache search results:', error);
+      }
+    }
+    
+    // Call original completion handler
+    if (onComplete) {
+      onComplete();
+    }
+  };
+  
+  await handleSSEResponse(response, wrappedOnEvent, wrappedOnComplete, onError);
 };
 
 // Chat endpoint with SSE streaming and tool execution
@@ -478,6 +529,33 @@ export const sendChatMessageStreaming = async (
   youtubeToken?: string | null,
   requestId?: string | null  // Optional request ID for grouping logs (e.g., from voice transcription)
 ): Promise<void> => {
+  // Check cache first (only for non-streaming requests without tools)
+  if (!request.stream && !request.tools && cache.isEnabled()) {
+    try {
+      const cachedResponse = await cache.getLLMResponse(request.messages);
+      
+      if (cachedResponse) {
+        // Simulate streaming events from cached response
+        onEvent('content', { content: cachedResponse.content });
+        onEvent('complete', { 
+          response: cachedResponse,
+          usage: cachedResponse.usage,
+          model: cachedResponse.model,
+          cached: true
+        });
+        
+        if (onComplete) {
+          onComplete();
+        }
+        
+        return; // Return early with cached response
+      }
+    } catch (error) {
+      console.error('Cache lookup failed, continuing with API call:', error);
+      // Continue with normal API call if cache fails
+    }
+  }
+  
   const apiBase = await getCachedApiBase();
   
   const response = await createSSERequest(
@@ -491,7 +569,52 @@ export const sendChatMessageStreaming = async (
     requestId // Pass request ID to headers
   );
   
-  await handleSSEResponse(response, onEvent, onComplete, onError);
+  // Collect response for caching (if caching is enabled and no tools)
+  let collectedContent = '';
+  let collectedUsage: any = null;
+  let collectedModel: string | undefined = undefined;
+  
+  const wrappedOnEvent = (event: string, data: any) => {
+    // Collect response data for caching
+    if (cache.isEnabled() && !request.tools) {
+      if (event === 'content') {
+        collectedContent += data.content || '';
+      }
+      if (event === 'complete') {
+        collectedUsage = data.usage;
+        collectedModel = data.model;
+      }
+    }
+    
+    // Call original event handler
+    onEvent(event, data);
+  };
+  
+  const wrappedOnComplete = async () => {
+    // Cache the response (async, don't block)
+    if (cache.isEnabled() && !request.tools && collectedContent) {
+      try {
+        await cache.setLLMResponse(
+          request.messages,
+          {
+            role: 'assistant',
+            content: collectedContent
+          },
+          collectedUsage,
+          collectedModel
+        );
+      } catch (error) {
+        console.error('Failed to cache response:', error);
+      }
+    }
+    
+    // Call original completion handler
+    if (onComplete) {
+      onComplete();
+    }
+  };
+  
+  await handleSSEResponse(response, wrappedOnEvent, wrappedOnComplete, onError);
 };
 
 // Image Generation endpoint (non-streaming)

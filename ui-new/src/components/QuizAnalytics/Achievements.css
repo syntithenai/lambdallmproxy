@@ -1,0 +1,149 @@
+.achievements {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.achievements.loading {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.achievements .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.achievements h2 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0;
+}
+
+.achievement-progress {
+  padding: 0.5rem 1rem;
+  background: #E3F2FD;
+  color: #1565C0;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.achievement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.achievement-card {
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.achievement-card.unlocked {
+  border-color: #4CAF50;
+  background: linear-gradient(135deg, #E8F5E9 0%, #ffffff 100%);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+}
+
+.achievement-card.locked {
+  opacity: 0.6;
+  filter: grayscale(50%);
+}
+
+.achievement-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+.achievement-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.achievement-name {
+  font-size: 1rem;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 0.25rem;
+}
+
+.achievement-description {
+  font-size: 0.875rem;
+  color: #666;
+  margin-bottom: 1rem;
+}
+
+.achievement-progress-bar {
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  transition: width 0.3s ease;
+}
+
+.achievement-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.unlocked-text {
+  color: #4CAF50;
+}
+
+.progress-text {
+  color: #999;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .achievements {
+    background: #1a1a1a;
+    border-color: #333;
+  }
+
+  .achievements h2 {
+    color: #fff;
+  }
+
+  .achievement-progress {
+    background: #1E3A5F;
+    color: #64B5F6;
+  }
+
+  .achievement-card {
+    border-color: #333;
+  }
+
+  .achievement-card.unlocked {
+    border-color: #4CAF50;
+    background: linear-gradient(135deg, #1B5E20 0%, #1a1a1a 100%);
+  }
+
+  .achievement-name {
+    color: #fff;
+  }
+
+  .achievement-description {
+    color: #999;
+  }
+
+  .achievement-progress-bar {
+    background: #333;
+  }
+}

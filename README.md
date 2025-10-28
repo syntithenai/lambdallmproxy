@@ -213,6 +213,133 @@ Advanced multi-provider management with intelligent load distribution:
 
 **Key Technologies**: Round-robin scheduling, circuit breaker pattern, rate limit tracking, provider health monitoring
 
+### 📰 Personalized Feed System
+
+AI-curated content discovery based on your interests and research:
+
+- **LLM-Powered Curation**: Generate "Did You Know" facts and Q&A items tailored to your interests
+- **Context-Aware**: Analyzes your Swag snippets and web search results for personalization
+- **Preference Learning**: Automatically tracks liked/disliked topics from user interactions
+- **Interactive Quizzes**: Generate 10-question quizzes for any feed item to test comprehension
+- **Swipe Gestures**: Mobile-friendly swipe left to trash, right to stash
+- **Infinite Scroll**: Seamless content loading with 10 items per batch
+- **Search Integration**: Customizable search terms (up to 5) for content discovery
+
+**Key Technologies**: SSE streaming, IndexedDB, DuckDuckGo search, gesture detection
+
+### 🧠 Interactive Quiz System
+
+Test your knowledge with AI-generated quizzes:
+
+- **Instant Quiz Generation**: Create quizzes from any snippet or feed item
+- **10-Question Format**: Multiple-choice questions with explanations
+- **Performance Tracking**: Monitor your quiz scores and progress over time
+- **Source-Based**: Questions derived from your saved research and content
+- **Immediate Feedback**: See correct answers and explanations after each question
+
+**Key Technologies**: LLM-based question generation, quiz analytics, local storage
+
+### 🎨 AI Image Tools
+
+Create and edit images directly in the browser:
+
+- **Image Generation**: Multiple AI providers (DALL-E, Replicate, Together AI)
+- **Image Editing**: In-browser image editor with filters, crops, annotations
+- **Prompt Engineering**: Build complex image generation prompts with guidance
+- **History Tracking**: Save and revisit previous image generations
+- **Provider Fallback**: Automatic failover if primary provider unavailable
+
+**Key Technologies**: Canvas API, multiple image generation providers, local storage
+
+### 🎙️ Audio & Video Transcription
+
+Convert speech to text with timestamp support:
+
+- **Multi-Format Support**: MP3, MP4, WAV, and more
+- **Timestamp Preservation**: Keep timing information for video/audio sync
+- **URL Transcription**: Transcribe directly from YouTube or other URLs
+- **Local File Upload**: Process files from your device
+- **Cost-Effective**: Uses Groq's Whisper API (free tier available)
+
+**Key Technologies**: Whisper API, file upload handling, timestamp parsing
+
+### 🔊 Text-to-Speech (TTS)
+
+Listen to any text content with natural voices:
+
+- **In-Browser TTS**: No external API required for basic voices
+- **Read Aloud**: Convert snippets, chat messages, or articles to speech
+- **Background Playback**: Continue listening while browsing
+- **Playback Controls**: Play, pause, speed adjustment
+- **Free & Private**: All processing happens in your browser
+
+**Key Technologies**: Web Speech API, audio playback management
+
+### 💳 Transparent Usage Billing
+
+Track every dollar spent on AI services:
+
+- **Real-Time Cost Tracking**: See costs for every API call
+- **Provider Breakdown**: Cost analysis by provider and model
+- **Personal Billing Sheet**: Export usage data to your own Google Sheet
+- **Usage History**: Complete transaction log with timestamps
+- **Credit System**: Optional prepaid credits with low-balance warnings
+- **PayPal Integration**: Top up credits directly through PayPal
+
+**Key Technologies**: Google Sheets API, PayPal API, cost calculation engine
+
+### 🔌 OpenAI-Compatible REST API
+
+Integrate this LLM proxy into your own applications:
+
+- **OpenAI SDK Compatible**: Drop-in replacement for OpenAI's API
+  - `/v1/chat/completions` - Streaming and non-streaming chat
+  - `/v1/models` - List available models
+- **Bearer Token Authentication**: Secure API key management
+  - Generate API keys via CLI: `node scripts/create-api-key.js your@email.com`
+  - Keys stored in Google Sheets with usage tracking
+  - Request and token count monitoring
+- **Multi-Provider Access**: Use any configured LLM provider via OpenAI format
+  - Groq (Llama 3.3, DeepSeek-R1, Mixtral, Gemma)
+  - Google Gemini (2.0 Flash, 2.5 Pro/Flash)
+  - OpenAI (GPT-4o, o1, o1-mini)
+  - Together AI, Replicate, Anthropic Claude
+- **Tool Use Support**: Full function calling and tool execution
+  - Web search, scraping, code execution
+  - RAG knowledge base queries
+  - Todo and snippet management
+  - Image generation, transcription
+- **Streaming SSE**: Real-time responses with Server-Sent Events
+  - OpenAI-compatible `chat.completion.chunk` format
+  - Custom events for tool notifications and search results
+  - Progress tracking for long-running operations
+- **Usage Logging**: All requests logged to Google Sheets
+  - Cost tracking per API key
+  - Token usage analytics
+  - Request history and debugging
+
+**Example Usage**:
+```python
+import openai
+
+client = openai.OpenAI(
+    base_url="https://your-lambda-url.amazonaws.com/v1",
+    api_key="sk-your-api-key-here"
+)
+
+stream = client.chat.completions.create(
+    model="groq/llama-3.3-70b-versatile",
+    messages=[{"role": "user", "content": "Search the web for AI news"}],
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end='')
+```
+
+**Key Technologies**: Lambda Function URLs, API key validation, SSE streaming, Google Sheets storage
+
 ## 🚀 Quick Start
 
 ### Prerequisites

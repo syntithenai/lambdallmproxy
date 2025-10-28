@@ -1,0 +1,92 @@
+/* Content Script Styles - Research Agent Extension */
+
+.research-agent-inline {
+  position: absolute;
+  z-index: 999999;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  pointer-events: all;
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.research-agent-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3),
+              0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.research-agent-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4),
+              0 2px 6px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.research-agent-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3),
+              0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.research-agent-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.5;
+}
+
+.research-agent-btn span {
+  line-height: 1;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .research-agent-btn {
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4),
+                0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+  
+  .research-agent-btn:hover {
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5),
+                0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Ensure button is above most page elements */
+.research-agent-inline * {
+  all: initial;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.research-agent-inline {
+  all: initial;
+  position: absolute;
+  z-index: 999999;
+  display: none;
+  align-items: center;
+  gap: 8px;
+}

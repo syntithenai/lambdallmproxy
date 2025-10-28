@@ -20,7 +20,7 @@ const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-
 const { loadProviderCatalog } = require('../utils/catalog-loader');
 
 // Load provider catalog using centralized loader
-const providerCatalog = loadProviderCatalog();
+let providerCatalog = loadProviderCatalog();
 
 // Enrich catalog with rate limit information from provider-specific modules
 const { GROQ_RATE_LIMITS } = require('../groq-rate-limits');
@@ -1055,13 +1055,17 @@ async function handler(event, responseStream, context) {
     try {
         // Initialize SSE stream with proper headers
         // Note: CORS headers are handled by Lambda Function URL configuration
+        const { getSecurityHeaders } = require('../utils/security-headers');
+        const securityHeaders = getSecurityHeaders();
+        
         const metadata = {
             statusCode: 200,
             headers: {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
+                'X-Accel-Buffering': 'no',
+                ...securityHeaders
             }
         };
         
@@ -1085,9 +1089,14 @@ async function handler(event, responseStream, context) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        let { messages, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location, language } = body;
+        let { messages, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location, language, voiceMode } = body;
         model = body.model; // Assign to function-scoped variable
         const tavilyApiKey = body.tavilyApiKey || '';
+        
+        // Log voice mode if enabled
+        if (voiceMode) {
+            console.log('🎙️ Voice mode enabled - will provide dual response format');
+        }
         
         // Extract user's preferred language for LLM responses
         const userLanguage = language || 'en';
@@ -1193,6 +1202,28 @@ async function handler(event, responseStream, context) {
                     mergedSystemContent += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
                 }
                 
+                // Add voice mode instructions
+                if (voiceMode) {
+                    mergedSystemContent += `\n\n**VOICE MODE ACTIVE**: You must provide responses in TWO formats as a JSON object:
+1. voiceResponse: A concise 1-2 sentence summary suitable for text-to-speech (conversational, simple language, under 200 characters)
+2. fullResponse: Complete detailed answer with all information
+
+Format your response as JSON:
+{
+  "voiceResponse": "Short answer here",
+  "fullResponse": "Detailed answer here"
+}
+
+Example:
+User: "What's the weather in Tokyo?"
+{
+  "voiceResponse": "It's currently 72 degrees and sunny in Tokyo.",
+  "fullResponse": "The current weather in Tokyo, Japan is 72°F (22°C) with clear skies and sunshine. The forecast shows continued pleasant weather with temperatures in the low 70s throughout the day. Humidity is at 45% with light winds from the east at 8 mph."
+}
+
+CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise and conversational.`;
+                }
+                
                 // Add location context if available
                 const finalSystemContent = locationContext 
                     ? mergedSystemContent + locationContext 
@@ -1206,13 +1237,35 @@ async function handler(event, responseStream, context) {
                 
                 console.log(`📍 Merged ${systemMessages.length} system message(s)` + 
                     (locationContext ? ' and added location context' : '') +
-                    (userLanguage !== 'en' ? ` with ${userLanguage} language instruction` : ''));
-            } else if (locationContext || userLanguage !== 'en') {
+                    (userLanguage !== 'en' ? ` with ${userLanguage} language instruction` : '') +
+                    (voiceMode ? ' with voice mode instructions' : ''));
+            } else if (locationContext || userLanguage !== 'en' || voiceMode) {
                 // No system message exists, create one with location context and/or language instruction
                 let systemContent = 'You are a helpful AI assistant with access to powerful tools. **MANDATORY TOOL USE**: (1) For calculations, math problems, or data processing, use execute_javascript. (2) For current events, news, recent information after your knowledge cutoff, facts needing citations, or any research query, use search_web. (3) For ANY diagrams, charts, flowcharts, or visualizations, use generate_chart - NEVER use execute_javascript for charts. **CRITICAL**: Always cite sources with URLs when using search_web. Use tools proactively - they provide better answers than relying solely on training data.';
                 
                 if (languageInstruction && userLanguage !== 'en') {
                     systemContent += `\n\n**LANGUAGE INSTRUCTION**: ${languageInstruction}`;
+                }
+                
+                if (voiceMode) {
+                    systemContent += `\n\n**VOICE MODE ACTIVE**: You must provide responses in TWO formats as a JSON object:
+1. voiceResponse: A concise 1-2 sentence summary suitable for text-to-speech (conversational, simple language, under 200 characters)
+2. fullResponse: Complete detailed answer with all information
+
+Format your response as JSON:
+{
+  "voiceResponse": "Short answer here",
+  "fullResponse": "Detailed answer here"
+}
+
+Example:
+User: "What's the weather in Tokyo?"
+{
+  "voiceResponse": "It's currently 72 degrees and sunny in Tokyo.",
+  "fullResponse": "The current weather in Tokyo, Japan is 72°F (22°C) with clear skies and sunshine. The forecast shows continued pleasant weather with temperatures in the low 70s throughout the day. Humidity is at 45% with light winds from the east at 8 mph."
+}
+
+CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise and conversational.`;
                 }
                 
                 if (locationContext) {
@@ -1225,7 +1278,8 @@ async function handler(event, responseStream, context) {
                 });
                 console.log('📍 Added system message' + 
                     (locationContext ? ' with location context' : '') +
-                    (userLanguage !== 'en' ? ` and ${userLanguage} language instruction` : ''));
+                    (userLanguage !== 'en' ? ` and ${userLanguage} language instruction` : '') +
+                    (voiceMode ? ' with voice mode instructions' : ''));
             } else {
                 // No system message at all, add default with tool guidance
                 messages.unshift({
@@ -1314,7 +1368,21 @@ async function handler(event, responseStream, context) {
         
         // Authenticate and authorize request
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
-        const authResult = await authenticateRequest(authHeader);
+        
+        // ✅ REST API BYPASS: Check if this is a REST API request (already authenticated via API key)
+        let authResult;
+        if (event._isRESTAPI && event._userEmail) {
+            // REST API request - skip OAuth, use email from API key validation
+            console.log(`🔑 REST API request authenticated via API key for: ${event._userEmail}`);
+            authResult = {
+                authenticated: true,
+                authorized: true, // REST API users get full access
+                email: event._userEmail
+            };
+        } else {
+            // Normal OAuth flow
+            authResult = await authenticateRequest(authHeader);
+        }
         
         // Check authentication
         if (!authResult.authenticated) {

@@ -29,6 +29,42 @@ const loadPayPalSDK = () => {
 
 loadPayPalSDK();
 
+// Register Service Worker for PWA functionality
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('✅ Service Worker registered successfully:', registration.scope);
+        
+        // Check for updates periodically
+        setInterval(() => {
+          registration.update();
+        }, 60 * 60 * 1000); // Check every hour
+        
+        // Listen for service worker updates
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // New service worker available - notify user
+                console.log('🔄 New version available! Please refresh the page.');
+                // Optional: Show toast notification to user
+                const event = new CustomEvent('sw-update-available');
+                window.dispatchEvent(event);
+              }
+            });
+          }
+        });
+      })
+      .catch((error) => {
+        console.error('❌ Service Worker registration failed:', error);
+      });
+  });
+} else {
+  console.warn('⚠️ Service Workers not supported in this browser');
+}
+
 // Check for ?reset=true URL parameter to clear remote Lambda preference
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('reset') === 'true') {

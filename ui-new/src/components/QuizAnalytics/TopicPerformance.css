@@ -1,0 +1,156 @@
+.topic-performance {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.topic-performance.loading,
+.topic-performance.empty {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.topic-performance .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.topic-performance h2 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0;
+}
+
+.sort-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sort-controls button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #e0e0e0;
+  background: white;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sort-controls button:hover {
+  background: #f5f5f5;
+}
+
+.sort-controls button.active {
+  background: #2196F3;
+  color: white;
+  border-color: #2196F3;
+}
+
+.chart-container {
+  margin-bottom: 2rem;
+  padding: 1rem 0;
+}
+
+.topic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.topic-table thead {
+  background: #f5f5f5;
+}
+
+.topic-table th {
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
+.topic-table tbody tr {
+  border-bottom: 1px solid #e0e0e0;
+  transition: background 0.2s;
+}
+
+.topic-table tbody tr:hover {
+  background: #f9f9f9;
+}
+
+.topic-table td {
+  padding: 0.75rem;
+}
+
+.topic-table .score {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.topic-table .score.good {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.topic-table .score.ok {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.topic-table .score.poor {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.topic-table .trend {
+  font-size: 1.25rem;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .topic-performance {
+    background: #1a1a1a;
+    border-color: #333;
+  }
+
+  .topic-performance h2 {
+    color: #fff;
+  }
+
+  .sort-controls button {
+    background: #2a2a2a;
+    border-color: #444;
+    color: #fff;
+  }
+
+  .sort-controls button:hover {
+    background: #333;
+  }
+
+  .topic-table thead {
+    background: #2a2a2a;
+  }
+
+  .topic-table th {
+    color: #999;
+  }
+
+  .topic-table tbody tr {
+    border-color: #333;
+  }
+
+  .topic-table tbody tr:hover {
+    background: #2a2a2a;
+  }
+}

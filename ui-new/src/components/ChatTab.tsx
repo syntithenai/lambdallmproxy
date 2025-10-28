@@ -29,6 +29,7 @@ import { LlmInfoDialogNew } from './LlmInfoDialogNew';
 import { ErrorInfoDialog } from './ErrorInfoDialog';
 import { FixResponseDialog } from './FixResponseDialog';
 import { VoiceInputDialog } from './VoiceInputDialog';
+import { ContinuousVoiceMode } from './ContinuousVoiceMode';
 import { GeneratedImageBlock } from './GeneratedImageBlock';
 import { JsonTree } from './JsonTree';
 import { ImageGallery } from './ImageGallery';
@@ -290,6 +291,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // YouTube search progress tracking
   const [youtubeSearchProgress, setYoutubeSearchProgress] = useState<Map<string, YouTubeSearchProgressData>>(new Map());
+  
+  // Screen reader live announcements for accessibility
+  const [srAnnouncement, setSrAnnouncement] = useState<string>('');
   
   // JavaScript execution progress tracking
   const [javascriptProgress, setJavascriptProgress] = useState<Map<string, {
@@ -2515,6 +2519,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               if (data.content) {
                 setStreamingContent(prev => prev + data.content);
                 
+                // Announce to screen readers when response starts (only on first delta)
+                if (!streamingContent) {
+                  setSrAnnouncement('Assistant is responding');
+                }
+                
                 // Update or create the current streaming block
                 setMessages(prev => {
                   const lastMessageIndex = prev.length - 1;
@@ -2569,6 +2578,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // Tool execution starting - add tool_call info to last assistant message
               // Note: Streaming block should already be finalized by message_complete
               console.log('� Tool call starting:', data.name, 'currentStreamingBlockIndex:', currentStreamingBlockIndex);
+              
+              // Announce tool execution to screen readers
+              const toolName = data.name?.replace(/_/g, ' ') || 'tool';
+              setSrAnnouncement(`Executing ${toolName}`);
               
               setToolStatus(prev => [...prev, {
                 id: data.id,
@@ -2837,6 +2850,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   result: data.content
                 } : t
               ));
+              
+              // Announce tool completion to screen readers
+              const completedToolName = data.name?.replace(/_/g, ' ') || 'tool';
+              if (data.error) {
+                setSrAnnouncement(`${completedToolName} failed`);
+              } else {
+                setSrAnnouncement(`${completedToolName} complete`);
+              }
               
               // Clear search progress when search_web tool completes
               // This prevents progress from showing on the last message after completion
@@ -3195,6 +3216,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               if (data.tool_calls && data.tool_calls.length > 0) {
                 console.log('📦 message_complete with tool_calls:', data.tool_calls.map((tc: any) => ({ id: tc.id, name: tc.function.name })));
               }
+              
+              // Announce response completion to screen readers
+              setSrAnnouncement('Response complete');
               
               // DEBUG: Log imageGenerations in message_complete
               console.log('🖼️ message_complete imageGenerations:', data.imageGenerations?.length || 0, 
@@ -4210,6 +4234,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               const errorMsg = data.error;
               showError(errorMsg);
               
+              // Announce error to screen readers
+              setSrAnnouncement(`Error: ${errorMsg.substring(0, 100)}`);
+              
               // Check for continue context again
               if (data.showContinueButton && data.continueContext) {
                 setShowContinueButton(true);
@@ -4372,7 +4399,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       />
 
       {/* Messages Area */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto md:px-4 py-4 space-y-4">
+      <div 
+        ref={messagesContainerRef} 
+        className="flex-1 overflow-y-auto md:px-4 py-4 space-y-4"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-relevant="additions text"
+      >
+        {/* Screen reader live region (visually hidden) */}
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {srAnnouncement}
+        </div>
         {messages.length === 0 && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
             No messages yet. Start a conversation!
@@ -6862,8 +6899,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     onClick={() => setSelectedSnippetIds(new Set())}
                     className="ml-2 p-1 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
                     title={t('chat.clearAttachedSnippets')}
+                    aria-label={t('chat.clearAttachedSnippets')}
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
@@ -6936,8 +6974,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   disabled={isLoading}
                   className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Attach images or PDFs"
+                  aria-label="Attach images or PDFs"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                   </svg>
                 </button>
@@ -6948,8 +6987,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   disabled={isLoading || !accessToken}
                   className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
+                  aria-label={!accessToken ? 'Sign in to use voice input' : 'Voice input (speech-to-text)'}
                 >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                     <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                   </svg>
@@ -7587,6 +7627,29 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         apiEndpoint={apiEndpoint}
       />
 
+      {/* Continuous Voice Mode (Hotword Detection) */}
+      {accessToken && (
+        <div className="fixed bottom-20 right-4 z-30 max-w-sm">
+          <ContinuousVoiceMode
+            onVoiceRequest={(text) => {
+              // Set the input text and trigger submission
+              setInput(text);
+              // Simulate sending after a brief delay to allow state update
+              setTimeout(() => {
+                handleSend();
+              }, 100);
+            }}
+            onTranscriptionStart={() => {
+              console.log('🎙️ Continuous mode: transcription started');
+            }}
+            accessToken={accessToken}
+            apiEndpoint={apiEndpoint}
+            isProcessing={isLoading}
+            isSpeaking={false} // TODO: Track TTS speaking state from background player
+          />
+        </div>
+      )}
+
       {/* Examples Modal - Full Screen 3-Column Layout */}
       <ExamplesModal
         isOpen={showExamplesModal}
@@ -7659,8 +7722,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               <button
                 onClick={() => setShowRawHtml(null)}
                 className="ml-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                aria-label="Close raw HTML dialog"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>

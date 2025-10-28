@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "Research Agent - AI Assistant",
+  "version": "1.0.0",
+  "description": "AI-powered research assistant that helps you understand, summarize, and explore web content directly in your browser.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png"
+    },
+    "default_title": "Research Agent"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"],
+      "css": ["content-script.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
+  "options_page": "options.html",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://*.amazonaws.com/*",
+    "https://*.github.io/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sidebar.html",
+        "icons/*",
+        "assets/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "minimum_chrome_version": "88"
+}

@@ -5,9 +5,9 @@
 
 const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { authenticateRequest } = require('../auth');
-const { logToGoogleSheets } = require('../services/google-sheets-logger');
+const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const { buildProviderPool } = require('../credential-pool');
-const { searchWeb } = require('../tools/search-web');
+const { searchWeb } = require('../tools/search_web');
 
 // Load provider catalog
 const { loadProviderCatalog } = require('../utils/catalog-loader');
@@ -168,7 +168,13 @@ Return ONLY the JSON, no additional text.`;
     
     console.log(`✅ Generated quiz: "${quiz.title}" with ${quiz.questions.length} questions`);
     
-    return quiz;
+    // Return quiz with usage data for cost tracking
+    return {
+        quiz,
+        usage: result.usage,
+        model: result.model,
+        provider: result.provider
+    };
 }
 
 /**
@@ -214,23 +220,48 @@ async function handleQuizGenerate(event) {
         }
         
         // Generate quiz
-        const quiz = await generateQuiz(content, enrichment, providers);
+        const result = await generateQuiz(content, enrichment, providers);
+        const quiz = result.quiz;
         
         const duration = Date.now() - startTime;
         
-        // Log to Google Sheets
+        // Calculate cost with proper token tracking
+        const promptTokens = result.usage?.prompt_tokens || 0;
+        const completionTokens = result.usage?.completion_tokens || 0;
+        const modelUsed = result.model || 'unknown';
+        const providerUsed = result.provider || 'unknown';
+        
+        // Detect if user provided their own API key
+        const isUserProvidedKey = Object.entries(providers).some(([type, key]) => 
+            type === providerUsed && key && !key.startsWith('sk-proj-')
+        );
+        
+        const cost = calculateCost(
+            modelUsed,
+            promptTokens,
+            completionTokens,
+            null,
+            isUserProvidedKey
+        );
+        
+        // Log to Google Sheets with proper cost tracking
         try {
             await logToGoogleSheets({
                 timestamp: new Date().toISOString(),
-                email: email,
-                endpoint: 'quiz',
-                requestType: enrichment ? 'quiz-enriched' : 'quiz-basic',
-                inputTokens: Math.ceil(content.length / 4), // Rough estimate
-                outputTokens: Math.ceil(JSON.stringify(quiz).length / 4),
-                duration: duration,
-                status: 'success',
-                model: 'llm-default',
-                cost: 0 // Will be calculated by logger
+                userEmail: email,
+                type: 'quiz_generation',
+                model: modelUsed,
+                provider: providerUsed,
+                promptTokens,
+                completionTokens,
+                totalTokens: promptTokens + completionTokens,
+                cost,
+                requestId: event.requestContext?.requestId || 'unknown',
+                metadata: {
+                    enrichment,
+                    questionCount: quiz.questions.length,
+                    quizTitle: quiz.title
+                }
             });
         } catch (logError) {
             console.error('⚠️ Failed to log to Google Sheets:', logError.message);

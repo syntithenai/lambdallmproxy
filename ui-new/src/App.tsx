@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -6,6 +6,7 @@ import { SearchResultsProvider } from './contexts/SearchResultsContext';
 import { PlaylistProvider } from './contexts/PlaylistContext';
 import { PlayerProvider } from './contexts/PlayerContext';
 import { SwagProvider } from './contexts/SwagContext';
+import { FeedProvider } from './contexts/FeedContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { YouTubeAuthProvider } from './contexts/YouTubeAuthContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
@@ -20,20 +21,12 @@ import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { PlaylistButton } from './components/PlaylistButton';
 import { BackgroundPlayer } from './components/BackgroundPlayer';
-import { SettingsModal } from './components/SettingsModal';
 import { ChatTab } from './components/ChatTab';
-import { PlanningPage } from './components/PlanningPage';
-import { SwagPage } from './components/SwagPage';
-import { QuizPage } from './components/QuizPage';
-import BillingPage from './components/BillingPage';
-import { HelpPage } from './components/HelpPage';
-import { PrivacyPolicy } from './components/PrivacyPolicy';
-import { SharedSnippetViewer } from './components/SharedSnippetViewer';
-import { ImageEditorPage } from './components/ImageEditor/ImageEditorPage';
 import ProviderSetupGate from './components/ProviderSetupGate';
 import { GlobalTTSStopButton } from './components/ReadButton';
 import { GitHubLink } from './components/GitHubLink';
 import { WelcomeWizard } from './components/WelcomeWizard';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { shouldShowWelcomeWizard } from './utils/auth';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { unifiedSync } from './services/unifiedSync';
@@ -42,7 +35,29 @@ import { SyncStatusProvider } from './contexts/SyncStatusContext';
 import { GlobalSyncIndicator } from './components/GlobalSyncIndicator';
 import { AgentProvider, useAgents } from './contexts/AgentContext';
 import { GlobalAgentIndicator } from './components/GlobalAgentIndicator';
-import { AgentManager } from './components/AgentManager';
+
+// Lazy-loaded components for code splitting
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const PlanningPage = lazy(() => import('./components/PlanningPage').then(m => ({ default: m.PlanningPage })));
+const SwagPage = lazy(() => import('./components/SwagPage').then(m => ({ default: m.SwagPage })));
+const QuizPage = lazy(() => import('./components/QuizPage').then(m => ({ default: m.QuizPage })));
+const FeedPage = lazy(() => import('./components/FeedPage'));
+const BillingPage = lazy(() => import('./components/BillingPage'));
+const HelpPage = lazy(() => import('./components/HelpPage').then(m => ({ default: m.HelpPage })));
+const PrivacyPolicy = lazy(() => import('./components/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
+const SharedSnippetViewer = lazy(() => import('./components/SharedSnippetViewer').then(m => ({ default: m.SharedSnippetViewer })));
+const ImageEditorPage = lazy(() => import('./components/ImageEditor/ImageEditorPage').then(m => ({ default: m.ImageEditorPage })));
+const AgentManager = lazy(() => import('./components/AgentManager').then(m => ({ default: m.AgentManager })));
+
+// Loading fallback component
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center h-full">
+    <div className="text-center">
+      <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
+      <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+    </div>
+  </div>
+);
 
 // Create a wrapper component that can access auth context
 function AppContent() {
@@ -62,6 +77,7 @@ function AppContent() {
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showWelcomeWizard, setShowWelcomeWizard] = useState(false);
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   
   // Initialize unified sync system
   useEffect(() => {
@@ -97,6 +113,20 @@ function AppContent() {
     document.documentElement.dir = direction;
     document.documentElement.lang = i18n.language;
   }, [settings.language, i18n]);
+  
+  // Global keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+K or ? to open keyboard shortcuts help
+      if ((e.ctrlKey && e.key === 'k') || e.key === '?') {
+        e.preventDefault();
+        setShowKeyboardShortcuts(true);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   
   // Close mobile menu when route changes
   useEffect(() => {
@@ -298,7 +328,11 @@ function AppContent() {
   
   // Show shared snippet viewer without authentication if on that route
   if (isPublicRoute) {
-    return <SharedSnippetViewer />;
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <SharedSnippetViewer />
+      </Suspense>
+    );
   }
 
   // Show login screen if not authenticated
@@ -642,54 +676,71 @@ function AppContent() {
       {/* Main Content - Only visible when authenticated */}
       <main id="main-content" className="flex-1 overflow-hidden">
         <div className="h-full max-w-screen-2xl md:mx-auto">
-          <Routes>
-            <Route 
-              path="/" 
-              element={
-                <ChatTab 
-                  enabledTools={enabledTools}
-                  setEnabledTools={setEnabledTools}
-                  showMCPDialog={showMCPDialog}
-                  setShowMCPDialog={setShowMCPDialog}
-                  onLoadingChange={setIsChatLoading}
-                />
-              } 
-            />
-            <Route path="/planning" element={<PlanningPage />} />
-            <Route path="/swag" element={<SwagPage />} />
-            <Route path="/quiz" element={<QuizPage />} />
-            <Route path="/image-editor" element={<ImageEditorPage />} />
-            <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
-            <Route path="/billing" element={<BillingPage />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route path="/privacy" element={<PrivacyPolicy />} />
-          </Routes>
+          <Suspense fallback={<LoadingFallback />}>
+            <Routes>
+              <Route 
+                path="/" 
+                element={
+                  <ChatTab 
+                    enabledTools={enabledTools}
+                    setEnabledTools={setEnabledTools}
+                    showMCPDialog={showMCPDialog}
+                    setShowMCPDialog={setShowMCPDialog}
+                    onLoadingChange={setIsChatLoading}
+                  />
+                } 
+              />
+              <Route path="/planning" element={<PlanningPage />} />
+              <Route path="/swag" element={<SwagPage />} />
+              <Route path="/quiz" element={<QuizPage />} />
+              <Route path="/feed" element={<FeedPage />} />
+              <Route path="/image-editor" element={<ImageEditorPage />} />
+              <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
+              <Route path="/billing" element={<BillingPage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
 
       {/* Settings Modal */}
-      <SettingsModal 
-        isOpen={showSettings} 
-        onClose={() => setShowSettings(false)}
-        enabledTools={enabledTools}
-        setEnabledTools={setEnabledTools}
-        onOpenMCPDialog={() => setShowMCPDialog(true)}
-      />
+      {showSettings && (
+        <Suspense fallback={null}>
+          <SettingsModal 
+            isOpen={showSettings} 
+            onClose={() => setShowSettings(false)}
+            enabledTools={enabledTools}
+            setEnabledTools={setEnabledTools}
+            onOpenMCPDialog={() => setShowMCPDialog(true)}
+          />
+        </Suspense>
+      )}
 
       {/* Agent Manager Modal */}
       {showAgentManager && (
-        <AgentManager
-          onSwitchToAgent={(_agentId, _chatId) => {
-            // Navigate to chat and load the agent's chat
-            handleNavigate('/');
-            setShowAgentManager(false);
-            // TODO: Load chat by chatId in ChatTab
-          }}
-          onCreateNewAgent={() => {
-            handleNavigate('/');
-            setShowAgentManager(false);
-          }}
-          onClose={() => setShowAgentManager(false)}
+        <Suspense fallback={null}>
+          <AgentManager
+            onSwitchToAgent={(_agentId, _chatId) => {
+              // Navigate to chat and load the agent's chat
+              handleNavigate('/');
+              setShowAgentManager(false);
+              // TODO: Load chat by chatId in ChatTab
+            }}
+            onCreateNewAgent={() => {
+              handleNavigate('/');
+              setShowAgentManager(false);
+            }}
+            onClose={() => setShowAgentManager(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* Keyboard Shortcuts Modal */}
+      {showKeyboardShortcuts && (
+        <KeyboardShortcutsModal 
+          isOpen={showKeyboardShortcuts}
+          onClose={() => setShowKeyboardShortcuts(false)}
         />
       )}
 
@@ -757,7 +808,9 @@ function App() {
                               <PlayerProvider>
                                 <SearchResultsProvider>
                                   <SwagProvider>
-                                    <AppContent />
+                                    <FeedProvider>
+                                      <AppContent />
+                                    </FeedProvider>
                                   </SwagProvider>
                                 </SearchResultsProvider>
                               </PlayerProvider>
@@ -772,7 +825,9 @@ function App() {
                             <PlayerProvider>
                               <SearchResultsProvider>
                                 <SwagProvider>
-                                  <AppContent />
+                                  <FeedProvider>
+                                    <AppContent />
+                                  </FeedProvider>
                                 </SwagProvider>
                               </SearchResultsProvider>
                             </PlayerProvider>

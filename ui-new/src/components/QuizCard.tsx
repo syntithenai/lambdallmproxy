@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, RotateCcw, CheckCircle2, XCircle, Trophy, Brain } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { quizAnalyticsDb, type QuestionStat } from '../db/quizAnalyticsDb';
 
 export interface QuizChoice {
   id: string;
@@ -43,10 +44,20 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
   const [state, setState] = useState<QuizState>('question');
   const [score, setScore] = useState(0);
   const [answers, setAnswers] = useState<QuizAnswer[]>([]);
+  
+  // Analytics tracking
+  const quizStartTime = useRef(Date.now());
+  const questionStartTime = useRef(Date.now());
+  const questionStats = useRef<QuestionStat[]>([]);
 
   const currentQuestion = quiz.questions[currentQuestionIndex];
   const progress = currentQuestionIndex + 1;
   const total = quiz.questions.length;
+
+  // Reset question start time when question changes
+  useEffect(() => {
+    questionStartTime.current = Date.now();
+  }, [currentQuestionIndex]);
 
   const handleAnswerSelect = (choiceId: string) => {
     if (state !== 'question') return;
@@ -58,19 +69,36 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
       setScore(score + 1);
     }
 
-    setAnswers([...answers, {
+    const newAnswer: QuizAnswer = {
       questionId: currentQuestion.id,
       questionPrompt: currentQuestion.prompt,
       selectedChoiceId: choiceId,
       correctChoiceId: currentQuestion.answerId,
       correct: isCorrect,
       explanation: currentQuestion.explanation || ''
-    }]);
+    };
+
+    setAnswers([...answers, newAnswer]);
+
+    // Track question-level analytics
+    const timeSpent = Date.now() - questionStartTime.current;
+    const selectedChoice = currentQuestion.choices.find(c => c.id === choiceId);
+    const correctChoice = currentQuestion.choices.find(c => c.id === currentQuestion.answerId);
+
+    questionStats.current.push({
+      questionId: currentQuestion.id,
+      questionText: currentQuestion.prompt,
+      correct: isCorrect,
+      timeSpent,
+      attempts: 1, // No retry in this version
+      selectedAnswer: selectedChoice?.text || '',
+      correctAnswer: correctChoice?.text || ''
+    });
 
     setState('answered');
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentQuestionIndex < quiz.questions.length - 1) {
       // Move to next question
       setCurrentQuestionIndex(currentQuestionIndex + 1);
@@ -79,6 +107,27 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
     } else {
       // Quiz completed
       setState('completed');
+      
+      const quizEndTime = Date.now();
+      const totalTimeSpent = quizEndTime - quizStartTime.current;
+      
+      // Save analytics to IndexedDB
+      try {
+        await quizAnalyticsDb.saveQuizResult({
+          timestamp: quizEndTime,
+          title: quiz.title,
+          totalQuestions: quiz.questions.length,
+          correctAnswers: score,
+          score: Math.round((score / quiz.questions.length) * 100),
+          timeSpent: totalTimeSpent,
+          startTime: quizStartTime.current,
+          endTime: quizEndTime,
+          questionStats: questionStats.current
+        });
+        console.log('✅ Quiz analytics saved');
+      } catch (error) {
+        console.error('Failed to save quiz analytics:', error);
+      }
       
       // Fire confetti if score is good
       const percentage = (score / quiz.questions.length) * 100;
@@ -103,6 +152,11 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
     setState('question');
     setScore(0);
     setAnswers([]);
+    
+    // Reset analytics tracking
+    quizStartTime.current = Date.now();
+    questionStartTime.current = Date.now();
+    questionStats.current = [];
   };
 
   const getChoiceClassName = (choice: QuizChoice) => {

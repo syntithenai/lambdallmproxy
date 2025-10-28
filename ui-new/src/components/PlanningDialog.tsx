@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FocusTrap } from 'focus-trap-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from './ToastManager';
@@ -457,8 +458,9 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
   return (
     <>
       {/* Main Planning Dialog */}
-      <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <FocusTrap active={isOpen}>
+        <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -1185,11 +1187,13 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
           </div>
         </div>
       </div>
+      </FocusTrap>
 
       {/* Load Plans Dialog */}
       {showLoadDialog && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
-          <div className="card p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <FocusTrap active={showLoadDialog}>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div className="card p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">{t('planning.loadSavedPlan')}</h3>
               {storageInfo && (
@@ -1256,6 +1260,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
             </button>
           </div>
         </div>
+        </FocusTrap>
       )}
 
       {/* LLM Transparency Dialog */}

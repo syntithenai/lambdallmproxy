@@ -19,6 +19,8 @@
 
 const { verifyGoogleToken } = require('../auth');
 const { imageEditTools, parseImageEditCommand } = require('../tools/image-edit-tools');
+const { logToGoogleSheets } = require('../services/google-sheets-logger');
+const { getOrEstimateUsage } = require('../utils/token-estimation');
 
 /**
  * Call Groq API for LLM inference
@@ -91,10 +93,12 @@ async function handler(event, responseStream, context) {
         
         // Verify authentication (optional but recommended)
         const googleToken = event.headers?.['x-google-oauth-token'] || event.headers?.['X-Google-OAuth-Token'];
+        let userEmail = 'anonymous';
         if (googleToken) {
             try {
-                await verifyGoogleToken(googleToken);
-                console.log('✅ Google OAuth token verified');
+                const payload = await verifyGoogleToken(googleToken);
+                userEmail = payload.email || 'anonymous';
+                console.log('✅ Google OAuth token verified for:', userEmail);
             } catch (error) {
                 console.warn('⚠️ Google OAuth verification failed:', error.message);
             }
@@ -102,6 +106,7 @@ async function handler(event, responseStream, context) {
         
         // Call LLM to parse command
         console.log('🤖 Parsing image command with LLM:', command);
+        const startTime = Date.now();
         
         const llmResponse = await callGroq(
             [
@@ -143,6 +148,51 @@ async function handler(event, responseStream, context) {
         }
         
         console.log('✅ Parsed operations:', operations);
+        
+        const duration = Date.now() - startTime;
+        
+        // Calculate usage and cost
+        const messages = [
+            {
+                role: 'system',
+                content: 'You are an image editing command parser. Convert natural language image editing requests into structured operations. Be precise and literal - only generate operations that are explicitly requested.'
+            },
+            {
+                role: 'user',
+                content: `Parse this image editing command: "${command}"\n\nRespond with the appropriate image operations.`
+            }
+        ];
+        
+        const responseText = explanation;
+        const usage = getOrEstimateUsage(
+            llmResponse.usage,
+            messages,
+            responseText,
+            'groq'
+        );
+        
+        // Log to Google Sheets
+        const logData = {
+            timestamp: new Date().toISOString(),
+            email: userEmail,
+            type: 'parse_image_command',
+            model: 'groq/llama-3.3-70b-versatile',
+            provider: 'groq',
+            tokensIn: usage.prompt_tokens,
+            tokensOut: usage.completion_tokens,
+            cost: usage.cost || 0,
+            durationMs: duration,
+            status: 'SUCCESS',
+            metadata: {
+                command: command.substring(0, 200),
+                operationsCount: operations.length
+            }
+        };
+        
+        // Log asynchronously (don't block response)
+        logToGoogleSheets(logData).catch(err => {
+            console.error('Failed to log parse-image-command to Google Sheets:', err);
+        });
         
         // Return successful response
         const successResponse = {

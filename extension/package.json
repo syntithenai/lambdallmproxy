@@ -1,0 +1,24 @@
+{
+  "name": "research-agent-extension",
+  "version": "1.0.0",
+  "description": "AI-powered research assistant browser extension",
+  "scripts": {
+    "icons": "node scripts/create-icons.js",
+    "build": "node scripts/build.js",
+    "watch": "node scripts/build.js --watch",
+    "pack": "node scripts/pack.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "research",
+    "ai",
+    "assistant",
+    "browser-extension",
+    "chrome-extension"
+  ],
+  "author": "Research Agent Team",
+  "license": "MIT",
+  "devDependencies": {
+    "archiver": "^6.0.1"
+  }
+}

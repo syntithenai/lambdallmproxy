@@ -8,6 +8,7 @@ const { authenticateRequest } = require('../auth');
 const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { buildProviderPool } = require('../credential-pool');
 const { getOrEstimateUsage } = require('../utils/token-estimation');
+const { logToGoogleSheets } = require('../services/google-sheets-logger');
 
 /**
  * Fix Mermaid chart syntax errors using LLM
@@ -187,6 +188,30 @@ Return ONLY the corrected Mermaid chart code (no markdown, no explanations, just
                 max_tokens: 2000
             }
         };
+
+        // Log to Google Sheets
+        const logData = {
+            timestamp: new Date().toISOString(),
+            email: authResult.email || 'unknown',
+            type: 'mermaid_fix',
+            model: result.model || selectedProvider.type,
+            provider: selectedProvider.type,
+            tokensIn: usage.prompt_tokens,
+            tokensOut: usage.completion_tokens,
+            cost: usage.cost || 0,
+            durationMs: duration,
+            status: 'SUCCESS',
+            metadata: {
+                chartLength: chart.length,
+                fixedChartLength: fixedChart.length,
+                errorMessage: error.substring(0, 200)
+            }
+        };
+
+        // Log asynchronously (don't block response)
+        logToGoogleSheets(logData).catch(err => {
+            console.error('Failed to log Mermaid fix to Google Sheets:', err);
+        });
 
         // Return fixed chart and usage info
         return {

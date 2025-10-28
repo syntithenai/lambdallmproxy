@@ -14,6 +14,25 @@ export const GitHubLink: React.FC<GitHubLinkProps> = ({ onOpenSettings, hideGitH
 
   return (
     <div className="hidden md:flex fixed bottom-4 right-4 flex-col gap-2 z-50" style={{ zIndex: 9999 }}>
+      {/* Feed Button */}
+      {onOpenSettings && (
+        <button
+          onClick={() => navigate('/feed')}
+          className="p-3 bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-700 dark:hover:bg-cyan-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center"
+          title="Feed"
+        >
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+        </button>
+      )}
+      
       {/* Quiz Statistics Button */}
       {onOpenSettings && (
         <button

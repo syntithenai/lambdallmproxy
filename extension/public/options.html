@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Agent - Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <img src="../icons/icon-48.png" alt="Research Agent" class="logo">
+      <h1>Research Agent Settings</h1>
+      <p class="subtitle">Configure your AI research assistant</p>
+    </header>
+
+    <main>
+      <!-- API Configuration -->
+      <section class="settings-section">
+        <h2>🔌 API Configuration</h2>
+        <p class="section-description">Connect to your Research Agent backend server</p>
+
+        <div class="form-group">
+          <label for="lambdaUrl">
+            Backend URL
+            <span class="required">*</span>
+          </label>
+          <input
+            type="url"
+            id="lambdaUrl"
+            placeholder="https://your-lambda-url.us-east-1.on.aws"
+            autocomplete="off"
+          />
+          <small class="help-text">
+            Your Lambda function URL or GitHub Pages URL (e.g., https://username.github.io/lambdallmproxy)
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label for="apiKey">
+            API Key (Google OAuth Token)
+            <span class="optional">optional</span>
+          </label>
+          <input
+            type="password"
+            id="apiKey"
+            placeholder="Enter your Google OAuth token"
+            autocomplete="off"
+          />
+          <small class="help-text">
+            Optional: For authenticated requests. Get from web app after logging in.
+          </small>
+          <button type="button" id="toggleApiKey" class="btn-secondary btn-small">Show</button>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="useLocalhost">
+          <label for="useLocalhost">
+            Use localhost for development (http://localhost:3000)
+          </label>
+        </div>
+      </section>
+
+      <!-- Extension Behavior -->
+      <section class="settings-section">
+        <h2>⚙️ Extension Behavior</h2>
+        <p class="section-description">Customize how the extension works</p>
+
+        <div class="form-group">
+          <label for="autoOpenSidebar">Sidebar Auto-open</label>
+          <select id="autoOpenSidebar">
+            <option value="always">Always open sidebar with query</option>
+            <option value="never">Never auto-open (manual only)</option>
+            <option value="ask">Ask each time</option>
+          </select>
+          <small class="help-text">
+            Control when the sidebar opens automatically
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label for="inlineButtonDelay">Inline Button Auto-hide Delay</label>
+          <select id="inlineButtonDelay">
+            <option value="3000">3 seconds</option>
+            <option value="5000" selected>5 seconds (default)</option>
+            <option value="10000">10 seconds</option>
+            <option value="never">Never auto-hide</option>
+          </select>
+          <small class="help-text">
+            How long the inline button stays visible after text selection
+          </small>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="enableInlineButton" checked>
+          <label for="enableInlineButton">
+            Show inline research button on text selection
+          </label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="enableContextMenu" checked>
+          <label for="enableContextMenu">
+            Enable context menu (right-click) actions
+          </label>
+        </div>
+      </section>
+
+      <!-- Privacy & Data -->
+      <section class="settings-section">
+        <h2>🔒 Privacy & Data</h2>
+        <p class="section-description">Manage your local data and privacy settings</p>
+
+        <div class="info-box">
+          <strong>Your Privacy Matters</strong>
+          <ul>
+            <li>✅ All conversations stored locally in your browser</li>
+            <li>✅ No tracking or analytics</li>
+            <li>✅ No data sent to third parties</li>
+            <li>✅ Settings synced only via Chrome Sync (if enabled)</li>
+          </ul>
+        </div>
+
+        <div class="form-group">
+          <label>Clear Conversation History</label>
+          <button type="button" id="clearHistory" class="btn-danger">
+            Clear All Conversations
+          </button>
+          <small class="help-text">
+            This will permanently delete all saved conversations
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label>Storage Usage</label>
+          <div id="storageInfo" class="storage-info">
+            <p>Loading storage information...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- About -->
+      <section class="settings-section">
+        <h2>ℹ️ About</h2>
+        <p class="section-description">Extension information and resources</p>
+
+        <div class="info-box">
+          <p><strong>Research Agent Extension</strong></p>
+          <p>Version: 1.0.0</p>
+          <p>AI-powered research assistant for Chrome</p>
+          <br>
+          <p>
+            <a href="https://github.com/syntithenai/lambdallmproxy" target="_blank" rel="noopener">
+              📚 Documentation
+            </a>
+            &nbsp;|&nbsp;
+            <a href="https://github.com/syntithenai/lambdallmproxy/issues" target="_blank" rel="noopener">
+              🐛 Report Issue
+            </a>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <button type="button" id="saveSettings" class="btn-primary">
+        💾 Save Settings
+      </button>
+      <button type="button" id="resetSettings" class="btn-secondary">
+        🔄 Reset to Defaults
+      </button>
+      <div id="status" class="status-message"></div>
+    </footer>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

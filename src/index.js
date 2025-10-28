@@ -63,12 +63,15 @@ const searchEndpoint = require('./endpoints/search');
 const proxyEndpoint = require('./endpoints/proxy');
 const chatEndpoint = require('./endpoints/chat');
 const quizEndpoint = require('./endpoints/quiz');
+const feedEndpoint = require('./endpoints/feed');
 const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
 const proxyImageEndpoint = require('./endpoints/proxy-image');
 const imageEditEndpoint = require('./endpoints/image-edit');
 const parseImageCommandEndpoint = require('./endpoints/parse-image-command');
+const v1ChatCompletionsEndpoint = require('./endpoints/v1-chat-completions');
+const v1ModelsEndpoint = require('./endpoints/v1-models');
 // Lazy-load convert endpoint (requires heavy dependencies like mammoth)
 // const convertEndpoint = require('./endpoints/convert');
 // Lazy-load rag-sync endpoint (requires googleapis)
@@ -85,6 +88,14 @@ const { handleCreateOrder, handleCaptureOrder } = require('./endpoints/paypal');
 const fixMermaidChartEndpoint = require('./endpoints/fix-mermaid-chart');
 const { getProviderHealthStatus } = require('./utils/provider-health');
 const { initializeCache, getFullStats } = require('./utils/cache');
+const { logCSPWarnings } = require('./utils/security-headers');
+
+// Log CSP warnings on cold start (only once per container lifecycle)
+let cspWarningsLogged = false;
+if (!cspWarningsLogged) {
+    logCSPWarnings();
+    cspWarningsLogged = true;
+}
 
 // Initialize cache on cold start
 let cacheInitialized = false;
@@ -196,6 +207,32 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        // OpenAI-compatible REST API endpoints
+        if (method === 'POST' && path === '/v1/chat/completions') {
+            console.log('Routing to OpenAI-compatible chat completions endpoint');
+            await v1ChatCompletionsEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        if (method === 'GET' && path === '/v1/models') {
+            console.log('Routing to OpenAI-compatible models endpoint');
+            const response = await v1ModelsEndpoint.handler(event);
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: {
+                    ...response.headers,
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
         if (method === 'POST' && path === '/quiz/generate') {
             console.log('Routing to quiz generation endpoint');
             const response = await quizEndpoint.handleQuizGenerate(event);
@@ -231,6 +268,36 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(response.body);
             responseStream.end();
+            return;
+        }
+        
+        if (method === 'POST' && path === '/feed/generate') {
+            console.log('Routing to feed generation endpoint');
+            await feedEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        if (method === 'GET' && path.startsWith('/feed/image')) {
+            console.log('Routing to feed image proxy endpoint');
+            // Extract URL parameter
+            const imageUrl = event.queryStringParameters?.url || '';
+            if (!imageUrl) {
+                const metadata = {
+                    statusCode: 400,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    }
+                };
+                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                responseStream.write(JSON.stringify({ error: 'Missing url parameter' }));
+                responseStream.end();
+                return;
+            }
+            
+            // Lazy-load image proxy endpoint
+            const imageProxyEndpoint = require('./endpoints/image-proxy');
+            await imageProxyEndpoint.handler(event, responseStream);
             return;
         }
         
@@ -853,19 +920,30 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             const { logLambdaInvocation } = require('./services/google-sheets-logger');
             const { verifyGoogleToken } = require('./auth');
             
-            // Extract user email from auth token if present
+            // Extract user email from auth token or REST API key
             let userEmail = 'unknown';
-            try {
-                const authHeader = event.headers?.authorization || event.headers?.Authorization;
-                if (authHeader && authHeader.startsWith('Bearer ')) {
-                    const token = authHeader.substring(7);
-                    const decoded = await verifyGoogleToken(token);
-                    if (decoded && decoded.email) {
-                        userEmail = decoded.email;
+            
+            // 1. Check if REST API request (email already validated and stored)
+            if (event._isRESTAPI && event._userEmail) {
+                userEmail = event._userEmail;
+                console.log(`📧 Using REST API user email for Lambda log: ${userEmail}`);
+            } 
+            // 2. Try extracting from Google OAuth token
+            else {
+                try {
+                    const authHeader = event.headers?.authorization || event.headers?.Authorization;
+                    if (authHeader && authHeader.startsWith('Bearer ')) {
+                        const token = authHeader.substring(7);
+                        const decoded = await verifyGoogleToken(token);
+                        if (decoded && decoded.email) {
+                            userEmail = decoded.email;
+                            console.log(`📧 Using OAuth user email for Lambda log: ${userEmail}`);
+                        }
                     }
+                } catch (authError) {
+                    // Ignore auth errors for logging purposes
+                    console.log('⚠️ Could not extract user email from OAuth token for Lambda log');
                 }
-            } catch (authError) {
-                // Ignore auth errors for logging purposes
             }
             
             // Get path from event

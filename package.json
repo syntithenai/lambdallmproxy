@@ -85,6 +85,7 @@
     "langchain": "^0.3.36",
     "mammoth": "^1.11.0",
     "multer": "^2.0.2",
+    "natural": "^6.12.0",
     "pdf-parse": "^2.3.10",
     "puppeteer": "^23.11.1",
     "puppeteer-extra": "^3.3.6",

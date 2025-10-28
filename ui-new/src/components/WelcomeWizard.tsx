@@ -22,13 +22,16 @@ const TOUR_STEPS: TourStep[] = [
     type: 'modal',
     title: '👋 Welcome to Research Agent!',
     content: `Your AI-powered research assistant with:
-• 🌐 Real-time web search
+• 🌐 Real-time web search & scraping
 • 📊 Advanced planning tools
 • 💾 Knowledge management (SWAG)
+• 📰 Personalized content feed
+• 🧠 Interactive quizzes
+• 🎨 AI image generation & editing
 • 🎙️ Voice & transcription
 • 📈 Cost tracking & billing
 
-Ready to explore? Let's take a quick tour! (2 minutes)`,
+Ready to explore? Let's take a quick tour! (3 minutes)`,
   },
   {
     id: 'chat',
@@ -97,6 +100,76 @@ Perfect for research projects and learning paths!`,
     tooltipPosition: 'bottom',
   },
   {
+    id: 'feed',
+    type: 'spotlight',
+    title: '📰 Personalized Feed',
+    content: `Discover curated content tailored to you:
+• AI-generated "Did You Know" facts
+• Interactive Q&A items
+• Based on your saved content and interests
+• Swipe to stash or trash
+• Generate quizzes from any item
+
+Perfect for learning and staying informed!`,
+    targetSelector: 'button[title*="Feed" i]',
+    tooltipPosition: 'bottom',
+  },
+  {
+    id: 'quiz',
+    type: 'spotlight',
+    title: '🧠 Interactive Quizzes',
+    content: `Test your knowledge:
+• Generate quizzes from saved snippets
+• 10-question multiple choice format
+• Immediate feedback and explanations
+• Track your quiz performance
+
+Great for studying and retention!`,
+    targetSelector: 'button[title*="Quiz" i]',
+    tooltipPosition: 'bottom',
+  },
+  {
+    id: 'image-editor',
+    type: 'spotlight',
+    title: '🎨 Image Tools',
+    content: `Create and edit images:
+• AI image generation (DALL-E, Replicate)
+• In-browser image editor
+• Filters, crops, annotations
+• Save and revisit generations
+
+Bring your ideas to life visually!`,
+    targetSelector: 'button[title*="Image" i]',
+    tooltipPosition: 'bottom',
+  },
+  {
+    id: 'rest-api',
+    type: 'modal',
+    title: '🔌 Developer Integration: REST API',
+    content: `Use this AI system in your own applications!
+
+📡 OpenAI-Compatible REST API:
+• /v1/chat/completions - Streaming & non-streaming chat
+• /v1/models - List available models
+• Bearer token authentication with usage tracking
+
+🔑 Create API Keys:
+\`\`\`bash
+node scripts/create-api-key.js your@email.com
+\`\`\`
+
+📚 Works with OpenAI SDK:
+\`\`\`python
+import openai
+client = openai.OpenAI(
+    base_url="https://your-lambda-url/v1",
+    api_key="sk-your-key-here"
+)
+\`\`\`
+
+Perfect for integrating AI into your apps, bots, and workflows!`,
+  },
+  {
     id: 'complete',
     type: 'modal',
     title: '🎉 You\'re All Set!',
@@ -107,6 +180,8 @@ Perfect for research projects and learning paths!`,
 • Use voice input for hands-free interaction
 • Save important responses to SWAG
 • Enable Planning for complex research
+• Try the Feed for curated content
+• Generate quizzes to test yourself
 
 Need help? Visit the Help page anytime!`,
   },
