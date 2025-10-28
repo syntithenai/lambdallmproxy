@@ -34,8 +34,8 @@ fi
 mkdir -p "$TEMP_DIR/nodejs"
 cd "$TEMP_DIR/nodejs"
 
-# Create package.json with only CRITICAL dependencies that must be in layer
-# (Keep this minimal - only native modules and large packages)
+# Create package.json with minimal critical dependencies
+# Exclude: Puppeteer (too large), google-spreadsheet (too large), sharp (large, optional)
 cat > package.json << 'EOF'
 {
   "name": "llmproxy-dependencies",
@@ -45,16 +45,18 @@ cat > package.json << 'EOF'
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "fluent-ffmpeg": "^2.1.3",
     "form-data": "^4.0.0",
-    "google-spreadsheet": "^4.1.5",
+    "google-auth-library": "^10.4.0",
+    "jsonwebtoken": "^9.0.2",
     "natural": "^6.12.0",
-    "sharp": "^0.33.5"
+    "pdf-parse": "^2.3.10",
+    "turndown": "^7.2.1"
   }
 }
 EOF
 
 # Install dependencies
 echo -e "${YELLOW}📥 Installing dependencies...${NC}"
-npm install --production --legacy-peer-deps
+npm install --omit=dev --no-package-lock --legacy-peer-deps --ignore-scripts
 
 # Create layer zip
 cd "$TEMP_DIR"

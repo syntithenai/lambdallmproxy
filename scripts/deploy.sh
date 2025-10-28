@@ -82,43 +82,79 @@ cp -r "$OLDPWD"/src/retry/* ./retry/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/mcp/* ./mcp/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/image-providers/* ./image-providers/ 2>/dev/null || true
 
-# Copy PROVIDER_CATALOG.json (required for image generation)
+# Copy PROVIDER_CATALOG.json and EMBEDDING_MODELS_CATALOG.json
 cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null || echo -e "${YELLOW}⚠️  PROVIDER_CATALOG.json not found${NC}"
+cp "$OLDPWD"/EMBEDDING_MODELS_CATALOG.json ./ 2>/dev/null || echo -e "${YELLOW}⚠️  EMBEDDING_MODELS_CATALOG.json not found${NC}"
 
-# Create minimal package.json - dependencies provided by layer
+# Create minimal package.json - most dependencies provided by layer
+# Only include large dependencies not in layer (google-spreadsheet, sharp, etc.)
 cat > package.json << EOF
 {
   "name": "llmproxy-lambda",
   "dependencies": {
-    "@distube/ytdl-core": "^4.14.4",
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "fluent-ffmpeg": "^2.1.2",
-    "form-data": "^4.0.0",
-    "google-auth-library": "^10.4.0"
+    "google-spreadsheet": "^4.1.5",
+    "sharp": "^0.33.5",
+    "axios": "^1.6.2",
+    "cheerio": "^1.1.2",
+    "mammoth": "^1.11.0",
+    "langchain": "^0.3.36",
+    "@paypal/checkout-server-sdk": "^1.0.3"
   }
 }
 EOF
 
 # Install minimal dependencies (most come from layer)
-echo -e "${YELLOW}📦 Installing minimal dependencies (others in layer)...${NC}"
-npm install --omit=dev --no-package-lock --legacy-peer-deps
+echo -e "${YELLOW}📦 Installing dependencies not in layer...${NC}"
+npm install --omit=dev --no-package-lock --legacy-peer-deps --ignore-scripts
 
 # List files before packaging
 echo -e "${YELLOW}📦 Files to be packaged:${NC}"
 ls -la *.js
 
 # Create the deployment package (include node_modules)
-zip -q -r "$ZIP_FILE" index.js package.json *.js PROVIDER_CATALOG.json config/ utils/ services/ streaming/ endpoints/ tools/ model-selection/ routing/ retry/ mcp/ image-providers/ node_modules/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
+zip -q -r "$ZIP_FILE" index.js package.json *.js PROVIDER_CATALOG.json EMBEDDING_MODELS_CATALOG.json config/ utils/ services/ streaming/ endpoints/ tools/ model-selection/ routing/ retry/ mcp/ image-providers/ node_modules/ 2>/dev/null || zip -q -r "$ZIP_FILE" index.js package.json
+
+# Check package size
+PACKAGE_SIZE=$(ls -lh "$ZIP_FILE" | awk '{print $5}')
+echo -e "${YELLOW}📦 Package size: ${PACKAGE_SIZE}${NC}"
 
 # Get current function configuration for backup
 aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" > function-backup.json 2>/dev/null
 
-# Update the Lambda function code
-UPDATE_RESULT=$(aws lambda update-function-code \
-    --function-name "$FUNCTION_NAME" \
-    --region "$REGION" \
-    --zip-file fileb://"$ZIP_FILE" \
-    --output json)
+# Use S3 upload for packages >50MB (Lambda direct upload limit is 70MB)
+PACKAGE_BYTES=$(stat -f%z "$ZIP_FILE" 2>/dev/null || stat -c%s "$ZIP_FILE")
+if [ "$PACKAGE_BYTES" -gt 52428800 ]; then
+    echo -e "${YELLOW}📦 Package is large (>50MB), uploading to S3 first...${NC}"
+    
+    # Create S3 bucket if needed
+    S3_BUCKET="llmproxy-deployments-code"
+    if ! aws s3 ls "s3://${S3_BUCKET}" 2>/dev/null; then
+        echo -e "${YELLOW}Creating S3 bucket: ${S3_BUCKET}${NC}"
+        aws s3 mb "s3://${S3_BUCKET}" --region "$REGION"
+    fi
+    
+    # Upload to S3
+    S3_KEY="deployments/llmproxy-$(date +%Y%m%d-%H%M%S).zip"
+    echo -e "${YELLOW}☁️  Uploading to S3...${NC}"
+    aws s3 cp "$ZIP_FILE" "s3://${S3_BUCKET}/${S3_KEY}"
+    
+    # Update function code from S3
+    echo -e "${YELLOW}🚀 Updating Lambda function from S3...${NC}"
+    UPDATE_RESULT=$(aws lambda update-function-code \
+        --function-name "$FUNCTION_NAME" \
+        --region "$REGION" \
+        --s3-bucket "$S3_BUCKET" \
+        --s3-key "$S3_KEY" \
+        --output json)
+else
+    # Direct upload for smaller packages
+    echo -e "${YELLOW}🚀 Updating Lambda function directly...${NC}"
+    UPDATE_RESULT=$(aws lambda update-function-code \
+        --function-name "$FUNCTION_NAME" \
+        --region "$REGION" \
+        --zip-file fileb://"$ZIP_FILE" \
+        --output json)
+fi
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Function deployed successfully${NC}"
