@@ -78,7 +78,6 @@ class FeedDatabase {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        const transaction = (event.target as IDBOpenDBRequest).transaction!;
         const oldVersion = event.oldVersion;
 
         // Feed items store
@@ -540,11 +539,13 @@ class FeedDatabase {
       const transaction = this.db!.transaction(['interactions'], 'readonly');
       const store = transaction.objectStore('interactions');
       const index = store.index('quizGenerated');
-      const request = index.getAll(true);
+      const request = index.getAll();
 
       request.onsuccess = () => {
         const interactions = request.result as UserInteraction[];
-        resolve(interactions.reverse().slice(0, limit));
+        // Filter for quiz-generated interactions
+        const quizInteractions = interactions.filter(i => i.quizGenerated);
+        resolve(quizInteractions.reverse().slice(0, limit));
       };
 
       request.onerror = () => reject(request.error);

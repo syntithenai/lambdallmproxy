@@ -2,7 +2,7 @@
  * Feed Page - Main Feed Feature Component
  */
 
-import React, { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFeed } from '../contexts/FeedContext';
 import { useAuth } from '../contexts/AuthContext';

@@ -2,10 +2,10 @@
  * Feed Context - Global State Management for Feed Feature
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { FeedItem, FeedPreferences, FeedQuiz } from '../types/feed';
 import { feedDB } from '../db/feedDb';
-import { generateFeedItems, generateFeedQuiz, fetchImageAsBase64 } from '../services/feedGenerator';
+import { generateFeedItems, generateFeedQuiz } from '../services/feedGenerator';
 import { useAuth } from './AuthContext';
 import { useSwag } from './SwagContext';
 
@@ -44,7 +44,7 @@ interface FeedProviderProps {
 }
 
 export function FeedProvider({ children }: FeedProviderProps) {
-  const { token } = useAuth();
+  const { getToken } = useAuth();
   const { snippets } = useSwag();
   
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -90,6 +90,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
    * Generate more feed items
    */
   const generateMore = useCallback(async () => {
+    const token = await getToken();
     if (!token || isGenerating) return;
 
     try {
@@ -97,7 +98,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
       setError(null);
 
       // Get Swag content (last 20 snippets)
-      const swagContent = snippets.slice(-20).map(s => s.text);
+      const swagContent = snippets.slice(-20).map(s => s.content || '');
 
       // Generate new items via backend
       const newItems = await generateFeedItems(
@@ -147,7 +148,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     } finally {
       setIsGenerating(false);
     }
-  }, [token, snippets, preferences, isGenerating]);
+  }, [getToken, snippets, preferences, isGenerating]);
 
   /**
    * Stash item to Swag
@@ -230,6 +231,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
    * Start quiz for an item
    */
   const startQuiz = useCallback(async (itemId: string) => {
+    const token = await getToken();
     if (!token) return;
 
     try {
@@ -259,7 +261,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [token, items]);
+  }, [getToken, items]);
 
   /**
    * Close quiz overlay
