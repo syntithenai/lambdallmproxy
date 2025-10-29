@@ -22,21 +22,6 @@
     }
   ],
   "categories": ["productivity", "education", "utilities"],
-  "screenshots": [
-    {
-      "src": "/screenshot-desktop.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "platform": "wide",
-      "label": "Desktop chat interface"
-    },
-    {
-      "src": "/screenshot-mobile.png",
-      "sizes": "750x1334",
-      "type": "image/png",
-      "label": "Mobile chat interface"
-    }
-  ],
   "related_applications": [],
   "prefer_related_applications": false,
   "shortcuts": [
