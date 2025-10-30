@@ -89,3 +89,6 @@ deploy_output.txt
 layer_output.txt
 layer_output.txt
 aws/dist/aws
+
+# Whisper model files (large)
+whisper-models/
