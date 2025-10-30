@@ -1,16 +1,16 @@
 // Service Worker for Research Agent PWA
-// Version 1.0.1
+// Version 1.0.0
 
-const CACHE_NAME = 'research-agent-v1.0.1';
-const RUNTIME_CACHE = 'runtime-cache-v1.0.1';
+const CACHE_NAME = 'research-agent-v1';
+const RUNTIME_CACHE = 'runtime-cache-v1';
 
 // Assets to cache on install (critical for offline functionality)
 const STATIC_ASSETS = [
+  '/',
   '/index.html',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',
-  '/manifest.json'
 ];
 
 // Install event - cache static assets
@@ -19,17 +19,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Caching static assets');
-      // Cache files individually to avoid one failure blocking all
-      return Promise.allSettled(
-        STATIC_ASSETS.map(url => 
-          cache.add(url).catch(err => {
-            console.warn(`[SW] Failed to cache ${url}:`, err);
-            return null;
-          })
-        )
-      );
+      return cache.addAll(STATIC_ASSETS);
     }).then(() => {
-      console.log('[SW] Service worker installed');
       // Force the waiting service worker to become the active service worker
       return self.skipWaiting();
     })

@@ -31,10 +31,13 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.js": [
+    "src/**/*.js": [
       "eslint --fix"
     ],
-    "*.{ts,tsx}": [
+    "scripts/**/*.js": [
+      "eslint --fix"
+    ],
+    "ui-new/**/*.{ts,tsx}": [
       "eslint --fix"
     ]
   },
