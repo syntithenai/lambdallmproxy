@@ -3,8 +3,21 @@
  * Handles credit purchases via PayPal
  */
 
-const { verifyGoogleToken } = require('../auth');
-const paypal = require('@paypal/checkout-server-sdk');
+const { authenticateRequest } = require('../auth');
+// Lazy load PayPal SDK to avoid startup crash if missing
+let paypal = null;
+function getPayPalSDK() {
+    if (!paypal) {
+        try {
+            paypal = require('@paypal/checkout-server-sdk');
+        } catch (error) {
+            console.error('⚠️ @paypal/checkout-server-sdk not available:', error.message);
+            throw new Error('PayPal SDK not installed');
+        }
+    }
+    return paypal;
+}
+
 const { logToGoogleSheets } = require('../services/google-sheets-logger');
 const { invalidateCreditCache } = require('../utils/credit-cache');
 
@@ -12,6 +25,8 @@ const { invalidateCreditCache } = require('../utils/credit-cache');
  * Get PayPal client configured for sandbox or live environment
  */
 function getPayPalClient() {
+    const paypalSDK = getPayPalSDK();
+    
     const clientId = process.env.PP_CID;
     const clientSecret = process.env.PP_SEC;
     const mode = process.env.PP_MODE || 'sandbox';
@@ -21,23 +36,21 @@ function getPayPalClient() {
     }
     
     const environment = mode === 'live'
-        ? new paypal.core.LiveEnvironment(clientId, clientSecret)
-        : new paypal.core.SandboxEnvironment(clientId, clientSecret);
+        ? new paypalSDK.core.LiveEnvironment(clientId, clientSecret)
+        : new paypalSDK.core.SandboxEnvironment(clientId, clientSecret);
     
-    return new paypal.core.PayPalHttpClient(environment);
+    return new paypalSDK.core.PayPalHttpClient(environment);
 }
 
 /**
  * Get CORS headers for response
+ * NOTE: Lambda Function URL already handles CORS, so we return minimal headers
+ * to avoid duplicate CORS headers (*, *) error
+ * @returns {object} Minimal headers (CORS handled by Lambda Function URL)
  */
 function getCorsHeaders(event) {
-    const origin = event.headers?.origin || event.headers?.Origin || '*';
     return {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        'Content-Type': 'application/json'
     };
 }
 
@@ -51,27 +64,18 @@ async function handleCreateOrder(event) {
         console.log('💳 PayPal create order request');
         
         // Authenticate user
-        const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        const authHeader = event.headers.Authorization || event.headers.authorization || '';
+        const authResult = await authenticateRequest(authHeader);
+        
+        if (!authResult.authenticated) {
             return {
                 statusCode: 401,
                 headers: getCorsHeaders(event),
-                body: JSON.stringify({ error: 'Missing or invalid authorization header' })
+                body: JSON.stringify({ error: 'Authentication required' })
             };
         }
         
-        const token = authHeader.substring(7);
-        const decodedToken = await verifyGoogleToken(token);
-        
-        if (!decodedToken || !decodedToken.email) {
-            return {
-                statusCode: 401,
-                headers: getCorsHeaders(event),
-                body: JSON.stringify({ error: 'Invalid or expired token' })
-            };
-        }
-        
-        const email = decodedToken.email;
+        const email = authResult.email;
         console.log(`✅ Authenticated user: ${email}`);
         
         // Parse request body
@@ -95,7 +99,8 @@ async function handleCreateOrder(event) {
         console.log(`💰 Creating PayPal order: $${purchaseAmount.toFixed(2)} for ${email}`);
         
         // Create PayPal order
-        const request = new paypal.orders.OrdersCreateRequest();
+        const paypalSDK = getPayPalSDK();
+        const request = new paypalSDK.orders.OrdersCreateRequest();
         request.prefer("return=representation");
         request.requestBody({
             intent: 'CAPTURE',
@@ -155,27 +160,18 @@ async function handleCaptureOrder(event) {
         console.log('💳 PayPal capture order request');
         
         // Authenticate user
-        const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        const authHeader = event.headers.Authorization || event.headers.authorization || '';
+        const authResult = await authenticateRequest(authHeader);
+        
+        if (!authResult.authenticated) {
             return {
                 statusCode: 401,
                 headers: getCorsHeaders(event),
-                body: JSON.stringify({ error: 'Missing or invalid authorization header' })
+                body: JSON.stringify({ error: 'Authentication required' })
             };
         }
         
-        const token = authHeader.substring(7);
-        const decodedToken = await verifyGoogleToken(token);
-        
-        if (!decodedToken || !decodedToken.email) {
-            return {
-                statusCode: 401,
-                headers: getCorsHeaders(event),
-                body: JSON.stringify({ error: 'Invalid or expired token' })
-            };
-        }
-        
-        const email = decodedToken.email;
+        const email = authResult.email;
         console.log(`✅ Authenticated user: ${email}`);
         
         // Parse request body
@@ -193,7 +189,8 @@ async function handleCaptureOrder(event) {
         console.log(`💰 Capturing PayPal order: ${orderId}`);
         
         // Capture PayPal order
-        const request = new paypal.orders.OrdersCaptureRequest(orderId);
+        const paypalSDK = getPayPalSDK();
+        const request = new paypalSDK.orders.OrdersCaptureRequest(orderId);
         request.requestBody({});
         
         const paypalClient = getPayPalClient();
@@ -249,6 +246,16 @@ async function handleCaptureOrder(event) {
         
         console.log(`✅ Payment completed: $${amount} from ${paypalEmail} (Transaction: ${transactionId})`);
         
+        // Calculate PayPal processing fees
+        // Standard PayPal fees: 2.9% + $0.30 per transaction
+        const paypalFeePercent = 0.029; // 2.9%
+        const paypalFixedFee = 0.30; // $0.30
+        const paypalFee = (amount * paypalFeePercent) + paypalFixedFee;
+        const netAmount = amount - paypalFee;
+        
+        console.log(`💳 PayPal fees: $${paypalFee.toFixed(4)} (${(paypalFeePercent * 100)}% + $${paypalFixedFee})`);
+        console.log(`💰 Net credit after fees: $${netAmount.toFixed(2)}`);
+        
         // Log credit addition to Google Sheets (negative cost = credit added)
         await logToGoogleSheets({
             userEmail: email,
@@ -258,7 +265,7 @@ async function handleCaptureOrder(event) {
             promptTokens: 0,
             completionTokens: 0,
             totalTokens: 0,
-            cost: -amount,  // Negative = credit added
+            cost: -netAmount,  // Negative = credit added (after PayPal fees)
             durationMs: 0,
             timestamp: new Date().toISOString(),
             requestId: `paypal-${transactionId}`,
@@ -268,11 +275,14 @@ async function handleCaptureOrder(event) {
             metadata: {
                 transactionId: transactionId,
                 paypalEmail: paypalEmail,
-                orderId: orderId
+                orderId: orderId,
+                grossAmount: amount,
+                paypalFee: parseFloat(paypalFee.toFixed(4)),
+                netAmount: parseFloat(netAmount.toFixed(2))
             }
         });
         
-        console.log(`📊 Logged credit purchase to Google Sheets: ${email} +$${amount}`);
+        console.log(`📊 Logged credit purchase to Google Sheets: ${email} +$${netAmount.toFixed(2)} (gross: $${amount}, fee: $${paypalFee.toFixed(4)})`);
         
         // Invalidate credit cache to force fresh balance fetch
         invalidateCreditCache(email);
@@ -282,7 +292,7 @@ async function handleCaptureOrder(event) {
         // Note: This is approximate since we just invalidated cache
         // The next credit check will fetch the actual balance from Google Sheets
         const { getCreditBalance } = require('../utils/credit-cache');
-        let newBalance = amount; // Default to amount added if we can't get previous balance
+        let newBalance = netAmount; // Default to net amount added if we can't get previous balance
         try {
             const currentBalance = await getCreditBalance(email);
             newBalance = currentBalance; // This should now include the credit we just added
@@ -295,10 +305,12 @@ async function handleCaptureOrder(event) {
             headers: getCorsHeaders(event),
             body: JSON.stringify({
                 success: true,
-                creditsAdded: amount,
+                creditsAdded: parseFloat(netAmount.toFixed(2)),
+                grossAmount: amount,
+                paypalFee: parseFloat(paypalFee.toFixed(4)),
                 newBalance: newBalance,
                 transactionId: transactionId,
-                message: `Successfully added $${amount.toFixed(2)} to your account`
+                message: `Successfully added $${netAmount.toFixed(2)} to your account (PayPal fee: $${paypalFee.toFixed(2)})`
             })
         };
         

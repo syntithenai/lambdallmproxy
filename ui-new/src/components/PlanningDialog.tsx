@@ -175,7 +175,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
 
       // Get enabled providers from settings
       // NOTE: Even if user has no providers, server may have server-side credentials
-      const enabledProviders = settings.providers.filter((p: any) => p.enabled === true);
+      const enabledProviders = settings.providers.filter((p: any) => p.enabled !== false);
       
       console.log(`📋 Enabled providers: ${enabledProviders.length} (server may have additional credentials)`);
 
@@ -1080,7 +1080,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                                       return;
                                     }
                                     
-                                    const enabledProviders = settings.providers.filter((p: any) => p.enabled === true);
+                                    const enabledProviders = settings.providers.filter((p: any) => p.enabled !== false);
                                     
                                     // Generate automatic answers to guidance questions
                                     const autoAnswers = result.guidanceQuestions?.map((q: string, idx: number) => 

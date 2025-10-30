@@ -34,11 +34,11 @@ interface YouTubeAuthContextValue {
 const YouTubeAuthContext = createContext<YouTubeAuthContextValue | undefined>(undefined);
 
 // OAuth configuration
-// Uses VITE_GOOGLE_CLIENT_ID from ui-new/.env
+// Uses VITE_GGL_CID from ui-new/.env
 const OAUTH_CONFIG = {
   clientId: import.meta.env.VITE_GGL_CID,
   redirectUri: `${import.meta.env.VITE_API}/oauth/callback`,
-  scope: 'https://www.googleapis.com/auth/youtube.force-ssl', // Required for captions.list API
+  scope: 'https://www.googleapis.com/auth/youtube.readonly', // Read-only access to YouTube data
   authUrl: 'https://accounts.google.com/o/oauth2/v2/auth'
 };
 

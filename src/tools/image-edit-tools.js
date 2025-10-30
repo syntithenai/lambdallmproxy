@@ -8,7 +8,7 @@ const imageEditTools = [
         type: 'function',
         function: {
             name: 'edit_images',
-            description: 'Apply image editing operations like resize, rotate, flip, format conversion, or filters to images based on natural language commands',
+            description: 'Apply image editing operations including traditional edits (resize, rotate, flip, format, filters) and AI-powered generative modifications (adding objects, changing backgrounds, content editing) based on natural language commands',
             parameters: {
                 type: 'object',
                 properties: {
@@ -20,8 +20,8 @@ const imageEditTools = [
                             properties: {
                                 type: {
                                     type: 'string',
-                                    enum: ['resize', 'rotate', 'flip', 'format', 'filter'],
-                                    description: 'Type of image operation to perform'
+                                    enum: ['resize', 'rotate', 'flip', 'format', 'filter', 'generate'],
+                                    description: 'Type of image operation to perform. Use "generate" for AI-powered modifications like adding objects, changing backgrounds, or modifying content.'
                                 },
                                 params: {
                                     type: 'object',
@@ -71,6 +71,16 @@ const imageEditTools = [
                                         strength: {
                                             type: 'number',
                                             description: 'Filter strength/intensity (1-10, default 5 for blur, 1 for sharpen)'
+                                        },
+                                        // Generate params (AI-powered modifications)
+                                        prompt: {
+                                            type: 'string',
+                                            description: 'Text description of what to add or modify in the image. Examples: "add a dog", "add flowers in the background", "change sky to sunset", "add a person wearing a hat"'
+                                        },
+                                        mode: {
+                                            type: 'string',
+                                            enum: ['inpaint', 'outpaint', 'edit'],
+                                            description: 'Generation mode: "inpaint" to add/modify specific areas, "outpaint" to extend image borders, "edit" for general AI editing'
                                         }
                                     }
                                 }
@@ -91,9 +101,13 @@ const imageEditTools = [
  */
 function parseImageEditCommand(toolCall) {
     try {
+        console.log('🔍 [parseImageEditCommand] Input:', JSON.stringify(toolCall, null, 2));
         const args = typeof toolCall.arguments === 'string' 
             ? JSON.parse(toolCall.arguments) 
             : toolCall.arguments;
+        
+        console.log('🔍 [parseImageEditCommand] Parsed args:', JSON.stringify(args, null, 2));
+        console.log('🔍 [parseImageEditCommand] Operations:', args.operations);
         
         return {
             success: true,
@@ -101,7 +115,8 @@ function parseImageEditCommand(toolCall) {
             message: `Parsed ${args.operations?.length || 0} operations`
         };
     } catch (error) {
-        console.error('Failed to parse image edit command:', error);
+        console.error('❌ Failed to parse image edit command:', error);
+        console.error('❌ Tool call that failed:', JSON.stringify(toolCall, null, 2));
         return {
             success: false,
             error: error.message,

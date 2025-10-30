@@ -423,6 +423,7 @@
       "tools": "Tools",
       "proxy": "Proxy",
       "location": "Location",
+      "voice": "音声",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -680,6 +681,28 @@
     "totalQuizzes": "合計クイズ",
     "averageScore": "平均スコア",
     "questionsAnswered": "回答した質問",
-    "statistics": "クイズ統計"
+    "statistics": "クイズ統計",
+    "subtitle": "学習の進捗とクイズのパフォーマンスを追跡",
+    "createNewQuiz": "新しいクイズを作成",
+    "recentQuizzes": "最近のクイズ",
+    "noQuizzesYet": "まだ完了したクイズがありません",
+    "noQuizzesDescription": "SWAGに保存されたコンテンツからクイズを受けて、ここで統計を確認してください",
+    "goToSwag": "SWAGへ移動",
+    "backToChat": "チャットに戻る",
+    "loadingStats": "統計を読み込み中...",
+    "errorLoadingStats": "クイズ統計の読み込みに失敗しました",
+    "confirmDelete": "クイズ'{{title}}'を削除してもよろしいですか？",
+    "quizDeleted": "クイズが正常に削除されました",
+    "errorDeletingQuiz": "クイズの削除に失敗しました",
+    "deleteQuiz": "クイズを削除",
+    "today": "今日",
+    "yesterday": "昨日",
+    "daysAgo": "{{days}}日前",
+    "snippetCount": "{{count}}個のスニペット",
+    "snippetCount_plural": "{{count}}個のスニペット",
+    "enriched": "エンリッチ済み",
+    "notSynced": "未同期",
+    "highestScore": "最高スコア",
+    "lowestScore": "最低スコア"
   }
 }

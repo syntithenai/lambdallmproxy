@@ -1,31 +1,42 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { GitHubLink } from './GitHubLink';
 import { Link } from 'react-router-dom';
 
+// Global flag to prevent multiple Google Sign-In initializations across all instances
+let globalGoogleInitialized = false;
+
 export const LoginScreen: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { login } = useAuth();
   const buttonRef = useRef<HTMLDivElement>(null);
-  const [hasAttemptedOneTap, setHasAttemptedOneTap] = useState(false);
+  const hasInitialized = useRef(false);
 
   const handleLanguageChange = (lang: string) => {
     i18n.changeLanguage(lang);
   };
 
   useEffect(() => {
-    if (buttonRef.current) {
+    if (buttonRef.current && !hasInitialized.current && !globalGoogleInitialized) {
+      let retryCount = 0;
+      const maxRetries = 50; // Maximum 5 seconds of retries
+      
       const initializeGoogleButton = () => {
         if (typeof google !== 'undefined' && google.accounts) {
           const clientId = import.meta.env.VITE_GGL_CID;
           
           if (!clientId) {
-            console.error('❌ VITE_GOOGLE_CLIENT_ID not configured in ui-new/.env');
+            console.error('❌ VITE_GGL_CID not configured in ui-new/.env');
             return;
           }
           
-          console.log('LoginScreen: Initializing Google Sign-In');
+          // Mark as initialized globally to prevent any duplicate calls
+          hasInitialized.current = true;
+          globalGoogleInitialized = true;
+          
+          console.log('LoginScreen: Initializing Google Sign-In (ONCE GLOBALLY)');
+          
           (google.accounts.id.initialize as any)({
             client_id: clientId,
             callback: (response: any) => {
@@ -34,10 +45,20 @@ export const LoginScreen: React.FC = () => {
                 login(response.credential);
               }
             },
-            // Disable auto-select to prevent automatic popup on re-login
+            // CRITICAL: Disable ALL automatic behaviors
             auto_select: false,
-            cancel_on_tap_outside: false
+            cancel_on_tap_outside: true,
+            itp_support: false,
+            use_fedcm_for_prompt: false // Disable FedCM prompts
           });
+          
+          // CRITICAL: Immediately cancel any auto-prompts after initialization
+          try {
+            (google.accounts.id as any).cancel();
+            console.log('LoginScreen: Cancelled any auto-prompts immediately after init');
+          } catch (e) {
+            // Ignore
+          }
 
           (google.accounts.id.renderButton as any)(
             buttonRef.current!,
@@ -50,31 +71,22 @@ export const LoginScreen: React.FC = () => {
             }
           );
 
-          // Attempt silent sign-in for returning users
-          // Only attempt once per mount to prevent "Cannot continue with Google" popup
-          if (!hasAttemptedOneTap) {
-            setHasAttemptedOneTap(true);
-            console.log('LoginScreen: Attempting One Tap sign-in (first time this mount)');
-            
-            try {
-              // Call prompt without notification callback to avoid deprecated methods warning
-              (google.accounts.id.prompt as any)();
-            } catch (error) {
-              // Silently catch any Google One Tap errors to prevent popup
-              console.log('LoginScreen: One Tap prompt failed silently:', error);
-            }
-          } else {
-            console.log('LoginScreen: Skipping One Tap (already attempted this mount)');
-          }
-        } else {
-          console.log('LoginScreen: Google SDK not loaded yet, retrying...');
+          console.log('LoginScreen: Google Sign-In button rendered (One Tap permanently disabled)');
+        } else if (retryCount < maxRetries) {
+          retryCount++;
+          console.log(`LoginScreen: Google SDK not loaded yet, retry ${retryCount}/${maxRetries}...`);
           setTimeout(initializeGoogleButton, 100);
+        } else {
+          console.error('LoginScreen: Failed to load Google SDK after maximum retries');
         }
       };
 
       initializeGoogleButton();
+    } else if (globalGoogleInitialized) {
+      console.log('LoginScreen: Google already initialized globally, skipping');
     }
-  }, [login, hasAttemptedOneTap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - only run once on mount
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">

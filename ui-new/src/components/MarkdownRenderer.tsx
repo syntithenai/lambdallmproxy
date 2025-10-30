@@ -3,7 +3,7 @@
  * Renders markdown content with syntax highlighting and proper styling
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -192,7 +192,7 @@ function ImageGallery({ images }: ImageGalleryProps) {
 }
 
 export function MarkdownRenderer({ content, className = '', chartDescription, onLlmApiCall, snippetId, snippetTags = [], onImageEdit }: MarkdownRendererProps) {
-  const [imageCounter, setImageCounter] = useState(0);
+  const imageCounterRef = useRef(0);
   // Special handling for pure HTML img tags with data URLs
   // This is for chart images saved from the Grab button
   const isHtmlImage = /^<img\s+[^>]*src="data:image\/[^"]+"/i.test(content.trim());
@@ -448,9 +448,8 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
               return null;
             }
             
-            // Increment counter and generate ID for this image
-            const currentCounter = imageCounter;
-            setImageCounter(prev => prev + 1);
+            // Use ref to track counter without causing re-renders
+            const currentCounter = imageCounterRef.current++;
             const imageId = snippetId ? `${snippetId}-img-${currentCounter}` : `img-${currentCounter}`;
             
             // Extract format from URL or data URL
@@ -487,7 +486,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
             // If edit button is enabled (onImageEdit provided), wrap in container with overlay
             if (onImageEdit) {
               return (
-                <div className="relative inline-block group my-4">
+                <span className="relative inline-block group my-4">
                   <img
                     src={imgSrc}
                     alt={alt || ''}
@@ -509,7 +508,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
                   </button>
-                </div>
+                </span>
               );
             }
             

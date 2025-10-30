@@ -18,7 +18,7 @@ export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseD
   const [explanation, setExplanation] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { getToken, user } = useAuth();
+  const { getToken } = useAuth();
   
   const MAX_LENGTH = 2000;
   const remainingChars = MAX_LENGTH - explanation.length;
@@ -36,15 +36,25 @@ export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseD
       const accessToken = await getToken();
       const apiBase = await getCachedApiBase();
       
+      if (!accessToken) {
+        throw new Error('No access token available');
+      }
+      
+      console.log('🔑 Token type check:', {
+        isJWT: accessToken.split('.').length === 3,
+        prefix: accessToken.substring(0, 20),
+        length: accessToken.length
+      });
+      
       // Call backend API to log report
       const response = await fetch(`${apiBase}/report-error`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${accessToken}`,
+          'X-Google-Access-Token': accessToken  // Also send as Google access token for Sheets API
         },
         body: JSON.stringify({
-          userEmail: user?.email || 'unknown',
           explanation: explanation.trim(),
           messageData: {
             messageId: messageData.messageId,

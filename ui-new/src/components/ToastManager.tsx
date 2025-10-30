@@ -5,10 +5,17 @@ interface Toast {
   message: string;
   type: 'success' | 'error' | 'warning' | 'info';
   duration?: number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 interface ToastContextType {
   showToast: (message: string, type?: Toast['type'], duration?: number) => void;
+  showPersistentToast: (message: string, type?: Toast['type'], action?: Toast['action']) => string;
+  removeToast: (id: string) => void;
+  updateToast: (id: string, message: string) => void;
   showError: (message: string) => void;
   showSuccess: (message: string) => void;
   showWarning: (message: string) => void;
@@ -33,6 +40,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
+  const updateToast = useCallback((id: string, message: string) => {
+    setToasts((prev) => prev.map((toast) => 
+      toast.id === id ? { ...toast, message } : toast
+    ));
+  }, []);
+
   const clearAllToasts = useCallback(() => {
     setToasts([]);
   }, []);
@@ -47,6 +60,15 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setTimeout(() => removeToast(id), duration);
     }
   }, [removeToast]);
+
+  const showPersistentToast = useCallback((message: string, type: Toast['type'] = 'info', action?: Toast['action']): string => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    const toast: Toast = { id, message, type, duration: 0, action };
+    
+    setToasts((prev) => [...prev, toast]);
+    
+    return id; // Return ID so caller can remove it later
+  }, []);
 
   const showError = useCallback((message: string) => showToast(message, 'error', 7000), [showToast]);
   const showSuccess = useCallback((message: string) => showToast(message, 'success', 3000), [showToast]);
@@ -75,7 +97,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <ToastContext.Provider value={{ showToast, showError, showSuccess, showWarning, showInfo, clearAllToasts }}>
+    <ToastContext.Provider value={{ showToast, showPersistentToast, removeToast, updateToast, showError, showSuccess, showWarning, showInfo, clearAllToasts }}>
       {children}
       
       {/* Toast Container */}
@@ -86,6 +108,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             <div className="flex-1">
               <p className="text-sm font-medium">{toast.message}</p>
             </div>
+            {toast.action && (
+              <button
+                onClick={toast.action.onClick}
+                className="px-3 py-1 text-xs font-semibold rounded bg-current/10 hover:bg-current/20 transition-colors"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               onClick={() => removeToast(toast.id)}
               className="text-current opacity-50 hover:opacity-100 transition-opacity"

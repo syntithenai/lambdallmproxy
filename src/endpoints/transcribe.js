@@ -11,7 +11,7 @@
  * Returns: { text: string, provider: 'groq'|'openai', cached: boolean }
  */
 
-const { verifyGoogleToken } = require('../auth');
+const { authenticateRequest } = require('../auth');
 const { loadEnvironmentProviders } = require('../credential-pool');
 const { getCacheKey, getFromCache, saveToCache } = require('../utils/cache');
 const crypto = require('crypto');
@@ -102,12 +102,12 @@ function parseMultipartFormData(event) {
 }
 
 /**
- * Call Whisper API for transcription (Groq or OpenAI)
- * Prefers Groq (FREE) over OpenAI (PAID)
+ * Call Whisper API for transcription (Speaches, Groq, or OpenAI)
+ * Priority: Speaches (LOCAL, FREE) > Groq (FREE) > OpenAI (PAID)
  * @param {Buffer} audioBuffer - Audio file buffer
  * @param {string} filename - Original filename
- * @param {string} apiKey - API key (Groq or OpenAI)
- * @param {string} provider - Provider type ('groq' or 'openai')
+ * @param {string} apiKey - API key (Speaches, Groq, or OpenAI)
+ * @param {string} provider - Provider type ('speaches', 'groq', or 'openai')
  * @returns {Promise<string>} Transcribed text
  */
 async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai') {
@@ -120,21 +120,53 @@ async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai'
             contentType: 'audio/webm'
         });
         
-        // Select model and endpoint based on provider
+        // Select model, endpoint, and protocol based on provider
+        const isSpeaches = provider === 'speaches';
         const isGroq = provider === 'groq';
-        const model = isGroq ? 'whisper-large-v3-turbo' : 'whisper-1';
-        const hostname = isGroq ? 'api.groq.com' : 'api.openai.com';
-        const path = isGroq ? '/openai/v1/audio/transcriptions' : '/v1/audio/transcriptions';
+        
+        let model, hostname, path, useHttps;
+        
+        if (isSpeaches) {
+            // Speaches configuration
+            model = 'whisper-1';
+            const { loadEnvironmentProviders } = require('../credential-pool');
+            const envProviders = loadEnvironmentProviders();
+            const speachesProvider = envProviders.find(p => p.type === 'speaches');
+            const endpoint = speachesProvider?.apiEndpoint || 'http://localhost:8000';
+            const url = new URL(endpoint);
+            hostname = url.hostname;
+            const port = url.port || (url.protocol === 'https:' ? 443 : 80);
+            path = '/v1/audio/transcriptions';
+            useHttps = url.protocol === 'https:';
+            
+            // Include port if non-standard
+            if (port && ((useHttps && port !== '443') || (!useHttps && port !== '80'))) {
+                hostname = `${hostname}:${port}`;
+            }
+        } else if (isGroq) {
+            // Groq configuration
+            model = 'whisper-large-v3-turbo';
+            hostname = 'api.groq.com';
+            path = '/openai/v1/audio/transcriptions';
+            useHttps = true;
+        } else {
+            // OpenAI configuration
+            model = 'whisper-1';
+            hostname = 'api.openai.com';
+            path = '/v1/audio/transcriptions';
+            useHttps = true;
+        }
         
         formData.append('model', model);
 
         console.log(`🎤 Calling ${provider.toUpperCase()} Whisper API...`);
         console.log(`   Model: ${model}`);
-        console.log(`   ${isGroq ? 'FREE' : 'PAID ($0.006/min)'} transcription`);
+        console.log(`   ${isSpeaches ? 'LOCAL, FREE' : isGroq ? 'FREE' : 'PAID ($0.006/min)'} transcription`);
         console.log('   API Key present:', !!apiKey);
         console.log('   API Key prefix:', apiKey ? apiKey.substring(0, 10) + '...' : 'none');
         console.log('   Audio buffer size:', audioBuffer.length);
         console.log('   Filename:', filename);
+        console.log('   Endpoint:', `${useHttps ? 'https' : 'http'}://${hostname}${path}`);
 
         return new Promise((resolve, reject) => {
             const options = {
@@ -147,36 +179,37 @@ async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai'
                 }
             };
 
-        const req = https.request(options, (res) => {
-            let data = '';
+            const protocol = useHttps ? https : http;
+            const req = protocol.request(options, (res) => {
+                let data = '';
 
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
 
-            res.on('end', () => {
-                console.log(`Whisper API response: ${res.statusCode}`);
-                console.log(`Response data: ${data.substring(0, 500)}`);
-                
-                if (res.statusCode === 200) {
-                    try {
-                        const result = JSON.parse(data);
-                        resolve(result.text);
-                    } catch (e) {
-                        console.error('Failed to parse Whisper response:', e);
-                        reject(new Error('Failed to parse Whisper API response'));
+                res.on('end', () => {
+                    console.log(`Whisper API response: ${res.statusCode}`);
+                    console.log(`Response data: ${data.substring(0, 500)}`);
+                    
+                    if (res.statusCode === 200) {
+                        try {
+                            const result = JSON.parse(data);
+                            resolve(result.text);
+                        } catch (e) {
+                            console.error('Failed to parse Whisper response:', e);
+                            reject(new Error('Failed to parse Whisper API response'));
+                        }
+                    } else {
+                        console.error(`Whisper API error ${res.statusCode}:`, data);
+                        reject(new Error(`Whisper API error: ${res.statusCode} - ${data}`));
                     }
-                } else {
-                    console.error(`Whisper API error ${res.statusCode}:`, data);
-                    reject(new Error(`Whisper API error: ${res.statusCode} - ${data}`));
-                }
+                });
             });
-        });
 
-        req.on('error', (error) => {
-            console.error('Whisper API request error:', error);
-            reject(new Error(`Whisper API request failed: ${error.message}`));
-        });
+            req.on('error', (error) => {
+                console.error('Whisper API request error:', error);
+                reject(new Error(`Whisper API request failed: ${error.message}`));
+            });
 
             formData.pipe(req);
         });
@@ -200,10 +233,12 @@ async function handler(event, context) {
         console.log('Body is base64:', event.isBase64Encoded);
         console.log('Body length:', event.body ? event.body.length : 0);
 
-        // Verify authentication
-        const authHeader = event.headers.authorization || event.headers.Authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            console.log('❌ Missing or invalid auth header');
+        // Verify authentication using unified auth function
+        const authHeader = event.headers.authorization || event.headers.Authorization || '';
+        const authResult = await authenticateRequest(authHeader);
+        
+        if (!authResult.authenticated) {
+            console.log('❌ Authentication failed');
             return {
                 statusCode: 401,
                 headers: {
@@ -213,34 +248,13 @@ async function handler(event, context) {
                     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
                 },
                 body: JSON.stringify({
-                    error: 'Missing or invalid authorization header'
+                    error: 'Authentication required'
                 })
             };
         }
 
-        const token = authHeader.substring(7);
-        console.log('Token present:', !!token);
-        
-        const decodedToken = await verifyGoogleToken(token);
-        
-        if (!decodedToken || !decodedToken.email) {
-            console.log('❌ Token verification failed');
-            return {
-                statusCode: 401,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-                },
-                body: JSON.stringify({
-                    error: 'Invalid or expired token'
-                })
-            };
-        }
-
-        console.log(`✅ Authenticated user: ${decodedToken.email}`);
-        const userEmail = decodedToken.email;
+        console.log(`✅ Authenticated user: ${authResult.email}`);
+        const userEmail = authResult.email;
         
         // Extract custom request ID from headers if provided (for grouping with chat logs)
         const customRequestId = event.headers['x-request-id'] || event.headers['X-Request-Id'] || null;
@@ -334,22 +348,31 @@ async function handler(event, context) {
             console.log(`🎤 Using user-provided ${whisperProvider} API key for transcription`);
         } else {
             // Fallback to environment providers
-            // Priority: Groq (FREE) > OpenAI (PAID)
+            // Priority: Speaches (LOCAL, FREE) > Groq (FREE) > OpenAI (PAID)
             const envProviders = loadEnvironmentProviders();
             
-            // Check for Groq providers first (FREE transcription)
-            const groqProvider = envProviders.find(p => p.type === 'groq' || p.type === 'groq-free');
-            if (groqProvider?.apiKey) {
-                whisperApiKey = groqProvider.apiKey;
-                whisperProvider = 'groq';
-                console.log('🎤 Using Groq Whisper from environment (FREE transcription)');
+            // Check for Speaches provider first (LOCAL, FREE transcription)
+            const speachesProvider = envProviders.find(p => p.type === 'speaches');
+            if (speachesProvider?.apiKey) {
+                whisperApiKey = speachesProvider.apiKey || 'dummy-key';
+                whisperProvider = 'speaches';
+                console.log('🏠 Using Speaches Whisper from environment (LOCAL, FREE transcription)');
+                console.log(`🏠 Speaches endpoint: ${speachesProvider.apiEndpoint || 'http://localhost:8000'}`);
             } else {
-                // Fallback to OpenAI (PAID transcription)
-                const openaiProvider = envProviders.find(p => p.type === 'openai');
-                if (openaiProvider?.apiKey) {
-                    whisperApiKey = openaiProvider.apiKey;
-                    whisperProvider = 'openai';
-                    console.log('🎤 Using OpenAI Whisper from environment (PAID transcription - $0.006/min)');
+                // Check for Groq providers (FREE cloud transcription)
+                const groqProvider = envProviders.find(p => p.type === 'groq' || p.type === 'groq-free');
+                if (groqProvider?.apiKey) {
+                    whisperApiKey = groqProvider.apiKey;
+                    whisperProvider = 'groq';
+                    console.log('⚡ Using Groq Whisper from environment (FREE transcription)');
+                } else {
+                    // Fallback to OpenAI (PAID transcription)
+                    const openaiProvider = envProviders.find(p => p.type === 'openai');
+                    if (openaiProvider?.apiKey) {
+                        whisperApiKey = openaiProvider.apiKey;
+                        whisperProvider = 'openai';
+                        console.log('🤖 Using OpenAI Whisper from environment (PAID transcription - $0.006/min)');
+                    }
                 }
             }
         }
@@ -395,20 +418,21 @@ async function handler(event, context) {
                 const durationMs = Date.now() - startTime;
                 console.log(`✅ Transcription successful: ${transcribedText.length} characters (via ${whisperProvider})`);
                 
-                // Calculate cost - Groq is FREE, OpenAI is $0.006/minute
+                // Calculate cost - Speaches (local) and Groq are FREE, OpenAI is $0.006/minute
                 // Estimate duration from audio size: ~1MB = ~1 minute (rough estimate)
                 // Local development is also FREE
                 const isLocal = process.env.LOCAL === 'true' || 
                                process.env.ENV === 'development' ||
                                process.env.AWS_EXEC === undefined;
                 const estimatedMinutes = audioPart.data.length / (1024 * 1024);
-                const cost = (isLocal || whisperProvider === 'groq') ? 0 : estimatedMinutes * 0.006;
+                const cost = (isLocal || whisperProvider === 'groq' || whisperProvider === 'speaches') ? 0 : estimatedMinutes * 0.006;
                 
                 // Create LLM API call record for transparency
+                const modelName = whisperProvider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1';
                 llmApiCall = {
                     phase: 'transcription',
                     provider: whisperProvider,
-                    model: whisperProvider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1',
+                    model: modelName,
                     type: 'transcription',
                     timestamp: new Date().toISOString(),
                     durationMs: durationMs,
@@ -442,7 +466,7 @@ async function handler(event, context) {
                     logToGoogleSheets({
                         userEmail: userEmail || 'anonymous',
                         provider: whisperProvider,
-                        model: whisperProvider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1',
+                        model: modelName,
                         type: 'transcription',
                         promptTokens: 0, // Audio transcription doesn't use tokens
                         completionTokens: 0,

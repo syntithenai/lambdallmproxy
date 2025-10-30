@@ -22,6 +22,10 @@ const https = require('https');
 // Load environment variables from .env file
 require('dotenv').config();
 
+// Set local environment flag
+process.env.IS_LOCAL = 'true';
+process.env.NODE_ENV = 'development';
+
 const app = express();
 const PORT = process.env.LOCAL_PORT || 3000;
 
@@ -67,7 +71,7 @@ app.use((req, res, next) => {
       }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-Google-OAuth-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id'],
     credentials: true
   })(req, res, next);
 });
@@ -481,6 +485,8 @@ if (USE_HTTPS) {
     console.log('\n🚀 Local Lambda Development Server');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`📍 Listening on: http://localhost:${PORT}`);
+    console.log(`🔐 OAuth Redirect: http://localhost:${PORT}/oauth/callback`);
+    console.log('💡 Make sure this URI is registered in Google Cloud Console');
   });
 }
 

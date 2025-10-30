@@ -14,6 +14,7 @@ import { CastProvider } from './contexts/CastContext';
 import { LocationProvider } from './contexts/LocationContext';
 import { TTSProvider } from './contexts/TTSContext';
 import { TTS_FEATURE_ENABLED } from './types/tts';
+import { FeaturesProvider, useFeatures } from './contexts/FeaturesContext';
 import { ToastProvider } from './components/ToastManager';
 import { chatHistoryDB } from './utils/chatHistoryDB';
 import { getCachedApiBase } from './utils/api';
@@ -32,15 +33,14 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { unifiedSync } from './services/unifiedSync';
 import { plansAdapter, playlistsAdapter } from './services/adapters';
 import { SyncStatusProvider } from './contexts/SyncStatusContext';
-import { GlobalSyncIndicator } from './components/GlobalSyncIndicator';
 import { AgentProvider, useAgents } from './contexts/AgentContext';
 import { GlobalAgentIndicator } from './components/GlobalAgentIndicator';
 
 // Lazy-loaded components for code splitting
-const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const SettingsPage = lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const PlanningPage = lazy(() => import('./components/PlanningPage').then(m => ({ default: m.PlanningPage })));
 const SwagPage = lazy(() => import('./components/SwagPage').then(m => ({ default: m.SwagPage })));
-const QuizPage = lazy(() => import('./components/QuizPage').then(m => ({ default: m.QuizPage })));
+const QuizPage = lazy(() => import('./components/QuizPage'));
 const FeedPage = lazy(() => import('./components/FeedPage'));
 const BillingPage = lazy(() => import('./components/BillingPage'));
 const HelpPage = lazy(() => import('./components/HelpPage').then(m => ({ default: m.HelpPage })));
@@ -65,10 +65,10 @@ function AppContent() {
   const { settings } = useSettings();
   const { usage, loading: usageLoading } = useUsage();
   const { showAgentManager, setShowAgentManager } = useAgents();
+  const { features } = useFeatures();
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const [showSettings, setShowSettings] = useState(false);
   const [showMCPDialog, setShowMCPDialog] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
@@ -78,6 +78,11 @@ function AppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showWelcomeWizard, setShowWelcomeWizard] = useState(false);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  
+  // Debug: Log route changes
+  useEffect(() => {
+    console.log('🧭 Route changed to:', location.pathname);
+  }, [location.pathname]);
   
   // Initialize unified sync system
   useEffect(() => {
@@ -135,11 +140,14 @@ function AppContent() {
   
   // Handle navigation with loading check
   const handleNavigate = (path: string) => {
+    console.log('handleNavigate called:', { path, isChatLoading, currentPath: location.pathname });
     if (isChatLoading && location.pathname === '/') {
       // Show warning dialog instead of blocking
+      console.log('Showing navigation warning (chat is loading)');
       setPendingNavigation(path);
       setShowNavigationWarning(true);
     } else {
+      console.log('Navigating to:', path);
       navigate(path);
     }
   };
@@ -147,9 +155,7 @@ function AppContent() {
   // Confirm navigation and stop active request
   const confirmNavigation = () => {
     setShowNavigationWarning(false);
-    if (pendingNavigation === 'settings') {
-      setShowSettings(true);
-    } else if (pendingNavigation) {
+    if (pendingNavigation) {
       navigate(pendingNavigation);
     }
     setPendingNavigation(null);
@@ -168,17 +174,6 @@ function AppContent() {
       setPendingNavigation(null);
     }
   }, [isChatLoading, showNavigationWarning]);
-  
-  // Handle Settings with loading check
-  const handleOpenSettings = () => {
-    if (isChatLoading && location.pathname === '/') {
-      // Show warning for settings too since it covers the chat
-      setPendingNavigation('settings');
-      setShowNavigationWarning(true);
-    } else {
-      setShowSettings(true);
-    }
-  };
   
   // Tool configuration - shared between ChatTab and SettingsModal
   const [enabledTools, setEnabledTools] = useLocalStorage<{
@@ -323,14 +318,23 @@ function AppContent() {
     }
   }, [hasCheckedAuth, isAuthenticated]);
 
-  // Check if we're on the shared snippet viewer route (public route)
-  const isPublicRoute = location.pathname.startsWith('/snippet/shared') || location.hash.includes('/snippet/shared');
+  // Check if we're on a public route (shared snippet viewer, privacy policy, help page)
+  const isPublicRoute = location.pathname.startsWith('/snippet/shared') || 
+                        location.hash.includes('/snippet/shared') ||
+                        location.pathname === '/privacy' ||
+                        location.pathname === '/help';
   
-  // Show shared snippet viewer without authentication if on that route
+  // Show public pages without authentication
   if (isPublicRoute) {
     return (
       <Suspense fallback={<LoadingFallback />}>
-        <SharedSnippetViewer />
+        {location.pathname.startsWith('/snippet/shared') || location.hash.includes('/snippet/shared') ? (
+          <SharedSnippetViewer />
+        ) : location.pathname === '/privacy' ? (
+          <PrivacyPolicy />
+        ) : location.pathname === '/help' ? (
+          <HelpPage />
+        ) : null}
       </Suspense>
     );
   }
@@ -363,7 +367,7 @@ function AppContent() {
 
   // Show full app UI only when authenticated
   return (
-    <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Skip to main content link - Accessibility */}
       <a 
         href="#main-content" 
@@ -389,7 +393,7 @@ function AppContent() {
             {/* Billing Button with Credit Info - Hide on billing page */}
             {location.pathname !== '/billing' && (
               <button
-                onClick={() => handleNavigate('/billing')}
+                onClick={() => { console.log('Billing button clicked, navigating to /billing'); handleNavigate('/billing'); }}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 min-h-11 touch-target"
                 title={usage ? `You have $${usage.creditBalance.toFixed(2)} remaining of $${usage.totalCredits.toFixed(2)} total credits` : 'View billing and usage details'}
                 aria-label="Billing and credits"
@@ -409,7 +413,8 @@ function AppContent() {
               </button>
             )}
             
-            {location.pathname === '/billing' || location.pathname === '/planning' ? (
+            {/* Back to Chat button - Show on ALL pages except chat (/) */}
+            {location.pathname !== '/' && (
               <button
                 onClick={() => navigate('/')}
                 className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
@@ -421,48 +426,8 @@ function AppContent() {
                 </svg>
                 <span className="text-sm hidden md:inline">Back to Chat</span>
               </button>
-            ) : location.pathname === '/help' || location.pathname === '/privacy' ? (
-              <>
-                <button
-                  onClick={() => navigate('/')}
-                  className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
-                  title="Back to Chat"
-                  aria-label="Back to Chat"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                  </svg>
-                  <span className="text-sm hidden md:inline">Back to Chat</span>
-                </button>
-                <button
-                  onClick={() => handleNavigate('/swag')}
-                  className="flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white min-h-11 touch-target"
-                  title="Swag - Save and manage snippets"
-                  aria-label="Swag"
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
-                  </svg>
-                  <span className="text-sm hidden md:inline">Swag</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => handleNavigate('/swag')}
-                  className="flex items-center gap-2 p-2 md:px-3 md:py-2 rounded-lg transition-colors shadow-sm font-medium bg-blue-600 hover:bg-blue-700 text-white min-h-11 touch-target"
-                  title="Swag - Save and manage snippets"
-                  aria-label="Swag"
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
-                  </svg>
-                  <span className="text-sm hidden md:inline">Swag</span>
-                </button>
-              </>
             )}
             
-            <GlobalSyncIndicator />
             <GlobalAgentIndicator />
             
             <GoogleLoginButton />
@@ -481,8 +446,8 @@ function AppContent() {
               </div>
             )}
             
-            {/* Back to Chat button on Swag/Billing pages, Swag button elsewhere */}
-            {location.pathname === '/swag' || location.pathname === '/billing' || location.pathname === '/planning' ? (
+            {/* Back to Chat button - Show on ALL pages except chat (/) */}
+            {location.pathname !== '/' && (
               <button
                 onClick={() => handleNavigate('/')}
                 className="px-3 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2"
@@ -494,19 +459,6 @@ function AppContent() {
                 </svg>
                 <span className="hidden md:inline text-sm font-medium text-gray-700 dark:text-gray-300">Back to Chat</span>
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => handleNavigate('/swag')}
-                  className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                  title="Swag"
-                  aria-label="Swag"
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 2C8 1.45 8.45 1 9 1h6c.55 0 1 .45 1 1v2h-8V2zm-1 4h10l1.5 13c.08.72-.48 1.32-1.2 1.32H6.7c-.72 0-1.28-.6-1.2-1.32L7 6zm5 2c-2.21 0-4 1.79-4 4v6h8v-6c0-2.21-1.79-4-4-4z"/>
-                  </svg>
-                </button>
-              </>
             )}
             
             {/* Hamburger Menu Button */}
@@ -589,23 +541,25 @@ function AppContent() {
                 </button>
               )}
               
-              {/* Image Editor Link */}
-              <button
-                onClick={() => {
-                  handleNavigate('/image-editor');
-                  setMobileMenuOpen(false);
-                }}
-                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-                <span className="font-medium text-gray-700 dark:text-gray-300">Image Editor</span>
-              </button>
+              {/* Image Editor Link - Only show if feature is available */}
+              {features?.imageEditing && (
+                <button
+                  onClick={() => {
+                    handleNavigate('/image-editor');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Image Editor</span>
+                </button>
+              )}
               
               <button
                 onClick={() => {
-                  handleOpenSettings();
+                  handleNavigate('/settings');
                   setMobileMenuOpen(false);
                 }}
                 className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -674,8 +628,8 @@ function AppContent() {
       <BackgroundPlayer />
 
       {/* Main Content - Only visible when authenticated */}
-      <main id="main-content" className="flex-1 overflow-hidden">
-        <div className="h-full max-w-screen-2xl md:mx-auto">
+      <main id="main-content" className="flex-1 overflow-y-auto">
+        <div className="min-h-full max-w-screen-2xl md:mx-auto">
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               <Route 
@@ -697,25 +651,19 @@ function AppContent() {
               <Route path="/image-editor" element={<ImageEditorPage />} />
               <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
               <Route path="/billing" element={<BillingPage />} />
+              <Route path="/settings" element={
+                <SettingsPage 
+                  enabledTools={enabledTools}
+                  setEnabledTools={setEnabledTools}
+                  onOpenMCPDialog={() => setShowMCPDialog(true)}
+                />
+              } />
               <Route path="/help" element={<HelpPage />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
             </Routes>
           </Suspense>
         </div>
       </main>
-
-      {/* Settings Modal */}
-      {showSettings && (
-        <Suspense fallback={null}>
-          <SettingsModal 
-            isOpen={showSettings} 
-            onClose={() => setShowSettings(false)}
-            enabledTools={enabledTools}
-            setEnabledTools={setEnabledTools}
-            onOpenMCPDialog={() => setShowMCPDialog(true)}
-          />
-        </Suspense>
-      )}
 
       {/* Agent Manager Modal */}
       {showAgentManager && (
@@ -776,7 +724,7 @@ function AppContent() {
       )}
 
       {/* Bottom Right Action Buttons - Fixed bottom right */}
-      <GitHubLink onOpenSettings={handleOpenSettings} />
+      <GitHubLink />
 
       {/* Welcome Wizard - Show once on first login */}
       <WelcomeWizard 
@@ -795,13 +743,31 @@ function App() {
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ToastProvider>
         <AuthProvider>
-          <UsageProvider>
-            <SettingsProvider>
-              <LocationProvider>
-                <SyncStatusProvider>
-                  <AgentProvider>
-                    {TTS_FEATURE_ENABLED ? (
-                      <TTSProvider>
+          <FeaturesProvider>
+            <UsageProvider>
+              <SettingsProvider>
+                <LocationProvider>
+                  <SyncStatusProvider>
+                    <AgentProvider>
+                      {TTS_FEATURE_ENABLED ? (
+                        <TTSProvider>
+                          <CastProvider>
+                            <YouTubeAuthProvider>
+                              <PlaylistProvider>
+                                <PlayerProvider>
+                                  <SearchResultsProvider>
+                                    <SwagProvider>
+                                      <FeedProvider>
+                                        <AppContent />
+                                      </FeedProvider>
+                                    </SwagProvider>
+                                  </SearchResultsProvider>
+                                </PlayerProvider>
+                              </PlaylistProvider>
+                            </YouTubeAuthProvider>
+                          </CastProvider>
+                        </TTSProvider>
+                      ) : (
                         <CastProvider>
                           <YouTubeAuthProvider>
                             <PlaylistProvider>
@@ -817,29 +783,13 @@ function App() {
                             </PlaylistProvider>
                           </YouTubeAuthProvider>
                         </CastProvider>
-                      </TTSProvider>
-                    ) : (
-                      <CastProvider>
-                        <YouTubeAuthProvider>
-                          <PlaylistProvider>
-                            <PlayerProvider>
-                              <SearchResultsProvider>
-                                <SwagProvider>
-                                  <FeedProvider>
-                                    <AppContent />
-                                  </FeedProvider>
-                                </SwagProvider>
-                              </SearchResultsProvider>
-                            </PlayerProvider>
-                          </PlaylistProvider>
-                        </YouTubeAuthProvider>
-                      </CastProvider>
-                    )}
-                  </AgentProvider>
-                </SyncStatusProvider>
-              </LocationProvider>
-            </SettingsProvider>
-          </UsageProvider>
+                      )}
+                    </AgentProvider>
+                  </SyncStatusProvider>
+                </LocationProvider>
+              </SettingsProvider>
+            </UsageProvider>
+          </FeaturesProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

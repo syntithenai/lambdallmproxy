@@ -142,7 +142,7 @@ class RAGSyncService {
   /**
    * Push snippets to Google Sheets
    */
-  async pushSnippets(snippets: ContentSnippet[], userEmail: string): Promise<void> {
+  async pushSnippets(snippets: ContentSnippet[], userEmail: string, token?: string): Promise<void> {
     if (!this.config) {
       throw new Error('Sync service not initialized');
     }
@@ -155,6 +155,7 @@ class RAGSyncService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           operation: 'push-snippets',
@@ -181,7 +182,7 @@ class RAGSyncService {
   /**
    * Pull snippets from Google Sheets
    */
-  async pullSnippets(userEmail: string): Promise<ContentSnippet[]> {
+  async pullSnippets(userEmail: string, token?: string): Promise<ContentSnippet[]> {
     if (!this.config) {
       throw new Error('Sync service not initialized');
     }
@@ -194,6 +195,7 @@ class RAGSyncService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           operation: 'pull-snippets',

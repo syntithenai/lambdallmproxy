@@ -9,7 +9,7 @@
 
 const { DuckDuckGoSearcher } = require('../search');
 const { SimpleHTMLParser } = require('../html-parser');
-const { verifyGoogleToken, getAllowedEmails } = require('../auth');
+const { authenticateRequest, getAllowedEmails } = require('../auth');
 
 /**
  * Fetch and extract content from a URL using DuckDuckGoSearcher's fetchUrl
@@ -153,16 +153,11 @@ async function handler(event, responseStream) {
         // Get authorization header
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
         
-        // Extract token (support both "Bearer token" and just "token")
-        const token = authHeader.startsWith('Bearer ') 
-            ? authHeader.substring(7) 
-            : authHeader;
-        
-        // Verify JWT token (async - cryptographically verified)
-        const verifiedUser = token ? await verifyGoogleToken(token) : null;
+        // Verify authentication using unified auth function
+        const authResult = await authenticateRequest(authHeader);
         
         // Require authentication
-        if (!verifiedUser) {
+        if (!authResult.authenticated) {
             sseWriter.writeEvent('error', {
                 error: 'Authentication required. Please provide a valid JWT token in the Authorization header.',
                 code: 'UNAUTHORIZED'
@@ -170,6 +165,8 @@ async function handler(event, responseStream) {
             responseStream.end();
             return;
         }
+        
+        const verifiedUser = authResult.user;
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');

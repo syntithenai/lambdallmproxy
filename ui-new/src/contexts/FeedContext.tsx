@@ -2,12 +2,13 @@
  * Feed Context - Global State Management for Feed Feature
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { FeedItem, FeedPreferences, FeedQuiz } from '../types/feed';
 import { feedDB } from '../db/feedDb';
 import { generateFeedItems, generateFeedQuiz } from '../services/feedGenerator';
 import { useAuth } from './AuthContext';
 import { useSwag } from './SwagContext';
+import { useToast } from '../components/ToastManager';
 
 interface FeedContextValue {
   // State
@@ -16,7 +17,10 @@ interface FeedContextValue {
   currentQuiz: FeedQuiz | null;
   isLoading: boolean;
   isGenerating: boolean;
+  isGeneratingQuiz: boolean; // NEW: Quiz generation indicator
+  generationStatus: string; // Current status message during generation
   error: string | null;
+  selectedTags: string[]; // Tags to filter Swag content for feed generation
   
   // Actions
   generateMore: () => Promise<void>;
@@ -26,6 +30,7 @@ interface FeedContextValue {
   startQuiz: (itemId: string) => Promise<void>;
   closeQuiz: () => void;
   updateSearchTerms: (terms: string[]) => Promise<void>;
+  updateSelectedTags: (tags: string[]) => void;
   refresh: () => Promise<void>;
 }
 
@@ -46,6 +51,7 @@ interface FeedProviderProps {
 export function FeedProvider({ children }: FeedProviderProps) {
   const { getToken } = useAuth();
   const { snippets } = useSwag();
+  const { showSuccess, showWarning, showError } = useToast();
   
   const [items, setItems] = useState<FeedItem[]>([]);
   const [preferences, setPreferences] = useState<FeedPreferences>({
@@ -55,30 +61,62 @@ export function FeedProvider({ children }: FeedProviderProps) {
     lastGenerated: new Date().toISOString()
   });
   const [currentQuiz, setCurrentQuiz] = useState<FeedQuiz | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start as true, set to false after initial load
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<string>(''); // Status message during generation
   const [error, setError] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]); // Filter Swag by these tags
+
+  // Use refs to access latest values without causing re-renders
+  const snippetsRef = useRef(snippets);
+  const preferencesRef = useRef(preferences);
+  const isGeneratingRef = useRef(isGenerating);
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    snippetsRef.current = snippets;
+  }, [snippets]);
+  
+  useEffect(() => {
+    preferencesRef.current = preferences;
+  }, [preferences]);
+  
+  useEffect(() => {
+    isGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
 
   /**
    * Load initial data from IndexedDB
    */
   useEffect(() => {
     const loadData = async () => {
+      console.log('📂 FeedContext: Starting initial data load...');
       try {
         setIsLoading(true);
+        
+        console.log('📂 Initializing feedDB...');
         await feedDB.init();
+        console.log('✅ FeedDB initialized');
         
         // Load preferences
+        console.log('📂 Loading preferences...');
         const prefs = await feedDB.getPreferences();
+        console.log('✅ Loaded preferences');
         setPreferences(prefs);
         
         // Load items (first 10)
+        console.log('📂 Loading items from DB...');
         const loadedItems = await feedDB.getItems(10, 0);
+        console.log('✅ Loaded items from DB:', loadedItems.length);
         setItems(loadedItems);
+        
+        console.log('✅ Initial data load complete');
       } catch (err) {
-        console.error('Failed to load feed data:', err);
+        console.error('❌ Failed to load feed data:', err);
         setError(err instanceof Error ? err.message : 'Failed to load feed');
       } finally {
+        console.log('📂 Setting isLoading to false');
         setIsLoading(false);
       }
     };
@@ -90,65 +128,129 @@ export function FeedProvider({ children }: FeedProviderProps) {
    * Generate more feed items
    */
   const generateMore = useCallback(async () => {
+    console.log('🎯 generateMore called');
+    
     const token = await getToken();
-    if (!token || isGenerating) return;
+    console.log('🔑 Token retrieved:', token ? `${token.substring(0, 20)}...` : 'NULL');
+    
+    if (!token) {
+      console.log('❌ No token, aborting');
+      setError('Please sign in to generate feed items');
+      showError('Please sign in to generate feed items');
+      return;
+    }
+    
+    // Check isGenerating via ref to avoid it being a dependency
+    if (isGeneratingRef.current) {
+      console.log('⏸️ Already generating, skipping');
+      return;
+    }
 
     try {
+      console.log('🚀 Starting feed generation...');
       setIsGenerating(true);
       setError(null);
+      setGenerationStatus('Preparing to generate feed...');
 
-      // Get Swag content (last 20 snippets)
-      const swagContent = snippets.slice(-20).map(s => s.content || '');
+      // Get Swag content - filter by selected tags if any
+      let filteredSnippets = snippetsRef.current;
+      
+      // Apply tag filter if tags are selected
+      if (selectedTags.length > 0) {
+        filteredSnippets = filteredSnippets.filter(snippet => 
+          snippet.tags && snippet.tags.some(tag => selectedTags.includes(tag))
+        );
+        console.log(`🏷️ Filtered by tags [${selectedTags.join(', ')}]: ${filteredSnippets.length} snippets`);
+      }
+      
+      // Get last 20 snippets from filtered set
+      const swagContent = filteredSnippets.slice(-20).map(s => s.content || '');
+      console.log('📚 Swag items:', swagContent.length);
 
-      // Generate new items via backend
+      // Track generated items as they arrive
+      const generatedItems: FeedItem[] = [];
+
+      // Generate new items via backend - use ref to avoid dependency
+      console.log('🔍 Calling generateFeedItems with preferences:', preferencesRef.current);
       const newItems = await generateFeedItems(
         token,
         swagContent,
-        preferences,
+        preferencesRef.current,
         10,
+        // Progress callback - update UI as items arrive
         (event) => {
-          // Log progress events
-          console.log('Feed generation event:', event);
+          console.log('📨 Feed event:', event.type, event);
+          
+          if (event.type === 'item_generated' && event.item) {
+            console.log('✨ New item generated:', event.item.title);
+            generatedItems.push(event.item);
+            
+            // Save item to IndexedDB immediately (fire-and-forget, non-blocking)
+            feedDB.saveItems([event.item])
+              .then(() => {
+                console.log('💾 Saved item to DB:', event.item!.id, event.item!.title);
+              })
+              .catch(dbError => {
+                console.error('❌ Failed to save item to DB:', event.item!.id, dbError);
+              });
+            
+            // Update status with item count
+            setGenerationStatus(`Generated ${generatedItems.length} of 10 items...`);
+            
+            // Immediately update UI with new item (append to bottom of list)
+            setItems(prev => {
+              // Append new item to end
+              const updated = [...prev, event.item!];
+              
+              // Prune oldest items if exceeding 30 items (keep newest 30)
+              const pruned = updated.length > 30 ? updated.slice(-30) : updated;
+              
+              console.log('📊 Items in state after adding:', pruned.length, 'items');
+              return pruned;
+            });
+          } else if (event.type === 'status' && event.message) {
+            console.log('📊 Status:', event.message);
+            setGenerationStatus(event.message); // Update UI with status message
+          } else if (event.type === 'search_complete') {
+            console.log('🔍 Search complete:', event.searchResults, 'results');
+            setGenerationStatus(`Search complete - found ${event.searchResults || 0} results`);
+          } else if (event.type === 'complete' && event.cost !== undefined) {
+            console.log('💰 Total cost:', event.cost);
+            if (event.cost > 0) {
+              setGenerationStatus(`Complete! Cost: $${event.cost.toFixed(6)}`);
+            }
+          } else if (event.type === 'error') {
+            console.error('❌ Generation error:', event.error);
+            setError(event.error || 'Generation failed');
+            setGenerationStatus('Generation failed');
+          }
         }
       );
+      
+      console.log('✅ Generated items:', newItems.length);
+      console.log('✅ Items via events:', generatedItems.length);
+      console.log('📄 Items preview:', newItems.map(i => ({ id: i.title })));
 
-      // Fetch images for items with imageSearchTerms
-      const itemsWithImages = await Promise.all(
-        newItems.map(async (item) => {
-          // Skip if already has image or no search terms
-          if (item.image || !('imageSearchTerms' in item)) {
-            return item;
-          }
-
-          try {
-            // Search for image via DuckDuckGo (handled by backend)
-            // For now, we'll skip image fetching in the initial implementation
-            // This can be enhanced later with image search API
-            return item;
-          } catch (err) {
-            console.warn('Failed to fetch image for item:', item.id, err);
-            return item;
-          }
-        })
-      );
-
-      // Save to IndexedDB
-      await feedDB.saveItems(itemsWithImages);
-
-      // Update state (prepend new items)
-      setItems(prev => [...itemsWithImages, ...prev]);
-
+      // Note: Items already added to UI AND saved to DB via event callback
+      // Just need to update lastGenerated timestamp
+      
       // Update lastGenerated timestamp
       await feedDB.updatePreferences({
         lastGenerated: new Date().toISOString()
       });
     } catch (err) {
-      console.error('Failed to generate feed items:', err);
+      console.error('❌ Failed to generate feed items:', err);
+      if (err instanceof Error) {
+        console.error('Error message:', err.message);
+        console.error('Error stack:', err.stack);
+      }
       setError(err instanceof Error ? err.message : 'Failed to generate feed');
     } finally {
       setIsGenerating(false);
+      setGenerationStatus(''); // Clear status message
     }
-  }, [getToken, snippets, preferences, isGenerating]);
+  }, [getToken]);
+  // Note: isGenerating, snippets, and preferences accessed via state/refs but NOT in deps to prevent infinite loops
 
   /**
    * Stash item to Swag
@@ -242,7 +344,10 @@ export function FeedProvider({ children }: FeedProviderProps) {
       let quiz = await feedDB.getQuiz(itemId);
 
       if (!quiz) {
-        // Generate new quiz
+        // Generate new quiz - show toast as this takes time
+        showWarning('🧠 Generating quiz... this may take 30-60 seconds. Please wait.');
+        setIsGeneratingQuiz(true);
+        
         const item = items.find(i => i.id === itemId);
         if (!item) {
           throw new Error('Item not found');
@@ -252,16 +357,20 @@ export function FeedProvider({ children }: FeedProviderProps) {
         
         // Save to cache
         await feedDB.saveQuiz(quiz);
+        showSuccess('✅ Quiz ready!');
       }
 
       setCurrentQuiz(quiz);
     } catch (err) {
       console.error('Failed to start quiz:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load quiz');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load quiz';
+      setError(errorMsg);
+      showError(`❌ ${errorMsg}`);
     } finally {
       setIsLoading(false);
+      setIsGeneratingQuiz(false);
     }
-  }, [getToken, items]);
+  }, [getToken, items, showWarning, showSuccess, showError]);
 
   /**
    * Close quiz overlay
@@ -286,6 +395,14 @@ export function FeedProvider({ children }: FeedProviderProps) {
   }, []);
 
   /**
+   * Update selected tags for filtering Swag content
+   */
+  const updateSelectedTags = useCallback((tags: string[]) => {
+    setSelectedTags(tags);
+    console.log(`🏷️ Tag filter updated: ${tags.length} tags selected`);
+  }, []);
+
+  /**
    * Refresh feed (reload from database)
    */
   const refresh = useCallback(async () => {
@@ -307,7 +424,10 @@ export function FeedProvider({ children }: FeedProviderProps) {
     currentQuiz,
     isLoading,
     isGenerating,
+    isGeneratingQuiz,
+    generationStatus,
     error,
+    selectedTags,
     generateMore,
     stashItem,
     trashItem,
@@ -315,6 +435,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     startQuiz,
     closeQuiz,
     updateSearchTerms,
+    updateSelectedTags,
     refresh
   };
 

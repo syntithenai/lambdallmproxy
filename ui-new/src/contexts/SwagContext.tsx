@@ -323,7 +323,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Perform initial full sync - pull remote snippets
         console.log('Performing initial sync...');
-        const remoteSnippets = await ragSyncService.pullSnippets(user.email);
+        const token = await getToken();
+        const remoteSnippets = await ragSyncService.pullSnippets(user.email, token || undefined);
         
         if (remoteSnippets && remoteSnippets.length > 0) {
           // Merge downloaded snippets with local ones
@@ -348,7 +349,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Push local snippets that don't exist remotely
         if (snippets.length > 0) {
-          await ragSyncService.pushSnippets(snippets, user.email);
+          await ragSyncService.pushSnippets(snippets, user.email, token || undefined);
         }
 
         // Start auto-sync

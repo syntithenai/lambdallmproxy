@@ -17,6 +17,8 @@ const API_KEY_PATTERNS: Record<ProviderType, RegExp> = {
   'atlascloud': /^apikey-[a-f0-9]{32}$/,
   'openai-compatible': /.+/, // Any non-empty string
   'replicate': /^r8_[a-zA-Z0-9]{40}$/, // Replicate API key format
+  'speaches': /.+/, // Any non-empty string (local server)
+  'anthropic': /^sk-ant-[a-zA-Z0-9_-]{20,}$/, // Anthropic API key format
 };
 
 /**
@@ -37,6 +39,8 @@ export function validateApiKey(apiKey: string, providerType: ProviderType): { va
       'atlascloud': 'Atlas Cloud API key must start with "apikey-" followed by 32 hex characters',
       'openai-compatible': 'API key cannot be empty',
       'replicate': 'Replicate API key must start with "r8_" followed by 40 characters',
+      'speaches': 'API key cannot be empty',
+      'anthropic': 'Anthropic API key must start with "sk-ant-" followed by at least 20 characters',
     };
     return { valid: false, error: errorMessages[providerType] };
   }

@@ -19,7 +19,7 @@ export interface AuthState {
 export const initializeGoogleOAuth = (callback: (response: any) => void) => {
   if (typeof google !== 'undefined' && google.accounts) {
     if (!GOOGLE_CLIENT_ID) {
-      console.error('❌ VITE_GOOGLE_CLIENT_ID not configured in ui-new/.env');
+      console.error('❌ VITE_GGL_CID not configured in ui-new/.env');
       return;
     }
     google.accounts.id.initialize({
@@ -269,43 +269,13 @@ export const refreshGoogleToken = async (currentAccessToken: string): Promise<{a
         };
       } else {
         console.log('OAuth refresh failed:', response.status);
-        // Fall through to silent sign-in attempt
+        return null;
       }
     }
     
-    // Fallback: Try silent sign-in (less reliable, but better than nothing)
-    console.log('🔄 Attempting silent sign-in fallback...');
-    return new Promise((resolve) => {
-      if (typeof google === 'undefined' || !google.accounts) {
-        console.log('Google API not loaded');
-        resolve(null);
-        return;
-      }
-
-      let hasResolved = false;
-      const timeout = setTimeout(() => {
-        if (!hasResolved) {
-          hasResolved = true;
-          console.log('Silent sign-in not available');
-          resolve(null);
-        }
-      }, 5000);
-
-      // Initialize with auto_select for silent refresh
-      (google.accounts.id.initialize as any)({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: (response: any) => {
-          if (!hasResolved && response.credential) {
-            hasResolved = true;
-            clearTimeout(timeout);
-            console.log('✅ Silent sign-in successful');
-            resolve({ accessToken: response.credential });
-          }
-        },
-        auto_select: true,
-        cancel_on_tap_outside: true
-      });
-    });
+    // No refresh token available
+    console.log('ℹ️ No refresh token available for silent refresh');
+    return null;
   } catch (error) {
     console.error('Token refresh failed:', error);
     return null;

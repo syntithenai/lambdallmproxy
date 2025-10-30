@@ -253,6 +253,9 @@ export interface ChatMessage {
   retryCount?: number;               // Number of retry attempts for this message
   originalErrorMessage?: string;     // Original error message for retry context
   originalUserPromptIndex?: number;  // Index of original user prompt for retry
+  // Manual stop support
+  wasStopped?: boolean;              // Flag indicating request was manually stopped by user
+  partialCost?: number;              // Cost calculated from partial tokens received before stop
   // Self-evaluation results
   evaluations?: Array<{              // Self-evaluation results for response comprehensiveness
     attempt: number;                 // Evaluation attempt number
@@ -302,6 +305,7 @@ export interface ProxyRequest {
   max_tokens?: number;
   stream?: boolean;
   providers?: Record<string, { apiKey: string; [key: string]: any }>; // All enabled providers for fallback
+  voiceMode?: boolean; // Enable dual response format (short for TTS, long for display)
 }
 
 export interface PlanningRequest {
@@ -866,5 +870,47 @@ export const generateQuiz = async (
   }
   
   return await response.json();
+};
+
+/**
+ * Get providers configured in backend environment variables
+ */
+export interface BackendProvider {
+  id: string;
+  type: string;
+  enabled: boolean;
+  source: string;
+  priority?: number;
+  apiEndpoint?: string;
+  modelName?: string;
+  rateLimitTPM?: number;
+  allowedModels?: string[];
+  maxQuality?: string;
+  // NOTE: API keys are NEVER sent from backend (security)
+}
+
+export const getBackendProviders = async (): Promise<BackendProvider[]> => {
+  try {
+    const apiBase = await getCachedApiBase();
+    
+    const response = await fetch(`${apiBase}/providers`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to fetch backend providers:', response.status, response.statusText);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log(`✅ Fetched ${data.count} backend providers`);
+    return data.providers || [];
+  } catch (error) {
+    console.error('Error fetching backend providers:', error);
+    return [];
+  }
 };
 

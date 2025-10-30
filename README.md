@@ -376,7 +376,7 @@ Edit the `.env` file created by `make install`:
 
 ```bash
 # Google OAuth (REQUIRED for authentication)
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GGL_CID=your-client-id.apps.googleusercontent.com
 ALLOWED_EMAILS=your-email@example.com,teammate@example.com
 
 # LLM Provider API Keys (at least one required)
@@ -403,7 +403,7 @@ LAMBDA_FUNCTION_NAME=llmproxy
    - Application type: "Web application"
    - Authorized JavaScript origins: `http://localhost:8081`, your deployed URL
    - Authorized redirect URIs: `http://localhost:8081/callback`
-   - Copy the **Client ID** to `GOOGLE_CLIENT_ID` in `.env`
+   - Copy the **Client ID** to `GGL_CID` in `.env`
 
 3. **Create Service Account** (for backend Google Sheets logging):
    - Navigate to "Credentials" → "Create Credentials" → "Service Account"
@@ -1000,7 +1000,7 @@ The project is organized for maintainability and scalability:
 
 1. **Valid JWT Token**: Google OAuth token in `Authorization` header
 2. **Email Whitelist**: Email must be in `ALLOWED_EMAILS` environment variable
-3. **Token Verification**: Backend validates token using `GOOGLE_CLIENT_ID`
+3. **Token Verification**: Backend validates token using `GGL_CID`
 
 ### Google OAuth Integration
 
@@ -1028,7 +1028,7 @@ The system includes comprehensive Google OAuth authentication:
 1. **Configure Google OAuth**:
 ```bash
 # Add to .env file
-GOOGLE_CLIENT_ID=your-google-client-id-here
+GGL_CID=your-google-client-id-here
 ALLOWED_EMAILS=user1@example.com,user2@example.com,user3@example.com
 ```
 
@@ -1043,12 +1043,12 @@ ALLOWED_EMAILS=user1@example.com,user2@example.com,user3@example.com
 
 3. **Build UI with Authentication**:
 ```bash
-make build-docs  # Replaces {{GOOGLE_CLIENT_ID}} placeholder
+make build-docs  # Injects GGL_CID as VITE_GGL_CID into UI
 ```
 
 4. **Deploy Lambda with Environment Variables**:
 ```bash
-make deploy  # Automatically includes GOOGLE_CLIENT_ID and ALLOWED_EMAILS
+make deploy  # Automatically includes GGL_CID and ALLOWED_EMAILS
 ```
 
 4. **Test Authentication**:
@@ -1168,7 +1168,7 @@ curl -X POST https://your-lambda-url.lambda-url.us-east-1.on.aws/ \
 All environment variables in the `.env` file are actively used in the application. The system has been optimized with no unused configuration variables:
 
 ### 🔒 Authentication Variables (REQUIRED)
-- **`GOOGLE_CLIENT_ID`** - **REQUIRED** - Google OAuth client ID for JWT token verification
+- **`GGL_CID`** - **REQUIRED** - Google OAuth client ID for JWT token verification
 - **`ALLOWED_EMAILS`** - **REQUIRED** - Comma-separated list of authorized email addresses
   - Example: `user1@example.com,user2@example.com,admin@company.com`
   - All API endpoints check if the JWT token's email is in this list

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import './BillingPage.css';
 import { useAuth } from '../contexts/AuthContext';
@@ -255,7 +255,7 @@ const BillingPage: React.FC = () => {
     });
   }, [isAuthenticated, accessToken]);
 
-  const fetchBillingData = async () => {
+  const fetchBillingData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -388,7 +388,8 @@ const BillingPage: React.FC = () => {
       setLoading(false);
       console.log('🏁 [BillingPage] fetchBillingData completed, loading:', false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, isAuthenticated]); // refreshUsage intentionally excluded to prevent infinite loop
 
   const handleClearData = async (mode: 'all' | 'provider' | 'dateRange', options: any) => {
     try {
@@ -505,7 +506,8 @@ const BillingPage: React.FC = () => {
     if (isAuthenticated && accessToken) {
       fetchBillingData();
     }
-  }, [isAuthenticated, accessToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, accessToken]); // fetchBillingData intentionally excluded - it's stable via useCallback
 
   // Render PayPal buttons when modal opens and SDK is loaded
   useEffect(() => {
@@ -1489,6 +1491,28 @@ const BillingPage: React.FC = () => {
                 <p>{t('billing.purchaseCreditsDescription')}</p>
               </div>
               
+              {/* PayPal Fee Warning */}
+              <div style={{ 
+                padding: '15px', 
+                background: '#fff8e1', 
+                border: '1px solid #ffc107',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                fontSize: '0.95rem'
+              }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#f57c00' }}>
+                  ℹ️ Transparent Pricing Notice
+                </div>
+                <p style={{ margin: '0 0 8px 0', color: '#5d4037' }}>
+                  PayPal charges <strong>2.9% + $0.30</strong> per transaction for payment processing.
+                  To maintain transparent pricing, these fees are <strong>deducted from your credit purchase</strong>.
+                </p>
+                <p style={{ margin: 0, color: '#5d4037', fontSize: '0.9rem' }}>
+                  Example: $10.00 payment = ${(10 - (10 * 0.029 + 0.30)).toFixed(2)} in credits 
+                  (fee: ${(10 * 0.029 + 0.30).toFixed(2)})
+                </p>
+              </div>
+              
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
                   {t('billing.enterAmount')}
@@ -1517,12 +1541,22 @@ const BillingPage: React.FC = () => {
                 marginBottom: '20px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span>{t('billing.creditsToAdd')}</span>
+                  <span>Payment Amount</span>
                   <strong>${parseFloat(creditAmount || '0').toFixed(2)}</strong>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#666' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.9rem', color: '#d32f2f' }}>
+                  <span>PayPal Fee (2.9% + $0.30)</span>
+                  <span>-${((parseFloat(creditAmount || '0') * 0.029) + 0.30).toFixed(2)}</span>
+                </div>
+                <div style={{ borderTop: '1px solid #ddd', paddingTop: '8px', marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#2e7d32' }}>
+                    <span>{t('billing.creditsToAdd')}</span>
+                    <span>${Math.max(0, parseFloat(creditAmount || '0') - ((parseFloat(creditAmount || '0') * 0.029) + 0.30)).toFixed(2)}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#666', marginTop: '8px' }}>
                   <span>{t('billing.newBalance')}</span>
-                  <span>${(creditBalance + parseFloat(creditAmount || '0')).toFixed(2)}</span>
+                  <span>${(creditBalance + Math.max(0, parseFloat(creditAmount || '0') - ((parseFloat(creditAmount || '0') * 0.029) + 0.30))).toFixed(2)}</span>
                 </div>
               </div>
               

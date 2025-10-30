@@ -9,6 +9,7 @@ function isOpenAIModel(model) { return typeof model === 'string' && model.starts
 function isGroqModel(model) { return typeof model === 'string' && (model.startsWith('groq:') || model.startsWith('groq-free:')); }
 function isGeminiModel(model) { return typeof model === 'string' && (model.startsWith('gemini:') || model.startsWith('gemini-free:')); }
 function isCohereModel(model) { return typeof model === 'string' && model.startsWith('cohere:'); }
+function isTogetherModel(model) { return typeof model === 'string' && model.startsWith('together:'); }
 
 // Check if model name (without prefix) is a known model by provider
 function isKnownOpenAIModel(modelName) {
@@ -315,7 +316,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
 
   // Auto-detect and add provider prefix if missing
   let normalizedModel = model;
-  if (!isOpenAIModel(model) && !isGroqModel(model) && !isGeminiModel(model) && !isCohereModel(model)) {
+  if (!isOpenAIModel(model) && !isGroqModel(model) && !isGeminiModel(model) && !isCohereModel(model) && !isTogetherModel(model)) {
     // Check if it's a known model name from any provider
     if (isKnownOpenAIModel(model)) {
       console.log(`⚠️ Model "${model}" is an OpenAI model, adding openai: prefix`);
@@ -439,6 +440,54 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     } catch (error) {
       // Enhance error with provider context
       error.provider = 'groq';
+      error.model = normalizedModel;
+      error.endpoint = `https://${hostname}${path}`;
+      throw error;
+    }
+  }
+
+  if (isTogetherModel(normalizedModel)) {
+    // Together AI OpenAI-compatible chat.completions
+    const hostname = 'api.together.xyz';
+    const path = '/v1/chat/completions';
+    const messages = (input || []).map(block => {
+      if (block.type === 'function_call_output') {
+        return { role: 'tool', content: block.output, tool_call_id: block.call_id };
+      }
+      if (block.role) {
+        const message = { role: block.role, content: block.content };
+        if (block.tool_calls) {
+          message.tool_calls = block.tool_calls;
+        }
+        return message;
+      }
+      return null;
+    }).filter(Boolean);
+
+    const payload = {
+      model: normalizedModel.replace(/^together:/, ''),
+      messages,
+      tools,
+      tool_choice: options?.tool_choice ?? defaultToolChoice,
+      ...((!tools || tools.length === 0) && { response_format: options?.response_format ?? defaultResponseFormat }),
+      temperature,
+      max_tokens,
+      top_p,
+      frequency_penalty,
+      presence_penalty
+    };
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${options?.apiKey}`
+    };
+    try {
+      const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
+      const result = normalizeFromChat(data);
+      result.provider = 'together';
+      result.model = normalizedModel;
+      return result;
+    } catch (error) {
+      error.provider = 'together';
       error.model = normalizedModel;
       error.endpoint = `https://${hostname}${path}`;
       throw error;

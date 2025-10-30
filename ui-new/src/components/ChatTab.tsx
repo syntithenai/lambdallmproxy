@@ -9,6 +9,7 @@ import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import { useUsage } from '../contexts/UsageContext';
 import { useCast } from '../contexts/CastContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useTTS } from '../contexts/TTSContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
@@ -98,6 +99,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
   const { addCost, usage } = useUsage();
+  const { state: ttsState, speak: ttsSpeak } = useTTS();
   const { isConnected: isCastConnected, sendMessages: sendCastMessages, sendScrollPosition } = useCast();
   const { location, isLoading: locationLoading, requestLocation, clearLocation } = useLocation();
   
@@ -381,6 +383,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Voice input dialog
   const [showVoiceInput, setShowVoiceInput] = useState(false);
+  const [continuousVoiceEnabled, setContinuousVoiceEnabled] = useState(false);
   
   // API endpoint for voice input (auto-detected)
   const [apiEndpoint, setApiEndpoint] = useState<string>('');
@@ -906,14 +909,20 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const handlePositiveFeedback = async (messageIndex: number) => {
     try {
       const message = messages[messageIndex];
-      const accessToken = await getToken();
+      const token = await getToken();
+      
+      if (!token) {
+        showError('Please sign in to submit feedback');
+        return;
+      }
+      
       const apiBase = await getCachedApiBase();
       
       const response = await fetch(`${apiBase}/report-error`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           userEmail: user?.email,
@@ -1507,6 +1516,52 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+      
+      // Save the partial response with available metadata
+      if (currentStreamingBlockIndex !== null && (streamingContent || messages[currentStreamingBlockIndex])) {
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const currentMsg = newMessages[currentStreamingBlockIndex];
+          
+          if (currentMsg && currentMsg.role === 'assistant') {
+            // Finalize the streaming message as "stopped"
+            const partialContent = streamingContent || currentMsg.content || '';
+            const llmApiCalls = currentMsg.llmApiCalls || [];
+            
+            // Calculate cost from partial tokens if available
+            let partialCost = 0;
+            if (llmApiCalls.length > 0) {
+              partialCost = calculateCostFromLlmApiCalls(llmApiCalls);
+            }
+            
+            newMessages[currentStreamingBlockIndex] = {
+              ...currentMsg,
+              content: partialContent + '\n\n_⏹️ Request stopped by user. Partial response shown above._',
+              isStreaming: false,
+              wasStopped: true, // Flag to indicate this was manually stopped
+              llmApiCalls,
+              partialCost
+            };
+            
+            // Update total cost
+            if (partialCost > 0) {
+              addCost(partialCost);
+            }
+            
+            console.log('⏹️ Request stopped. Saved partial response:', {
+              contentLength: partialContent.length,
+              llmApiCallsCount: llmApiCalls.length,
+              partialCost
+            });
+          }
+          
+          return newMessages;
+        });
+        
+        setCurrentStreamingBlockIndex(null);
+        setStreamingContent('');
+      }
+      
       setIsLoading(false);
     }
   };
@@ -2409,6 +2464,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           evaluations,
           errorData,
           imageGenerations,
+          partialCost,
+          wasStopped,
           ...cleanMsg 
         } = msg as any;
         return cleanMsg;
@@ -2419,7 +2476,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       // Send providers array instead of model field - filter out disabled providers
       // IMPORTANT: Only send providers that are explicitly enabled (enabled === true)
       // Providers without 'enabled' field or with enabled=false are excluded
-      const enabledProviders = settings.providers.filter(p => p.enabled === true);
+      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
       
       // Load proxy settings from localStorage
       const proxySettings = localStorage.getItem('proxy_settings');
@@ -2444,11 +2501,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         temperature: 0.7,
         stream: true,  // Always use streaming
         optimization: settings.optimization || 'cheap',  // Model selection strategy
-        language: settings.language || 'en'  // User's preferred language for responses
+        language: settings.language || 'en',  // User's preferred language for responses
+        voiceMode: continuousVoiceEnabled  // Enable dual response format for voice mode
       };
       
       console.log(`🎯 Model selection optimization: ${requestPayload.optimization}`);
       console.log(`🌐 Response language: ${requestPayload.language}`);
+      if (continuousVoiceEnabled) {
+        console.log(`🎙️ Voice mode enabled - dual response format requested`);
+      }
       
       // Add location data if available
       if (location) {
@@ -3519,6 +3580,31 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // All processing complete
               console.log('Stream complete:', data);
               
+              // Handle dual response format from voice mode
+              if (data.shortResponse && continuousVoiceEnabled) {
+                console.log(`🎙️ Received short response for TTS (${data.shortResponse.length} chars)`);
+                
+                // Speak the short response via TTS
+                // The ContinuousVoiceMode component will restart recording when TTS finishes
+                // because it monitors ttsState.isPlaying via the isSpeaking prop
+                ttsSpeak(data.shortResponse, {
+                  shouldSummarize: false, // Already pre-summarized
+                  onStart: () => {
+                    console.log('🎙️ TTS started speaking short response');
+                  },
+                  onEnd: () => {
+                    console.log('🎙️ TTS finished speaking - ContinuousVoiceMode will auto-restart recording');
+                  },
+                  onError: (error) => {
+                    console.error('🎙️ TTS error:', error);
+                    showError('TTS playback failed');
+                  }
+                }).catch(error => {
+                  console.error('🎙️ Failed to start TTS:', error);
+                  showError('Failed to speak response');
+                });
+              }
+              
               // Attach extractedContent to the last assistant message
               if (data.extractedContent) {
                 console.log('📦 Attaching extractedContent from complete event:', {
@@ -3972,9 +4058,37 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     // Remove the failed message
     setMessages(prev => prev.slice(0, messageIndex));
     
-    // Restore user input and trigger auto-submit
-    const userContent = getMessageText(userPrompt.content);
-    setInput(userContent);
+    // Restore user input (preserve multimodal content including images)
+    if (typeof userPrompt.content === 'string') {
+      // Simple text message
+      setInput(userPrompt.content);
+    } else if (Array.isArray(userPrompt.content)) {
+      // Multimodal content - extract text and restore attachments
+      const textPart = userPrompt.content.find(part => part.type === 'text');
+      setInput(textPart?.text || '');
+      
+      // Restore image attachments from base64 data URLs
+      const imageParts = userPrompt.content.filter(part => part.type === 'image_url');
+      if (imageParts.length > 0) {
+        const restoredFiles = imageParts.map((part, idx) => {
+          const dataUrl = part.image_url?.url || '';
+          const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (matches) {
+            return {
+              name: `restored_image_${idx + 1}.png`,
+              type: matches[1],
+              base64: matches[2]
+            };
+          }
+          return null;
+        }).filter(Boolean);
+        
+        if (restoredFiles.length > 0) {
+          setAttachedFiles(restoredFiles as any);
+          console.log(`🖼️ Restored ${restoredFiles.length} image(s) for retry`);
+        }
+      }
+    }
     
     // Set trigger to auto-submit when input updates
     retryTriggerRef.current = true;
@@ -6981,13 +7095,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   </svg>
                 </button>
 
-                {/* Voice Input Button */}
+                {/* Voice Input Button - Activates Continuous Voice Mode */}
                 <button
-                  onClick={() => setShowVoiceInput(true)}
+                  onClick={() => setContinuousVoiceEnabled(!continuousVoiceEnabled)}
                   disabled={isLoading || !accessToken}
-                  className="btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={!accessToken ? 'Please sign in to use voice input' : 'Voice input (speech-to-text)'}
-                  aria-label={!accessToken ? 'Sign in to use voice input' : 'Voice input (speech-to-text)'}
+                  className={`btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    continuousVoiceEnabled ? 'bg-blue-100 dark:bg-blue-900 border-blue-500' : ''
+                  }`}
+                  title={!accessToken ? 'Please sign in to use voice input' : continuousVoiceEnabled ? 'Stop continuous voice mode' : 'Start continuous voice mode (hands-free)'}
+                  aria-label={!accessToken ? 'Sign in to use voice input' : continuousVoiceEnabled ? 'Stop continuous voice mode' : 'Start continuous voice mode'}
                 >
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
@@ -7627,7 +7743,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         apiEndpoint={apiEndpoint}
       />
 
-      {/* Continuous Voice Mode (Hotword Detection) */}
+      {/* Continuous Voice Mode (Hotword Detection) - Controlled by mic button */}
       {accessToken && (
         <div className="fixed bottom-20 right-4 z-30 max-w-sm">
           <ContinuousVoiceMode
@@ -7645,7 +7761,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             accessToken={accessToken}
             apiEndpoint={apiEndpoint}
             isProcessing={isLoading}
-            isSpeaking={false} // TODO: Track TTS speaking state from background player
+            isSpeaking={ttsState.isPlaying} // Track TTS speaking state for auto-restart
+            enabled={continuousVoiceEnabled}
+            onEnabledChange={setContinuousVoiceEnabled}
           />
         </div>
       )}

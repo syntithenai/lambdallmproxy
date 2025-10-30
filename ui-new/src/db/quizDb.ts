@@ -28,6 +28,8 @@ export interface QuizStatistic {
   answers: QuizAnswer[];
   enrichment: boolean; // Whether web search enrichment was used
   synced: boolean; // Whether synced to Google Sheets
+  completed: boolean; // Whether the quiz was actually completed (vs just generated)
+  quizData?: any; // Store the actual quiz questions for restarting incomplete quizzes
 }
 
 class QuizDatabase {
@@ -110,7 +112,8 @@ class QuizDatabase {
       ...statistic,
       id,
       synced: false,
-      percentage
+      percentage,
+      completed: statistic.completed ?? true // Default to completed if not specified
     };
 
     return new Promise((resolve, reject) => {
@@ -126,6 +129,150 @@ class QuizDatabase {
       request.onerror = () => {
         console.error('Failed to save quiz statistic:', request.error);
         reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * Save a generated quiz (not yet completed)
+   */
+  async saveGeneratedQuiz(quizTitle: string, snippetIds: string[], totalQuestions: number, enrichment: boolean, quizData?: any): Promise<string> {
+    await this.init();
+
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const id = this.generateUUID();
+    const generatedQuiz: QuizStatistic = {
+      id,
+      quizTitle,
+      snippetIds,
+      score: 0,
+      totalQuestions,
+      percentage: 0,
+      timeTaken: 0,
+      completedAt: new Date().toISOString(),
+      answers: [],
+      enrichment,
+      synced: false,
+      completed: false,
+      quizData
+    };
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([STATISTICS_STORE], 'readwrite');
+      const store = transaction.objectStore(STATISTICS_STORE);
+      const request = store.add(generatedQuiz);
+
+      request.onsuccess = () => {
+        console.log('✅ Generated quiz saved:', id);
+        resolve(id);
+      };
+
+      request.onerror = () => {
+        console.error('Failed to save generated quiz:', request.error);
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * Update quiz data (for regenerated quizzes)
+   */
+  async updateQuizData(id: string, quizData: any): Promise<void> {
+    await this.init();
+
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([STATISTICS_STORE], 'readwrite');
+      const store = transaction.objectStore(STATISTICS_STORE);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const quiz = getRequest.result;
+        if (!quiz) {
+          reject(new Error('Quiz not found'));
+          return;
+        }
+
+        const updatedQuiz: QuizStatistic = {
+          ...quiz,
+          quizData
+        };
+
+        const putRequest = store.put(updatedQuiz);
+
+        putRequest.onsuccess = () => {
+          console.log('✅ Quiz data updated:', id);
+          resolve();
+        };
+
+        putRequest.onerror = () => {
+          console.error('Failed to update quiz data:', putRequest.error);
+          reject(putRequest.error);
+        };
+      };
+
+      getRequest.onerror = () => {
+        console.error('Failed to get quiz:', getRequest.error);
+        reject(getRequest.error);
+      };
+    });
+  }
+
+  /**
+   * Update a quiz statistic with completion data
+   */
+  async updateQuizCompletion(id: string, score: number, timeTaken: number, answers: QuizAnswer[]): Promise<void> {
+    await this.init();
+
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([STATISTICS_STORE], 'readwrite');
+      const store = transaction.objectStore(STATISTICS_STORE);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const quiz = getRequest.result;
+        if (!quiz) {
+          reject(new Error('Quiz not found'));
+          return;
+        }
+
+        const percentage = Math.round((score / quiz.totalQuestions) * 100);
+        const updatedQuiz: QuizStatistic = {
+          ...quiz,
+          score,
+          percentage,
+          timeTaken,
+          answers,
+          completedAt: new Date().toISOString(),
+          completed: true
+        };
+
+        const putRequest = store.put(updatedQuiz);
+
+        putRequest.onsuccess = () => {
+          console.log('✅ Quiz completion updated:', id);
+          resolve();
+        };
+
+        putRequest.onerror = () => {
+          console.error('Failed to update quiz completion:', putRequest.error);
+          reject(putRequest.error);
+        };
+      };
+
+      getRequest.onerror = () => {
+        console.error('Failed to get quiz:', getRequest.error);
+        reject(getRequest.error);
       };
     });
   }
@@ -323,7 +470,10 @@ class QuizDatabase {
     totalQuestionsAnswered: number;
     totalCorrectAnswers: number;
   }> {
-    const statistics = await this.getQuizStatistics();
+    const allStatistics = await this.getQuizStatistics();
+    
+    // Only count completed quizzes in summary statistics
+    const statistics = allStatistics.filter(stat => stat.completed);
     
     if (statistics.length === 0) {
       return {

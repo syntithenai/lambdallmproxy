@@ -97,7 +97,7 @@ To enable Google Docs export:
 
 2. **Environment Variable**:
    - Edit `ui-new/.env`
-   - Add: `VITE_GOOGLE_CLIENT_ID=your_client_id_here`
+   - Add: `VITE_GGL_CID=your_client_id_here`
    - Rebuild: `./scripts/build-docs.sh`
 
 3. **Testing**:

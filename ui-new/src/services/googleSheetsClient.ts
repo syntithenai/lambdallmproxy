@@ -27,7 +27,7 @@ let tokenExpiresAt: number = 0;
  */
 export function initGoogleIdentity(clientId: string): void {
   if (!clientId) {
-    console.warn('⚠️ GOOGLE_CLIENT_ID not configured - client-side Sheets sync disabled');
+    console.warn('⚠️ VITE_GGL_CID not configured - client-side Sheets sync disabled');
     return;
   }
 

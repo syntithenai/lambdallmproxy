@@ -418,7 +418,37 @@ function getApiKeyForProvider(provider, contextKeys = {}) {
     return contextKey;
   }
   
-  // Fallback to environment variables
+  // Check credential pool (new indexed LP_* format)
+  const { loadEnvironmentProviders } = require('../credential-pool');
+  const envProviders = loadEnvironmentProviders();
+  const normalizedProvider = provider.toLowerCase();
+  
+  // Find first matching provider with image capability
+  const matchingProvider = envProviders.find(p => {
+    const providerType = p.type.toLowerCase();
+    
+    // Direct match
+    if (providerType === normalizedProvider) {
+      return true;
+    }
+    
+    // Handle aliases (e.g., togetherai -> together)
+    if (normalizedProvider === 'together' && providerType === 'togetherai') {
+      return true;
+    }
+    if (normalizedProvider === 'togetherai' && providerType === 'together') {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  if (matchingProvider?.apiKey) {
+    console.log(`🔑 Found API key for ${provider} from credential pool (index ${matchingProvider.index})`);
+    return matchingProvider.apiKey;
+  }
+  
+  // Fallback to legacy environment variables (deprecated)
   const envVarMap = {
     'openai': 'OPENAI_KEY',
     'together': 'TOGETHER_KEY',

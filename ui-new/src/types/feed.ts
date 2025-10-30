@@ -8,7 +8,9 @@ export interface FeedItem {
   id: string;                    // UUID
   type: FeedItemType;            // Content type
   title: string;                 // Headline
-  content: string;               // Main text/summary
+  content: string;               // Main text/summary (short)
+  expandedContent?: string;      // Longer article with 4+ facts
+  mnemonic?: string;             // Memory aid (acronym/rhyme/connection)
   image?: string;                // Image URL (from Unsplash/Pexels)
   imageThumb?: string;           // Thumbnail URL
   imageSource?: string;          // Image provider: 'unsplash' | 'pexels'
@@ -17,6 +19,7 @@ export interface FeedItem {
   imageAttribution?: string;     // Plain text attribution
   imageAttributionHtml?: string; // HTML attribution (with links)
   topics: string[];              // Extracted topics/tags
+  searchTerms?: string[];        // Original search terms that generated this item
   sources: string[];             // Source URLs from search
   createdAt: string;             // ISO timestamp
   viewed: boolean;               // User has seen it

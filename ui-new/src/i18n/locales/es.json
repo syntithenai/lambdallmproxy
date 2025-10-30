@@ -423,6 +423,7 @@
       "tools": "Herramientas",
       "proxy": "Proxy",
       "location": "Ubicación",
+      "voice": "Voz",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -659,6 +660,7 @@
   },
   "quiz": {
     "title": "Cuestionario",
+    "subtitle": "Sigue tu progreso de aprendizaje y rendimiento en cuestionarios",
     "startQuiz": "Iniciar Cuestionario",
     "nextQuestion": "Siguiente Pregunta",
     "previousQuestion": "Anterior",
@@ -680,6 +682,27 @@
     "totalQuizzes": "Total de Cuestionarios",
     "averageScore": "Puntuación Promedio",
     "questionsAnswered": "Preguntas Respondidas",
-    "statistics": "Estadísticas del Cuestionario"
+    "statistics": "Estadísticas del Cuestionario",
+    "createNewQuiz": "Crear Nuevo Cuestionario",
+    "recentQuizzes": "Cuestionarios Recientes",
+    "noQuizzesYet": "Aún no hay cuestionarios completados",
+    "noQuizzesDescription": "Realiza un cuestionario desde tu contenido guardado en SWAG para ver tus estadísticas aquí",
+    "goToSwag": "Ir a SWAG",
+    "backToChat": "Volver al Chat",
+    "loadingStats": "Cargando estadísticas...",
+    "errorLoadingStats": "Error al cargar estadísticas del cuestionario",
+    "confirmDelete": "¿Estás seguro de que quieres eliminar el cuestionario '{{title}}'?",
+    "quizDeleted": "Cuestionario eliminado exitosamente",
+    "errorDeletingQuiz": "Error al eliminar el cuestionario",
+    "deleteQuiz": "Eliminar cuestionario",
+    "today": "Hoy",
+    "yesterday": "Ayer",
+    "daysAgo": "Hace {{days}} días",
+    "snippetCount": "{{count}} fragmento",
+    "snippetCount_plural": "{{count}} fragmentos",
+    "enriched": "Enriquecido",
+    "notSynced": "No Sincronizado",
+    "highestScore": "Puntuación Más Alta",
+    "lowestScore": "Puntuación Más Baja"
   }
 }

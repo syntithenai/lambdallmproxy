@@ -8,6 +8,7 @@ const { authenticateRequest } = require('../auth');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const { buildProviderPool } = require('../credential-pool');
 const { searchWeb } = require('../tools/search_web');
+const { buildModelRotationSequence, estimateTokenRequirements } = require('../model-selector-v2');
 
 // Load provider catalog
 const { loadProviderCatalog } = require('../utils/catalog-loader');
@@ -40,19 +41,54 @@ async function generateQuiz(content, enrichment = false, providers = {}) {
             const searchPrompt = `Extract 2-3 key search terms from this content for finding additional information: "${content.substring(0, 200)}..."
 Return only the search terms, comma separated.`;
             
-            const pool = buildProviderPool(providers, providerCatalog);
-            const searchTermsResult = await llmResponsesWithTools(
-                searchPrompt,
-                '',
-                [],
-                pool,
-                null,
-                null,
-                false,
-                null
+            // Build model sequence for search term extraction
+            const uiProviders = Object.entries(providers).map(([type, p]) => ({
+                type: type, // Use the object key as the type
+                apiKey: p.apiKey,
+                enabled: true
+            })).filter(p => p.type && p.apiKey);
+            
+            const estimatedTokens = estimateTokenRequirements(
+                [{ role: 'user', content: searchPrompt }],
+                false
             );
             
-            const searchTerms = searchTermsResult.finalResponse.trim();
+            const modelSequence = buildModelRotationSequence(uiProviders, {
+                needsTools: false,
+                needsVision: false,
+                estimatedTokens,
+                optimization: 'fast' // Use fast models for simple extraction
+            });
+            
+            if (modelSequence.length === 0) {
+                throw new Error('No available models for search term extraction');
+            }
+            
+            // Try models in sequence for search term extraction
+            let searchTermsResult = null;
+            for (let i = 0; i < Math.min(3, modelSequence.length); i++) {
+                const selectedModel = modelSequence[i];
+                try {
+                    searchTermsResult = await llmResponsesWithTools({
+                        model: selectedModel.model,
+                        input: [{ role: 'user', content: searchPrompt }],
+                        tools: [],
+                        options: {
+                            apiKey: selectedModel.apiKey,
+                            temperature: 0.3,
+                            maxTokens: 100,
+                            stream: false
+                        }
+                    });
+                    break; // Success
+                } catch (error) {
+                    console.warn(`⚠️ Search term extraction failed with ${selectedModel.model}:`, error.message?.substring(0, 100));
+                    if (i < Math.min(3, modelSequence.length) - 1) continue;
+                    throw error; // Re-throw if last attempt
+                }
+            }
+            
+            const searchTerms = searchTermsResult.content || searchTermsResult.text || '';
             console.log(`🔍 Search terms: ${searchTerms}`);
             
             // Perform web search
@@ -71,68 +107,156 @@ Return only the search terms, comma separated.`;
         }
     }
     
-    // Generate quiz using LLM
-    const quizPrompt = `You are a quiz generator. Create an educational multiple-choice quiz based on the following content.
+    // Generate quiz using LLM with tool calling for structured output
+    const quizPrompt = `Create an educational multiple-choice quiz based on the following content.
 
 Content:
 ${enrichedContent}
 
-Generate a quiz with exactly 10 questions. Each question must have:
-- A clear, specific prompt
-- Exactly 4 answer choices (A, B, C, D)
-- One correct answer
-- A brief explanation of why the correct answer is right
+Generate a quiz with exactly 10 questions. Each question must test understanding (not just recall), have exactly 4 answer choices, one correct answer, and a brief explanation. Vary difficulty levels and make distractors plausible but incorrect.`;
 
-Format your response as JSON with this structure:
-{
-  "title": "Quiz title (concise, related to the content)",
-  "questions": [
-    {
-      "id": "q1",
-      "prompt": "Question text?",
-      "choices": [
-        {"id": "a", "text": "Choice A"},
-        {"id": "b", "text": "Choice B"},
-        {"id": "c", "text": "Choice C"},
-        {"id": "d", "text": "Choice D"}
-      ],
-      "answerId": "b",
-      "explanation": "Brief explanation of correct answer"
-    }
-  ]
-}
+    // Define quiz schema as a tool for guaranteed structured output
+    const quizTool = {
+        type: 'function',
+        function: {
+            name: 'generate_quiz',
+            description: 'Generate a structured multiple-choice quiz',
+            parameters: {
+                type: 'object',
+                properties: {
+                    title: {
+                        type: 'string',
+                        description: 'Quiz title (concise, related to the content)'
+                    },
+                    questions: {
+                        type: 'array',
+                        description: 'Array of exactly 10 quiz questions',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                id: { type: 'string', description: 'Question ID (e.g., "q1")' },
+                                prompt: { type: 'string', description: 'Question text' },
+                                choices: {
+                                    type: 'array',
+                                    description: 'Exactly 4 answer choices',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            id: { type: 'string', description: 'Choice ID (a, b, c, d)' },
+                                            text: { type: 'string', description: 'Choice text' }
+                                        },
+                                        required: ['id', 'text']
+                                    },
+                                    minItems: 4,
+                                    maxItems: 4
+                                },
+                                answerId: { type: 'string', description: 'ID of correct choice' },
+                                explanation: { type: 'string', description: 'Brief explanation' }
+                            },
+                            required: ['id', 'prompt', 'choices', 'answerId', 'explanation']
+                        },
+                        minItems: 10,
+                        maxItems: 10
+                    }
+                },
+                required: ['title', 'questions']
+            }
+        }
+    };
 
-Ensure questions test understanding, not just recall. Vary difficulty levels. Make distractors plausible but clearly incorrect.
-
-Return ONLY the JSON, no additional text.`;
-
-    console.log('🧠 Generating quiz with LLM...');
+    console.log('🧠 Generating quiz with LLM (tool calling for structured output)...');
     
-    const pool = buildProviderPool(providers, providerCatalog);
-    const result = await llmResponsesWithTools(
-        quizPrompt,
-        '',
-        [],
-        pool,
-        null,
-        null,
-        false,
-        null
+    // Build model sequence for quiz generation
+    const uiProviders = Object.entries(providers).map(([type, p]) => ({
+        type: type,
+        apiKey: p.apiKey,
+        enabled: true
+    })).filter(p => p.type && p.apiKey);
+    
+    const estimatedTokens = estimateTokenRequirements(
+        [{ role: 'user', content: quizPrompt }],
+        true // Tools enabled
     );
     
-    const response = result.finalResponse.trim();
+    const modelSequence = buildModelRotationSequence(uiProviders, {
+        needsTools: true, // Require tool calling support
+        needsVision: false,
+        estimatedTokens,
+        optimization: 'quality'
+    });
     
-    // Try to parse JSON response
+    if (modelSequence.length === 0) {
+        throw new Error('No available models with tool calling support for quiz generation');
+    }
+    
+    // Try models in sequence until one succeeds
+    let result = null;
+    let lastError = null;
+    
+    for (let i = 0; i < modelSequence.length; i++) {
+        const selectedModel = modelSequence[i];
+        console.log(`🎯 Quiz: Trying model ${i + 1}/${modelSequence.length}: ${selectedModel.model}`);
+        
+        try {
+            result = await llmResponsesWithTools({
+                model: selectedModel.model,
+                input: [{ role: 'user', content: quizPrompt }],
+                tools: [quizTool],
+                tool_choice: { type: 'function', function: { name: 'generate_quiz' } },
+                options: {
+                    apiKey: selectedModel.apiKey,
+                    temperature: 0.7,
+                    maxTokens: 5000,
+                    stream: false
+                }
+            });
+            
+            console.log(`✅ Quiz: Successfully generated with ${selectedModel.model}`);
+            break;
+            
+        } catch (error) {
+            lastError = error;
+            console.error(`❌ Quiz: Model ${selectedModel.model} failed:`, error.message?.substring(0, 200));
+            
+            if (i < modelSequence.length - 1) {
+                console.log(`⏭️ Quiz: Trying next model...`);
+                continue;
+            }
+        }
+    }
+    
+    if (!result) {
+        console.error(`❌ Quiz: All ${modelSequence.length} models failed. Last error:`, lastError?.message);
+        throw new Error(`All models failed. Last error: ${lastError?.message || 'Unknown error'}`);
+    }
+    
+    // Extract quiz data from tool call response
     let quiz;
     try {
-        // Remove markdown code blocks if present
-        const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, response];
-        const jsonStr = jsonMatch[1] || response;
-        quiz = JSON.parse(jsonStr);
+        // Check if response has tool calls (structured output)
+        if (result.tool_calls && result.tool_calls.length > 0) {
+            const toolCall = result.tool_calls[0];
+            if (toolCall.function && toolCall.function.name === 'generate_quiz') {
+                // Parse arguments (might be string or object)
+                quiz = typeof toolCall.function.arguments === 'string'
+                    ? JSON.parse(toolCall.function.arguments)
+                    : toolCall.function.arguments;
+                console.log('✅ Extracted quiz from tool call');
+            }
+        }
+        
+        // Fallback to parsing content as JSON (if no tool call)
+        if (!quiz) {
+            const response = (result.content || result.text || '').trim();
+            const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, response];
+            const jsonStr = jsonMatch[1] || response;
+            quiz = JSON.parse(jsonStr);
+            console.log('✅ Parsed quiz from JSON response');
+        }
     } catch (parseError) {
-        console.error('❌ Failed to parse quiz JSON:', parseError.message);
-        console.error('Response:', response.substring(0, 500));
-        throw new Error('Failed to parse quiz from LLM response');
+        console.error('❌ Failed to extract quiz data:', parseError.message);
+        console.error('Result:', JSON.stringify(result).substring(0, 500));
+        throw new Error('Failed to extract quiz from LLM response');
     }
     
     // Validate quiz structure
@@ -184,8 +308,19 @@ async function handleQuizGenerate(event) {
     const startTime = Date.now();
     
     try {
-        // Authenticate request
-        const { email, accessToken } = await authenticateRequest(event);
+        // Extract and authenticate JWT token
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const authResult = await authenticateRequest(authHeader);
+        
+        if (!authResult.authenticated) {
+            return {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Authentication required' })
+            };
+        }
+        
+        const email = authResult.email;
         console.log(`🎯 Quiz generation request from: ${email}`);
         
         // Parse request body
@@ -211,16 +346,37 @@ async function handleQuizGenerate(event) {
             };
         }
         
-        if (!providers || Object.keys(providers).length === 0) {
+        // Build provider pool from user providers (array) + environment if authorized
+        const userProviders = Array.isArray(providers) ? providers : [];
+        if (userProviders.length === 0) {
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ error: 'Missing required field: providers' })
+                body: JSON.stringify({ error: 'No providers configured. Please add providers in Settings.' })
             };
         }
         
+        const providerPool = buildProviderPool(userProviders, authResult.authorized);
+        console.log(`🎯 Provider pool for quiz: ${providerPool.length} provider(s) available`);
+        
+        if (providerPool.length === 0) {
+            return {
+                statusCode: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'No valid providers available' })
+            };
+        }
+        
+        // Convert provider pool to legacy object format for generateQuiz function
+        const providersObject = {};
+        providerPool.forEach(p => {
+            if (p.apiKey && p.type) {
+                providersObject[p.type] = { apiKey: p.apiKey };
+            }
+        });
+        
         // Generate quiz
-        const result = await generateQuiz(content, enrichment, providers);
+        const result = await generateQuiz(content, enrichment, providersObject);
         const quiz = result.quiz;
         
         const duration = Date.now() - startTime;
@@ -310,8 +466,19 @@ async function handleQuizGenerate(event) {
  */
 async function handleQuizSyncStatistics(event) {
     try {
-        // Authenticate request
-        const { user } = await authenticateRequest(event);
+        // Extract and authenticate JWT token
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const authResult = await authenticateRequest(authHeader);
+        
+        if (!authResult.authenticated) {
+            return {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Authentication required' })
+            };
+        }
+        
+        const user = authResult.user;
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');

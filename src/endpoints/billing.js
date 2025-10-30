@@ -8,6 +8,7 @@ const { authenticateRequest } = require('../auth');
 const { getUserTotalCost, getUserBillingData } = require('../services/google-sheets-logger');
 const { getCachedCreditBalance } = require('../utils/credit-cache');
 const { CREDIT_LIMIT } = require('./usage');
+const { loadEnvironmentProviders } = require('../credential-pool');
 
 /**
  * Get response headers for billing endpoint
@@ -188,6 +189,114 @@ async function handleGetBilling(event, responseStream) {
             speakjs: true  // Always available client-side
         };
         
+        // --- Provider Information ---
+        // Load providers configured via environment variables
+        const envProviders = loadEnvironmentProviders();
+        
+        // Build provider capacity information
+        // SECURITY: NO API keys or key previews are exposed to frontend
+        const providerCapabilities = envProviders.map(provider => {
+            const capability = {
+                id: provider.id,
+                type: provider.type,
+                priority: provider.priority || 100,
+                enabled: true,
+                source: 'environment'
+            };
+            
+            // Add optional fields if present (but NEVER API keys)
+            if (provider.apiEndpoint) {
+                capability.endpoint = provider.apiEndpoint;
+            }
+            if (provider.modelName) {
+                capability.defaultModel = provider.modelName;
+            }
+            if (provider.rateLimitTPM) {
+                capability.rateLimitTPM = provider.rateLimitTPM;
+            }
+            if (provider.allowedModels && provider.allowedModels.length > 0) {
+                capability.allowedModels = provider.allowedModels;
+            }
+            if (provider.maxQuality) {
+                capability.maxQuality = provider.maxQuality;
+            }
+            
+            // NOTE: API keys are NEVER sent to frontend (not even masked)
+            // Provider is configured on server side only
+            
+            return capability;
+        });
+        
+        console.log(`📋 Exposing ${providerCapabilities.length} provider(s) in billing response`);
+        
+        // --- Available Features ---
+        // Determine which features are available based on configured providers
+        // Load provider catalog to get feature support
+        const fs = require('fs');
+        const path = require('path');
+        const catalogPath = path.join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
+        let providerCatalog = {};
+        try {
+            providerCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+        } catch (err) {
+            console.warn('⚠️ Could not load provider catalog:', err.message);
+        }
+        
+        // Check which features are available based on environment providers
+        const features = {
+            chat: false,
+            imageGeneration: false,
+            imageEditing: false,
+            transcription: false,
+            textToSpeech: false,
+            embeddings: false,
+            webSearch: false
+        };
+        
+        // Check for chat providers
+        if (providerCatalog.chat && providerCatalog.chat.providers) {
+            for (const provider of envProviders) {
+                const catalogProvider = providerCatalog.chat.providers[provider.type];
+                if (catalogProvider) {
+                    features.chat = true;
+                    break;
+                }
+            }
+        }
+        
+        // Check for image generation/editing providers
+        if (providerCatalog.image && providerCatalog.image.providers) {
+            for (const provider of envProviders) {
+                const catalogProvider = providerCatalog.image.providers[provider.type];
+                if (catalogProvider) {
+                    features.imageGeneration = true;
+                    features.imageEditing = true; // Same providers support both for now
+                    break;
+                }
+            }
+        }
+        
+        // Check for transcription (Whisper-compatible endpoints)
+        if (process.env.WHISPER_ENDPOINT || process.env.OPENAI_KEY) {
+            features.transcription = true;
+        }
+        
+        // Check for TTS (multiple providers)
+        if (process.env.GROQ_KEY || process.env.GEMINI_KEY || 
+            process.env.TOGETHER_KEY || process.env.ELEVENLABS_KEY) {
+            features.textToSpeech = true;
+        }
+        
+        // Check for embeddings (OpenAI for RAG)
+        if (process.env.OPENAI_KEY) {
+            features.embeddings = true;
+        }
+        
+        // Web search is always available (uses DuckDuckGo)
+        features.webSearch = true;
+        
+        console.log('✨ Available features:', features);
+        
         const metadata = {
             statusCode: 200,
             headers: getResponseHeaders()
@@ -199,7 +308,9 @@ async function handleGetBilling(event, responseStream) {
             transactions,
             totals,
             count: transactions.length,
-            ttsCapabilities
+            ttsCapabilities,
+            providerCapabilities, // Provider information from env vars
+            features // NEW: Available features based on configured providers
         }));
         responseStream.end();
 

@@ -14,6 +14,8 @@ interface TourStep {
   content: string;
   targetSelector?: string;
   tooltipPosition?: 'top' | 'bottom' | 'left' | 'right';
+  prepareFn?: () => void; // Function to prepare the UI (e.g., navigate, open menus)
+  requiresMobile?: boolean; // Whether this step requires mobile menu to be open
 }
 
 const TOUR_STEPS: TourStep[] = [
@@ -31,7 +33,7 @@ const TOUR_STEPS: TourStep[] = [
 • 🎙️ Voice & transcription
 • 📈 Cost tracking & billing
 
-Ready to explore? Let's take a quick tour! (3 minutes)`,
+Ready to explore? Let's take a quick tour! (2 minutes)`,
   },
   {
     id: 'chat',
@@ -58,89 +60,22 @@ All stored locally in your browser for privacy!`,
     tooltipPosition: 'bottom',
   },
   {
-    id: 'settings',
-    type: 'spotlight',
-    title: '⚙️ Settings & AI Providers',
-    content: `Customize your experience:
-• Add your own API keys for $0 cost
-• Enable/disable tools (search, transcription, etc.)
-• Configure RAG (semantic search) settings
-• Manage display preferences
+    id: 'features',
+    type: 'modal',
+    title: '✨ Key Features',
+    content: `📋 **Planning & Todos**: Break complex tasks into structured plans
 
-Start with free providers, add your keys later!`,
-    targetSelector: 'button[aria-label*="Settings" i]',
-    tooltipPosition: 'bottom',
-  },
-  {
-    id: 'billing',
-    type: 'spotlight',
-    title: '💰 Billing & Usage Tracking',
-    content: `Transparent cost management:
-• $0.50 welcome bonus for new users
-• Real-time usage tracking per request
-• Detailed cost breakdown by provider
-• No hidden fees - pay only for what you use
+📰 **Personalized Feed**: Discover curated content tailored to you
 
-View your balance anytime in the Billing page.`,
-    targetSelector: 'button[title*="Billing" i]',
-    tooltipPosition: 'bottom',
-  },
-  {
-    id: 'planning',
-    type: 'spotlight',
-    title: '📋 Planning & Todos',
-    content: `Break complex tasks into structured plans:
-• Multi-step research workflows
-• Auto-generated action items
-• Persistent todo tracking
-• Transfer between planning and chat
+🧠 **Interactive Quizzes**: Test your knowledge with generated quizzes
 
-Perfect for research projects and learning paths!`,
-    targetSelector: 'button[title*="Planning" i]',
-    tooltipPosition: 'bottom',
-  },
-  {
-    id: 'feed',
-    type: 'spotlight',
-    title: '📰 Personalized Feed',
-    content: `Discover curated content tailored to you:
-• AI-generated "Did You Know" facts
-• Interactive Q&A items
-• Based on your saved content and interests
-• Swipe to stash or trash
-• Generate quizzes from any item
+🎨 **Image Tools**: Create and edit images with AI
 
-Perfect for learning and staying informed!`,
-    targetSelector: 'button[title*="Feed" i]',
-    tooltipPosition: 'bottom',
-  },
-  {
-    id: 'quiz',
-    type: 'spotlight',
-    title: '🧠 Interactive Quizzes',
-    content: `Test your knowledge:
-• Generate quizzes from saved snippets
-• 10-question multiple choice format
-• Immediate feedback and explanations
-• Track your quiz performance
+⚙️ **Settings**: Add your own API keys for $0 cost, customize tools
 
-Great for studying and retention!`,
-    targetSelector: 'button[title*="Quiz" i]',
-    tooltipPosition: 'bottom',
-  },
-  {
-    id: 'image-editor',
-    type: 'spotlight',
-    title: '🎨 Image Tools',
-    content: `Create and edit images:
-• AI image generation (DALL-E, Replicate)
-• In-browser image editor
-• Filters, crops, annotations
-• Save and revisit generations
+💰 **Billing**: $0.50 welcome bonus, transparent cost tracking
 
-Bring your ideas to life visually!`,
-    targetSelector: 'button[title*="Image" i]',
-    tooltipPosition: 'bottom',
+Access these from the menu anytime!`,
   },
   {
     id: 'rest-api',
@@ -354,18 +289,23 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
       {step.type === 'spotlight' && spotlightPosition && (
         <div
           ref={tooltipRef}
-          className="absolute bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md transform transition-all duration-300"
+          className="absolute bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md transform transition-all duration-300 border-2 border-gray-200 dark:border-gray-700"
           style={{
             ...getTooltipPosition(spotlightPosition, step.tooltipPosition || 'top'),
             zIndex: 10000,
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Arrow */}
+          {/* Arrow with tail effect */}
           <div
-            className="absolute w-4 h-4 bg-white dark:bg-gray-800 transform rotate-45"
+            className="absolute w-6 h-6"
             style={getArrowPosition(step.tooltipPosition || 'top')}
-          />
+          >
+            {/* Outer arrow (border) */}
+            <div className="absolute w-full h-full bg-gray-200 dark:bg-gray-700 transform rotate-45" />
+            {/* Inner arrow */}
+            <div className="absolute inset-[2px] bg-white dark:bg-gray-800 transform rotate-45" />
+          </div>
 
           <div className="relative z-10">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
@@ -464,35 +404,50 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
 // Helper functions for tooltip positioning
 function getTooltipPosition(targetRect: DOMRect, position: string): React.CSSProperties {
   const padding = 20;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const tooltipMaxWidth = 384; // max-w-md = 28rem = 448px, but we use 384 for safety
+
+  let style: React.CSSProperties = {};
 
   switch (position) {
     case 'top':
-      return {
-        left: targetRect.left + targetRect.width / 2,
+      style = {
+        left: Math.min(Math.max(targetRect.left + targetRect.width / 2, tooltipMaxWidth / 2 + 16), viewportWidth - tooltipMaxWidth / 2 - 16),
         top: targetRect.top - padding,
         transform: 'translate(-50%, -100%)',
       };
+      break;
     case 'bottom':
-      return {
-        left: targetRect.left + targetRect.width / 2,
+      style = {
+        left: Math.min(Math.max(targetRect.left + targetRect.width / 2, tooltipMaxWidth / 2 + 16), viewportWidth - tooltipMaxWidth / 2 - 16),
         top: targetRect.bottom + padding,
         transform: 'translate(-50%, 0)',
       };
+      break;
     case 'left':
-      return {
+      style = {
         left: targetRect.left - padding,
-        top: targetRect.top + targetRect.height / 2,
+        top: Math.min(Math.max(targetRect.top + targetRect.height / 2, 150), viewportHeight - 150),
         transform: 'translate(-100%, -50%)',
       };
+      break;
     case 'right':
-      return {
+      style = {
         left: targetRect.right + padding,
-        top: targetRect.top + targetRect.height / 2,
+        top: Math.min(Math.max(targetRect.top + targetRect.height / 2, 150), viewportHeight - 150),
         transform: 'translate(0, -50%)',
       };
+      break;
     default:
-      return {};
+      style = {
+        left: Math.min(Math.max(targetRect.left + targetRect.width / 2, tooltipMaxWidth / 2 + 16), viewportWidth - tooltipMaxWidth / 2 - 16),
+        top: targetRect.top - padding,
+        transform: 'translate(-50%, -100%)',
+      };
   }
+
+  return style;
 }
 
 function getArrowPosition(position: string): React.CSSProperties {
@@ -506,6 +461,6 @@ function getArrowPosition(position: string): React.CSSProperties {
     case 'right':
       return { left: '-8px', top: '50%', transform: 'translateY(-50%) rotate(45deg)' };
     default:
-      return {};
+      return { bottom: '-8px', left: '50%', transform: 'translateX(-50%) rotate(45deg)' };
   }
 }

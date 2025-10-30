@@ -18,6 +18,8 @@ export type ProviderType =
   | 'together'            // Together AI - https://api.together.xyz/v1
   | 'replicate'           // Replicate - https://api.replicate.com/v1
   | 'atlascloud'          // Atlas Cloud - https://api.atlascloud.ai/v1
+  | 'speaches'            // Speaches - Local Whisper server (http://localhost:8000)
+  | 'anthropic'           // Anthropic - https://api.anthropic.com/v1
   | 'openai-compatible';  // Custom endpoint - user specifies endpoint AND modelName
 
 export interface ProviderConfig {
@@ -79,6 +81,8 @@ export const PROVIDER_ENDPOINTS: Record<Exclude<ProviderType, 'openai-compatible
   'together': 'https://api.together.xyz/v1',
   'replicate': 'https://api.replicate.com/v1',
   'atlascloud': 'https://api.atlascloud.ai/v1',
+  'speaches': 'http://localhost:8000',
+  'anthropic': 'https://api.anthropic.com/v1',
 };
 
 /**
@@ -115,6 +119,16 @@ export const PROVIDER_INFO: Record<ProviderType, { name: string; icon: string; d
     name: 'Atlas Cloud',
     icon: '☁️',
     description: 'API marketplace for various LLM models'
+  },
+  'speaches': {
+    name: 'Speaches (Local)',
+    icon: '🏠',
+    description: 'Local Whisper server for STT and TTS (OpenAI compatible)'
+  },
+  'anthropic': {
+    name: 'Anthropic',
+    icon: '🧠',
+    description: 'Claude models - Advanced reasoning and analysis'
   },
   'openai-compatible': {
     name: 'OpenAI Compatible (Custom)',

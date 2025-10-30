@@ -78,7 +78,7 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
   }, [isAuthenticated, accessToken]);
 
   // Get enabled providers
-  const enabledProviders = settings.providers.filter((p: any) => p.enabled === true);
+  const enabledProviders = settings.providers.filter((p: any) => p.enabled !== false);
 
   // Planning generation hook
   const { isLoading, generateResearchPlan, stopGeneration } = usePlanningGeneration({

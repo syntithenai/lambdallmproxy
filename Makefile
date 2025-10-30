@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python docker-build docker-build-dev docker-up docker-up-dev docker-down docker-logs docker-logs-dev docker-shell docker-shell-dev docker-clean mcp-list-examples mcp-install-jokes mcp-sample-jokes mcp-test-jokes credit-add lint lint-fix security-scan check-secrets
+.PHONY: help install check-node setup install-backend install-ui install-all deploy-lambda deploy-lambda-fast deploy-env build-ui deploy-ui all update-catalog clean serve logs logs-tail run-lambda-local serve-ui dev test test-watch test-coverage setup-puppeteer deploy-puppeteer setup-puppeteer-permissions logs-puppeteer rag-ingest rag-stats rag-list rag-search rag-delete setup-scraping test-scraping test-tiers test-tier-0 test-tier-1 test-tier-2 test-tier-3 test-tier-4 install-playwright install-python docker-build docker-build-dev docker-up docker-up-dev docker-down docker-logs docker-logs-dev docker-shell docker-shell-dev docker-clean mcp-list-examples mcp-install-jokes mcp-sample-jokes mcp-test-jokes credit-add lint lint-fix security-scan check-secrets
 
 # Default target - Show help
 help:
@@ -77,6 +77,11 @@ help:
 	@echo ""
 	@echo "Combined:"
 	@echo "  make all                 - Deploy everything (Main Lambda + UI)"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test                - Run Jest test suite"
+	@echo "  make test-watch          - Run Jest in watch mode"
+	@echo "  make test-coverage       - Run tests with coverage report"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make logs                - View recent main Lambda CloudWatch logs"
@@ -368,6 +373,25 @@ dev:
 	@echo "Press Ctrl+C to stop both servers"
 	@echo ""
 	@bash -c 'trap "kill 0" INT; NODE_ENV=development HEADLESS=false npx nodemon & sleep 2; cd ui-new && npm run dev & wait'
+
+# ================================================================
+# Testing
+# ================================================================
+
+# Run Jest test suite
+test:
+	@echo "🧪 Running Jest tests..."
+	@npm test
+
+# Run Jest in watch mode
+test-watch:
+	@echo "🧪 Running Jest in watch mode..."
+	@npm test -- --watch
+
+# Run tests with coverage report
+test-coverage:
+	@echo "🧪 Running tests with coverage..."
+	@npm test -- --coverage
 
 # ================================================================
 # Docker Commands

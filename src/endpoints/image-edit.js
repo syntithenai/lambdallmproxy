@@ -23,8 +23,12 @@ const { verifyGoogleToken } = require('../auth');
 /**
  * Process image with sharp library
  * Applies operations in sequence and returns processed image buffer
+ * @param {string} imageUrl - URL of image to process
+ * @param {Array} operations - Array of operations to apply
+ * @param {Function} onProgress - Progress callback
+ * @param {Object} generationContext - Context for AI image generation (provider pool, API keys)
  */
-async function processImage(imageUrl, operations, onProgress) {
+async function processImage(imageUrl, operations, onProgress, generationContext = {}) {
     try {
         // Simulate progress updates
         onProgress({ status: 'downloading', progress: 10 });
@@ -131,6 +135,99 @@ async function processImage(imageUrl, operations, onProgress) {
                         }
                         break;
                     
+                    case 'generate':
+                        // AI-powered generative editing (adding objects, changing backgrounds, etc.)
+                        console.log(`🎨 [Generate] AI editing request: ${op.params.prompt || 'no prompt'}, mode: ${op.params.mode || 'edit'}`);
+                        
+                        // Import generateImageDirect function
+                        const { generateImageDirect } = require('./generate-image');
+                        
+                        // Auto-select best available image provider from credential pool
+                        let selectedProvider = 'openai'; // Fallback default
+                        let selectedModel = 'dall-e-3';
+                        
+                        if (generationContext.providerPool && Array.isArray(generationContext.providerPool)) {
+                            // Priority order for image generation providers (free first, then paid)
+                            const providerPriority = ['together', 'replicate', 'openai', 'gemini'];
+                            
+                            for (const preferredProvider of providerPriority) {
+                                const found = generationContext.providerPool.find(p => 
+                                    p.type.toLowerCase() === preferredProvider && p.apiKey
+                                );
+                                
+                                if (found) {
+                                    selectedProvider = found.type.toLowerCase();
+                                    // Select appropriate model based on provider
+                                    if (selectedProvider === 'together') {
+                                        selectedModel = 'black-forest-labs/FLUX.1-schnell-Free';
+                                    } else if (selectedProvider === 'replicate') {
+                                        selectedModel = 'flux-1.1-pro';
+                                    } else if (selectedProvider === 'openai') {
+                                        selectedModel = 'dall-e-3';
+                                    } else if (selectedProvider === 'gemini') {
+                                        selectedModel = 'imagen-3.0-generate-001';
+                                    }
+                                    console.log(`✅ [Generate] Auto-selected provider: ${selectedProvider} with model: ${selectedModel}`);
+                                    break;
+                                }
+                            }
+                            
+                            if (selectedProvider === 'openai' && !generationContext.providerPool.find(p => p.type.toLowerCase() === 'openai')) {
+                                console.warn(`⚠️ [Generate] No image providers found in credential pool, using default: ${selectedProvider}`);
+                            }
+                        } else {
+                            console.warn(`⚠️ [Generate] No provider pool available, using default: ${selectedProvider}`);
+                        }
+                        
+                        // Prepare generation parameters
+                        const genParams = {
+                            prompt: op.params.prompt || 'add creative element to image',
+                            provider: op.params.provider || selectedProvider, // Use auto-selected or fallback
+                            model: op.params.model || selectedModel,
+                            size: op.params.size || `${currentWidth}x${currentHeight}`, // Match current image dimensions
+                            quality: op.params.quality || 'standard',
+                            style: op.params.style || 'natural',
+                            referenceImages: [imageUrl], // Include current image as reference for inpainting
+                            context: generationContext // Pass provider pool and API keys from handler
+                        };
+                        
+                        // Generate/modify image using AI
+                        console.log(`🔄 [Generate] Calling generateImageDirect with provider: ${genParams.provider}`);
+                        const genResult = await generateImageDirect(genParams);
+                        
+                        if (!genResult.success) {
+                            console.error(`❌ [Generate] Failed: ${genResult.error}`);
+                            throw new Error(`AI generation failed: ${genResult.error}`);
+                        }
+                        
+                        // Replace current image buffer with generated image
+                        console.log(`✅ [Generate] Success! Using generated image`);
+                        
+                        // Convert data URL to buffer if needed
+                        if (genResult.imageUrl && genResult.imageUrl.startsWith('data:')) {
+                            const base64Data = genResult.imageUrl.split(',')[1];
+                            imageBuffer = Buffer.from(base64Data, 'base64');
+                            sharpInstance = sharp(imageBuffer);
+                            
+                            // Update dimensions from generated image
+                            const newMetadata = await sharpInstance.metadata();
+                            currentWidth = newMetadata.width;
+                            currentHeight = newMetadata.height;
+                        } else if (genResult.base64) {
+                            imageBuffer = Buffer.from(genResult.base64, 'base64');
+                            sharpInstance = sharp(imageBuffer);
+                            
+                            // Update dimensions
+                            const newMetadata = await sharpInstance.metadata();
+                            currentWidth = newMetadata.width;
+                            currentHeight = newMetadata.height;
+                        } else {
+                            throw new Error('Generated image has no data URL or base64');
+                        }
+                        
+                        appliedOperations.push(`AI: ${op.params.prompt.substring(0, 50)}${op.params.prompt.length > 50 ? '...' : ''}`);
+                        break;
+                    
                     default:
                         console.warn(`Unknown operation type: ${op.type}`);
                 }
@@ -197,7 +294,7 @@ async function handler(event, responseStream, context) {
     try {
         // Parse request body
         const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-        const { images, operations } = body;
+        const { images, operations, providers } = body;
         
         if (!images || !Array.isArray(images) || images.length === 0) {
             throw new Error('Invalid request: images array required');
@@ -206,6 +303,14 @@ async function handler(event, responseStream, context) {
         if (!operations || !Array.isArray(operations) || operations.length === 0) {
             throw new Error('Invalid request: operations array required');
         }
+        
+        // Build generation context for AI operations
+        const generationContext = {
+            providerPool: providers || [], // Provider pool from request
+            // Future: Add API keys from headers or environment
+        };
+        
+        console.log(`📦 [ImageEdit] Generation context: ${providers ? providers.length : 0} providers from request`);
         
         // Verify authentication
         const googleToken = event.headers?.['x-google-oauth-token'] || event.headers?.['X-Google-OAuth-Token'];
@@ -259,7 +364,8 @@ async function handler(event, responseStream, context) {
                             imageIndex: i,
                             ...progressData
                         })}\n\n`);
-                    }
+                    },
+                    generationContext // Pass generation context for AI operations
                 );
                 
                 results.push({

@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  chatterbox-tts:
+    image: bhimrazy/chatterbox-tts:latest
+    container_name: chatterbox-tts
+    ports:
+      - "8000:8000"
+    devices:
+      - "/dev/dri/card1:/dev/dri/card1"  # GPU access (card1 for your system)
+      - "/dev/dri/renderD128:/dev/dri/renderD128"  # GPU render node
+      - "/dev/kfd:/dev/kfd"  # GPU compute access
+    environment:
+      # AMD ROCm GPU Configuration
+      # CRITICAL: Set this to match your GPU architecture
+      # Your GPU: AMD Strix Halo (Radeon 8050S/8060S) - gfx1150 (RDNA 3.5)
+      # For gfx1150, use gfx1100 as fallback (RDNA 3 architecture)
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - PYTORCH_ROCM_ARCH=gfx1100
+      - ROCm_HOME=/opt/rocm
+      - HIP_VISIBLE_DEVICES=0
+      
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      
+      # Model Configuration (optional - defaults to good quality models)
+      # Uncomment to customize:
+      # - TTS_MODEL=tts_models/multilingual/multi-dataset/xtts_v2
+      # - VOCODER_MODEL=vocoder_models/universal/libri-tts/wavegrad
+    
+    volumes:
+      # Cache models to avoid re-downloading
+      - chatterbox-models:/root/.local/share/tts
+    
+    # NOTE: AMD ROCm GPU support - no deploy.resources.reservations needed
+    # GPU access is provided via /dev/dri and /dev/kfd devices above
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  chatterbox-models:
+    driver: local
+
+# Usage:
+# 1. Start the service:
+#    docker-compose -f docker-compose.chatterbox.yml up -d
+#
+# 2. View logs:
+#    docker-compose -f docker-compose.chatterbox.yml logs -f
+#
+# 3. Test the endpoint:
+#    curl -X POST http://localhost:8000/api/tts \
+#      -H "Content-Type: application/json" \
+#      -d '{"text": "Hello world", "language": "en"}' \
+#      --output test.wav
+#
+# 4. Stop the service:
+#    docker-compose -f docker-compose.chatterbox.yml down
+#
+# GPU Requirements:
+# - AMD GPU with ROCm support (tested with Strix Halo - Radeon 8050S/8060S)
+# - ROCm drivers installed on host system
+# - Docker Compose version 1.28.0+
+#
+# To verify GPU is available in container:
+#    docker exec chatterbox-tts rocm-smi
+#    docker exec chatterbox-tts rocminfo | grep "Name:"
+#
+# NOTE: If the container doesn't have ROCm PyTorch installed, it will fall back to CPU.
+# The official chatterbox-tts-server image may need to be rebuilt with ROCm support.
+# Consider using CPU mode if GPU acceleration isn't working:
+#    Add environment variable: - DEVICE=cpu

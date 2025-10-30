@@ -423,6 +423,7 @@
       "tools": "Tools",
       "proxy": "Proxy",
       "location": "Location",
+      "voice": "Голос",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -680,6 +681,28 @@
     "totalQuizzes": "Всего Викторин",
     "averageScore": "Средний Результат",
     "questionsAnswered": "Отвеченных Вопросов",
-    "statistics": "Статистика Викторины"
+    "statistics": "Статистика Викторины",
+    "subtitle": "Отслеживайте свой прогресс в обучении и результаты викторин",
+    "createNewQuiz": "Создать Новую Викторину",
+    "recentQuizzes": "Недавние Викторины",
+    "noQuizzesYet": "Пока нет пройденных викторин",
+    "noQuizzesDescription": "Пройдите викторину из сохраненного контента в SWAG, чтобы увидеть свою статистику здесь",
+    "goToSwag": "Перейти в SWAG",
+    "backToChat": "Назад к Чату",
+    "loadingStats": "Загрузка статистики...",
+    "errorLoadingStats": "Не удалось загрузить статистику викторины",
+    "confirmDelete": "Вы уверены, что хотите удалить викторину '{{title}}'?",
+    "quizDeleted": "Викторина успешно удалена",
+    "errorDeletingQuiz": "Не удалось удалить викторину",
+    "deleteQuiz": "Удалить викторину",
+    "today": "Сегодня",
+    "yesterday": "Вчера",
+    "daysAgo": "{{days}} дней назад",
+    "snippetCount": "{{count}} фрагмент",
+    "snippetCount_plural": "{{count}} фрагментов",
+    "enriched": "Обогащено",
+    "notSynced": "Не Синхронизировано",
+    "highestScore": "Наивысший Балл",
+    "lowestScore": "Наименьший Балл"
   }
 }

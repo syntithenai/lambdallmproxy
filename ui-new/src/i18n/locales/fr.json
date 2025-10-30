@@ -423,6 +423,7 @@
       "tools": "Herramientas",
       "proxy": "Proxy",
       "location": "Ubicación",
+      "voice": "Voix",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -659,6 +660,7 @@
   },
   "quiz": {
     "title": "Quiz",
+    "subtitle": "Suivez votre progression d'apprentissage et vos performances aux quiz",
     "startQuiz": "Démarrer le Quiz",
     "nextQuestion": "Question Suivante",
     "previousQuestion": "Précédent",
@@ -680,6 +682,27 @@
     "totalQuizzes": "Total des Quiz",
     "averageScore": "Score Moyen",
     "questionsAnswered": "Questions Répondues",
-    "statistics": "Statistiques du Quiz"
+    "statistics": "Statistiques du Quiz",
+    "createNewQuiz": "Créer un Nouveau Quiz",
+    "recentQuizzes": "Quiz Récents",
+    "noQuizzesYet": "Aucun quiz complété pour l'instant",
+    "noQuizzesDescription": "Passez un quiz depuis votre contenu sauvegardé dans SWAG pour voir vos statistiques ici",
+    "goToSwag": "Aller à SWAG",
+    "backToChat": "Retour au Chat",
+    "loadingStats": "Chargement des statistiques...",
+    "errorLoadingStats": "Échec du chargement des statistiques du quiz",
+    "confirmDelete": "Êtes-vous sûr de vouloir supprimer le quiz '{{title}}' ?",
+    "quizDeleted": "Quiz supprimé avec succès",
+    "errorDeletingQuiz": "Échec de la suppression du quiz",
+    "deleteQuiz": "Supprimer le quiz",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "daysAgo": "Il y a {{days}} jours",
+    "snippetCount": "{{count}} extrait",
+    "snippetCount_plural": "{{count}} extraits",
+    "enriched": "Enrichi",
+    "notSynced": "Non Synchronisé",
+    "highestScore": "Meilleur Score",
+    "lowestScore": "Score le Plus Bas"
   }
 }

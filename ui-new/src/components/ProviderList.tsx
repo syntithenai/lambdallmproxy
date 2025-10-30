@@ -137,11 +137,14 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
               Cloud Sync for Provider Credentials
             </div>
             <div className="text-sm text-blue-700 dark:text-blue-300 mb-3">
-              Connect to Google Drive in the <strong>Cloud Sync</strong> tab to enable automatic synchronization of your provider settings.
-              {isAuthenticated() && (
-                <span className="block mt-1 text-green-700 dark:text-green-400 font-medium">
+              {isAuthenticated() ? (
+                <span className="block text-green-700 dark:text-green-400 font-medium">
                   ✓ Cloud sync is active - changes are saved automatically
                 </span>
+              ) : (
+                <>
+                  Connect to Google Drive in the <strong>Cloud Sync</strong> tab to enable automatic synchronization of your provider settings.
+                </>
               )}
             </div>
             <div className="flex gap-2">

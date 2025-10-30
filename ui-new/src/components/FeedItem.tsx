@@ -16,8 +16,9 @@ import {
   ExternalLink,
   Tag,
   Calendar,
-  ChevronDown,
-  ChevronUp
+  X,
+  Search,
+  Hand
 } from 'lucide-react';
 
 interface FeedItemCardProps {
@@ -26,11 +27,11 @@ interface FeedItemCardProps {
 
 export default function FeedItemCard({ item }: FeedItemCardProps) {
   const { t } = useTranslation();
-  const { stashItem, trashItem, markViewed, startQuiz } = useFeed();
+  const { stashItem, trashItem, markViewed, startQuiz, isGeneratingQuiz } = useFeed();
   const { addSnippet } = useSwag();
   
   const cardRef = useRef<HTMLDivElement>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [showDialog, setShowDialog] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const viewStartTime = useRef<number>(Date.now());
 
@@ -93,14 +94,34 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
   };
 
   /**
-   * Handle stash action
+   * Handle grab action (save to Swag)
    */
   const handleStash = async () => {
     // Track interaction
     await trackInteraction('stash');
 
-    // Add to Swag
-    const content = `**${item.title}**\n\n${item.content}\n\nTopics: ${item.topics.join(', ')}`;
+    // Build content with image if available
+    let content = `**${item.title}**\n\n`;
+    
+    // Include image with attribution if available
+    if (item.image) {
+      content += `![${item.title}](${item.image})\n\n`;
+      if (item.imageAttribution) {
+        content += `*Image: ${item.imageAttribution}*\n\n`;
+      }
+    }
+    
+    content += `${item.content}\n\n`;
+    content += `**Topics:** ${item.topics.join(', ')}`;
+    
+    // Add sources if available
+    if (item.sources && item.sources.length > 0) {
+      content += `\n\n**Sources:**\n`;
+      item.sources.forEach((source, idx) => {
+        content += `${idx + 1}. ${source}\n`;
+      });
+    }
+
     await addSnippet(content, 'tool', item.title);
 
     // Mark as stashed
@@ -163,7 +184,10 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
       style={{
         transform: getSwipeTransform(),
         backgroundColor: getSwipeBackgroundColor(),
-        transition: swipeState.isSwiping ? 'none' : 'all 0.2s ease'
+        transition: swipeState.isSwiping ? 'none' : 'all 0.2s ease',
+        display: 'block', // Ensure visibility
+        visibility: 'visible', // Ensure visibility
+        minHeight: '100px' // Ensure card takes up space
       }}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
@@ -195,7 +219,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
               ? 'bg-blue-100 text-blue-700' 
               : 'bg-purple-100 text-purple-700'
           }`}>
-            {item.type === 'did-you-know' ? t('feed.didYouKnow') : t('feed.qAndA')}
+            {item.type === 'did-you-know' ? t('feed.didYouKnow') : t('feed.questionAnswer')}
           </span>
           
           {item.stashed && (
@@ -227,36 +251,54 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
           </div>
         )}
 
-        {/* Content */}
-        <p className={`text-gray-700 mb-3 ${!isExpanded ? 'line-clamp-3' : ''}`}>
-          {item.content}
-        </p>
+        {/* Content - Click to expand */}
+        <div 
+          onClick={() => setShowDialog(true)}
+          className="cursor-pointer"
+        >
+          <p className="text-gray-700 mb-3 line-clamp-3">
+            {item.content}
+          </p>
 
-        {/* Expand/Collapse */}
-        {item.content.length > 200 && (
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 mb-3"
-          >
-            {isExpanded ? (
-              <>{t('feed.showLess')} <ChevronUp className="h-4 w-4" /></>
-            ) : (
-              <>{t('feed.showMore')} <ChevronDown className="h-4 w-4" /></>
-            )}
-          </button>
-        )}
+          {/* Mnemonic - Always visible */}
+          {item.mnemonic && (
+            <div className="bg-purple-50 border-l-4 border-purple-400 p-3 mb-3 rounded">
+              <p className="text-sm font-medium text-purple-900">
+                💡 {item.mnemonic}
+              </p>
+            </div>
+          )}
+
+          {/* Click hint */}
+          {item.expandedContent && (
+            <p className="text-xs text-blue-600 hover:text-blue-700 font-medium mb-3">
+              Click to read more...
+            </p>
+          )}
+        </div>
 
         {/* Metadata */}
         <div className="flex flex-wrap gap-3 text-sm text-gray-500 mb-3">
           <div className="flex items-center gap-1">
             <Calendar className="h-4 w-4" />
-            <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+            <span>
+              {(() => {
+                try {
+                  const date = new Date(item.createdAt);
+                  return isNaN(date.getTime()) ? 'Recently' : date.toLocaleDateString();
+                } catch {
+                  return 'Recently';
+                }
+              })()}
+            </span>
           </div>
           
           {item.topics.length > 0 && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
               <Tag className="h-4 w-4" />
-              <span>{item.topics.slice(0, 3).join(', ')}</span>
+              <span className="text-gray-700">
+                {item.topics.slice(0, 3).join(', ')}
+              </span>
             </div>
           )}
         </div>
@@ -282,6 +324,27 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
           </div>
         )}
 
+        {/* Search Terms - Clickable Google Search Links */}
+        {item.searchTerms && item.searchTerms.length > 0 && (
+          <div className="border-t border-gray-200 pt-3 mb-3">
+            <p className="text-xs text-gray-500 font-semibold inline">Search: </p>
+            {item.searchTerms.map((term, idx) => (
+              <span key={idx}>
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(term)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                  title={`Search Google for "${term}"`}
+                >
+                  {term}
+                </a>
+                {idx < (item.searchTerms?.length || 0) - 1 && <span className="text-xs text-gray-500">, </span>}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Action buttons */}
         <div className={`flex gap-2 transition-opacity ${
           showActions || swipeState.isSwiping ? 'opacity-100' : 'opacity-0 md:opacity-100'
@@ -291,7 +354,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
             disabled={item.stashed}
             className="flex-1 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium text-sm flex items-center justify-center gap-2"
           >
-            <Bookmark className="h-4 w-4" />
+            <Hand className="h-4 w-4" />
             {item.stashed ? t('feed.stashed') : t('feed.stash')}
           </button>
 
@@ -311,6 +374,220 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
           </button>
         </div>
       </div>
+
+      {/* Full-Screen Detail Dialog */}
+      {showDialog && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowDialog(false)}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex justify-between items-start">
+              <div className="flex-1 pr-4">
+                <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                  item.type === 'did-you-know' 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'bg-purple-100 text-purple-700'
+                }`}>
+                  {item.type === 'did-you-know' ? t('feed.didYouKnow') : t('feed.questionAnswer')}
+                </span>
+                <h2 className="text-2xl font-bold text-gray-900 mt-2">
+                  {item.title}
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowDialog(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-6 w-6 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              {/* Image */}
+              {item.image && (
+                <div className="mb-4 rounded-lg overflow-hidden">
+                  <img 
+                    src={item.image} 
+                    alt={item.title}
+                    className="w-full h-64 object-cover"
+                  />
+                  {item.imageAttribution && (
+                    <div 
+                      className="text-xs text-gray-500 mt-2 bg-gray-50 p-2 rounded"
+                      dangerouslySetInnerHTML={{ __html: item.imageAttributionHtml || item.imageAttribution }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Summary */}
+              <div className="mb-4">
+                <h3 className="font-semibold text-gray-900 mb-2">Summary</h3>
+                <p className="text-gray-700 leading-relaxed">
+                  {item.content}
+                </p>
+              </div>
+
+              {/* Mnemonic with Google Search Link */}
+              {item.mnemonic && (
+                <div className="bg-purple-50 border-l-4 border-purple-400 p-4 mb-4 rounded">
+                  <p className="text-sm font-medium text-purple-900 mb-2">
+                    💡 {item.mnemonic}
+                  </p>
+                  {item.topics.length > 0 && (
+                    <a
+                      href={`https://www.google.com/search?q=${encodeURIComponent(item.topics.join(' '))}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                    >
+                      <Search className="h-3 w-3" />
+                      Search more about this
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Expanded Content */}
+              {item.expandedContent && (
+                <div className="mb-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">📖 Deep Dive</h3>
+                  <div className="text-gray-700 leading-relaxed space-y-3 whitespace-pre-line">
+                    {item.expandedContent}
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="flex flex-wrap gap-3 text-sm text-gray-500 mb-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center gap-1">
+                  <Calendar className="h-4 w-4" />
+                  <span>
+                    {(() => {
+                      try {
+                        const date = new Date(item.createdAt);
+                        return isNaN(date.getTime()) ? 'Recently' : date.toLocaleDateString();
+                      } catch {
+                        return 'Recently';
+                      }
+                    })()}
+                  </span>
+                </div>
+                
+                {item.topics.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <Tag className="h-4 w-4" />
+                    <span>{item.topics.slice(0, 3).join(', ')}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Sources */}
+              {item.sources.length > 0 && (
+                <div className="border-t border-gray-200 pt-4 mb-4">
+                  <p className="text-sm text-gray-700 mb-2 font-semibold">{t('feed.sources')}:</p>
+                  <div className="space-y-2">
+                    {item.sources.map((source, idx) => (
+                      <a
+                        key={idx}
+                        href={source}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        <span className="truncate">{source}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Search Terms */}
+              {item.searchTerms && item.searchTerms.length > 0 && (
+                <div className="border-t border-gray-200 pt-4">
+                  <p className="text-sm text-gray-700 font-semibold inline">Search: </p>
+                  {item.searchTerms.map((term, idx) => (
+                    <span key={idx}>
+                      <a
+                        href={`https://www.google.com/search?q=${encodeURIComponent(term)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                        title={`Search Google for "${term}"`}
+                      >
+                        {term}
+                      </a>
+                      {idx < (item.searchTerms?.length || 0) - 1 && <span className="text-sm text-gray-500">, </span>}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-4 flex gap-3">
+              <button
+                onClick={async () => {
+                  await handleStash();
+                  setShowDialog(false);
+                }}
+                className={`flex-1 px-4 py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
+                  item.stashed
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                <Bookmark className="h-5 w-5" />
+                {item.stashed ? t('feed.stashed') : t('feed.stash')}
+              </button>
+
+              <button
+                onClick={async () => {
+                  await handleQuiz();
+                  setShowDialog(false);
+                }}
+                disabled={isGeneratingQuiz}
+                className={`flex-1 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 ${
+                  isGeneratingQuiz ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                {isGeneratingQuiz ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    {t('quiz.generating')}
+                  </>
+                ) : (
+                  <>
+                    <Brain className="h-5 w-5" />
+                    {t('feed.quiz')}
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={async () => {
+                  await handleTrash();
+                  setShowDialog(false);
+                }}
+                className="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+              >
+                <Trash2 className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

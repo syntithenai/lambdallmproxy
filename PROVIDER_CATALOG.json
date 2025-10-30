@@ -556,8 +556,9 @@
               "tokensPerMinute": 5000,
               "requestsPerMinute": 30
             },
-            "deprecated": false,
-            "available": true
+            "deprecated": true,
+            "available": false,
+            "deprecationReason": "Decommissioned by Groq on Oct 2025"
           }
         }
       },
@@ -1290,6 +1291,72 @@
             "available": true
           }
         }
+      },
+      "anthropic": {
+        "name": "Anthropic",
+        "type": "anthropic",
+        "apiBase": "https://api.anthropic.com/v1",
+        "supportsStreaming": true,
+        "supportsTools": true,
+        "freeTier": {
+          "available": false
+        },
+        "models": {
+          "claude-sonnet-4-5-20250929": {
+            "id": "claude-sonnet-4-5-20250929",
+            "category": "flagship",
+            "contextWindow": 200000,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 3.00,
+              "output": 15.00,
+              "unit": "per_million_tokens",
+              "free": false
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "deprecated": false,
+            "available": true,
+            "description": "Claude Sonnet 4.5 - Most intelligent model with best-in-class reasoning"
+          },
+          "claude-3-7-sonnet-20250219": {
+            "id": "claude-3-7-sonnet-20250219",
+            "category": "large",
+            "contextWindow": 200000,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 3.00,
+              "output": 15.00,
+              "unit": "per_million_tokens",
+              "free": false
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "deprecated": false,
+            "available": true,
+            "description": "Claude 3.7 Sonnet - Balanced performance and speed"
+          },
+          "claude-3-5-haiku-20241022": {
+            "id": "claude-3-5-haiku-20241022",
+            "category": "small",
+            "contextWindow": 200000,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.80,
+              "output": 4.00,
+              "unit": "per_million_tokens",
+              "free": false
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "deprecated": false,
+            "available": true,
+            "description": "Claude 3.5 Haiku - Fast and cost-effective"
+          }
+        }
       }
     }
   },
@@ -1352,6 +1419,55 @@
               "requestsPerMinute": 20,
               "requestsPerDay": 1000
             }
+          }
+        }
+      },
+      "speaches": {
+        "name": "Speaches Local",
+        "type": "speaches",
+        "apiBase": "http://localhost:8000",
+        "supportsStreaming": false,
+        "supportsTools": false,
+        "freeTier": {
+          "available": true,
+          "limits": {}
+        },
+        "models": {
+          "whisper-1": {
+            "id": "whisper-1",
+            "category": "transcription",
+            "contextWindow": 0,
+            "maxOutput": 0,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_minute",
+              "free": true
+            },
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": false,
+            "available": true,
+            "deprecated": false,
+            "supportsTimestamps": true,
+            "supportsTranslation": false
+          },
+          "tts-1": {
+            "id": "tts-1",
+            "category": "text-to-speech",
+            "contextWindow": 0,
+            "maxOutput": 0,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_character",
+              "free": true
+            },
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": false,
+            "available": true,
+            "deprecated": false
           }
         }
       }
@@ -1510,6 +1626,16 @@
       "description": "Run models locally on your machine",
       "supported": [
         "chat",
+        "streaming"
+      ]
+    },
+    {
+      "name": "LM Studio (Local)",
+      "endpoint": "http://localhost:1234/v1",
+      "description": "Run models locally via LM Studio",
+      "supported": [
+        "chat",
+        "tools",
         "streaming"
       ]
     },

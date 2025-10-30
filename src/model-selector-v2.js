@@ -67,7 +67,7 @@ function estimateTokenRequirements(messages, hasTools) {
 /**
  * Build model rotation sequence - tries all models within provider before switching
  * @param {Array} uiProviders - Provider configs [{type, apiKey, enabled}]
- * @param {Object} requirements - {needsTools, needsVision, estimatedTokens, optimization}
+ * @param {Object} requirements - {needsTools, needsVision, needsReasoning, estimatedTokens, optimization}
  * @returns {Array<{providerType, model, apiKey, tokensPerMinute, category}>}
  */
 function buildModelRotationSequence(uiProviders, requirements) {
@@ -109,6 +109,8 @@ function buildModelRotationSequence(uiProviders, requirements) {
                 if (requirements.needsTools && !model.supportsTools) return false;
                 if (requirements.needsVision && !model.supportsVision) return false;
                 if (requirements.estimatedTokens > model.tokensPerMinute) return false;
+                // Filter for reasoning models if required
+                if (requirements.needsReasoning && model.category !== 'reasoning') return false;
                 return true;
             })
             .sort((a, b) => {
@@ -119,7 +121,9 @@ function buildModelRotationSequence(uiProviders, requirements) {
                     if (a.category !== 'small' && b.category === 'small') return 1;
                     return b.tokensPerMinute - a.tokensPerMinute;
                 } else if (requirements.optimization === 'quality') {
-                    // Prefer large models
+                    // Prefer reasoning models first, then large models
+                    if (a.category === 'reasoning' && b.category !== 'reasoning') return -1;
+                    if (a.category !== 'reasoning' && b.category === 'reasoning') return 1;
                     if (a.category === 'large' && b.category !== 'large') return -1;
                     if (a.category !== 'large' && b.category === 'large') return 1;
                     return b.contextWindow - a.contextWindow;

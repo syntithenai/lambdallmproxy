@@ -66,6 +66,8 @@ export const TTSSettings: React.FC = () => {
 
   const getProviderDisplayName = (providerType: TTSProviderType): string => {
     const names: Record<TTSProviderType, string> = {
+      'chatterbox': 'Chatterbox TTS (Local GPU)',
+      'speaches': 'Speaches TTS (Local)',
       'llm': 'LLM Provider (Auto)',
       'openai-tts': 'OpenAI TTS',
       'groq-tts': 'Groq TTS',
@@ -80,6 +82,8 @@ export const TTSSettings: React.FC = () => {
 
   const getProviderDescription = (providerType: TTSProviderType): string => {
     const descriptions: Record<TTSProviderType, string> = {
+      'chatterbox': 'High-quality neural TTS with GPU acceleration (requires Docker container on localhost:8000)',
+      'speaches': 'Local TTS server (configure in LLM providers)',
       'llm': 'Automatically selects best available LLM provider (fallback option)',
       'openai-tts': 'OpenAI\'s text-to-speech model (high quality, fast)',
       'groq-tts': 'Groq\'s PlayAI TTS model (fast inference)',

@@ -33,7 +33,7 @@ export const initGoogleAuth = () => {
     console.log('📋 Client ID value:', GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.substring(0, 20) + '...' : 'MISSING');
     
     if (!GOOGLE_CLIENT_ID) {
-      const error = 'Google Client ID not configured. Please set VITE_GOOGLE_CLIENT_ID in ui-new/.env';
+      const error = 'Google Client ID not configured. Please set VITE_GGL_CID in ui-new/.env';
       console.error('❌', error);
       reject(new Error(error));
       return;
@@ -277,9 +277,9 @@ export const listGoogleDocs = async (): Promise<GoogleDoc[]> => {
   const token = await requestGoogleAuth();
   console.log('🔑 Using token:', token.substring(0, 20) + '...');
 
-  // Query for documents created by this app with metadata
-  // Using properties to filter only documents created by this specific app
-  const query = "mimeType='application/vnd.google-apps.document' and trashed=false and properties has { key='createdByApp' and value='LambdaLLMProxy-Swag' }";
+  // Query for SPREADSHEET with EXACT name "Research Agent Swag"
+  // If user renames it, we'll create a new one with the correct name
+  const query = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name='Research Agent Swag'";
   console.log('🔍 Query:', query);
   console.log('🚀 Making API request to Google Drive...');
   const response = await fetch(
@@ -305,12 +305,12 @@ export const listGoogleDocs = async (): Promise<GoogleDoc[]> => {
   const data = await response.json();
   console.log('✅ Documents retrieved:', data.files?.length || 0);
   
-  // Double-check filtering on client side for extra safety
+  // Only accept documents named EXACTLY "Research Agent Swag"
+  // This ensures if user renames it, we'll create a fresh one
   const filtered = data.files.filter((file: any) => 
-    file.properties?.createdByApp === 'LambdaLLMProxy-Swag' ||
-    file.description?.includes('Created by LLM Proxy Swag feature')
+    file.name === 'Research Agent Swag'
   );
-  console.log('✅ App-created documents:', filtered.length);
+  console.log('✅ Documents with exact name "Research Agent Swag":', filtered.length);
 
   return filtered.map((file: any) => ({
     id: file.id,

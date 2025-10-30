@@ -13,50 +13,50 @@ log_warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 
 cd "$(dirname "$0")/.."
 
-# Get Lambda URL from .env or Lambda directly
-LAMBDA_URL=$(grep '^LAMBDA_FUNCTION_URL=' .env 2>/dev/null | cut -d'=' -f2 || echo "")
+# Get Lambda URL from AWS Lambda directly (no longer in .env)
+LAMBDA_URL=$(aws lambda get-function-url-config --function-name llmproxy 2>/dev/null | jq -r '.FunctionUrl' | sed 's:/*$::' || echo "")
 
 if [ -z "$LAMBDA_URL" ]; then
-    log_warn "LAMBDA_FUNCTION_URL not found in .env, trying to get from AWS..."
-    LAMBDA_URL=$(aws lambda get-function-url-config --function-name llmproxy 2>/dev/null | jq -r '.FunctionUrl' | sed 's:/*$::' || echo "")
+    log_warn "Unable to get Lambda URL from AWS. Make sure AWS CLI is configured."
+    exit 1
 fi
 
-if [ -n "$LAMBDA_URL" ]; then
-    log_step "Updating .env.production with Lambda URL: $LAMBDA_URL"
+log_step "Updating .env.production with Lambda URL: $LAMBDA_URL"
+
+# Get Google Client ID from root .env (use GGL_CID which is the actual variable name)
+GOOGLE_CLIENT_ID=$(grep '^GGL_CID=' .env 2>/dev/null | cut -d'=' -f2 || echo "")
+
+# Get PayPal Client ID from root .env (use PP_CID which is the actual variable name)
+PAYPAL_CLIENT_ID=$(grep '^PP_CID=' .env 2>/dev/null | cut -d'=' -f2 || echo "")
+
+# Update or create .env.production
+if [ -f ui-new/.env.production ]; then
+    # Update VITE_API (was VITE_API_BASE)
+    sed -i "s|^VITE_API_BASE=.*|VITE_API=$LAMBDA_URL|" ui-new/.env.production
+    sed -i "s|^VITE_API=.*|VITE_API=$LAMBDA_URL|" ui-new/.env.production
     
-    # Get Google Client ID from .env as source of truth
-    GOOGLE_CLIENT_ID=$(grep '^VITE_GOOGLE_CLIENT_ID=' ui-new/.env 2>/dev/null | cut -d'=' -f2 || echo "548179877633-cfvhlc5roj9prus33jlarcm540i495qi.apps.googleusercontent.com")
-    
-    # Get PayPal Client ID from .env as source of truth
-    PAYPAL_CLIENT_ID=$(grep '^VITE_PAYPAL_CLIENT_ID=' ui-new/.env 2>/dev/null | cut -d'=' -f2 || echo "AU9cY15vsAcz4tWwm5U0O-nMBqYTP3cT0dOHTpHqPCCD1n9fwdcD-xNcuzMv_eP-UtaB3PFHTuHoXeCW")
-    
-    # Update or create .env.production
-    if [ -f ui-new/.env.production ]; then
-        # Update VITE_API_BASE
-        sed -i "s|^VITE_API_BASE=.*|VITE_API_BASE=$LAMBDA_URL|" ui-new/.env.production
-        
-        # Update or add VITE_GOOGLE_CLIENT_ID
-        if grep -q '^VITE_GOOGLE_CLIENT_ID=' ui-new/.env.production; then
-            sed -i "s|^VITE_GOOGLE_CLIENT_ID=.*|VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|" ui-new/.env.production
-        else
-            echo "" >> ui-new/.env.production
-            echo "# Google Client ID for OAuth authentication" >> ui-new/.env.production
-            echo "VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> ui-new/.env.production
-        fi
-        
-        # Update or add VITE_PAYPAL_CLIENT_ID
-        if grep -q '^VITE_PAYPAL_CLIENT_ID=' ui-new/.env.production; then
-            sed -i "s|^VITE_PAYPAL_CLIENT_ID=.*|VITE_PAYPAL_CLIENT_ID=$PAYPAL_CLIENT_ID|" ui-new/.env.production
-        else
-            echo "" >> ui-new/.env.production
-            echo "# PayPal Client ID for payment integration" >> ui-new/.env.production
-            echo "VITE_PAYPAL_CLIENT_ID=$PAYPAL_CLIENT_ID" >> ui-new/.env.production
-        fi
-        
-        log_info "Updated ui-new/.env.production with Lambda URL, Google Client ID, and PayPal Client ID"
+    # Update or add VITE_GGL_CID (shortened Google Client ID)
+    if grep -q '^VITE_GGL_CID=' ui-new/.env.production; then
+        sed -i "s|^VITE_GGL_CID=.*|VITE_GGL_CID=$GOOGLE_CLIENT_ID|" ui-new/.env.production
     else
-        log_warn ".env.production not found, creating it..."
-        cat > ui-new/.env.production << EOF
+        echo "" >> ui-new/.env.production
+        echo "# Google Client ID for OAuth authentication (YouTube, etc.)" >> ui-new/.env.production
+        echo "VITE_GGL_CID=$GOOGLE_CLIENT_ID" >> ui-new/.env.production
+    fi
+    
+    # Update or add VITE_PP_CID (shortened PayPal Client ID)
+    if grep -q '^VITE_PP_CID=' ui-new/.env.production; then
+        sed -i "s|^VITE_PP_CID=.*|VITE_PP_CID=$PAYPAL_CLIENT_ID|" ui-new/.env.production
+    else
+        echo "" >> ui-new/.env.production
+        echo "# PayPal Client ID for payment integration" >> ui-new/.env.production
+        echo "VITE_PP_CID=$PAYPAL_CLIENT_ID" >> ui-new/.env.production
+    fi
+    
+    log_info "Updated ui-new/.env.production with Lambda URL, Google Client ID (VITE_GGL_CID), and PayPal Client ID (VITE_PP_CID)"
+else
+    log_warn ".env.production not found, creating it..."
+    cat > ui-new/.env.production << EOF
 # Production Environment Configuration
 # ================================================================
 # This file is used when running: npm run build
@@ -64,23 +64,20 @@ if [ -n "$LAMBDA_URL" ]; then
 
 # API ENDPOINT - Production Lambda URL
 # This is automatically set by the deploy script
-VITE_API_BASE=$LAMBDA_URL
+VITE_API=$LAMBDA_URL
 
-# Google Client ID for OAuth authentication
-VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+# Google Client ID for OAuth authentication (YouTube, etc.)
+VITE_GGL_CID=$GGL_CID
 
 # PayPal Client ID for payment integration
-VITE_PAYPAL_CLIENT_ID=$PAYPAL_CLIENT_ID
+VITE_PP_CID=$PP_CID
 
 EOF
-        log_info "Created ui-new/.env.production"
-    fi
-else
-    log_warn "Could not determine Lambda URL, using existing .env.production"
+    log_info "Created ui-new/.env.production"
 fi
 
 log_step "Building React UI from ui-new/ (using .env.production)..."
 cd ui-new
 npm run build
 log_info "Build complete! Files in docs/"
-log_info "Production build uses VITE_API_BASE from .env.production"
+log_info "Production build uses VITE_API from .env.production"

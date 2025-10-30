@@ -423,6 +423,7 @@
       "tools": "Herramientas",
       "proxy": "Proxy",
       "location": "Ubicación",
+      "voice": "Stimme",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -680,6 +681,28 @@
     "totalQuizzes": "Gesamte Quizze",
     "averageScore": "Durchschnittliche Punktzahl",
     "questionsAnswered": "Beantwortete Fragen",
-    "statistics": "Quiz-Statistiken"
+    "statistics": "Quiz-Statistiken",
+    "subtitle": "Verfolgen Sie Ihren Lernfortschritt und Ihre Quiz-Leistung",
+    "createNewQuiz": "Neues Quiz Erstellen",
+    "recentQuizzes": "Letzte Quiz",
+    "noQuizzesYet": "Noch keine Quiz abgeschlossen",
+    "noQuizzesDescription": "Machen Sie ein Quiz aus Ihrem gespeicherten Inhalt in SWAG, um Ihre Statistiken hier zu sehen",
+    "goToSwag": "Zu SWAG Gehen",
+    "backToChat": "Zurück zum Chat",
+    "loadingStats": "Statistiken werden geladen...",
+    "errorLoadingStats": "Fehler beim Laden der Quiz-Statistiken",
+    "confirmDelete": "Sind Sie sicher, dass Sie das Quiz '{{title}}' löschen möchten?",
+    "quizDeleted": "Quiz erfolgreich gelöscht",
+    "errorDeletingQuiz": "Fehler beim Löschen des Quiz",
+    "deleteQuiz": "Quiz löschen",
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "daysAgo": "Vor {{days}} Tagen",
+    "snippetCount": "{{count}} Snippet",
+    "snippetCount_plural": "{{count}} Snippets",
+    "enriched": "Angereichert",
+    "notSynced": "Nicht Synchronisiert",
+    "highestScore": "Höchste Punktzahl",
+    "lowestScore": "Niedrigste Punktzahl"
   }
 }

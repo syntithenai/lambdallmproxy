@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { hotwordService } from '../services/hotwordDetection';
+import { useToast } from './ToastManager';
 import './ContinuousVoiceMode.css';
+import { getCachedApiBase } from '../utils/api';
 
 type ConversationState = 'hotword' | 'listening' | 'thinking' | 'speaking';
 
@@ -11,6 +13,8 @@ interface ContinuousVoiceModeProps {
   apiEndpoint: string;
   isProcessing?: boolean;
   isSpeaking?: boolean;
+  enabled?: boolean; // External control for enabled state
+  onEnabledChange?: (enabled: boolean) => void; // Callback when enabled state changes
 }
 
 export function ContinuousVoiceMode({ 
@@ -19,9 +23,38 @@ export function ContinuousVoiceMode({
   accessToken,
   apiEndpoint,
   isProcessing = false,
-  isSpeaking = false
+  isSpeaking = false,
+  enabled = false,
+  onEnabledChange
 }: ContinuousVoiceModeProps) {
-  const [isEnabled, setIsEnabled] = useState(false);
+  // keep apiEndpoint referenced to avoid unused variable linting (we resolve base via getCachedApiBase)
+  void apiEndpoint;
+  
+  // Toast notifications
+  const { showPersistentToast, removeToast, updateToast } = useToast();
+  const toastIdRef = useRef<string | null>(null);
+  
+  // Update toast message based on state
+  const updateToastMessage = (message: string) => {
+    if (toastIdRef.current) {
+      updateToast(toastIdRef.current, message);
+    }
+  };
+  
+  // Use external enabled state if provided, otherwise manage internally
+  const [isEnabled, setIsEnabled] = useState(enabled);
+  
+  // Sync with external enabled prop
+  useEffect(() => {
+    setIsEnabled(enabled);
+  }, [enabled]);
+  
+  // Notify parent when enabled state changes
+  const handleSetEnabled = (newEnabled: boolean) => {
+    setIsEnabled(newEnabled);
+    onEnabledChange?.(newEnabled);
+  };
+  
   const [state, setState] = useState<ConversationState>('hotword');
   const [transcript, setTranscript] = useState('');
   const [turnCount, setTurnCount] = useState(0);
@@ -74,7 +107,7 @@ export function ContinuousVoiceMode({
       
       if (newTurnCount >= maxTurns) {
         console.warn('⚠️ Max turns reached, stopping continuous mode');
-        setIsEnabled(false);
+        handleSetEnabled(false);
         return;
       }
 
@@ -87,12 +120,32 @@ export function ContinuousVoiceMode({
   useEffect(() => {
     if (isEnabled) {
       initializeContinuousMode();
+      // Show persistent toast when enabled
+      if (!toastIdRef.current) {
+        toastIdRef.current = showPersistentToast(
+          '🎤 Listening for "' + hotword + '"...',
+          'info',
+          {
+            label: 'Stop',
+            onClick: () => handleSetEnabled(false)
+          }
+        );
+      }
     } else {
       cleanup();
+      // Remove toast when disabled
+      if (toastIdRef.current) {
+        removeToast(toastIdRef.current);
+        toastIdRef.current = null;
+      }
     }
 
     return () => {
       cleanup();
+      if (toastIdRef.current) {
+        removeToast(toastIdRef.current);
+        toastIdRef.current = null;
+      }
     };
   }, [isEnabled]);
 
@@ -102,21 +155,42 @@ export function ContinuousVoiceMode({
     }
   }, [state, isEnabled]);
 
+  // Update toast message when state changes
+  useEffect(() => {
+    if (!isEnabled || !toastIdRef.current) return;
+    
+    const stateMessages = {
+      hotword: `🎤 Listening for "${hotword}"...`,
+      listening: '🎙️ Recording... (speak now)',
+      thinking: '🤔 Processing...',
+      speaking: '🔊 Speaking...'
+    };
+    
+    updateToastMessage(stateMessages[state]);
+  }, [state, isEnabled, hotword]);
+
   async function initializeContinuousMode() {
     try {
-      // Initialize Porcupine
+      // Initialize Porcupine for hotword detection
       await hotwordService.initialize(hotword, sensitivity);
-      setState('hotword');
+      
+      // Start recording immediately on first enable (skip hotword)
+      console.log('🎙️ Starting continuous mode - recording immediately');
+      setState('listening');
       setTurnCount(0);
+      startRecording();
+      startTimeout();
     } catch (error) {
       console.error('❌ Failed to initialize continuous mode:', error);
-      setIsEnabled(false);
+      handleSetEnabled(false);
       alert(`Failed to initialize voice detection: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   async function startHotwordListening() {
     try {
+      // Reinitialize if needed (e.g., after release())
+      await hotwordService.initialize(hotword, sensitivity);
       await hotwordService.startListening(handleHotwordDetected);
       console.log('🎤 Hotword mode active');
     } catch (error) {
@@ -307,24 +381,52 @@ export function ContinuousVoiceMode({
     const formData = new FormData();
     formData.append('audio', blob, 'recording.webm');
 
-    const baseUrl = apiEndpoint.replace('/openai/v1', '');
-    const transcribeUrl = `${baseUrl}/transcribe`;
+    // Resolve current API base (handles local dev vs remote)
+    const resolvedBase = (await getCachedApiBase()).replace('/openai/v1', '');
+    const transcribeUrl = `${resolvedBase}/transcribe`;
 
-    const response = await fetch(transcribeUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: formData
-    });
+    const maxAttempts = 3;
+    let lastErr: any = null;
 
-    const data = await response.json();
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
 
-    if (!response.ok) {
-      throw new Error(data.error || 'Transcription failed');
+        const response = await fetch(transcribeUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: formData,
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const errMsg = data?.error || response.statusText || `HTTP ${response.status}`;
+          throw new Error(errMsg);
+        }
+
+        return data.text || data.transcription || '';
+      } catch (err: any) {
+        lastErr = err;
+        const isNetwork = err instanceof TypeError && err.message.includes('Failed to fetch');
+        const isAbort = err.name === 'AbortError';
+        console.warn(`Transcription attempt ${attempt} failed:`, err?.message || err);
+        if (attempt < maxAttempts && (isNetwork || isAbort)) {
+          const backoff = 400 * Math.pow(2, attempt - 1);
+          await new Promise(r => setTimeout(r, backoff));
+          continue;
+        }
+        throw err;
+      }
     }
 
-    return data.text || data.transcription || '';
+    throw lastErr || new Error('Transcription failed');
   }
 
   async function cleanup() {
@@ -343,22 +445,24 @@ export function ContinuousVoiceMode({
   }
 
   function toggleContinuousMode() {
-    setIsEnabled(!isEnabled);
+    handleSetEnabled(!isEnabled);
   }
 
   return (
     <div className="continuous-voice-mode">
-      {/* Toggle Button */}
-      <button
-        onClick={toggleContinuousMode}
-        className={`toggle-btn ${isEnabled ? 'active' : ''}`}
-        title={isEnabled ? 'Stop Continuous Mode' : 'Start Continuous Mode'}
-      >
-        {isEnabled ? '🔴 Stop' : '🎙️ Continuous Mode'}
-      </button>
+      {/* Toggle Button - Only show if not externally controlled */}
+      {!onEnabledChange && (
+        <button
+          onClick={toggleContinuousMode}
+          className={`toggle-btn ${isEnabled ? 'active' : ''}`}
+          title={isEnabled ? 'Stop Continuous Mode' : 'Start Continuous Mode'}
+        >
+          {isEnabled ? '🔴 Stop' : '🎙️ Continuous Mode'}
+        </button>
+      )}
 
-      {/* State Indicator */}
-      {isEnabled && (
+      {/* State Indicator - Only show if not externally controlled */}
+      {isEnabled && !onEnabledChange && (
         <div className={`state-indicator state-${state}`}>
           <div className="state-icon">
             {state === 'hotword' && '🎤'}
@@ -378,8 +482,8 @@ export function ContinuousVoiceMode({
         </div>
       )}
 
-      {/* Settings Panel */}
-      {!isEnabled && (
+      {/* Settings Panel - Only show if not externally controlled (settings in Settings tab otherwise) */}
+      {!isEnabled && !onEnabledChange && (
         <details className="settings-panel">
           <summary>⚙️ Settings</summary>
           

@@ -20,9 +20,16 @@ const SettingsContext = createContext<SettingsContextValue | undefined>(undefine
  * Converts single provider to multi-provider array
  */
 function migrateSettings(oldSettings: any): Settings {
-  // If already v2, return as-is
+  // If already v2, return as-is (but clean up any legacy fields)
   if (oldSettings.version === '2.0.0') {
-    return oldSettings;
+    // Check if legacy fields exist
+    if ('provider' in oldSettings || 'llmApiKey' in oldSettings) {
+      // Remove legacy v1 fields if they exist (prevents re-migration)
+      const { provider, llmApiKey, ...cleanSettings } = oldSettings;
+      return cleanSettings as Settings;
+    }
+    // No migration needed - return same reference to prevent infinite loop
+    return oldSettings as Settings;
   }
 
   // Migrate from v1 single provider to v2 multi-provider
@@ -65,6 +72,13 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
   useEffect(() => {
     if (rawSettings !== settings) {
       setRawSettings(settings);
+      
+      // Also save to Google Drive to overwrite old format
+      if (isAuthenticated()) {
+        saveSettingsToDrive(JSON.stringify(settings, null, 2)).catch((error) => {
+          console.error('❌ Failed to save migrated settings to Google Drive:', error);
+        });
+      }
     }
   }, [rawSettings, settings, setRawSettings]);
 

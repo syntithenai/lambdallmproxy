@@ -423,6 +423,7 @@
       "tools": "Tools",
       "proxy": "Proxy",
       "location": "Location",
+      "voice": "语音",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -680,6 +681,28 @@
     "totalQuizzes": "总测验数",
     "averageScore": "平均得分",
     "questionsAnswered": "已回答问题",
-    "statistics": "测验统计"
+    "statistics": "测验统计",
+    "subtitle": "跟踪您的学习进度和测验表现",
+    "createNewQuiz": "创建新测验",
+    "recentQuizzes": "最近的测验",
+    "noQuizzesYet": "还没有完成的测验",
+    "noQuizzesDescription": "从 SWAG 中保存的内容进行测验，在这里查看您的统计数据",
+    "goToSwag": "前往 SWAG",
+    "backToChat": "返回聊天",
+    "loadingStats": "正在加载统计数据...",
+    "errorLoadingStats": "加载测验统计数据失败",
+    "confirmDelete": "您确定要删除测验'{{title}}'吗？",
+    "quizDeleted": "测验已成功删除",
+    "errorDeletingQuiz": "删除测验失败",
+    "deleteQuiz": "删除测验",
+    "today": "今天",
+    "yesterday": "昨天",
+    "daysAgo": "{{days}} 天前",
+    "snippetCount": "{{count}} 个片段",
+    "snippetCount_plural": "{{count}} 个片段",
+    "enriched": "已丰富",
+    "notSynced": "未同步",
+    "highestScore": "最高分",
+    "lowestScore": "最低分"
   }
 }

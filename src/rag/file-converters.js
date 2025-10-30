@@ -243,12 +243,22 @@ async function convertPDFToMarkdown(input) {
  * @param {string} altText - Alt text for image (optional)
  * @returns {Promise<Object>} - { markdown, metadata }
  */
-async function convertImageToMarkdown(input, mimeType = 'image/png', altText = 'Image') {
+async function convertImageToMarkdown(input, mimeType = 'image/png', altText = 'Uploaded Image') {
   try {
     const buffer = Buffer.isBuffer(input) ? input : await fs.readFile(input);
     const dataURI = imageToBase64DataURI(buffer, mimeType);
 
-    const markdown = `![${altText}](${dataURI})`;
+    // Use HTML img tag for better compatibility with markdown renderers
+    // This ensures the base64 image renders properly in snippets
+    const markdown = `<img src="${dataURI}" alt="${altText}" style="max-width: 100%; height: auto;" />`;
+
+    console.log(`📸 Converted image to base64 HTML:`, {
+      mimeType,
+      bufferSize: buffer.length,
+      base64Length: dataURI.length,
+      altText,
+      markdownPreview: markdown.substring(0, 100) + '...'
+    });
 
     return {
       markdown,

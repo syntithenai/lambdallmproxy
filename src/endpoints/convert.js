@@ -58,10 +58,13 @@ exports.handler = async (event, responseStream) => {
       console.log(`📊 Decoded buffer size: ${buffer.length} bytes`);
 
       const mimeType = body.mimeType || '';
+      
+      // Extract filename without extension for alt text
+      const altText = body.fileName.replace(/\.[^/.]+$/, '');
 
       // Convert to markdown
       console.log('🔄 Starting conversion...');
-      const result = await convertToMarkdown(buffer, mimeType, {});
+      const result = await convertToMarkdown(buffer, mimeType, { altText });
       console.log(`✅ Conversion complete. Result:`, {
         hasMarkdown: !!result.markdown,
         markdownLength: result.markdown?.length || 0,
@@ -101,9 +104,14 @@ exports.handler = async (event, responseStream) => {
       });
 
       const { buffer, contentType } = await fetchPromise;
+      
+      // Extract alt text from URL (filename without extension)
+      const urlPath = url.split('?')[0]; // Remove query params
+      const filename = urlPath.split('/').pop() || 'Image from URL';
+      const altText = filename.replace(/\.[^/.]+$/, '');
 
       // Convert to markdown
-      const result = await convertToMarkdown(buffer, contentType.split(';')[0], {});
+      const result = await convertToMarkdown(buffer, contentType.split(';')[0], { altText });
       markdown = result.markdown;
     } else {
       throw new Error('Either file or URL is required');

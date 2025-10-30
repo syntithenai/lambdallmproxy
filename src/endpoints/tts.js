@@ -1,12 +1,13 @@
 /**
  * TTS Endpoint
  * Proxies text-to-speech requests through Lambda for comprehensive logging
- * Supports: OpenAI TTS, Google Cloud TTS, Groq TTS, ElevenLabs
+ * Supports: Speaches (local), OpenAI TTS, Google Cloud TTS, Groq TTS, ElevenLabs
  */
 
 const { authenticateRequest } = require('../auth');
 const https = require('https');
 const http = require('http');
+const { getEnvProviders } = require('../credential-pool');
 
 /**
  * Get CORS headers for TTS endpoint
@@ -42,12 +43,18 @@ function calculateTTSCost(provider, text, voice, model) {
         },
         'elevenlabs': {
             'default': 0.30       // $0.30 per 1K characters = $300 per 1M
+        },
+        'speaches': {
+            'tts-1': 0.00         // Local - FREE
         }
     };
 
     let costPerMillion = 0;
 
     switch (provider) {
+        case 'speaches':
+            costPerMillion = 0; // Local TTS is free
+            break;
         case 'openai':
             costPerMillion = pricing.openai[model] || pricing.openai['tts-1'];
             break;
@@ -121,6 +128,36 @@ function makeHttpsRequest(url, options, body = null) {
  */
 async function callOpenAITTS(text, voice, rate, apiKey, model = 'tts-1') {
     const url = 'https://api.openai.com/v1/audio/speech';
+    
+    const response = await makeHttpsRequest(url, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        }
+    }, {
+        model,
+        input: text,
+        voice: voice || 'alloy',
+        speed: rate || 1.0
+    });
+
+    return response.body;
+}
+
+/**
+ * Call Speaches TTS API (OpenAI-compatible endpoint)
+ */
+async function callSpeachesTTS(text, voice, rate, apiKey, model = 'tts-1', endpoint) {
+    // Parse endpoint to handle localhost with port
+    const urlObj = new URL(endpoint);
+    const protocol = urlObj.protocol === 'https:' ? 'https' : 'http';
+    const hostname = urlObj.hostname;
+    const port = urlObj.port || (protocol === 'https' ? '443' : '80');
+    
+    const url = `${protocol}://${hostname}:${port}/v1/audio/speech`;
+    
+    console.log(`🏠 Calling Speaches TTS at ${url} (model=${model}, voice=${voice})`);
     
     const response = await makeHttpsRequest(url, {
         method: 'POST',
@@ -282,6 +319,25 @@ async function handleTTS(event, responseStream, context) {
 
         console.log(`🎙️ TTS request from ${userEmail}: provider=${provider}, voice=${voice}, textLength=${text.length}`);
         
+        // Get environment-configured providers (for Speaches local TTS)
+        const envProviders = getEnvProviders();
+        
+        // Priority-based TTS provider selection:
+        // 1. Speaches (LOCAL, FREE) - if available
+        // 2. Client-specified provider (from request body)
+        let actualProvider = provider;
+        let actualApiKey = clientApiKey;
+        let ttsEndpoint = null;
+        
+        // Check for Speaches first (local, free TTS)
+        const speachesProvider = envProviders.find(p => p.type === 'speaches');
+        if (speachesProvider?.apiKey && provider === 'speaches') {
+            actualProvider = 'speaches';
+            actualApiKey = speachesProvider.apiKey || 'dummy-key';
+            ttsEndpoint = speachesProvider.apiEndpoint;
+            console.log('🏠 Using Speaches TTS from environment (LOCAL, FREE text-to-speech)');
+        }
+        
         // ✅ CREDIT SYSTEM: Check credit balance before processing request
         const { checkCreditBalance, estimateTTSCost } = require('../utils/credit-check');
         const estimatedCost = estimateTTSCost(text, model || 'tts-1');
@@ -302,33 +358,38 @@ async function handleTTS(event, responseStream, context) {
         console.log(`💳 Credit check passed for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
 
         // Get API key from environment or client
-        let apiKey;
-        switch (provider) {
-            case 'openai':
-                apiKey = clientApiKey || process.env.OPENAI_KEY;
-                break;
-            case 'google':
-            case 'gemini':
-                apiKey = clientApiKey || process.env.GEMINI_KEY;
-                break;
-            case 'groq':
-                apiKey = clientApiKey || process.env.GROQ_KEY;
-                break;
-            case 'elevenlabs':
-                apiKey = clientApiKey || process.env.ELEVENLABS_KEY;
-                break;
-            default:
-                const metadata = {
-                    statusCode: 400,
-                    headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
-                };
-                responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-                responseStream.write(JSON.stringify({
-                    error: `Unsupported provider: ${provider}`,
-                    code: 'UNSUPPORTED_PROVIDER'
-                }));
-                responseStream.end();
-                return;
+        let apiKey = actualApiKey;
+        if (!apiKey) {
+            switch (actualProvider) {
+                case 'speaches':
+                    apiKey = 'dummy-key'; // Local TTS doesn't need real key
+                    break;
+                case 'openai':
+                    apiKey = process.env.OPENAI_KEY;
+                    break;
+                case 'google':
+                case 'gemini':
+                    apiKey = process.env.GEMINI_KEY;
+                    break;
+                case 'groq':
+                    apiKey = process.env.GROQ_KEY;
+                    break;
+                case 'elevenlabs':
+                    apiKey = process.env.ELEVENLABS_KEY;
+                    break;
+                default:
+                    const metadata = {
+                        statusCode: 400,
+                        headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
+                    };
+                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                    responseStream.write(JSON.stringify({
+                        error: `Unsupported provider: ${actualProvider}`,
+                        code: 'UNSUPPORTED_PROVIDER'
+                    }));
+                    responseStream.end();
+                    return;
+            }
         }
 
         if (!apiKey) {
@@ -338,7 +399,7 @@ async function handleTTS(event, responseStream, context) {
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({
-                error: `API key not configured for provider: ${provider}`,
+                error: `API key not configured for provider: ${actualProvider}`,
                 code: 'API_KEY_MISSING'
             }));
             responseStream.end();
@@ -347,9 +408,13 @@ async function handleTTS(event, responseStream, context) {
 
         // Call appropriate TTS provider
         let audioBuffer;
-        switch (provider) {
+        const modelName = model || 'tts-1';
+        switch (actualProvider) {
+            case 'speaches':
+                audioBuffer = await callSpeachesTTS(text, voice, rate, apiKey, modelName, ttsEndpoint);
+                break;
             case 'openai':
-                audioBuffer = await callOpenAITTS(text, voice, rate, apiKey, model);
+                audioBuffer = await callOpenAITTS(text, voice, rate, apiKey, modelName);
                 break;
             case 'google':
             case 'gemini':
@@ -365,8 +430,8 @@ async function handleTTS(event, responseStream, context) {
 
         const duration = Date.now() - startTime;
 
-        // Calculate cost
-        const cost = calculateTTSCost(provider, text, voice, model);
+        // Calculate cost (use actualProvider for accurate cost calculation)
+        const cost = calculateTTSCost(actualProvider, text, voice, modelName);
 
         // Log to Google Sheets (async, don't block response)
         try {
@@ -379,8 +444,8 @@ async function handleTTS(event, responseStream, context) {
             
             const logData = {
                 userEmail,
-                provider,
-                model: model || voice || 'default',
+                provider: actualProvider, // Log actual provider used
+                model: modelName || voice || 'default',
                 type: 'tts', // New type for text-to-speech
                 promptTokens: 0, // TTS doesn't use tokens
                 completionTokens: 0,
@@ -408,7 +473,7 @@ async function handleTTS(event, responseStream, context) {
         const { deductCreditFromCache } = require('../utils/credit-check');
         await deductCreditFromCache(userEmail, cost, 'tts');
 
-        console.log(`✅ TTS generated: ${text.length} chars, $${cost.toFixed(6)}, ${duration}ms`);
+        console.log(`✅ TTS generated (${actualProvider}/${modelName}): ${text.length} chars, $${cost.toFixed(6)}, ${duration}ms`);
 
         // Return audio
         const metadata = {

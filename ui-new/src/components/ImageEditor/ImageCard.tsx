@@ -36,6 +36,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
       {/* Image */}
       <img
+        key={image.url} // Force re-render when URL changes
         src={image.url}
         alt={image.name}
         className="w-full h-auto object-cover"

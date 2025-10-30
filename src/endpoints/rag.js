@@ -11,14 +11,12 @@ const { buildProviderPool } = require('../credential-pool');
 
 /**
  * Get CORS headers for responses
- * @returns {object} CORS headers
+ * NOTE: Lambda Function URL already handles CORS, so we return empty object
+ * to avoid duplicate headers (*, *) error
+ * @returns {object} Empty object (CORS handled by Lambda Function URL)
  */
 function getCORSHeaders() {
-    return {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-    };
+    return {};
 }
 
 /**

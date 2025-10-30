@@ -9,7 +9,7 @@ import type { BulkOperation } from './types';
 export interface ImageEditRequest {
   images: Array<{ id: string; url: string }>;
   operations: Array<{
-    type: 'resize' | 'rotate' | 'flip' | 'format' | 'filter';
+    type: 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate';
     params: any;
   }>;
 }
@@ -116,9 +116,14 @@ export async function editImages(
 /**
  * Parse natural language image editing command using LLM
  * @param command - Natural language command (e.g., "make it smaller and rotate right")
+ * @param providers - User's LLM provider configurations (optional, will use environment providers if authenticated)
  * @returns Promise that resolves with parsed operations
  */
-export async function parseImageCommand(command: string): Promise<{
+export async function parseImageCommand(
+  command: string,
+  providers?: Array<{ type: string; apiKey: string; enabled?: boolean }>,
+  authToken?: string | null
+): Promise<{
   success: boolean;
   operations: BulkOperation[];
   explanation: string;
@@ -127,16 +132,48 @@ export async function parseImageCommand(command: string): Promise<{
   const apiBase = await getCachedApiBase();
   const url = `${apiBase}/parse-image-command`;
 
-  // Get Google OAuth token
-  const googleToken = localStorage.getItem('google_oauth_token');
+  // Get Google OAuth token - prioritize parameter, then localStorage
+  const googleToken = authToken || localStorage.getItem('google_oauth_token') || localStorage.getItem('access_token');
+
+  // Filter to only enabled providers WITH API keys
+  // If no valid providers, omit the field so backend uses environment providers
+  const enabledProviders = providers
+    ?.filter(p => p.enabled !== false && p.apiKey && p.apiKey.trim() !== '')
+    || [];
+  
+  // Only send providers if we have valid ones with API keys
+  const hasValidProviders = enabledProviders.length > 0;
+  
+  // Debug logging
+  console.log('🔍 [parseImageCommand] Sending request:', {
+    hasGoogleToken: !!googleToken,
+    tokenSource: authToken ? 'parameter' : 'localStorage',
+    tokenLength: googleToken?.length,
+    providersCount: enabledProviders.length,
+    hasValidProviders,
+    providers: enabledProviders.map(p => ({ type: p.type, hasApiKey: !!p.apiKey, enabled: p.enabled })),
+    willUseBackendProviders: !hasValidProviders
+  });
+
+  const requestBody: any = { command };
+  
+  // Only include providers if we have valid ones with API keys
+  // Otherwise, backend will use environment providers (Groq, OpenAI, Gemini, etc.)
+  if (hasValidProviders) {
+    requestBody.providers = enabledProviders;
+  }
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(googleToken ? { 'X-Google-OAuth-Token': googleToken } : {}),
+      // Use both Authorization and X-Google-OAuth-Token headers for maximum compatibility
+      ...(googleToken ? { 
+        'Authorization': `Bearer ${googleToken}`,
+        'X-Google-OAuth-Token': googleToken 
+      } : {}),
     },
-    body: JSON.stringify({ command }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {

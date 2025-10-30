@@ -83,6 +83,13 @@ cp -r "$OLDPWD"/src/providers/* ./providers/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/rag/* ./rag/ 2>/dev/null || true
 cp -r "$OLDPWD"/src/scrapers/* ./scrapers/ 2>/dev/null || true
 
+# Copy node_modules if present (for critical dependencies)
+if [ -d "$OLDPWD"/src/node_modules ]; then
+    echo -e "${GREEN}✅ Copying node_modules (critical dependencies)${NC}"
+    cp -r "$OLDPWD"/src/node_modules ./ 2>/dev/null || true
+    du -sh node_modules 2>/dev/null || true
+fi
+
 # Copy PROVIDER_CATALOG.json (required for image generation)
 if cp "$OLDPWD"/PROVIDER_CATALOG.json ./ 2>/dev/null; then
     echo -e "${GREEN}✅ Copied PROVIDER_CATALOG.json${NC}"
@@ -101,13 +108,22 @@ fi
 
 # List files
 echo -e "${YELLOW}📦 Code files to deploy:${NC}"
-find . -name "*.js" | head -20
+find . -name "*.js" -not -path "*/node_modules/*" | head -20
 echo -e "${YELLOW}📦 JSON files to deploy:${NC}"
 find . -name "*.json" -not -path "*/node_modules/*"
 
-# Create the deployment package (CODE ONLY - no node_modules!)
-echo -e "${YELLOW}🗜️  Creating lightweight package...${NC}"
-zip -q -r "$ZIP_FILE" . -x "node_modules/*"
+# Check if node_modules exists (for critical dependencies like google-auth-library)
+if [ -d "node_modules" ]; then
+    echo -e "${GREEN}✅ Including node_modules (critical dependencies)${NC}"
+    du -sh node_modules
+    # Create the deployment package (include minimal node_modules)
+    echo -e "${YELLOW}🗜️  Creating package with minimal dependencies...${NC}"
+    zip -q -r "$ZIP_FILE" .
+else
+    # Create the deployment package (CODE ONLY - no node_modules!)
+    echo -e "${YELLOW}🗜️  Creating lightweight package...${NC}"
+    zip -q -r "$ZIP_FILE" . -x "node_modules/*"
+fi
 
 # Get package size
 SIZE=$(ls -lh "$ZIP_FILE" | awk '{print $5}')

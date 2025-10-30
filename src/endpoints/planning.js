@@ -244,7 +244,7 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
     const messages = [
         { 
             role: 'system', 
-            content: 'You are a research strategist. Analyze queries and determine optimal research approaches and expert personas. You may provide detailed analysis if the query is complex. Always respond with valid JSON only.' 
+            content: 'You are a research strategist and planning expert. Analyze queries deeply and determine optimal research approaches and expert personas using step-by-step reasoning. You may provide detailed analysis if the query is complex. Always respond with valid JSON only.' 
         },
         { role: 'user', content: planningPrompt }
     ];

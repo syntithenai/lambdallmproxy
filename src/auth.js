@@ -2,7 +2,19 @@
  * Authentication utilities for Google OAuth and email validation
  */
 
-const { OAuth2Client } = require('google-auth-library');
+// Lazy load google-auth-library to avoid startup crash if missing
+let OAuth2Client = null;
+function getOAuth2Client() {
+    if (!OAuth2Client) {
+        try {
+            OAuth2Client = require('google-auth-library').OAuth2Client;
+        } catch (error) {
+            console.error('⚠️ google-auth-library not available:', error.message);
+            throw new Error('Google authentication library not installed');
+        }
+    }
+    return OAuth2Client;
+}
 
 // Google OAuth configuration: derive allowed emails from env on-demand, so warm containers pick up changes
 function getAllowedEmails() {
@@ -26,12 +38,13 @@ async function verifyGoogleToken(token) {
         // Get Google Client ID from environment
         const clientId = process.env.GGL_CID;
         if (!clientId) {
-            console.error('❌ GOOGLE_CLIENT_ID not set in environment variables');
+            console.error('❌ GGL_CID not set in environment variables');
             return null;
         }
         
         // Create OAuth2 client for token verification
-        const client = new OAuth2Client(clientId);
+        const OAuth2ClientClass = getOAuth2Client();
+        const client = new OAuth2ClientClass(clientId);
         
         // ✅ SECURE: Verify token signature against Google's public keys
         // This ensures the token was actually issued by Google and hasn't been tampered with

@@ -11,6 +11,7 @@ const { authenticateRequest } = require('../auth');
 const { buildProviderPool } = require('../credential-pool');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const feedRecommender = require('../services/feed-recommender');
+const { buildModelRotationSequence, estimateTokenRequirements } = require('../model-selector-v2');
 
 /**
  * Extract images from web search results
@@ -134,7 +135,7 @@ async function generateFeedItems(swagContent, searchTerms, count, preferences, p
     }
     
     // Build LLM prompt
-    const systemPrompt = `You are a content curator generating interesting "Did You Know" facts and Q&A items.
+    const systemPrompt = `You are a content curator generating in-depth educational content.
 
 INPUT CONTEXT:
 ${swagSummary ? `User's saved content:\n${swagSummary}\n\n` : ''}
@@ -142,17 +143,30 @@ ${searchSummary ? `Recent news/searches:\n${searchSummary}\n\n` : ''}
 ${likedTopics ? `User liked topics: ${likedTopics}\n` : ''}
 ${dislikedTopics ? `User disliked topics (AVOID): ${dislikedTopics}\n` : ''}
 
-TASK: Generate ${count} engaging items mixing:
+TASK: Generate ${count} high-quality educational items mixing:
 - "Did You Know" facts (70%) - surprising, educational facts
 - Question & Answer pairs (30%) - thought-provoking Q&A
 
-REQUIREMENTS:
-- Each item should be surprising, educational, or thought-provoking
-- Connect to user's interests when possible
-- Avoid disliked topics completely
-- Include specific topics/keywords for image search
-- Keep content concise (2-3 sentences)
-- Cite sources when using search data
+CRITICAL REQUIREMENTS:
+1. Each item MUST have:
+   - Short summary (2-3 sentences) in "content"
+   - Expanded article (4-6 paragraphs) in "expandedContent" with AT LEAST 4 interesting facts
+   - Creative mnemonic in "mnemonic" - use acronyms, rhymes, or surprising connections
+   
+2. Mnemonics should be MEMORABLE:
+   - Acronyms: First letters spell a word (e.g., "HOMES" for Great Lakes)
+   - Rhymes: Catchy phrases (e.g., "In 1492, Columbus sailed the ocean blue")
+   - Connections: Link to pop culture, celebrities, or surprising parallels
+   
+3. Expanded content should:
+   - Include specific numbers, dates, and measurements
+   - Feature surprising comparisons or contrasts
+   - Cite historical context or modern relevance
+   - Use vivid, memorable details
+
+4. Connect to user's interests when possible
+5. Avoid disliked topics completely
+6. Include specific topics/keywords for image search
 
 OUTPUT FORMAT (JSON):
 {
@@ -160,43 +174,141 @@ OUTPUT FORMAT (JSON):
     {
       "type": "did-you-know",
       "title": "Brief headline (max 80 chars)",
-      "content": "Engaging 2-3 sentence summary",
-      "topics": ["topic1", "topic2"],
+      "content": "Engaging 2-3 sentence summary for preview",
+      "expandedContent": "4-6 paragraphs with AT LEAST 4 fascinating facts. Include specific details, numbers, and memorable comparisons. Make it educational and surprising.",
+      "mnemonic": "Creative memory aid - acronym, rhyme, or surprising connection to help remember the key fact",
+      "topics": ["topic1", "topic2", "topic3"],
       "imageSearchTerms": "specific search query for image"
     }
   ]
 }
 
+IMPORTANT: Since generating detailed content takes more tokens, you're generating ${count} items.
+Focus on QUALITY over quantity. Each item should be fascinating and memorable.
+
 Generate exactly ${count} items. Return ONLY valid JSON.`;
 
     eventCallback('status', { message: 'Generating feed items...' });
     
-    // Call LLM
-    const messages = [{ role: 'user', content: systemPrompt }];
-    const response = await llmResponsesWithTools(
-        messages,
-        providers,
-        null, // requestedModel
-        {
-            temperature: 0.8,
-            maxTokens: 2000,
-            stream: false
-        }
+    // Build model rotation sequence using intelligent selector
+    const estimatedTokens = estimateTokenRequirements(
+        [{ role: 'user', content: systemPrompt }],
+        false // no tools needed
     );
+    
+    // providerPool is already in the correct array format
+    // Each item has: {type, apiKey, model, endpoint, ...}
+    const uiProviders = providers.map(p => ({
+        type: p.type,
+        apiKey: p.apiKey,
+        enabled: true
+    })).filter(p => p.type && p.apiKey);
+    
+    console.log(`🔍 Feed: Using ${uiProviders.length} providers for model selection (${providers.length} total in pool)`);
+    
+    const modelSequence = buildModelRotationSequence(uiProviders, {
+        needsTools: false,
+        needsVision: false,
+        estimatedTokens,
+        optimization: 'quality' // Use best models for feed generation
+    });
+    
+    console.log(`🔍 Feed: Model sequence has ${modelSequence.length} models`);
+    
+    if (modelSequence.length === 0) {
+        throw new Error('No available models for feed generation');
+    }
+    
+    // Try models in sequence until one succeeds (automatic failover)
+    let response = null;
+    let lastError = null;
+    
+    for (let i = 0; i < modelSequence.length; i++) {
+        const selectedModel = modelSequence[i];
+        console.log(`🎯 Feed: Trying model ${i + 1}/${modelSequence.length}: ${selectedModel.model}`);
+        
+        try {
+            // Call LLM with new signature
+            response = await llmResponsesWithTools({
+                model: selectedModel.model,
+                input: [
+                    { role: 'user', content: systemPrompt }
+                ],
+                tools: [], // No tools needed for feed generation
+                options: {
+                    apiKey: selectedModel.apiKey,
+                    temperature: 0.8,
+                    maxTokens: 4096,
+                    stream: false
+                }
+            });
+            
+            // Success! Break out of retry loop
+            console.log(`✅ Feed: Successfully generated with ${selectedModel.model}`);
+            break;
+            
+        } catch (error) {
+            lastError = error;
+            const isRateLimitError = error.message?.includes('429') || 
+                                    error.message?.includes('rate limit') ||
+                                    error.message?.includes('quota exceeded');
+            const isDecommissionedError = error.message?.includes('decommissioned') ||
+                                         error.message?.includes('400');
+            
+            console.error(`❌ Feed: Model ${selectedModel.model} failed:`, error.message?.substring(0, 200));
+            
+            // If not the last model, try next one
+            if (i < modelSequence.length - 1) {
+                if (isRateLimitError) {
+                    console.log(`⏭️ Feed: Rate limit hit, trying next model...`);
+                } else if (isDecommissionedError) {
+                    console.log(`⏭️ Feed: Model decommissioned, trying next model...`);
+                } else {
+                    console.log(`⏭️ Feed: Error occurred, trying next model...`);
+                }
+                eventCallback('status', { 
+                    message: `Model ${selectedModel.model.split(':')[1]} unavailable, trying alternative...` 
+                });
+                continue;
+            }
+        }
+    }
+    
+    // If all models failed, throw the last error
+    if (!response) {
+        console.error(`❌ Feed: All ${modelSequence.length} models failed. Last error:`, lastError?.message);
+        throw new Error(`All models failed. Last error: ${lastError?.message || 'Unknown error'}`);
+    }
     
     // Parse response
     let parsedData;
     try {
         // Extract JSON from response
         const content = response.content || response.message?.content || '';
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
+        
+        // Try to extract JSON from markdown code blocks first
+        let jsonText = null;
+        const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+        if (codeBlockMatch) {
+            jsonText = codeBlockMatch[1];
+        } else {
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                jsonText = jsonMatch[0];
+            }
+        }
+        
+        if (!jsonText) {
+            console.error('No JSON found in response. Content length:', content.length);
+            console.error('Content preview:', content.substring(0, 500));
             throw new Error('No JSON found in response');
         }
-        parsedData = JSON.parse(jsonMatch[0]);
+        
+        parsedData = JSON.parse(jsonText);
     } catch (error) {
         console.error('Failed to parse LLM response:', error);
-        console.error('Response:', response);
+        console.error('Response type:', typeof response);
+        console.error('Response keys:', Object.keys(response));
         throw new Error('Failed to parse LLM response');
     }
     
@@ -206,19 +318,26 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
     
     // Process items and add metadata including search results
     const items = parsedData.items.map((itemData, idx) => ({
+        id: `feed-${Date.now()}-${idx}`, // Add unique ID
         type: itemData.type || 'did-you-know',
         title: itemData.title || `Fact ${idx + 1}`,
         content: itemData.content || '',
+        expandedContent: itemData.expandedContent || '', // Detailed article
+        mnemonic: itemData.mnemonic || '', // Memory aid
         topics: itemData.topics || [],
+        searchTerms: searchTerms, // Pass original search terms
         imageSearchTerms: itemData.imageSearchTerms || '',
         sources: searchResults.map(r => r.url).slice(0, 3),
         searchResults: searchResults // Pass search results for image extraction
     }));
     
-    // Fetch images for feed items (in parallel)
+    // Fetch images for feed items (in parallel) and emit each item as it completes
     eventCallback('status', { message: 'Fetching images...' });
     
-    const imagePromises = items.map(async (item) => {
+    const itemsWithImages = [];
+    let completedCount = 0;
+    
+    const imagePromises = items.map(async (item, idx) => {
         // PRIORITY 1: Try to extract images from web search results
         if (item.searchResults && item.searchResults.length > 0) {
             try {
@@ -228,74 +347,83 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
                     const webImage = imagesFromSearch[0];
                     console.log(`✅ Using image from web search for: "${item.title}"`);
                     
-                    return {
-                        ...item,
-                        image: webImage.url,
-                        imageThumb: webImage.thumb || webImage.url,
-                        imageSource: 'web_search',
-                        imageAttribution: `From search result: ${webImage.sourceUrl || 'web'}`,
-                        imageAttributionHtml: webImage.sourceUrl 
-                            ? `Image from <a href="${webImage.sourceUrl}" target="_blank" rel="noopener noreferrer">search result</a>`
-                            : 'Image from web search'
-                    };
-                }
-            } catch (error) {
-                console.error(`Failed to extract images from search for "${item.title}":`, error);
-                // Fall through to API search
-            }
-        }
-        
-        // PRIORITY 2: Fallback to image search APIs if no web search images
-        if (!item.imageSearchTerms) {
-            return { ...item, image: null, imageAttribution: null };
-        }
-        
-        try {
-            const imageData = await searchImage(item.imageSearchTerms, { provider: 'auto' });
-            
-            if (imageData) {
-                // Track Unsplash download if from Unsplash
-                if (imageData.source === 'unsplash' && imageData.downloadUrl) {
-                    // Fire and forget - don't wait for tracking to complete
-                    trackUnsplashDownload(imageData.downloadUrl).catch(err => 
-                        console.error('Failed to track Unsplash download:', err)
-                    );
-                }
-                
-                console.log(`✅ Using ${imageData.source} API image for: "${item.title}"`);
-                
                 return {
                     ...item,
-                    image: imageData.url,
-                    imageThumb: imageData.thumb,
-                    imageSource: imageData.source,
-                    imagePhotographer: imageData.photographer,
-                    imagePhotographerUrl: imageData.photographerUrl,
-                    imageAttribution: imageData.attribution,
-                    imageAttributionHtml: imageData.attributionHtml
+                    image: webImage.url,
+                    imageThumb: webImage.thumb || webImage.url,
+                    imageSource: 'web_search',
+                    imageAttribution: `From search result: ${webImage.sourceUrl || 'web'}`,
+                    imageAttributionHtml: webImage.sourceUrl 
+                        ? `Image from <a href="${webImage.sourceUrl}" target="_blank" rel="noopener noreferrer">search result</a>`
+                        : 'Image from web search'
                 };
             }
         } catch (error) {
-            console.error(`Image API search failed for "${item.imageSearchTerms}":`, error);
+            console.error(`Failed to extract images from search for "${item.title}":`, error);
+            // Fall through to API search
         }
-        
+    }
+    
+    // PRIORITY 2: Fallback to image search APIs if no web search images
+    if (!item.imageSearchTerms) {
         return { ...item, image: null, imageAttribution: null };
-    });
+    }
     
-    const itemsWithImages = await Promise.all(imagePromises);
+    try {
+        const imageData = await searchImage(item.imageSearchTerms, { provider: 'auto' });
+        
+        if (imageData) {
+            // Track Unsplash download if from Unsplash
+            if (imageData.source === 'unsplash' && imageData.downloadUrl) {
+                // Fire and forget - don't wait for tracking to complete
+                trackUnsplashDownload(imageData.downloadUrl).catch(err => 
+                    console.error('Failed to track Unsplash download:', err)
+                );
+            }
+            
+            console.log(`✅ Using ${imageData.source} API image for: "${item.title}"`);
+            
+            return {
+                ...item,
+                image: imageData.url,
+                imageThumb: imageData.thumb,
+                imageSource: imageData.source,
+                imagePhotographer: imageData.photographer,
+                imagePhotographerUrl: imageData.photographerUrl,
+                imageAttribution: imageData.attribution,
+                imageAttributionHtml: imageData.attributionHtml
+            };
+        }
+    } catch (error) {
+        console.error(`Image API search failed for "${item.imageSearchTerms}":`, error);
+    }
     
-    eventCallback('status', { 
-        message: `Generated ${itemsWithImages.length} items with images`,
-        imagesFound: itemsWithImages.filter(i => i.image).length
-    });
+    return { ...item, image: null, imageAttribution: null };
+}).map(async (itemPromise, idx) => {
+    // Wait for this item to complete
+    const completedItem = await itemPromise;
+    completedCount++;
     
-    return { 
-        items: itemsWithImages, 
-        searchResults,
-        usage: response.usage,
-        model: response.model,
-        provider: response.provider
-    };
+    // Emit item_generated event immediately as each item completes
+    eventCallback('item_generated', { item: completedItem });
+    eventCallback('status', { message: `Completed ${completedCount} of ${items.length} items...` });
+    
+    return completedItem;
+});
+
+await Promise.all(imagePromises);
+    
+eventCallback('status', { 
+    message: `Generated ${items.length} items`
+});
+
+return { 
+    items, // Items already emitted via item_generated events
+    searchResults,
+    usage: response.usage,
+    model: response.model,
+    provider: response.provider
+};
 }
 
 /**
@@ -332,11 +460,8 @@ async function handler(event, responseStream, context) {
     try {
         // Authenticate request
         const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
-        const token = authHeader.startsWith('Bearer ') 
-            ? authHeader.substring(7) 
-            : authHeader;
         
-        const verifiedUser = await authenticateRequest(event);
+        const verifiedUser = await authenticateRequest(authHeader);
         if (!verifiedUser || !verifiedUser.email) {
             sseWriter.writeEvent('error', {
                 error: 'Authentication required'
@@ -351,7 +476,7 @@ async function handler(event, responseStream, context) {
         const body = JSON.parse(event.body || '{}');
         const swagContent = body.swagContent || [];
         const searchTerms = body.searchTerms || [];
-        const count = body.count || 10;
+        const count = body.count || 5; // Reduced from 10 to 5 for higher quality with expanded content
         const preferences = body.preferences || {
             searchTerms: [],
             likedTopics: [],
@@ -425,40 +550,34 @@ async function handler(event, responseStream, context) {
             return;
         }
         
-        // Convert provider pool to format expected by LLM adapter
-        const providers = {};
-        for (const provider of providerPool) {
-            if (!providers[provider.type]) {
-                providers[provider.type] = {
-                    apiKey: provider.apiKey,
-                    endpoint: provider.endpoint,
-                    model: provider.model || provider.modelName
-                };
-            }
-        }
-        
-        // Generate feed items
+        // Generate feed items (pass providerPool directly as it's already in correct format)
         const result = await generateFeedItems(
             swagContent,
             personalizedSearchTerms,
             count,
             preferences,
-            providers,
+            providerPool, // Pass provider array directly
             (eventType, eventData) => {
                 sseWriter.writeEvent(eventType, eventData);
             }
         );
         
-        // Send items one by one
-        for (const item of result.items) {
-            sseWriter.writeEvent('item_generated', { item });
-        }
+        // Items already sent via item_generated events in generateFeedItems
+        // No need to send them again here
         
         // Calculate cost for the LLM call
-        const promptTokens = result.usage?.prompt_tokens || 0;
-        const completionTokens = result.usage?.completion_tokens || 0;
+        const usage = result.usage || {};
+        console.log('📊 Usage data:', JSON.stringify(usage, null, 2));
+        
+        // Handle different usage field names from different providers
+        const promptTokens = usage.prompt_tokens || usage.promptTokens || usage.input_tokens || 0;
+        const completionTokens = usage.completion_tokens || usage.completionTokens || usage.output_tokens || 0;
+        const totalTokens = usage.total_tokens || usage.totalTokens || (promptTokens + completionTokens);
+        
         const modelUsed = result.model || providerPool[0]?.model || 'unknown';
         const providerUsed = result.provider || providerPool[0]?.type || 'unknown';
+        
+        console.log(`💰 Model: ${modelUsed}, Provider: ${providerUsed}, Tokens: ${promptTokens}+${completionTokens}=${totalTokens}`);
         
         // Determine if user provided their own key
         const isUserProvidedKey = providerPool.some(p => 
@@ -473,6 +592,8 @@ async function handler(event, responseStream, context) {
             isUserProvidedKey
         );
         
+        console.log(`💵 Calculated cost: $${cost.toFixed(6)} (user key: ${isUserProvidedKey})`);
+        
         // Log to Google Sheets
         try {
             await logToGoogleSheets({
@@ -483,7 +604,7 @@ async function handler(event, responseStream, context) {
                 provider: providerUsed,
                 promptTokens,
                 completionTokens,
-                totalTokens: promptTokens + completionTokens,
+                totalTokens,
                 cost,
                 requestId,
                 metadata: {

@@ -29,7 +29,7 @@ export interface ProcessingStatus {
   error?: string;
 }
 
-export type BulkOperationType = 'resize' | 'rotate' | 'flip' | 'format' | 'filter';
+export type BulkOperationType = 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate';
 
 export interface BulkOperation {
   type: BulkOperationType;
@@ -53,13 +53,49 @@ export interface FlipParams {
 }
 
 export interface FormatParams {
-  format: 'jpg' | 'png' | 'webp';
+  format: 'jpg' | 'png' | 'webp' | 'avif';
   quality?: number;
 }
 
 export interface FilterParams {
-  filter: 'grayscale' | 'sepia' | 'blur' | 'sharpen';
+  filter: 'grayscale' | 'sepia' | 'blur' | 'sharpen' | 'negate' | 'normalize';
   intensity?: number;
+  strength?: number;
+}
+
+export interface CropParams {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+}
+
+export interface AutocropParams {
+  focus: 'center' | 'face';
+}
+
+export interface ModulateParams {
+  brightness?: number;
+  saturation?: number;
+  hue?: number;
+}
+
+export interface TintParams {
+  r: number;
+  g: number;
+  b: number;
+}
+
+export interface ExtendParams {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+  background?: { r: number; g: number; b: number };
+}
+
+export interface GammaParams {
+  gamma: number;
 }
 
 export interface ProgressUpdate {

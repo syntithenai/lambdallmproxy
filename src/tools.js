@@ -4398,6 +4398,12 @@ Generate your detailed reasoning chain now:`;
       }
     }
     
+    case 'generate_quiz': {
+      // This is a structured output tool - don't execute, just return the arguments
+      // The LLM uses this to generate structured quiz data via function calling
+      return JSON.stringify(args);
+    }
+    
     default: {
       // Check if this is an MCP tool (format: serverName__toolName)
       if (name.includes('__')) {

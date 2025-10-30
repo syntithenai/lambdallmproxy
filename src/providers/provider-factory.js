@@ -10,6 +10,7 @@ const { BaseProvider } = require('./base-provider');
 // Import provider implementations
 const { GroqProvider } = require('./groq-provider');
 const { OpenAIProvider } = require('./openai-provider');
+const AnthropicProvider = require('./anthropic-provider');
 // const { GeminiProvider } = require('./gemini-provider');
 // const { OpenAICompatibleProvider } = require('./openai-compatible-provider');
 
@@ -22,6 +23,7 @@ const PROVIDER_CLASSES = {
   'groq-free': GroqProvider,
   'openai': OpenAIProvider,
   'together': OpenAIProvider, // Together AI is OpenAI-compatible
+  'anthropic': AnthropicProvider,
   // 'gemini': GeminiProvider,
   // 'gemini-free': GeminiProvider,
   // 'openai-compatible': OpenAICompatibleProvider

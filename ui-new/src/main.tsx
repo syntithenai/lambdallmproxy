@@ -15,7 +15,7 @@ if (typeof window !== 'undefined') {
 const loadPayPalSDK = () => {
   const clientId = import.meta.env.VITE_PP_CID;
   if (!clientId) {
-    console.warn('⚠️ VITE_PAYPAL_CLIENT_ID not found in environment - PayPal integration disabled');
+    console.warn('⚠️ VITE_PP_CID not found in environment - PayPal integration disabled');
     return;
   }
   

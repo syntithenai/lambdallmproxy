@@ -26,7 +26,28 @@ export function HelpPage() {
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Help & Documentation</h1>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+            aria-label="Back to chat"
+          >
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 19l-7-7m0 0l7-7m-7 7h18"
+              />
+            </svg>
+          </button>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Help & Documentation</h1>
+        </div>
         <button
           onClick={() => navigate('/privacy')}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"

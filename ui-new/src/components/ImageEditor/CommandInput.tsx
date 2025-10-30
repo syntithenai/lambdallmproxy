@@ -13,7 +13,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
   onChange,
   onSubmit,
   disabled,
-  placeholder = "Describe transformation (e.g., 'resize to 800px width' or 'convert to grayscale')",
+  placeholder = "Describe transformation (e.g., 'resize to 800px width', 'convert to grayscale', or 'add a dog')",
 }) => {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
@@ -212,12 +212,23 @@ export const CommandInput: React.FC<CommandInputProps> = ({
         console.log('🎤 Recognition ended');
         setIsListening(false);
         setShowOverlay(false);
+        
+        // Auto-submit if speech was detected and we have text
+        const hadSpeech = hasDetectedSpeechRef.current;
         hasDetectedSpeechRef.current = false;
         interimTranscriptRef.current = '';
+        
         if (silenceTimerRef.current) {
           clearTimeout(silenceTimerRef.current);
         }
         cleanupAudio();
+        
+        // Auto-submit after a short delay if we detected speech
+        if (hadSpeech && value.trim()) {
+          setTimeout(() => {
+            onSubmit();
+          }, 500);
+        }
       };
     }
 
@@ -291,6 +302,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
               onChange={(e) => onChange(e.target.value)}
               disabled={disabled}
               placeholder={placeholder}
+              tabIndex={0}
               className="w-full border border-gray-300 rounded-lg p-3 pr-12 resize-none h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               onKeyDown={handleKeyDown}
             />
@@ -301,6 +313,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
                 type="button"
                 onClick={handleVoiceInput}
                 disabled={disabled}
+                tabIndex={2}
                 className={`
                   absolute right-2 top-2 p-2 rounded-full transition-all
                   ${isListening 
@@ -324,6 +337,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
           <button
             type="submit"
             disabled={disabled || !value.trim()}
+            tabIndex={1}
             className={`
               self-end px-6 py-3 rounded-lg font-medium transition-colors
               ${
@@ -339,10 +353,9 @@ export const CommandInput: React.FC<CommandInputProps> = ({
 
         {/* Example Commands */}
         <div className="mt-2 text-xs text-gray-500">
-          <strong>Examples:</strong> "resize to 800px width" • "convert to grayscale" • "rotate 90 degrees" •
-          "add 10px border"
+          <strong>Examples:</strong> "resize to 800px width" • "convert to grayscale" • "rotate 90 degrees" • "add a dog" • "change background to sunset"
           {isSupported && (
-            <> • <strong>🎤 Voice:</strong> Click microphone to speak commands</>
+            <> • <strong>🎤 Voice:</strong> Click microphone to speak commands (auto-submits)</>
           )}
           {' '}• Press <kbd className="px-1 py-0.5 bg-gray-200 rounded">Ctrl+Enter</kbd> to apply
         </div>

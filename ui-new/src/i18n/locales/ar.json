@@ -423,6 +423,7 @@
       "tools": "Tools",
       "proxy": "Proxy",
       "location": "Location",
+      "voice": "صوت",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -680,6 +681,28 @@
     "totalQuizzes": "إجمالي الاختبارات",
     "averageScore": "متوسط الدرجات",
     "questionsAnswered": "الأسئلة المجاب عنها",
-    "statistics": "إحصائيات الاختبار"
+    "statistics": "إحصائيات الاختبار",
+    "subtitle": "تتبع تقدم التعلم وأداء الاختبارات",
+    "createNewQuiz": "إنشاء اختبار جديد",
+    "recentQuizzes": "الاختبارات الأخيرة",
+    "noQuizzesYet": "لا توجد اختبارات مكتملة بعد",
+    "noQuizzesDescription": "قم بإجراء اختبار من المحتوى المحفوظ في SWAG لرؤية إحصائياتك هنا",
+    "goToSwag": "الانتقال إلى SWAG",
+    "backToChat": "العودة إلى الدردشة",
+    "loadingStats": "جارٍ تحميل الإحصائيات...",
+    "errorLoadingStats": "فشل تحميل إحصائيات الاختبار",
+    "confirmDelete": "هل أنت متأكد من أنك تريد حذف الاختبار '{{title}}'؟",
+    "quizDeleted": "تم حذف الاختبار بنجاح",
+    "errorDeletingQuiz": "فشل حذف الاختبار",
+    "deleteQuiz": "حذف الاختبار",
+    "today": "اليوم",
+    "yesterday": "أمس",
+    "daysAgo": "منذ {{days}} أيام",
+    "snippetCount": "{{count}} مقتطف",
+    "snippetCount_plural": "{{count}} مقتطفات",
+    "enriched": "محسّن",
+    "notSynced": "غير متزامن",
+    "highestScore": "أعلى درجة",
+    "lowestScore": "أدنى درجة"
   }
 }

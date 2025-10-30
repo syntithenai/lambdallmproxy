@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDialogClose } from '../hooks/useDialogClose';
 import { useProviders } from '../hooks/useProviders';
+import { getCachedApiBase } from '../utils/api';
 
 interface VoiceInputDialogProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
   accessToken,
   apiEndpoint
 }) => {
+  // keep apiEndpoint prop referenced to avoid unused variable linting
+  void apiEndpoint;
   const dialogRef = useDialogClose(isOpen, onClose, false); // Don't close on click outside while recording
   const { providers } = useProviders(); // Get user providers for API keys
   
@@ -63,7 +66,26 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
       setError(null);
       audioChunksRef.current = [];
       
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Check if mediaDevices is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Your browser does not support audio recording');
+      }
+      
+      // Enumerate devices to check if microphone exists
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(device => device.kind === 'audioinput');
+      
+      if (audioInputs.length === 0) {
+        throw new Error('No microphone found. Please connect a microphone and try again.');
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
       streamRef.current = stream;
       
       // Setup audio context for visualization
@@ -100,9 +122,25 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
       // Start silence detection
       detectSilence();
       
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error starting recording:', err);
-      setError('Failed to access microphone. Please check permissions.');
+      
+      // Provide specific error messages
+      let errorMessage = 'Failed to access microphone. ';
+      
+      if (err.name === 'NotFoundError' || err.message.includes('No microphone')) {
+        errorMessage = 'No microphone found. Please connect a microphone and try again.';
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMessage = 'Microphone permission denied. Please allow microphone access in your browser settings.';
+      } else if (err.name === 'NotSupportedError') {
+        errorMessage = 'Your browser does not support audio recording. Please use Chrome, Firefox, or Edge.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      } else {
+        errorMessage += 'Please check permissions and try again.';
+      }
+      
+      setError(errorMessage);
     }
   };
 
@@ -157,42 +195,54 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
     cleanup();
   };
 
-  // Transcribe audio using Whisper
+  // Transcribe audio using Whisper with retries and API base auto-detection
   const transcribeAudio = async (audioBlob: Blob) => {
     if (!accessToken) {
       setError('Not authenticated. Please sign in.');
       return;
     }
-    
+
     setIsProcessing(true);
-    
+
     // Generate request ID for grouping transcription with subsequent chat request
     const requestId = `web-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     console.log('🎙️ Generated request ID for voice transcription:', requestId);
+
+    // Priority-based transcription provider selection:
+    // 1. Speaches (LOCAL, FREE) - if available
+    // 2. Groq (FREE)
+    // 3. OpenAI (PAID)
+    const speachesProvider = providers.find(p => p.type === 'speaches' && p.enabled !== false);
+    const groqProvider = providers.find(p => p.type === 'groq' && p.enabled !== false);
+    const openaiProvider = providers.find(p => p.type === 'openai' && p.enabled !== false);
     
-    // Find Groq or OpenAI API key from user providers (prefer Groq for free transcription)
-    const groqProvider = providers.find(p => p.type === 'groq');
-    const openaiProvider = providers.find(p => p.type === 'openai');
-    const whisperApiKey = groqProvider?.apiKey || openaiProvider?.apiKey || null;
-    const whisperProvider = groqProvider ? 'groq' : (openaiProvider ? 'openai' : null);
-    
-    console.log('🎤 Transcription provider:', whisperProvider, 'hasKey:', !!whisperApiKey);
-    
+    const whisperApiKey = speachesProvider?.apiKey || groqProvider?.apiKey || openaiProvider?.apiKey || null;
+    const whisperProvider = speachesProvider ? 'speaches' : (groqProvider ? 'groq' : (openaiProvider ? 'openai' : null));
+
+    if (speachesProvider) {
+      console.log('🎤 Transcription provider: 🏠 Speaches (LOCAL, FREE)');
+    } else {
+      console.log('🎤 Transcription provider:', whisperProvider, 'hasKey:', !!whisperApiKey);
+    }
+
+    // Build form data once
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+    if (whisperApiKey && whisperProvider) {
+      formData.append('apiKey', whisperApiKey);
+      formData.append('provider', whisperProvider);
+    }
+
+    // Helper: perform fetch with retries on network failures
+    const maxAttempts = 3;
+    let lastError: any = null;
+
     try {
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.webm');
-      
-      // Add API key to form data if available
-      if (whisperApiKey && whisperProvider) {
-        formData.append('apiKey', whisperApiKey);
-        formData.append('provider', whisperProvider);
-      }
-      
-      // Use apiEndpoint, removing /openai/v1 suffix if present
-      const baseUrl = apiEndpoint.replace('/openai/v1', '');
-      const transcribeUrl = `${baseUrl}/transcribe`;
-      
-      console.log('Transcribing audio:', {
+      // Resolve API base dynamically (handles local dev vs remote)
+      const resolvedBase = (await getCachedApiBase()).replace('/openai/v1', '');
+      const transcribeUrl = `${resolvedBase}/transcribe`;
+
+      console.log('Transcribing audio (resolved):', {
         url: transcribeUrl,
         blobSize: audioBlob.size,
         blobType: audioBlob.type,
@@ -201,60 +251,77 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
         provider: whisperProvider,
         hasApiKey: !!whisperApiKey
       });
-      
-      const response = await fetch(transcribeUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'X-Request-Id': requestId  // Pass request ID for log grouping
-        },
-        body: formData
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        // Handle error - stringify if it's an object
-        let errorMessage = 'Unknown error';
-        if (data.error) {
-          errorMessage = typeof data.error === 'string' 
-            ? data.error 
-            : JSON.stringify(data.error);
-        } else if (response.statusText) {
-          errorMessage = response.statusText;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 20000); // 20s
+
+          const response = await fetch(transcribeUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'X-Request-Id': requestId
+            },
+            body: formData,
+            signal: controller.signal
+          });
+
+          clearTimeout(timeout);
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            const errMsg = data?.error || response.statusText || `HTTP ${response.status}`;
+            console.error(`Transcription failed (attempt ${attempt}):`, errMsg, data);
+            throw new Error(errMsg);
+          }
+
+          const text = data.text || data.transcription || '';
+          const llmApiCall = data.llmApiCall || null;
+
+          setTranscription(text);
+          // Auto-submit after a short delay, passing request ID and llmApiCall to parent
+          setTimeout(() => {
+            onTranscriptionComplete(text, requestId, llmApiCall);
+            onClose();
+          }, 500);
+
+          // Success - return the text
+          return;
+        } catch (fetchErr: any) {
+          lastError = fetchErr;
+          // If abort due to timeout or network, retry with exponential backoff
+          const isNetwork = fetchErr instanceof TypeError && fetchErr.message.includes('Failed to fetch');
+          const isAbort = fetchErr.name === 'AbortError';
+          console.warn(`Transcription attempt ${attempt} failed:`, fetchErr?.message || fetchErr);
+          if (attempt < maxAttempts && (isNetwork || isAbort)) {
+            const backoffMs = 500 * Math.pow(2, attempt - 1);
+            console.log(`Retrying transcription in ${backoffMs}ms...`);
+            await new Promise(r => setTimeout(r, backoffMs));
+            continue;
+          }
+          // Non-retryable or last attempt - rethrow
+          throw fetchErr;
         }
-        console.error('Transcription failed:', { status: response.status, data });
-        throw new Error(`Transcription failed: ${errorMessage}`);
       }
-      
-      const text = data.text || data.transcription || '';
-      const llmApiCall = data.llmApiCall || null;
-      
-      setTranscription(text);
-      
-      // Auto-submit after a short delay, passing request ID and llmApiCall to parent
-      setTimeout(() => {
-        onTranscriptionComplete(text, requestId, llmApiCall);
-        onClose();
-      }, 500);
-      
-    } catch (err) {
-      console.error('Transcription error:', err);
-      
-      // Provide more specific error messages for common issues
+
+      // If loop exits without returning, throw last error
+      throw lastError || new Error('Transcription failed');
+
+    } catch (err: any) {
+      console.error('Transcription error (final):', err);
+      // Provide clearer messages
       let errorMessage = 'Transcription failed';
       if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
-        errorMessage = 'Network error: Could not reach transcription service. Check your internet connection and API endpoint configuration.';
-        console.error('Network error details:', {
-          message: err.message,
-          apiEndpoint,
-          transcribeUrl: `${apiEndpoint.replace('/openai/v1', '')}/transcribe`
-        });
+        errorMessage = 'Network error: Could not reach transcription service. Check your internet connection and that the backend is running (run `make dev`).';
+      } else if (err.name === 'AbortError') {
+        errorMessage = 'Transcription request timed out. Please try again.';
       } else if (err instanceof Error) {
         errorMessage = err.message;
       }
-      
       setError(errorMessage);
+      return;
     } finally {
       setIsProcessing(false);
     }

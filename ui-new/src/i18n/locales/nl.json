@@ -423,6 +423,7 @@
       "tools": "Tools",
       "proxy": "Proxy",
       "location": "Location",
+      "voice": "Stem",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -680,6 +681,28 @@
     "totalQuizzes": "Totaal Quizzen",
     "averageScore": "Gemiddelde Score",
     "questionsAnswered": "Beantwoorde Vragen",
-    "statistics": "Quiz Statistieken"
+    "statistics": "Quiz Statistieken",
+    "subtitle": "Volg je leervoortgang en quizprestaties",
+    "createNewQuiz": "Nieuwe Quiz Maken",
+    "recentQuizzes": "Recente Quizzen",
+    "noQuizzesYet": "Nog geen voltooide quizzen",
+    "noQuizzesDescription": "Doe een quiz vanuit je opgeslagen inhoud in SWAG om je statistieken hier te zien",
+    "goToSwag": "Ga naar SWAG",
+    "backToChat": "Terug naar Chat",
+    "loadingStats": "Statistieken laden...",
+    "errorLoadingStats": "Fout bij het laden van quizstatistieken",
+    "confirmDelete": "Weet je zeker dat je de quiz '{{title}}' wilt verwijderen?",
+    "quizDeleted": "Quiz succesvol verwijderd",
+    "errorDeletingQuiz": "Fout bij het verwijderen van quiz",
+    "deleteQuiz": "Quiz verwijderen",
+    "today": "Vandaag",
+    "yesterday": "Gisteren",
+    "daysAgo": "{{days}} dagen geleden",
+    "snippetCount": "{{count}} fragment",
+    "snippetCount_plural": "{{count}} fragmenten",
+    "enriched": "Verrijkt",
+    "notSynced": "Niet Gesynchroniseerd",
+    "highestScore": "Hoogste Score",
+    "lowestScore": "Laagste Score"
   }
 }

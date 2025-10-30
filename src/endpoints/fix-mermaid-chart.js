@@ -9,6 +9,7 @@ const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { buildProviderPool } = require('../credential-pool');
 const { getOrEstimateUsage } = require('../utils/token-estimation');
 const { logToGoogleSheets } = require('../services/google-sheets-logger');
+const { buildModelRotationSequence, estimateTokenRequirements } = require('../model-selector-v2');
 
 /**
  * Fix Mermaid chart syntax errors using LLM
@@ -133,28 +134,80 @@ Return ONLY the corrected Mermaid chart code (no markdown, no explanations, just
 
         const startTime = Date.now();
         
-        const result = await llmResponsesWithTools({
-            messages,
-            provider: selectedProvider,
-            temperature: 0.1, // Low temperature for deterministic fixes
-            max_tokens: 2000,
-            tools: [],
-            enabledTools: {},
-            verifiedUser: authResult.user,
-            userEmail: authResult.email
+        // Build model sequence for chart fixing - convert providerPool to uiProviders format
+        const uiProviders = providerPool.map(p => ({
+            type: p.type,
+            apiKey: p.apiKey,
+            enabled: true
+        })).filter(p => p.type && p.apiKey);
+        
+        const estimatedTokens = estimateTokenRequirements(messages, false);
+        
+        const modelSequence = buildModelRotationSequence(uiProviders, {
+            needsTools: false,
+            needsVision: false,
+            estimatedTokens,
+            optimization: 'quality' // Use quality models for accurate fixes
         });
+        
+        if (modelSequence.length === 0) {
+            throw new Error('No available models for chart fixing');
+        }
+        
+        // Try models in sequence until one succeeds (automatic failover)
+        let result = null;
+        let lastError = null;
+        
+        for (let i = 0; i < modelSequence.length; i++) {
+            const selectedModelInfo = modelSequence[i];
+            console.log(`🎯 Mermaid: Trying model ${i + 1}/${modelSequence.length}: ${selectedModelInfo.model}`);
+            
+            try {
+                result = await llmResponsesWithTools({
+                    model: selectedModelInfo.model,
+                    input: messages,
+                    tools: [],
+                    options: {
+                        apiKey: selectedModelInfo.apiKey,
+                        temperature: 0.1, // Low temperature for deterministic fixes
+                        maxTokens: 2000,
+                        stream: false
+                    }
+                });
+                
+                // Success! Break out of retry loop
+                console.log(`✅ Mermaid: Successfully fixed with ${selectedModelInfo.model}`);
+                break;
+                
+            } catch (error) {
+                lastError = error;
+                console.error(`❌ Mermaid: Model ${selectedModelInfo.model} failed:`, error.message?.substring(0, 200));
+                
+                // If not the last model, try next one
+                if (i < modelSequence.length - 1) {
+                    console.log(`⏭️ Mermaid: Trying next model...`);
+                    continue;
+                }
+            }
+        }
+        
+        // If all models failed, throw the last error
+        if (!result) {
+            console.error(`❌ Mermaid: All ${modelSequence.length} models failed. Last error:`, lastError?.message);
+            throw new Error(`All models failed. Last error: ${lastError?.message || 'Unknown error'}`);
+        }
 
         const duration = Date.now() - startTime;
 
         // Extract fixed chart from response
-        const fixedChart = result.content.trim();
+        const fixedChart = (result.content || result.text || '').trim();
 
         // Get or estimate token usage
         const usage = getOrEstimateUsage(
             result.usage,
             messages,
             fixedChart,
-            selectedProvider.type === 'groq' ? 'groq' : selectedProvider.type
+            selectedModelInfo.providerType || 'groq'
         );
 
         console.log(`✅ Chart fixed in ${duration}ms`);

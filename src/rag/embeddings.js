@@ -18,6 +18,7 @@ const PROVIDER_ENDPOINTS = {
   openai: 'https://api.openai.com/v1/embeddings',
   cohere: 'https://api.cohere.ai/v1/embed',
   together: 'https://api.together.xyz/v1/embeddings',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/models/',
 };
 
 // Default configuration
@@ -252,6 +253,19 @@ async function generateEmbeddingWithProvider(text, model, provider, apiKey, time
       };
       break;
       
+    case 'gemini':
+      // Gemini uses API key in URL parameter instead of header
+      // API endpoint: https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent?key={apiKey}
+      headers = {
+        'Content-Type': 'application/json',
+      };
+      requestBody = {
+        content: {
+          parts: [{ text: text }]
+        }
+      };
+      break;
+      
     default:
       throw new Error(`Provider ${provider} not implemented`);
   }
@@ -260,7 +274,12 @@ async function generateEmbeddingWithProvider(text, model, provider, apiKey, time
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   
   try {
-    const response = await fetch(endpoint, {
+    // Build endpoint URL (Gemini uses API key as query parameter)
+    const apiUrl = provider === 'gemini' 
+      ? `${endpoint}${model}:embedContent?key=${apiKey}`
+      : endpoint;
+    
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(requestBody),
@@ -376,6 +395,13 @@ function parseEmbeddingResponse(data, provider) {
       return {
         embedding: data.data[0].embedding,
         tokens: data.usage?.total_tokens || Math.ceil(data.data[0].embedding.length / 4),
+      };
+      
+    case 'gemini':
+      // Gemini response format: { embedding: { values: [float, ...] } }
+      return {
+        embedding: data.embedding.values,
+        tokens: Math.ceil(data.embedding.values.length / 4), // Estimate tokens from dimensions
       };
       
     default:

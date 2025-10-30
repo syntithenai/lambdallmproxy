@@ -443,6 +443,11 @@
 /* Prevent horizontal scroll on mobile */
 body {
   overflow-x: hidden;
+  overflow-y: auto; /* Ensure vertical scrolling is enabled */
+}
+
+html {
+  overflow-y: auto; /* Ensure vertical scrolling on html element too */
 }
 
 /* Safe area insets for notched devices (iPhone X+) */

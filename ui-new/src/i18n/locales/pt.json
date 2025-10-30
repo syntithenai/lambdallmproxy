@@ -423,6 +423,7 @@
       "tools": "Tools",
       "proxy": "Proxy",
       "location": "Location",
+      "voice": "Voz",
       "tts": "TTS",
       "rag": "RAG"
     },
@@ -680,6 +681,28 @@
     "totalQuizzes": "Total de Quizzes",
     "averageScore": "Pontuação Média",
     "questionsAnswered": "Perguntas Respondidas",
-    "statistics": "Estatísticas do Quiz"
+    "statistics": "Estatísticas do Quiz",
+    "subtitle": "Acompanhe seu progresso de aprendizado e desempenho em quizzes",
+    "createNewQuiz": "Criar Novo Quiz",
+    "recentQuizzes": "Quizzes Recentes",
+    "noQuizzesYet": "Nenhum quiz completado ainda",
+    "noQuizzesDescription": "Faça um quiz do seu conteúdo salvo no SWAG para ver suas estatísticas aqui",
+    "goToSwag": "Ir para SWAG",
+    "backToChat": "Voltar ao Chat",
+    "loadingStats": "Carregando estatísticas...",
+    "errorLoadingStats": "Falha ao carregar estatísticas do quiz",
+    "confirmDelete": "Tem certeza de que deseja excluir o quiz '{{title}}'?",
+    "quizDeleted": "Quiz excluído com sucesso",
+    "errorDeletingQuiz": "Falha ao excluir quiz",
+    "deleteQuiz": "Excluir quiz",
+    "today": "Hoje",
+    "yesterday": "Ontem",
+    "daysAgo": "Há {{days}} dias",
+    "snippetCount": "{{count}} trecho",
+    "snippetCount_plural": "{{count}} trechos",
+    "enriched": "Enriquecido",
+    "notSynced": "Não Sincronizado",
+    "highestScore": "Pontuação Mais Alta",
+    "lowestScore": "Pontuação Mais Baixa"
   }
 }

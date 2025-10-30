@@ -76,7 +76,7 @@ export const SwagPage: React.FC = () => {
     getAllTags,
     addTagsToSnippets,
     removeTagsFromSnippets,
-  // storageStats,
+    storageStats,
     getEmbeddingDetails,
     generateEmbeddings
   } = useSwag();
@@ -158,6 +158,7 @@ export const SwagPage: React.FC = () => {
     snippetIds: string[];
     startTime: number;
     enrichment: boolean;
+    quizId?: string; // Store quiz ID for updating on completion
   } | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   
@@ -641,7 +642,7 @@ export const SwagPage: React.FC = () => {
         return;
       }
       
-      const enabledProviders = settings.providers.filter(p => p.enabled === true);
+      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
       
       if (enabledProviders.length === 0) {
         showError('No LLM providers enabled. Please enable at least one provider in Settings.');
@@ -668,16 +669,32 @@ export const SwagPage: React.FC = () => {
 
       console.log('✅ Quiz generated:', quiz.title);
       
-      // Store metadata for saving statistics later
+      // Save generated quiz immediately (marked as not completed)
+      const quizId = await quizDB.saveGeneratedQuiz(
+        quiz.title,
+        selected.map(s => s.id),
+        quiz.questions?.length || 0,
+        enrichment
+      );
+      
+      // Store metadata for updating on completion
       setQuizMetadata({
         snippetIds: selected.map(s => s.id),
         startTime,
-        enrichment
+        enrichment,
+        quizId
       });
       
-      // Show quiz modal
-      setCurrentQuiz(quiz);
-      setShowQuizModal(true);
+      // Check if a quiz is already active
+      if (showQuizModal && currentQuiz) {
+        // Show toast notification instead of opening the new quiz
+        showSuccess(`Quiz "${quiz.title}" ready! Complete the current quiz first.`);
+        console.log('⚠️ Quiz already active - new quiz ready but not shown');
+      } else {
+        // Show quiz modal
+        setCurrentQuiz(quiz);
+        setShowQuizModal(true);
+      }
       
     } catch (error) {
       console.error('Quiz generation error:', error);
@@ -733,8 +750,14 @@ export const SwagPage: React.FC = () => {
             const formData = new FormData();
             formData.append('file', file);
             
+            // Get auth token
+            const token = await getToken();
+            
             const response = await fetch(`${apiUrl}/convert-to-markdown`, {
               method: 'POST',
+              headers: {
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+              },
               body: formData,
             });
             
@@ -819,11 +842,15 @@ export const SwagPage: React.FC = () => {
         setUploadProgress({ current: completed, total: totalItems, status: `Fetching ${url}...` });
         
         try {
+          // Get auth token
+          const token = await getToken();
+          
           // Send URL to backend for conversion
           const response = await fetch(`${apiUrl}/convert-to-markdown`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({ url }),
           });
@@ -1318,19 +1345,42 @@ export const SwagPage: React.FC = () => {
               </select>
             )}
 
-            {/* Embedding Progress Indicator (NEW) */}
+            {/* Storage and Search Index Progress Indicators (floating right) */}
             {snippets.length > 0 && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-600 dark:text-gray-400">Search Index:</span>
-                <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-green-500 transition-all duration-300"
-                    style={{width: `${snippets.length > 0 ? (embeddedCount / snippets.length) * 100 : 0}%`}}
-                  />
+              <div className="flex flex-col gap-1">
+                {/* Storage Capacity Indicator */}
+                {storageStats && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-600 dark:text-gray-400">Storage:</span>
+                    <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-300 ${
+                          storageStats.percentUsed < 50 ? 'bg-green-500' :
+                          storageStats.percentUsed < 80 ? 'bg-yellow-500' :
+                          'bg-red-500'
+                        }`}
+                        style={{width: `${Math.min(storageStats.percentUsed, 100)}%`}}
+                      />
+                    </div>
+                    <span className="text-gray-600 dark:text-gray-400 font-medium">
+                      {storageStats.percentUsed.toFixed(0)}%
+                    </span>
+                  </div>
+                )}
+                
+                {/* Search Index Indicator */}
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-600 dark:text-gray-400">Search Index:</span>
+                  <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-green-500 transition-all duration-300"
+                      style={{width: `${snippets.length > 0 ? (embeddedCount / snippets.length) * 100 : 0}%`}}
+                    />
+                  </div>
+                  <span className="text-gray-600 dark:text-gray-400 font-medium">
+                    {embeddedCount}/{snippets.length}
+                  </span>
                 </div>
-                <span className="text-gray-600 dark:text-gray-400 font-medium">
-                  {embeddedCount}/{snippets.length}
-                </span>
               </div>
             )}
           </div>
@@ -1742,6 +1792,7 @@ export const SwagPage: React.FC = () => {
                   >
                     <div className="line-clamp-6">
                       <MarkdownRenderer 
+                        key={`${snippet.id}-${snippet.updateDate || snippet.timestamp}`}
                         content={snippet.content} 
                         snippetId={snippet.id}
                         snippetTags={snippet.tags || []}
@@ -2252,6 +2303,7 @@ export const SwagPage: React.FC = () => {
                   // Otherwise, always render as markdown
                   // Markdown handles plain text gracefully, so this is safe
                   return <MarkdownRenderer 
+                    key={`${viewingSnippet.id}-${viewingSnippet.updateDate || viewingSnippet.timestamp}`}
                     content={content} 
                     snippetId={viewingSnippet.id}
                     snippetTags={viewingSnippet.tags || []}
@@ -2670,33 +2722,39 @@ export const SwagPage: React.FC = () => {
               const timeTaken = Date.now() - quizMetadata.startTime;
               
               try {
-                // Save to IndexedDB
-                const statisticId = await quizDB.saveQuizStatistic({
-                  quizTitle: currentQuiz.title,
-                  snippetIds: quizMetadata.snippetIds,
-                  score,
-                  totalQuestions: total,
-                  timeTaken,
-                  completedAt: new Date().toISOString(),
-                  answers,
-                  enrichment: quizMetadata.enrichment
-                });
-                
-                console.log('✅ Quiz statistic saved to IndexedDB:', statisticId);
-                
-                // Sync to Google Sheets (async, don't block UI)
-                const token = await getToken();
-                if (token) {
-                  syncSingleQuizStatistic(statisticId, token)
-                    .then(synced => {
-                      if (synced) {
-                        console.log('✅ Quiz statistic synced to Google Sheets');
-                      }
-                    })
-                    .catch(error => {
-                      console.error('Failed to sync quiz statistic:', error);
-                      // Will retry on next background sync
-                    });
+                // Update the generated quiz with completion data
+                if (quizMetadata.quizId) {
+                  await quizDB.updateQuizCompletion(quizMetadata.quizId, score, timeTaken, answers);
+                  console.log('✅ Quiz completion updated in IndexedDB:', quizMetadata.quizId);
+                  
+                  // Sync to Google Sheets (async, don't block UI)
+                  const token = await getToken();
+                  if (token) {
+                    syncSingleQuizStatistic(quizMetadata.quizId, token)
+                      .then(synced => {
+                        if (synced) {
+                          console.log('✅ Quiz statistic synced to Google Sheets');
+                        }
+                      })
+                      .catch(error => {
+                        console.error('Failed to sync quiz statistic:', error);
+                        // Will retry on next background sync
+                      });
+                  }
+                } else {
+                  // Fallback to old method if quizId is not available
+                  console.warn('No quizId found, using fallback save method');
+                  await quizDB.saveQuizStatistic({
+                    quizTitle: currentQuiz.title,
+                    snippetIds: quizMetadata.snippetIds,
+                    score,
+                    totalQuestions: total,
+                    timeTaken,
+                    completedAt: new Date().toISOString(),
+                    answers,
+                    enrichment: quizMetadata.enrichment,
+                    completed: true
+                  });
                 }
                 
                 showSuccess(`Quiz completed! Score: ${score}/${total} (${percentage}%)`);

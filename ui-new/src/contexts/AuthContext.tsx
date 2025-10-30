@@ -171,6 +171,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     attemptAutoLogin();
   }, [hasAttemptedAutoLogin, authState.isAuthenticated, login]);
 
+  // Cancel Google One Tap when authenticated to prevent popup spam
+  useEffect(() => {
+    if (authState.isAuthenticated && typeof google !== 'undefined' && google?.accounts?.id) {
+      // Cancel any pending One Tap prompts
+      try {
+        (google.accounts.id as any).cancel();
+        console.log('✅ Cancelled any pending Google One Tap prompts (user authenticated)');
+      } catch (error) {
+        console.log('No Google One Tap prompt to cancel');
+      }
+    }
+  }, [authState.isAuthenticated]);
+
   // Automatic token refresh before expiration
   useEffect(() => {
     if (!authState.isAuthenticated || !authState.accessToken) {

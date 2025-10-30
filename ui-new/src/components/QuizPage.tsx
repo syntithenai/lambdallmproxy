@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { quizDB, type QuizStatistic } from '../db/quizDb';
 import { Trophy, Brain, Clock, TrendingUp, Calendar, ArrowLeft, Trash2 } from 'lucide-react';
 import { useToast } from './ToastManager';
+import { useAuth } from '../contexts/AuthContext';
+import { QuizCard } from './QuizCard';
+import { syncSingleQuizStatistic } from '../utils/quizSync';
 
-export const QuizPage: React.FC = () => {
+export default function QuizPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { showSuccess, showError } = useToast();
+  const { showSuccess, showError, showWarning } = useToast();
+  const { getToken } = useAuth();
+  
   const [statistics, setStatistics] = useState<QuizStatistic[]>([]);
   const [summary, setSummary] = useState<{
     totalQuizzes: number;
@@ -20,9 +25,37 @@ export const QuizPage: React.FC = () => {
     totalCorrectAnswers: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Quiz modal state
+  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [currentQuiz, setCurrentQuiz] = useState<any | null>(null);
+  const [quizMetadata, setQuizMetadata] = useState<{
+    snippetIds: string[];
+    startTime: number;
+    enrichment: boolean;
+    quizId?: string;
+  } | null>(null);
 
   useEffect(() => {
     loadStatistics();
+  }, []);
+
+  // Reload statistics when page becomes visible (e.g., after completing a quiz)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('Quiz page visible - reloading statistics');
+        loadStatistics();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', loadStatistics);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', loadStatistics);
+    };
   }, []);
 
   const loadStatistics = async () => {
@@ -32,6 +65,19 @@ export const QuizPage: React.FC = () => {
         quizDB.getQuizStatistics(20), // Get last 20 quizzes
         quizDB.getStatisticsSummary()
       ]);
+      
+      console.log('📊 Loaded quiz statistics:', {
+        totalQuizzes: stats.length,
+        completed: stats.filter(s => s.completed).length,
+        incomplete: stats.filter(s => !s.completed).length,
+        quizzes: stats.map(s => ({
+          id: s.id.substring(0, 8),
+          title: s.quizTitle,
+          completed: s.completed,
+          hasQuizData: !!s.quizData
+        }))
+      });
+      
       setStatistics(stats);
       setSummary(summaryData);
     } catch (error) {
@@ -55,6 +101,29 @@ export const QuizPage: React.FC = () => {
       console.error('Failed to delete quiz:', error);
       showError(t('quiz.errorDeletingQuiz'));
     }
+  };
+
+  const handleRestartQuiz = async (stat: QuizStatistic) => {
+    // If quiz data exists, start immediately
+    if (stat.quizData) {
+      console.log('✅ Using stored quiz data:', stat.quizTitle);
+      
+      setQuizMetadata({
+        snippetIds: stat.snippetIds,
+        startTime: Date.now(),
+        enrichment: stat.enrichment,
+        quizId: stat.id
+      });
+      
+      setCurrentQuiz(stat.quizData);
+      setShowQuizModal(true);
+      return;
+    }
+    
+    // Quiz data not available - show error instead of regenerating
+    // This prevents repeated API calls when providers are rate-limited
+    console.log('⚠️ Quiz data not available for:', stat.quizTitle);
+    showError('Quiz data not available. Please generate a new quiz instead.');
   };
 
   const formatDuration = (ms: number): string => {
@@ -193,23 +262,24 @@ export const QuizPage: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                 {t('quiz.noQuizzesYet')}
               </h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
+              <p className="text-gray-600 dark:text-gray-400">
                 {t('quiz.noQuizzesDescription')}
               </p>
-              <button
-                onClick={() => navigate('/swag')}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors inline-flex items-center gap-2"
-              >
-                <Brain className="w-5 h-5" />
-                {t('quiz.goToSwag')}
-              </button>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-4 max-w-md mx-auto">
+                💡 {t('quiz.quizMeHelp')}
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {statistics.map((stat) => (
                 <div
                   key={stat.id}
-                  className="p-6 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                  className={`p-6 transition-colors cursor-pointer ${
+                    stat.completed 
+                      ? 'hover:bg-gray-50 dark:hover:bg-gray-750' 
+                      : 'bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/30 border-l-4 border-yellow-500'
+                  }`}
+                  onClick={() => handleRestartQuiz(stat)}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -217,11 +287,22 @@ export const QuizPage: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                           {stat.quizTitle}
                         </h3>
-                        <span
-                          className={`px-3 py-1 rounded-full text-sm font-semibold ${getScoreBg(stat.percentage)} ${getScoreColor(stat.percentage)}`}
-                        >
-                          {stat.score}/{stat.totalQuestions} ({stat.percentage}%)
-                        </span>
+                        {!stat.completed ? (
+                          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200">
+                            {t('quiz.clickToRestart')}
+                          </span>
+                        ) : (
+                          <>
+                            <span
+                              className={`px-3 py-1 rounded-full text-sm font-semibold ${getScoreBg(stat.percentage)} ${getScoreColor(stat.percentage)}`}
+                            >
+                              {stat.score}/{stat.totalQuestions} ({stat.percentage}%)
+                            </span>
+                            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded text-xs font-medium">
+                              {t('quiz.clickToRetake') || 'Click to Retake'}
+                            </span>
+                          </>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
@@ -251,7 +332,10 @@ export const QuizPage: React.FC = () => {
                     </div>
 
                     <button
-                      onClick={() => handleDeleteQuiz(stat.id, stat.quizTitle)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteQuiz(stat.id, stat.quizTitle);
+                      }}
                       className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                       title={t('quiz.deleteQuiz')}
                     >
@@ -266,6 +350,72 @@ export const QuizPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Quiz Modal */}
+      {showQuizModal && currentQuiz && quizMetadata && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <QuizCard
+            quiz={currentQuiz}
+            onClose={() => {
+              console.log('❌ Quiz modal closed without completion');
+              console.log('📝 Quiz should remain in database as incomplete');
+              setShowQuizModal(false);
+              setCurrentQuiz(null);
+              setQuizMetadata(null);
+              // Reload statistics to ensure the incomplete quiz is visible
+              loadStatistics();
+            }}
+            onComplete={async (score, total, answers) => {
+              const percentage = Math.round((score / total) * 100);
+              const timeTaken = Date.now() - quizMetadata.startTime;
+              
+              try {
+                // Update the generated quiz with completion data
+                if (quizMetadata.quizId) {
+                  await quizDB.updateQuizCompletion(quizMetadata.quizId, score, timeTaken, answers);
+                  
+                  // Sync to Google Sheets (async, don't block UI)
+                  const token = await getToken();
+                  if (token) {
+                    syncSingleQuizStatistic(quizMetadata.quizId, token)
+                      .then(synced => {
+                        if (synced) {
+                          console.log('✅ Quiz statistic synced to Google Sheets');
+                        }
+                      })
+                      .catch(error => {
+                        console.error('Failed to sync quiz statistic:', error);
+                        // Will retry on next background sync
+                      });
+                  }
+                } else {
+                  // Fallback to old method if quizId is not available
+                  console.warn('No quizId found, using fallback save method');
+                  await quizDB.saveQuizStatistic({
+                    quizTitle: currentQuiz.title,
+                    snippetIds: quizMetadata.snippetIds,
+                    score,
+                    totalQuestions: total,
+                    timeTaken,
+                    completedAt: new Date().toISOString(),
+                    answers,
+                    enrichment: quizMetadata.enrichment,
+                    completed: true
+                  });
+                }
+                
+                showSuccess(`Quiz completed! Score: ${score}/${total} (${percentage}%)`);
+                
+                // Reload statistics to show the completed quiz
+                await loadStatistics();
+              } catch (error) {
+                console.error('Failed to save quiz statistic:', error);
+                showWarning(`Quiz completed! Score: ${score}/${total} (${percentage}%) - Statistics not saved`);
+              }
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 };

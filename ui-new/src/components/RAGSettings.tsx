@@ -273,7 +273,7 @@ export const RAGSettings: React.FC = () => {
           </label>
           <input
             type="range"
-            min="0.3"
+            min="0.1"
             max="0.95"
             step="0.05"
             value={config.similarityThreshold || 0.3}

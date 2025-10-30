@@ -42,10 +42,13 @@ The Continuous Voice Mode feature enables hands-free, continuous conversation wi
 
 4. **Backend Integration** (`src/endpoints/chat.js`)
    - Voice mode parameter support
-   - System prompt injection for dual response format:
-     - `voiceResponse`: Short 1-2 sentence answer (<200 chars)
-     - `fullResponse`: Complete detailed answer
+   - System prompt injection for dual response format (JSON structure):
+     - `voiceResponse`: Short 1-2 sentence answer (<200 chars) for TTS
+     - `fullResponse`: Complete detailed answer for display
+   - **Primary method**: LLM generates JSON with both responses
+   - **Fallback method**: Algorithmic stripping if LLM doesn't follow format
    - Example: Weather query returns conversational voice response + detailed text
+   - Smart parsing extracts JSON from code blocks or raw response
 
 5. **UI Integration** (`ui-new/src/components/ChatTab.tsx`)
    - Fixed bottom-right positioning
@@ -379,15 +382,45 @@ Example - User: "What's the weather in Tokyo?"
 ```
 
 **Implementation** (`src/endpoints/chat.js`):
-- Line 1093: Extract `voiceMode` from request body
-- Line 1100: Log voice mode activation
-- Lines 1197-1276: Inject system prompt in 3 locations (message merge, new message, fallback)
+- Line 1076: Extract `voiceMode` from request body
+- Line 1081: Log voice mode activation
+- Lines 1190-1266: Inject system prompt in 3 locations (message merge, new message, fallback)
+- Lines 4013-4044: Parse dual response format
 
-**Future Enhancement** (Not Yet Implemented):
-- Parse JSON response from LLM
-- Use `voiceResponse` for TTS
-- Display `fullResponse` in chat history
-- Currently: Entire LLM response used for both
+**Dual Response Processing** (`src/utils/voice-response-generator.js`):
+1. **Primary Method - LLM JSON Response**:
+   - Function: `parseVoiceResponse(content)`
+   - Extracts JSON from LLM response (with or without markdown code blocks)
+   - Validates `voiceResponse` and `fullResponse` fields
+   - Returns structured object if valid
+   - Example: `{ voiceResponse: "Short answer", fullResponse: "Detailed answer" }`
+
+2. **Fallback Method - Algorithmic Stripping**:
+   - Function: `generateShortResponse(content, maxLength)`
+   - Removes markdown formatting (code blocks, links, headers, bold/italic)
+   - Extracts first few sentences up to maxLength (default 500 chars)
+   - Truncates at word boundary if necessary
+   - Used when: LLM doesn't provide JSON or JSON parsing fails
+
+**Response Flow**:
+```
+Voice Mode Request
+    ↓
+LLM generates response
+    ↓
+Try parse JSON (primary)
+    ↓
+Success? → Use voiceResponse for TTS, fullResponse for display
+    ↓
+Failed? → Use algorithmic fallback (strip markdown, truncate)
+    ↓
+Return both shortResponse and fullResponse in 'complete' event
+```
+
+**Benefits**:
+- LLM-generated responses are more natural and context-aware
+- Algorithmic fallback ensures system always works even if LLM doesn't follow format
+- Dual response allows optimal UX: short for TTS, detailed for reading
 
 ## Troubleshooting
 

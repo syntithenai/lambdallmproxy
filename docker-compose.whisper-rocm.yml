@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  whisper-rocm:
+    container_name: whisper-rocm-openai
+    build:
+      context: .
+      dockerfile: Dockerfile.whisper-rocm
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # OpenAI-compatible API port
+    volumes:
+      - ./whisper-models:/data  # Model storage
+    devices:
+      - "/dev/dri/card1:/dev/dri/card1"  # GPU access (card1 for your system)
+      - "/dev/dri/renderD128:/dev/dri/renderD128"  # GPU render node
+      - "/dev/kfd"  # GPU compute access
+    environment:
+      # CRITICAL: Set this to match your GPU architecture
+      # Your GPU: AMD Strix Halo (Radeon 8050S/8060S) - gfx1150 (RDNA 3.5)
+      # For gfx1150, use gfx1100 as fallback (RDNA 3 architecture)
+      HSA_OVERRIDE_GFX_VERSION: "11.0.0"
+      
+      # Build target - must match HSA_OVERRIDE_GFX_VERSION
+      PYTORCH_ROCM_ARCH: "gfx1100"
+      
+      # Whisper model to use
+      # Options: tiny, tiny.en, base, base.en, small, small.en, 
+      #          medium, medium.en, large-v2, large-v3,
+      #          distil-small.en, distil-medium.en, distil-large-v2
+      MODEL_NAME: "distil-small.en"
+      
+      # Device to use (cuda for GPU, cpu for CPU-only)
+      # NOTE: Using CPU mode due to gfx1150 (Strix Halo) compatibility issues with ROCm 6.2
+      DEVICE: "cpu"
+      
+      # Compute type (default, float16, int8, int8_float16)
+      COMPUTE_TYPE: "default"
+      
+      # API server settings
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      
+      # Data directory for model downloads
+      DATA_DIR: "/data"
+    # Resource limits (adjust based on your system)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: amd
+    #           count: 1
+    #           capabilities: [gpu]

@@ -38,6 +38,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useSwag } from '../contexts/SwagContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { ContentSnippet } from '../contexts/SwagContext';
@@ -53,6 +54,49 @@ interface SnippetSelectorProps {
   /** User email for display/tracking */
   userEmail?: string;
 }
+
+/**
+ * Extract image data from snippet content
+ * Returns { hasImage, imageSrc, altText, textContent }
+ */
+const extractImageData = (content: string): { 
+  hasImage: boolean; 
+  imageSrc: string | null; 
+  altText: string | null;
+  textContent: string;
+} => {
+  // Match img tag and extract src and alt attributes separately
+  const imgTagMatch = content.match(/<img[^>]+>/i);
+  
+  if (imgTagMatch) {
+    const imgTag = imgTagMatch[0];
+    
+    // Extract src attribute
+    const srcMatch = imgTag.match(/src=["']([^"']+)["']/i);
+    const imageSrc = srcMatch ? srcMatch[1] : null;
+    
+    // Extract alt attribute
+    const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+    const altText = altMatch ? altMatch[1] : 'Image';
+    
+    // Extract text content (remove img tag)
+    const textContent = content.replace(/<img[^>]+>/gi, '').trim();
+    
+    return {
+      hasImage: !!imageSrc,
+      imageSrc,
+      altText,
+      textContent: textContent.length > 200 ? textContent.substring(0, 200) + '...' : textContent
+    };
+  }
+  
+  return {
+    hasImage: false,
+    imageSrc: null,
+    altText: null,
+    textContent: content.length > 300 ? content.substring(0, 300) + '...' : content
+  };
+};
 
 export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
   selectedSnippetIds,
@@ -406,10 +450,51 @@ export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
                       )}
                     </div>
                     
-                    {/* Content preview */}
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                      {snippet.content}
-                    </p>
+                    {/* Content preview - render images directly, text with markdown */}
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 overflow-hidden snippet-preview">
+                      {(() => {
+                        const imageData = extractImageData(snippet.content);
+                        
+                        if (imageData.hasImage && imageData.imageSrc) {
+                          return (
+                            <div className="space-y-2">
+                              <img
+                                src={imageData.imageSrc}
+                                alt={imageData.altText || 'Image'}
+                                className="max-w-full h-auto max-h-32 rounded border border-gray-300 dark:border-gray-600 block"
+                                loading="lazy"
+                              />
+                              {imageData.textContent && (
+                                <ReactMarkdown
+                                  components={{
+                                    p: ({ node, ...props }) => <p {...props} className="my-1" />,
+                                    code: ({ node, ...props }) => (
+                                      <code {...props} className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs" />
+                                    ),
+                                  }}
+                                >
+                                  {imageData.textContent}
+                                </ReactMarkdown>
+                              )}
+                            </div>
+                          );
+                        }
+                        
+                        // Text-only content
+                        return (
+                          <ReactMarkdown
+                            components={{
+                              p: ({ node, ...props }) => <p {...props} className="my-1" />,
+                              code: ({ node, ...props }) => (
+                                <code {...props} className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs" />
+                              ),
+                            }}
+                          >
+                            {imageData.textContent}
+                          </ReactMarkdown>
+                        );
+                      })()}
+                    </div>
                     
                     {/* Tags */}
                     {snippet.tags && snippet.tags.length > 0 && (

@@ -60,6 +60,10 @@ export function PrivacyPolicy() {
             </p>
             
             <p>
+              <strong>YouTube Video Data:</strong> If you choose to connect your YouTube account, we access YouTube video captions and subtitles in read-only mode. We use this data solely to analyze video content and generate AI summaries or answers. We never modify, delete, or upload any YouTube content. Caption data is processed in real-time during your session and is not stored permanently on our servers.
+            </p>
+            
+            <p>
               <strong>Optional Information:</strong> Some features work better with additional data that you can choose to provide. If you grant permission, we may access your location for location-based queries, or connect to your Google Drive for cloud synchronization. These are entirely optional—the service works without them.
             </p>
           </section>
@@ -105,10 +109,14 @@ export function PrivacyPolicy() {
               <strong>Your Personal Cloud Storage:</strong> If you enable Google Drive synchronization, your content travels directly from your browser to your own Google Drive account. We don't maintain copies on our servers—the data goes straight to storage you control.
             </p>
             
+            <p>
+              <strong>YouTube Integration:</strong> When you connect your YouTube account and analyze a video, we fetch the video's captions/subtitles directly from YouTube's API using your authenticated access. This data is sent to your chosen AI provider for analysis (summaries, Q&A, etc.) and is processed in real-time. We do not store YouTube captions permanently on our servers. Your YouTube OAuth token is stored in your browser's localStorage and is used only to authenticate requests on your behalf. We access YouTube data in read-only mode—we never edit, delete, or upload any YouTube content.
+            </p>
+            
             <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
               <p className="font-semibold text-red-800 dark:text-red-200 mb-2">⚠️ What We DON'T Do</p>
               <p className="text-sm">
-                We do NOT sell your personal information to advertisers, data brokers, or marketing companies. We do NOT share your conversations or content with third parties for purposes unrelated to providing you the service. Your data is used solely to give you the AI assistance you signed up for, nothing more.
+                We do NOT sell your personal information to advertisers, data brokers, or marketing companies. We do NOT share your conversations or content with third parties for purposes unrelated to providing you the service. We do NOT cache, scrape, or redistribute YouTube content. Your data is used solely to give you the AI assistance you signed up for, nothing more.
               </p>
             </div>
           </section>

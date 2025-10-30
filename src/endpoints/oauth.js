@@ -7,10 +7,28 @@
  * - /oauth/revoke: Revokes OAuth tokens
  * 
  * All endpoints (except callback) require JWT authentication.
+ * 
+ * NOTE: CORS headers are NOT set in this file because the Lambda Function URL
+ * is configured with CORS at the infrastructure level. Setting headers here
+ * would create duplicates (*, *) causing CORS errors.
  */
 
-const { OAuth2Client } = require('google-auth-library');
+// Lazy load google-auth-library to avoid startup crash if missing
+let OAuth2Client = null;
+function getOAuth2Client() {
+    if (!OAuth2Client) {
+        try {
+            OAuth2Client = require('google-auth-library').OAuth2Client;
+        } catch (error) {
+            console.error('⚠️ google-auth-library not available:', error.message);
+            throw new Error('Google authentication library not installed');
+        }
+    }
+    return OAuth2Client;
+}
+
 const { authenticateRequest } = require('../auth');
+const { getOAuthRedirectURI } = require('../utils/environment-config');
 
 /**
  * OAuth2 Callback Endpoint
@@ -62,10 +80,14 @@ async function oauthCallbackEndpoint(event) {
     }
 
     // Exchange authorization code for tokens
-    const oauth2Client = new OAuth2Client(
+    const OAuth2ClientClass = getOAuth2Client();
+    const redirectUri = getOAuthRedirectURI();
+    console.log('Using OAuth redirect URI:', redirectUri);
+    
+    const oauth2Client = new OAuth2ClientClass(
       process.env.GGL_CID,
       process.env.GGL_SEC,
-      process.env.OAUTH_URI
+      redirectUri
     );
 
     console.log('Exchanging code for tokens...');
@@ -127,8 +149,6 @@ async function oauthRefreshEndpoint(event) {
         statusCode: 401,
         headers: { 
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': 'true'
         },
         body: JSON.stringify({ error: 'Unauthorized', message: 'JWT authentication required' })
       };
@@ -144,18 +164,19 @@ async function oauthRefreshEndpoint(event) {
         statusCode: 400,
         headers: { 
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': 'true'
         },
         body: JSON.stringify({ error: 'Bad Request', message: 'refresh_token required' })
       };
     }
 
     // Use OAuth2Client to refresh tokens
-    const oauth2Client = new OAuth2Client(
+    const OAuth2ClientClass = getOAuth2Client();
+    const redirectUri = getOAuthRedirectURI();
+    
+    const oauth2Client = new OAuth2ClientClass(
       process.env.GGL_CID,
       process.env.GGL_SEC,
-      process.env.OAUTH_URI
+      redirectUri
     );
     
     oauth2Client.setCredentials({ refresh_token: refreshToken });
@@ -173,8 +194,6 @@ async function oauthRefreshEndpoint(event) {
       statusCode: 200,
       headers: { 
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Credentials': 'true'
       },
       body: JSON.stringify({
         access_token: credentials.access_token,
@@ -196,8 +215,6 @@ async function oauthRefreshEndpoint(event) {
       statusCode,
       headers: { 
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Credentials': 'true'
       },
       body: JSON.stringify({ 
         error: isInvalidGrant ? 'invalid_grant' : 'refresh_failed',
@@ -223,8 +240,6 @@ async function oauthRevokeEndpoint(event) {
         statusCode: 401,
         headers: { 
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': 'true'
         },
         body: JSON.stringify({ error: 'Unauthorized', message: 'JWT authentication required' })
       };
@@ -240,18 +255,19 @@ async function oauthRevokeEndpoint(event) {
         statusCode: 400,
         headers: { 
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': 'true'
         },
         body: JSON.stringify({ error: 'Bad Request', message: 'token required' })
       };
     }
 
     // Revoke token with Google
-    const oauth2Client = new OAuth2Client(
+    const OAuth2ClientClass = getOAuth2Client();
+    const redirectUri = getOAuthRedirectURI();
+    
+    const oauth2Client = new OAuth2ClientClass(
       process.env.GGL_CID,
       process.env.GGL_SEC,
-      process.env.OAUTH_URI
+      redirectUri
     );
 
     console.log('Revoking token for user:', auth.email);
@@ -262,8 +278,6 @@ async function oauthRevokeEndpoint(event) {
       statusCode: 200,
       headers: { 
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Credentials': 'true'
       },
       body: JSON.stringify({ success: true, message: 'Token revoked successfully' })
     };
@@ -273,8 +287,6 @@ async function oauthRevokeEndpoint(event) {
       statusCode: 500,
       headers: { 
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Credentials': 'true'
       },
       body: JSON.stringify({ 
         error: 'revoke_failed',

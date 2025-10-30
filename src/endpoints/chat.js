@@ -297,14 +297,16 @@ async function logToBothSheets(accessToken, logData) {
         await logToGoogleSheets(logData);
         console.log('✅ Logged to service account sheet');
     } catch (error) {
-        // Re-throw SHEET_LIMIT_REACHED errors - this is a critical system limit
+        // SHEET_LIMIT_REACHED is no longer fatal - we still log to the main service sheet
+        // Even if we can't create per-user sheets, the service should continue working
         if (error.code === 'SHEET_LIMIT_REACHED') {
-            console.error('❌ CRITICAL: Sheet limit reached - cannot accept new users');
-            throw error; // Propagate to caller to return 503 error to user
+            console.warn('⚠️ WARNING: Sheet limit reached - cannot create new user sheets (continuing anyway)');
+            console.warn('⚠️ All logs will go to service account sheet only');
+            // Don't throw - let the request continue
+        } else {
+            // Log other errors but don't fail the request
+            console.error('⚠️ Failed to log to service account sheet:', error.message);
         }
-        
-        // Log other errors but don't fail the request
-        console.error('⚠️ Failed to log to service account sheet:', error.message);
     }
     
 
@@ -679,26 +681,8 @@ function filterToolMessagesForCurrentCycle(messages, isInitialRequest = false) {
  * @returns {Promise<Object|null>} Verified user or null
  */
 async function verifyAuthToken(authHeader) {
-    if (!authHeader) {
-        return null;
-    }
-    
-    const token = authHeader.startsWith('Bearer ') 
-        ? authHeader.substring(7) 
-        : authHeader;
-    
-    const verifiedUser = await verifyGoogleToken(token);
-    
-    if (!verifiedUser) {
-        return null;
-    }
-    
-    const allowedEmails = getAllowedEmails();
-    if (!allowedEmails || !allowedEmails.includes(verifiedUser.email)) {
-        return null;
-    }
-    
-    return verifiedUser;
+    const authResult = await authenticateRequest(authHeader || '');
+    return authResult.authenticated ? authResult.user : null;
 }
 
 /**
@@ -4027,15 +4011,54 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                 }
             }
             
+            // 🎙️ VOICE MODE: Generate dual response format if voice mode is enabled
+            let shortResponse = null;
+            if (voiceMode && currentMessages.length > 0) {
+                const lastAssistantMsg = currentMessages[currentMessages.length - 1];
+                if (lastAssistantMsg && lastAssistantMsg.role === 'assistant' && lastAssistantMsg.content) {
+                    const { generateShortResponse, shouldGenerateShortResponse, parseVoiceResponse } = require('../utils/voice-response-generator');
+                    
+                    // Try to parse LLM's JSON response first (primary method)
+                    const parsedResponse = parseVoiceResponse(lastAssistantMsg.content);
+                    
+                    if (parsedResponse) {
+                        // LLM provided structured response with voiceResponse and fullResponse
+                        shortResponse = parsedResponse.voiceResponse;
+                        // Replace the full message content with the detailed response
+                        lastAssistantMsg.content = parsedResponse.fullResponse;
+                        console.log(`🎙️ Voice mode: LLM provided structured response (voice: ${shortResponse.length} chars, full: ${parsedResponse.fullResponse.length} chars)`);
+                    } else {
+                        // Fallback: Use algorithmic stripping if LLM didn't provide JSON
+                        console.log(`🎙️ Voice mode: LLM response not in JSON format, using algorithmic fallback`);
+                        if (shouldGenerateShortResponse(lastAssistantMsg.content)) {
+                            shortResponse = generateShortResponse(lastAssistantMsg.content, 500);
+                            console.log(`🎙️ Generated short response for voice mode (${shortResponse.length} chars from ${lastAssistantMsg.content.length} chars)`);
+                        } else {
+                            // Response is already short, use as-is for both
+                            shortResponse = lastAssistantMsg.content;
+                            console.log(`🎙️ Response already short - using as-is for voice mode`);
+                        }
+                    }
+                }
+            }
+            
             // Send final 'complete' event
-            sseWriter.writeEvent('complete', {
+            const completeEvent = {
                 status: 'success',
                 messages: currentMessages,
                 iterations: iterationCount,
                 extractedContent: extractedContent || undefined,
                 cost: parseFloat(finalRequestCost.toFixed(4)), // Cost for this request
                 ...finalMemoryMetadata
-            });
+            };
+            
+            // Add short response if voice mode is enabled
+            if (voiceMode && shortResponse) {
+                completeEvent.shortResponse = shortResponse;
+                console.log(`🎙️ Including shortResponse in complete event`);
+            }
+            
+            sseWriter.writeEvent('complete', completeEvent);
             
             // ✅ CREDIT SYSTEM: Optimistically deduct actual cost from cache
             const { deductCreditFromCache } = require('../utils/credit-check');

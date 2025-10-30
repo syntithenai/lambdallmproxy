@@ -72,6 +72,7 @@ const imageEditEndpoint = require('./endpoints/image-edit');
 const parseImageCommandEndpoint = require('./endpoints/parse-image-command');
 const v1ChatCompletionsEndpoint = require('./endpoints/v1-chat-completions');
 const v1ModelsEndpoint = require('./endpoints/v1-models');
+const providersEndpoint = require('./endpoints/providers');
 // Lazy-load convert endpoint (requires heavy dependencies like mammoth)
 // const convertEndpoint = require('./endpoints/convert');
 // Lazy-load rag-sync endpoint (requires googleapis)
@@ -217,6 +218,25 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'GET' && path === '/v1/models') {
             console.log('Routing to OpenAI-compatible models endpoint');
             const response = await v1ModelsEndpoint.handler(event);
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: {
+                    ...response.headers,
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
+        if (method === 'GET' && path === '/providers') {
+            console.log('Routing to providers configuration endpoint');
+            const response = await providersEndpoint.handler(event);
             const origin = event.headers?.origin || event.headers?.Origin || '*';
             const metadata = {
                 statusCode: response.statusCode,
@@ -389,16 +409,45 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         
         // Report error endpoint (for user feedback on bad LLM responses)
         if (method === 'POST' && path === '/report-error') {
-            console.log('Routing to report-error endpoint');
+            console.log('✅ Routing to report-error endpoint');
             const { verifyGoogleToken } = require('./auth');
             const { logErrorReport } = require('./services/error-reporter');
             
             try {
                 // Parse request body
                 const body = JSON.parse(event.body || '{}');
+                console.log('📦 Request body keys:', Object.keys(body));
+                console.log('📦 Has explanation:', !!body.explanation);
+                console.log('📦 Has messageData:', !!body.messageData);
                 
-                // Validate required fields (explanation optional for positive feedback)
-                if (!body.userEmail || !body.messageData || !body.feedbackType) {
+                // Extract Google access token from custom header (for Sheets API)
+                const googleAccessToken = event.headers?.['x-google-access-token'] || event.headers?.['X-Google-Access-Token'];
+                console.log('🔑 Has Google access token:', !!googleAccessToken);
+                
+                // Extract user from auth token (for user identification)
+                const authHeader = event.headers?.authorization || event.headers?.Authorization;
+                let userEmail = 'unknown';
+                
+                console.log('🔑 Has auth header:', !!authHeader);
+                
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    const token = authHeader.substring(7);
+                    console.log('🔑 Auth token extracted, length:', token.length);
+                    try {
+                        const authResult = await verifyGoogleToken(token);
+                        if (authResult && authResult.email) {
+                            userEmail = authResult.email;
+                            console.log('✅ Token verified, user:', userEmail);
+                        } else {
+                            console.warn('⚠️ Token verification returned null or no email');
+                        }
+                    } catch (err) {
+                        console.warn('⚠️ Failed to verify token for error report:', err.message);
+                    }
+                }
+                
+                // Validate required fields - just need explanation and messageData
+                if (!body.explanation || !body.messageData) {
                     const errorResponse = {
                         statusCode: 400,
                         headers: {
@@ -406,7 +455,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                             'Access-Control-Allow-Origin': '*'
                         },
                         body: JSON.stringify({
-                            error: 'Missing required fields: userEmail, messageData, feedbackType'
+                            error: 'Missing required fields: explanation and messageData are required'
                         })
                     };
                     const metadata = {
@@ -419,76 +468,13 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                     return;
                 }
                 
-                // Validate feedbackType
-                if (!['positive', 'negative'].includes(body.feedbackType)) {
-                    const errorResponse = {
-                        statusCode: 400,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Access-Control-Allow-Origin': '*'
-                        },
-                        body: JSON.stringify({
-                            error: 'feedbackType must be "positive" or "negative"'
-                        })
-                    };
-                    const metadata = {
-                        statusCode: errorResponse.statusCode,
-                        headers: errorResponse.headers
-                    };
-                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-                    responseStream.write(errorResponse.body);
-                    responseStream.end();
-                    return;
-                }
-                
-                // Get OAuth token from Authorization header
-                const authHeader = event.headers.authorization || event.headers.Authorization;
-                if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                    const errorResponse = {
-                        statusCode: 401,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Access-Control-Allow-Origin': '*'
-                        },
-                        body: JSON.stringify({ error: 'Missing or invalid authorization' })
-                    };
-                    const metadata = {
-                        statusCode: errorResponse.statusCode,
-                        headers: errorResponse.headers
-                    };
-                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-                    responseStream.write(errorResponse.body);
-                    responseStream.end();
-                    return;
-                }
-                
-                const accessToken = authHeader.substring(7);
-                
-                // Verify token
-                const userData = await verifyGoogleToken(accessToken);
-                
-                // Ensure user email matches (prevent spoofing)
-                if (userData.email !== body.userEmail) {
-                    const errorResponse = {
-                        statusCode: 403,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Access-Control-Allow-Origin': '*'
-                        },
-                        body: JSON.stringify({ error: 'User email mismatch' })
-                    };
-                    const metadata = {
-                        statusCode: errorResponse.statusCode,
-                        headers: errorResponse.headers
-                    };
-                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-                    responseStream.write(errorResponse.body);
-                    responseStream.end();
-                    return;
-                }
-                
-                // Log to Google Sheets
-                await logErrorReport(body, accessToken);
+                // Log to Google Sheets with user email from auth token
+                await logErrorReport({
+                    userEmail,
+                    explanation: body.explanation,
+                    messageData: body.messageData,
+                    timestamp: body.timestamp || new Date().toISOString()
+                }, googleAccessToken);
                 
                 const successResponse = {
                     statusCode: 200,
@@ -510,7 +496,11 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                 responseStream.end();
                 
             } catch (error) {
-                console.error('Error logging report:', error);
+                console.error('❌ Error in /report-error endpoint:');
+                console.error('Error message:', error.message);
+                console.error('Error stack:', error.stack);
+                console.error('Error details:', JSON.stringify(error, null, 2));
+                
                 const errorResponse = {
                     statusCode: 500,
                     headers: {
