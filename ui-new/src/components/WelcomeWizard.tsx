@@ -119,6 +119,7 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [spotlightPosition, setSpotlightPosition] = useState<DOMRect | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
   const step = TOUR_STEPS[currentStep];
@@ -133,32 +134,59 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
     }
   }, [isOpen, currentStep, step.navigateTo, navigate]);
 
-  // Calculate spotlight position
+  // Calculate spotlight position with retry logic
   useEffect(() => {
     if (!isOpen || step.type !== 'spotlight' || !step.targetSelector) {
       setSpotlightPosition(null);
+      setIsSearching(false);
       return;
     }
+
+    setIsSearching(true);
+    setSpotlightPosition(null);
+    let attemptCount = 0;
+    const maxAttempts = 10; // Try for 3 seconds total
 
     const updatePosition = () => {
       const target = document.querySelector(step.targetSelector!);
       if (target) {
         const rect = target.getBoundingClientRect();
         setSpotlightPosition(rect);
-      } else {
-        console.warn(`Spotlight target not found: ${step.targetSelector}`);
-        setSpotlightPosition(null);
+        setIsSearching(false);
+        return true;
       }
+      return false;
     };
 
-    // Wait for navigation and UI to render
-    const timeout = setTimeout(updatePosition, 300);
+    // Try immediately
+    if (updatePosition()) {
+      return;
+    }
+
+    // Retry with increasing delays if element not found
+    const retryInterval = setInterval(() => {
+      attemptCount++;
+      if (updatePosition() || attemptCount >= maxAttempts) {
+        clearInterval(retryInterval);
+        if (attemptCount >= maxAttempts) {
+          // eslint-disable-next-line no-console
+          console.warn(`Spotlight target not found after ${maxAttempts} attempts: ${step.targetSelector}`);
+          setIsSearching(false);
+        }
+      }
+    }, 300);
 
     // Update on window resize
-    window.addEventListener('resize', updatePosition);
+    const handleResize = () => {
+      if (spotlightPosition) {
+        updatePosition();
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
     return () => {
-      clearTimeout(timeout);
-      window.removeEventListener('resize', updatePosition);
+      clearInterval(retryInterval);
+      window.removeEventListener('resize', handleResize);
     };
   }, [isOpen, step, currentStep]);
 
@@ -303,14 +331,14 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
             {/* Tapered tail pointing to element */}
             <svg
               className="absolute"
-              style={getTailPosition(step.tooltipPosition || 'top')}
+              style={getTailPosition(step.tooltipPosition || 'top', spotlightPosition)}
               width="40"
               height="40"
               viewBox="0 0 40 40"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
             >
-              {getTailPath(step.tooltipPosition || 'top')}
+              {getTailPath()}
             </svg>
 
             <div className="relative z-10">
@@ -367,27 +395,44 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
         </div>
       )}
 
-      {/* Tooltip for steps without target */}
-      {step.type === 'spotlight' && !spotlightPosition && (
+      {/* Loading indicator while searching for target */}
+      {step.type === 'spotlight' && !spotlightPosition && isSearching && (
+        <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md border-4 border-gray-900 dark:border-gray-100">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm font-bold uppercase">
+                Loading...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tooltip for steps without target (after search timeout) */}
+      {step.type === 'spotlight' && !spotlightPosition && !isSearching && (
         <div className="absolute inset-0 flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md border-4 border-gray-900 dark:border-gray-100">
             <div className="text-center mb-4">
-              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                Target element not found. It may not be visible yet.
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 font-bold">
+                ⚠️ Element not found
+              </p>
+              <p className="text-gray-500 dark:text-gray-500 text-xs">
+                This feature may not be available on this page.
               </p>
             </div>
             <div className="flex justify-center gap-3">
               <button
                 onClick={handleBack}
-                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium text-sm"
+                className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors font-bold text-xs uppercase"
               >
                 Back
               </button>
               <button
                 onClick={handleNext}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-bold text-xs uppercase"
               >
-                Skip & Continue
+                Skip
               </button>
             </div>
           </div>
@@ -458,19 +503,34 @@ function getTooltipPosition(targetRect: DOMRect, position: string): React.CSSPro
   return style;
 }
 
-// Position the tapered tail SVG
-function getTailPosition(position: string): React.CSSProperties {
+// Position the tapered tail SVG to point accurately at the target element
+function getTailPosition(position: string, targetRect: DOMRect): React.CSSProperties {
+  const tooltipMaxWidth = 320;
+  const viewportWidth = window.innerWidth;
+  
+  // Calculate where the tooltip will be positioned
+  const targetCenterX = targetRect.left + targetRect.width / 2;
+  const tooltipLeft = Math.min(
+    Math.max(targetCenterX, tooltipMaxWidth / 2 + 16),
+    viewportWidth - tooltipMaxWidth / 2 - 16
+  );
+  
+  // Calculate the offset of the target from the tooltip center
+  const offsetFromCenter = targetCenterX - tooltipLeft;
+  // Convert to percentage of tooltip width (clamped to stay within tooltip bounds)
+  const percentOffset = Math.max(-40, Math.min(40, (offsetFromCenter / tooltipMaxWidth) * 100));
+  
   switch (position) {
     case 'top':
       return { 
         bottom: '-36px', 
-        left: '50%', 
+        left: `calc(50% + ${percentOffset}%)`, 
         transform: 'translateX(-50%)',
       };
     case 'bottom':
       return { 
         top: '-36px', 
-        left: '50%', 
+        left: `calc(50% + ${percentOffset}%)`, 
         transform: 'translateX(-50%) rotate(180deg)',
       };
     case 'left':
@@ -488,14 +548,14 @@ function getTailPosition(position: string): React.CSSProperties {
     default:
       return { 
         bottom: '-36px', 
-        left: '50%', 
+        left: `calc(50% + ${percentOffset}%)`, 
         transform: 'translateX(-50%)',
       };
   }
 }
 
 // Create tapered comic-style tail SVG path
-function getTailPath(_position: string): React.ReactNode {
+function getTailPath(): React.ReactNode {
   // Tapered tail pointing downward (adjusts with rotation in getTailPosition)
   return (
     <>
