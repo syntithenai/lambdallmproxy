@@ -286,9 +286,12 @@ export const CommandInput: React.FC<CommandInputProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
+    // Submit on Enter (without shift key for multiline support)
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      onSubmit();
+      if (value.trim() && !disabled) {
+        onSubmit();
+      }
     }
   };
 
@@ -302,7 +305,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
               onChange={(e) => onChange(e.target.value)}
               disabled={disabled}
               placeholder={placeholder}
-              tabIndex={0}
+              tabIndex={1}
               className="w-full border border-gray-300 rounded-lg p-3 pr-12 resize-none h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               onKeyDown={handleKeyDown}
             />
@@ -313,7 +316,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
                 type="button"
                 onClick={handleVoiceInput}
                 disabled={disabled}
-                tabIndex={2}
+                tabIndex={3}
                 className={`
                   absolute right-2 top-2 p-2 rounded-full transition-all
                   ${isListening 
@@ -337,7 +340,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
           <button
             type="submit"
             disabled={disabled || !value.trim()}
-            tabIndex={1}
+            tabIndex={2}
             className={`
               self-end px-6 py-3 rounded-lg font-medium transition-colors
               ${
@@ -357,7 +360,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
           {isSupported && (
             <> • <strong>🎤 Voice:</strong> Click microphone to speak commands (auto-submits)</>
           )}
-          {' '}• Press <kbd className="px-1 py-0.5 bg-gray-200 rounded">Ctrl+Enter</kbd> to apply
+          {' '}• Press <kbd className="px-1 py-0.5 bg-gray-200 rounded">Enter</kbd> to apply • <kbd className="px-1 py-0.5 bg-gray-200 rounded">Shift+Enter</kbd> for new line
         </div>
       </form>
 

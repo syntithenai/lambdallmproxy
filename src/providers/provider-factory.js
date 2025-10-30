@@ -5,13 +5,12 @@
  * Routes to the appropriate provider implementation based on type.
  */
 
-const { BaseProvider } = require('./base-provider');
-
 // Import provider implementations
 const { GroqProvider } = require('./groq-provider');
 const { OpenAIProvider } = require('./openai-provider');
-const AnthropicProvider = require('./anthropic-provider');
+// const AnthropicProvider = require('./anthropic-provider'); // Not implemented yet
 // const { GeminiProvider } = require('./gemini-provider');
+// eslint-disable-next-line no-secrets/no-secrets
 // const { OpenAICompatibleProvider } = require('./openai-compatible-provider');
 
 /**
@@ -23,9 +22,10 @@ const PROVIDER_CLASSES = {
   'groq-free': GroqProvider,
   'openai': OpenAIProvider,
   'together': OpenAIProvider, // Together AI is OpenAI-compatible
-  'anthropic': AnthropicProvider,
+  // 'anthropic': AnthropicProvider, // Not implemented yet
   // 'gemini': GeminiProvider,
   // 'gemini-free': GeminiProvider,
+  // eslint-disable-next-line no-secrets/no-secrets
   // 'openai-compatible': OpenAICompatibleProvider
 };
 

@@ -72,7 +72,7 @@ const imageEditEndpoint = require('./endpoints/image-edit');
 const parseImageCommandEndpoint = require('./endpoints/parse-image-command');
 const v1ChatCompletionsEndpoint = require('./endpoints/v1-chat-completions');
 const v1ModelsEndpoint = require('./endpoints/v1-models');
-const providersEndpoint = require('./endpoints/providers');
+// const providersEndpoint = require('./endpoints/providers'); // Not implemented - use /billing instead
 // Lazy-load convert endpoint (requires heavy dependencies like mammoth)
 // const convertEndpoint = require('./endpoints/convert');
 // Lazy-load rag-sync endpoint (requires googleapis)
@@ -82,6 +82,7 @@ const billingEndpoint = require('./endpoints/billing');
 const ttsEndpoint = require('./endpoints/tts');
 const { oauthCallbackEndpoint, oauthRefreshEndpoint, oauthRevokeEndpoint } = require('./endpoints/oauth');
 const { handleCacheStats } = require('./endpoints/cache-stats');
+// eslint-disable-next-line no-unused-vars
 const { CREDIT_LIMIT } = require('./endpoints/usage'); // Keep CREDIT_LIMIT export for backward compatibility
 const { resetMemoryTracker } = require('./utils/memory-tracker');
 const { handleGenerateImage } = require('./endpoints/generate-image');
@@ -234,24 +235,25 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
-        if (method === 'GET' && path === '/providers') {
-            console.log('Routing to providers configuration endpoint');
-            const response = await providersEndpoint.handler(event);
-            const origin = event.headers?.origin || event.headers?.Origin || '*';
-            const metadata = {
-                statusCode: response.statusCode,
-                headers: {
-                    ...response.headers,
-                    'Access-Control-Allow-Origin': origin,
-                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-                }
-            };
-            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-            responseStream.write(response.body);
-            responseStream.end();
-            return;
-        }
+        // Note: /providers endpoint not implemented - use /billing for provider info
+        // if (method === 'GET' && path === '/providers') {
+        //     console.log('Routing to providers configuration endpoint');
+        //     const response = await providersEndpoint.handler(event);
+        //     const origin = event.headers?.origin || event.headers?.Origin || '*';
+        //     const metadata = {
+        //         statusCode: response.statusCode,
+        //         headers: {
+        //             ...response.headers,
+        //             'Access-Control-Allow-Origin': origin,
+        //             'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        //             'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        //         }
+        //     };
+        //     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+        //     responseStream.write(response.body);
+        //     responseStream.end();
+        //     return;
+        // }
         
         if (method === 'POST' && path === '/quiz/generate') {
             console.log('Routing to quiz generation endpoint');
@@ -930,6 +932,7 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                             console.log(`📧 Using OAuth user email for Lambda log: ${userEmail}`);
                         }
                     }
+                // eslint-disable-next-line no-unused-vars
                 } catch (authError) {
                     // Ignore auth errors for logging purposes
                     console.log('⚠️ Could not extract user email from OAuth token for Lambda log');

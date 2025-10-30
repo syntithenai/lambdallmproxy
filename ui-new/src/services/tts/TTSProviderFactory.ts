@@ -10,7 +10,7 @@ import type { ProviderConfig } from '../../types/provider';
 import { LLMProviderTTSProvider } from './LLMProviderTTSProvider';
 import { ElevenLabsProvider } from './ElevenLabsProvider';
 import { BrowserSpeechProvider, SpeakJsProvider } from './BrowserProviders';
-import { SpeachesProvider } from './SpeachesProvider';
+// import { SpeachesProvider } from './SpeachesProvider'; // File doesn't exist
 import { ChatterboxTTSProvider } from './ChatterboxTTSProvider';
 
 export class TTSProviderFactory {
@@ -28,15 +28,7 @@ export class TTSProviderFactory {
       console.log('🏠 Chatterbox TTS provider initialized (LOCAL GPU)');
     }
 
-    // Initialize Speaches (Local TTS - Priority #2)
-    const speachesProvider = llmProviders.find(p => p.type === 'speaches' && p.enabled !== false);
-    if (speachesProvider) {
-      const speaches = new SpeachesProvider(speachesProvider);
-      if (await speaches.isAvailable()) {
-        this.providers.set('speaches', speaches);
-        console.log('🏠 Speaches TTS provider initialized (LOCAL)');
-      }
-    }
+    // Note: Speaches provider not implemented yet (SpeachesProvider.ts doesn't exist)
 
     // Initialize individual LLM providers for TTS
     await this.initializeLLMProviders();

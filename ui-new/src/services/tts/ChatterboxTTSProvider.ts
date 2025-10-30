@@ -48,39 +48,11 @@ export class ChatterboxTTSProvider implements TTSProvider {
       return this.cachedVoices;
     }
 
-    try {
-      // Try to fetch available speakers from the API
-      const response = await fetch(`${this.baseUrl}/api/speakers`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        this.cachedVoices = this.parseVoicesFromAPI(data);
-        return this.cachedVoices;
-      }
-    } catch (error) {
-      console.warn('Failed to fetch Chatterbox speakers, using defaults:', error);
-    }
-
-    // Fallback to default voices
+    // TODO: TTS provider capabilities should come from the backend /billing endpoint
+    // to match the architecture used for image generation providers.
+    // For now, just return default voices to avoid direct HTTP calls and CORS errors.
     this.cachedVoices = this.getDefaultVoices();
     return this.cachedVoices;
-  }
-
-  private parseVoicesFromAPI(data: any): Voice[] {
-    // Parse API response - adapt based on actual Chatterbox API format
-    if (Array.isArray(data.speakers)) {
-      return data.speakers.map((speaker: any, index: number) => ({
-        id: speaker.id || `speaker_${index}`,
-        name: speaker.name || `Speaker ${index + 1}`,
-        language: speaker.language || 'en',
-        gender: speaker.gender || 'neutral',
-        provider: 'chatterbox'
-      }));
-    }
-    return this.getDefaultVoices();
   }
 
   private getDefaultVoices(): Voice[] {

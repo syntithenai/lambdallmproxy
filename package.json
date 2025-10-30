@@ -48,6 +48,7 @@
     "@typescript-eslint/parser": "^8.46.2",
     "chromedriver": "^120.0.1",
     "eslint": "^9.38.0",
+    "typescript": "~5.9.3",
     "eslint-plugin-no-secrets": "^2.2.1",
     "eslint-plugin-security": "^3.0.1",
     "globals": "^16.4.0",
