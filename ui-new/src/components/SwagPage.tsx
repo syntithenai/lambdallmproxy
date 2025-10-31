@@ -143,7 +143,7 @@ export const SwagPage: React.FC = () => {
   
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
-  // eslint-disable-next-line no-unused-vars
+   
   const [_dragCounter, setDragCounter] = useState(0);
   
   // Confirmation dialog state for tag deletion
@@ -164,7 +164,7 @@ export const SwagPage: React.FC = () => {
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   
   // Load RAG config for similarity threshold
-  // eslint-disable-next-line no-unused-vars
+   
   const [_ragConfig, setRagConfig] = useState<{ similarityThreshold?: number }>({});
   
   // Recent tags for desktop quick filter
@@ -1031,34 +1031,58 @@ export const SwagPage: React.FC = () => {
         console.log('✅ Using cached query embedding');
         embedding = cached.embedding;
       } else {
-        console.log('🔄 Fetching new query embedding from backend');
-        // Get query embedding from backend (use auto-detected API base)
-        const apiUrl = await getCachedApiBase();
-        const token = await getToken();
-        console.log('🌐 Using API URL for embed-query:', apiUrl);
-        const response = await fetch(`${apiUrl}/rag/embed-query`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ 
-            query: vectorSearchQuery,
-            embeddingModel: settings.embeddingModel,
-            providers: settings.providers
-          })
-        });
+        // Check if using local embeddings
+        const useLocalEmbeddings = settings.embeddingSource === 'local';
+        console.log(`� Query embedding source: ${settings.embeddingSource}, useLocal=${useLocalEmbeddings}`);
         
-        if (!response.ok) {
-          throw new Error(`Backend error: ${response.status}`);
+        if (useLocalEmbeddings) {
+          // ============ LOCAL BROWSER-BASED EMBEDDINGS ============
+          console.log('🏠 Generating query embedding locally');
+          
+          // Dynamically import LocalEmbeddingService
+          const { getLocalEmbeddingService } = await import('../services/localEmbeddings');
+          const embeddingService = getLocalEmbeddingService();
+          
+          // Get selected model (default to recommended)
+          const modelId = settings.embeddingModel || 'Xenova/all-MiniLM-L6-v2';
+          console.log(`📦 Using model: ${modelId}`);
+          
+          // Load model if needed (service caches loaded models)
+          await embeddingService.loadModel(modelId);
+          
+          // Generate embedding for query
+          embedding = await embeddingService.generateEmbedding(vectorSearchQuery.trim());
+          console.log('✅ Generated local query embedding');
+        } else {
+          // ============ API-BASED EMBEDDINGS ============
+          console.log('🔄 Fetching query embedding from backend API');
+          const apiUrl = await getCachedApiBase();
+          const token = await getToken();
+          console.log('🌐 Using API URL for embed-query:', apiUrl);
+          const response = await fetch(`${apiUrl}/rag/embed-query`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ 
+              query: vectorSearchQuery,
+              embeddingModel: settings.embeddingModel,
+              providers: settings.providers
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Backend error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          embedding = data.embedding;
         }
-        
-        const data = await response.json();
-        embedding = data.embedding;
         
         // Cache the embedding
         const ragConfig = JSON.parse(localStorage.getItem('rag_config') || '{}');
-        const embeddingModel = ragConfig.embeddingModel || 'text-embedding-3-small';
+        const embeddingModel = ragConfig.embeddingModel || settings.embeddingModel || 'text-embedding-3-small';
         await ragDB.cacheQueryEmbedding(vectorSearchQuery.trim(), embedding, embeddingModel);
         console.log('💾 Cached query embedding for future use');
       }
