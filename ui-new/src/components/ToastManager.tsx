@@ -5,6 +5,7 @@ interface Toast {
   message: string;
   type: 'success' | 'error' | 'warning' | 'info';
   duration?: number;
+  progress?: number; // 0-100 for progress bar
   action?: {
     label: string;
     onClick: () => void;
@@ -15,7 +16,7 @@ interface ToastContextType {
   showToast: (message: string, type?: Toast['type'], duration?: number) => void;
   showPersistentToast: (message: string, type?: Toast['type'], action?: Toast['action']) => string;
   removeToast: (id: string) => void;
-  updateToast: (id: string, message: string) => void;
+  updateToast: (id: string, message: string, progress?: number) => void;
   showError: (message: string) => void;
   showSuccess: (message: string) => void;
   showWarning: (message: string) => void;
@@ -40,9 +41,9 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
-  const updateToast = useCallback((id: string, message: string) => {
+  const updateToast = useCallback((id: string, message: string, progress?: number) => {
     setToasts((prev) => prev.map((toast) => 
-      toast.id === id ? { ...toast, message } : toast
+      toast.id === id ? { ...toast, message, ...(progress !== undefined && { progress }) } : toast
     ));
   }, []);
 
@@ -107,6 +108,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             <span className="text-xl font-bold">{getIcon(toast.type)}</span>
             <div className="flex-1">
               <p className="text-sm font-medium">{toast.message}</p>
+              {toast.progress !== undefined && (
+                <div className="mt-2 w-full bg-current/20 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-current h-full transition-all duration-300 ease-out rounded-full"
+                    style={{ width: `${Math.min(100, Math.max(0, toast.progress))}%` }}
+                  />
+                </div>
+              )}
             </div>
             {toast.action && (
               <button

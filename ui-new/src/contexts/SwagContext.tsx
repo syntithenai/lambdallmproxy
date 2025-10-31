@@ -62,7 +62,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoaded, setIsLoaded] = useState(false);
   const [storageStats, setStorageStats] = useState<{ totalSize: number; limit: number; percentUsed: number } | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const { showError, showWarning, showSuccess } = useToast();
+  const { showError, showWarning, showSuccess, showPersistentToast, removeToast, updateToast } = useToast();
   const { user, getToken } = useAuth();
   const { settings } = useSettings();
 
@@ -752,13 +752,26 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Get selected model (default to recommended)
         const modelId = settings.embeddingModel || 'Xenova/all-MiniLM-L6-v2';
+        const modelName = modelId.replace('Xenova/', '');
         console.log(`📦 Loading model: ${modelId}`);
+        
+        // Show persistent toast with progress bar
+        let toastId: string | null = null;
+        toastId = showPersistentToast(`🔄 Loading local model ${modelName}...`, 'info');
         
         // Load model with progress feedback
         await embeddingService.loadModel(modelId, (progress) => {
           console.log(`⏳ ${progress.message} (${progress.progress}%)`);
-          // Could show toast or progress indicator here
+          if (toastId) {
+            const percentage = Math.round(progress.progress);
+            updateToast(toastId, `🔄 Loading local model ${modelName}... ${percentage}%`, percentage);
+          }
         });
+        
+        if (toastId) {
+          removeToast(toastId);
+          toastId = null;
+        }
         
         console.log('✅ Model loaded, generating embeddings...');
         
