@@ -6,7 +6,7 @@ interface CloudSyncSettingsProps {
   onClose?: () => void;
 }
 
-const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose }) => {
+const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +21,18 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
     playlistsCount: number;
     snippetsCount: number;
     embeddingsCount: number;
-  }>({ plansCount: 0, playlistsCount: 0, snippetsCount: 0, embeddingsCount: 0 });
+    chatHistoryCount: number;
+    quizProgressCount: number;
+    feedItemsCount: number;
+  }>({ 
+    plansCount: 0, 
+    playlistsCount: 0, 
+    snippetsCount: 0, 
+    embeddingsCount: 0,
+    chatHistoryCount: 0,
+    quizProgressCount: 0,
+    feedItemsCount: 0
+  });
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(
     localStorage.getItem('auto_sync_enabled') === 'true'
   );
@@ -35,7 +46,10 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
         plansCount: metadata.plansCount,
         playlistsCount: metadata.playlistsCount,
         snippetsCount: metadata.snippetsCount || 0,
-        embeddingsCount: metadata.embeddingsCount || 0
+        embeddingsCount: metadata.embeddingsCount || 0,
+        chatHistoryCount: metadata.chatHistoryCount || 0,
+        quizProgressCount: metadata.quizProgressCount || 0,
+        feedItemsCount: metadata.feedItemsCount || 0
       });
     } catch (error) {
       console.error('Failed to load sync metadata:', error);
@@ -75,6 +89,24 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
         messages.push(`Uploaded ${result.embeddings.itemCount} embedding(s)`);
       } else if (result.embeddings.action === 'downloaded') {
         messages.push(`Downloaded ${result.embeddings.itemCount} embedding(s)`);
+      }
+      
+      if (result.chatHistory.action === 'uploaded') {
+        messages.push(`Uploaded ${result.chatHistory.itemCount} chat(s)`);
+      } else if (result.chatHistory.action === 'downloaded') {
+        messages.push(`Downloaded ${result.chatHistory.itemCount} chat(s)`);
+      }
+      
+      if (result.quizProgress.action === 'uploaded') {
+        messages.push(`Uploaded ${result.quizProgress.itemCount} quiz stat(s)`);
+      } else if (result.quizProgress.action === 'downloaded') {
+        messages.push(`Downloaded ${result.quizProgress.itemCount} quiz stat(s)`);
+      }
+      
+      if (result.feedItems.action === 'uploaded') {
+        messages.push(`Uploaded ${result.feedItems.itemCount} feed item(s)`);
+      } else if (result.feedItems.action === 'downloaded') {
+        messages.push(`Downloaded ${result.feedItems.itemCount} feed item(s)`);
       }
       
       if (messages.length === 0) {
@@ -309,6 +341,21 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
                     <strong>{syncMetadata.embeddingsCount} chunks</strong>
                   </div>
                   
+                  <div className="flex justify-between items-center">
+                    <span>Chat history:</span>
+                    <strong>{syncMetadata.chatHistoryCount} chats</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Quiz progress:</span>
+                    <strong>{syncMetadata.quizProgressCount} quizzes</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Feed items:</span>
+                    <strong>{syncMetadata.feedItemsCount} items</strong>
+                  </div>
+                  
                   {syncStatus && (
                     <div className="p-2 bg-green-100 dark:bg-green-800 rounded text-green-800 dark:text-green-100">
                       ✓ {syncStatus}
@@ -362,6 +409,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
                     <li><strong>Settings & Preferences:</strong> Automatically synced across devices</li>
                     <li><strong>API Keys (SWAG):</strong> Securely backed up to your Google Drive</li>
                     <li><strong>RAG Content:</strong> Snippets and embeddings synced to Google Drive</li>
+                    <li><strong>Chat History:</strong> All conversations backed up with metadata</li>
+                    <li><strong>Quiz Progress:</strong> Quiz statistics and scores synced</li>
+                    <li><strong>Feed Items:</strong> Generated content and recommendations backed up</li>
                     <li><strong>Usage Logs:</strong> Billing and transaction history backed up</li>
                   </ul>
                 </div>
