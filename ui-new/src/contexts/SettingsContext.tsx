@@ -18,40 +18,60 @@ const SettingsContext = createContext<SettingsContextValue | undefined>(undefine
 /**
  * Migrate settings from v1.0.0 to v2.0.0
  * Converts single provider to multi-provider array
+ * Also ensures embedding settings have default values
  */
 function migrateSettings(oldSettings: any): Settings {
-  // If already v2, return as-is (but clean up any legacy fields)
-  if (oldSettings.version === '2.0.0') {
+  let settings = oldSettings;
+  let needsMigration = false;
+
+  // If already v2, clean up legacy fields
+  if (settings.version === '2.0.0') {
     // Check if legacy fields exist
-    if ('provider' in oldSettings || 'llmApiKey' in oldSettings) {
+    if ('provider' in settings || 'llmApiKey' in settings) {
       // Remove legacy v1 fields if they exist (prevents re-migration)
-      const { provider, llmApiKey, ...cleanSettings } = oldSettings;
-      return cleanSettings as Settings;
+      const { provider, llmApiKey, ...cleanSettings } = settings;
+      settings = cleanSettings;
+      needsMigration = true;
     }
-    // No migration needed - return same reference to prevent infinite loop
-    return oldSettings as Settings;
+  } else {
+    // Migrate from v1 single provider to v2 multi-provider
+    const migratedProviders: ProviderConfig[] = [];
+
+    if (settings.provider && settings.llmApiKey) {
+      // Determine provider type - map old groq to new groq type
+      const providerType = settings.provider === 'groq' ? 'groq' : 'openai';
+      
+      migratedProviders.push({
+        id: crypto.randomUUID(),
+        type: providerType,
+        apiEndpoint: PROVIDER_ENDPOINTS[providerType],
+        apiKey: settings.llmApiKey
+      });
+    }
+
+    settings = {
+      version: '2.0.0',
+      providers: migratedProviders,
+      tavilyApiKey: settings.tavilyApiKey || ''
+    };
+    needsMigration = true;
   }
 
-  // Migrate from v1 single provider to v2 multi-provider
-  const migratedProviders: ProviderConfig[] = [];
-
-  if (oldSettings.provider && oldSettings.llmApiKey) {
-    // Determine provider type - map old groq to new groq type
-    const providerType = oldSettings.provider === 'groq' ? 'groq' : 'openai';
-    
-    migratedProviders.push({
-      id: crypto.randomUUID(),
-      type: providerType,
-      apiEndpoint: PROVIDER_ENDPOINTS[providerType],
-      apiKey: oldSettings.llmApiKey
-    });
+  // IMPORTANT: Fix missing or undefined embedding settings
+  // This ensures local embeddings work out of the box
+  if (!settings.embeddingSource || settings.embeddingSource === 'undefined') {
+    console.log('🔧 Migrating: Setting default embeddingSource to "local"');
+    settings.embeddingSource = 'local';
+    needsMigration = true;
+  }
+  
+  if (!settings.embeddingModel || settings.embeddingModel === 'undefined') {
+    console.log('🔧 Migrating: Setting default embeddingModel to "Xenova/all-MiniLM-L6-v2"');
+    settings.embeddingModel = 'Xenova/all-MiniLM-L6-v2';
+    needsMigration = true;
   }
 
-  return {
-    version: '2.0.0',
-    providers: migratedProviders,
-    tavilyApiKey: oldSettings.tavilyApiKey || ''
-  };
+  return settings as Settings;
 }
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
