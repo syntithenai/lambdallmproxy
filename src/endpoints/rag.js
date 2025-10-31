@@ -465,8 +465,8 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                 const providersToTry = [
                     { provider: embeddingProvider, model: embeddingModel, apiKey, providerConfig }
                 ];
-                if (selectedEmbeddingConfig.fallbackOptions) {
-                    providersToTry.push(...selectedEmbeddingConfig.fallbackOptions.map(opt => ({
+                if (embeddingSelection.fallbackOptions) {
+                    providersToTry.push(...embeddingSelection.fallbackOptions.map(opt => ({
                         provider: opt.provider,
                         model: opt.model,
                         apiKey: opt.apiKey,
