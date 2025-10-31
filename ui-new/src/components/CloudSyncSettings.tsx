@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './CloudSyncSettings.css';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 interface CloudSyncSettingsProps {
   onClose?: () => void;
@@ -10,6 +11,109 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  
+  // Sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const [syncMetadata, setSyncMetadata] = useState<{
+    plansCount: number;
+    playlistsCount: number;
+    snippetsCount: number;
+    embeddingsCount: number;
+  }>({ plansCount: 0, playlistsCount: 0, snippetsCount: 0, embeddingsCount: 0 });
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(
+    localStorage.getItem('auto_sync_enabled') === 'true'
+  );
+
+  // Load sync metadata
+  const loadSyncMetadata = async () => {
+    try {
+      const metadata = await googleDriveSync.getSyncMetadata();
+      setLastSyncTime(metadata.lastSyncTime);
+      setSyncMetadata({
+        plansCount: metadata.plansCount,
+        playlistsCount: metadata.playlistsCount,
+        snippetsCount: metadata.snippetsCount || 0,
+        embeddingsCount: metadata.embeddingsCount || 0
+      });
+    } catch (error) {
+      console.error('Failed to load sync metadata:', error);
+    }
+  };
+
+  // Handle manual sync
+  const handleSync = async () => {
+    setIsSyncing(true);
+    setSyncStatus(null);
+    setError(null);
+
+    try {
+      const result = await googleDriveSync.syncAll();
+      
+      // Format status message
+      const messages: string[] = [];
+      if (result.plans.action === 'uploaded') {
+        messages.push(`Uploaded ${result.plans.itemCount} plan(s)`);
+      } else if (result.plans.action === 'downloaded') {
+        messages.push(`Downloaded ${result.plans.itemCount} plan(s)`);
+      }
+      
+      if (result.playlists.action === 'uploaded') {
+        messages.push(`Uploaded ${result.playlists.itemCount} playlist(s)`);
+      } else if (result.playlists.action === 'downloaded') {
+        messages.push(`Downloaded ${result.playlists.itemCount} playlist(s)`);
+      }
+      
+      if (result.snippets.action === 'uploaded') {
+        messages.push(`Uploaded ${result.snippets.itemCount} snippet(s)`);
+      } else if (result.snippets.action === 'downloaded') {
+        messages.push(`Downloaded ${result.snippets.itemCount} snippet(s)`);
+      }
+      
+      if (result.embeddings.action === 'uploaded') {
+        messages.push(`Uploaded ${result.embeddings.itemCount} embedding(s)`);
+      } else if (result.embeddings.action === 'downloaded') {
+        messages.push(`Downloaded ${result.embeddings.itemCount} embedding(s)`);
+      }
+      
+      if (messages.length === 0) {
+        setSyncStatus('Everything is up to date');
+      } else {
+        setSyncStatus(messages.join(', '));
+      }
+      
+      // Reload metadata
+      await loadSyncMetadata();
+      
+      console.log('✅ Sync completed:', result);
+    } catch (err: any) {
+      setError(err.message || 'Sync failed');
+      console.error('Sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Toggle auto-sync
+  const handleAutoSyncToggle = () => {
+    const newValue = !autoSyncEnabled;
+    setAutoSyncEnabled(newValue);
+    localStorage.setItem('auto_sync_enabled', String(newValue));
+  };
+
+  // Format last sync time
+  const formatLastSyncTime = (timestamp: number): string => {
+    if (timestamp === 0) return 'Never';
+    
+    const now = Date.now();
+    const diff = now - timestamp;
+    
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} minutes ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
+    return `${Math.floor(diff / 86400000)} days ago`;
+  };
 
   // Check authentication status on mount
   useEffect(() => {
@@ -19,6 +123,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
     if (accessToken && accessToken.length > 0) {
       setIsAuthenticated(true);
       setUserEmail(storedEmail);
+      loadSyncMetadata();
     }
   }, []);
 
@@ -170,6 +275,80 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
 
       {isAuthenticated && (
         <>
+          <div className="card p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 mt-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">☁️</span>
+              <div className="flex-1">
+                <div className="font-semibold text-blue-900 dark:text-blue-100 mb-3">
+                  Data Sync Status
+                </div>
+                
+                <div className="text-sm text-blue-700 dark:text-blue-300 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span>Last synced:</span>
+                    <strong>{formatLastSyncTime(lastSyncTime)}</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Saved plans:</span>
+                    <strong>{syncMetadata.plansCount} items</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Saved playlists:</span>
+                    <strong>{syncMetadata.playlistsCount} items</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Saved snippets:</span>
+                    <strong>{syncMetadata.snippetsCount} items</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Saved embeddings:</span>
+                    <strong>{syncMetadata.embeddingsCount} chunks</strong>
+                  </div>
+                  
+                  {syncStatus && (
+                    <div className="p-2 bg-green-100 dark:bg-green-800 rounded text-green-800 dark:text-green-100">
+                      ✓ {syncStatus}
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleSync}
+                      disabled={isSyncing}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSyncing ? (
+                        <>
+                          <span className="inline-block animate-spin mr-2">🔄</span>
+                          Syncing...
+                        </>
+                      ) : (
+                        <>🔄 Sync Now</>
+                      )}
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mt-3 p-2 bg-blue-100 dark:bg-blue-800 rounded">
+                    <input
+                      type="checkbox"
+                      id="auto-sync"
+                      checked={autoSyncEnabled}
+                      onChange={handleAutoSyncToggle}
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor="auto-sync" className="cursor-pointer">
+                      Auto-sync every 5 minutes
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <div className="card p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 mt-4">
             <div className="flex items-start gap-3">
               <span className="text-2xl">✅</span>
@@ -182,7 +361,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({ onClose: _onClose
                   <ul className="list-disc ml-5 mt-2 space-y-1">
                     <li><strong>Settings & Preferences:</strong> Automatically synced across devices</li>
                     <li><strong>API Keys (SWAG):</strong> Securely backed up to your Google Drive</li>
-                    <li><strong>RAG Content:</strong> Snippets and embeddings synced to Google Sheets</li>
+                    <li><strong>RAG Content:</strong> Snippets and embeddings synced to Google Drive</li>
                     <li><strong>Usage Logs:</strong> Billing and transaction history backed up</li>
                   </ul>
                 </div>

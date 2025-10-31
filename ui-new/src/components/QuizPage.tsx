@@ -181,7 +181,7 @@ export default function QuizPage() {
               <ArrowLeft className="w-6 h-6 text-gray-600 dark:text-gray-400" />
             </button>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 quiz-page-header" data-testid="quiz-page-title">
                 <Brain className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
                 {t('quiz.title')}
               </h1>

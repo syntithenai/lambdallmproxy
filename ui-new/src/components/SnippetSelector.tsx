@@ -41,6 +41,7 @@ import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useSwag } from '../contexts/SwagContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
@@ -105,6 +106,7 @@ export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
 }) => {
   const { getToken } = useAuth();
   const { snippets, getAllTags } = useSwag();
+  const { settings } = useSettings();
   
   // Search mode: 'text' for keyword search, 'vector' for semantic search
   const [searchMode, setSearchMode] = useState<'text' | 'vector'>('text');
@@ -171,7 +173,11 @@ export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ query: vectorQuery })
+        body: JSON.stringify({ 
+          query: vectorQuery,
+          embeddingModel: settings.embeddingModel,
+          providers: settings.providers
+        })
       });
       
       if (!response.ok) {

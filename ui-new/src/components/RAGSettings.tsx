@@ -3,6 +3,8 @@ import { useToast } from './ToastManager';
 // Document management removed from settings - heavy features moved to SWAG page
 import { useSwag } from '../contexts/SwagContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { getCachedApiBase } from '../utils/api';
 
 interface RAGConfig {
   enabled: boolean;
@@ -26,24 +28,85 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
   similarityThreshold: 0.3, // Lowered from 0.5 for better recall (semantic search can have lower scores for exact matches)
 };
 
-const EMBEDDING_MODELS = [
-  { name: 'text-embedding-3-small', provider: 'openai', cost: '$0.02/1M tokens', recommended: true },
-  { name: 'text-embedding-3-large', provider: 'openai', cost: '$0.13/1M tokens' },
-  { name: 'embed-english-v3.0', provider: 'cohere', cost: '$0.10/1M tokens' },
-  { name: 'm2-bert-80M-8k-retrieval', provider: 'together', cost: '$0.008/1M tokens' },
+// Local browser-based embedding models (via Transformers.js)
+const LOCAL_EMBEDDING_MODELS = [
+  { id: 'Xenova/all-MiniLM-L6-v2', name: 'MiniLM-L6 (Recommended)', dimensions: 384, size: '23 MB', speed: 'Fast', description: 'Balanced quality and speed, best for general use' },
+  { id: 'Xenova/paraphrase-MiniLM-L3-v2', name: 'MiniLM-L3 (Fastest)', dimensions: 384, size: '17 MB', speed: 'Very Fast', description: 'Fastest option, slightly lower quality' },
+  { id: 'Xenova/bge-small-en-v1.5', name: 'BGE-Small (Highest Quality)', dimensions: 384, size: '33 MB', speed: 'Slower', description: 'Best quality for English text, slower generation' },
 ];
 
+interface EmbeddingModel {
+  id: string;
+  provider: string;
+  name: string;
+  dimensions: number;
+  maxTokens: number;
+  recommended?: boolean;
+  deprecated?: boolean;
+  description: string;
+  pricing?: {
+    perMillionTokens: number;
+  };
+}
+
 export const RAGSettings: React.FC = () => {
-  const { showSuccess, showError, showWarning } = useToast();
+  const { showSuccess, showError, showWarning, showPersistentToast, removeToast, updateToast } = useToast();
   const { getUserRagSpreadsheet } = useSwag();
   const { user } = useAuth();
+  const { settings, setSettings } = useSettings();
   const [config, setConfig] = useState<RAGConfig>(DEFAULT_RAG_CONFIG);
   const [loading, setLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [availableEmbeddings, setAvailableEmbeddings] = useState<EmbeddingModel[]>([]);
+  const [loadingEmbeddings, setLoadingEmbeddings] = useState(true);
+  const [modelLoadProgress, setModelLoadProgress] = useState<{ loading: boolean; progress: number; model: string } | null>(null);
 
   useEffect(() => {
     loadRAGConfig();
+    fetchAvailableEmbeddings();
   }, []);
+  
+  // Check if currently selected model is available
+  const isSelectedModelAvailable = () => {
+    if (settings.embeddingSource === 'local') {
+      // Local models are always "available" (will download on demand)
+      return true;
+    }
+    
+    // For API models, check if selected model is in available list
+    if (!settings.embeddingModel) {
+      return availableEmbeddings.length > 0; // No model selected, but models available
+    }
+    
+    return availableEmbeddings.some(m => m.id === settings.embeddingModel);
+  };
+
+  const fetchAvailableEmbeddings = async () => {
+    try {
+      const apiUrl = await getCachedApiBase();
+      const token = localStorage.getItem('google_token');
+      
+      const response = await fetch(`${apiUrl}/billing`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.availableEmbeddings && Array.isArray(data.availableEmbeddings)) {
+          setAvailableEmbeddings(data.availableEmbeddings);
+          console.log('📊 Fetched available embeddings:', data.availableEmbeddings.length);
+        }
+      } else {
+        console.warn('Failed to fetch available embeddings from billing endpoint');
+      }
+    } catch (error) {
+      console.error('Error fetching available embeddings:', error);
+    } finally {
+      setLoadingEmbeddings(false);
+    }
+  };
 
   const loadRAGConfig = async () => {
     try {
@@ -111,6 +174,53 @@ export const RAGSettings: React.FC = () => {
     }
   };
 
+  const preloadLocalModel = async (modelId: string) => {
+    let toastId: string | null = null;
+    
+    try {
+      setModelLoadProgress({ loading: true, progress: 0, model: modelId });
+      
+      // Show persistent toast
+      const modelName = modelId.split('/')[1];
+      toastId = showPersistentToast(`🔄 Loading model ${modelName}... 0%`, 'info');
+      
+      // Dynamically import the service
+      const { getLocalEmbeddingService } = await import('../services/localEmbeddings');
+      const embeddingService = getLocalEmbeddingService();
+      
+      // Load model with progress callback
+      await embeddingService.loadModel(modelId, (progress) => {
+        const percentage = Math.round(progress.progress * 100);
+        setModelLoadProgress({ loading: true, progress: percentage, model: modelId });
+        
+        // Update persistent toast
+        if (toastId) {
+          updateToast(toastId, `🔄 Loading model ${modelName}... ${percentage}%`);
+        }
+      });
+      
+      // Hide loading toast
+      if (toastId) {
+        removeToast(toastId);
+      }
+      
+      // Show success
+      showSuccess(`✅ Model ${modelName} loaded successfully! Ready to use.`);
+      setModelLoadProgress(null);
+      
+    } catch (error) {
+      console.error('Failed to preload local model:', error);
+      
+      // Hide loading toast
+      if (toastId) {
+        removeToast(toastId);
+      }
+      
+      showError(`❌ Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setModelLoadProgress(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -143,6 +253,34 @@ export const RAGSettings: React.FC = () => {
         </label>
       </div>
 
+      {/* Model Unavailable Warning */}
+      {config.enabled && !loadingEmbeddings && !isSelectedModelAvailable() && (
+        <div className="card p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-700">
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">⚠️</div>
+            <div className="flex-1">
+              <div className="font-bold text-red-900 dark:text-red-200 mb-2">
+                RAG System Disabled: Embedding Model Not Available
+              </div>
+              <div className="text-sm text-red-800 dark:text-red-300 space-y-2">
+                <p>
+                  Your selected embedding model "{settings.embeddingModel || 'none'}" is not available from your configured providers.
+                </p>
+                <p className="font-medium">
+                  To fix this:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 ml-2">
+                  <li>Select a new embedding model from the available options below</li>
+                  <li>Save your settings</li>
+                  <li>Go to SWAG page and regenerate embeddings for all your snippets</li>
+                  <li>Or configure a provider that supports your selected model in the Providers tab</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Auto-Embed Toggle */}
       <div className="card p-4">
         <label className="flex items-center justify-between cursor-pointer">
@@ -164,35 +302,145 @@ export const RAGSettings: React.FC = () => {
         </label>
       </div>
 
-      {/* Embedding Model Selection */}
+      {/* Embedding Source Selection */}
       <div className="card p-4">
-        <label className="block mb-2">
-          <span className="font-medium text-gray-900 dark:text-gray-100">
-            Embedding Model
-          </span>
-        </label>
-        <select
-          value={config.embeddingModel}
-          onChange={(e) => {
-            const selectedModel = EMBEDDING_MODELS.find(m => m.name === e.target.value);
-            if (selectedModel) {
-              handleConfigChange('embeddingModel', selectedModel.name);
-              handleConfigChange('embeddingProvider', selectedModel.provider);
-            }
-          }}
-          disabled={!config.enabled}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50"
-        >
-          {EMBEDDING_MODELS.map(model => (
-            <option key={model.name} value={model.name}>
-              {model.name} ({model.cost}) {model.recommended ? '⭐ Recommended' : ''}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
-          ⚠️ Changing models requires re-embedding all content
-        </p>
+        <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
+          Embedding Source
+        </h4>
+        
+        <div className="space-y-3">
+          {/* API-based option */}
+          <label className="flex items-start cursor-pointer">
+            <input
+              type="radio"
+              name="embeddingSource"
+              value="api"
+              checked={(settings.embeddingSource || 'api') === 'api'}
+              onChange={() => {
+                setSettings({ ...settings, embeddingSource: 'api' });
+                setHasChanges(true);
+              }}
+              disabled={!config.enabled}
+              className="mt-1 w-4 h-4 text-blue-600 disabled:opacity-50"
+            />
+            <div className="ml-3">
+              <div className="font-medium text-gray-900 dark:text-gray-100">
+                API-Based (Server)
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                High quality (1536 dims), fast (&lt;1s), requires provider. Uses your configured providers.
+              </div>
+            </div>
+          </label>
+
+          {/* Local browser option */}
+          <label className="flex items-start cursor-pointer">
+            <input
+              type="radio"
+              name="embeddingSource"
+              value="local"
+              checked={settings.embeddingSource === 'local'}
+              onChange={() => {
+                setSettings({ ...settings, embeddingSource: 'local' });
+                setHasChanges(true);
+              }}
+              disabled={!config.enabled}
+              className="mt-1 w-4 h-4 text-blue-600 disabled:opacity-50"
+            />
+            <div className="ml-3">
+              <div className="font-medium text-gray-900 dark:text-gray-100">
+                Local (Browser) 🆕
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Free, offline, no auth needed. Slower (2-5s), lower quality (384 dims). Good for personal use.
+              </div>
+            </div>
+          </label>
+        </div>
       </div>
+
+      {/* Embedding Model Selection - API-Based */}
+      {(settings.embeddingSource || 'api') === 'api' && (
+        <div className="card p-4">
+          <label className="block mb-2">
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              API Embedding Model
+            </span>
+          </label>
+          
+          {loadingEmbeddings ? (
+            <div className="text-sm text-gray-500">Loading available models...</div>
+          ) : availableEmbeddings.length === 0 ? (
+            <div className="text-sm text-red-600 dark:text-red-400">
+              ⚠️ No embedding models available. Please configure a provider with embedding capabilities in the Providers tab.
+            </div>
+          ) : (
+            <>
+              <select
+                value={settings.embeddingModel || 'text-embedding-3-small'}
+                onChange={(e) => {
+                  setSettings({ ...settings, embeddingModel: e.target.value });
+                  setHasChanges(true);
+                }}
+                disabled={!config.enabled}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50"
+              >
+                {availableEmbeddings.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} ({model.provider}) - ${model.pricing?.perMillionTokens || 0}/M tokens
+                    {model.recommended ? ' ⭐' : ''}
+                    {model.deprecated ? ' (Legacy)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                {availableEmbeddings.find(m => m.id === (settings.embeddingModel || 'text-embedding-3-small'))?.description || 
+                 'Select an embedding model from your configured providers'}
+              </p>
+            </>
+          )}
+          <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+            ⚠️ Changing models requires re-embedding all content
+          </p>
+        </div>
+      )}
+
+      {/* Embedding Model Selection - Local */}
+      {settings.embeddingSource === 'local' && (
+        <div className="card p-4">
+          <label className="block mb-2">
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              Local Embedding Model
+            </span>
+          </label>
+          <select
+            value={settings.embeddingModel || 'Xenova/all-MiniLM-L6-v2'}
+            onChange={async (e) => {
+              const newModel = e.target.value;
+              setSettings({ ...settings, embeddingModel: newModel });
+              setHasChanges(true);
+              
+              // Preload the model to verify it works and cache it
+              await preloadLocalModel(newModel);
+            }}
+            disabled={!config.enabled || modelLoadProgress?.loading}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 disabled:opacity-50"
+          >
+            {LOCAL_EMBEDDING_MODELS.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name} - {model.size}, {model.speed}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            {LOCAL_EMBEDDING_MODELS.find(m => m.id === (settings.embeddingModel || 'Xenova/all-MiniLM-L6-v2'))?.description || 
+             'Runs entirely in your browser using WebAssembly'}
+          </p>
+          <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+            ⚠️ Model will download on first use (~17-33 MB). Changing models requires re-embedding all content.
+          </p>
+        </div>
+      )}
 
       {/* Chunking Settings */}
       <div className="card p-4 space-y-4">

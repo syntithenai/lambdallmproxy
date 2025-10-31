@@ -6,10 +6,8 @@ import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useDialogClose } from '../hooks/useDialogClose';
 import { ProviderList } from './ProviderList';
-import { ServerProviders } from './ServerProviders';
 import { TTSSettings } from './TTSSettings';
 import { RAGSettings } from './RAGSettings';
-import { VoiceSettings } from './VoiceSettings';
 import CloudSyncSettings from './CloudSyncSettings';
 import { TTS_FEATURE_ENABLED } from '../types/tts';
 
@@ -49,7 +47,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'voice' | 'tts' | 'rag' | 'cloud'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag' | 'cloud'>('general');
   
   // Track if a provider is being edited
   const [isEditingProvider, setIsEditingProvider] = useState(false);
@@ -170,16 +168,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             📍 {t('settings.tabs.location')}
           </button>
-          <button
-            onClick={() => setActiveTab('voice')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
-              activeTab === 'voice'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-            }`}
-          >
-            🎤 {t('settings.tabs.voice')}
-          </button>
           {TTS_FEATURE_ENABLED && (
             <button
               onClick={() => setActiveTab('tts')}
@@ -256,16 +244,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
           
-          {/* Server-Configured Providers (from environment variables) */}
-          <ServerProviders />
-          
-          {/* User-Configured Provider List */}
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              👤 User-Configured Providers
-            </h4>
-            <ProviderList onEditingChange={setIsEditingProvider} />
-          </div>
+          {/* Provider List Component */}
+          <ProviderList onEditingChange={setIsEditingProvider} />
           
           {/* Model Selection Optimization - Hidden when editing a provider */}
           {!isEditingProvider && (
@@ -554,87 +534,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               </label>
-            </div>
 
-            {/* YouTube Transcripts - Simple Checkbox */}
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
-              <div className="mb-4">
-                <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={isConnected}
-                    onChange={(e) => {
-                      // Don't trigger OAuth on checkbox click
-                      // User needs to explicitly use the connect button below
-                      e.preventDefault();
-                    }}
-                    className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900 dark:text-gray-100">
-                      📺 Use YouTube Captions API
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Direct access to YouTube transcripts (faster than Whisper transcription)
-                    </div>
-                  </div>
-                  {isConnected && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded-full">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                      Connected
-                    </span>
-                  )}
-                </label>
-              </div>
-
-              {/* Connection Controls - Only show if not connected */}
-              {!isConnected && (
-                <div className="ml-11 mb-4">
-                  <button
-                    onClick={initiateOAuthFlow}
-                    disabled={isLoading}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
-                  >
-                    {isLoading ? 'Connecting...' : 'Connect YouTube Account'}
-                  </button>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    Requires Google account authorization (read-only access)
-                  </p>
-                </div>
-              )}
-
-              {/* Disconnect Button - Only show if connected */}
-              {isConnected && (
-                <div className="ml-11 mb-4">
-                  <button
-                    onClick={() => {
-                      if (confirm('Are you sure you want to disconnect YouTube access?')) {
-                        disconnect();
-                      }
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-red-300 dark:border-red-700 rounded-lg transition-colors"
-                  >
-                    Disconnect YouTube Access
-                  </button>
-                </div>
-              )}
-
-              {/* Error Display */}
-              {error && (
-                <div className="ml-11 mb-4 text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
-                  <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                  <span>{error}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="space-y-3">
               <label className="flex items-center gap-3 cursor-pointer p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-2 border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10">
                 <input
                   type="checkbox"
@@ -644,7 +544,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                    � {t('settings.askLlm')}
+                    🤖 {t('settings.askLlm')}
                     <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-200 dark:bg-amber-900/50 dark:text-amber-400 rounded-full">
                       ⚠️ HIGH TOKEN USAGE
                     </span>
@@ -690,6 +590,82 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </label>
             </div>
+          </div>
+
+          {/* YouTube Transcripts - Simple Checkbox */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
+            <div className="mb-4">
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={isConnected}
+                  onChange={(e) => {
+                    // Don't trigger OAuth on checkbox click
+                    // User needs to explicitly use the connect button below
+                    e.preventDefault();
+                  }}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    📺 Use YouTube Captions API
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Direct access to YouTube transcripts (faster than Whisper transcription)
+                  </div>
+                </div>
+                {isConnected && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded-full">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Connected
+                  </span>
+                )}
+              </label>
+            </div>
+
+            {/* Connection Controls - Only show if not connected */}
+            {!isConnected && (
+              <div className="ml-11 mb-4">
+                <button
+                  onClick={initiateOAuthFlow}
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
+                >
+                  {isLoading ? 'Connecting...' : 'Connect YouTube Account'}
+                </button>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  Requires Google account authorization (read-only access)
+                </p>
+              </div>
+            )}
+
+            {/* Disconnect Button - Only show if connected */}
+            {isConnected && (
+              <div className="ml-11 mb-4">
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure you want to disconnect YouTube access?')) {
+                      disconnect();
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-red-300 dark:border-red-700 rounded-lg transition-colors"
+                >
+                  Disconnect YouTube Access
+                </button>
+              </div>
+            )}
+
+            {/* Error Display */}
+            {error && (
+              <div className="ml-11 mb-4 text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
+                <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span>{error}</span>
+              </div>
+            )}
           </div>
 
           {/* MCP Servers */}
@@ -949,11 +925,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
         </div>
-        )}
-
-        {/* Voice Tab */}
-        {activeTab === 'voice' && (
-          <VoiceSettings />
         )}
 
         {/* TTS Tab */}

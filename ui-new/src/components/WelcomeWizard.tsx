@@ -52,7 +52,16 @@ Let's explore the key features in under 2 minutes.`,
     title: '💎 SWAG Storage',
     content: `Save & organize important info. Tag, search, and embed content locally!`,
     targetSelector: 'button[title*="Swag" i]',
-    tooltipPosition: 'bottom',
+    tooltipPosition: 'left',
+    navigateTo: '/',
+  },
+  {
+    id: 'nav-billing',
+    type: 'spotlight',
+    title: '💰 Navigate to Billing',
+    content: `Click this button to view billing & usage.`,
+    targetSelector: 'button[aria-label*="Billing" i], a[href="/billing"]',
+    tooltipPosition: 'right',
     navigateTo: '/',
   },
   {
@@ -60,7 +69,7 @@ Let's explore the key features in under 2 minutes.`,
     type: 'spotlight',
     title: '💰 Billing & Usage',
     content: `Track costs & usage. $0.50 welcome bonus included!`,
-    targetSelector: 'a[href="/billing"], button[aria-label*="billing" i]',
+    targetSelector: '.billing-page, .billing-header, .billing-title h1, .transactions-table, .summary-cards',
     tooltipPosition: 'bottom',
     navigateTo: '/billing',
   },
@@ -68,8 +77,8 @@ Let's explore the key features in under 2 minutes.`,
     id: 'feed',
     type: 'spotlight',
     title: '📰 Content Feed',
-    content: `Discover curated articles tailored to you.`,
-    targetSelector: 'a[href="/feed"], button[aria-label*="feed" i]',
+    content: `Discover curated articles, tutorials & insights. Filter by your saved Swag tags.`,
+    targetSelector: '.bg-white.border-b.border-gray-200.sticky h1, .text-2xl.font-bold.text-gray-900',
     tooltipPosition: 'bottom',
     navigateTo: '/feed',
   },
@@ -77,8 +86,8 @@ Let's explore the key features in under 2 minutes.`,
     id: 'quiz',
     type: 'spotlight',
     title: '🧠 Quiz Mode',
-    content: `Test your knowledge with AI-generated quizzes.`,
-    targetSelector: 'a[href="/quiz"], button[aria-label*="quiz" i]',
+    content: `Test your knowledge with AI-generated quizzes. Generate from Feed articles or selected SWAG content.`,
+    targetSelector: '[data-testid="quiz-page-title"], .quiz-page-header, h1.text-3xl.font-bold',
     tooltipPosition: 'bottom',
     navigateTo: '/quiz',
   },
@@ -86,8 +95,8 @@ Let's explore the key features in under 2 minutes.`,
     id: 'image-editor',
     type: 'spotlight',
     title: '🎨 Image Editor',
-    content: `Create & edit images with AI assistance.`,
-    targetSelector: 'a[href="/image-editor"], button[aria-label*="image" i]',
+    content: `Create & edit images with AI assistance. Generate, modify, and save images.`,
+    targetSelector: 'h1.text-xl.font-bold.text-gray-900',
     tooltipPosition: 'bottom',
     navigateTo: '/image-editor',
   },
@@ -95,8 +104,8 @@ Let's explore the key features in under 2 minutes.`,
     id: 'settings',
     type: 'spotlight',
     title: '⚙️ Settings',
-    content: `Add your own API keys for $0 cost. Customize tools & preferences.`,
-    targetSelector: 'a[href="/settings"], button[aria-label*="settings" i]',
+    content: `Add your own API keys for $0 cost. Customize tools, themes & preferences.`,
+    targetSelector: 'h1.text-3xl.font-bold.text-gray-900, h1.dark\\:text-gray-100',
     tooltipPosition: 'bottom',
     navigateTo: '/settings',
   },
@@ -105,10 +114,6 @@ Let's explore the key features in under 2 minutes.`,
     type: 'modal',
     title: '🎉 All Set!',
     content: `You're ready to go!
-
-💡 Press "/" for quick examples
-🎙️ Use voice for hands-free chat
-💾 Save responses to SWAG
 
 Enjoy your AI assistant!`,
     navigateTo: '/',
@@ -131,8 +136,13 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
     if (!isOpen) return;
     if (step.navigateTo) {
       navigate(step.navigateTo);
+      
+      // Scroll to top for nav-billing step
+      if (step.id === 'nav-billing') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     }
-  }, [isOpen, currentStep, step.navigateTo, navigate]);
+  }, [isOpen, currentStep, step.navigateTo, navigate, step.id]);
 
   // Calculate spotlight position with retry logic
   useEffect(() => {
@@ -172,6 +182,15 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
           // eslint-disable-next-line no-console
           console.warn(`Spotlight target not found after ${maxAttempts} attempts: ${step.targetSelector}`);
           setIsSearching(false);
+          
+          // Auto-advance for content pages that fail to load
+          // Give user 2 seconds to see the fallback UI before auto-skipping
+          const autoAdvanceSteps = ['feed', 'billing', 'quiz', 'image-editor', 'settings'];
+          if (autoAdvanceSteps.includes(step.id)) {
+            setTimeout(() => {
+              handleNext();
+            }, 2000);
+          }
         }
       }
     }, 300);

@@ -365,6 +365,38 @@ export const resetWelcomeWizard = (): void => {
 };
 
 /**
+ * Trigger the welcome wizard to show
+ */
+export const triggerWelcomeWizard = (): void => {
+  try {
+    console.log('🎓 Triggering welcome wizard...');
+    
+    // Reset the wizard state
+    resetWelcomeWizard();
+    console.log('🎓 Reset wizard state');
+    
+    // Dispatch a custom event to trigger the wizard
+    const event = new CustomEvent('show-welcome-wizard');
+    console.log('🎓 About to dispatch event:', event);
+    console.log('🎓 Current event listeners on window:', window);
+    
+    const result = window.dispatchEvent(event);
+    console.log('🎓 Event dispatch result:', result);
+    console.log('🎓 Event dispatched successfully');
+    
+    // Also try a delayed dispatch in case of timing issues
+    setTimeout(() => {
+      console.log('🎓 Trying delayed dispatch...');
+      const delayedEvent = new CustomEvent('show-welcome-wizard');
+      window.dispatchEvent(delayedEvent);
+    }, 100);
+    
+  } catch (e) {
+    console.error('Failed to trigger welcome wizard:', e);
+  }
+};
+
+/**
  * Check if welcome wizard should be shown
  * @param isAuthenticated - Whether user is logged in
  * @returns true if wizard should be displayed

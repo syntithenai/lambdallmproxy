@@ -1041,7 +1041,11 @@ export const SwagPage: React.FC = () => {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ query: vectorSearchQuery })
+          body: JSON.stringify({ 
+            query: vectorSearchQuery,
+            embeddingModel: settings.embeddingModel,
+            providers: settings.providers
+          })
         });
         
         if (!response.ok) {
@@ -1538,6 +1542,33 @@ export const SwagPage: React.FC = () => {
                   placeholder="Add tag to filter..."
                 />
               </div>
+              
+              {/* Select All/None buttons - moved from floating toolbar */}
+              {snippets.length > 0 && !viewingSnippet && !editingSnippet && (
+                <>
+                  <div className="h-4 w-px bg-gray-300 dark:bg-gray-600 mx-1" />
+                  <button
+                    onClick={selectAll}
+                    className="px-3 py-1 text-xs rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                    title="Select all snippets (Ctrl+A)"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    <span>Select All</span>
+                  </button>
+                  <button
+                    onClick={selectNone}
+                    className="px-3 py-1 text-xs rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                    title="Deselect all snippets (Ctrl+D)"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span>Select None</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -2383,35 +2414,11 @@ export const SwagPage: React.FC = () => {
         </div>
       )}
 
-      {/* Floating Action Toolbar (Updated with Select All/None) */}
+      {/* Floating Action Toolbar (Select All/None buttons moved to tag filter area) */}
   {getSelectedSnippets().length > 0 && !viewingSnippet && !editingSnippet && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 shadow-2xl rounded-full px-4 md:px-6 py-3 flex items-center gap-2 md:gap-4 border-2 border-gray-200 dark:border-gray-700 z-50 animate-in slide-in-from-bottom duration-200 max-w-[95vw] overflow-x-auto">
-          {/* Select All/None buttons */}
-          <button
-            onClick={selectAll}
-            className="px-2 md:px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-1.5 whitespace-nowrap"
-            title="Select all snippets (Ctrl+A)"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-            <span className="hidden md:inline">All</span>
-          </button>
-          <button
-            onClick={selectNone}
-            className="px-2 md:px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-1.5 whitespace-nowrap"
-            title="Deselect all snippets (Ctrl+D)"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            <span className="hidden md:inline">None</span>
-          </button>
-          
-          <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" />
-          
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
-            {getSelectedSnippets().length}
+            {getSelectedSnippets().length} selected
           </span>
           
           <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" />

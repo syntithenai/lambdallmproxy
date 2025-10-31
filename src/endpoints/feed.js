@@ -283,32 +283,51 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
     // Parse response
     let parsedData;
     try {
-        // Extract JSON from response
-        const content = response.content || response.message?.content || '';
+        // Extract JSON from response - check multiple possible locations
+        const content = response.text || response.content || response.message?.content || response.choices?.[0]?.message?.content || '';
+        
+        console.log('🔍 Feed: Parsing LLM response');
+        console.log('🔍 Feed: Response structure:', {
+            hasContent: !!response.content,
+            hasMessage: !!response.message,
+            hasMessageContent: !!response.message?.content,
+            hasText: !!response.text,
+            responseType: typeof response,
+            responseKeys: Object.keys(response),
+            contentLength: content.length,
+            contentPreview: content.substring(0, 200)
+        });
         
         // Try to extract JSON from markdown code blocks first
         let jsonText = null;
         const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
         if (codeBlockMatch) {
             jsonText = codeBlockMatch[1];
+            console.log('🔍 Feed: Found JSON in code block');
         } else {
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 jsonText = jsonMatch[0];
+                console.log('🔍 Feed: Found JSON without code block');
             }
         }
         
         if (!jsonText) {
-            console.error('No JSON found in response. Content length:', content.length);
+            console.error('❌ Feed: No JSON found in response');
+            console.error('Content length:', content.length);
             console.error('Content preview:', content.substring(0, 500));
+            console.error('Full content:', content);
             throw new Error('No JSON found in response');
         }
         
+        console.log('🔍 Feed: Attempting to parse JSON, length:', jsonText.length);
         parsedData = JSON.parse(jsonText);
+        console.log('✅ Feed: Successfully parsed JSON');
     } catch (error) {
-        console.error('Failed to parse LLM response:', error);
+        console.error('❌ Feed: Failed to parse LLM response:', error);
         console.error('Response type:', typeof response);
         console.error('Response keys:', Object.keys(response));
+        console.error('Raw response:', response);
         throw new Error('Failed to parse LLM response');
     }
     

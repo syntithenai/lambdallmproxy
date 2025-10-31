@@ -83,6 +83,11 @@ function AppContent() {
   useEffect(() => {
     console.log('🧭 Route changed to:', location.pathname);
   }, [location.pathname]);
+
+  // Debug: Log welcome wizard state changes
+  useEffect(() => {
+    console.log('🎓 showWelcomeWizard changed to:', showWelcomeWizard);
+  }, [showWelcomeWizard]);
   
   // Initialize unified sync system
   useEffect(() => {
@@ -311,12 +316,27 @@ function AppContent() {
 
   // Check if we should show the welcome wizard
   useEffect(() => {
-    if (hasCheckedAuth && isAuthenticated && shouldShowWelcomeWizard(isAuthenticated)) {
-      // Small delay to let the UI finish rendering
-      const timer = setTimeout(() => setShowWelcomeWizard(true), 500);
-      return () => clearTimeout(timer);
-    }
+    // Temporarily disabled automatic welcome wizard to debug manual trigger
+    // if (hasCheckedAuth && isAuthenticated && shouldShowWelcomeWizard(isAuthenticated)) {
+    //   // Small delay to let the UI finish rendering
+    //   const timer = setTimeout(() => setShowWelcomeWizard(true), 500);
+    //   return () => clearTimeout(timer);
+    // }
   }, [hasCheckedAuth, isAuthenticated]);
+
+  // Listen for manual welcome wizard trigger events
+  useEffect(() => {
+    const handleShowWelcomeWizard = () => {
+      console.log('🎓 Received show-welcome-wizard event, setting showWelcomeWizard to true');
+      setShowWelcomeWizard(prev => {
+        console.log('🎓 State update function called, prev:', prev, 'new: true');
+        return true;
+      });
+    };
+
+    window.addEventListener('show-welcome-wizard', handleShowWelcomeWizard);
+    return () => window.removeEventListener('show-welcome-wizard', handleShowWelcomeWizard);
+  }, []);
 
   // Check if we're on a public route (shared snippet viewer, privacy policy, help page)
   const isPublicRoute = location.pathname.startsWith('/snippet/shared') || 
@@ -327,15 +347,25 @@ function AppContent() {
   // Show public pages without authentication
   if (isPublicRoute) {
     return (
-      <Suspense fallback={<LoadingFallback />}>
-        {location.pathname.startsWith('/snippet/shared') || location.hash.includes('/snippet/shared') ? (
-          <SharedSnippetViewer />
-        ) : location.pathname === '/privacy' ? (
-          <PrivacyPolicy />
-        ) : location.pathname === '/help' ? (
-          <HelpPage />
-        ) : null}
-      </Suspense>
+      <>
+        <Suspense fallback={<LoadingFallback />}>
+          {location.pathname.startsWith('/snippet/shared') || location.hash.includes('/snippet/shared') ? (
+            <SharedSnippetViewer />
+          ) : location.pathname === '/privacy' ? (
+            <PrivacyPolicy />
+          ) : location.pathname === '/help' ? (
+            <HelpPage />
+          ) : null}
+        </Suspense>
+        
+        {/* Welcome Wizard - Also available on public routes for authenticated users */}
+        {isAuthenticated && (
+          <WelcomeWizard 
+            isOpen={showWelcomeWizard}
+            onClose={() => setShowWelcomeWizard(false)}
+          />
+        )}
+      </>
     );
   }
 

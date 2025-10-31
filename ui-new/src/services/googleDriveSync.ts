@@ -9,6 +9,9 @@ import { requestGoogleAuth } from '../utils/googleDocs';
 import { getAllCachedPlans, saveCachedPlan, clearAllCachedPlans } from '../utils/planningCache';
 import type { CachedPlan } from '../utils/planningCache';
 import { playlistDB } from '../utils/playlistDB';
+import { storage } from '../utils/storage';
+import { ragDB } from '../utils/ragDB';
+import type { ContentSnippet } from '../contexts/SwagContext';
 
 /**
  * Sync result for a single operation
@@ -34,8 +37,12 @@ export interface SyncMetadata {
   lastSyncTime: number;
   lastPlansSync: number;
   lastPlaylistsSync: number;
+  lastSnippetsSync: number;
+  lastEmbeddingsSync: number;
   plansCount: number;
   playlistsCount: number;
+  snippetsCount: number;
+  embeddingsCount: number;
 }
 
 /**
@@ -52,6 +59,8 @@ export interface SavedPlaylist {
 const APP_FOLDER_NAME = 'LLM Proxy App Data';
 const PLANS_FILENAME = 'saved_plans.json';
 const PLAYLISTS_FILENAME = 'saved_playlists.json';
+const SNIPPETS_FILENAME = 'saved_snippets.json';
+const EMBEDDINGS_FILENAME = 'saved_embeddings.json';
 const METADATA_FILENAME = 'sync_metadata.json';
 
 // Cache folder ID to avoid repeated lookups
@@ -497,15 +506,233 @@ class GoogleDriveSync {
   }
 
   /**
-   * Sync both plans and playlists
+   * Sync snippets (SWAG content)
    */
-  async syncAll(): Promise<{ plans: SyncResult, playlists: SyncResult }> {
-    const [plans, playlists] = await Promise.all([
+  async syncSnippets(): Promise<SyncResult> {
+    try {
+      // Get local snippets from storage
+      const localSnippets = await storage.getItem<ContentSnippet[]>('swag-snippets') || [];
+      
+      // Get remote snippets from Drive
+      const remoteSnippets = await this.downloadSnippets();
+      
+      if (localSnippets.length === 0 && remoteSnippets.length === 0) {
+        return {
+          success: true,
+          action: 'no-change',
+          timestamp: Date.now(),
+          itemCount: 0
+        };
+      }
+      
+      // Get last modification times
+      const localTimestamp = localSnippets.length > 0
+        ? Math.max(...localSnippets.map(s => s.updateDate || s.timestamp))
+        : 0;
+      const remoteTimestamp = remoteSnippets.length > 0
+        ? Math.max(...remoteSnippets.map(s => s.updateDate || s.timestamp))
+        : 0;
+      
+      // Determine action based on Last-Write-Wins
+      if (localSnippets.length === 0) {
+        // Download from remote
+        await storage.setItem('swag-snippets', remoteSnippets);
+        await this.updateSyncMetadata('snippets', remoteSnippets.length);
+        return {
+          success: true,
+          action: 'downloaded',
+          timestamp: Date.now(),
+          itemCount: remoteSnippets.length
+        };
+      } else if (remoteSnippets.length === 0) {
+        // Upload to remote
+        await this.uploadSnippets(localSnippets);
+        await this.updateSyncMetadata('snippets', localSnippets.length);
+        return {
+          success: true,
+          action: 'uploaded',
+          timestamp: Date.now(),
+          itemCount: localSnippets.length
+        };
+      } else if (localTimestamp > remoteTimestamp) {
+        // Local is newer, upload
+        await this.uploadSnippets(localSnippets);
+        await this.updateSyncMetadata('snippets', localSnippets.length);
+        return {
+          success: true,
+          action: 'uploaded',
+          timestamp: Date.now(),
+          itemCount: localSnippets.length
+        };
+      } else if (remoteTimestamp > localTimestamp) {
+        // Remote is newer, download
+        await storage.setItem('swag-snippets', remoteSnippets);
+        await this.updateSyncMetadata('snippets', remoteSnippets.length);
+        return {
+          success: true,
+          action: 'downloaded',
+          timestamp: Date.now(),
+          itemCount: remoteSnippets.length
+        };
+      } else {
+        // Same timestamp, no change needed
+        await this.updateSyncMetadata('snippets', localSnippets.length);
+        return {
+          success: true,
+          action: 'no-change',
+          timestamp: Date.now(),
+          itemCount: localSnippets.length
+        };
+      }
+    } catch (error) {
+      console.error('Error syncing snippets:', error);
+      return {
+        success: false,
+        action: 'error',
+        timestamp: Date.now(),
+        itemCount: 0,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Sync embeddings (RAG database)
+   */
+  async syncEmbeddings(): Promise<SyncResult> {
+    try {
+      // Get all local chunks from ragDB
+      const localChunks = await ragDB.getAllChunks();
+      
+      // Get remote embeddings from Drive
+      const remoteChunks = await this.downloadEmbeddings();
+      
+      if (localChunks.length === 0 && remoteChunks.length === 0) {
+        return {
+          success: true,
+          action: 'no-change',
+          timestamp: Date.now(),
+          itemCount: 0
+        };
+      }
+      
+      // Get last modification times (convert ISO strings to timestamps)
+      const localTimestamp = localChunks.length > 0
+        ? Math.max(...localChunks.map(c => new Date(c.created_at).getTime()))
+        : 0;
+      const remoteTimestamp = remoteChunks.length > 0
+        ? Math.max(...remoteChunks.map(c => new Date(c.created_at).getTime()))
+        : 0;
+      
+      // Determine action based on Last-Write-Wins
+      if (localChunks.length === 0) {
+        // Download from remote
+        await ragDB.saveChunks(remoteChunks);
+        await this.updateSyncMetadata('embeddings', remoteChunks.length);
+        return {
+          success: true,
+          action: 'downloaded',
+          timestamp: Date.now(),
+          itemCount: remoteChunks.length
+        };
+      } else if (remoteChunks.length === 0) {
+        // Upload to remote
+        await this.uploadEmbeddings(localChunks);
+        await this.updateSyncMetadata('embeddings', localChunks.length);
+        return {
+          success: true,
+          action: 'uploaded',
+          timestamp: Date.now(),
+          itemCount: localChunks.length
+        };
+      } else if (localTimestamp > remoteTimestamp) {
+        // Local is newer, upload
+        await this.uploadEmbeddings(localChunks);
+        await this.updateSyncMetadata('embeddings', localChunks.length);
+        return {
+          success: true,
+          action: 'uploaded',
+          timestamp: Date.now(),
+          itemCount: localChunks.length
+        };
+      } else if (remoteTimestamp > localTimestamp) {
+        // Remote is newer, download
+        await ragDB.saveChunks(remoteChunks);
+        await this.updateSyncMetadata('embeddings', remoteChunks.length);
+        return {
+          success: true,
+          action: 'downloaded',
+          timestamp: Date.now(),
+          itemCount: remoteChunks.length
+        };
+      } else {
+        // Same timestamp, no change needed
+        await this.updateSyncMetadata('embeddings', localChunks.length);
+        return {
+          success: true,
+          action: 'no-change',
+          timestamp: Date.now(),
+          itemCount: localChunks.length
+        };
+      }
+    } catch (error) {
+      console.error('Error syncing embeddings:', error);
+      return {
+        success: false,
+        action: 'error',
+        timestamp: Date.now(),
+        itemCount: 0,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Upload snippets to Google Drive
+   */
+  async uploadSnippets(snippets: ContentSnippet[]): Promise<void> {
+    const content = JSON.stringify(snippets, null, 2);
+    await this.uploadFile(SNIPPETS_FILENAME, content);
+  }
+
+  /**
+   * Download snippets from Google Drive
+   */
+  async downloadSnippets(): Promise<ContentSnippet[]> {
+    const content = await this.downloadFile(SNIPPETS_FILENAME);
+    if (!content) return [];
+    return JSON.parse(content);
+  }
+
+  /**
+   * Upload embeddings to Google Drive
+   */
+  async uploadEmbeddings(chunks: any[]): Promise<void> {
+    const content = JSON.stringify(chunks, null, 2);
+    await this.uploadFile(EMBEDDINGS_FILENAME, content);
+  }
+
+  /**
+   * Download embeddings from Google Drive
+   */
+  async downloadEmbeddings(): Promise<any[]> {
+    const content = await this.downloadFile(EMBEDDINGS_FILENAME);
+    if (!content) return [];
+    return JSON.parse(content);
+  }
+
+  /**
+   * Sync all data: plans, playlists, snippets, and embeddings
+   */
+  async syncAll(): Promise<{ plans: SyncResult, playlists: SyncResult, snippets: SyncResult, embeddings: SyncResult }> {
+    const [plans, playlists, snippets, embeddings] = await Promise.all([
       this.syncPlans(),
-      this.syncPlaylists()
+      this.syncPlaylists(),
+      this.syncSnippets(),
+      this.syncEmbeddings()
     ]);
 
-    return { plans, playlists };
+    return { plans, playlists, snippets, embeddings };
   }
 
   /**
@@ -527,18 +754,34 @@ class GoogleDriveSync {
         lastSyncTime: 0,
         lastPlansSync: 0,
         lastPlaylistsSync: 0,
+        lastSnippetsSync: 0,
+        lastEmbeddingsSync: 0,
         plansCount: 0,
-        playlistsCount: 0
+        playlistsCount: 0,
+        snippetsCount: 0,
+        embeddingsCount: 0
       };
     }
 
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    // Ensure all fields exist (backward compatibility)
+    return {
+      lastSyncTime: parsed.lastSyncTime || 0,
+      lastPlansSync: parsed.lastPlansSync || 0,
+      lastPlaylistsSync: parsed.lastPlaylistsSync || 0,
+      lastSnippetsSync: parsed.lastSnippetsSync || 0,
+      lastEmbeddingsSync: parsed.lastEmbeddingsSync || 0,
+      plansCount: parsed.plansCount || 0,
+      playlistsCount: parsed.playlistsCount || 0,
+      snippetsCount: parsed.snippetsCount || 0,
+      embeddingsCount: parsed.embeddingsCount || 0
+    };
   }
 
   /**
    * Update sync metadata
    */
-  private async updateSyncMetadata(type: 'plans' | 'playlists', itemCount: number): Promise<void> {
+  private async updateSyncMetadata(type: 'plans' | 'playlists' | 'snippets' | 'embeddings', itemCount: number): Promise<void> {
     const metadata = await this.getSyncMetadata();
     
     metadata.lastSyncTime = Date.now();
@@ -546,9 +789,15 @@ class GoogleDriveSync {
     if (type === 'plans') {
       metadata.lastPlansSync = Date.now();
       metadata.plansCount = itemCount;
-    } else {
+    } else if (type === 'playlists') {
       metadata.lastPlaylistsSync = Date.now();
       metadata.playlistsCount = itemCount;
+    } else if (type === 'snippets') {
+      metadata.lastSnippetsSync = Date.now();
+      metadata.snippetsCount = itemCount;
+    } else {
+      metadata.lastEmbeddingsSync = Date.now();
+      metadata.embeddingsCount = itemCount;
     }
 
     const content = JSON.stringify(metadata, null, 2);

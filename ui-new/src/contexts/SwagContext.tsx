@@ -9,6 +9,7 @@ import { useSettings } from './SettingsContext';
 import { ragDB } from '../utils/ragDB';
 import { fetchSnippetById } from '../services/snippetsSync';
 import { getCachedApiBase } from '../utils/api';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 export interface ContentSnippet {
   id: string;
@@ -65,7 +66,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { user, getToken } = useAuth();
   const { settings } = useSettings();
 
-  // Load from storage on mount
+  // Load from storage on mount and sync with Google Drive
   useEffect(() => {
     const loadSnippets = async () => {
       try {
@@ -74,6 +75,32 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSnippets(saved);
         }
         setIsLoaded(true);
+        
+        // Check for newer data in Google Drive after local load
+        if (isSyncEnabled()) {
+          try {
+            console.log('🔄 Checking Google Drive for newer snippets and embeddings...');
+            
+            // Sync snippets
+            const snippetsResult = await googleDriveSync.syncSnippets();
+            if (snippetsResult.success && snippetsResult.action === 'downloaded') {
+              console.log(`📥 Downloaded ${snippetsResult.itemCount} snippets from Google Drive`);
+              // Reload snippets after download
+              const updated = await storage.getItem<ContentSnippet[]>('swag-snippets');
+              if (updated) {
+                setSnippets(updated);
+              }
+            }
+            
+            // Sync embeddings
+            const embeddingsResult = await googleDriveSync.syncEmbeddings();
+            if (embeddingsResult.success && embeddingsResult.action === 'downloaded') {
+              console.log(`📥 Downloaded ${embeddingsResult.itemCount} embeddings from Google Drive`);
+            }
+          } catch (error) {
+            console.error('Failed to sync with Google Drive on load:', error);
+          }
+        }
       } catch (error) {
         console.error('Failed to load snippets:', error);
         showError('Failed to load snippets from storage');
@@ -130,6 +157,26 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     saveSnippets();
   }, [snippets, isLoaded, showError, showWarning]);
+
+  // Debounced sync to Google Drive when snippets change
+  useEffect(() => {
+    if (!isLoaded) return; // Don't sync during initial load
+    if (!isSyncEnabled()) return; // Only sync if authenticated
+
+    const syncTimeout = setTimeout(async () => {
+      try {
+        console.log('🔄 Syncing snippets to Google Drive...');
+        const result = await googleDriveSync.syncSnippets();
+        if (result.success && result.action !== 'no-change') {
+          console.log(`✅ Snippets synced: ${result.action} (${result.itemCount} items)`);
+        }
+      } catch (error) {
+        console.error('Failed to sync snippets to Google Drive:', error);
+      }
+    }, 10000); // Wait 10 seconds after last change
+
+    return () => clearTimeout(syncTimeout);
+  }, [snippets, isLoaded]);
 
   // Helper to check if cloud sync is available (user is authenticated)
   const isSyncEnabled = () => {
@@ -690,119 +737,222 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      // Step 1: Request embeddings from backend with retry logic
-      let response;
-      let retryCount = 0;
-      const maxRetries = 3;
+      // Check if local embeddings are selected
+      const useLocalEmbeddings = settings.embeddingSource === 'local';
+      let results: any[] = [];
       
-      while (retryCount <= maxRetries) {
-        try {
-          const apiUrl = await getCachedApiBase();
-          const token = await getToken();
+      if (useLocalEmbeddings) {
+        // ============ LOCAL BROWSER-BASED EMBEDDINGS ============
+        console.log('🏠 Using local browser-based embeddings');
+        
+        // Dynamically import LocalEmbeddingService to avoid bundling issues
+        const { getLocalEmbeddingService } = await import('../services/localEmbeddings');
+        const embeddingService = getLocalEmbeddingService();
+        
+        // Get selected model (default to recommended)
+        const modelId = settings.embeddingModel || 'Xenova/all-MiniLM-L6-v2';
+        console.log(`📦 Loading model: ${modelId}`);
+        
+        // Load model with progress feedback
+        await embeddingService.loadModel(modelId, (progress) => {
+          console.log(`⏳ ${progress.message} (${progress.progress}%)`);
+          // Could show toast or progress indicator here
+        });
+        
+        console.log('✅ Model loaded, generating embeddings...');
+        
+        // Process each snippet
+        for (let i = 0; i < snippetsToEmbed.length; i++) {
+          const snippet = snippetsToEmbed[i];
           
-          // Format providers for backend (only enabled providers with embedding capability)
-          const providers = settings.providers
-            .filter(p => p.enabled !== false && p.capabilities?.embedding !== false)
-            .map(p => ({
-              type: p.type,
-              apiKey: p.apiKey,
-              apiEndpoint: p.apiEndpoint,
-              modelName: p.modelName,
-              allowedModels: p.allowedModels,
-              maxImageQuality: p.maxImageQuality
-            }));
-          
-          response = await fetch(`${apiUrl}/rag/embed-snippets`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({
-              snippets: snippetsToEmbed.map(s => ({
-                id: s.id,
-                content: s.content,
-                title: s.title,
-                tags: s.tags,
-                timestamp: s.timestamp
-              })),
-              providers,  // Include providers in request
-              force
-            }),
-          });
-
-          // If rate limited (429), retry with exponential backoff
-          if (response.status === 429 && retryCount < maxRetries) {
-            const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-            console.warn(`⏳ Rate limited, retrying in ${waitTime/1000}s... (attempt ${retryCount + 1}/${maxRetries})`);
-            showWarning(`⏳ Rate limited, retrying in ${waitTime/1000}s...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-            retryCount++;
-            continue;
+          try {
+            // Notify progress
+            if (onProgress) {
+              onProgress(i + 1, snippetsToEmbed.length);
+            }
+            
+            // Generate embedding for full content (with metadata prefix like API version)
+            const metadataPrefix = [];
+            if (snippet.title) {
+              metadataPrefix.push(`Title: ${snippet.title}`);
+            }
+            if (snippet.tags && snippet.tags.length > 0) {
+              metadataPrefix.push(`Tags: ${snippet.tags.join(', ')}`);
+            }
+            const metadataText = metadataPrefix.length > 0 ? metadataPrefix.join('\n') + '\n\n' : '';
+            const fullText = metadataText + snippet.content;
+            
+            // Generate embedding
+            const embedding = await embeddingService.generateEmbedding(fullText);
+            
+            // Create chunk object compatible with ragDB
+            const chunk = {
+              id: `${snippet.id}_0`, // Single chunk per snippet for local embeddings
+              snippet_id: snippet.id,
+              chunk_text: snippet.content,
+              chunk_index: 0,
+              start_char: 0,
+              end_char: snippet.content.length,
+              embedding: embedding,
+              created_at: Date.now(),
+              updated_at: Date.now()
+            };
+            
+            results.push({
+              id: snippet.id,
+              status: 'success',
+              chunks: [chunk]
+            });
+            
+          } catch (error) {
+            console.error(`❌ Failed to embed snippet ${snippet.id}:`, error);
+            results.push({
+              id: snippet.id,
+              status: 'failed',
+              error: error instanceof Error ? error.message : 'Unknown error',
+              chunks: []
+            });
           }
-
-          // Break on success or non-retryable error
-          break;
-
-        } catch (fetchError) {
-          if (retryCount < maxRetries) {
-            const waitTime = Math.pow(2, retryCount) * 1000;
-            console.warn(`⚠️ Fetch error, retrying in ${waitTime/1000}s...`, fetchError);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-            retryCount++;
-            continue;
-          }
-          throw fetchError;
-        }
-      }
-
-      if (!response || !response.ok) {
-        const errorText = await response?.text() || 'No response';
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText };
         }
         
-        // Check for specific error about missing embedding provider
-        if (errorData.requiredAction === 'CONFIGURE_EMBEDDING_PROVIDER' || 
-            (errorData.error && errorData.error.includes('No embedding provider'))) {
-          throw new Error(
-            `⚙️ Embedding Provider Required\n\n` +
-            `To use Swag embeddings and vector search, you need to configure a provider that supports embeddings.\n\n` +
-            `📝 Steps:\n` +
-            `1. Go to Settings (gear icon)\n` +
-            `2. Click "Providers" tab\n` +
-            `3. Add a provider: OpenAI, Together.AI, Cohere, or Voyage\n` +
-            `4. Enable the "🔗 Embeddings" capability\n` +
-            `5. Save and try again\n\n` +
-            `💡 Note: Swag embeddings work independently of the RAG system. You just need one embedding-capable provider configured.`
-          );
-        }
+      } else {
+        // ============ API-BASED EMBEDDINGS (EXISTING LOGIC) ============
+        // Step 1: Request embeddings from backend with retry logic
+        let response;
+        let retryCount = 0;
+        const maxRetries = 3;
         
-        throw new Error(`Failed to generate embeddings: ${response?.status} ${response?.statusText}. ${errorText}`);
-      }
+        while (retryCount <= maxRetries) {
+          try {
+            const apiUrl = await getCachedApiBase();
+            const token = await getToken();
+            
+            // Check authentication before proceeding
+            if (!token) {
+              throw new Error(
+                `🔐 Authentication Required\n\n` +
+                `To generate embeddings, you need to sign in with Google.\n\n` +
+                `📝 Steps:\n` +
+                `1. Click the profile icon in the top right\n` +
+                `2. Click "Sign in with Google"\n` +
+                `3. Authorize the application\n` +
+                `4. Try generating embeddings again\n\n` +
+                `💡 Note: Embeddings enable vector search and semantic similarity in SWAG.`
+              );
+            }
+            
+            // Format providers for backend (only enabled providers with embedding capability)
+            const providers = settings.providers
+              .filter(p => p.enabled !== false && p.capabilities?.embedding !== false)
+              .map(p => ({
+                type: p.type,
+                apiKey: p.apiKey,
+                apiEndpoint: p.apiEndpoint,
+                modelName: p.modelName,
+                allowedModels: p.allowedModels,
+                maxImageQuality: p.maxImageQuality
+              }));
+            
+            // Include selected embedding model from settings
+            const embeddingModel = settings.embeddingModel || undefined;
+            
+            response = await fetch(`${apiUrl}/rag/embed-snippets`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({
+                snippets: snippetsToEmbed.map(s => ({
+                  id: s.id,
+                  content: s.content,
+                  title: s.title,
+                  tags: s.tags,
+                  timestamp: s.timestamp
+                })),
+                providers,  // Include providers in request
+                embeddingModel, // Include selected embedding model
+                force
+              }),
+            });
 
-      // Parse JSON response
-      const responseData = await response.json();
-      const firstEmbedding = responseData.results?.[0]?.chunks?.[0]?.embedding;
-      console.log('📦 Backend response:', {
-        success: responseData.success,
-        resultsCount: responseData.results?.length,
-        firstResult: responseData.results?.[0],
-        firstChunk: responseData.results?.[0]?.chunks?.[0],
-        firstChunkKeys: responseData.results?.[0]?.chunks?.[0] ? Object.keys(responseData.results[0].chunks[0]) : [],
-        firstChunkEmbeddingLength: firstEmbedding?.length,
-        firstChunkEmbeddingType: firstEmbedding?.constructor?.name,
-        firstChunkEmbeddingFirst5: Array.isArray(firstEmbedding) ? firstEmbedding.slice(0, 5) : 'NOT_AN_ARRAY'
-      });
+            // If rate limited (429), retry with exponential backoff
+            if (response.status === 429 && retryCount < maxRetries) {
+              const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+              console.warn(`⏳ Rate limited, retrying in ${waitTime/1000}s... (attempt ${retryCount + 1}/${maxRetries})`);
+              showWarning(`⏳ Rate limited, retrying in ${waitTime/1000}s...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              retryCount++;
+              continue;
+            }
+
+            // Break on success or non-retryable error
+            break;
+
+          } catch (fetchError) {
+            if (retryCount < maxRetries) {
+              const waitTime = Math.pow(2, retryCount) * 1000;
+              console.warn(`⚠️ Fetch error, retrying in ${waitTime/1000}s...`, fetchError);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              retryCount++;
+              continue;
+            }
+            throw fetchError;
+          }
+        }
+
+        if (!response || !response.ok) {
+          const errorText = await response?.text() || 'No response';
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { error: errorText };
+          }
+          
+          // Check for specific error about missing embedding provider
+          if (errorData.requiredAction === 'CONFIGURE_EMBEDDING_PROVIDER' || 
+              (errorData.error && errorData.error.includes('No embedding provider'))) {
+            throw new Error(
+              `⚙️ Embedding Provider Required\n\n` +
+              `To use Swag embeddings and vector search, you need to configure a provider that supports embeddings.\n\n` +
+              `📝 Steps:\n` +
+              `1. Go to Settings (gear icon)\n` +
+              `2. Click "Providers" tab\n` +
+              `3. Add a provider: OpenAI, Together.AI, Cohere, or Voyage\n` +
+              `4. Enable the "🔗 Embeddings" capability\n` +
+              `5. Save and try again\n\n` +
+              `💡 Note: Swag embeddings work independently of the RAG system. You just need one embedding-capable provider configured.`
+            );
+          }
+          
+          throw new Error(`Failed to generate embeddings: ${response?.status} ${response?.statusText}. ${errorText}`);
+        }
+
+        // Parse JSON response
+        const responseData = await response.json();
+        const firstEmbedding = responseData.results?.[0]?.chunks?.[0]?.embedding;
+        console.log('📦 Backend response:', {
+          success: responseData.success,
+          resultsCount: responseData.results?.length,
+          firstResult: responseData.results?.[0],
+          firstChunk: responseData.results?.[0]?.chunks?.[0],
+          firstChunkKeys: responseData.results?.[0]?.chunks?.[0] ? Object.keys(responseData.results[0].chunks[0]) : [],
+          firstChunkEmbeddingLength: firstEmbedding?.length,
+          firstChunkEmbeddingType: firstEmbedding?.constructor?.name,
+          firstChunkEmbeddingFirst5: Array.isArray(firstEmbedding) ? firstEmbedding.slice(0, 5) : 'NOT_AN_ARRAY'
+        });
+        
+        const { success, error } = responseData;
+        results = responseData.results;
+        
+        if (!success) {
+          throw new Error(error || 'Failed to generate embeddings');
+        }
+      } // End of API-based embeddings if/else
       
-      const { success, results, error } = responseData;
-      
-      if (!success) {
-        throw new Error(error || 'Failed to generate embeddings');
-      }
+      // ============ COMMON LOGIC: Save results to IndexedDB ============
+      // At this point, both local and API paths have `results` array available
       
       // Step 2: Save to IndexedDB
       const embeddedSnippetIds: string[] = [];
@@ -939,6 +1089,22 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       console.log(`✅ Generated ${totalChunks} embeddings for ${embedded} snippets`);
+      
+      // Sync embeddings to Google Drive immediately (no debounce)
+      if (isSyncEnabled()) {
+        // Fire and forget - don't block return
+        (async () => {
+          try {
+            console.log('🔄 Syncing embeddings to Google Drive...');
+            const result = await googleDriveSync.syncEmbeddings();
+            if (result.success && result.action !== 'no-change') {
+              console.log(`✅ Embeddings synced: ${result.action} (${result.itemCount} chunks)`);
+            }
+          } catch (error) {
+            console.error('Failed to sync embeddings to Google Drive:', error);
+          }
+        })();
+      }
       
       return {
         embedded,

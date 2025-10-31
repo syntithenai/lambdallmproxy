@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { resetWelcomeWizard } from '../utils/auth';
+import { triggerWelcomeWizard } from '../utils/auth';
+import { useAuth } from '../contexts/AuthContext';
 
 export function HelpPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'features' | 'planning' | 'tools' | 'rag' | 'pricing'>('features');
   const contentRef = useRef<HTMLDivElement>(null);
+  const { isAuthenticated } = useAuth();
 
   // Reset scroll to top when tab changes
   useEffect(() => {
@@ -90,6 +92,8 @@ export function HelpPage() {
 }
 
 function FeaturesContent() {
+  const { isAuthenticated } = useAuth();
+  
   return (
     <div className="space-y-6 text-gray-800 dark:text-gray-200 text-left">
       <h2 className="text-3xl font-bold mb-4 text-left">Features & Advantages</h2>
@@ -155,25 +159,25 @@ function FeaturesContent() {
         </div>
       </section>
       
-      <section className="space-y-4">
-        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 p-5 rounded-lg border-2 border-indigo-300 dark:border-indigo-700">
-          <h3 className="text-xl font-semibold text-indigo-600 dark:text-indigo-400 mb-3">🎓 New to Research Agent?</h3>
-          <p className="mb-3 text-sm">
-            If you're just getting started or want a quick refresher on the key features, you can replay the interactive welcome tour 
-            that introduces you to the main components of the application.
-          </p>
-          <button
-            onClick={() => {
-              resetWelcomeWizard();
-              window.location.reload();
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium"
-          >
-            <span>🎓</span>
-            <span>Replay Welcome Tour</span>
-          </button>
-        </div>
-      </section>
+      {/* Only show welcome tour section for authenticated users */}
+      {isAuthenticated && (
+        <section className="space-y-4">
+          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 p-5 rounded-lg border-2 border-indigo-300 dark:border-indigo-700">
+            <h3 className="text-xl font-semibold text-indigo-600 dark:text-indigo-400 mb-3">🎓 New to Research Agent?</h3>
+            <p className="mb-3 text-sm">
+              If you're just getting started or want a quick refresher on the key features, you can replay the interactive welcome tour 
+              that introduces you to the main components of the application.
+            </p>
+            <button
+              onClick={triggerWelcomeWizard}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium"
+            >
+              <span>🎓</span>
+              <span>Replay Welcome Tour</span>
+            </button>
+          </div>
+        </section>
+      )}
       
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🚀 Multi-Provider LLM Access with Intelligent Load Balancing</h3>
@@ -1309,6 +1313,8 @@ function PricingContent() {
           </details>
         </div>
       </section>
+      
+
     </div>
   );
 }

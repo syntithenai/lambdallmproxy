@@ -2144,7 +2144,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               'Content-Type': 'application/json',
               ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({ query: textToSend })
+            body: JSON.stringify({ 
+              query: textToSend,
+              embeddingModel: settings.embeddingModel,
+              providers: settings.providers
+            })
           });
           
           if (!embedResponse.ok) {

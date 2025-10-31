@@ -56,6 +56,8 @@ export interface Settings {
   syncToGoogleDrive?: boolean; // Enable automatic sync to Google Drive (default: false)
   optimization?: OptimizationPreference; // Model selection strategy (default: 'cheap')
   language?: string;           // User's preferred UI language (ISO 639-1 code: en, es, fr, de, zh, ja, ar, nl, pt, ru)
+  embeddingSource?: 'api' | 'local'; // Embedding source: 'api' = backend API, 'local' = browser-based (default: 'api')
+  embeddingModel?: string;     // Selected embedding model ID (e.g., 'text-embedding-3-small' or 'Xenova/all-MiniLM-L6-v2')
 }
 
 /**

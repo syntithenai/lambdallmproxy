@@ -370,12 +370,24 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                 ...getCORSHeaders()
             }
             };
+            
+            // Provide specific error message if a model was requested but not available
+            let errorMessage, hintMessage;
+            if (requestedModel) {
+                errorMessage = `Requested embedding model "${requestedModel}" is not available from your configured providers.`;
+                hintMessage = 'The embedding model you selected in Settings is no longer available. This can happen if: (1) The provider was removed, (2) The provider\'s API key was changed, or (3) The model was restricted via allowedModels. Please go to Settings → RAG → Choose a different embedding model from the available options, or configure a provider that supports this model.';
+            } else {
+                errorMessage = 'No embedding provider available. Swag embeddings require a provider with embedding capabilities.';
+                hintMessage = 'Go to Settings → Providers → Add a provider (OpenAI, Together.AI, Cohere, Voyage, or Gemini) and ensure the "🔗 Embeddings" capability is enabled. Swag embeddings work independently of the RAG system - you only need an embedding-capable provider configured.';
+            }
+            
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(JSON.stringify({ 
                 success: false,
-                error: 'No embedding provider available. Swag embeddings require a provider with embedding capabilities.',
-                hint: 'Go to Settings → Providers → Add a provider (OpenAI, Together.AI, Cohere, or Voyage) and ensure the "🔗 Embeddings" capability is enabled. Swag embeddings work independently of the RAG system - you only need an embedding-capable provider configured.',
-                requiredAction: 'CONFIGURE_EMBEDDING_PROVIDER'
+                error: errorMessage,
+                hint: hintMessage,
+                requestedModel: requestedModel || null,
+                requiredAction: requestedModel ? 'CHANGE_EMBEDDING_MODEL' : 'CONFIGURE_EMBEDDING_PROVIDER'
             }));
             responseStream.end();
             return;
@@ -827,7 +839,7 @@ async function handleEmbedQuery(event, body, responseStream) {
     }
     
     try {
-        const { query } = body;
+        const { query, embeddingModel: requestedModel = null, providers: userProviders = [] } = body;
         
         if (!query || typeof query !== 'string') {
             const metadata = {
@@ -845,24 +857,69 @@ async function handleEmbedQuery(event, body, responseStream) {
             return;
         }
         
+        // Build provider pool (UI providers + environment providers if authorized)
+        const providerPool = buildProviderPool(userProviders, isAuthorized);
+        console.log(`📦 Provider pool size for embed-query: ${providerPool.length}`);
+        
+        // Determine which embedding model to use
+        // Priority: 1. UI request, 2. Environment variable, 3. Default fallback
+        const embeddingModelToUse = requestedModel || process.env.RAG_MDL || 'text-embedding-3-small';
+        console.log(`🎯 Embed-query model: ${embeddingModelToUse} (source: ${requestedModel ? 'UI request' : process.env.RAG_MDL ? 'environment' : 'default'})`);
+        
+        // Select embedding provider from pool
+        const embeddingSelection = selectEmbeddingProvider(providerPool, embeddingModelToUse);
+        if (!embeddingSelection) {
+            const metadata = {
+                statusCode: 400,
+                headers: { 
+                'Content-Type': 'application/json',
+                ...getCORSHeaders()
+            }
+            };
+            
+            // Provide specific error if model was requested but not available
+            let errorMessage, hintMessage;
+            if (requestedModel) {
+                errorMessage = `Requested embedding model "${requestedModel}" is not available from your configured providers.`;
+                hintMessage = 'The embedding model you selected in Settings is no longer available. Please go to Settings → RAG → Choose a different embedding model, or configure a provider that supports this model.';
+            } else {
+                errorMessage = 'No embedding provider available for query search.';
+                hintMessage = 'Please configure at least one provider with embedding capabilities in Settings → Providers.';
+            }
+            
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(JSON.stringify({ 
+                error: errorMessage,
+                hint: hintMessage,
+                requestedModel: requestedModel || null,
+                requiredAction: requestedModel ? 'CHANGE_EMBEDDING_MODEL' : 'CONFIGURE_EMBEDDING_PROVIDER'
+            }));
+            responseStream.end();
+            return;
+        }
+        
+        const { provider: embeddingProvider, model: embeddingModel, apiKey } = embeddingSelection;
+        console.log(`✅ Using embedding provider: ${embeddingProvider}:${embeddingModel}`);
+        
         // Generate embedding for query
         const startTime = Date.now();
         const result = await embeddings.generateEmbedding(
             query,
-            'text-embedding-3-small',
-            'openai',
-            process.env.OPENAI_KEY
+            embeddingModel,
+            embeddingProvider,
+            apiKey
         );
         const duration = Date.now() - startTime;
         
         // Log to Google Sheets
         try {
-            const totalCost = calculateCost('text-embedding-3-small', result.tokens || 0, 0, null, false); // Server-side OpenAI key
+            const isUserProvidedKey = !embeddingSelection.isServerSideKey;
+            const totalCost = calculateCost(embeddingModel, result.tokens || 0, 0, null, !isUserProvidedKey);
             
             await logToBothSheets(googleToken, {
                 userEmail,
-                provider: 'openai',
-                model: 'text-embedding-3-small',
+                provider: embeddingProvider,
+                model: embeddingModel,
                 promptTokens: result.tokens || 0,
                 completionTokens: 0,
                 totalTokens: result.tokens || 0,
@@ -882,8 +939,8 @@ async function handleEmbedQuery(event, body, responseStream) {
         // Create llmApiCall object for transparency
         const llmApiCall = {
             phase: 'embedding',
-            provider: 'openai',
-            model: 'text-embedding-3-small',
+            provider: embeddingProvider,
+            model: embeddingModel,
             type: 'embedding',
             timestamp: new Date().toISOString(),
             durationMs: duration,

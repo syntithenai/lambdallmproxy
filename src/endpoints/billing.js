@@ -178,22 +178,29 @@ async function handleGetBilling(event, responseStream) {
         // --- TTS Capabilities ---
         // This block determines which TTS providers are available server-side
         // and exposes their status to the frontend for UI display.
-        // NOTE: OPENAI_KEY is for RAG embeddings only, NOT for TTS/chat
+        // Detects from new provider format (LP_TYPE_N/LP_KEY_N) only
         const ttsCapabilities = {
-            // openai: Disabled - OPENAI_KEY is reserved for RAG embeddings only
-            groq: !!process.env.GROQ_KEY,
-            gemini: !!process.env.GEMINI_KEY,
-            together: !!process.env.TOGETHER_KEY,
-            elevenlabs: !!process.env.ELEVENLABS_KEY,
             browser: true, // Always available client-side
             speakjs: true  // Always available client-side
         };
         
-        // --- Provider Information ---
-        // Load providers configured via environment variables
+        // Detect TTS-capable providers from environment
         const envProviders = loadEnvironmentProviders();
+        for (const provider of envProviders) {
+            // Providers that support TTS
+            if (provider.type === 'groq' || provider.type === 'groq-free') {
+                ttsCapabilities.groq = true;
+            } else if (provider.type === 'gemini' || provider.type === 'gemini-free') {
+                ttsCapabilities.gemini = true;
+            } else if (provider.type === 'together') {
+                ttsCapabilities.together = true;
+            } else if (provider.type === 'elevenlabs') {
+                ttsCapabilities.elevenlabs = true;
+            }
+        }
         
-        // Build provider capacity information
+        // --- Provider Information ---
+        // Build provider capacity information from already-loaded envProviders
         // SECURITY: NO API keys or key previews are exposed to frontend
         const providerCapabilities = envProviders.map(provider => {
             const capability = {
@@ -276,26 +283,99 @@ async function handleGetBilling(event, responseStream) {
             }
         }
         
-        // Check for transcription (Whisper-compatible endpoints)
-        if (process.env.WHISPER_ENDPOINT || process.env.OPENAI_KEY) {
-            features.transcription = true;
+        // Check for transcription (Whisper-compatible providers: Groq, OpenAI)
+        for (const provider of envProviders) {
+            if (provider.type === 'groq' || provider.type === 'groq-free' || 
+                provider.type === 'openai' || provider.type === 'openai-free') {
+                features.transcription = true;
+                break;
+            }
         }
         
-        // Check for TTS (multiple providers)
-        if (process.env.GROQ_KEY || process.env.GEMINI_KEY || 
-            process.env.TOGETHER_KEY || process.env.ELEVENLABS_KEY) {
-            features.textToSpeech = true;
+        // Check for TTS (multiple providers support TTS)
+        for (const provider of envProviders) {
+            if (provider.type === 'groq' || provider.type === 'groq-free' ||
+                provider.type === 'gemini' || provider.type === 'gemini-free' ||
+                provider.type === 'together' || provider.type === 'elevenlabs') {
+                features.textToSpeech = true;
+                break;
+            }
         }
         
-        // Check for embeddings (OpenAI for RAG)
-        if (process.env.OPENAI_KEY) {
-            features.embeddings = true;
+        // Check for embeddings (Groq, OpenAI, Cohere support embeddings)
+        for (const provider of envProviders) {
+            if (provider.type === 'groq' || provider.type === 'groq-free' ||
+                provider.type === 'openai' || provider.type === 'openai-free' ||
+                provider.type === 'cohere' || provider.type === 'voyage' ||
+                provider.type === 'together' || provider.type === 'gemini' || provider.type === 'gemini-free') {
+                features.embeddings = true;
+                break;
+            }
         }
         
         // Web search is always available (uses DuckDuckGo)
         features.webSearch = true;
         
         console.log('✨ Available features:', features);
+        
+        // --- Available Embedding Models ---
+        // Load embedding catalog and filter by available providers
+        const embeddingCatalogPath = path.join(__dirname, '..', '..', 'EMBEDDING_MODELS_CATALOG.json');
+        let availableEmbeddings = [];
+        try {
+            const embeddingCatalog = JSON.parse(fs.readFileSync(embeddingCatalogPath, 'utf8'));
+            
+            // Get provider types from environment providers
+            const providerTypes = new Set(envProviders.map(p => p.type === 'openai-free' || p.type === 'groq-free' || p.type === 'gemini-free' ? p.type.replace('-free', '') : p.type));
+            
+            // Filter embedding models to only those available from configured providers
+            availableEmbeddings = embeddingCatalog.models.filter(model => {
+                // Check if provider is available
+                if (!providerTypes.has(model.provider)) {
+                    return false;
+                }
+                
+                // Check if model is restricted by allowedModels for this provider
+                const providerConfig = envProviders.find(p => {
+                    const normalizedType = p.type === 'openai-free' || p.type === 'groq-free' || p.type === 'gemini-free' ? p.type.replace('-free', '') : p.type;
+                    return normalizedType === model.provider;
+                });
+                
+                if (providerConfig && providerConfig.allowedModels && Array.isArray(providerConfig.allowedModels) && providerConfig.allowedModels.length > 0) {
+                    return providerConfig.allowedModels.includes(model.id);
+                }
+                
+                return true;
+            }).map(model => ({
+                id: model.id,
+                provider: model.provider,
+                name: model.name,
+                dimensions: model.dimensions,
+                maxTokens: model.maxTokens,
+                recommended: model.recommended || false,
+                deprecated: model.deprecated || false,
+                description: model.description,
+                pricing: model.pricing
+            }));
+            
+            console.log(`📊 Available embedding models: ${availableEmbeddings.length}`);
+        } catch (err) {
+            console.warn('⚠️ Could not load embedding catalog:', err.message);
+        }
+        
+        // --- Provider Availability ---
+        // Check which providers have API keys configured (for embedding availability)
+        const providerAvailability = {};
+        for (const provider of envProviders) {
+            const normalizedType = provider.type === 'openai-free' || provider.type === 'groq-free' || provider.type === 'gemini-free' ? provider.type.replace('-free', '') : provider.type;
+            if (!providerAvailability[normalizedType]) {
+                providerAvailability[normalizedType] = {
+                    hasApiKey: !!provider.apiKey,
+                    supportsEmbeddings: ['openai', 'cohere', 'voyage', 'together', 'gemini'].includes(normalizedType)
+                };
+            }
+        }
+        console.log('📊 Provider availability:', providerAvailability);
         
         const metadata = {
             statusCode: 200,
@@ -310,7 +390,9 @@ async function handleGetBilling(event, responseStream) {
             count: transactions.length,
             ttsCapabilities,
             providerCapabilities, // Provider information from env vars
-            features // NEW: Available features based on configured providers
+            features, // Available features based on configured providers
+            availableEmbeddings, // Available embedding models filtered by configured providers
+            providerAvailability // Which providers have API keys and support embeddings
         }));
         responseStream.end();
 

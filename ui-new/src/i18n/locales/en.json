@@ -360,6 +360,8 @@
     "languageHelp": "Changes the interface language and instructs the AI to respond in your selected language",
     "providerCredentials": "Provider Credentials",
     "providerDescription": "Configure your LLM provider API keys. The backend automatically selects the best model for each request",
+    "serverProviders": "Server Providers",
+    "serverProvidersDescription": "View available providers configured on the server and their capabilities",
     "modelSelectionStrategy": "Model Selection Strategy",
     "modelStrategyDescription": "Choose how the system selects models for your requests. This balances cost, quality, and performance",
     "cheap": "Cheap (Recommended)",
