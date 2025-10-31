@@ -853,6 +853,7 @@ async function handleEmbedQuery(event, body, responseStream) {
     // Authenticate user - REQUIRED
     let userEmail = 'unknown';
     let googleToken = null;
+    let isAuthorized = false;
     
     const authHeader = event.headers?.authorization || event.headers?.Authorization;
     if (!authHeader) {
@@ -892,6 +893,7 @@ async function handleEmbedQuery(event, body, responseStream) {
         }
         
         userEmail = authResult.email || 'unknown';
+        isAuthorized = authResult.authorized || false;
         
         // Extract OAuth token
         if (authHeader.startsWith('Bearer ')) {
@@ -979,25 +981,89 @@ async function handleEmbedQuery(event, body, responseStream) {
         const { provider: embeddingProvider, model: embeddingModel, apiKey } = embeddingSelection;
         console.log(`✅ Using embedding provider: ${embeddingProvider}:${embeddingModel}`);
         
-        // Generate embedding for query
+        // Try primary provider first, then fallbacks on rate limit errors
+        let result = null;
+        let currentProvider = embeddingProvider;
+        let currentModel = embeddingModel;
+        let _currentApiKey = apiKey; // Track for future use
+        let lastError = null;
+        
+        // Build list of providers to try (primary + fallbacks)
+        const providersToTry = [
+            { provider: embeddingProvider, model: embeddingModel, apiKey }
+        ];
+        if (embeddingSelection.fallbackOptions) {
+            providersToTry.push(...embeddingSelection.fallbackOptions.map(opt => ({
+                provider: opt.provider,
+                model: opt.model,
+                apiKey: opt.apiKey
+            })));
+        }
+        
+        // Try each provider until one succeeds
         const startTime = Date.now();
-        const result = await embeddings.generateEmbedding(
-            query,
-            embeddingModel,
-            embeddingProvider,
-            apiKey
-        );
+        for (let i = 0; i < providersToTry.length; i++) {
+            const tryConfig = providersToTry[i];
+            const isRetry = i > 0;
+            
+            try {
+                if (isRetry) {
+                    console.log(`🔄 Retrying query embedding with fallback provider: ${tryConfig.provider}:${tryConfig.model} (attempt ${i + 1}/${providersToTry.length})`);
+                }
+                
+                result = await embeddings.generateEmbedding(
+                    query,
+                    tryConfig.model,
+                    tryConfig.provider,
+                    tryConfig.apiKey
+                );
+                
+                // Success! Update current values for logging
+                currentProvider = tryConfig.provider;
+                currentModel = tryConfig.model;
+                _currentApiKey = tryConfig.apiKey;
+                
+                if (isRetry) {
+                    console.log(`✅ Fallback successful with ${currentProvider}:${currentModel}`);
+                }
+                
+                break; // Success, exit retry loop
+                
+            } catch (error) {
+                lastError = error;
+                
+                // Check if it's a rate limit error (429)
+                const isRateLimitError = 
+                    error.status === 429 ||
+                    error.message?.includes('429') ||
+                    error.message?.includes('rate limit') ||
+                    error.message?.includes('quota exceeded');
+                
+                if (isRateLimitError && i < providersToTry.length - 1) {
+                    console.warn(`⚠️ Rate limit hit on ${tryConfig.provider}:${tryConfig.model} for query embedding, trying fallback...`);
+                    continue; // Try next provider
+                }
+                
+                // Not a rate limit error or no more fallbacks
+                throw error;
+            }
+        }
+        
+        if (!result) {
+            throw lastError || new Error('Failed to generate query embedding with all providers');
+        }
+        
         const duration = Date.now() - startTime;
         
-        // Log to Google Sheets
+        // Log to Google Sheets (use actual provider that succeeded)
         try {
             const isUserProvidedKey = !embeddingSelection.isServerSideKey;
-            const totalCost = calculateCost(embeddingModel, result.tokens || 0, 0, null, !isUserProvidedKey);
+            const totalCost = calculateCost(currentModel, result.tokens || 0, 0, null, !isUserProvidedKey);
             
             await logToBothSheets(googleToken, {
                 userEmail,
-                provider: embeddingProvider,
-                model: embeddingModel,
+                provider: currentProvider,
+                model: currentModel,
                 promptTokens: result.tokens || 0,
                 completionTokens: 0,
                 totalTokens: result.tokens || 0,
@@ -1006,10 +1072,11 @@ async function handleEmbedQuery(event, body, responseStream) {
                 type: 'embedding',
                 metadata: {
                     queryLength: query.length,
-                    embeddingDimensions: result.embedding?.length || 0
+                    embeddingDimensions: result.embedding?.length || 0,
+                    usedFallback: embeddingProvider !== currentProvider
                 }
             });
-            console.log(`✅ Logged query embedding: ${result.tokens} tokens, $${totalCost.toFixed(6)}`);
+            console.log(`✅ Logged query embedding: ${result.tokens} tokens, $${totalCost.toFixed(6)}${embeddingProvider !== currentProvider ? ` (fallback: ${currentProvider})` : ''}`);
         } catch (logError) {
             console.error('⚠️ Failed to log query embedding to sheets:', logError.message);
         }
@@ -1017,8 +1084,8 @@ async function handleEmbedQuery(event, body, responseStream) {
         // Create llmApiCall object for transparency
         const llmApiCall = {
             phase: 'embedding',
-            provider: embeddingProvider,
-            model: embeddingModel,
+            provider: currentProvider,
+            model: currentModel,
             type: 'embedding',
             timestamp: new Date().toISOString(),
             durationMs: duration,
@@ -1036,7 +1103,9 @@ async function handleEmbedQuery(event, body, responseStream) {
                 embeddingDimensions: result.embedding?.length || 0
             },
             metadata: {
-                cached: false
+                cached: false,
+                usedFallback: embeddingProvider !== currentProvider,
+                originalProvider: embeddingProvider !== currentProvider ? embeddingProvider : undefined
             }
         };
         
