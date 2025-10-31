@@ -7,7 +7,6 @@ export function HelpPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'features' | 'planning' | 'tools' | 'rag' | 'pricing'>('features');
   const contentRef = useRef<HTMLDivElement>(null);
-  const { isAuthenticated } = useAuth();
 
   // Reset scroll to top when tab changes
   useEffect(() => {

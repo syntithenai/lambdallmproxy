@@ -39,7 +39,7 @@ export class LocalEmbeddingService {
    * @param modelId - HuggingFace model ID (e.g., 'Xenova/all-MiniLM-L6-v2')
    * @param onProgress - Optional callback for load progress updates
    */
-  async loadModel(modelId: string, onProgress?: (progress: LoadProgress) => void): Promise<void> {
+  async loadModel(modelId: string, onProgress?: (_loadProgress: LoadProgress) => void): Promise<void> {
     // If already loading this model, return existing promise
     if (this.isLoading && this.currentModel === modelId && this.loadPromise) {
       return this.loadPromise;
@@ -62,7 +62,8 @@ export class LocalEmbeddingService {
         // Create progress callback for Transformers.js
         const progressCallback = (progress: any) => {
           if (progress.status === 'progress' && progress.progress !== undefined) {
-            const percent = Math.round(progress.progress);
+            // Transformers.js returns progress as 0-1, convert to 0-100
+            const percent = Math.round(progress.progress * 100);
             onProgress?.({
               status: 'loading',
               progress: percent,

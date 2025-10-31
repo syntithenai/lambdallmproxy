@@ -92,7 +92,12 @@ export default [
       
       // TypeScript rules - relaxed for gradual migration
       '@typescript-eslint/no-explicit-any': 'off', // Allow any for now
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['warn', { 
+        argsIgnorePattern: '^_', 
+        varsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_'
+      }],
+      'no-unused-vars': 'off', // Turn off base rule (use @typescript-eslint version)
       'no-console': 'warn',
       'no-useless-escape': 'warn' // Warn instead of error
     }

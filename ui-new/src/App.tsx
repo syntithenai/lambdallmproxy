@@ -28,7 +28,6 @@ import { GlobalTTSStopButton } from './components/ReadButton';
 import { GitHubLink } from './components/GitHubLink';
 import { WelcomeWizard } from './components/WelcomeWizard';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
-import { shouldShowWelcomeWizard } from './utils/auth';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { unifiedSync } from './services/unifiedSync';
 import { plansAdapter, playlistsAdapter } from './services/adapters';
@@ -300,7 +299,7 @@ function AppContent() {
             setIsBlocked(true);
           }
         }
-      } catch (error) {
+      } catch {
         // Silently handle network errors - they're not critical for app functionality
         // The auth check is just for provider setup verification
         console.log('Unable to verify provider setup status (this is not critical)');
@@ -699,7 +698,7 @@ function AppContent() {
       {showAgentManager && (
         <Suspense fallback={null}>
           <AgentManager
-            onSwitchToAgent={(_agentId, _chatId) => {
+            onSwitchToAgent={() => {
               // Navigate to chat and load the agent's chat
               handleNavigate('/');
               setShowAgentManager(false);
