@@ -60,7 +60,9 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     providers: [],
     tavilyApiKey: '',
     syncToGoogleDrive: true, // Default to enabled for better user experience
-    language: 'en' // Default to English
+    language: 'en', // Default to English
+    embeddingSource: 'local', // Default to local embeddings (browser-based, no API needed)
+    embeddingModel: 'Xenova/all-MiniLM-L6-v2' // Default to recommended local model
   });
 
   const [isLoadingFromDrive, setIsLoadingFromDrive] = useState(false);
@@ -152,7 +154,9 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
       version: '2.0.0',
       providers: [],
       tavilyApiKey: '',
-      syncToGoogleDrive: false
+      syncToGoogleDrive: false,
+      embeddingSource: 'local',
+      embeddingModel: 'Xenova/all-MiniLM-L6-v2'
     };
     setRawSettings(clearedSettings);
     console.log('🗑️  Settings cleared');

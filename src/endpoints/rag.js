@@ -143,19 +143,27 @@ function selectEmbeddingProvider(providerPool, requestedModel = null) {
         return 0;
     });
     
-    // Select the cheapest option
+    // Select the cheapest option as primary
     const selected = availableOptions[0];
     
     console.log(`✅ Selected cheapest embedding model: ${selected.provider}:${selected.model} ($${selected.pricePerMillion}/M tokens)`);
     if (availableOptions.length > 1) {
-        console.log(`   💰 Other options available: ${availableOptions.slice(1, 3).map(o => `${o.provider}:${o.model} ($${o.pricePerMillion}/M)`).join(', ')}${availableOptions.length > 3 ? ` and ${availableOptions.length - 3} more` : ''}`);
+        console.log(`   💰 Fallback options available: ${availableOptions.slice(1, 3).map(o => `${o.provider}:${o.model} ($${o.pricePerMillion}/M)`).join(', ')}${availableOptions.length > 3 ? ` and ${availableOptions.length - 3} more` : ''}`);
     }
     
+    // Return primary option with fallback list
     return {
         provider: selected.provider,
         model: selected.model,
         apiKey: selected.apiKey,
-        providerConfig: selected.providerConfig
+        providerConfig: selected.providerConfig,
+        fallbackOptions: availableOptions.slice(1).map(opt => ({
+            provider: opt.provider,
+            model: opt.model,
+            apiKey: opt.apiKey,
+            providerConfig: opt.providerConfig,
+            pricePerMillion: opt.pricePerMillion
+        }))
     };
 }
 
@@ -444,15 +452,83 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                 const metadataText = metadataPrefix.length > 0 ? metadataPrefix.join('\n') + '\n\n' : '';
                 
                 const chunkTexts = chunks.map(c => metadataText + c.chunk_text);
-                const embeddingResults = await embeddings.batchGenerateEmbeddings(
-                    chunkTexts,
-                    embeddingModel,
-                    embeddingProvider,
-                    apiKey,
-                    { providerConfig } // Pass provider config for allowedModels validation
-                );
                 
-                console.log(`Generated ${embeddingResults.length} embeddings for snippet ${snippet.id}`);
+                // Try primary provider first, then fallbacks on rate limit errors
+                let embeddingResults = null;
+                let currentProvider = embeddingProvider;
+                let currentModel = embeddingModel;
+                let currentApiKey = apiKey;
+                let currentProviderConfig = providerConfig;
+                let lastError = null;
+                
+                // Build list of providers to try (primary + fallbacks)
+                const providersToTry = [
+                    { provider: embeddingProvider, model: embeddingModel, apiKey, providerConfig }
+                ];
+                if (selectedEmbeddingConfig.fallbackOptions) {
+                    providersToTry.push(...selectedEmbeddingConfig.fallbackOptions.map(opt => ({
+                        provider: opt.provider,
+                        model: opt.model,
+                        apiKey: opt.apiKey,
+                        providerConfig: opt.providerConfig
+                    })));
+                }
+                
+                // Try each provider until one succeeds
+                for (let i = 0; i < providersToTry.length; i++) {
+                    const tryConfig = providersToTry[i];
+                    const isRetry = i > 0;
+                    
+                    try {
+                        if (isRetry) {
+                            console.log(`🔄 Retrying with fallback provider: ${tryConfig.provider}:${tryConfig.model} (attempt ${i + 1}/${providersToTry.length})`);
+                        }
+                        
+                        embeddingResults = await embeddings.batchGenerateEmbeddings(
+                            chunkTexts,
+                            tryConfig.model,
+                            tryConfig.provider,
+                            tryConfig.apiKey,
+                            { providerConfig: tryConfig.providerConfig }
+                        );
+                        
+                        // Success! Update current values for logging
+                        currentProvider = tryConfig.provider;
+                        currentModel = tryConfig.model;
+                        currentApiKey = tryConfig.apiKey;
+                        currentProviderConfig = tryConfig.providerConfig;
+                        
+                        if (isRetry) {
+                            console.log(`✅ Fallback successful with ${currentProvider}:${currentModel}`);
+                        }
+                        
+                        break; // Success, exit retry loop
+                        
+                    } catch (error) {
+                        lastError = error;
+                        
+                        // Check if it's a rate limit error (429)
+                        const isRateLimitError = 
+                            error.status === 429 ||
+                            error.message?.includes('429') ||
+                            error.message?.includes('rate limit') ||
+                            error.message?.includes('quota exceeded');
+                        
+                        if (isRateLimitError && i < providersToTry.length - 1) {
+                            console.warn(`⚠️ Rate limit hit on ${tryConfig.provider}:${tryConfig.model}, trying fallback...`);
+                            continue; // Try next provider
+                        }
+                        
+                        // Not a rate limit error or no more fallbacks
+                        throw error;
+                    }
+                }
+                
+                if (!embeddingResults) {
+                    throw lastError || new Error('Failed to generate embeddings with all providers');
+                }
+                
+                console.log(`Generated ${embeddingResults.length} embeddings for snippet ${snippet.id} using ${currentProvider}:${currentModel}`);
                 console.log('🔍 First embedding result:', {
                     hasEmbedding: !!embeddingResults[0]?.embedding,
                     embeddingType: embeddingResults[0]?.embedding?.constructor?.name,
@@ -463,13 +539,13 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                 // Log embedding generation to Google Sheets
                 try {
                     const totalTokens = embeddingResults.reduce((sum, result) => sum + (result.tokens || 0), 0);
-                    const totalCost = calculateCost(embeddingModel, totalTokens, 0, null, isUserProvidedKey); // Embeddings have 0 output tokens
+                    const totalCost = calculateCost(currentModel, totalTokens, 0, null, isUserProvidedKey); // Embeddings have 0 output tokens
                     const duration = Date.now() - startTime;
                     
                     await logToBothSheets(googleToken, {
                         userEmail,
-                        provider: embeddingProvider,
-                        model: embeddingModel,
+                        provider: currentProvider,
+                        model: currentModel,
                         promptTokens: totalTokens,
                         completionTokens: 0,
                         totalTokens,
@@ -482,7 +558,9 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                         error: null,
                         metadata: {
                             snippetId: snippet.id,
-                            chunksGenerated: embeddingResults.length
+                            chunksGenerated: embeddingResults.length,
+                            originalProvider: embeddingProvider !== currentProvider ? embeddingProvider : undefined,
+                            usedFallback: embeddingProvider !== currentProvider
                         }
                     });
                     console.log(`✅ Logged embedding generation: ${embeddingResults.length} chunks, ${totalTokens} tokens, $${totalCost.toFixed(6)}`);
@@ -499,8 +577,8 @@ async function handleEmbedSnippets(event, body, writeEvent, responseStream, lamb
                     // Convert Float32Array to regular array for JSON serialization
                     embedding: Array.from(embeddingResults[index].embedding),
                     chunk_index: chunk.chunk_index,
-                    embedding_model: embeddingModel,
-                    embedding_provider: embeddingProvider,
+                    embedding_model: currentModel,
+                    embedding_provider: currentProvider,
                     embedding_dimensions: embeddingResults[index].embedding.length,
                     source_type: 'text',
                     created_at: new Date().toISOString()
