@@ -34,7 +34,7 @@ const { loadProviderCatalog } = require('../utils/catalog-loader');
 const providerCatalog = loadProviderCatalog();
 
 const { RateLimitTracker } = require('../model-selection/rate-limit-tracker');
-const { selectModel, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
+const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy } = require('../model-selection/selector');
 
 // Global rate limit tracker for load balancing
 let globalRateLimitTracker = null;
@@ -331,39 +331,121 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
             throw new Error(`No API key available for provider: ${selectedModel.providerType}`);
         }
 
-        const requestBody = {
-            model: finalModel,
-            input: messages,
-            tools: [],
-            options: {
-                apiKey,
-                reasoningEffort: DEFAULT_REASONING_EFFORT,
-                temperature: 0.2,
-                max_tokens: MAX_TOKENS_PLANNING * 2,
-                timeoutMs: 30000
+        // Try the selected model with rate limit fallback
+        let response = null;
+        let lastError = null;
+        const maxRetries = 3; // Try up to 3 different models
+        let currentAttempt = 0;
+        let currentModel = selectedModel;
+        let currentApiKey = apiKey;
+        
+        while (currentAttempt < maxRetries && !response) {
+            try {
+                finalModel = `${currentModel.providerType}:${currentModel.name || currentModel.id}`;
+                
+                const requestBody = {
+                    model: finalModel,
+                    input: messages,
+                    tools: [],
+                    options: {
+                        apiKey: currentApiKey,
+                        reasoningEffort: DEFAULT_REASONING_EFFORT,
+                        temperature: 0.2,
+                        max_tokens: MAX_TOKENS_PLANNING * 2,
+                        timeoutMs: 30000
+                    }
+                };
+                
+                const isRetry = currentAttempt > 0;
+                if (isRetry) {
+                    console.log(`🔄 Planning: Retrying with fallback model (attempt ${currentAttempt + 1}/${maxRetries}): ${finalModel}`);
+                } else {
+                    console.log('🔍 Planning: Making LLM request with model:', finalModel);
+                }
+                
+                // Send real-time event before LLM call
+                if (eventCallback) {
+                    eventCallback('llm_request', {
+                        phase: 'planning',
+                        model: finalModel,
+                        provider: currentModel.providerType,
+                        modelName: currentModel.name || currentModel.id,
+                        timestamp: new Date().toISOString(),
+                        status: 'requesting',
+                        message: isRetry 
+                            ? `Retrying planning request with ${finalModel}...`
+                            : `Making planning request to ${finalModel}...`,
+                        requestedModel: requestedModel,
+                        selectedViaLoadBalancing: !requestedModel,
+                        isRetry,
+                        attemptNumber: currentAttempt + 1
+                    });
+                }
+                
+                response = await llmResponsesWithTools(requestBody);
+                
+                if (isRetry) {
+                    console.log(`✅ Planning: Fallback successful with ${finalModel}`);
+                }
+                console.log('🔍 Planning: LLM response received, length:', response?.text?.length || 0);
+                console.log('🔍 Planning: Raw LLM response preview:', response?.text?.substring(0, 300) || 'null');
+                
+                break; // Success, exit retry loop
+                
+            } catch (error) {
+                lastError = error;
+                
+                // Check if it's a rate limit error
+                const isRateLimitError = 
+                    error.status === 429 ||
+                    error.message?.includes('429') ||
+                    error.message?.includes('rate limit') ||
+                    error.message?.includes('quota exceeded');
+                
+                if (isRateLimitError && currentAttempt < maxRetries - 1) {
+                    console.warn(`⚠️ Planning: Rate limit hit with ${finalModel}, trying fallback...`);
+                    
+                    // Mark the current provider as rate limited in tracker
+                    rateLimitTracker.recordError(currentModel.providerType, currentModel.name || currentModel.id);
+                    
+                    // Try to select a fallback model
+                    try {
+                        const fallbackSelection = selectWithFallback({
+                            messages,
+                            tools: [],
+                            catalog: runtimeCatalog,
+                            rateLimitTracker,
+                            preferences: {
+                                strategy: SelectionStrategy.QUALITY_OPTIMIZED,
+                                preferFree: false,
+                                maxCostPerMillion: Infinity
+                            },
+                            roundRobinSelector: new RoundRobinSelector(),
+                            max_tokens: MAX_TOKENS_PLANNING * 2
+                        });
+                        
+                        currentModel = fallbackSelection.model;
+                        currentApiKey = runtimeCatalog.providers[currentModel.providerType].apiKey;
+                        currentAttempt++;
+                        
+                        console.log(`🔄 Planning: Selected fallback model: ${currentModel.providerType}:${currentModel.name || currentModel.id}`);
+                        continue; // Try again with fallback model
+                        
+                    } catch (fallbackError) {
+                        console.error('❌ Planning: Failed to select fallback model:', fallbackError.message);
+                        throw lastError; // Can't get fallback, throw original error
+                    }
+                } else {
+                    // Not a rate limit error or no more retries
+                    throw error;
+                }
             }
-        };
-        
-        console.log('🔍 Planning: Making LLM request with model:', finalModel);
-        
-        // Send real-time event before LLM call
-        if (eventCallback) {
-            eventCallback('llm_request', {
-                phase: 'planning',
-                model: finalModel,
-                provider: selectedModel.providerType,
-                modelName: selectedModel.name || selectedModel.id,
-                timestamp: new Date().toISOString(),
-                status: 'requesting',
-                message: `Making planning request to ${finalModel}...`,
-                requestedModel: requestedModel,
-                selectedViaLoadBalancing: !requestedModel
-            });
         }
         
-        const response = await llmResponsesWithTools(requestBody);
-        console.log('🔍 Planning: LLM response received, length:', response?.text?.length || 0);
-        console.log('🔍 Planning: Raw LLM response preview:', response?.text?.substring(0, 300) || 'null');
+        if (!response) {
+            console.error(`❌ Planning: All ${maxRetries} attempts failed. Last error:`, lastError?.message);
+            throw lastError || new Error('Planning request failed after all retries');
+        }
         
         // Send real-time event after LLM call
         if (eventCallback) {

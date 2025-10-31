@@ -157,35 +157,53 @@ Return ONLY the corrected Mermaid chart code (no markdown, no explanations, just
         // Try models in sequence until one succeeds (automatic failover)
         let result = null;
         let lastError = null;
+        let selectedModelInfo = null; // Track which model succeeded
         
         for (let i = 0; i < modelSequence.length; i++) {
-            const selectedModelInfo = modelSequence[i];
-            console.log(`🎯 Mermaid: Trying model ${i + 1}/${modelSequence.length}: ${selectedModelInfo.model}`);
+            const currentModelInfo = modelSequence[i];
+            console.log(`🎯 Mermaid: Trying model ${i + 1}/${modelSequence.length}: ${currentModelInfo.model}`);
             
             try {
                 result = await llmResponsesWithTools({
-                    model: selectedModelInfo.model,
+                    model: currentModelInfo.model,
                     input: messages,
                     tools: [],
                     options: {
-                        apiKey: selectedModelInfo.apiKey,
+                        apiKey: currentModelInfo.apiKey,
                         temperature: 0.1, // Low temperature for deterministic fixes
                         maxTokens: 2000,
                         stream: false
                     }
                 });
                 
-                // Success! Break out of retry loop
+                // Success! Track which model succeeded and break out of retry loop
+                selectedModelInfo = currentModelInfo;
                 console.log(`✅ Mermaid: Successfully fixed with ${selectedModelInfo.model}`);
                 break;
                 
             } catch (error) {
                 lastError = error;
-                console.error(`❌ Mermaid: Model ${selectedModelInfo.model} failed:`, error.message?.substring(0, 200));
+                
+                // Check if it's a rate limit error
+                const isRateLimitError = 
+                    error.status === 429 ||
+                    error.message?.includes('429') ||
+                    error.message?.includes('rate limit') ||
+                    error.message?.includes('quota exceeded');
+                
+                if (isRateLimitError) {
+                    console.error(`❌ Mermaid: Rate limit hit with ${currentModelInfo.model}:`, error.message?.substring(0, 200));
+                } else {
+                    console.error(`❌ Mermaid: Model ${currentModelInfo.model} failed:`, error.message?.substring(0, 200));
+                }
                 
                 // If not the last model, try next one
                 if (i < modelSequence.length - 1) {
-                    console.log(`⏭️ Mermaid: Trying next model...`);
+                    if (isRateLimitError) {
+                        console.log(`⏭️ Mermaid: Rate limit detected, trying fallback model...`);
+                    } else {
+                        console.log(`⏭️ Mermaid: Trying next model...`);
+                    }
                     continue;
                 }
             }

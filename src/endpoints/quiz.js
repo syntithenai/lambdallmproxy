@@ -82,8 +82,23 @@ Return only the search terms, comma separated.`;
                     });
                     break; // Success
                 } catch (error) {
-                    console.warn(`⚠️ Search term extraction failed with ${selectedModel.model}:`, error.message?.substring(0, 100));
-                    if (i < Math.min(3, modelSequence.length) - 1) continue;
+                    // Check if it's a rate limit error
+                    const isRateLimitError = 
+                        error.status === 429 ||
+                        error.message?.includes('429') ||
+                        error.message?.includes('rate limit') ||
+                        error.message?.includes('quota exceeded');
+                    
+                    if (isRateLimitError) {
+                        console.warn(`⚠️ Rate limit hit during search term extraction with ${selectedModel.model}:`, error.message?.substring(0, 100));
+                        if (i < Math.min(3, modelSequence.length) - 1) {
+                            console.log(`⏭️ Quiz search: Rate limit detected, trying fallback model...`);
+                            continue;
+                        }
+                    } else {
+                        console.warn(`⚠️ Search term extraction failed with ${selectedModel.model}:`, error.message?.substring(0, 100));
+                        if (i < Math.min(3, modelSequence.length) - 1) continue;
+                    }
                     throw error; // Re-throw if last attempt
                 }
             }
@@ -216,10 +231,26 @@ Generate a quiz with exactly 10 questions. Each question must test understanding
             
         } catch (error) {
             lastError = error;
-            console.error(`❌ Quiz: Model ${selectedModel.model} failed:`, error.message?.substring(0, 200));
+            
+            // Check if it's a rate limit error
+            const isRateLimitError = 
+                error.status === 429 ||
+                error.message?.includes('429') ||
+                error.message?.includes('rate limit') ||
+                error.message?.includes('quota exceeded');
+            
+            if (isRateLimitError) {
+                console.error(`❌ Quiz: Rate limit hit with ${selectedModel.model}:`, error.message?.substring(0, 200));
+            } else {
+                console.error(`❌ Quiz: Model ${selectedModel.model} failed:`, error.message?.substring(0, 200));
+            }
             
             if (i < modelSequence.length - 1) {
-                console.log(`⏭️ Quiz: Trying next model...`);
+                if (isRateLimitError) {
+                    console.log(`⏭️ Quiz: Rate limit detected, trying fallback model...`);
+                } else {
+                    console.log(`⏭️ Quiz: Trying next model...`);
+                }
                 continue;
             }
         }
