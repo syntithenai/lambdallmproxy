@@ -80,17 +80,30 @@ export const RAGSettings: React.FC = () => {
       const apiUrl = await getCachedApiBase();
       const token = localStorage.getItem('google_token');
       
+      // Include UI providers in request so billing endpoint can filter embeddings
+      const providers = settings.providers
+        ?.filter(p => p.enabled !== false)
+        .map(p => ({
+          type: p.type,
+          allowedModels: p.allowedModels
+        })) || [];
+      
       const response = await fetch(`${apiUrl}/billing`, {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
+        body: JSON.stringify({
+          providers // Send UI providers to check for embedding availability
+        })
       });
 
       if (response.ok) {
         const data = await response.json();
         if (data.availableEmbeddings && Array.isArray(data.availableEmbeddings)) {
           setAvailableEmbeddings(data.availableEmbeddings);
-          console.log('📊 Fetched available embeddings:', data.availableEmbeddings.length);
+          console.log('📊 Fetched available embeddings:', data.availableEmbeddings.length, 'from', providers.length, 'providers');
         }
       } else {
         console.warn('Failed to fetch available embeddings from billing endpoint');

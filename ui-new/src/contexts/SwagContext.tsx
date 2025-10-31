@@ -739,6 +739,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       // Check if local embeddings are selected
       const useLocalEmbeddings = settings.embeddingSource === 'local';
+      console.log(`🔍 Embedding source check: embeddingSource="${settings.embeddingSource}", useLocalEmbeddings=${useLocalEmbeddings}, embeddingModel="${settings.embeddingModel}"`);
       let results: any[] = [];
       
       if (useLocalEmbeddings) {

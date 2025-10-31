@@ -320,6 +320,7 @@ async function handleGetBilling(event, responseStream) {
         
         // --- Available Embedding Models ---
         // Load embedding catalog and filter by available providers
+        // Support both environment AND UI providers (sent via POST body)
         const embeddingCatalogPath = path.join(__dirname, '..', '..', 'EMBEDDING_MODELS_CATALOG.json');
         let availableEmbeddings = [];
         try {
@@ -328,15 +329,37 @@ async function handleGetBilling(event, responseStream) {
             // Get provider types from environment providers
             const providerTypes = new Set(envProviders.map(p => p.type === 'openai-free' || p.type === 'groq-free' || p.type === 'gemini-free' ? p.type.replace('-free', '') : p.type));
             
-            // Filter embedding models to only those available from configured providers
+            // Also check UI providers if provided in POST body
+            let uiProviders = [];
+            if (event.body) {
+                try {
+                    const body = JSON.parse(event.body);
+                    if (body.providers && Array.isArray(body.providers)) {
+                        uiProviders = body.providers;
+                        // Add UI provider types to the set
+                        uiProviders.forEach(p => {
+                            const normalizedType = p.type === 'openai-free' || p.type === 'groq-free' || p.type === 'gemini-free' ? p.type.replace('-free', '') : p.type;
+                            providerTypes.add(normalizedType);
+                        });
+                        console.log(`📱 Received ${uiProviders.length} UI providers for embedding availability check`);
+                    }
+                } catch (parseError) {
+                    console.warn('⚠️ Could not parse billing POST body:', parseError.message);
+                }
+            }
+            
+            // Filter embedding models to only those available from configured providers (env + UI)
             availableEmbeddings = embeddingCatalog.models.filter(model => {
-                // Check if provider is available
+                // Check if provider is available (from env or UI)
                 if (!providerTypes.has(model.provider)) {
                     return false;
                 }
                 
-                // Check if model is restricted by allowedModels for this provider
+                // Check if model is restricted by allowedModels for this provider (check both env and UI)
                 const providerConfig = envProviders.find(p => {
+                    const normalizedType = p.type === 'openai-free' || p.type === 'groq-free' || p.type === 'gemini-free' ? p.type.replace('-free', '') : p.type;
+                    return normalizedType === model.provider;
+                }) || uiProviders.find(p => {
                     const normalizedType = p.type === 'openai-free' || p.type === 'groq-free' || p.type === 'gemini-free' ? p.type.replace('-free', '') : p.type;
                     return normalizedType === model.provider;
                 });
@@ -629,8 +652,9 @@ async function handler(event, responseStream, context) {
         return await handleGetTransactions(event, responseStream);
     }
 
-    // GET /billing - Read billing data (includes TTS capabilities)
-    if (path === '/billing' && method === 'GET') {
+    // GET/POST /billing - Read billing data (includes TTS capabilities)
+    // POST accepts UI providers in body for embedding availability check
+    if (path === '/billing' && (method === 'GET' || method === 'POST')) {
         return await handleGetBilling(event, responseStream);
     }
 
