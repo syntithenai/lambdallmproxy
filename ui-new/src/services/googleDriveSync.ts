@@ -12,6 +12,12 @@ import { playlistDB } from '../utils/playlistDB';
 import { storage } from '../utils/storage';
 import { ragDB } from '../utils/ragDB';
 import type { ContentSnippet } from '../contexts/SwagContext';
+import { chatHistoryDB } from '../utils/chatHistoryDB';
+import type { ChatHistoryEntry } from '../utils/chatHistoryDB';
+import { quizDB } from '../db/quizDb';
+import type { QuizStatistic } from '../db/quizDb';
+import { feedDB } from '../db/feedDb';
+import type { FeedItem } from '../types/feed';
 
 /**
  * Sync result for a single operation
@@ -39,10 +45,16 @@ export interface SyncMetadata {
   lastPlaylistsSync: number;
   lastSnippetsSync: number;
   lastEmbeddingsSync: number;
+  lastChatHistorySync: number;
+  lastQuizProgressSync: number;
+  lastFeedItemsSync: number;
   plansCount: number;
   playlistsCount: number;
   snippetsCount: number;
   embeddingsCount: number;
+  chatHistoryCount: number;
+  quizProgressCount: number;
+  feedItemsCount: number;
 }
 
 /**
@@ -61,6 +73,9 @@ const PLANS_FILENAME = 'saved_plans.json';
 const PLAYLISTS_FILENAME = 'saved_playlists.json';
 const SNIPPETS_FILENAME = 'saved_snippets.json';
 const EMBEDDINGS_FILENAME = 'saved_embeddings.json';
+const CHAT_HISTORY_FILENAME = 'chat_history.json';
+const QUIZ_PROGRESS_FILENAME = 'quiz_progress.json';
+const FEED_ITEMS_FILENAME = 'feed_items.json';
 const METADATA_FILENAME = 'sync_metadata.json';
 
 // Cache folder ID to avoid repeated lookups
@@ -722,17 +737,360 @@ class GoogleDriveSync {
   }
 
   /**
-   * Sync all data: plans, playlists, snippets, and embeddings
+   * Sync chat history (Last-Write-Wins strategy)
    */
-  async syncAll(): Promise<{ plans: SyncResult, playlists: SyncResult, snippets: SyncResult, embeddings: SyncResult }> {
-    const [plans, playlists, snippets, embeddings] = await Promise.all([
+  async syncChatHistory(): Promise<SyncResult> {
+    try {
+      // Get local chat history from IndexedDB (init happens automatically in getAllChats)
+      const localChats = await chatHistoryDB.getAllChats();
+      
+      // Get remote chat history from Google Drive
+      const remoteContent = await this.downloadFile(CHAT_HISTORY_FILENAME);
+      const remoteChats: ChatHistoryEntry[] = remoteContent ? JSON.parse(remoteContent) : [];
+      
+      // Find max timestamps
+      const localTimestamp = localChats.length > 0 ? Math.max(...localChats.map(c => c.timestamp)) : 0;
+      const remoteTimestamp = remoteChats.length > 0 ? Math.max(...remoteChats.map(c => c.timestamp)) : 0;
+      
+      let action: SyncResult['action'] = 'no-change';
+      let itemCount = localChats.length;
+      
+      // Sync logic: Last-Write-Wins
+      if (localChats.length === 0 && remoteChats.length > 0) {
+        // Download remote → local
+        console.log(`📥 Downloading ${remoteChats.length} chat(s) from Google Drive...`);
+        for (const chat of remoteChats) {
+          await chatHistoryDB.saveChat(
+            chat.id,
+            chat.messages,
+            chat.title,
+            {
+              systemPrompt: chat.systemPrompt,
+              planningQuery: chat.planningQuery,
+              generatedSystemPrompt: chat.generatedSystemPrompt,
+              generatedUserQuery: chat.generatedUserQuery,
+              selectedSnippetIds: chat.selectedSnippetIds,
+              todosState: chat.todosState
+            }
+          );
+        }
+        action = 'downloaded';
+        itemCount = remoteChats.length;
+      } else if (remoteChats.length === 0 && localChats.length > 0) {
+        // Upload local → remote
+        console.log(`📤 Uploading ${localChats.length} chat(s) to Google Drive...`);
+        await this.uploadChatHistory(localChats);
+        action = 'uploaded';
+      } else if (localTimestamp > remoteTimestamp) {
+        // Local is newer → upload
+        console.log(`📤 Uploading ${localChats.length} chat(s) (local newer)...`);
+        await this.uploadChatHistory(localChats);
+        action = 'uploaded';
+      } else if (remoteTimestamp > localTimestamp) {
+        // Remote is newer → download
+        console.log(`📥 Downloading ${remoteChats.length} chat(s) (remote newer)...`);
+        // Clear local and restore from remote
+        const allLocalChats = await chatHistoryDB.getAllChats();
+        for (const chat of allLocalChats) {
+          await chatHistoryDB.deleteChat(chat.id);
+        }
+        for (const chat of remoteChats) {
+          await chatHistoryDB.saveChat(
+            chat.id,
+            chat.messages,
+            chat.title,
+            {
+              systemPrompt: chat.systemPrompt,
+              planningQuery: chat.planningQuery,
+              generatedSystemPrompt: chat.generatedSystemPrompt,
+              generatedUserQuery: chat.generatedUserQuery,
+              selectedSnippetIds: chat.selectedSnippetIds,
+              todosState: chat.todosState
+            }
+          );
+        }
+        action = 'downloaded';
+        itemCount = remoteChats.length;
+      }
+      
+      // Update metadata
+      if (action !== 'no-change') {
+        await this.updateSyncMetadata('chatHistory', itemCount);
+      }
+      
+      return {
+        success: true,
+        action,
+        timestamp: Date.now(),
+        itemCount
+      };
+      
+    } catch (error: any) {
+      console.error('Failed to sync chat history:', error);
+      return {
+        success: false,
+        action: 'error',
+        timestamp: Date.now(),
+        itemCount: 0,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Upload chat history to Google Drive
+   */
+  async uploadChatHistory(chats: ChatHistoryEntry[]): Promise<void> {
+    const content = JSON.stringify(chats, null, 2);
+    await this.uploadFile(CHAT_HISTORY_FILENAME, content);
+  }
+
+  /**
+   * Download chat history from Google Drive
+   */
+  async downloadChatHistory(): Promise<ChatHistoryEntry[]> {
+    const content = await this.downloadFile(CHAT_HISTORY_FILENAME);
+    if (!content) return [];
+    return JSON.parse(content);
+  }
+
+  /**
+   * Sync quiz progress/statistics (Last-Write-Wins strategy)
+   */
+  async syncQuizProgress(): Promise<SyncResult> {
+    try {
+      // Get local quiz statistics from IndexedDB
+      await quizDB.init();
+      const localStats = await quizDB.getQuizStatistics(); // Returns all statistics
+      
+      // Get remote quiz progress from Google Drive
+      const remoteContent = await this.downloadFile(QUIZ_PROGRESS_FILENAME);
+      const remoteStats: QuizStatistic[] = remoteContent ? JSON.parse(remoteContent) : [];
+      
+      // Find max timestamps (completedAt is ISO string)
+      const localTimestamp = localStats.length > 0 
+        ? Math.max(...localStats.map(s => new Date(s.completedAt).getTime())) 
+        : 0;
+      const remoteTimestamp = remoteStats.length > 0 
+        ? Math.max(...remoteStats.map(s => new Date(s.completedAt).getTime())) 
+        : 0;
+      
+      let action: SyncResult['action'] = 'no-change';
+      let itemCount = localStats.length;
+      
+      // Sync logic: Last-Write-Wins
+      if (localStats.length === 0 && remoteStats.length > 0) {
+        // Download remote → local
+        console.log(`📥 Downloading ${remoteStats.length} quiz statistic(s) from Google Drive...`);
+        for (const stat of remoteStats) {
+          await quizDB.saveQuizStatistic({
+            quizTitle: stat.quizTitle,
+            snippetIds: stat.snippetIds,
+            score: stat.score,
+            totalQuestions: stat.totalQuestions,
+            timeTaken: stat.timeTaken,
+            completedAt: stat.completedAt,
+            answers: stat.answers,
+            enrichment: stat.enrichment,
+            completed: stat.completed,
+            quizData: stat.quizData
+          });
+        }
+        action = 'downloaded';
+        itemCount = remoteStats.length;
+      } else if (remoteStats.length === 0 && localStats.length > 0) {
+        // Upload local → remote
+        console.log(`📤 Uploading ${localStats.length} quiz statistic(s) to Google Drive...`);
+        await this.uploadQuizProgress(localStats);
+        action = 'uploaded';
+      } else if (localTimestamp > remoteTimestamp) {
+        // Local is newer → upload
+        console.log(`📤 Uploading ${localStats.length} quiz statistic(s) (local newer)...`);
+        await this.uploadQuizProgress(localStats);
+        action = 'uploaded';
+      } else if (remoteTimestamp > localTimestamp) {
+        // Remote is newer → download
+        console.log(`📥 Downloading ${remoteStats.length} quiz statistic(s) (remote newer)...`);
+        // Clear local and restore from remote
+        await quizDB.clearAllStatistics();
+        for (const stat of remoteStats) {
+          await quizDB.saveQuizStatistic({
+            quizTitle: stat.quizTitle,
+            snippetIds: stat.snippetIds,
+            score: stat.score,
+            totalQuestions: stat.totalQuestions,
+            timeTaken: stat.timeTaken,
+            completedAt: stat.completedAt,
+            answers: stat.answers,
+            enrichment: stat.enrichment,
+            completed: stat.completed,
+            quizData: stat.quizData
+          });
+        }
+        action = 'downloaded';
+        itemCount = remoteStats.length;
+      }
+      
+      // Update metadata
+      if (action !== 'no-change') {
+        await this.updateSyncMetadata('quizProgress', itemCount);
+      }
+      
+      return {
+        success: true,
+        action,
+        timestamp: Date.now(),
+        itemCount
+      };
+      
+    } catch (error: any) {
+      console.error('Failed to sync quiz progress:', error);
+      return {
+        success: false,
+        action: 'error',
+        timestamp: Date.now(),
+        itemCount: 0,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Upload quiz progress to Google Drive
+   */
+  async uploadQuizProgress(stats: QuizStatistic[]): Promise<void> {
+    const content = JSON.stringify(stats, null, 2);
+    await this.uploadFile(QUIZ_PROGRESS_FILENAME, content);
+  }
+
+  /**
+   * Download quiz progress from Google Drive
+   */
+  async downloadQuizProgress(): Promise<QuizStatistic[]> {
+    const content = await this.downloadFile(QUIZ_PROGRESS_FILENAME);
+    if (!content) return [];
+    return JSON.parse(content);
+  }
+
+  /**
+   * Sync feed items (Last-Write-Wins strategy)
+   */
+  async syncFeedItems(): Promise<SyncResult> {
+    try {
+      // Get local feed items from IndexedDB (get all with large limit)
+      await feedDB.init();
+      const localItems = await feedDB.getItems(10000, 0); // Get up to 10k items
+      
+      // Get remote feed items from Google Drive
+      const remoteContent = await this.downloadFile(FEED_ITEMS_FILENAME);
+      const remoteItems: FeedItem[] = remoteContent ? JSON.parse(remoteContent) : [];
+      
+      // Find max timestamps (createdAt is ISO string)
+      const localTimestamp = localItems.length > 0 
+        ? Math.max(...localItems.map((i: FeedItem) => new Date(i.createdAt).getTime())) 
+        : 0;
+      const remoteTimestamp = remoteItems.length > 0 
+        ? Math.max(...remoteItems.map((i: FeedItem) => new Date(i.createdAt).getTime())) 
+        : 0;
+      
+      let action: SyncResult['action'] = 'no-change';
+      let itemCount = localItems.length;
+      
+      // Sync logic: Last-Write-Wins
+      if (localItems.length === 0 && remoteItems.length > 0) {
+        // Download remote → local
+        console.log(`📥 Downloading ${remoteItems.length} feed item(s) from Google Drive...`);
+        await feedDB.saveItems(remoteItems);
+        action = 'downloaded';
+        itemCount = remoteItems.length;
+      } else if (remoteItems.length === 0 && localItems.length > 0) {
+        // Upload local → remote
+        console.log(`📤 Uploading ${localItems.length} feed item(s) to Google Drive...`);
+        await this.uploadFeedItems(localItems);
+        action = 'uploaded';
+      } else if (localTimestamp > remoteTimestamp) {
+        // Local is newer → upload
+        console.log(`📤 Uploading ${localItems.length} feed item(s) (local newer)...`);
+        await this.uploadFeedItems(localItems);
+        action = 'uploaded';
+      } else if (remoteTimestamp > localTimestamp) {
+        // Remote is newer → download
+        console.log(`📥 Downloading ${remoteItems.length} feed item(s) (remote newer)...`);
+        // Clear local by deleting all items
+        const allItems = await feedDB.getItems(10000, 0);
+        for (const item of allItems) {
+          await feedDB.deleteItem(item.id);
+        }
+        // Restore from remote
+        await feedDB.saveItems(remoteItems);
+        action = 'downloaded';
+        itemCount = remoteItems.length;
+      }
+      
+      // Update metadata
+      if (action !== 'no-change') {
+        await this.updateSyncMetadata('feedItems', itemCount);
+      }
+      
+      return {
+        success: true,
+        action,
+        timestamp: Date.now(),
+        itemCount
+      };
+      
+    } catch (error: any) {
+      console.error('Failed to sync feed items:', error);
+      return {
+        success: false,
+        action: 'error',
+        timestamp: Date.now(),
+        itemCount: 0,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Upload feed items to Google Drive
+   */
+  async uploadFeedItems(items: FeedItem[]): Promise<void> {
+    const content = JSON.stringify(items, null, 2);
+    await this.uploadFile(FEED_ITEMS_FILENAME, content);
+  }
+
+  /**
+   * Download feed items from Google Drive
+   */
+  async downloadFeedItems(): Promise<FeedItem[]> {
+    const content = await this.downloadFile(FEED_ITEMS_FILENAME);
+    if (!content) return [];
+    return JSON.parse(content);
+  }
+
+  /**
+   * Sync all data: plans, playlists, snippets, embeddings, chat history, quiz progress, and feed items
+   */
+  async syncAll(): Promise<{ 
+    plans: SyncResult, 
+    playlists: SyncResult, 
+    snippets: SyncResult, 
+    embeddings: SyncResult,
+    chatHistory: SyncResult,
+    quizProgress: SyncResult,
+    feedItems: SyncResult
+  }> {
+    const [plans, playlists, snippets, embeddings, chatHistory, quizProgress, feedItems] = await Promise.all([
       this.syncPlans(),
       this.syncPlaylists(),
       this.syncSnippets(),
-      this.syncEmbeddings()
+      this.syncEmbeddings(),
+      this.syncChatHistory(),
+      this.syncQuizProgress(),
+      this.syncFeedItems()
     ]);
 
-    return { plans, playlists, snippets, embeddings };
+    return { plans, playlists, snippets, embeddings, chatHistory, quizProgress, feedItems };
   }
 
   /**
@@ -756,10 +1114,16 @@ class GoogleDriveSync {
         lastPlaylistsSync: 0,
         lastSnippetsSync: 0,
         lastEmbeddingsSync: 0,
+        lastChatHistorySync: 0,
+        lastQuizProgressSync: 0,
+        lastFeedItemsSync: 0,
         plansCount: 0,
         playlistsCount: 0,
         snippetsCount: 0,
-        embeddingsCount: 0
+        embeddingsCount: 0,
+        chatHistoryCount: 0,
+        quizProgressCount: 0,
+        feedItemsCount: 0
       };
     }
 
@@ -771,17 +1135,26 @@ class GoogleDriveSync {
       lastPlaylistsSync: parsed.lastPlaylistsSync || 0,
       lastSnippetsSync: parsed.lastSnippetsSync || 0,
       lastEmbeddingsSync: parsed.lastEmbeddingsSync || 0,
+      lastChatHistorySync: parsed.lastChatHistorySync || 0,
+      lastQuizProgressSync: parsed.lastQuizProgressSync || 0,
+      lastFeedItemsSync: parsed.lastFeedItemsSync || 0,
       plansCount: parsed.plansCount || 0,
       playlistsCount: parsed.playlistsCount || 0,
       snippetsCount: parsed.snippetsCount || 0,
-      embeddingsCount: parsed.embeddingsCount || 0
+      embeddingsCount: parsed.embeddingsCount || 0,
+      chatHistoryCount: parsed.chatHistoryCount || 0,
+      quizProgressCount: parsed.quizProgressCount || 0,
+      feedItemsCount: parsed.feedItemsCount || 0
     };
   }
 
   /**
    * Update sync metadata
    */
-  private async updateSyncMetadata(type: 'plans' | 'playlists' | 'snippets' | 'embeddings', itemCount: number): Promise<void> {
+  private async updateSyncMetadata(
+    type: 'plans' | 'playlists' | 'snippets' | 'embeddings' | 'chatHistory' | 'quizProgress' | 'feedItems', 
+    itemCount: number
+  ): Promise<void> {
     const metadata = await this.getSyncMetadata();
     
     metadata.lastSyncTime = Date.now();
@@ -795,9 +1168,18 @@ class GoogleDriveSync {
     } else if (type === 'snippets') {
       metadata.lastSnippetsSync = Date.now();
       metadata.snippetsCount = itemCount;
-    } else {
+    } else if (type === 'embeddings') {
       metadata.lastEmbeddingsSync = Date.now();
       metadata.embeddingsCount = itemCount;
+    } else if (type === 'chatHistory') {
+      metadata.lastChatHistorySync = Date.now();
+      metadata.chatHistoryCount = itemCount;
+    } else if (type === 'quizProgress') {
+      metadata.lastQuizProgressSync = Date.now();
+      metadata.quizProgressCount = itemCount;
+    } else if (type === 'feedItems') {
+      metadata.lastFeedItemsSync = Date.now();
+      metadata.feedItemsCount = itemCount;
     }
 
     const content = JSON.stringify(metadata, null, 2);
