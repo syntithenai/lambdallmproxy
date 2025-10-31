@@ -57,6 +57,7 @@ import {
   clearAllChatHistory,
   type ChatHistoryEntry 
 } from '../utils/chatHistory';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 interface EnabledTools {
   web_search: boolean;
@@ -1407,6 +1408,30 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       })();
     }
   }, [messages, currentChatId, messagesLoaded, systemPrompt, originalPlanningQuery, generatedSystemPromptFromPlanning, generatedUserQueryFromPlanning]);
+
+  // Sync chat history to Google Drive (debounced 10 seconds)
+  useEffect(() => {
+    const isSyncEnabled = () => {
+      const token = localStorage.getItem('google_drive_access_token');
+      const autoSync = localStorage.getItem('auto_sync_enabled') === 'true';
+      return token && token.length > 0 && autoSync;
+    };
+
+    if (!isSyncEnabled() || messages.length === 0) return;
+
+    const syncTimeout = setTimeout(async () => {
+      try {
+        const result = await googleDriveSync.syncChatHistory();
+        if (result.success) {
+          console.log('✅ Chat history synced to Google Drive');
+        }
+      } catch (error) {
+        console.error('❌ Failed to sync chat history:', error);
+      }
+    }, 10000); // 10 second debounce
+
+    return () => clearTimeout(syncTimeout);
+  }, [messages]);
 
   // Load chat history list when dialog opens
   useEffect(() => {

@@ -9,6 +9,7 @@ import { generateFeedItems, generateFeedQuiz } from '../services/feedGenerator';
 import { useAuth } from './AuthContext';
 import { useSwag } from './SwagContext';
 import { useToast } from '../components/ToastManager';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 interface FeedContextValue {
   // State
@@ -238,6 +239,26 @@ export function FeedProvider({ children }: FeedProviderProps) {
       await feedDB.updatePreferences({
         lastGenerated: new Date().toISOString()
       });
+      
+      // Sync feed items to Google Drive (immediate, fire-and-forget)
+      const isSyncEnabled = () => {
+        const token = localStorage.getItem('google_drive_access_token');
+        const autoSync = localStorage.getItem('auto_sync_enabled') === 'true';
+        return token && token.length > 0 && autoSync;
+      };
+      
+      if (isSyncEnabled()) {
+        (async () => {
+          try {
+            const result = await googleDriveSync.syncFeedItems();
+            if (result.success) {
+              console.log('✅ Feed items synced to Google Drive');
+            }
+          } catch (error) {
+            console.error('❌ Failed to sync feed items:', error);
+          }
+        })();
+      }
     } catch (err) {
       console.error('❌ Failed to generate feed items:', err);
       if (err instanceof Error) {

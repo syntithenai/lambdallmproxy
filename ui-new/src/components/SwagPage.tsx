@@ -32,6 +32,7 @@ import { extractImagesFromSnippets, snippetHasImages } from './ImageEditor/extra
 import { quizDB } from '../db/quizDb';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
 import { ErrorBoundary } from './ErrorBoundary';
+import { googleDriveSync } from '../services/googleDriveSync';
 import '../styles/markdown-editor.css';
 
 export const SwagPage: React.FC = () => {
@@ -2765,6 +2766,26 @@ export const SwagPage: React.FC = () => {
                 }
                 
                 showSuccess(`Quiz completed! Score: ${score}/${total} (${percentage}%)`);
+                
+                // Sync quiz progress to Google Drive (debounced via timeout)
+                const isSyncEnabled = () => {
+                  const token = localStorage.getItem('google_drive_access_token');
+                  const autoSync = localStorage.getItem('auto_sync_enabled') === 'true';
+                  return token && token.length > 0 && autoSync;
+                };
+                
+                if (isSyncEnabled()) {
+                  setTimeout(async () => {
+                    try {
+                      const result = await googleDriveSync.syncQuizProgress();
+                      if (result.success) {
+                        console.log('✅ Quiz progress synced to Google Drive');
+                      }
+                    } catch (error) {
+                      console.error('❌ Failed to sync quiz progress:', error);
+                    }
+                  }, 10000); // 10 second debounce
+                }
               } catch (error) {
                 console.error('Failed to save quiz statistic:', error);
                 showWarning(`Quiz completed! Score: ${score}/${total} (${percentage}%) - Statistics not saved`);

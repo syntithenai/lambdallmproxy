@@ -7,6 +7,7 @@ import { useToast } from './ToastManager';
 import { useAuth } from '../contexts/AuthContext';
 import { QuizCard } from './QuizCard';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 export default function QuizPage() {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ export default function QuizPage() {
     totalCorrectAnswers: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastQuizSave, setLastQuizSave] = useState<number>(0);
   
   // Quiz modal state
   const [showQuizModal, setShowQuizModal] = useState(false);
@@ -39,6 +41,32 @@ export default function QuizPage() {
   useEffect(() => {
     loadStatistics();
   }, []);
+
+  // Sync quiz progress to Google Drive (debounced 10 seconds)
+  useEffect(() => {
+    if (lastQuizSave === 0) return;
+
+    const isSyncEnabled = () => {
+      const token = localStorage.getItem('google_drive_access_token');
+      const autoSync = localStorage.getItem('auto_sync_enabled') === 'true';
+      return token && token.length > 0 && autoSync;
+    };
+
+    if (!isSyncEnabled()) return;
+
+    const syncTimeout = setTimeout(async () => {
+      try {
+        const result = await googleDriveSync.syncQuizProgress();
+        if (result.success) {
+          console.log('✅ Quiz progress synced to Google Drive');
+        }
+      } catch (error) {
+        console.error('❌ Failed to sync quiz progress:', error);
+      }
+    }, 10000); // 10 second debounce
+
+    return () => clearTimeout(syncTimeout);
+  }, [lastQuizSave]);
 
   // Reload statistics when page becomes visible (e.g., after completing a quiz)
   useEffect(() => {
@@ -408,6 +436,9 @@ export default function QuizPage() {
                 
                 // Reload statistics to show the completed quiz
                 await loadStatistics();
+                
+                // Trigger Google Drive sync (debounced)
+                setLastQuizSave(Date.now());
               } catch (error) {
                 console.error('Failed to save quiz statistic:', error);
                 showWarning(`Quiz completed! Score: ${score}/${total} (${percentage}%) - Statistics not saved`);
