@@ -22,7 +22,6 @@ const SettingsContext = createContext<SettingsContextValue | undefined>(undefine
  */
 function migrateSettings(oldSettings: any): Settings {
   let settings = oldSettings;
-  let needsMigration = false;
 
   // If already v2, clean up legacy fields
   if (settings.version === '2.0.0') {
@@ -31,7 +30,6 @@ function migrateSettings(oldSettings: any): Settings {
       // Remove legacy v1 fields if they exist (prevents re-migration)
       const { provider, llmApiKey, ...cleanSettings } = settings;
       settings = cleanSettings;
-      needsMigration = true;
     }
   } else {
     // Migrate from v1 single provider to v2 multi-provider
@@ -54,7 +52,6 @@ function migrateSettings(oldSettings: any): Settings {
       providers: migratedProviders,
       tavilyApiKey: settings.tavilyApiKey || ''
     };
-    needsMigration = true;
   }
 
   // IMPORTANT: Fix missing or undefined embedding settings
@@ -62,13 +59,11 @@ function migrateSettings(oldSettings: any): Settings {
   if (!settings.embeddingSource || settings.embeddingSource === 'undefined') {
     console.log('🔧 Migrating: Setting default embeddingSource to "local"');
     settings.embeddingSource = 'local';
-    needsMigration = true;
   }
   
   if (!settings.embeddingModel || settings.embeddingModel === 'undefined') {
     console.log('🔧 Migrating: Setting default embeddingModel to "Xenova/all-MiniLM-L6-v2"');
     settings.embeddingModel = 'Xenova/all-MiniLM-L6-v2';
-    needsMigration = true;
   }
 
   return settings as Settings;

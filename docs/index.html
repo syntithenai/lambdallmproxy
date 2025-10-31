@@ -21,7 +21,72 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <!-- Google OAuth -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer onload="if(typeof google !== 'undefined' && google.accounts && google.accounts.id) { try { google.accounts.id.cancel(); console.log('🚫 SDK loaded: cancelled auto-prompts'); } catch(e){} }"></script>
+    <!-- Disable automatic Google One Tap prompts globally -->
+    <script>
+      // Global flag to prevent popup loops
+      window.__googleSignInDisabled = false;
+      window.__googlePopupCount = 0;
+      window.__googlePopupLastTime = 0;
+      
+      // Detect rapid popup attempts (popup spam)
+      var originalOpen = window.open;
+      window.open = function() {
+        var now = Date.now();
+        if (now - window.__googlePopupLastTime < 1000) {
+          window.__googlePopupCount++;
+          if (window.__googlePopupCount > 3) {
+            console.error('🚫 BLOCKED: Too many popups detected! Blocking further Google popups.');
+            window.__googleSignInDisabled = true;
+            return null;
+          }
+        } else {
+          window.__googlePopupCount = 0;
+        }
+        window.__googlePopupLastTime = now;
+        
+        // Check if this is a Google accounts popup
+        if (arguments[0] && typeof arguments[0] === 'string' && 
+            arguments[0].includes('accounts.google.com') && 
+            window.__googleSignInDisabled) {
+          console.error('🚫 BLOCKED: Google popup blocked due to spam protection');
+          return null;
+        }
+        
+        return originalOpen.apply(this, arguments);
+      };
+      
+      // Intercept and cancel ANY Google One Tap attempts - only on initial page load
+      (function() {
+        var cancelCount = 0;
+        var maxChecks = 20; // Only check 20 times (2 seconds)
+        var checkCount = 0;
+        
+        var intervalId = setInterval(function() {
+          checkCount++;
+          
+          if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+            try {
+              google.accounts.id.cancel();
+              cancelCount++;
+              if (cancelCount === 1) {
+                console.log('🚫 Cancelled initial Google One Tap auto-prompt');
+              }
+            } catch (e) {
+              // Ignore - Google SDK not ready
+            }
+          }
+          
+          // Stop after max checks or if we've cancelled at least once and SDK is loaded
+          if (checkCount >= maxChecks || (cancelCount > 0 && checkCount > 5)) {
+            clearInterval(intervalId);
+            if (cancelCount > 1) {
+              console.log('✅ Stopped Google One Tap monitoring (' + cancelCount + ' cancellations)');
+            }
+          }
+        }, 100); // Check every 100ms
+      })();
+    </script>
     <!-- PayPal SDK - Loaded dynamically in main.tsx with env var -->
     <!-- Single Page Apps for GitHub Pages -->
     <!-- This script checks for the redirect from 404.html and converts the query string back to a path -->
@@ -37,8 +102,8 @@
         }
       }(window.location))
     </script>
-    <script type="module" crossorigin src="/assets/index-CCA4-d-K.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DMFohEY-.css">
+    <script type="module" crossorigin src="/assets/index-_rsZEnQA.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-UUsDHFfE.css">
   </head>
   <body>
     <div id="root"></div>

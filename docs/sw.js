@@ -1,16 +1,16 @@
 // Service Worker for Research Agent PWA
-// Version 1.0.0
+// Version 1.0.2 - Fixed development file caching
 
-const CACHE_NAME = 'research-agent-v1';
-const RUNTIME_CACHE = 'runtime-cache-v1';
+const CACHE_NAME = 'research-agent-v1.0.2';
+const RUNTIME_CACHE = 'runtime-cache-v1.0.2';
 
 // Assets to cache on install (critical for offline functionality)
 const STATIC_ASSETS = [
-  '/',
   '/index.html',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',
+  '/manifest.json'
 ];
 
 // Install event - cache static assets
@@ -19,8 +19,17 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
+      // Cache files individually to avoid one failure blocking all
+      return Promise.allSettled(
+        STATIC_ASSETS.map(url => 
+          cache.add(url).catch(err => {
+            console.warn(`[SW] Failed to cache ${url}:`, err);
+            return null;
+          })
+        )
+      );
     }).then(() => {
+      console.log('[SW] Service worker installed');
       // Force the waiting service worker to become the active service worker
       return self.skipWaiting();
     })
@@ -54,6 +63,19 @@ self.addEventListener('fetch', (event) => {
 
   // Skip cross-origin requests
   if (url.origin !== location.origin) {
+    return;
+  }
+
+  // Skip caching for development files (Vite dev server files)
+  // These include .tsx, .ts, .jsx, .js source files and Vite HMR requests
+  if (url.pathname.includes('/src/') || 
+      url.pathname.includes('/@') ||
+      url.pathname.includes('?import') ||
+      url.searchParams.has('t') ||
+      url.pathname.endsWith('.tsx') ||
+      url.pathname.endsWith('.ts') ||
+      url.pathname.endsWith('.jsx')) {
+    // Let the browser handle these normally (no caching)
     return;
   }
 
