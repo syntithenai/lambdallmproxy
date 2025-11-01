@@ -2190,12 +2190,15 @@ Brief answer with URLs:`;
               });
             }
             
+            const projectId = extractProjectId(context.event);
+            
             const snippet = await snippetsService.getSnippet(
               {
                 id: payload.id,
                 title: payload.title
               },
               userEmail,
+              projectId,
               accessToken
             );
             
@@ -2216,10 +2219,13 @@ Brief answer with URLs:`;
           }
           
           case 'search': {
+            const projectId = extractProjectId(context.event);
+            
             console.log('🔍 manage_snippets SEARCH:', {
               query: payload.query,
               tags: payload.tags,
               userEmail: userEmail,
+              projectId: projectId,
               hasAccessToken: !!accessToken,
               hasRefreshToken: !!refreshToken
             });
@@ -2233,6 +2239,7 @@ Brief answer with URLs:`;
                     tags: payload.tags || []
                   },
                   userEmail,
+                  projectId,
                   token
                 );
               },
@@ -2283,12 +2290,15 @@ Brief answer with URLs:`;
               });
             }
             
+            const projectId = extractProjectId(context.event);
+            
             const deleted = await snippetsService.removeSnippet(
               {
                 id: payload.id,
                 title: payload.title
               },
               userEmail,
+              projectId,
               accessToken
             );
             

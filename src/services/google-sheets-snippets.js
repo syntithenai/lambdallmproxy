@@ -444,11 +444,14 @@ async function insertSnippet({ title, content, tags = [], source = 'manual', url
  * @param {number} id - Snippet ID
  * @param {Object} updates - Fields to update
  * @param {string} userEmail - User's email
+ * @param {string|null} projectId - Project ID (optional, for verification)
  * @param {string} accessToken - User's OAuth access token
  * @returns {Promise<Object>} Updated snippet
  */
-async function updateSnippet(id, updates, userEmail, accessToken) {
+async function updateSnippet(id, updates, userEmail, projectId, accessToken) {
   try {
+    validateUserEmail(userEmail);
+    
     const { spreadsheetId } = await getOrCreateSnippetsSheet(userEmail, accessToken);
     const sheets = google.sheets({
       version: 'v4',
@@ -457,60 +460,90 @@ async function updateSnippet(id, updates, userEmail, accessToken) {
     
     sheets.context._options.auth.setCredentials({ access_token: accessToken });
     
-    // Find row by ID
+    // Find row by ID (now columns A:J with user_email and project_id)
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Snippets!A:H'
+      range: 'Snippets!A:J'
     });
     
     if (!response.data.values || response.data.values.length < 2) {
       throw new Error('Snippet not found');
     }
     
-    const rowIndex = response.data.values.findIndex((row, idx) => 
-      idx > 0 && parseInt(row[0], 10) === id
+    const headers = response.data.values[0];
+    const dataRows = response.data.values.slice(1);
+    
+    // Parse rows and filter by user/project
+    const parsedRows = dataRows.map(row => ({
+      id: row[0],
+      user_email: row[1],
+      project_id: row[2],
+      created_at: row[3],
+      updated_at: row[4],
+      title: row[5],
+      content: row[6],
+      tags: row[7],
+      source: row[8],
+      url: row[9]
+    }));
+    
+    const filtered = filterByUserAndProject(parsedRows, userEmail, projectId);
+    const snippet = filtered.find(s => parseInt(s.id, 10) === id);
+    
+    if (!snippet) {
+      throw new Error(`Snippet with ID ${id} not found or access denied`);
+    }
+    
+    // Find original row index
+    const rowIndex = dataRows.findIndex(row => 
+      parseInt(row[0], 10) === id && row[1] === userEmail
     );
     
     if (rowIndex === -1) {
-      throw new Error(`Snippet with ID ${id} not found`);
+      throw new Error('Snippet not found or access denied');
     }
     
-    const existingRow = response.data.values[rowIndex];
+    const existingRow = dataRows[rowIndex];
     const now = new Date().toISOString();
     
-    // Build updated row
+    // Build updated row (preserve user_email and project_id)
     const updatedRow = [
       id,
-      existingRow[1], // Keep original created_at
-      now, // Update updated_at
-      updates.title !== undefined ? updates.title : existingRow[3],
-      updates.content !== undefined ? updates.content : existingRow[4],
-      updates.tags !== undefined ? (Array.isArray(updates.tags) ? updates.tags.map(t => t.toLowerCase()).sort().join(', ') : updates.tags) : existingRow[5],
-      updates.source !== undefined ? updates.source : existingRow[6],
-      updates.url !== undefined ? updates.url : existingRow[7]
+      existingRow[1], // user_email (unchanged)
+      existingRow[2], // project_id (unchanged)
+      existingRow[3], // created_at (unchanged)
+      now, // updated_at
+      updates.title !== undefined ? updates.title : existingRow[5],
+      updates.content !== undefined ? updates.content : existingRow[6],
+      updates.tags !== undefined ? (Array.isArray(updates.tags) ? updates.tags.map(t => t.toLowerCase()).sort().join(', ') : updates.tags) : existingRow[7],
+      updates.source !== undefined ? updates.source : existingRow[8],
+      updates.url !== undefined ? updates.url : existingRow[9]
     ];
     
-    // Update row
+    // Update row (rowIndex + 2 because: +1 for header, +1 for 1-based indexing)
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Snippets!A${rowIndex + 1}:H${rowIndex + 1}`,
+      range: `Snippets!A${rowIndex + 2}:J${rowIndex + 2}`,
       valueInputOption: 'RAW',
       requestBody: {
         values: [updatedRow]
       }
     });
     
-    console.log(`✅ Snippets: Updated snippet #${id}`);
+    logUserAccess('updated', 'snippet', id.toString(), userEmail, projectId);
+    console.log(`✅ Snippets: Updated snippet #${id} for ${userEmail}`);
     
     return {
       id,
-      created_at: updatedRow[1],
-      updated_at: updatedRow[2],
-      title: updatedRow[3],
-      content: updatedRow[4],
-      tags: updatedRow[5] ? updatedRow[5].split(', ').filter(Boolean) : [],
-      source: updatedRow[6],
-      url: updatedRow[7]
+      user_email: updatedRow[1],
+      project_id: updatedRow[2],
+      created_at: updatedRow[3],
+      updated_at: updatedRow[4],
+      title: updatedRow[5],
+      content: updatedRow[6],
+      tags: updatedRow[7] ? updatedRow[7].split(', ').filter(Boolean) : [],
+      source: updatedRow[8],
+      url: updatedRow[9]
     };
   } catch (error) {
     console.error('❌ Snippets: Error updating snippet:', error.message);
@@ -524,11 +557,14 @@ async function updateSnippet(id, updates, userEmail, accessToken) {
  * @param {number} params.id - Snippet ID (optional)
  * @param {string} params.title - Snippet title (optional)
  * @param {string} userEmail - User's email
+ * @param {string|null} projectId - Project ID (optional, for verification)
  * @param {string} accessToken - User's OAuth access token
  * @returns {Promise<Object>} Deleted snippet info
  */
-async function removeSnippet({ id, title }, userEmail, accessToken) {
+async function removeSnippet({ id, title }, userEmail, projectId, accessToken) {
   try {
+    validateUserEmail(userEmail);
+    
     const { spreadsheetId } = await getOrCreateSnippetsSheet(userEmail, accessToken);
     const sheets = google.sheets({
       version: 'v4',
@@ -537,40 +573,65 @@ async function removeSnippet({ id, title }, userEmail, accessToken) {
     
     sheets.context._options.auth.setCredentials({ access_token: accessToken });
     
-    // Read all snippets
+    // Read all snippets (now A:J with user_email and project_id)
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Snippets!A:H'
+      range: 'Snippets!A:J'
     });
     
     if (!response.data.values || response.data.values.length < 2) {
       throw new Error('No snippets found');
     }
     
-    // Filter out the snippet to remove
     const headers = response.data.values[0];
-    const rows = response.data.values.slice(1);
+    const dataRows = response.data.values.slice(1);
     
-    const rowToRemove = rows.find(row => {
+    // Parse and filter by user/project
+    const parsedRows = dataRows.map(row => ({
+      id: row[0],
+      user_email: row[1],
+      project_id: row[2],
+      created_at: row[3],
+      updated_at: row[4],
+      title: row[5],
+      content: row[6],
+      tags: row[7],
+      source: row[8],
+      url: row[9]
+    }));
+    
+    const filtered = filterByUserAndProject(parsedRows, userEmail, projectId);
+    
+    // Find the snippet to remove
+    const snippetToRemove = filtered.find(snippet => {
       if (id !== undefined) {
-        return parseInt(row[0], 10) === id;
+        return parseInt(snippet.id, 10) === id;
       }
       if (title !== undefined) {
-        return row[3] === title;
+        return snippet.title === title;
       }
       return false;
     });
     
-    if (!rowToRemove) {
-      throw new Error('Snippet not found');
+    if (!snippetToRemove) {
+      throw new Error('Snippet not found or access denied');
     }
     
-    const filteredRows = rows.filter(row => row !== rowToRemove);
+    // Find row index in original data
+    const rowIndexToRemove = dataRows.findIndex(row => 
+      row[0] === snippetToRemove.id && row[1] === userEmail
+    );
+    
+    if (rowIndexToRemove === -1) {
+      throw new Error('Snippet not found or access denied');
+    }
+    
+    const filteredRows = dataRows.filter((row, idx) => idx !== rowIndexToRemove);
     
     // Clear and rewrite sheet
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: 'Snippets!A2:H'
+      range: 'Snippets!A2:J'
     });
     
     if (filteredRows.length > 0) {
@@ -584,11 +645,12 @@ async function removeSnippet({ id, title }, userEmail, accessToken) {
       });
     }
     
-    console.log(`✅ Snippets: Removed snippet #${rowToRemove[0]}: "${rowToRemove[3]}"`);
+    logUserAccess('deleted', 'snippet', snippetToRemove.id, userEmail, projectId);
+    console.log(`✅ Snippets: Removed snippet #${snippetToRemove.id}: "${snippetToRemove.title}" for ${userEmail}`);
     
     return {
-      id: parseInt(rowToRemove[0], 10),
-      title: rowToRemove[3]
+      id: parseInt(snippetToRemove.id, 10),
+      title: snippetToRemove.title
     };
   } catch (error) {
     console.error('❌ Snippets: Error removing snippet:', error.message);
@@ -602,11 +664,14 @@ async function removeSnippet({ id, title }, userEmail, accessToken) {
  * @param {number} params.id - Snippet ID (optional)
  * @param {string} params.title - Snippet title (optional)
  * @param {string} userEmail - User's email
+ * @param {string|null} projectId - Project ID (optional, for filtering)
  * @param {string} accessToken - User's OAuth access token
  * @returns {Promise<Object|null>} Snippet or null
  */
-async function getSnippet({ id, title }, userEmail, accessToken) {
+async function getSnippet({ id, title }, userEmail, projectId, accessToken) {
   try {
+    validateUserEmail(userEmail);
+    
     const { spreadsheetId } = await getOrCreateSnippetsSheet(userEmail, accessToken);
     const sheets = google.sheets({
       version: 'v4',
@@ -617,37 +682,58 @@ async function getSnippet({ id, title }, userEmail, accessToken) {
     
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Snippets!A:H'
+      range: 'Snippets!A:J'
     });
     
     if (!response.data.values || response.data.values.length < 2) {
       return null;
     }
     
-    const rows = response.data.values.slice(1);
-    const row = rows.find(r => {
+    const dataRows = response.data.values.slice(1);
+    
+    // Parse and filter by user/project
+    const parsedRows = dataRows.map(row => ({
+      id: row[0],
+      user_email: row[1],
+      project_id: row[2],
+      created_at: row[3],
+      updated_at: row[4],
+      title: row[5],
+      content: row[6],
+      tags: row[7],
+      source: row[8],
+      url: row[9]
+    }));
+    
+    const filtered = filterByUserAndProject(parsedRows, userEmail, projectId);
+    
+    const snippet = filtered.find(s => {
       if (id !== undefined) {
-        return parseInt(r[0], 10) === id;
+        return parseInt(s.id, 10) === id;
       }
       if (title !== undefined) {
-        return r[3] === title;
+        return s.title === title;
       }
       return false;
     });
     
-    if (!row) {
+    if (!snippet) {
       return null;
     }
     
+    logUserAccess('accessed', 'snippet', snippet.id, userEmail, projectId);
+    
     return {
-      id: parseInt(row[0], 10),
-      created_at: row[1],
-      updated_at: row[2],
-      title: row[3],
-      content: row[4],
-      tags: row[5] ? row[5].split(', ').filter(Boolean) : [],
-      source: row[6],
-      url: row[7] || ''
+      id: parseInt(snippet.id, 10),
+      user_email: snippet.user_email,
+      project_id: snippet.project_id,
+      created_at: snippet.created_at,
+      updated_at: snippet.updated_at,
+      title: snippet.title,
+      content: snippet.content,
+      tags: snippet.tags ? snippet.tags.split(', ').filter(Boolean) : [],
+      source: snippet.source || '',
+      url: snippet.url || ''
     };
   } catch (error) {
     console.error('❌ Snippets: Error getting snippet:', error.message);
@@ -661,15 +747,19 @@ async function getSnippet({ id, title }, userEmail, accessToken) {
  * @param {string} params.query - Text query (searches title and content)
  * @param {string[]} params.tags - Tags filter (AND logic)
  * @param {string} userEmail - User's email
+ * @param {string|null} projectId - Project ID (optional, for filtering)
  * @param {string} accessToken - User's OAuth access token
  * @returns {Promise<Array>} Array of matching snippets
  */
-async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
+async function searchSnippets({ query, tags = [] }, userEmail, projectId, accessToken) {
   try {
+    validateUserEmail(userEmail);
+    
     console.log('🔍 Snippets: Starting search...', {
       query: query,
       tags: tags,
       userEmail: userEmail,
+      projectId: projectId,
       hasAccessToken: !!accessToken
     });
     
@@ -685,7 +775,7 @@ async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
     
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Snippets!A:H'
+      range: 'Snippets!A:J'
     });
     
     console.log('📊 Snippets: Raw response:', {
@@ -698,18 +788,36 @@ async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
       return [];
     }
     
-    const rows = response.data.values.slice(1);
-    console.log(`📊 Snippets: Processing ${rows.length} data rows`);
+    const dataRows = response.data.values.slice(1);
+    console.log(`📊 Snippets: Processing ${dataRows.length} data rows`);
+    
+    // Parse rows with new schema
+    const parsedRows = dataRows.map(row => ({
+      id: row[0],
+      user_email: row[1],
+      project_id: row[2],
+      created_at: row[3],
+      updated_at: row[4],
+      title: row[5] || '',
+      content: row[6] || '',
+      tags: row[7],
+      source: row[8] || 'manual',
+      url: row[9] || ''
+    }));
+    
+    // Filter by user and project first
+    const userFiltered = filterByUserAndProject(parsedRows, userEmail, projectId);
+    console.log(`📊 Snippets: ${userFiltered.length} snippets after user/project filtering`);
     
     // Log first 3 rows as examples
-    if (rows.length > 0) {
+    if (userFiltered.length > 0) {
       console.log('📝 Example rows (first 3):');
-      rows.slice(0, 3).forEach((row, idx) => {
+      userFiltered.slice(0, 3).forEach((row, idx) => {
         console.log(`  Row ${idx + 1}:`, {
-          id: row[0],
-          title: row[3],
-          tags_raw: row[5],
-          source: row[6]
+          id: row.id,
+          title: row.title,
+          tags_raw: row.tags,
+          source: row.source
         });
       });
     }
@@ -723,38 +831,40 @@ async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
       tagsLower: tagsLower
     });
     
-    const results = rows
-      .map(row => {
+    const results = userFiltered
+      .map(snippet => {
         // Handle tags in both formats:
         // 1. Comma-separated string: "tag1, tag2, tag3"
         // 2. JSON array (from Swag UI): ["tag1","tag2","tag3"]
         // 3. Comma-separated without spaces: "tag1,tag2,tag3"
-        let tags = [];
-        if (row[5]) {
-          const tagValue = row[5].trim();
+        let parsedTags = [];
+        if (snippet.tags) {
+          const tagValue = snippet.tags.trim();
           if (tagValue.startsWith('[')) {
             // JSON array format
             try {
-              tags = JSON.parse(tagValue);
+              parsedTags = JSON.parse(tagValue);
             } catch (e) {
               console.warn('Failed to parse tags JSON:', tagValue);
-              tags = [];
+              parsedTags = [];
             }
           } else {
             // Comma-separated format - split by comma and trim each tag
-            tags = tagValue.split(',').map(t => t.trim()).filter(Boolean);
+            parsedTags = tagValue.split(',').map(t => t.trim()).filter(Boolean);
           }
         }
         
         return {
-          id: parseInt(row[0], 10),
-          created_at: row[1],
-          updated_at: row[2],
-          title: row[3] || '',
-          content: row[4] || '',
-          tags: tags,
-          source: row[6] || 'manual',
-          url: row[7] || ''
+          id: parseInt(snippet.id, 10),
+          user_email: snippet.user_email,
+          project_id: snippet.project_id,
+          created_at: snippet.created_at,
+          updated_at: snippet.updated_at,
+          title: snippet.title,
+          content: snippet.content,
+          tags: parsedTags,
+          source: snippet.source,
+          url: snippet.url
         };
       })
       .filter(snippet => {
@@ -786,6 +896,8 @@ async function searchSnippets({ query, tags = [] }, userEmail, accessToken) {
       });
     
     console.log(`🔍 Snippets: Search found ${results.length} results (query: "${query}", tags: [${tags.join(', ')}])`);
+    
+    logUserAccess('searched', 'snippets', `query="${query}"`, userEmail, projectId);
     
     return results;
   } catch (error) {
