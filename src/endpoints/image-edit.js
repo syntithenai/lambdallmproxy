@@ -22,6 +22,7 @@ const { verifyGoogleToken } = require('../auth');
 const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { buildProviderPool } = require('../credential-pool');
 const { calculateCost, calculateLambdaCost } = require('../services/google-sheets-logger');
+const { calculateLambdaCost: unifiedCalculateLambdaCost } = require('../utils/pricing-service');
 
 /**
  * Check if a model name indicates vision capability
@@ -926,7 +927,7 @@ async function handler(event, responseStream, _context) {
                     // Calculate Lambda cost for this request
                     const durationMs = Date.now() - startTime;
                     const memoryMB = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || '256');
-                    const lambdaCost = calculateLambdaCost(memoryMB, durationMs);
+                    const lambdaCost = unifiedCalculateLambdaCost(memoryMB, durationMs);
                     
                     // Apply LLM markup only if using server-side keys
                     // User-provided keys have $0 cost (they pay provider directly)

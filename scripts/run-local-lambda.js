@@ -27,7 +27,7 @@ process.env.IS_LOCAL = 'true';
 process.env.NODE_ENV = 'development';
 
 const app = express();
-const PORT = process.env.LOCAL_PORT || 3000;
+const PORT = process.env.LOCAL_LAMBDA_PORT || 3000;
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({ 

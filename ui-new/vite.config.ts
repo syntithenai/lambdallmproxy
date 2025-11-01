@@ -8,7 +8,7 @@ export default defineConfig(() => ({
   // Use root path for custom domain
   base: '/',
   server: {
-    port: 8081,
+    port: parseInt(process.env.VITE_PORT || '8081'),
     host: true, // Listen on all addresses
     allowedHosts:['peppertrees.asuscomm.com'],
     watch: {
