@@ -10,7 +10,7 @@ import { useAuth } from './AuthContext';
 import { useSwag } from './SwagContext';
 import { useProject } from './ProjectContext';
 import { useToast } from '../components/ToastManager';
-import { googleDriveSync } from '../services/googleDriveSync';
+import { feedSyncService } from '../services/feedSyncService';
 
 interface FeedContextValue {
   // State
@@ -101,7 +101,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
   }, [isGenerating]);
 
   /**
-   * Load initial data from IndexedDB
+   * Load initial data from IndexedDB and sync with Google Sheets
    */
   useEffect(() => {
     const loadData = async () => {
@@ -119,11 +119,36 @@ export function FeedProvider({ children }: FeedProviderProps) {
         console.log('✅ Loaded preferences');
         setPreferences(prefs);
         
-        // Load items (first 10)
+        // Load items from local IndexedDB first (fast)
         console.log('📂 Loading items from DB...');
         const loadedItems = await feedDB.getItems(10, 0);
         console.log('✅ Loaded items from DB:', loadedItems.length);
         setAllItems(loadedItems);
+        
+        // Sync with Google Sheets in background (if enabled)
+        const token = localStorage.getItem('google_access_token');
+        const autoSync = localStorage.getItem('auto_sync_enabled') === 'true';
+        
+        if (token && autoSync) {
+          console.log('🔄 Syncing with Google Sheets in background...');
+          feedSyncService.fullSync()
+            .then(async (result) => {
+              if (result.success) {
+                console.log('✅ Background sync complete:', result.action, result.itemCount, 'items');
+                
+                // Reload items if sync downloaded or merged new items
+                if (result.action === 'downloaded' || result.action === 'merged') {
+                  const syncedItems = await feedDB.getItems(100, 0);
+                  setAllItems(syncedItems);
+                  console.log('✅ Reloaded items after sync:', syncedItems.length);
+                }
+              }
+            })
+            .catch((error) => {
+              console.error('❌ Background sync failed:', error);
+              // Don't show error to user - feed still works from local DB
+            });
+        }
         
         console.log('✅ Initial data load complete');
       } catch (err) {
@@ -264,9 +289,9 @@ export function FeedProvider({ children }: FeedProviderProps) {
         lastGenerated: new Date().toISOString()
       });
       
-      // Sync feed items to Google Drive (immediate, fire-and-forget)
+      // Sync feed items to Google Sheets (immediate, fire-and-forget)
       const isSyncEnabled = () => {
-        const token = localStorage.getItem('google_drive_access_token');
+        const token = localStorage.getItem('google_access_token');
         const autoSync = localStorage.getItem('auto_sync_enabled') === 'true';
         return token && token.length > 0 && autoSync;
       };
@@ -274,9 +299,14 @@ export function FeedProvider({ children }: FeedProviderProps) {
       if (isSyncEnabled()) {
         (async () => {
           try {
-            const result = await googleDriveSync.syncFeedItems();
+            console.log('🔄 Syncing feed items to Google Sheets...');
+            const result = await feedSyncService.fullSync();
             if (result.success) {
-              console.log('✅ Feed items synced to Google Drive');
+              console.log('✅ Feed items synced to Google Sheets:', result.action, result.itemCount, 'items');
+              
+              // Reload items from DB after sync (may have new items from remote)
+              const syncedItems = await feedDB.getItems(100, 0);
+              setAllItems(syncedItems);
             }
           } catch (error) {
             console.error('❌ Failed to sync feed items:', error);

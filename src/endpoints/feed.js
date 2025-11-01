@@ -570,7 +570,7 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
     return completedItem;
 });
 
-await Promise.all(imagePromises);
+const completedItems = await Promise.all(imagePromises);
     
 eventCallback('status', { 
     message: `Generated ${items.length} items`
@@ -585,7 +585,7 @@ if (totalImageGenCost > 0) {
 }
 
 return { 
-    items, // Items already emitted via item_generated events
+    items: completedItems, // Return completed items with images
     searchResults,
     usage: response.usage,
     model: response.model,
@@ -729,6 +729,48 @@ async function handler(event, responseStream, context) {
                 sseWriter.writeEvent(eventType, eventData);
             }
         );
+        
+        // Save generated feed items to Google Sheets (backend storage)
+        const projectId = extractProjectId(event);
+        try {
+            sseWriter.writeEvent('status', { message: 'Saving feed items...' });
+            
+            // Prepare feed items for storage
+            const feedItemsToSave = result.items.map(item => ({
+                title: item.title,
+                content: item.content,
+                url: item.sources?.[0] || '',
+                source: 'ai_generated',
+                topics: item.topics
+            }));
+            
+            // Save each item to Google Sheets
+            let savedCount = 0;
+            for (const feedItem of feedItemsToSave) {
+                try {
+                    await feedService.insertFeedItem(
+                        feedItem,
+                        userEmail,
+                        projectId,
+                        verifiedUser.accessToken
+                    );
+                    savedCount++;
+                } catch (saveError) {
+                    console.error(`Failed to save feed item "${feedItem.title}":`, saveError);
+                    // Continue saving other items
+                }
+            }
+            
+            console.log(`✅ Saved ${savedCount}/${feedItemsToSave.length} feed items to Google Sheets`);
+            sseWriter.writeEvent('status', { message: `Saved ${savedCount} items` });
+        } catch (saveError) {
+            console.error('Failed to save feed items to Google Sheets:', saveError);
+            // Don't fail the entire request - items were still generated
+            sseWriter.writeEvent('warning', { 
+                message: 'Feed items generated but not saved to storage',
+                error: saveError.message 
+            });
+        }
         
         // Items already sent via item_generated events in generateFeedItems
         // No need to send them again here
