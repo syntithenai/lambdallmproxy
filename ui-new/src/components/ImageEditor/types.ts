@@ -30,7 +30,7 @@ export interface ProcessingStatus {
   error?: string;
 }
 
-export type BulkOperationType = 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'facedetect' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate';
+export type BulkOperationType = 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'facedetect' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate' | 'duplicate';
 
 export interface BulkOperation {
   type: BulkOperationType;

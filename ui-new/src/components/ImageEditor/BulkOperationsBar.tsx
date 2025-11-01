@@ -33,13 +33,6 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [openDropdown]);
 
-  const buttonClass = (baseClass = '') =>
-    `px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-      disabled || selectedCount === 0
-        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-        : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-    } ${baseClass}`;
-
   const dropdownButtonClass = (isOpen: boolean) =>
     `px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1 ${
       disabled || selectedCount === 0
@@ -137,13 +130,13 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
               {/* Resize */}
               <div className={sectionHeaderClass}>Resize</div>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 0.5 }, label: '50%' })}
+                onClick={() => handleOperation({ type: 'resize', params: { percentage: 50 }, label: '50%' })}
                 className={dropdownItemClass}
               >
                 🔽 50% Size
               </button>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 2 }, label: '200%' })}
+                onClick={() => handleOperation({ type: 'resize', params: { percentage: 200 }, label: '200%' })}
                 className={dropdownItemClass}
               >
                 🔼 200% Size
@@ -285,350 +278,22 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
           )}
         </div>
 
-        {/* 3. FORMAT DROPDOWN */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['format'] = el; }}>
-          <button
-            onClick={() => toggleDropdown('format')}
-            disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'format')}
-          >
-            💾 Format ▾
-          </button>
-          {openDropdown === 'format' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[200px]">
-              <button
-                onClick={() => handleOperation({ type: 'format', params: { format: 'jpg', quality: 90 }, label: 'JPG High' })}
-                className={dropdownItemClass}
-              >
-                📺 1920×1080 (Full HD)
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'crop', params: { width: 1280, height: 720 }, label: '1280×720' })
-                }
-                className={dropdownItemClass}
-              >
-                📺 1280×720 (HD)
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'crop', params: { width: 800, height: 800 }, label: '800×800' })
-                }
-                className={dropdownItemClass}
-              >
-                ⬜ 800×800 (Square)
-              </button>
-            </div>
-          )}
-        </div>
+        {/* 3. FORMAT DROPDOWN - HIDDEN (all images auto-converted to webp) */}
+        {/* Format conversion to webp happens automatically in backend */}
 
-        {/* Flip Dropdown */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['flip'] = el; }}>
-          <button
-            onClick={() => toggleDropdown('flip')}
-            disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'flip')}
-          >
-            Flip ▾
-          </button>
-          {openDropdown === 'flip' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[150px]">
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'flip', params: { direction: 'horizontal' }, label: 'Horizontal' })
-                }
-                className={dropdownItemClass}
-              >
-                ↔️ Horizontal
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'flip', params: { direction: 'vertical' }, label: 'Vertical' })
-                }
-                className={dropdownItemClass}
-              >
-                ↕️ Vertical
-              </button>
-              <button
-                onClick={() => handleOperation({ type: 'rotate', params: { degrees: 180 }, label: '180°' })}
-                className={dropdownItemClass}
-              >
-                🔄 180° rotation
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Format Dropdown */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['format'] = el; }}>
-          <button
-            onClick={() => toggleDropdown('format')}
-            disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'format')}
-          >
-            Format ▾
-          </button>
-          {openDropdown === 'format' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[150px]">
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'format', params: { format: 'jpg', quality: 90 }, label: 'JPG (High)' })
-                }
-                className={dropdownItemClass}
-              >
-                📄 JPG (High Quality)
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'format', params: { format: 'jpg', quality: 80 }, label: 'JPG (Medium)' })
-                }
-                className={dropdownItemClass}
-              >
-                📄 JPG (Medium)
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'format', params: { format: 'jpg', quality: 60 }, label: 'JPG (Low)' })
-                }
-                className={dropdownItemClass}
-              >
-                📄 JPG (Low/Small)
-              </button>
-              <div className="border-t border-gray-200 my-1"></div>
-              <button
-                onClick={() => handleOperation({ type: 'format', params: { format: 'png' }, label: 'PNG' })}
-                className={dropdownItemClass}
-              >
-                🖼️ PNG (Lossless)
-              </button>
-              <button
-                onClick={() => handleOperation({ type: 'format', params: { format: 'webp' }, label: 'WebP' })}
-                className={dropdownItemClass}
-              >
-                🌐 WebP (Modern)
-              </button>
-              <button
-                onClick={() => handleOperation({ type: 'format', params: { format: 'avif' }, label: 'AVIF' })}
-                className={dropdownItemClass}
-              >
-                ⚡ AVIF (Best Compression)
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Filters Dropdown */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['filters'] = el; }}>
-          <button
-            onClick={() => toggleDropdown('filters')}
-            disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'filters')}
-          >
-            Filters ▾
-          </button>
-          {openDropdown === 'filters' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[150px]">
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'filter', params: { filter: 'grayscale' }, label: 'Grayscale' })
-                }
-                className={dropdownItemClass}
-              >
-                ⚫ Grayscale
-              </button>
-              <button
-                onClick={() => handleOperation({ type: 'filter', params: { filter: 'sepia' }, label: 'Sepia' })}
-                className={dropdownItemClass}
-              >
-                🟤 Sepia
-              </button>
-              <button
-                onClick={() => handleOperation({ type: 'filter', params: { filter: 'negate' }, label: 'Invert' })}
-                className={dropdownItemClass}
-              >
-                🔲 Invert Colors
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'filter', params: { filter: 'normalize' }, label: 'Normalize' })
-                }
-                className={dropdownItemClass}
-              >
-                📊 Normalize (Auto-enhance)
-              </button>
-              <div className="border-t border-gray-200 my-1"></div>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'filter', params: { filter: 'blur', strength: 3 }, label: 'Blur' })
-                }
-                className={dropdownItemClass}
-              >
-                🌫️ Blur
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'filter', params: { filter: 'sharpen' }, label: 'Sharpen' })
-                }
-                className={dropdownItemClass}
-              >
-                ✨ Sharpen
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Adjustments Dropdown */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['adjust'] = el; }}>
-          <button
-            onClick={() => toggleDropdown('adjust')}
-            disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'adjust')}
-          >
-            Adjustments ▾
-          </button>
-          {openDropdown === 'adjust' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[180px]">
-              <button
-                onClick={() =>
-                  handleOperation({
-                    type: 'modulate',
-                    params: { brightness: 1.2 },
-                    label: 'Brightness +20%',
-                  })
-                }
-                className={dropdownItemClass}
-              >
-                ☀️ Brightness +20%
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({
-                    type: 'modulate',
-                    params: { brightness: 0.8 },
-                    label: 'Brightness -20%',
-                  })
-                }
-                className={dropdownItemClass}
-              >
-                🌙 Brightness -20%
-              </button>
-              <div className="border-t border-gray-200 my-1"></div>
-              <button
-                onClick={() =>
-                  handleOperation({
-                    type: 'modulate',
-                    params: { saturation: 1.5 },
-                    label: 'Saturation +50%',
-                  })
-                }
-                className={dropdownItemClass}
-              >
-                🎨 Saturation +50%
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({
-                    type: 'modulate',
-                    params: { saturation: 0.5 },
-                    label: 'Saturation -50%',
-                  })
-                }
-                className={dropdownItemClass}
-              >
-                🎨 Saturation -50%
-              </button>
-              <div className="border-t border-gray-200 my-1"></div>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'modulate', params: { hue: 90 }, label: 'Hue shift +90°' })
-                }
-                className={dropdownItemClass}
-              >
-                � Hue shift +90°
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'tint', params: { r: 255, g: 200, b: 150 }, label: 'Warm tint' })
-                }
-                className={dropdownItemClass}
-              >
-                🔥 Warm tint
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'tint', params: { r: 150, g: 200, b: 255 }, label: 'Cool tint' })
-                }
-                className={dropdownItemClass}
-              >
-                ❄️ Cool tint
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Effects Dropdown */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['effects'] = el; }}>
-          <button
-            onClick={() => toggleDropdown('effects')}
-            disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'effects')}
-          >
-            Effects ▾
-          </button>
-          {openDropdown === 'effects' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[180px]">
-              <button
-                onClick={() =>
-                  handleOperation({
-                    type: 'extend',
-                    params: { top: 20, bottom: 20, left: 20, right: 20, background: { r: 255, g: 255, b: 255 } },
-                    label: 'White border',
-                  })
-                }
-                className={dropdownItemClass}
-              >
-                ⬜ White border (20px)
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({
-                    type: 'extend',
-                    params: { top: 20, bottom: 20, left: 20, right: 20, background: { r: 0, g: 0, b: 0 } },
-                    label: 'Black border',
-                  })
-                }
-                className={dropdownItemClass}
-              >
-                ⬛ Black border (20px)
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({
-                    type: 'extend',
-                    params: { top: 50, bottom: 50, left: 50, right: 50, background: { r: 255, g: 255, b: 255 } },
-                    label: 'Wide padding',
-                  })
-                }
-                className={dropdownItemClass}
-              >
-                📐 Wide padding (50px)
-              </button>
-              <div className="border-t border-gray-200 my-1"></div>
-              <button
-                onClick={() => handleOperation({ type: 'gamma', params: { gamma: 1.5 }, label: 'Gamma boost' })}
-                className={dropdownItemClass}
-              >
-                💡 Gamma boost
-              </button>
-              <button
-                onClick={() => handleOperation({ type: 'gamma', params: { gamma: 0.7 }, label: 'Gamma reduce' })}
-                className={dropdownItemClass}
-              >
-                🔅 Gamma reduce
-              </button>
-            </div>
-          )}
-        </div>
+        {/* 4. DUPLICATE BUTTON */}
+        <button
+          onClick={() => handleOperation({ type: 'duplicate', params: {}, label: 'Duplicate' })}
+          disabled={disabled || selectedCount === 0}
+          className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1 ${
+            disabled || selectedCount === 0
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+          }`}
+          title="Duplicate selected images and save to SWAG"
+        >
+          📋 Duplicate
+        </button>
       </div>
 
       <div className="text-xs text-gray-500 mt-3 flex justify-between items-center">

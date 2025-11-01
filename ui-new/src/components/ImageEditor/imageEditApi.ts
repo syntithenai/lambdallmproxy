@@ -9,7 +9,7 @@ import type { BulkOperation } from './types';
 export interface ImageEditRequest {
   images: Array<{ id: string; url: string }>;
   operations: Array<{
-    type: 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate';
+    type: 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'facedetect' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate';
     params: any;
   }>;
 }
@@ -32,6 +32,12 @@ export interface ProgressEvent {
     format?: string;
     didAutoResize?: boolean;
     originalDimensions?: { width: number; height: number };
+  };
+  cost?: {
+    llm: number;
+    lambda: number;
+    total: number;
+    isUserProvidedKey: boolean;
   };
   error?: string;
   results?: any[];

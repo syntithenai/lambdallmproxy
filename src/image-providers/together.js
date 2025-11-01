@@ -97,7 +97,9 @@ async function generateImage({ prompt, model, size = '1024x1024', steps = null, 
     width,
     height,
     steps: Math.max(1, Math.min(finalSteps, modelConfig.maxSteps)), // Clamp steps to model's max
-    n: 1
+    n: 1,
+    // Add negative prompt to preserve original image characteristics
+    negative_prompt: "different person, different face, different composition, different background, distorted, blurry, low quality"
   };
   
   // Add reference image if provided (img2img mode)
@@ -113,13 +115,15 @@ async function generateImage({ prompt, model, size = '1024x1024', steps = null, 
       }
     }
     
-    // Together AI supports image_url for img2img
-    payload.image_url = `data:image/png;base64,${imageData}`;
-    // Strength parameter controls how much the reference image influences the result
-    // 0.0 = exact copy, 1.0 = completely ignore reference
-    payload.strength = 0.7; // Balanced influence
+    console.log(`📎 [Together AI] Reference image length: ${imageData.length} bytes`);
     
-    console.log(`📎 [Together AI] img2img mode with strength: ${payload.strength}`);
+    // Together AI FLUX models support img2img with image_url parameter
+    // FLUX.1-dev and FLUX.1-kontext-pro support this properly
+    // Free model (schnell-Free) may not support img2img
+    payload.image_url = `data:image/png;base64,${imageData}`;
+    
+    console.log(`📎 [Together AI] img2img mode enabled with reference image`);
+    console.log(`📎 [Together AI] Image URL length: ${payload.image_url.length} chars`);
   }
   
   const requestBody = JSON.stringify(payload);

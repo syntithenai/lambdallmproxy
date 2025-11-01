@@ -18,6 +18,11 @@ export const CommandInput: React.FC<CommandInputProps> = ({
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
+  
+  // Prompt history state
+  const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasDetectedSpeechRef = useRef(false);
@@ -28,6 +33,36 @@ export const CommandInput: React.FC<CommandInputProps> = ({
   const animationFrameRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  
+  // Load prompt history from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('imageEditorPromptHistory');
+    if (saved) {
+      try {
+        setPromptHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse prompt history:', e);
+      }
+    }
+  }, []);
+  
+  // Save prompt to history
+  const savePromptToHistory = (prompt: string) => {
+    if (!prompt.trim()) return;
+    
+    setPromptHistory(prev => {
+      // Remove duplicate if exists
+      const filtered = prev.filter(p => p !== prompt);
+      // Add to beginning and limit to 50 items
+      const updated = [prompt, ...filtered].slice(0, 50);
+      // Save to localStorage
+      localStorage.setItem('imageEditorPromptHistory', JSON.stringify(updated));
+      return updated;
+    });
+    setHistoryIndex(-1);
+  };
+  
+
 
   // Initialize audio analyzer for frequency visualization
   const setupAudioAnalyzer = async () => {
@@ -281,15 +316,37 @@ export const CommandInput: React.FC<CommandInputProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (value.trim() && !disabled) {
+      savePromptToHistory(value);
       onSubmit();
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Navigate command history with arrow keys
+    if (e.key === 'ArrowUp' && !e.shiftKey) {
+      e.preventDefault();
+      if (promptHistory.length === 0) return;
+      
+      const newIndex = Math.min(historyIndex + 1, promptHistory.length - 1);
+      setHistoryIndex(newIndex);
+      onChange(promptHistory[newIndex]);
+    } else if (e.key === 'ArrowDown' && !e.shiftKey) {
+      e.preventDefault();
+      if (historyIndex <= 0) {
+        setHistoryIndex(-1);
+        onChange('');
+        return;
+      }
+      
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      onChange(promptHistory[newIndex]);
+    }
     // Submit on Enter (without shift key for multiline support)
-    if (e.key === 'Enter' && !e.shiftKey) {
+    else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (value.trim() && !disabled) {
+        savePromptToHistory(value);
         onSubmit();
       }
     }

@@ -13,13 +13,15 @@ const openaiProvider = require('../image-providers/openai');
 const togetherProvider = require('../image-providers/together');
 const replicateProvider = require('../image-providers/replicate');
 const geminiProvider = require('../image-providers/gemini');
+const atlascloudProvider = require('../image-providers/atlascloud');
 
 // Provider map
 const PROVIDERS = {
   'openai': openaiProvider,
   'together': togetherProvider,
   'replicate': replicateProvider,
-  'gemini': geminiProvider
+  'gemini': geminiProvider,
+  'atlascloud': atlascloudProvider
 };
 
 /**
@@ -140,8 +142,8 @@ async function handleGenerateImage(event) {
     
     console.log(`🔍 Generating image: provider=${provider}, model=${model}, size=${size}, quality=${quality}`);
     
-    // Check provider availability
-    const availability = await checkProviderAvailability(provider);
+    // Check provider availability - pass context keys so health check can find them
+    const availability = await checkProviderAvailability(provider, contextKeys);
     let selectedProvider = provider;
     let selectedModel = model;
     let fallbackUsed = false;
@@ -512,6 +514,14 @@ async function generateImageDirect(params) {
     // Extract API key from provider pool (new method) or legacy context
     let apiKey = null;
     
+    // Build context keys object for compatibility
+    const contextKeys = context ? {
+      openai: context.openaiApiKey,
+      together: context.togetherApiKey,
+      gemini: context.geminiApiKey,
+      replicate: context.replicateApiKey
+    } : {};
+    
     if (context?.providerPool) {
       apiKey = getApiKeyFromPool(provider, context.providerPool);
       if (apiKey) {
@@ -521,12 +531,6 @@ async function generateImageDirect(params) {
     
     // Fallback to legacy context keys if provider pool not available
     if (!apiKey && context) {
-      const contextKeys = {
-        openai: context.openaiApiKey,
-        together: context.togetherApiKey,
-        gemini: context.geminiApiKey,
-        replicate: context.replicateApiKey
-      };
       apiKey = contextKeys[provider];
       if (apiKey) {
         console.log(`🔑 [Direct] Using API key from legacy context for ${provider}`);
@@ -554,8 +558,8 @@ async function generateImageDirect(params) {
       console.log(`📎 [Direct] Using ${referenceImages.length} reference image(s)`);
     }
     
-    // Check provider availability
-    const availability = await checkProviderAvailability(provider);
+    // Check provider availability - pass context keys so health check can find them
+    const availability = await checkProviderAvailability(provider, contextKeys);
     let selectedProvider = provider;
     let selectedModel = model;
     let fallbackUsed = false;

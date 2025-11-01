@@ -645,6 +645,7 @@ export const generateImage = async (
   originalProvider?: string;
   llmApiCall?: any;
   metadata?: any;
+  cost?: number;
   error?: string;
 }> => {
   const apiBase = await getCachedApiBase();

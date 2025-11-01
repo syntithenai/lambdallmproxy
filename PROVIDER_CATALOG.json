@@ -289,6 +289,57 @@
             "deprecated": false,
             "available": true,
             "description": "SDAIA Allam 2 7B - Arabic-focused model"
+          },
+          "_deprecated_llama-3.2-11b-vision-preview": {
+            "id": "llama-3.2-11b-vision-preview",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 7680,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 14400
+            },
+            "deprecated": true,
+            "available": false,
+            "deprecationDate": "2025-11-01",
+            "deprecationReason": "Decommissioned by Groq on Nov 2025. Use llama-4-maverick-17b or llama-4-scout-17b instead.",
+            "description": "Meta Llama 3.2 11B Vision - DEPRECATED: Use Llama 4 vision models instead"
+          },
+          "_deprecated_llama-3.2-90b-vision-preview": {
+            "id": "llama-3.2-90b-vision-preview",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0,
+              "output": 0,
+              "unit": "per_million_tokens",
+              "free": true
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 7680,
+              "tokensPerDay": 500000,
+              "requestsPerMinute": 30,
+              "requestsPerDay": 14400
+            },
+            "deprecated": true,
+            "available": false,
+            "deprecationReason": "Decommissioned by Groq on Nov 2025. Use llama-4-maverick-17b or llama-4-scout-17b instead.",
+            "description": "Meta Llama 3.2 90B Vision - DEPRECATED: Use Llama 4 vision models instead"
           }
         }
       },
@@ -538,6 +589,50 @@
             "deprecated": false,
             "available": true,
             "description": "SDAIA Allam 2 7B - Arabic-focused model"
+          },
+          "llama-3.2-11b-vision-preview": {
+            "id": "llama-3.2-11b-vision-preview",
+            "category": "small",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.055,
+              "output": 0.055,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 60000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": true,
+            "available": false,
+            "deprecationReason": "Decommissioned by Groq on Nov 2025. Use llama-4-maverick-17b or llama-4-scout-17b instead.",
+            "description": "Meta Llama 3.2 11B Vision - DEPRECATED: Use Llama 4 vision models instead"
+          },
+          "_deprecated_llama-3.2-90b-vision-preview": {
+            "id": "llama-3.2-90b-vision-preview",
+            "category": "large",
+            "contextWindow": 131072,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 0.90,
+              "output": 0.90,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 60000,
+              "requestsPerMinute": 1000
+            },
+            "deprecated": true,
+            "available": false,
+            "deprecationReason": "Decommissioned by Groq on Nov 2025. Use llama-4-maverick-17b or llama-4-scout-17b instead.",
+            "description": "Meta Llama 3.2 90B Vision - DEPRECATED: Use Llama 4 vision models instead"
           },
           "mixtral-8x7b-32768": {
             "id": "mixtral-8x7b-32768",
@@ -1470,6 +1565,514 @@
             "deprecated": false
           }
         }
+      },
+      "replicate": {
+        "name": "Replicate",
+        "type": "replicate",
+        "apiBase": "https://api.replicate.com/v1",
+        "supportsStreaming": true,
+        "supportsTools": false,
+        "freeTier": {
+          "available": false,
+          "limits": {}
+        },
+        "rateLimits": {
+          "createPrediction": 600,
+          "otherEndpoints": 3000,
+          "unit": "per_minute"
+        },
+        "rateLimitHeaders": {
+          "format": "standard",
+          "prefix": "ratelimit-"
+        },
+        "models": {
+          "xai/grok-4": {
+            "id": "xai/grok-4",
+            "category": "reasoning",
+            "contextWindow": 128000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 10.0, "output": 30.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Grok 4 - xAI's most advanced reasoning model"
+          },
+          "openai/o1": {
+            "id": "openai/o1",
+            "category": "reasoning",
+            "contextWindow": 128000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 15.0, "output": 60.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "OpenAI o1 - first o-series reasoning model"
+          },
+          "meta/meta-llama-3.1-405b-instruct": {
+            "id": "meta/meta-llama-3.1-405b-instruct",
+            "category": "reasoning",
+            "contextWindow": 128000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 9.5, "output": 9.5, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Meta Llama 3.1 405B - flagship 405B parameter model"
+          },
+          "openai/gpt-5": {
+            "id": "openai/gpt-5",
+            "category": "reasoning",
+            "contextWindow": 128000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 5.0, "output": 15.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-5 - excelling at coding, writing, and reasoning"
+          },
+          "anthropic/claude-4.5-sonnet": {
+            "id": "anthropic/claude-4.5-sonnet",
+            "category": "reasoning",
+            "contextWindow": 200000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 3.0, "output": 15.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Claude 4.5 Sonnet - best coding model with development lifecycle improvements"
+          },
+          "anthropic/claude-4-sonnet": {
+            "id": "anthropic/claude-4-sonnet",
+            "category": "reasoning",
+            "contextWindow": 200000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 3.0, "output": 15.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Claude 4 Sonnet - superior coding and reasoning"
+          },
+          "anthropic/claude-3.7-sonnet": {
+            "id": "anthropic/claude-3.7-sonnet",
+            "category": "reasoning",
+            "contextWindow": 200000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 3.0, "output": 15.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Claude 3.7 Sonnet - first hybrid reasoning model on market"
+          },
+          "anthropic/claude-3.5-sonnet": {
+            "id": "anthropic/claude-3.5-sonnet",
+            "category": "reasoning",
+            "contextWindow": 200000,
+            "qualityTier": "ultra",
+            "pricing": {"input": 3.0, "output": 15.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Claude 3.5 Sonnet - most intelligent Claude with image understanding"
+          },
+          "openai/o4-mini": {
+            "id": "openai/o4-mini",
+            "category": "reasoning",
+            "contextWindow": 128000,
+            "qualityTier": "premium",
+            "pricing": {"input": 3.0, "output": 12.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "o4 Mini - fast, lightweight reasoning model"
+          },
+          "openai/o1-mini": {
+            "id": "openai/o1-mini",
+            "category": "reasoning",
+            "contextWindow": 128000,
+            "qualityTier": "premium",
+            "pricing": {"input": 3.0, "output": 12.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "o1 Mini - small model alternative to o1"
+          },
+          "deepseek-ai/deepseek-r1": {
+            "id": "deepseek-ai/deepseek-r1",
+            "category": "reasoning",
+            "contextWindow": 64000,
+            "qualityTier": "premium",
+            "pricing": {"input": 3.75, "output": 0.01, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "DeepSeek R1 - reasoning model on par with OpenAI o1"
+          },
+          "google/gemini-2.5-flash": {
+            "id": "google/gemini-2.5-flash",
+            "category": "reasoning",
+            "contextWindow": 1000000,
+            "qualityTier": "premium",
+            "pricing": {"input": 2.5, "output": 2.5, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Gemini 2.5 Flash - hybrid thinking AI optimized for speed and cost-efficiency"
+          },
+          "openai/gpt-4.1": {
+            "id": "openai/gpt-4.1",
+            "category": "reasoning",
+            "contextWindow": 128000,
+            "qualityTier": "premium",
+            "pricing": {"input": 2.5, "output": 10.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-4.1 - flagship model for complex tasks"
+          },
+          "openai/gpt-4o": {
+            "id": "openai/gpt-4o",
+            "category": "multimodal",
+            "contextWindow": 128000,
+            "qualityTier": "premium",
+            "pricing": {"input": 2.5, "output": 10.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-4o - high-intelligence chat model"
+          },
+          "moonshotai/kimi-k2-instruct": {
+            "id": "moonshotai/kimi-k2-instruct",
+            "category": "reasoning",
+            "contextWindow": 200000,
+            "qualityTier": "premium",
+            "pricing": {"input": 2.0, "output": 8.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Kimi K2 - exceptional reasoning, coding and agentic capabilities"
+          },
+          "qwen/qwen3-235b-a22b-instruct-2507": {
+            "id": "qwen/qwen3-235b-a22b-instruct-2507",
+            "category": "general",
+            "contextWindow": 32000,
+            "qualityTier": "premium",
+            "pricing": {"input": 1.1, "output": 4.4, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Qwen3 235B A22B - updated model for instruction following"
+          },
+          "anthropic/claude-3.5-haiku": {
+            "id": "anthropic/claude-3.5-haiku",
+            "category": "fast",
+            "contextWindow": 200000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.8, "output": 4.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Claude 3.5 Haiku - fastest, most cost-effective Claude model"
+          },
+          "anthropic/claude-4.5-haiku": {
+            "id": "anthropic/claude-4.5-haiku",
+            "category": "fast",
+            "contextWindow": 200000,
+            "qualityTier": "standard",
+            "pricing": {"input": 1.0, "output": 5.0, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Claude 4.5 Haiku - coding performance at one-third cost, twice the speed"
+          },
+          "meta/meta-llama-3-70b-instruct": {
+            "id": "meta/meta-llama-3-70b-instruct",
+            "category": "large",
+            "contextWindow": 8000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.65, "output": 2.75, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Llama 3 70B Instruct - fine-tuned for chat completions"
+          },
+          "deepseek-ai/deepseek-v3.1": {
+            "id": "deepseek-ai/deepseek-v3.1",
+            "category": "reasoning",
+            "contextWindow": 64000,
+            "qualityTier": "premium",
+            "pricing": {"input": 0.55, "output": 2.19, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "DeepSeek V3.1 - latest hybrid thinking model"
+          },
+          "openai/gpt-5-mini": {
+            "id": "openai/gpt-5-mini",
+            "category": "fast",
+            "contextWindow": 128000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.55, "output": 2.2, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-5 Mini - faster version of GPT-5"
+          },
+          "openai/gpt-4.1-mini": {
+            "id": "openai/gpt-4.1-mini",
+            "category": "fast",
+            "contextWindow": 128000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.4, "output": 1.6, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-4.1 Mini - fast, affordable version of GPT-4.1"
+          },
+          "openai/gpt-oss-120b": {
+            "id": "openai/gpt-oss-120b",
+            "category": "general",
+            "contextWindow": 32000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.4, "output": 1.2, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT OSS 120B - 120B open-weight language model"
+          },
+          "deepseek-ai/deepseek-v3": {
+            "id": "deepseek-ai/deepseek-v3",
+            "category": "reasoning",
+            "contextWindow": 64000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.27, "output": 1.1, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "DeepSeek V3 - leading non-reasoning model, milestone for open source"
+          },
+          "openai/gpt-5-nano": {
+            "id": "openai/gpt-5-nano",
+            "category": "fast",
+            "contextWindow": 128000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.15, "output": 0.6, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-5 Nano - fastest, most cost-effective GPT-5"
+          },
+          "openai/gpt-4o-mini": {
+            "id": "openai/gpt-4o-mini",
+            "category": "fast",
+            "contextWindow": 128000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.15, "output": 0.6, "unit": "per_million_tokens", "free": false},
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-4o Mini - low latency, low cost GPT-4o"
+          },
+          "openai/gpt-oss-20b": {
+            "id": "openai/gpt-oss-20b",
+            "category": "general",
+            "contextWindow": 16000,
+            "qualityTier": "standard",
+            "pricing": {"input": 0.1, "output": 0.3, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT OSS 20B - 20B open-weight language model"
+          },
+          "openai/gpt-4.1-nano": {
+            "id": "openai/gpt-4.1-nano",
+            "category": "fast",
+            "contextWindow": 128000,
+            "qualityTier": "budget",
+            "pricing": {"input": 0.1, "output": 0.4, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "GPT-4.1 Nano - fastest, most cost-effective GPT-4.1"
+          },
+          "meta/meta-llama-3-8b-instruct": {
+            "id": "meta/meta-llama-3-8b-instruct",
+            "category": "small",
+            "contextWindow": 8000,
+            "qualityTier": "budget",
+            "pricing": {"input": 0.05, "output": 0.25, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Llama 3 8B Instruct - fast and cost-effective"
+          },
+          "ibm-granite/granite-3.3-8b-instruct": {
+            "id": "ibm-granite/granite-3.3-8b-instruct",
+            "category": "general",
+            "contextWindow": 128000,
+            "qualityTier": "budget",
+            "pricing": {"input": 0.05, "output": 0.25, "unit": "per_million_tokens", "free": false},
+            "supportsTools": false,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "available": true,
+            "description": "Granite 3.3 8B - improved reasoning and instruction-following"
+          }
+        },
+        "textToSpeech": {
+          "supportsStreaming": false,
+          "models": {
+            "resemble-ai/chatterbox": {
+              "id": "resemble-ai/chatterbox",
+              "qualityTier": "premium",
+              "pricing": {"default": 0.025, "unit": "per_thousand_characters", "free": false},
+              "features": ["emotion-control", "voice-cloning", "watermarking"],
+              "languages": ["en"],
+              "available": true,
+              "description": "Chatterbox - expressive speech with emotion control and instant voice cloning"
+            },
+            "resemble-ai/chatterbox-pro": {
+              "id": "resemble-ai/chatterbox-pro",
+              "qualityTier": "ultra",
+              "pricing": {"default": 0.04, "unit": "per_thousand_characters", "free": false},
+              "features": ["emotion-control", "voice-cloning", "watermarking"],
+              "languages": ["en"],
+              "available": true,
+              "description": "Chatterbox Pro - professional-grade expressive speech generation"
+            },
+            "resemble-ai/chatterbox-multilingual": {
+              "id": "resemble-ai/chatterbox-multilingual",
+              "qualityTier": "ultra",
+              "pricing": {"default": 0.035, "unit": "per_thousand_characters", "free": false},
+              "features": ["emotion-control", "voice-cloning", "multilingual", "cross-language-transfer"],
+              "languages": ["en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko", "ar", "hi", "ru", "tr", "pl", "nl", "sv", "da", "no", "fi", "cs", "el", "he", "th"],
+              "available": true,
+              "description": "Chatterbox Multilingual - expressive speech in 23 languages with instant voice cloning"
+            },
+            "minimax/speech-02-turbo": {
+              "id": "minimax/speech-02-turbo",
+              "qualityTier": "standard",
+              "pricing": {"default": 0.0001, "unit": "per_second", "free": false},
+              "features": ["emotion-expression", "multilingual", "low-latency"],
+              "languages": ["en", "zh", "ja", "ko", "es", "fr", "de"],
+              "available": true,
+              "description": "Speech-02 Turbo - real-time TTS with low latency for voice agents"
+            },
+            "minimax/speech-02-hd": {
+              "id": "minimax/speech-02-hd",
+              "qualityTier": "premium",
+              "pricing": {"default": 0.0002, "unit": "per_second", "free": false},
+              "features": ["emotion-expression", "multilingual", "high-fidelity"],
+              "languages": ["en", "zh", "ja", "ko", "es", "fr", "de"],
+              "available": true,
+              "description": "Speech-02 HD - high-fidelity TTS optimized for voiceovers and audiobooks"
+            },
+            "jaaari/kokoro-82m": {
+              "id": "jaaari/kokoro-82m",
+              "qualityTier": "budget",
+              "pricing": {"default": 0.00005, "unit": "per_second", "free": false},
+              "features": ["fast", "lightweight"],
+              "languages": ["en"],
+              "available": true,
+              "description": "Kokoro 82M - lightweight 82M parameter TTS based on StyleTTS2"
+            },
+            "x-lance/f5-tts": {
+              "id": "x-lance/f5-tts",
+              "qualityTier": "standard",
+              "pricing": {"default": 0.0001, "unit": "per_second", "free": false},
+              "features": ["voice-cloning"],
+              "languages": ["en"],
+              "available": true,
+              "description": "F5-TTS - state-of-the-art open source voice cloning"
+            }
+          }
+        },
+        "speechToText": {
+          "models": {
+            "openai/gpt-4o-transcribe": {
+              "id": "openai/gpt-4o-transcribe",
+              "qualityTier": "premium",
+              "pricing": {"default": 0.006, "unit": "per_minute", "free": false},
+              "features": ["fast", "accurate", "multilingual"],
+              "languages": ["auto-detect"],
+              "available": true,
+              "description": "GPT-4o Transcribe - speech-to-text using GPT-4o"
+            },
+            "openai/gpt-4o-mini-transcribe": {
+              "id": "openai/gpt-4o-mini-transcribe",
+              "qualityTier": "standard",
+              "pricing": {"default": 0.002, "unit": "per_minute", "free": false},
+              "features": ["fast", "accurate", "multilingual"],
+              "languages": ["auto-detect"],
+              "available": true,
+              "description": "GPT-4o Mini Transcribe - cost-effective speech-to-text using GPT-4o mini"
+            },
+            "vaibhavs10/incredibly-fast-whisper": {
+              "id": "vaibhavs10/incredibly-fast-whisper",
+              "qualityTier": "standard",
+              "pricing": {"default": 0.001, "unit": "per_minute", "free": false},
+              "features": ["very-fast", "accurate", "multilingual"],
+              "languages": ["auto-detect"],
+              "available": true,
+              "description": "Incredibly Fast Whisper - 10x faster than original Whisper with large-v3"
+            },
+            "victor-upmeet/whisperx": {
+              "id": "victor-upmeet/whisperx",
+              "qualityTier": "premium",
+              "pricing": {"default": 0.003, "unit": "per_minute", "free": false},
+              "features": ["diarization", "word-timestamps", "accurate", "multilingual"],
+              "languages": ["auto-detect"],
+              "available": true,
+              "description": "WhisperX - accelerated transcription with speaker diarization and word-level timestamps"
+            },
+            "thomasmol/whisper-diarization": {
+              "id": "thomasmol/whisper-diarization",
+              "qualityTier": "standard",
+              "pricing": {"default": 0.002, "unit": "per_minute", "free": false},
+              "features": ["diarization", "word-timestamps", "sentence-timestamps", "fast"],
+              "languages": ["auto-detect"],
+              "available": true,
+              "description": "Whisper Diarization - blazing fast with Whisper Large V3 Turbo and speaker identification"
+            },
+            "openai/whisper": {
+              "id": "openai/whisper",
+              "qualityTier": "standard",
+              "pricing": {"default": 0.0015, "unit": "per_minute", "free": false},
+              "features": ["accurate", "multilingual"],
+              "languages": ["auto-detect"],
+              "available": true,
+              "description": "OpenAI Whisper - general-purpose speech-to-text"
+            }
+          }
+        }
       }
     }
   },
@@ -1882,6 +2485,112 @@
             "fallbackPriority": 4,
             "available": true,
             "deprecated": false
+          },
+          "flux-kontext-dev": {
+            "id": "black-forest-labs/flux-kontext-dev",
+            "type": "image-edit",
+            "qualityTier": "high",
+            "contextWindow": 77,
+            "supportedSizes": ["match_input", "1:1", "16:9", "9:16", "4:3", "3:4"],
+            "supportedQualities": ["standard"],
+            "pricing": {
+              "default": 0.025,
+              "unit": "per_image"
+            },
+            "capabilities": ["image-editing", "preservation", "style-transfer", "object-modification"],
+            "fallbackPriority": 1,
+            "available": true,
+            "deprecated": false,
+            "description": "Open-weight FLUX Kontext for image editing - $0.025/image, excellent preservation"
+          },
+          "flux-kontext-pro": {
+            "id": "black-forest-labs/flux-kontext-pro",
+            "type": "image-edit",
+            "qualityTier": "ultra",
+            "contextWindow": 77,
+            "supportedSizes": ["match_input", "1:1", "16:9", "9:16", "4:3", "3:4"],
+            "supportedQualities": ["standard", "high"],
+            "pricing": {
+              "default": 0.04,
+              "unit": "per_image"
+            },
+            "capabilities": ["image-editing", "preservation", "typography", "precise-edits"],
+            "fallbackPriority": 2,
+            "available": true,
+            "deprecated": false,
+            "description": "State-of-the-art image editing - $0.04/image, best prompt following"
+          },
+          "flux-kontext-max": {
+            "id": "black-forest-labs/flux-kontext-max",
+            "type": "image-edit",
+            "qualityTier": "ultra",
+            "contextWindow": 77,
+            "supportedSizes": ["match_input", "1:1", "16:9", "9:16", "4:3", "3:4"],
+            "supportedQualities": ["premium"],
+            "pricing": {
+              "default": 0.06,
+              "unit": "per_image",
+              "estimate": true
+            },
+            "capabilities": ["image-editing", "preservation", "typography", "premium-quality"],
+            "fallbackPriority": 3,
+            "available": true,
+            "deprecated": false,
+            "description": "Premium FLUX Kontext - maximum performance and typography"
+          },
+          "nano-banana": {
+            "id": "google/nano-banana",
+            "type": "image-edit",
+            "qualityTier": "ultra",
+            "contextWindow": 77,
+            "supportedSizes": ["match_input", "1:1", "16:9", "9:16"],
+            "supportedQualities": ["standard"],
+            "pricing": {
+              "default": 0.05,
+              "unit": "per_image",
+              "estimate": true
+            },
+            "capabilities": ["image-editing", "multi-image", "fast", "preservation"],
+            "fallbackPriority": 4,
+            "available": true,
+            "deprecated": false,
+            "description": "Google Gemini 2.5 image editing - fast with multi-image support"
+          },
+          "seedream-4": {
+            "id": "bytedance/seedream-4",
+            "type": "image-edit",
+            "qualityTier": "ultra",
+            "contextWindow": 77,
+            "supportedSizes": ["match_input", "4K"],
+            "supportedQualities": ["4K", "high"],
+            "pricing": {
+              "default": 0.08,
+              "unit": "per_image",
+              "estimate": true
+            },
+            "capabilities": ["image-editing", "4k-resolution", "precise-edits"],
+            "fallbackPriority": 5,
+            "available": true,
+            "deprecated": false,
+            "description": "ByteDance SeeDream-4 - up to 4K resolution image editing"
+          },
+          "seededit-3": {
+            "id": "bytedance/seededit-3.0",
+            "type": "image-edit",
+            "qualityTier": "high",
+            "contextWindow": 77,
+            "supportedSizes": ["match_input"],
+            "supportedQualities": ["standard"],
+            "pricing": {
+              "default": 0.03,
+              "unit": "per_image",
+              "estimate": true
+            },
+            "capabilities": ["image-editing", "preservation", "lighting", "object-removal"],
+            "fallbackPriority": 6,
+            "available": true,
+            "deprecated": false,
+            "description": "Text-guided editing with preservation of original details"
           }
         }
       }

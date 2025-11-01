@@ -129,6 +129,19 @@ function loadEnvironmentProviders() {
             }
         }
         
+        // Add provider capabilities (e.g., 'chat', 'embeddings', 'image', 'image-edit')
+        const capabilitiesKey = `LP_CAPABILITIES_${index}`;
+        if (process.env[capabilitiesKey]) {
+            const capabilitiesStr = process.env[capabilitiesKey].trim();
+            if (capabilitiesStr) {
+                provider.capabilities = capabilitiesStr
+                    .split(',')
+                    .map(c => c.trim())
+                    .filter(c => c.length > 0);
+                console.log(`   🎯 Capabilities: ${provider.capabilities.join(', ')}`);
+            }
+        }
+        
         providers.push(provider);
         console.log(`📦 Loaded environment provider ${index}: ${type} (source: environment)`);
     }

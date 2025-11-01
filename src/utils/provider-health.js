@@ -47,7 +47,27 @@ function hasApiKey(provider, context = {}) {
     }
   }
   
-  // No key found in user's configured providers
+  // Check environment providers (credential pool) as fallback
+  const { loadEnvironmentProviders } = require('../credential-pool');
+  const envProviders = loadEnvironmentProviders();
+  const normalizedProvider = provider.toLowerCase();
+  
+  const hasEnvProvider = envProviders.some(p => {
+    const providerType = p.type.toLowerCase();
+    
+    // Direct match or alias match (together/togetherai)
+    const isMatch = providerType === normalizedProvider ||
+                    (normalizedProvider === 'together' && providerType === 'togetherai') ||
+                    (normalizedProvider === 'togetherai' && providerType === 'together');
+    
+    return isMatch && p.apiKey;
+  });
+  
+  if (hasEnvProvider) {
+    return true;
+  }
+  
+  // No key found in user's configured providers or environment
   return false;
 }
 

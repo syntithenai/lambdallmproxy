@@ -1,0 +1,5 @@
+
+> ui-new@0.0.0 build
+> tsc -b && vite build
+
+vite v7.1.11 building for production...

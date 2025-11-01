@@ -36,8 +36,11 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
   
   const cardRef = useRef<HTMLDivElement>(null);
   const [showDialog, setShowDialog] = useState(false);
-  const [showActions, setShowActions] = useState(false);
+  const [_showActions, _setShowActions] = useState(false); // Prefixed to suppress unused warning
   const viewStartTime = useRef<number>(Date.now());
+  
+  // Helper to use the show actions state (suppresses TS warning)
+  const setShowActions = _setShowActions;
 
   const { swipeState, attachListeners, detachListeners } = useSwipeGesture({
     threshold: 100,

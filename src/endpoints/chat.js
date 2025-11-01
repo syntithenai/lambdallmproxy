@@ -20,6 +20,11 @@ const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-
 const { loadProviderCatalog } = require('../utils/catalog-loader');
 const { cleanStreamingChunk, requiresCleaning } = require('../model-formats');
 
+// Clear require cache to force fresh catalog load
+const path = require('path');
+const catalogPath = path.join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
+delete require.cache[require.resolve(catalogPath)];
+
 // Load provider catalog using centralized loader
 let providerCatalog = loadProviderCatalog();
 
@@ -79,6 +84,48 @@ function enrichCatalogWithRateLimits(catalog) {
                 modelInfo.tpm = limits.tpm;
                 modelInfo.rpm = limits.rpm;
             }
+        }
+    }
+    
+    return catalog;
+}
+
+/**
+ * Filter deprecated models from catalog
+ * Removes models with _deprecated_ prefix, deprecated: true, or available: false
+ * @param {Object} catalog - Provider catalog
+ * @returns {Object} Filtered catalog
+ */
+function filterDeprecatedModels(catalog) {
+    if (!catalog || !catalog.chat || !catalog.chat.providers) {
+        return catalog;
+    }
+    
+    console.log('🔍 Filtering deprecated models from catalog...');
+    
+    for (const [providerType, providerInfo] of Object.entries(catalog.chat.providers)) {
+        if (!providerInfo.models) continue;
+        
+        const originalModels = Object.keys(providerInfo.models);
+        const filteredModels = {};
+        
+        for (const [modelKey, modelInfo] of Object.entries(providerInfo.models)) {
+            // Skip deprecated models
+            if (modelKey.startsWith('_deprecated_') || 
+                modelInfo.deprecated === true || 
+                modelInfo.available === false) {
+                console.log(`⏭️  Skipping deprecated model: ${providerType}/${modelKey}`);
+                continue;
+            }
+            
+            filteredModels[modelKey] = modelInfo;
+        }
+        
+        providerInfo.models = filteredModels;
+        
+        const removedCount = originalModels.length - Object.keys(filteredModels).length;
+        if (removedCount > 0) {
+            console.log(`✅ ${providerType}: Filtered ${removedCount} deprecated model(s), ${Object.keys(filteredModels).length} remaining`);
         }
     }
     
@@ -160,6 +207,7 @@ function enrichCatalogWithPriority(catalog, providerPool) {
 }
 
 // Enrich the catalog immediately after loading
+providerCatalog = filterDeprecatedModels(providerCatalog);
 providerCatalog = enrichCatalogWithRateLimits(providerCatalog);
 console.log('✅ Provider catalog enriched with rate limit information');
 

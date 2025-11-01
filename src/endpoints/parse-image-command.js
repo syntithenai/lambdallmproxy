@@ -33,6 +33,10 @@ const { loadProviderCatalog } = require('../utils/catalog-loader');
 const { GROQ_RATE_LIMITS } = require('../groq-rate-limits');
 const { GEMINI_RATE_LIMITS } = require('../gemini-rate-limits');
 
+// Clear catalog cache to ensure fresh load (important for deprecated model updates)
+const catalogPath = require('path').join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
+delete require.cache[require.resolve(catalogPath)];
+
 // Load and enrich provider catalog (same as chat.js)
 let providerCatalog = loadProviderCatalog();
 
@@ -85,6 +89,19 @@ function buildRuntimeCatalog(baseCatalog, availableProviders) {
     const filteredProviders = {};
     for (const [type, info] of Object.entries(catalog.chat.providers)) {
         if (availableTypes.has(type)) {
+            // Filter out deprecated models from the provider's models
+            if (info.models) {
+                const activeModels = {};
+                for (const [modelKey, modelInfo] of Object.entries(info.models)) {
+                    // Skip models with _deprecated_ prefix or deprecated flag
+                    if (modelKey.startsWith('_deprecated_') || modelInfo.deprecated === true || modelInfo.available === false) {
+                        console.log(`⏭️  Skipping deprecated model: ${type}/${modelKey}`);
+                        continue;
+                    }
+                    activeModels[modelKey] = modelInfo;
+                }
+                info.models = activeModels;
+            }
             filteredProviders[type] = info;
         }
     }
@@ -230,7 +247,11 @@ async function handler(event, responseStream, context) {
         
         // For local development or when no user providers, allow environment providers even without auth
         const allowEnvironmentProviders = isAuthorized || (userProviders.length === 0 && process.env.ALLOW_ENVIRONMENT_PROVIDERS !== 'false');
+        console.log(`🔍 Building provider pool: isAuthorized=${isAuthorized}, userProviders=${userProviders.length}, allowEnvironmentProviders=${allowEnvironmentProviders}`);
+        
         const providerPool = buildProviderPool(userProviders, allowEnvironmentProviders);
+        console.log(`✅ Provider pool built: ${providerPool.length} providers available`);
+        console.log(`   Providers: ${providerPool.map(p => `${p.type}/${p.model || p.modelName || 'default'}`).join(', ')}`);
         
         if (providerPool.length === 0) {
             throw new Error('No LLM providers configured. Please add at least one provider in Settings.');
@@ -275,7 +296,8 @@ async function handler(event, responseStream, context) {
                 hasOutput: !!llmResponse.output,
                 outputLength: llmResponse.output?.length,
                 hasRawResponse: !!llmResponse.rawResponse,
-                text: llmResponse.text?.substring(0, 100)
+                text: llmResponse.text?.substring(0, 100),
+                fullOutput: llmResponse.output
             }, null, 2));
             
             if (llmResponse.output && llmResponse.output.length > 0) {
@@ -293,7 +315,10 @@ async function handler(event, responseStream, context) {
                 }
             } else if (llmResponse.text) {
                 // Fallback: LLM explained but didn't use tool
+                console.warn('⚠️ LLM returned text instead of tool call:', llmResponse.text.substring(0, 200));
                 explanation = llmResponse.text;
+            } else {
+                console.warn('⚠️ LLM returned neither output nor text');
             }
         } catch (llmError) {
             // Handle LLM HTTP errors (e.g., tool validation failures)

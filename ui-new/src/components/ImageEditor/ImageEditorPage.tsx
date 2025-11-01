@@ -4,6 +4,7 @@ import { useSwag } from '../../contexts/SwagContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFeatures } from '../../contexts/FeaturesContext';
+import { useUsage } from '../../contexts/UsageContext';
 import { useToast } from '../ToastManager';
 import { ImageGrid } from './ImageGrid';
 import { SelectionControls } from './SelectionControls';
@@ -20,6 +21,7 @@ export const ImageEditorPage: React.FC = () => {
   const { settings } = useSettings();
   const { getToken } = useAuth();
   const { features } = useFeatures();
+  const { providerCapabilities } = useUsage();
   const { showSuccess, showInfo } = useToast();
 
   // Get images and editing context from navigation state
@@ -102,6 +104,57 @@ export const ImageEditorPage: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Undo/Redo functionality
+  const [history, setHistory] = useState<Map<string, string>[]>([new Map(processedImageUrls)]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  const handleUndo = () => {
+    if (!canUndo) return;
+    const newIndex = historyIndex - 1;
+    setHistoryIndex(newIndex);
+    setProcessedImageUrls(new Map(history[newIndex]));
+  };
+
+  const handleRedo = () => {
+    if (!canRedo) return;
+    const newIndex = historyIndex + 1;
+    setHistoryIndex(newIndex);
+    setProcessedImageUrls(new Map(history[newIndex]));
+  };
+
+  // Save history snapshot when processedImageUrls changes
+  React.useEffect(() => {
+    // Only add to history if processedImageUrls actually changed
+    if (history.length === 0 || 
+        history[historyIndex].size !== processedImageUrls.size ||
+        Array.from(processedImageUrls.entries()).some(([k, v]) => history[historyIndex].get(k) !== v)) {
+      // Remove any future history if we're in the middle and make a new change
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push(new Map(processedImageUrls));
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+    }
+  }, [processedImageUrls]);
+
+  // Keyboard shortcuts for undo/redo
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key === 'z' || e.key === 'y')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canUndo, canRedo, historyIndex]);
+
   // Persist command to localStorage whenever it changes
   React.useEffect(() => {
     try {
@@ -170,17 +223,23 @@ export const ImageEditorPage: React.FC = () => {
   const handleBulkOperation = async (operation: BulkOperation) => {
     if (selectedImages.size === 0) return;
 
+    // Handle duplicate operation separately (no backend API call needed)
+    if (operation.type === 'duplicate') {
+      await handleDuplicate();
+      return;
+    }
+
     setIsProcessing(true);
 
     const selectedImageIds = Array.from(selectedImages);
     const selectedImagesData = allImages.filter((img) => selectedImageIds.includes(img.id));
 
     try {
-      // Call real API
+      // Call real API (duplicate is already handled above, so this is safe)
       await editImages(
         {
           images: selectedImagesData.map((img) => ({ id: img.id, url: img.url })),
-          operations: [operation],
+          operations: [operation as any], // Safe: duplicate is filtered out above
         },
         (event) => {
           // Handle progress events
@@ -240,6 +299,14 @@ export const ImageEditorPage: React.FC = () => {
                   `Auto-resized from ${event.result.originalDimensions.width}×${event.result.originalDimensions.height} ` +
                   `to ${event.result.dimensions.width}×${event.result.dimensions.height} (max 1024×768)`
                 );
+              }
+              
+              // Show cost notification if AI generation was used
+              if (event.cost && event.cost.total > 0) {
+                const costMsg = event.cost.isUserProvidedKey 
+                  ? `💰 Cost: $${event.cost.total.toFixed(4)} (Lambda only - your API key used)`
+                  : `💰 Cost: $${event.cost.total.toFixed(4)} (LLM: $${event.cost.llm.toFixed(4)}, Lambda: $${event.cost.lambda.toFixed(4)})`;
+                showInfo(costMsg);
               }
             }
           } else if (event.type === 'image_error' && event.imageId) {
@@ -334,23 +401,19 @@ export const ImageEditorPage: React.FC = () => {
       // TODO: Add explicit resize check when metadata is available
 
       // Replace old URL with new base64 URL
+      // Note: Using simple string replacement instead of regex because base64 data is too long
+      // and contains special characters that break regex construction
       let updatedContent = snippet.content;
       
       // Replace in markdown: ![alt](url)
-      updatedContent = updatedContent.replace(
-        new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(oldUrl)}\\)`, 'g'),
-        `![$1](${finalUrl})`
-      );
+      const markdownPattern = `](${oldUrl})`;
+      updatedContent = updatedContent.split(markdownPattern).join(`](${finalUrl})`);
       
-      // Replace in HTML: <img src="url">
-      updatedContent = updatedContent.replace(
-        new RegExp(`<img([^>]*?)src="${escapeRegex(oldUrl)}"`, 'g'),
-        `<img$1src="${finalUrl}"`
-      );
-      updatedContent = updatedContent.replace(
-        new RegExp(`<img([^>]*?)src='${escapeRegex(oldUrl)}'`, 'g'),
-        `<img$1src='${finalUrl}'`
-      );
+      // Replace in HTML: <img src="url"> (both single and double quotes)
+      const htmlPatternDouble = `src="${oldUrl}"`;
+      const htmlPatternSingle = `src='${oldUrl}'`;
+      updatedContent = updatedContent.split(htmlPatternDouble).join(`src="${finalUrl}"`);
+      updatedContent = updatedContent.split(htmlPatternSingle).join(`src='${finalUrl}'`);
 
       // Update snippet
       await updateSnippet(image.snippetId, { content: updatedContent });
@@ -379,11 +442,72 @@ export const ImageEditorPage: React.FC = () => {
     }
   };
 
-  // Helper function to escape special regex characters
-  const escapeRegex = (str: string): string => {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Handle duplicate operation
+  const handleDuplicate = async () => {
+    const selectedImageIds = Array.from(selectedImages);
+    const selectedImagesData = allImages.filter((img) => selectedImageIds.includes(img.id));
+
+    if (selectedImagesData.length === 0) return;
+
+    // Confirm if multiple images selected
+    if (selectedImagesData.length > 1) {
+      const confirmed = window.confirm(
+        `Are you sure you want to duplicate ${selectedImagesData.length} images? ` +
+        `This will create ${selectedImagesData.length} new snippets in SWAG.`
+      );
+      if (!confirmed) return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const duplicatedImages: ImageData[] = [];
+
+      for (const image of selectedImagesData) {
+        // Create new image with unique ID
+        const duplicateId = `duplicate-${Date.now()}-${Math.random()}`;
+        const duplicateName = `${image.name} (Copy)`;
+        
+        const duplicatedImage: ImageData = {
+          id: duplicateId,
+          url: image.url, // Same URL (data URL is already in memory)
+          name: duplicateName,
+          tags: [...image.tags, 'duplicated'],
+        };
+
+        duplicatedImages.push(duplicatedImage);
+
+        // Save to SWAG immediately
+        try {
+          const title = `Copy of: ${image.name}`;
+          const content = `![${duplicateName}](${image.url})`;
+          await addSnippet(content, 'user', title);
+          console.log(`✅ Duplicated and saved to SWAG: ${duplicateName}`);
+        } catch (error) {
+          console.error('Failed to save duplicate to SWAG:', error);
+          showInfo(`Duplicated ${duplicateName} but failed to save to SWAG`);
+        }
+      }
+
+      // Add duplicated images to the images array
+      setImages(prev => [...prev, ...duplicatedImages]);
+
+      // Select the duplicated images
+      const duplicatedIds = duplicatedImages.map(img => img.id);
+      setSelectedImages(new Set(duplicatedIds));
+
+      showSuccess(
+        `Duplicated ${duplicatedImages.length} image${duplicatedImages.length > 1 ? 's' : ''} and saved to SWAG`
+      );
+    } catch (error) {
+      console.error('Duplicate error:', error);
+      alert(`Error duplicating images: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
+  // Helper function to escape special regex characters
   // Helper: Convert File to base64
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -477,23 +601,109 @@ export const ImageEditorPage: React.FC = () => {
     
     setIsGenerating(true);
     try {
-      const authToken = await getToken();
+      // Debug: Check all possible token sources
+      console.log('🔍 [Generate] Checking auth tokens:');
+      console.log('  - google_access_token:', localStorage.getItem('google_access_token') ? 'EXISTS' : 'MISSING');
+      console.log('  - google_oauth_token:', localStorage.getItem('google_oauth_token') ? 'EXISTS' : 'MISSING');
+      console.log('  - access_token:', localStorage.getItem('access_token') ? 'EXISTS' : 'MISSING');
+      
+      let authToken = await getToken();
+      console.log('🔑 [Generate] getToken() returned:', authToken ? `${authToken.substring(0, 30)}...` : 'NULL');
+      
+      // Fallback: check for legacy token keys if getToken returns null
+      if (!authToken) {
+        authToken = localStorage.getItem('google_oauth_token') || localStorage.getItem('access_token');
+        if (authToken) {
+          console.log('⚠️ [Generate] Using fallback token from localStorage');
+        }
+      }
+      
+      if (!authToken) {
+        throw new Error('Please sign in to generate images. Click the Sign In button in the top right.');
+      }
+      
       const apiBase = await import('../../utils/api').then(m => m.getCachedApiBase());
+      
+      // Combine UI providers (from settings) with backend environment providers
+      // Priority: UI configured providers > Environment providers
+      console.log('🔍 UI providers:', settings.providers);
+      console.log('🔍 Environment providers:', providerCapabilities);
+      
+      // Filter UI providers for image generation
+      const uiImageProviders = (settings.providers || []).filter(p => {
+        // enabled defaults to true if undefined
+        const isEnabled = p.enabled !== false;
+        const hasApiKey = !!p.apiKey;
+        const isImageProvider = ['openai', 'together', 'replicate', 'gemini'].includes(p.type);
+        
+        console.log(`🔍 UI Provider ${p.type}: enabled=${isEnabled}, hasApiKey=${hasApiKey}, isImageProvider=${isImageProvider}`);
+        
+        return isEnabled && hasApiKey && isImageProvider;
+      });
+      
+      // Filter environment providers for image generation
+      const envImageProviders = (providerCapabilities || [])
+        .filter(p => ['openai', 'together', 'replicate', 'gemini'].includes(p.type))
+        .map(p => ({
+          id: p.id,
+          type: p.type as any,
+          apiEndpoint: p.endpoint || '',
+          apiKey: '', // Not exposed from backend
+          enabled: p.enabled !== false,
+          source: 'environment' as const
+        }));
+      
+      console.log(`✅ Found ${uiImageProviders.length} UI providers, ${envImageProviders.length} environment providers`);
+      
+      // Combine both sources (UI providers take precedence)
+      const allImageProviders = [...uiImageProviders, ...envImageProviders];
+      
+      if (allImageProviders.length === 0) {
+        throw new Error('No image generation provider configured. Please add OpenAI, Together, Replicate, or Gemini in Settings.');
+      }
+      
+      // Select provider (prefer OpenAI for best quality)
+      const providerPriority = ['openai', 'together', 'gemini', 'replicate'];
+      allImageProviders.sort((a, b) => {
+        const aIndex = providerPriority.indexOf(a.type.toLowerCase());
+        const bIndex = providerPriority.indexOf(b.type.toLowerCase());
+        return aIndex - bIndex;
+      });
+      
+      const selectedProvider = allImageProviders[0];
+      
+      // Select model based on provider
+      let model = 'dall-e-3'; // Default for OpenAI
+      if (selectedProvider.type.toLowerCase() === 'together') {
+        model = 'black-forest-labs/FLUX.1-schnell-Free';
+      } else if (selectedProvider.type.toLowerCase() === 'replicate') {
+        model = 'black-forest-labs/flux-schnell';
+      } else if (selectedProvider.type.toLowerCase() === 'gemini') {
+        model = 'imagen-3.0-generate-001';
+      }
+      
+      console.log(`🎨 Generating image with ${selectedProvider.type}:${model}`);
+      console.log(`🔑 Using auth token:`, authToken ? `${authToken.substring(0, 20)}...` : 'NONE');
       
       // Call the generate-image endpoint
       const response = await fetch(`${apiBase}/generate-image`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-          'X-Google-OAuth-Token': localStorage.getItem('google_oauth_token') || ''
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           prompt: generatePrompt,
-          providers: settings.providers,
+          provider: selectedProvider.type,
+          model: model,
           size: generateSize,
           quality: 'standard',
-          style: 'natural'
+          style: 'natural',
+          accessToken: authToken, // Backend expects accessToken in body, not header
+          // Pass API keys from settings
+          openaiApiKey: selectedProvider.type === 'openai' ? selectedProvider.apiKey : undefined,
+          togetherApiKey: selectedProvider.type === 'together' ? selectedProvider.apiKey : undefined,
+          replicateApiKey: selectedProvider.type === 'replicate' ? selectedProvider.apiKey : undefined,
+          geminiApiKey: selectedProvider.type === 'gemini' ? selectedProvider.apiKey : undefined
         })
       });
       
@@ -503,18 +713,21 @@ export const ImageEditorPage: React.FC = () => {
       
       const result = await response.json();
       
-      if (!result.success || !result.imageUrl) {
-        throw new Error(result.error || 'Generation failed - no image URL returned');
+      if (!result.success) {
+        throw new Error(result.error || 'Generation failed');
       }
       
-      // Download the generated image and convert to base64
-      const imageResponse = await fetch(result.imageUrl);
-      const imageBlob = await imageResponse.blob();
-      const base64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(imageBlob);
-      });
+      // Use base64 data from backend (avoids CORS issues with direct image URLs)
+      let base64 = result.base64 || result.imageUrl;
+      
+      if (!base64) {
+        throw new Error('No image data returned from backend');
+      }
+      
+      // Ensure base64 has proper data URL prefix
+      if (!base64.startsWith('data:')) {
+        base64 = `data:image/jpeg;base64,${base64}`;
+      }
       
       // Constrain to 1024×768
       const constrainedBase64 = await constrainImageSize(base64, 1024, 768);
@@ -566,12 +779,119 @@ export const ImageEditorPage: React.FC = () => {
   };
 
   const handleCommandSubmit = async () => {
-    if (!command.trim() || selectedImages.size === 0) return;
+    if (!command.trim()) return;
 
     setIsProcessing(true);
 
     try {
-      // Parse natural language command using LLM
+      // NEW FEATURE: If no images are selected, generate a new image from the prompt
+      if (selectedImages.size === 0) {
+        console.log('🎨 No images selected - generating new image from prompt:', command);
+        
+        const authToken = await getToken();
+        
+        // Import generateImage from api.ts
+        const { generateImage } = await import('../../utils/api');
+        
+        // Find image-capable providers
+        const imageProviders = settings.providers.filter(p => 
+          p.enabled !== false && 
+          (p.capabilities?.image !== false) &&
+          (p.type === 'openai' || p.type === 'replicate' || p.type === 'together')
+        );
+        
+        if (imageProviders.length === 0) {
+          alert('No image generation provider configured. Please configure one in Settings.');
+          setIsProcessing(false);
+          return;
+        }
+        
+        // Use the first available image provider
+        const imageProvider = imageProviders[0];
+        
+        // Build provider API keys object
+        const providerApiKeys: {
+          openaiApiKey?: string;
+          togetherApiKey?: string;
+          geminiApiKey?: string;
+          replicateApiKey?: string;
+        } = {};
+        
+        settings.providers.forEach(p => {
+          if (p.type === 'openai' && p.apiKey) providerApiKeys.openaiApiKey = p.apiKey;
+          if (p.type === 'replicate' && p.apiKey) providerApiKeys.replicateApiKey = p.apiKey;
+          if (p.type === 'together' && p.apiKey) providerApiKeys.togetherApiKey = p.apiKey;
+          if (p.type === 'gemini' && p.apiKey) providerApiKeys.geminiApiKey = p.apiKey;
+        });
+        
+        // Generate the image using the backend's model selection logic
+        const result = await generateImage(
+          command,
+          imageProvider.type, // Provider type (e.g., 'replicate')
+          '', // Let backend select model
+          '', // Let backend select modelKey
+          '1024x768', // Default size for generated images
+          'fast', // Use fast/cheap tier
+          'vivid', // Default style
+          authToken,
+          providerApiKeys
+        );
+        
+        if (!result.success || !result.imageUrl) {
+          alert(result.error || 'Failed to generate image');
+          setIsProcessing(false);
+          return;
+        }
+        
+        // Prefer base64 data URL for storage, fallback to regular URL
+        let imageUrl = result.imageUrl;
+        if (result.base64 && !result.base64.startsWith('data:')) {
+          imageUrl = `data:image/png;base64,${result.base64}`;
+        } else if (result.base64) {
+          imageUrl = result.base64;
+        }
+        
+        // Add the generated image to the images array
+        const imageId = `generated-${Date.now()}-${Math.random()}`;
+        const newImage: ImageData = {
+          id: imageId,
+          url: imageUrl,
+          name: `Generated: ${command.substring(0, 50)}`,
+          tags: ['ai-generated']
+        };
+        
+        setImages(prev => [...prev, newImage]);
+        setSelectedImages(new Set([imageId]));
+        
+        // Auto-save to SWAG
+        try {
+          const title = `AI Image: ${command.substring(0, 80)}`;
+          const content = `![Generated Image](${imageUrl})\n\n**Prompt:** ${command}`;
+          await addSnippet(content, 'user', title);
+          console.log('✅ Auto-saved generated image to SWAG');
+          showSuccess('Image generated and saved to SWAG');
+        } catch (error) {
+          console.error('Failed to auto-save to SWAG:', error);
+          showSuccess('Image generated (failed to save to SWAG)');
+        }
+        
+        // Show cost information if available
+        if (result.cost !== undefined && result.cost > 0) {
+          // Check if user provided their own API key
+          const hasUserKey = imageProviders.some(p => p.apiKey && p.apiKey.trim() !== '');
+          const costMsg = hasUserKey 
+            ? `💰 Generation cost: $${result.cost.toFixed(4)} (using your API key)`
+            : `💰 Generation cost: $${result.cost.toFixed(4)} (includes 25% LLM markup + Lambda fees)`;
+          showInfo(costMsg);
+        }
+        
+        // Clear command after successful generation
+        setCommand('');
+        setIsProcessing(false);
+        return;
+      }
+
+      // EXISTING FEATURE: If images are selected, parse and execute editing commands
       console.log('Parsing command:', command);
       const authToken = await getToken();
       const parseResult = await parseImageCommand(command, settings.providers, authToken);
@@ -670,10 +990,30 @@ export const ImageEditorPage: React.FC = () => {
             </svg>
             Back to Swag
           </button>
-          <h1 className="text-xl font-bold text-gray-900">
-            Image Editor
-            {selectedImages.size > 0 && ` (${selectedImages.size} selected)`}
-          </h1>
+          <div className="flex items-center gap-4">
+            <div className="flex gap-2">
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo || isProcessing}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Undo (Ctrl+Z)"
+              >
+                ↶ Undo
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!canRedo || isProcessing}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Redo (Ctrl+Y)"
+              >
+                ↷ Redo
+              </button>
+            </div>
+            <h1 className="text-xl font-bold text-gray-900">
+              Image Editor
+              {selectedImages.size > 0 && ` (${selectedImages.size} selected)`}
+            </h1>
+          </div>
           <div className="text-sm text-gray-600">
             {processedImageUrls.size > 0 && (
               <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-green-50 text-green-700 border border-green-200">
@@ -755,44 +1095,68 @@ export const ImageEditorPage: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full">
             <h2 className="text-xl font-bold mb-4">Generate Image from Prompt</h2>
-            <textarea
-              value={generatePrompt}
-              onChange={(e) => setGeneratePrompt(e.target.value)}
-              placeholder="Describe the image you want to create..."
-              className="w-full h-32 border border-gray-300 rounded p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              autoFocus
-            />
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Image Size
-              </label>
-              <select
-                value={generateSize}
-                onChange={(e) => setGenerateSize(e.target.value)}
-                className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="1024x1024">Square (1024×1024)</option>
-                <option value="1024x768">Landscape (1024×768)</option>
-                <option value="768x1024">Portrait (768×1024)</option>
-                <option value="1792x1024">Wide (1792×1024)</option>
-                <option value="1024x1792">Tall (1024×1792)</option>
-              </select>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => { setShowGenerateDialog(false); setGeneratePrompt(''); }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleGenerateFromPrompt}
-                disabled={!generatePrompt.trim() || isGenerating}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                {isGenerating ? 'Generating...' : 'Generate Image'}
-              </button>
-            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (generatePrompt.trim() && !isGenerating) {
+                handleGenerateFromPrompt();
+              }
+            }}>
+              <textarea
+                value={generatePrompt}
+                onChange={(e) => setGeneratePrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  // Submit on Enter (without shift for multiline support)
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (generatePrompt.trim() && !isGenerating) {
+                      handleGenerateFromPrompt();
+                    }
+                  }
+                }}
+                placeholder="Describe the image you want to create..."
+                className="w-full h-32 border border-gray-300 rounded p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                tabIndex={1}
+                autoFocus
+              />
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Image Size
+                </label>
+                <select
+                  value={generateSize}
+                  onChange={(e) => setGenerateSize(e.target.value)}
+                  className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  tabIndex={2}
+                >
+                  <option value="1024x1024">Square (1024×1024)</option>
+                  <option value="1024x768">Landscape (1024×768)</option>
+                  <option value="768x1024">Portrait (768×1024)</option>
+                  <option value="1792x1024">Wide (1792×1024)</option>
+                  <option value="1024x1792">Tall (1024×1792)</option>
+                </select>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => { setShowGenerateDialog(false); setGeneratePrompt(''); }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                  tabIndex={4}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!generatePrompt.trim() || isGenerating}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  tabIndex={3}
+                >
+                  {isGenerating ? 'Generating...' : 'Generate Image'}
+                </button>
+              </div>
+              <div className="mt-2 text-xs text-gray-500 text-center">
+                Press <kbd className="px-1 py-0.5 bg-gray-200 rounded">Enter</kbd> to generate • <kbd className="px-1 py-0.5 bg-gray-200 rounded">Shift+Enter</kbd> for new line
+              </div>
+            </form>
           </div>
         </div>
       )}

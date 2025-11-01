@@ -209,11 +209,10 @@ exports.handler = async (event, responseStream, context) => {
             return await handleSyncEmbeddings(event, body, responseStream);
         }
 
-        // POST /rag/ingest - Ingest document/URL
-        // TODO: Implement ingest functionality
-        // if (path === '/rag/ingest' && method === 'POST') {
-        //     return await handleIngest(body, writeEvent, responseStream);
-        // }
+        // POST /rag/ingest - Ingest document/URL/snippet
+        if (path === '/rag/ingest' && method === 'POST') {
+            return await handleIngest(event, body, writeEvent, responseStream);
+        }
 
         // GET /rag/embedding-status/:snippetId - Check embedding status
         if (path.startsWith('/rag/embedding-status/') && method === 'GET') {

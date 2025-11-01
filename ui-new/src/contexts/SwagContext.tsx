@@ -564,9 +564,15 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // If content changed, re-embed if auto-embed is enabled
+    // Skip embedding for image snippets (images are excluded from embeddings)
     if (oldSnippet && updates.content && updates.content !== oldSnippet.content) {
-      const newTitle = updates.title !== undefined ? updates.title : oldSnippet.title;
-      await autoEmbedSnippet(id, updates.content, newTitle);
+      const hasImages = /<img[^>]*>|!\[[^\]]*\]\([^)]+\)/.test(updates.content);
+      if (!hasImages) {
+        const newTitle = updates.title !== undefined ? updates.title : oldSnippet.title;
+        await autoEmbedSnippet(id, updates.content, newTitle);
+      } else {
+        console.log('⏭️  Skipping embedding for image snippet:', id);
+      }
     }
   };
 

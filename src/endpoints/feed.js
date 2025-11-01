@@ -461,7 +461,7 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
                                 provider: selectedModel.provider,
                                 model: selectedModel.model,
                                 modelKey: selectedModel.modelKey,
-                                size: '512x512', // Low resolution for speed/cost
+                                size: '800x600', // 4:3 aspect ratio for news feed thumbnails
                                 quality: qualityTier,
                                 style: 'natural'
                             });
