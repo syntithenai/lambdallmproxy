@@ -93,11 +93,48 @@ constructor(baseUrl: string = 'http://localhost:9000') {
 }
 ```
 
+## CORS Configuration
+
+The Chatterbox TTS service needs CORS headers to work with the UI. The docker-compose file includes CORS environment variables, but if you still experience CORS errors:
+
+### Option 1: Use with Production Deployment
+Deploy the UI to GitHub Pages and access via the production URL. The Lambda backend can proxy TTS requests.
+
+### Option 2: Start Chatterbox with CORS Support
+If the image supports it, the docker-compose file is pre-configured with:
+- `CORS_ORIGINS`: Allows requests from localhost:8081 and localhost:5173
+- `CORS_ALLOW_CREDENTIALS`: Enables authenticated requests
+
+### Option 3: Manual CORS Headers (Advanced)
+If CORS environment variables don't work, you may need to:
+1. Fork the chatterbox-tts repository
+2. Add CORS middleware to the FastAPI application
+3. Build your own Docker image
+
+Example FastAPI CORS configuration:
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8081", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
 ## Using in the Application
 
 1. **Start the Chatterbox container** (see Quick Start above)
 
-2. **Open the application** and go to Settings → TTS
+2. **Restart the container** if you modified docker-compose.yml:
+```bash
+docker-compose -f docker-compose.chatterbox.yml down
+docker-compose -f docker-compose.chatterbox.yml up -d
+```
+
+3. **Open the application** and go to Settings → TTS
 
 3. **Select "Chatterbox TTS (Local GPU)"** from the provider dropdown
 
