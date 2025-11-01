@@ -40,6 +40,10 @@ exports.handler = async (event, responseStream) => {
     const authenticatedEmail = authResult.email;
     console.log(`✅ Authenticated rag-sync request from: ${authenticatedEmail}`);
     
+    // Extract project ID from headers (MULTI-TENANCY)
+    const projectId = event.headers?.['x-project-id'] || event.headers?.['X-Project-ID'] || '';
+    console.log(`🔑 Project ID: ${projectId || '(default)'}`);
+    
     const body = JSON.parse(event.body || '{}');
     const { operation, userEmail, deviceId, data, lastSync } = body;
     
@@ -103,23 +107,23 @@ exports.handler = async (event, responseStream) => {
     
     switch (operation) {
       case 'push-snippets':
-        result = await handlePushSnippets(sheets, spreadsheetId, data, effectiveUserEmail, deviceId);
+        result = await handlePushSnippets(sheets, spreadsheetId, data, effectiveUserEmail, projectId, deviceId);
         break;
         
       case 'pull-snippets':
-        result = await handlePullSnippets(sheets, spreadsheetId, effectiveUserEmail);
+        result = await handlePullSnippets(sheets, spreadsheetId, effectiveUserEmail, projectId);
         break;
         
       case 'delete-snippet':
-        result = await handleDeleteSnippet(sheets, spreadsheetId, data.snippetId, effectiveUserEmail);
+        result = await handleDeleteSnippet(sheets, spreadsheetId, data.snippetId, effectiveUserEmail, projectId);
         break;
         
       case 'full-sync':
-        result = await handleFullSync(sheets, spreadsheetId, data, effectiveUserEmail, deviceId, lastSync);
+        result = await handleFullSync(sheets, spreadsheetId, data, effectiveUserEmail, projectId, deviceId, lastSync);
         break;
         
       case 'get-sync-status':
-        result = await handleGetSyncStatus(sheets, spreadsheetId, effectiveUserEmail);
+        result = await handleGetSyncStatus(sheets, spreadsheetId, effectiveUserEmail, projectId);
         break;
         
       default:
@@ -162,15 +166,15 @@ exports.handler = async (event, responseStream) => {
 /**
  * Push snippets to Google Sheets
  */
-async function handlePushSnippets(sheets, spreadsheetId, snippets, userEmail, deviceId) {
+async function handlePushSnippets(sheets, spreadsheetId, snippets, userEmail, projectId, deviceId) {
   if (!Array.isArray(snippets) || snippets.length === 0) {
     return { count: 0, message: 'No snippets to push' };
   }
   
-  console.log(`📤 Pushing ${snippets.length} snippets for ${userEmail}...`);
+  console.log(`📤 Pushing ${snippets.length} snippets for ${userEmail} (project: ${projectId || 'default'})...`);
   
-  // Use bulk save for efficiency
-  const count = await bulkSaveSnippetsToSheets(sheets, spreadsheetId, snippets, userEmail, deviceId);
+  // Use bulk save for efficiency (MULTI-TENANCY: Pass projectId)
+  const count = await bulkSaveSnippetsToSheets(sheets, spreadsheetId, snippets, userEmail, projectId, deviceId);
   
   return {
     count,
@@ -181,10 +185,11 @@ async function handlePushSnippets(sheets, spreadsheetId, snippets, userEmail, de
 /**
  * Pull snippets from Google Sheets
  */
-async function handlePullSnippets(sheets, spreadsheetId, userEmail) {
-  console.log(`📥 Pulling snippets for ${userEmail}...`);
+async function handlePullSnippets(sheets, spreadsheetId, userEmail, projectId) {
+  console.log(`📥 Pulling snippets for ${userEmail} (project: ${projectId || 'default'})...`);
   
-  const snippets = await loadSnippetsFromSheets(sheets, spreadsheetId, userEmail);
+  // MULTI-TENANCY: Pass projectId to filter snippets
+  const snippets = await loadSnippetsFromSheets(sheets, spreadsheetId, userEmail, projectId);
   
   return {
     snippets,
@@ -196,10 +201,11 @@ async function handlePullSnippets(sheets, spreadsheetId, userEmail) {
 /**
  * Delete a snippet from Google Sheets
  */
-async function handleDeleteSnippet(sheets, spreadsheetId, snippetId, userEmail) {
-  console.log(`🗑️ Deleting snippet ${snippetId} for ${userEmail}...`);
+async function handleDeleteSnippet(sheets, spreadsheetId, snippetId, userEmail, projectId) {
+  console.log(`🗑️ Deleting snippet ${snippetId} for ${userEmail} (project: ${projectId || 'default'})...`);
   
-  const deleted = await deleteSnippetFromSheets(sheets, spreadsheetId, snippetId, userEmail);
+  // MULTI-TENANCY: Pass projectId for ownership verification
+  const deleted = await deleteSnippetFromSheets(sheets, spreadsheetId, snippetId, userEmail, projectId);
   
   return {
     deleted,
@@ -210,11 +216,11 @@ async function handleDeleteSnippet(sheets, spreadsheetId, snippetId, userEmail) 
 /**
  * Full bidirectional sync
  */
-async function handleFullSync(sheets, spreadsheetId, localSnippets, userEmail, deviceId, lastSync) {
-  console.log(`🔄 Full sync for ${userEmail}...`);
+async function handleFullSync(sheets, spreadsheetId, localSnippets, userEmail, projectId, deviceId, lastSync) {
+  console.log(`🔄 Full sync for ${userEmail} (project: ${projectId || 'default'})...`);
   
-  // Get remote snippets
-  const remoteSnippets = await loadSnippetsFromSheets(sheets, spreadsheetId, userEmail);
+  // Get remote snippets (MULTI-TENANCY: Filter by projectId)
+  const remoteSnippets = await loadSnippetsFromSheets(sheets, spreadsheetId, userEmail, projectId);
   
   // Determine what needs to be synced
   const localMap = new Map(localSnippets.map(s => [s.id, s]));
@@ -253,9 +259,9 @@ async function handleFullSync(sheets, spreadsheetId, localSnippets, userEmail, d
     }
   }
   
-  // Upload new/updated snippets
+  // Upload new/updated snippets (MULTI-TENANCY: Pass projectId)
   if (toUpload.length > 0) {
-    await bulkSaveSnippetsToSheets(sheets, spreadsheetId, toUpload, userEmail, deviceId);
+    await bulkSaveSnippetsToSheets(sheets, spreadsheetId, toUpload, userEmail, projectId, deviceId);
   }
   
   return {
@@ -269,11 +275,11 @@ async function handleFullSync(sheets, spreadsheetId, localSnippets, userEmail, d
 /**
  * Get sync status
  */
-async function handleGetSyncStatus(sheets, spreadsheetId, userEmail) {
+async function handleGetSyncStatus(sheets, spreadsheetId, userEmail, projectId) {
   const { getLastSyncTimestamp } = require('../rag/sheets-storage');
   
   const lastSync = await getLastSyncTimestamp(sheets, spreadsheetId, userEmail, 'snippet');
-  const snippets = await loadSnippetsFromSheets(sheets, spreadsheetId, userEmail);
+  const snippets = await loadSnippetsFromSheets(sheets, spreadsheetId, userEmail, projectId);
   
   return {
     lastSync,

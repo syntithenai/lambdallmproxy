@@ -29,9 +29,10 @@ const EMBEDDINGS_HEADERS = [
   'source_file_path',     // File path if uploaded
   'source_file_name',     // Original filename
   'source_mime_type',     // MIME type
-  'user_email',           // NEW: Owner email
-  'device_id',            // NEW: Last device that updated
-  'sync_version',         // NEW: Version for conflict resolution
+  'user_email',           // Owner email
+  'project_id',           // MULTI-TENANCY: Project filter key
+  'device_id',            // Last device that updated
+  'sync_version',         // Version for conflict resolution
   'created_at',
   'updated_at',
   'synced_at',
@@ -48,6 +49,7 @@ const SNIPPETS_HEADERS = [
   'tags_json',            // JSON array of tags
   'has_embedding',        // boolean
   'user_email',           // Owner email
+  'project_id',           // MULTI-TENANCY: Project filter key
   'device_id',            // Last device that updated
   'sync_version',         // Version counter for conflict resolution
   'created_at',
@@ -886,7 +888,7 @@ async function ensureFilesSheet(sheets, spreadsheetId) {
  * @param {string} deviceId - Device ID
  * @returns {Promise<void>}
  */
-async function saveSnippetToSheets(sheets, spreadsheetId, snippet, userEmail, deviceId) {
+async function saveSnippetToSheets(sheets, spreadsheetId, snippet, userEmail, projectId, deviceId) {
   try {
     const now = new Date().toISOString();
     
@@ -911,6 +913,7 @@ async function saveSnippetToSheets(sheets, spreadsheetId, snippet, userEmail, de
       JSON.stringify(snippet.tags || []),
       snippet.hasEmbedding ? 'TRUE' : 'FALSE',
       userEmail,
+      projectId || '',  // MULTI-TENANCY: Project ID
       deviceId,
       snippet.sync_version || 1,
       snippet.created_at || now,
@@ -979,11 +982,11 @@ async function saveSnippetToSheets(sheets, spreadsheetId, snippet, userEmail, de
  * @param {string} userEmail - User email for filtering
  * @returns {Promise<Array>} Array of snippets
  */
-async function loadSnippetsFromSheets(sheets, spreadsheetId, userEmail) {
+async function loadSnippetsFromSheets(sheets, spreadsheetId, userEmail, projectId = null) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${SNIPPETS_SHEET}!A:N`,
+      range: `${SNIPPETS_SHEET}!A:O`,  // Extended range to include project_id
     });
     
     const rows = response.data.values || [];
@@ -993,7 +996,12 @@ async function loadSnippetsFromSheets(sheets, spreadsheetId, userEmail) {
     
     // Parse rows into snippet objects (skip header)
     const snippets = rows.slice(1)
-      .filter(row => row[8] === userEmail) // Filter by user_email column
+      .filter(row => {
+        // MULTI-TENANCY: Filter by user_email AND project_id
+        const matchesUser = row[8] === userEmail;
+        const matchesProject = !projectId || row[9] === projectId || !row[9]; // Match if projectId matches or is empty (legacy data)
+        return matchesUser && matchesProject;
+      })
       .map(row => ({
         id: row[0],
         content: row[1],
@@ -1004,14 +1012,15 @@ async function loadSnippetsFromSheets(sheets, spreadsheetId, userEmail) {
         tags: row[6] ? JSON.parse(row[6]) : [],
         hasEmbedding: row[7] === 'TRUE',
         user_email: row[8],
-        device_id: row[9],
-        sync_version: parseInt(row[10]) || 1,
-        created_at: row[11],
-        updated_at: row[12],
-        synced_at: row[13],
+        project_id: row[9] || '',  // MULTI-TENANCY: Project ID
+        device_id: row[10],
+        sync_version: parseInt(row[11]) || 1,
+        created_at: row[12],
+        updated_at: row[13],
+        synced_at: row[14],
       }));
     
-    console.log(`Loaded ${snippets.length} snippets from Sheets for ${userEmail}`);
+    console.log(`Loaded ${snippets.length} snippets from Sheets for ${userEmail}${projectId ? ` (project: ${projectId})` : ''}`);
     return snippets;
     
   } catch (error) {
@@ -1029,7 +1038,7 @@ async function loadSnippetsFromSheets(sheets, spreadsheetId, userEmail) {
  * @param {string} deviceId - Device ID
  * @returns {Promise<number>} Number of snippets saved
  */
-async function bulkSaveSnippetsToSheets(sheets, spreadsheetId, snippets, userEmail, deviceId) {
+async function bulkSaveSnippetsToSheets(sheets, spreadsheetId, snippets, userEmail, projectId, deviceId) {
   try {
     if (!snippets || snippets.length === 0) {
       return 0;
@@ -1048,6 +1057,7 @@ async function bulkSaveSnippetsToSheets(sheets, spreadsheetId, snippets, userEma
       JSON.stringify(snippet.tags || []),
       snippet.hasEmbedding ? 'TRUE' : 'FALSE',
       userEmail,
+      projectId || '',  // MULTI-TENANCY: Project ID
       deviceId,
       snippet.sync_version || 1,
       snippet.created_at || now,
@@ -1095,18 +1105,23 @@ async function bulkSaveSnippetsToSheets(sheets, spreadsheetId, snippets, userEma
  * @param {string} userEmail - User email for verification
  * @returns {Promise<boolean>} True if deleted
  */
-async function deleteSnippetFromSheets(sheets, spreadsheetId, snippetId, userEmail) {
+async function deleteSnippetFromSheets(sheets, spreadsheetId, snippetId, userEmail, projectId = null) {
   try {
     // Find the row
     const allData = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${SNIPPETS_SHEET}!A:I`,
+      range: `${SNIPPETS_SHEET}!A:O`,  // Extended range to include project_id
     });
     
     const rows = allData.data.values || [];
-    const rowIndex = rows.findIndex((row, index) => 
-      index > 0 && row[0] === snippetId && row[8] === userEmail
-    );
+    const rowIndex = rows.findIndex((row, index) => {
+      if (index === 0) return false;  // Skip header
+      // MULTI-TENANCY: Match by id, user_email, AND project_id
+      const matchesId = row[0] === snippetId;
+      const matchesUser = row[8] === userEmail;
+      const matchesProject = !projectId || row[9] === projectId || !row[9]; // Match if projectId matches or is empty
+      return matchesId && matchesUser && matchesProject;
+    });
     
     if (rowIndex <= 0) {
       console.log(`Snippet ${snippetId} not found or not owned by ${userEmail}`);
