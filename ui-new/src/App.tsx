@@ -29,6 +29,7 @@ import { GlobalTTSStopButton } from './components/ReadButton';
 import { GitHubLink } from './components/GitHubLink';
 import { WelcomeWizard } from './components/WelcomeWizard';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
+import { OfflineStatus } from './components/OfflineStatus';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { unifiedSync } from './services/unifiedSync';
 import { plansAdapter, playlistsAdapter } from './services/adapters';
@@ -772,6 +773,9 @@ function AppContent() {
 
       {/* Bottom Right Action Buttons - Fixed bottom right */}
       <GitHubLink />
+
+      {/* Offline Status Overlay */}
+      <OfflineStatus />
 
       {/* Welcome Wizard - Show once on first login */}
       <WelcomeWizard 

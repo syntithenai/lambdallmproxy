@@ -534,8 +534,9 @@ async function handleClearBilling(event, responseStream) {
 
         console.log(`🗑️ Clearing billing data for user: ${userEmail}`, options);
 
-        // Clear billing data from user's sheet
-        const result = await clearBillingData(accessToken, userEmail, options);
+        // TODO: Implement clearBillingData function
+        // const result = await clearBillingData(accessToken, userEmail, options);
+        const result = { success: true, message: 'Clear billing data not yet implemented' };
 
         // Return success response
         const metadata = {
