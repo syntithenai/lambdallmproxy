@@ -6,6 +6,7 @@
 const { chunker, embeddings } = require('../rag');
 const { generateUUID } = require('../rag/utils');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
+const { calculateLLMCost, isUIKey } = require('../utils/pricing-service');
 const { authenticateRequest } = require('../auth');
 const { buildProviderPool } = require('../credential-pool');
 

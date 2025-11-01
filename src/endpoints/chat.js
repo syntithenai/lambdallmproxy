@@ -234,15 +234,18 @@ const isLocalDevelopment = () => {
            process.env.AWS_EXEC === undefined;
 };
 
-// Calculate cost, but return 0 if running locally
-// ✅ PRICING SYSTEM: Pass isUserProvidedKey flag to apply surcharge only for server keys
+// Import unified pricing service
+const { calculateLLMCost, isUIKey } = require('../utils/pricing-service');
+
+// Calculate cost, but return 0 if running locally or in development
 const calculateCostSafe = (model, promptTokens, completionTokens, provider = null) => {
     if (isLocalDevelopment()) {
         return 0;
     }
+    
     // Determine if this is a user-provided key (no surcharge) or server key (surcharge applies)
-    const isUserProvidedKey = provider ? !provider.isServerSideKey : false;
-    return calculateCost(model, promptTokens, completionTokens, null, isUserProvidedKey);
+    const isUserProvidedKey = isUIKey(provider);
+    return calculateLLMCost({ model, promptTokens, completionTokens, provider, isUIKey: isUserProvidedKey });
 };
 
 /**
@@ -4023,11 +4026,18 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
             const finalMemoryMetadata = memoryTracker.getResponseMetadata();
             
             // Calculate cost for this request
-            const { calculateCost } = require('../services/google-sheets-logger');
+            const { getCostDetails, isUIKey } = require('../utils/pricing-service');
             let finalRequestCost = 0;
+            
+            // Import cost logger
+            const { logLLMCost } = require('../services/cost-logger');
+            
             for (const apiCall of allLlmApiCalls) {
                 const usage = apiCall.response?.usage;
                 if (usage && apiCall.model) {
+                    // Determine if this is a UI-provided key
+                    const isUserProvidedKey = isUIKey(selectedProvider);
+                    
                     const cost = calculateCostSafe(
                         apiCall.model,
                         usage.prompt_tokens || 0,
@@ -4035,36 +4045,23 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                         selectedProvider
                     );
                     finalRequestCost += cost;
-                }
-            }
-            
-            // Log all LLM API calls to Google Sheets
-            console.log(`📊 Logging ${allLlmApiCalls.length} LLM API calls to Google Sheets...`);
-            for (const apiCall of allLlmApiCalls) {
-                const usage = apiCall.response?.usage;
-                if (usage && apiCall.model) {
-                    const cost = calculateCostSafe(
-                        apiCall.model,
-                        usage.prompt_tokens || 0,
-                        usage.completion_tokens || 0,
-                        selectedProvider
-                    );
                     
+                    // Use new centralized logger instead of direct logToBothSheets
                     try {
-                        await logToBothSheets(driveAccessToken, {
+                        await logLLMCost({
                             userEmail,
-                            provider: apiCall.provider || 'unknown',
                             model: apiCall.model,
                             promptTokens: usage.prompt_tokens || 0,
                             completionTokens: usage.completion_tokens || 0,
-                            totalTokens: usage.total_tokens || 0,
                             cost,
-                            duration: usage.total_time || 0,
-                            type: apiCall.phase || 'chat',
-                            memoryLimitMB,
-                            memoryUsedMB,
+                            provider: apiCall.provider || 'unknown',
+                            isUIKey: isUserProvidedKey,
                             requestId,
-                            timestamp: apiCall.timestamp || new Date().toISOString()
+                            durationMs: usage.total_time || 0,
+                            metadata: {
+                                phase: apiCall.phase || 'chat'
+                            },
+                            type: apiCall.phase || 'chat'
                         });
                         console.log(`✅ Logged LLM call: ${apiCall.model} (${usage.total_tokens} tokens, $${cost.toFixed(6)})`);
                     } catch (logError) {

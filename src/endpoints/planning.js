@@ -11,6 +11,7 @@ const { llmResponsesWithTools } = require('../llm_tools_adapter');
 const { DEFAULT_REASONING_EFFORT, MAX_TOKENS_PLANNING } = require('../config/tokens');
 const { authenticateRequest, getAllowedEmails } = require('../auth');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
+const { calculateLLMCost, isUIKey } = require('../utils/pricing-service');
 const { buildProviderPool } = require('../credential-pool');
 const { getLanguageInstruction } = require('../utils/languageInstructions');
 const path = require('path');
