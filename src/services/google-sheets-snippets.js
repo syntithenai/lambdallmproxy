@@ -7,6 +7,8 @@
  * 
  * Schema:
  * - id (auto-incrementing number)
+ * - user_email (owner email - for multi-tenancy)
+ * - project_id (optional project filter - for multi-tenancy)
  * - created_at (ISO timestamp)
  * - updated_at (ISO timestamp)
  * - title (string)
@@ -17,6 +19,7 @@
  */
 
 const { google } = require('googleapis');
+const { validateUserEmail, filterByUserAndProject, logUserAccess } = require('./user-isolation');
 
 // In-memory cache for spreadsheet ID (per user/session)
 const spreadsheetCache = new Map();
@@ -175,6 +178,8 @@ async function initializeSnippetsSheet(spreadsheetId, accessToken) {
   
   const headers = [
     'ID',
+    'User Email',
+    'Project ID',
     'Created At',
     'Updated At',
     'Title',
@@ -187,7 +192,7 @@ async function initializeSnippetsSheet(spreadsheetId, accessToken) {
   // Write headers
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: 'Snippets!A1:H1',
+    range: 'Snippets!A1:J1',
     valueInputOption: 'RAW',
     requestBody: {
       values: [headers]
@@ -370,11 +375,14 @@ async function getNextId(spreadsheetId, accessToken) {
  * @param {string} params.source - Source type ('chat', 'url', 'file', 'manual')
  * @param {string} params.url - Optional URL
  * @param {string} userEmail - User's email
+ * @param {string|null} projectId - Project ID (optional)
  * @param {string} accessToken - User's OAuth access token
  * @returns {Promise<Object>} Created snippet
  */
-async function insertSnippet({ title, content, tags = [], source = 'manual', url = '' }, userEmail, accessToken) {
+async function insertSnippet({ title, content, tags = [], source = 'manual', url = '' }, userEmail, projectId, accessToken) {
   try {
+    validateUserEmail(userEmail);
+    
     const { spreadsheetId } = await getOrCreateSnippetsSheet(userEmail, accessToken);
     const sheets = google.sheets({
       version: 'v4',
@@ -389,6 +397,8 @@ async function insertSnippet({ title, content, tags = [], source = 'manual', url
     
     const row = [
       id,
+      userEmail,
+      projectId || '',
       now,
       now,
       title || '',
@@ -401,17 +411,20 @@ async function insertSnippet({ title, content, tags = [], source = 'manual', url
     // Append row
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Snippets!A:H',
+      range: 'Snippets!A:J',
       valueInputOption: 'RAW',
       requestBody: {
         values: [row]
       }
     });
     
-    console.log(`✅ Snippets: Inserted snippet #${id}: "${title}"`);
+    logUserAccess('created', 'snippet', id.toString(), userEmail, projectId);
+    console.log(`✅ Snippets: Inserted snippet #${id}: "${title}" for ${userEmail}${projectId ? ` (project: ${projectId})` : ''}`);
     
     return {
       id,
+      user_email: userEmail,
+      project_id: projectId,
       created_at: now,
       updated_at: now,
       title,

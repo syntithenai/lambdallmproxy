@@ -2103,6 +2103,10 @@ Brief answer with URLs:`;
               });
             }
             
+            // Extract project ID from context/event headers
+            const { extractProjectId } = require('./services/user-isolation');
+            const projectId = context.event ? extractProjectId(context.event) : null;
+            
             const snippet = await snippetsService.insertSnippet(
               {
                 title: payload.title,
@@ -2112,6 +2116,7 @@ Brief answer with URLs:`;
                 url: payload.url || ''
               },
               userEmail,
+              projectId,
               accessToken
             );
             
@@ -2142,6 +2147,10 @@ Brief answer with URLs:`;
               });
             }
             
+            // Extract project ID from context/event headers
+            const { extractProjectId } = require('./services/user-isolation');
+            const projectId = context.event ? extractProjectId(context.event) : null;
+            
             const snippet = await snippetsService.insertSnippet(
               {
                 title: payload.title,
@@ -2151,6 +2160,7 @@ Brief answer with URLs:`;
                 url: payload.url || ''
               },
               userEmail,
+              projectId,
               accessToken
             );
             
