@@ -420,7 +420,7 @@ export default function FeedSettings() {
       {/* Content Maturity Level */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-3">
-          Content Maturity Level
+          🎓 Content Maturity Level
         </h3>
         
         <p className="text-sm text-gray-600 mb-4">
@@ -428,11 +428,14 @@ export default function FeedSettings() {
         </p>
 
         <select
-          value={localStorage.getItem('feed_maturity_level') || 'adult'}
-          onChange={(e) => {
-            localStorage.setItem('feed_maturity_level', e.target.value);
+          value={preferences.maturityLevel || 'adult'}
+          onChange={async (e) => {
+            const level = e.target.value as 'child' | 'youth' | 'adult' | 'academic';
+            await feedDB.setMaturityLevel(level);
             // Force a re-render
             window.dispatchEvent(new Event('feed-maturity-changed'));
+            // Reload statistics to reflect changes
+            await loadFeedStatistics();
           }}
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >

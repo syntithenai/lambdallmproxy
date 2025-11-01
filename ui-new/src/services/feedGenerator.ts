@@ -41,13 +41,14 @@ export async function generateFeedItems(
   swagContent: string[],
   preferences: FeedPreferences,
   count: number = 5, // Reduced from 10 to 5 for higher quality with expanded content
+  maturityLevel?: 'child' | 'youth' | 'adult' | 'academic',
   onProgress?: (event: FeedGenerationEvent) => void
 ): Promise<FeedItem[]> {
   const apiUrl = await getCachedApiBase();
   
-  // Get maturity level from localStorage
-  const maturityLevel = localStorage.getItem('feed_maturity_level') || 'adult';
-  console.log(`🎓 Feed maturity level: ${maturityLevel}`);
+  // Use provided maturity level or get from preferences or fall back to 'adult'
+  const level = maturityLevel || preferences.maturityLevel || 'adult';
+  console.log(`🎓 Feed maturity level: ${level}`);
   
   // Build request
   const requestBody: GenerateFeedRequest = {
@@ -55,7 +56,7 @@ export async function generateFeedItems(
     searchTerms: preferences.searchTerms,
     count,
     preferences,
-    maturityLevel: maturityLevel as 'child' | 'youth' | 'adult' | 'academic'
+    maturityLevel: level
   };
 
   // Make SSE request

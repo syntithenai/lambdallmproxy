@@ -218,7 +218,7 @@ function AppContent() {
   // Warn user before closing/refreshing during active request
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isChatLoading && location.pathname === '/') {
+      if (isChatLoading && location.pathname === '/chat') {
         e.preventDefault();
         e.returnValue = ''; // Chrome requires returnValue to be set
         return ''; // Some browsers use return value
@@ -448,18 +448,18 @@ function AppContent() {
               </button>
             )}
             
-            {/* Back to Chat button - Show on ALL pages except chat (/) */}
+            {/* Back button - Show on ALL pages except feed (/) */}
             {location.pathname !== '/' && (
               <button
                 onClick={() => navigate('/')}
                 className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
-                title="Back to Chat"
-                aria-label="Back to Chat"
+                title="Back to Feed"
+                aria-label="Back to Feed"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
-                <span className="text-sm hidden md:inline">Back to Chat</span>
+                <span className="text-sm hidden md:inline">Back</span>
               </button>
             )}
             
@@ -481,18 +481,18 @@ function AppContent() {
               </div>
             )}
             
-            {/* Back to Chat button - Show on ALL pages except chat (/) */}
+            {/* Back button - Show on ALL pages except feed (/) */}
             {location.pathname !== '/' && (
               <button
                 onClick={() => handleNavigate('/')}
                 className="px-3 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2"
-                title="Back to Chat"
-                aria-label="Back to Chat"
+                title="Back to Feed"
+                aria-label="Back to Feed"
               >
                 <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
-                <span className="hidden md:inline text-sm font-medium text-gray-700 dark:text-gray-300">Back to Chat</span>
+                <span className="hidden md:inline text-sm font-medium text-gray-700 dark:text-gray-300">Back</span>
               </button>
             )}
             
@@ -524,10 +524,27 @@ function AppContent() {
             aria-label="Mobile navigation"
           >
             <div className="px-4 py-2 space-y-1">
+              {/* Feed */}
               {location.pathname !== '/' && (
                 <button
                   onClick={() => {
                     navigate('/');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                  </svg>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Feed</span>
+                </button>
+              )}
+              
+              {/* Chat */}
+              {location.pathname !== '/chat' && (
+                <button
+                  onClick={() => {
+                    navigate('/chat');
                     setMobileMenuOpen(false);
                   }}
                   className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -667,19 +684,10 @@ function AppContent() {
         <div className="min-h-full max-w-screen-2xl md:mx-auto">
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
-              <Route 
-                path="/" 
-                element={
-                  <ChatTab 
-                    enabledTools={enabledTools}
-                    setEnabledTools={setEnabledTools}
-                    showMCPDialog={showMCPDialog}
-                    setShowMCPDialog={setShowMCPDialog}
-                    onLoadingChange={setIsChatLoading}
-                  />
-                } 
-              />
-              {/* /chat route for compatibility (same as root) */}
+              {/* Feed is now the default landing page */}
+              <Route path="/" element={<FeedPage />} />
+              
+              {/* Chat is accessible at /chat */}
               <Route 
                 path="/chat" 
                 element={
@@ -695,7 +703,6 @@ function AppContent() {
               <Route path="/planning" element={<PlanningPage />} />
               <Route path="/swag" element={<SwagPage />} />
               <Route path="/quiz" element={<QuizPage />} />
-              <Route path="/feed" element={<FeedPage />} />
               <Route path="/image-editor" element={<ImageEditorPage />} />
               <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
               <Route path="/billing" element={<BillingPage />} />
@@ -719,12 +726,12 @@ function AppContent() {
           <AgentManager
             onSwitchToAgent={() => {
               // Navigate to chat and load the agent's chat
-              handleNavigate('/');
+              handleNavigate('/chat');
               setShowAgentManager(false);
               // TODO: Load chat by chatId in ChatTab
             }}
             onCreateNewAgent={() => {
-              handleNavigate('/');
+              handleNavigate('/chat');
               setShowAgentManager(false);
             }}
             onClose={() => setShowAgentManager(false)}

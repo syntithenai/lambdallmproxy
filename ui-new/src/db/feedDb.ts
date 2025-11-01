@@ -776,6 +776,63 @@ class FeedDatabase {
       .sort((a, b) => b.count - a.count)
       .slice(0, limit);
   }
+
+  /**
+   * Remove a disliked topic from avoid list
+   */
+  async removeDislikedTopic(topic: string, userId: string = 'default'): Promise<void> {
+    const prefs = await this.getUserPreferences(userId);
+    if (!prefs) return;
+
+    prefs.avoidTopics = prefs.avoidTopics.filter(t => t !== topic);
+    prefs.lastUpdated = Date.now();
+
+    await this.updateUserPreferences(prefs);
+    console.log(`🗑️ Removed disliked topic: "${topic}"`);
+  }
+
+  /**
+   * Get topic history for graphs (last 6 months)
+   * Returns array of {topic, month, count} for top topics
+   */
+  async getTopicHistory(months: number = 6): Promise<Array<{ topic: string; month: string; count: number }>> {
+    const stats = await this.getTopicStatistics(months);
+    const result: Array<{ topic: string; month: string; count: number }> = [];
+
+    // Get top 5 topics
+    const topTopics = await this.getTopTopics(5);
+    const topTopicNames = new Set(topTopics.map(t => t.topic));
+
+    // Build data array for charts
+    for (const [topic, monthCounts] of stats.entries()) {
+      if (!topTopicNames.has(topic)) continue; // Only include top topics
+      
+      for (const { month, count } of monthCounts) {
+        result.push({ topic, month, count });
+      }
+    }
+
+    return result.sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  /**
+   * Set maturity level preference
+   */
+  async setMaturityLevel(level: 'child' | 'youth' | 'adult' | 'academic'): Promise<void> {
+    await this.updatePreferences({
+      maturityLevel: level,
+      lastUpdated: Date.now()
+    });
+    console.log(`🎓 Maturity level set to: ${level}`);
+  }
+
+  /**
+   * Get maturity level preference
+   */
+  async getMaturityLevel(): Promise<'child' | 'youth' | 'adult' | 'academic'> {
+    const prefs = await this.getPreferences();
+    return prefs.maturityLevel || 'adult'; // Default to adult
+  }
 }
 
 // Export singleton instance

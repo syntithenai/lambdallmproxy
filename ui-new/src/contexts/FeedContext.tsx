@@ -184,6 +184,10 @@ export function FeedProvider({ children }: FeedProviderProps) {
       // Track generated items as they arrive
       const generatedItems: FeedItem[] = [];
 
+      // Get maturity level from preferences
+      const maturityLevel = preferencesRef.current.maturityLevel || 'adult';
+      console.log('🎓 Using maturity level:', maturityLevel);
+
       // Generate new items via backend - use ref to avoid dependency
       console.log('🔍 Calling generateFeedItems with preferences:', preferencesRef.current);
       const newItems = await generateFeedItems(
@@ -191,6 +195,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
         swagContent,
         preferencesRef.current,
         10,
+        maturityLevel,
         // Progress callback - update UI as items arrive
         (event) => {
           console.log('📨 Feed event:', event.type, event);

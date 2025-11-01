@@ -1,7 +1,7 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ImageEditorNavButton } from './ImageEditorNavButton';
-import { Rss, Brain } from 'lucide-react';
+import { Rss, Brain, MessageSquare } from 'lucide-react';
 
 interface GitHubLinkProps {
   hideGitHub?: boolean;
@@ -9,10 +9,22 @@ interface GitHubLinkProps {
 
 export const GitHubLink: React.FC<GitHubLinkProps> = ({ hideGitHub = false }) => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   return (
     <div className="hidden md:flex fixed bottom-4 right-4 flex-col gap-2 z-50" style={{ zIndex: 9999 }}>
-      {/* Swag Button - NOW AT TOP */}
+      {/* Chat Button - Only show when NOT on chat page */}
+      {location.pathname !== '/chat' && (
+        <button
+          onClick={() => navigate('/chat')}
+          className="p-3 bg-green-600 hover:bg-green-500 dark:bg-green-700 dark:hover:bg-green-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center"
+          title="Chat with AI"
+        >
+          <MessageSquare className="w-6 h-6" />
+        </button>
+      )}
+      
+      {/* Swag Button */}
       <button
         onClick={() => { console.log('Navigating to /swag'); navigate('/swag'); }}
         className="p-3 bg-blue-600 hover:bg-blue-500 dark:bg-blue-700 dark:hover:bg-blue-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center"

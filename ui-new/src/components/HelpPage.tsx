@@ -308,6 +308,27 @@ function FeaturesContent() {
       </section>
 
       <section className="space-y-4">
+        <h3 className="text-xl font-semibold text-cyan-600 dark:text-cyan-400">🎯 Personalized Learning Feed</h3>
+        <div className="space-y-2 pl-4">
+          <p><strong>Content Discovery:</strong> Get a personalized feed of fascinating facts, news, and educational content tailored to your interests. The Feed learns from your interactions to surface increasingly relevant content.</p>
+          <p><strong>Interactive Quizzes:</strong> Test your knowledge with auto-generated quizzes based on feed content. Track your learning progress and retain information through active recall.</p>
+          <p><strong>Smart Filtering:</strong> Upvote content you enjoy to see more like it. Downvote to block topics and prevent similar content from appearing in future feeds.</p>
+          <p><strong>Seamless Chat Integration:</strong> Click the chat button on any feed item to dive deeper, ask questions, or explore topics in more detail with AI assistance.</p>
+          <p><strong>Maturity Levels:</strong> Customize content appropriateness with child-safe, youth-focused, adult, or academic maturity filters in Settings.</p>
+        </div>
+        
+        <div className="bg-cyan-50 dark:bg-cyan-900/20 p-4 rounded-lg border border-cyan-200 dark:border-cyan-800 mt-3">
+          <p className="font-semibold mb-2 text-cyan-700 dark:text-cyan-300">📊 How Downvoting Works</p>
+          <div className="space-y-2 text-sm">
+            <p><strong>Topic Blocking:</strong> When you downvote a feed item, all its associated topics are automatically added to your blocked list. Future feed generation will avoid content related to these topics.</p>
+            <p><strong>Persistent Filtering:</strong> Blocked topics are stored permanently in your browser's IndexedDB until you manually remove them from Settings → Feed tab.</p>
+            <p><strong>Granular Control:</strong> You can review your complete blocked topics list at any time and remove individual topics if you change your mind.</p>
+            <p><strong>Learning Over Time:</strong> The more you interact with feed items (upvoting and downvoting), the better the system understands your preferences and delivers more relevant content.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💾 Knowledge Management</h3>
         <div className="space-y-2 pl-4">
           <p><strong>Content Management:</strong> Save snippets, images, and links to your personal knowledge base with tagging and organization features.</p>

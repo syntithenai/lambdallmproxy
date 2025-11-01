@@ -189,6 +189,11 @@ export const LoginScreen: React.FC = () => {
               </div>
               
               <div>
+                <strong className="text-cyan-600 dark:text-cyan-400">🎯 Personalized Learning Feed:</strong>
+                <span className="text-gray-700 dark:text-gray-300"> Discover fascinating facts, news, and educational content tailored to your interests. Test your knowledge with auto-generated quizzes and expand your learning with AI chat.</span>
+              </div>
+              
+              <div>
                 <strong className="text-yellow-600 dark:text-yellow-400">{t('auth.costEffective')}:</strong>
                 <span className="text-gray-700 dark:text-gray-300"> {t('auth.costEffectiveDesc')}</span>
               </div>

@@ -33,6 +33,8 @@ export interface FeedPreferences {
   likedTopics: string[];         // Topics from stashed items
   dislikedTopics: string[];      // Topics from trashed items
   lastGenerated: string;         // Last generation timestamp
+  maturityLevel?: 'child' | 'youth' | 'adult' | 'academic'; // Content maturity level
+  lastUpdated?: number;          // Last update timestamp (milliseconds)
 }
 
 export interface FeedQuiz {
