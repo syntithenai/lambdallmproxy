@@ -12,6 +12,8 @@ const { buildProviderPool } = require('../credential-pool');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const feedRecommender = require('../services/feed-recommender');
 const { buildModelRotationSequence, estimateTokenRequirements } = require('../model-selector-v2');
+const feedService = require('../services/google-sheets-feed');
+const { extractProjectId } = require('../services/user-isolation');
 
 /**
  * Extract images from web search results
@@ -816,7 +818,285 @@ async function handler(event, responseStream, context) {
     }
 }
 
+/**
+ * Get stored feed items for user
+ * Supports multi-tenancy with X-Project-ID header
+ */
+async function getFeedItemsHandler(event) {
+    try {
+        // Authenticate request
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const verifiedUser = await authenticateRequest(authHeader);
+        
+        if (!verifiedUser || !verifiedUser.email) {
+            return {
+                statusCode: 401,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                body: JSON.stringify({ error: 'Authentication required' })
+            };
+        }
+        
+        // Extract project ID from header
+        const projectId = extractProjectId(event);
+        
+        // Get feed items (filtered by user and project)
+        const items = await feedService.getFeedItems(
+            verifiedUser.email,
+            projectId,
+            verifiedUser.accessToken
+        );
+        
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Project-ID'
+            },
+            body: JSON.stringify({
+                items,
+                projectId: projectId || null
+            })
+        };
+    } catch (error) {
+        console.error('Failed to get feed items:', error);
+        return {
+            statusCode: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({
+                error: 'Failed to retrieve feed items',
+                message: error.message
+            })
+        };
+    }
+}
+
+/**
+ * Save a new feed item
+ * Supports multi-tenancy with X-Project-ID header
+ */
+async function saveFeedItemHandler(event) {
+    try {
+        // Authenticate request
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const verifiedUser = await authenticateRequest(authHeader);
+        
+        if (!verifiedUser || !verifiedUser.email) {
+            return {
+                statusCode: 401,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                body: JSON.stringify({ error: 'Authentication required' })
+            };
+        }
+        
+        // Extract project ID from header
+        const projectId = extractProjectId(event);
+        
+        // Parse request body
+        const body = JSON.parse(event.body || '{}');
+        
+        // Insert feed item
+        const createdItem = await feedService.insertFeedItem(
+            body,
+            verifiedUser.email,
+            projectId,
+            verifiedUser.accessToken
+        );
+        
+        return {
+            statusCode: 201,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Project-ID'
+            },
+            body: JSON.stringify(createdItem)
+        };
+    } catch (error) {
+        console.error('Failed to save feed item:', error);
+        return {
+            statusCode: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({
+                error: 'Failed to save feed item',
+                message: error.message
+            })
+        };
+    }
+}
+
+/**
+ * Vote on a feed item (upvote/downvote)
+ * Supports multi-tenancy with X-Project-ID header
+ */
+async function voteFeedItemHandler(event) {
+    try {
+        // Authenticate request
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const verifiedUser = await authenticateRequest(authHeader);
+        
+        if (!verifiedUser || !verifiedUser.email) {
+            return {
+                statusCode: 401,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                body: JSON.stringify({ error: 'Authentication required' })
+            };
+        }
+        
+        // Extract project ID from header
+        const projectId = extractProjectId(event);
+        
+        // Parse request body
+        const body = JSON.parse(event.body || '{}');
+        const itemId = body.itemId;
+        const vote = body.vote; // 'up', 'down', or '' to clear
+        
+        if (!itemId) {
+            return {
+                statusCode: 400,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                body: JSON.stringify({ error: 'itemId is required' })
+            };
+        }
+        
+        // Vote on item
+        const updatedItem = await feedService.voteFeedItem(
+            itemId,
+            vote,
+            verifiedUser.email,
+            projectId,
+            verifiedUser.accessToken
+        );
+        
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Project-ID'
+            },
+            body: JSON.stringify(updatedItem)
+        };
+    } catch (error) {
+        console.error('Failed to vote on feed item:', error);
+        
+        const statusCode = error.message.includes('not found') ? 404 : 500;
+        
+        return {
+            statusCode,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({
+                error: 'Failed to vote on feed item',
+                message: error.message
+            })
+        };
+    }
+}
+
+/**
+ * Delete a feed item
+ * Supports multi-tenancy with X-Project-ID header
+ */
+async function deleteFeedItemHandler(event) {
+    try {
+        // Authenticate request
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const verifiedUser = await authenticateRequest(authHeader);
+        
+        if (!verifiedUser || !verifiedUser.email) {
+            return {
+                statusCode: 401,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                body: JSON.stringify({ error: 'Authentication required' })
+            };
+        }
+        
+        // Extract project ID from header
+        const projectId = extractProjectId(event);
+        
+        // Extract item ID from path or query
+        const itemId = event.pathParameters?.id || event.queryStringParameters?.id;
+        
+        if (!itemId) {
+            return {
+                statusCode: 400,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                body: JSON.stringify({ error: 'itemId is required' })
+            };
+        }
+        
+        // Delete item
+        await feedService.deleteFeedItem(
+            itemId,
+            verifiedUser.email,
+            projectId,
+            verifiedUser.accessToken
+        );
+        
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Project-ID'
+            },
+            body: JSON.stringify({ success: true })
+        };
+    } catch (error) {
+        console.error('Failed to delete feed item:', error);
+        
+        const statusCode = error.message.includes('not found') ? 404 : 500;
+        
+        return {
+            statusCode,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({
+                error: 'Failed to delete feed item',
+                message: error.message
+            })
+        };
+    }
+}
+
 module.exports = {
     handler,
-    generateFeedItems
+    generateFeedItems,
+    getFeedItemsHandler,
+    saveFeedItemHandler,
+    voteFeedItemHandler,
+    deleteFeedItemHandler
 };

@@ -299,6 +299,62 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        // Get stored feed items
+        if (method === 'GET' && path === '/feed/items') {
+            console.log('Routing to get feed items endpoint');
+            const response = await feedEndpoint.getFeedItemsHandler(event);
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: response.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Save a new feed item
+        if (method === 'POST' && path === '/feed/items') {
+            console.log('Routing to save feed item endpoint');
+            const response = await feedEndpoint.saveFeedItemHandler(event);
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: response.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Vote on a feed item
+        if (method === 'POST' && path === '/feed/vote') {
+            console.log('Routing to vote feed item endpoint');
+            const response = await feedEndpoint.voteFeedItemHandler(event);
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: response.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Delete a feed item
+        if (method === 'DELETE' && path.startsWith('/feed/items/')) {
+            console.log('Routing to delete feed item endpoint');
+            const response = await feedEndpoint.deleteFeedItemHandler(event);
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: response.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
         if (method === 'GET' && path.startsWith('/feed/image')) {
             console.log('Routing to feed image proxy endpoint');
             // Extract URL parameter

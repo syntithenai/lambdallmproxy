@@ -26,6 +26,9 @@ export interface FeedItem {
   stashed: boolean;              // Stashed to Swag
   trashed: boolean;              // User dismissed
   projectId?: string;            // Associated project for filtering
+  upvoteCount?: number;          // Number of upvotes (synced with Google Sheets)
+  downvoteCount?: number;        // Number of downvotes (synced with Google Sheets)
+  userVote?: 'up' | 'down' | ''; // Current user's vote (synced with Google Sheets)
 }
 
 export interface FeedPreferences {
