@@ -1122,9 +1122,13 @@ async function handler(event, responseStream, context) {
         
         // Parse request body
         const body = JSON.parse(event.body || '{}');
-        let { messages, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location, language, voiceMode } = body;
+        let { messages, tools, providers: userProviders, isRetry, retryContext, isContinuation, mcp_servers, location, language, voiceMode, useLocalWhisper, localWhisperUrl } = body;
         model = body.model; // Assign to function-scoped variable
         const tavilyApiKey = body.tavilyApiKey || '';
+        
+        // Extract local Whisper settings (for local development with local Whisper service)
+        const whisperUseLocal = useLocalWhisper === true;
+        const whisperLocalUrl = localWhisperUrl || 'http://localhost:8000';
         
         // Log voice mode if enabled
         if (voiceMode) {
@@ -1953,7 +1957,10 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
             messages: messages || [],
             // Pass provider configuration for model filtering in LLM calls
             providerConfig: selectedProvider,
-            providers: providerPool // Pass full provider pool for tools that need access to multiple providers
+            providers: providerPool, // Pass full provider pool for tools that need access to multiple providers
+            // Local Whisper settings for privacy-first transcription
+            useLocalWhisper: whisperUseLocal,
+            localWhisperUrl: whisperLocalUrl
         };
         
         const hasToolsConfigured = Array.isArray(tools) && tools.length > 0;

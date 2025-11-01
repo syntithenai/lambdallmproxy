@@ -307,6 +307,8 @@ export interface ProxyRequest {
   providers?: Record<string, { apiKey: string; [key: string]: any }>; // All enabled providers for fallback
   voiceMode?: boolean; // Enable dual response format (short for TTS, long for display)
   imageQuality?: 'low' | 'medium' | 'high'; // Default image generation quality preference
+  useLocalWhisper?: boolean; // Try local Whisper service first (for local development)
+  localWhisperUrl?: string; // URL of local Whisper service (e.g., http://localhost:8000)
 }
 
 export interface PlanningRequest {

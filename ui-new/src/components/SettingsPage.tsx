@@ -7,6 +7,7 @@ import { useFeatures } from '../contexts/FeaturesContext';
 import { ProviderList } from './ProviderList';
 import { ServerProviders } from './ServerProviders';
 import { TTSSettings } from './TTSSettings';
+import { VoiceSettings } from './VoiceSettings';
 import { RAGSettings } from './RAGSettings';
 import CloudSyncSettings from './CloudSyncSettings';
 import FeedSettings from './FeedSettings';
@@ -43,7 +44,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
   const { features } = useFeatures();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag' | 'cloud' | 'feed'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'voice' | 'rag' | 'cloud' | 'feed'>('general');
   
   // Track if a provider is being edited
   const [isEditingProvider, setIsEditingProvider] = useState(false);
@@ -172,6 +173,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             }`}
           >
             🔊 {t('settings.tabs.tts')}
+          </button>
+          <button
+            onClick={() => setActiveTab('voice')}
+            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === 'voice'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            🎤 Voice
           </button>
           <button
             onClick={() => setActiveTab('rag')}
@@ -976,6 +987,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {/* TTS Tab */}
         {activeTab === 'tts' && (
           <TTSSettings />
+        )}
+
+        {/* Voice Tab */}
+        {activeTab === 'voice' && (
+          <VoiceSettings />
         )}
 
         {/* RAG Tab */}

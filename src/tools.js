@@ -2676,6 +2676,10 @@ Brief answer with URLs:`;
         // Use provider-specific model name
         const model = provider === 'groq' ? 'whisper-large-v3-turbo' : 'whisper-1';
 
+        // Check for local Whisper settings (passed from frontend)
+        const useLocalWhisper = args.useLocalWhisper === true || context.useLocalWhisper === true;
+        const localWhisperUrl = args.localWhisperUrl || context.localWhisperUrl || 'http://localhost:8000';
+
         const result = await transcribeUrl({
           url,
           apiKey,
@@ -2684,7 +2688,9 @@ Brief answer with URLs:`;
           prompt: args.prompt,
           model,
           onProgress,
-          toolCallId
+          toolCallId,
+          useLocalWhisper,
+          localWhisperUrl
         });
 
         // Emit transcript extraction event with metadata

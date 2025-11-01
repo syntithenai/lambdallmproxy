@@ -368,6 +368,95 @@ async function downloadMedia(url, onProgress) {
 }
 
 /**
+ * Try to transcribe using local Whisper service (e.g., http://localhost:8000)
+ * Returns null if local service is unavailable or disabled
+ */
+async function transcribeWithLocalWhisper(audioBuffer, filename, localWhisperUrl, options = {}) {
+    // Check if local Whisper is enabled (from frontend localStorage settings)
+    // This will be passed via params from the frontend
+    if (!localWhisperUrl) {
+        console.log('⚠️ Local Whisper URL not configured, skipping local transcription');
+        return null;
+    }
+
+    console.log(`🏠 Attempting local Whisper transcription at ${localWhisperUrl}`);
+    
+    try {
+        const FormData = require('form-data');
+        const https = require('https');
+        const http = require('http');
+        const { URL } = require('url');
+
+        const formData = new FormData();
+        formData.append('file', audioBuffer, {
+            filename: filename,
+            contentType: options.contentType || 'audio/wav',
+            knownLength: audioBuffer.length
+        });
+        
+        if (options.language) {
+            formData.append('language', options.language);
+        }
+
+        const parsedUrl = new URL(localWhisperUrl + '/v1/audio/transcriptions');
+        const isHttps = parsedUrl.protocol === 'https:';
+        const httpModule = isHttps ? https : http;
+
+        const requestOptions = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port || (isHttps ? 443 : 80),
+            path: parsedUrl.pathname,
+            method: 'POST',
+            headers: formData.getHeaders(),
+            timeout: 30000 // 30 second timeout for local service
+        };
+
+        return await new Promise((resolve, reject) => {
+            const req = httpModule.request(requestOptions, (res) => {
+                let data = '';
+                
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    if (res.statusCode === 200) {
+                        try {
+                            const result = JSON.parse(data);
+                            console.log(`✅ Local Whisper transcription successful`);
+                            resolve(result);
+                        } catch (e) {
+                            console.log(`⚠️ Local Whisper returned invalid JSON: ${data}`);
+                            resolve(null);
+                        }
+                    } else {
+                        console.log(`⚠️ Local Whisper returned status ${res.statusCode}: ${data}`);
+                        resolve(null);
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                console.log(`⚠️ Local Whisper request failed: ${error.message}`);
+                resolve(null); // Return null to trigger cloud fallback
+            });
+
+            req.on('timeout', () => {
+                console.log('⚠️ Local Whisper request timed out');
+                req.destroy();
+                resolve(null);
+            });
+
+            formData.pipe(req);
+        });
+
+    } catch (error) {
+        console.log(`⚠️ Local Whisper error: ${error.message}`);
+        return null; // Return null to trigger cloud fallback
+    }
+}
+
+/**
  * Transcribe audio using OpenAI or Groq Whisper API
  * Detects provider from API key prefix:
  * - gsk_* = Groq
@@ -467,7 +556,9 @@ async function transcribeUrl(params) {
         language, 
         prompt, 
         onProgress,
-        toolCallId 
+        toolCallId,
+        localWhisperUrl, // URL for local Whisper service (e.g., http://localhost:8000)
+        useLocalWhisper = false // Whether to try local Whisper first
     } = params;
 
     // Validate inputs
@@ -720,18 +811,42 @@ async function transcribeUrl(params) {
                       : audioData.contentType?.includes('m4a') ? 'm4a'
                       : 'mp3'; // default to mp3
 
-            const transcription = await transcribeWithWhisper(
-                chunk.buffer,
-                `chunk_${chunk.chunkIndex}.${ext}`,
-                apiKey,
-                {
-                    provider,
-                    model,
-                    language,
-                    prompt: chunk.chunkIndex === 0 ? prompt : transcriptions[chunk.chunkIndex - 1]?.text.slice(-200),
-                    contentType: audioData.contentType || 'audio/mpeg'
+            let transcription = null;
+
+            // Try local Whisper first if enabled
+            if (useLocalWhisper && localWhisperUrl) {
+                transcription = await transcribeWithLocalWhisper(
+                    chunk.buffer,
+                    `chunk_${chunk.chunkIndex}.${ext}`,
+                    localWhisperUrl,
+                    {
+                        language,
+                        contentType: audioData.contentType || 'audio/mpeg'
+                    }
+                );
+
+                if (transcription) {
+                    console.log(`✅ Chunk ${i + 1} transcribed via local Whisper`);
+                } else {
+                    console.log(`⚠️ Local Whisper failed for chunk ${i + 1}, falling back to cloud provider`);
                 }
-            );
+            }
+
+            // Fallback to cloud Whisper if local failed or not enabled
+            if (!transcription) {
+                transcription = await transcribeWithWhisper(
+                    chunk.buffer,
+                    `chunk_${chunk.chunkIndex}.${ext}`,
+                    apiKey,
+                    {
+                        provider,
+                        model,
+                        language,
+                        prompt: chunk.chunkIndex === 0 ? prompt : transcriptions[chunk.chunkIndex - 1]?.text.slice(-200),
+                        contentType: audioData.contentType || 'audio/mpeg'
+                    }
+                );
+            }
 
             transcriptions.push({
                 ...transcription,
