@@ -18,7 +18,6 @@ import {
   Tag,
   Calendar,
   X,
-  Search,
   Hand,
   MessageSquare,
   ThumbsDown
@@ -321,23 +320,22 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
           </div>
           
           {item.topics.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1">
-                <Tag className="h-4 w-4" />
-                <span className="text-gray-700">
-                  {item.topics.slice(0, 3).join(', ')}
+            <div className="flex items-center gap-1 flex-wrap">
+              <Tag className="h-4 w-4" />
+              {item.topics.slice(0, 3).map((topic, idx) => (
+                <span key={idx}>
+                  <a
+                    href={`https://www.google.com/search?q=${encodeURIComponent(topic)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-700 hover:text-blue-600 hover:underline"
+                    title={`Search Google for "${topic}"`}
+                  >
+                    {topic}
+                  </a>
+                  {idx < Math.min(item.topics.length, 3) - 1 && <span className="text-gray-500">, </span>}
                 </span>
-              </div>
-              <a
-                href={`https://www.google.com/search?q=${encodeURIComponent(item.topics.join(' '))}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
-                title="Search Google for these topics"
-              >
-                <Search className="h-3 w-3" />
-                Search
-              </a>
+              ))}
             </div>
           )}
         </div>
@@ -493,23 +491,30 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                 </p>
               </div>
 
-              {/* Mnemonic with Google Search Link */}
+              {/* Mnemonic with Searchable Tags */}
               {item.mnemonic && (
                 <div className="bg-purple-50 border-l-4 border-purple-400 p-4 mb-4 rounded">
                   <p className="text-sm font-medium text-purple-900 mb-2">
                     💡 {item.mnemonic}
                   </p>
                   {item.topics.length > 0 && (
-                    <a
-                      href={`https://www.google.com/search?q=${encodeURIComponent(item.topics.join(' '))}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
-                      title="Search Google for these topics"
-                    >
-                      <Search className="h-3 w-3" />
-                      Search more about this
-                    </a>
+                    <div className="flex items-center gap-1 flex-wrap text-xs">
+                      <span className="text-gray-600">Topics:</span>
+                      {item.topics.map((topic, idx) => (
+                        <span key={idx}>
+                          <a
+                            href={`https://www.google.com/search?q=${encodeURIComponent(topic)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-700 hover:underline"
+                            title={`Search Google for "${topic}"`}
+                          >
+                            {topic}
+                          </a>
+                          {idx < item.topics.length - 1 && <span className="text-gray-500">, </span>}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
@@ -541,21 +546,22 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                 </div>
                 
                 {item.topics.length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      <Tag className="h-4 w-4" />
-                      <span>{item.topics.slice(0, 3).join(', ')}</span>
-                    </div>
-                    <a
-                      href={`https://www.google.com/search?q=${encodeURIComponent(item.topics.join(' '))}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
-                      title="Search Google for these topics"
-                    >
-                      <Search className="h-3 w-3" />
-                      Search
-                    </a>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <Tag className="h-4 w-4" />
+                    {item.topics.slice(0, 3).map((topic, idx) => (
+                      <span key={idx}>
+                        <a
+                          href={`https://www.google.com/search?q=${encodeURIComponent(topic)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-700 hover:text-blue-600 hover:underline"
+                          title={`Search Google for "${topic}"`}
+                        >
+                          {topic}
+                        </a>
+                        {idx < Math.min(item.topics.length, 3) - 1 && <span className="text-gray-500">, </span>}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
