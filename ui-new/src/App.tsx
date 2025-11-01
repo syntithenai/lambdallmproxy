@@ -32,7 +32,7 @@ import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { OfflineStatus } from './components/OfflineStatus';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { unifiedSync } from './services/unifiedSync';
-import { plansAdapter, playlistsAdapter } from './services/adapters';
+import { plansAdapter, playlistsAdapter, googleSheetsAdapter } from './services/adapters';
 import { SyncStatusProvider } from './contexts/SyncStatusContext';
 import { AgentProvider, useAgents } from './contexts/AgentContext';
 import { GlobalAgentIndicator } from './components/GlobalAgentIndicator';
@@ -96,6 +96,7 @@ function AppContent() {
     // Register sync adapters
     unifiedSync.registerAdapter(plansAdapter);
     unifiedSync.registerAdapter(playlistsAdapter);
+    unifiedSync.registerAdapter(googleSheetsAdapter);
     
     // Check if auto-sync is enabled (default to enabled, opt-out)
     const autoSyncEnabled = localStorage.getItem('auto_sync_enabled') !== 'false';
@@ -103,7 +104,7 @@ function AppContent() {
     if (autoSyncEnabled) {
       // Start automatic periodic sync (every 5 minutes)
       unifiedSync.start(5 * 60 * 1000);
-      console.log('✅ Unified sync started');
+      console.log('✅ Unified sync started (plans, playlists, google-sheets)');
     } else {
       console.log('⚠️ Auto-sync disabled by user');
     }

@@ -5,3 +5,4 @@
 
 export { plansAdapter } from './plansAdapter';
 export { playlistsAdapter } from './playlistsAdapter';
+export { googleSheetsAdapter } from './googleSheetsAdapter';
