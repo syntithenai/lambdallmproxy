@@ -17,6 +17,7 @@ const { getCacheKey, getFromCache, saveToCache } = require('../utils/cache');
 const crypto = require('crypto');
 const FormData = require('form-data');
 const https = require('https');
+const http = require('http');
 
 /**
  * Parse multipart/form-data from Lambda event
@@ -108,9 +109,10 @@ function parseMultipartFormData(event) {
  * @param {string} filename - Original filename
  * @param {string} apiKey - API key (Speaches, Groq, or OpenAI)
  * @param {string} provider - Provider type ('speaches', 'groq', or 'openai')
+ * @param {string} customEndpoint - Custom endpoint URL (for local Whisper)
  * @returns {Promise<string>} Transcribed text
  */
-async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai') {
+async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai', customEndpoint = null) {
     try {
         const FormData = require('form-data');
         const formData = new FormData();
@@ -127,12 +129,22 @@ async function callWhisperAPI(audioBuffer, filename, apiKey, provider = 'openai'
         let model, hostname, path, useHttps;
         
         if (isSpeaches) {
-            // Speaches configuration
+            // Speaches configuration (local Whisper)
             model = 'whisper-1';
-            const { loadEnvironmentProviders } = require('../credential-pool');
-            const envProviders = loadEnvironmentProviders();
-            const speachesProvider = envProviders.find(p => p.type === 'speaches');
-            const endpoint = speachesProvider?.apiEndpoint || 'http://localhost:8000';
+            
+            // Use custom endpoint if provided, otherwise load from environment
+            let endpoint;
+            if (customEndpoint) {
+                endpoint = customEndpoint;
+                console.log(`🏠 Using custom local Whisper endpoint: ${endpoint}`);
+            } else {
+                const { loadEnvironmentProviders } = require('../credential-pool');
+                const envProviders = loadEnvironmentProviders();
+                const speachesProvider = envProviders.find(p => p.type === 'speaches');
+                endpoint = speachesProvider?.apiEndpoint || 'http://localhost:8000';
+                console.log(`🏠 Using Speaches endpoint from environment: ${endpoint}`);
+            }
+            
             const url = new URL(endpoint);
             hostname = url.hostname;
             const port = url.port || (url.protocol === 'https:' ? 443 : 80);
@@ -334,6 +346,16 @@ async function handler(event, context) {
         const audioHash = crypto.createHash('md5').update(audioPart.data).digest('hex');
         console.log(`🔑 Audio hash: ${audioHash}`);
 
+        // Check for local Whisper preference from frontend (NEW)
+        const useLocalWhisperPart = parts.find(p => p.name === 'useLocalWhisper');
+        const localWhisperUrlPart = parts.find(p => p.name === 'localWhisperUrl');
+        const useLocalWhisper = useLocalWhisperPart?.data.toString('utf-8') === 'true';
+        const localWhisperUrl = localWhisperUrlPart?.data.toString('utf-8') || 'http://localhost:8000';
+        
+        if (useLocalWhisper) {
+            console.log(`🏠 Frontend requested local Whisper: ${localWhisperUrl}`);
+        }
+
         // Check for user-provided API key in form data first
         const userApiKeyPart = parts.find(p => p.name === 'apiKey');
         const userProviderPart = parts.find(p => p.name === 'provider');
@@ -346,6 +368,20 @@ async function handler(event, context) {
             whisperApiKey = userApiKeyPart.data.toString('utf-8');
             whisperProvider = userProviderPart.data.toString('utf-8');
             console.log(`🎤 Using user-provided ${whisperProvider} API key for transcription`);
+        } else if (useLocalWhisper) {
+            // Frontend requested local Whisper (NEW - highest priority after user key)
+            whisperApiKey = 'dummy-key'; // Local Whisper doesn't need a real key
+            whisperProvider = 'speaches';
+            console.log(`🏠 Using local Whisper from frontend settings: ${localWhisperUrl}`);
+            
+            // Override Speaches endpoint from environment
+            const { loadEnvironmentProviders } = require('../credential-pool');
+            const envProviders = loadEnvironmentProviders();
+            const speachesProvider = envProviders.find(p => p.type === 'speaches');
+            if (speachesProvider) {
+                // Temporarily override endpoint for this request
+                speachesProvider.apiEndpoint = localWhisperUrl;
+            }
         } else {
             // Fallback to environment providers
             // Priority: Speaches (LOCAL, FREE) > Groq (FREE) > OpenAI (PAID)
@@ -414,7 +450,9 @@ async function handler(event, context) {
         if (!transcribedText) {
             try {
                 const startTime = Date.now();
-                transcribedText = await callWhisperAPI(audioPart.data, audioPart.filename, whisperApiKey, whisperProvider);
+                // Pass custom endpoint if using local Whisper
+                const customEndpoint = (useLocalWhisper && whisperProvider === 'speaches') ? localWhisperUrl : null;
+                transcribedText = await callWhisperAPI(audioPart.data, audioPart.filename, whisperApiKey, whisperProvider, customEndpoint);
                 const durationMs = Date.now() - startTime;
                 console.log(`✅ Transcription successful: ${transcribedText.length} characters (via ${whisperProvider})`);
                 

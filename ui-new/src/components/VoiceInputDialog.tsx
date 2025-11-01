@@ -225,12 +225,25 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
       console.log('🎤 Transcription provider:', whisperProvider, 'hasKey:', !!whisperApiKey);
     }
 
+    // Read local Whisper settings from localStorage
+    const useLocalWhisper = localStorage.getItem('voice_useLocalWhisper') === 'true';
+    const localWhisperUrl = localStorage.getItem('voice_localWhisperUrl') || 'http://localhost:8000';
+    
+    console.log(`🎤 VoiceInputDialog: useLocalWhisper=${useLocalWhisper}, url=${localWhisperUrl}`);
+    
     // Build form data once
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
     if (whisperApiKey && whisperProvider) {
       formData.append('apiKey', whisperApiKey);
       formData.append('provider', whisperProvider);
+    }
+    
+    // Add local Whisper settings if enabled
+    if (useLocalWhisper) {
+      formData.append('useLocalWhisper', 'true');
+      formData.append('localWhisperUrl', localWhisperUrl);
+      console.log(`🏠 VoiceInputDialog: Using local Whisper at ${localWhisperUrl}`);
     }
 
     // Helper: perform fetch with retries on network failures
