@@ -476,6 +476,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   useEffect(() => {
     if (routerLocation.state?.initialQuery) {
       const query = routerLocation.state.initialQuery;
+      
+      // Clear chat if requested (from feed items)
+      if (routerLocation.state?.clearChat) {
+        console.log('🧹 Clearing chat thread as requested from feed item');
+        setMessages([]);
+      }
+      
       setInput(query);
       
       // Auto-submit if requested and not currently loading
@@ -2567,11 +2574,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         stream: true,  // Always use streaming
         optimization: settings.optimization || 'cheap',  // Model selection strategy
         language: settings.language || 'en',  // User's preferred language for responses
-        voiceMode: continuousVoiceEnabled  // Enable dual response format for voice mode
+        voiceMode: continuousVoiceEnabled,  // Enable dual response format for voice mode
+        imageQuality: settings.imageQuality || 'low'  // Default image generation quality
       };
       
       console.log(`🎯 Model selection optimization: ${requestPayload.optimization}`);
       console.log(`🌐 Response language: ${requestPayload.language}`);
+      console.log(`🎨 Image quality: ${requestPayload.imageQuality}`);
       if (continuousVoiceEnabled) {
         console.log(`🎙️ Voice mode enabled - dual response format requested`);
       }
@@ -4319,11 +4328,13 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       stream: true,
       isContinuation: true,  // Critical: Flag to bypass message filtering
       optimization: settings.optimization || 'cheap',  // Model selection strategy
-      language: settings.language || 'en'  // User's preferred language for responses
+      language: settings.language || 'en',  // User's preferred language for responses
+      imageQuality: settings.imageQuality || 'low'  // Default image generation quality
     };
     
     console.log(`🎯 Continuation request with optimization: ${requestPayload.optimization}`);
     console.log(`🌐 Response language: ${requestPayload.language}`);
+    console.log(`🎨 Image quality: ${requestPayload.imageQuality}`);
     
     // Add location data if available (same as initial request)
     if (location) {

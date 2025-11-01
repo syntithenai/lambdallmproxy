@@ -678,6 +678,19 @@ function AppContent() {
                   />
                 } 
               />
+              {/* /chat route for compatibility (same as root) */}
+              <Route 
+                path="/chat" 
+                element={
+                  <ChatTab 
+                    enabledTools={enabledTools}
+                    setEnabledTools={setEnabledTools}
+                    showMCPDialog={showMCPDialog}
+                    setShowMCPDialog={setShowMCPDialog}
+                    onLoadingChange={setIsChatLoading}
+                  />
+                } 
+              />
               <Route path="/planning" element={<PlanningPage />} />
               <Route path="/swag" element={<SwagPage />} />
               <Route path="/quiz" element={<QuizPage />} />

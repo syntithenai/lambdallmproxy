@@ -306,6 +306,7 @@ export interface ProxyRequest {
   stream?: boolean;
   providers?: Record<string, { apiKey: string; [key: string]: any }>; // All enabled providers for fallback
   voiceMode?: boolean; // Enable dual response format (short for TTS, long for display)
+  imageQuality?: 'low' | 'medium' | 'high'; // Default image generation quality preference
 }
 
 export interface PlanningRequest {

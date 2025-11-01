@@ -13,6 +13,7 @@ export interface AvailableFeatures {
   textToSpeech: boolean;
   embeddings: boolean;
   webSearch: boolean;
+  proxy?: boolean;              // Server has proxy configured
 }
 
 interface FeaturesContextType {

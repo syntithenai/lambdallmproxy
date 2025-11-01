@@ -54,11 +54,20 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
       const { quizDB } = await import('../db/quizDb');
       const { ragDB } = await import('../utils/ragDB');
       
-      // Get counts from IndexedDB by fetching all items (no limit)
-      // For feedDB, we need to get all items, so use a high limit
-      const feedItems = await feedDB.getItems(10000, 0); // Get up to 10k items
+      // Get counts from IndexedDB using proper count methods
+      const feedItemsCount = await feedDB.getCount(); // Use new getCount method
       const quizStats = await quizDB.getQuizStatistics(); // Get all statistics
       const embeddingChunks = await ragDB.getAllChunks();
+      
+      console.log('📊 Loaded sync metadata counts:', {
+        plans: localPlans.length,
+        playlists: localPlaylists.length,
+        snippets: localSnippets.length,
+        embeddings: embeddingChunks.length,
+        chatHistory: localChatHistory.length,
+        quizProgress: quizStats.length,
+        feedItems: feedItemsCount
+      });
       
       setSyncMetadata({
         plansCount: localPlans.length,
@@ -67,7 +76,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
         embeddingsCount: embeddingChunks.length,
         chatHistoryCount: localChatHistory.length,
         quizProgressCount: quizStats.length,
-        feedItemsCount: feedItems.length
+        feedItemsCount: feedItemsCount
       });
     } catch (error) {
       console.error('Failed to load sync metadata:', error);

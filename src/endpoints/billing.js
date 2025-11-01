@@ -316,6 +316,10 @@ async function handleGetBilling(event, responseStream) {
         // Web search is always available (uses DuckDuckGo)
         features.webSearch = true;
         
+        // Check if server has proxy configured (Webshare)
+        const hasProxy = !!(process.env.WEBSHARE_PROXY_USERNAME && process.env.WEBSHARE_PROXY_PASSWORD);
+        features.proxy = hasProxy;
+        
         console.log('✨ Available features:', features);
         
         // --- Available Embedding Models ---

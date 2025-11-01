@@ -1,6 +1,6 @@
 {
-  "version": "1.0.1",
-  "lastUpdated": "2025-10-12",
+  "version": "1.0.2",
+  "lastUpdated": "2025-11-01",
   "chat": {
     "description": "Chat/completion LLM providers",
     "providers": {

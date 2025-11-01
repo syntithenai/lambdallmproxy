@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import MDEditor, { commands } from '@uiw/react-md-editor';
 import rehypeSanitize from 'rehype-sanitize';
 import { ImagePicker } from './ImagePicker';
+import { imageStorage } from '../utils/imageStorage';
 
 interface MarkdownEditorProps {
   value: string;
@@ -23,6 +24,31 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [isDark, setIsDark] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [editorApi, setEditorApi] = useState<any>(null);
+  const [displayValue, setDisplayValue] = useState(value);
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+
+  // Load images from IndexedDB for display when value changes
+  useEffect(() => {
+    const loadImages = async () => {
+      // Check if value has any image references
+      if (!value.includes('swag-image://')) {
+        setDisplayValue(value);
+        return;
+      }
+
+      setIsLoadingImages(true);
+      try {
+        const loadedContent = await imageStorage.processContentForDisplay(value);
+        setDisplayValue(loadedContent);
+      } catch (error) {
+        console.error('Failed to load images:', error);
+        setDisplayValue(value); // Fallback to original
+      } finally {
+        setIsLoadingImages(false);
+      }
+    };
+    loadImages();
+  }, [value]);
 
   // Detect dark mode from document
   useEffect(() => {
@@ -108,8 +134,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
   return (
     <div data-color-mode={isDark ? 'dark' : 'light'}>
+      {isLoadingImages && (
+        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+          Loading images...
+        </div>
+      )}
       <MDEditor
-        value={value}
+        value={displayValue}
         onChange={(val) => onChange(val || '')}
         height={height}
         preview={preview}

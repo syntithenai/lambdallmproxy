@@ -77,7 +77,8 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     syncToGoogleDrive: true, // Default to enabled for better user experience
     language: 'en', // Default to English
     embeddingSource: 'local', // Default to local embeddings (browser-based, no API needed)
-    embeddingModel: 'Xenova/all-MiniLM-L6-v2' // Default to recommended local model
+    embeddingModel: 'Xenova/all-MiniLM-L6-v2', // Default to recommended local model
+    imageQuality: 'low' // Default to lowest quality/cost for image generation
   });
 
   const [isLoadingFromDrive, setIsLoadingFromDrive] = useState(false);

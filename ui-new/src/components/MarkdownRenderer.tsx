@@ -3,7 +3,7 @@
  * Renders markdown content with syntax highlighting and proper styling
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -12,6 +12,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { MermaidChart } from './MermaidChart';
 import { usePlaylist } from '../contexts/PlaylistContext';
+import { imageStorage } from '../utils/imageStorage';
 
 // Custom sanitization schema that allows safe HTML elements
 const sanitizeSchema = {
@@ -57,6 +58,7 @@ interface MarkdownRendererProps {
     name: string;
     tags: string[];
     snippetId?: string;
+    imageIndex?: number;
     width?: number;
     height?: number;
     format?: string;
@@ -193,23 +195,59 @@ function ImageGallery({ images }: ImageGalleryProps) {
 
 export function MarkdownRenderer({ content, className = '', chartDescription, onLlmApiCall, snippetId, snippetTags = [], onImageEdit }: MarkdownRendererProps) {
   const imageCounterRef = useRef(0);
+  const [displayContent, setDisplayContent] = useState(content);
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+  
+  // Load images from IndexedDB when content changes
+  useEffect(() => {
+    const loadImages = async () => {
+      // Check if content has any image references
+      if (!content.includes('swag-image://')) {
+        setDisplayContent(content);
+        return;
+      }
+      
+      setIsLoadingImages(true);
+      try {
+        const loadedContent = await imageStorage.processContentForDisplay(content);
+        setDisplayContent(loadedContent);
+      } catch (error) {
+        console.error('Failed to load images:', error);
+        setDisplayContent(content); // Fallback to original
+      } finally {
+        setIsLoadingImages(false);
+      }
+    };
+    
+    loadImages();
+  }, [content]);
+  
   // Special handling for pure HTML img tags with data URLs
   // This is for chart images saved from the Grab button
-  const isHtmlImage = /^<img\s+[^>]*src="data:image\/[^"]+"/i.test(content.trim());
+  const isHtmlImage = /^<img\s+[^>]*src="data:image\/[^"]+"/i.test(displayContent.trim());
   
   if (isHtmlImage) {
     // Render HTML directly using dangerouslySetInnerHTML for data URL images
     return (
       <div 
         className={`markdown-content ${className}`}
-        dangerouslySetInnerHTML={{ __html: content }}
+        dangerouslySetInnerHTML={{ __html: displayContent }}
       />
+    );
+  }
+  
+  // Show loading state while images are being loaded
+  if (isLoadingImages) {
+    return (
+      <div className={`markdown-content ${className} text-gray-500 dark:text-gray-400 italic`}>
+        Loading images...
+      </div>
     );
   }
   
   // Pre-process content to convert HTML code blocks containing tables into actual HTML
   // This handles when LLM wraps HTML tables in ```html code blocks
-  let processedContent = content.replace(/```html\n([\s\S]*?)\n```/g, (match, htmlCode) => {
+  let processedContent = displayContent.replace(/```html\n([\s\S]*?)\n```/g, (match, htmlCode) => {
     // Only convert if it contains table elements (to avoid rendering arbitrary HTML)
     if (htmlCode.includes('<table')) {
       // Add styling classes to table elements
@@ -245,7 +283,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
     }
     
     // Remove gallery section from main content
-    mainContent = content.replace(galleryRegex, '').trim();
+    mainContent = displayContent.replace(galleryRegex, '').trim();
   }
   
   return (
@@ -470,6 +508,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
             const handleEditClick = (e: React.MouseEvent) => {
               e.preventDefault();
               e.stopPropagation();
+              console.log('🖼️ Edit button clicked!', { imageId, imgSrc: imgSrc.substring(0, 50), currentCounter });
               
               if (onImageEdit) {
                 onImageEdit({
@@ -478,6 +517,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
                   name: alt || `Image ${currentCounter + 1}`,
                   tags: snippetTags,
                   snippetId: snippetId,
+                  imageIndex: currentCounter,
                   format: getFormat(imgSrc),
                 });
               }
@@ -485,29 +525,74 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
             
             // If edit button is enabled (onImageEdit provided), wrap in container with overlay
             if (onImageEdit) {
+              console.log('✏️ Rendering edit button for image:', imageId);
               return (
-                <span className="relative inline-block group my-4">
+                <span 
+                  className="relative inline-block group my-4" 
+                  style={{ 
+                    display: 'inline-block', 
+                    position: 'relative',
+                    cursor: 'pointer'
+                  }}
+                  onClick={handleEditClick}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      // Trigger edit with a synthetic click event
+                      if (onImageEdit) {
+                        onImageEdit({
+                          id: imageId,
+                          url: imgSrc,
+                          name: alt || `Image ${currentCounter + 1}`,
+                          tags: snippetTags,
+                          snippetId: snippetId,
+                          imageIndex: currentCounter,
+                          format: getFormat(imgSrc),
+                        });
+                      }
+                    }
+                  }}
+                >
                   <img
                     src={imgSrc}
                     alt={alt || ''}
-                    className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-700"
+                    className="max-w-full h-auto rounded-lg border-2 border-orange-500 hover:border-orange-600 block transition-all hover:opacity-90"
                     loading="lazy"
+                    style={{ borderRadius: '8px' }}
                     onError={(e) => {
                       console.error('Image failed to load:', { src: imgSrc, alt });
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
                   />
-                  {/* Edit button overlay */}
-                  <button
-                    onClick={handleEditClick}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-orange-600 hover:bg-orange-700 text-white rounded-full p-2 shadow-lg"
+                  {/* Edit button overlay - visual indicator that image is editable */}
+                  <div
+                    style={{ 
+                      position: 'absolute',
+                      top: '8px',
+                      right: '8px',
+                      zIndex: 9999,
+                      backgroundColor: '#ea580c',
+                      color: 'white',
+                      borderRadius: '50%',
+                      padding: '8px',
+                      border: 'none',
+                      pointerEvents: 'none',
+                      boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                      width: '36px',
+                      height: '36px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
                     title="Edit image"
                     aria-label="Edit image"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
-                  </button>
+                  </div>
                 </span>
               );
             }

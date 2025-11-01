@@ -11,6 +11,7 @@ import { ragDB } from '../utils/ragDB';
 import { fetchSnippetById } from '../services/snippetsSync';
 import { getCachedApiBase } from '../utils/api';
 import { googleDriveSync } from '../services/googleDriveSync';
+import { imageStorage } from '../utils/imageStorage';
 
 export interface ContentSnippet {
   id: string;
@@ -171,6 +172,42 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     saveSnippets();
   }, [allSnippets, isLoaded, showError, showWarning]);
+
+  // Periodic garbage collection of orphaned images
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    // Run garbage collection every 5 minutes
+    const gcInterval = setInterval(async () => {
+      try {
+        const allContents = allSnippets.map(s => s.content);
+        const deletedCount = await imageStorage.garbageCollect(allContents);
+        if (deletedCount > 0) {
+          console.log(`🗑️ Garbage collected ${deletedCount} orphaned images from IndexedDB`);
+        }
+      } catch (error) {
+        console.error('Failed to garbage collect images:', error);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    // Also run on mount after a short delay
+    const initialGC = setTimeout(async () => {
+      try {
+        const allContents = allSnippets.map(s => s.content);
+        const deletedCount = await imageStorage.garbageCollect(allContents);
+        if (deletedCount > 0) {
+          console.log(`🗑️ Initial garbage collection: removed ${deletedCount} orphaned images`);
+        }
+      } catch (error) {
+        console.error('Failed to run initial garbage collection:', error);
+      }
+    }, 30000); // 30 seconds after load
+
+    return () => {
+      clearInterval(gcInterval);
+      clearTimeout(initialGC);
+    };
+  }, [allSnippets, isLoaded]);
 
   // Debounced sync to Google Drive when snippets change
   useEffect(() => {
@@ -467,7 +504,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (!response.ok) {
-        console.error('Failed to auto-embed snippet');
+        console.warn('⚠️ Auto-embed failed (backend may not support this feature). Use browser-based embeddings instead.');
         return;
       }
 
@@ -503,13 +540,25 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ));
 
     } catch (error) {
-      console.error('Auto-embed failed:', error);
+      console.warn('⚠️ Auto-embed failed:', error instanceof Error ? error.message : error);
+      console.log('💡 Tip: You can disable auto-embed in RAG settings or use browser-based embeddings');
     }
   };
 
   const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string): Promise<ContentSnippet | undefined> => {
+    // Process content: Extract base64 images and replace with references
+    let processedContent = content;
+    try {
+      processedContent = await imageStorage.processContentForSave(content);
+      if (processedContent !== content) {
+        console.log('📦 Extracted images to IndexedDB');
+      }
+    } catch (error) {
+      console.error('Failed to process images, using original content:', error);
+    }
+    
     // Check if content already exists (prevent duplicates)
-    const existingSnippet = allSnippets.find(s => s.content.trim() === content.trim());
+    const existingSnippet = allSnippets.find(s => s.content.trim() === processedContent.trim());
     
     if (existingSnippet) {
       // Update the timestamp to move it to the top
@@ -521,7 +570,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const currentProjectId = getCurrentProjectId();
     const newSnippet: ContentSnippet = {
       id: `snippet-${now}-${Math.random().toString(36).substr(2, 9)}`,
-      content,
+      content: processedContent, // Use processed content with image refs
       title,
       sourceType,
       timestamp: now,
@@ -540,7 +589,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
 
-    // Auto-embed if enabled
+    // Auto-embed if enabled (use original content for embedding, not refs)
     await autoEmbedSnippet(newSnippet.id, content, title);
     
     return newSnippet;
@@ -549,7 +598,21 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateSnippet = async (id: string, updates: Partial<ContentSnippet>) => {
     const oldSnippet = snippets.find(s => s.id === id);
     
-    const updatedSnippet = { ...oldSnippet, ...updates, updateDate: Date.now() } as ContentSnippet;
+    // Process content if it's being updated
+    let processedUpdates = { ...updates };
+    if (updates.content) {
+      try {
+        const processedContent = await imageStorage.processContentForSave(updates.content);
+        if (processedContent !== updates.content) {
+          console.log('📦 Extracted images to IndexedDB during update');
+          processedUpdates.content = processedContent;
+        }
+      } catch (error) {
+        console.error('Failed to process images during update:', error);
+      }
+    }
+    
+    const updatedSnippet = { ...oldSnippet, ...processedUpdates, updateDate: Date.now() } as ContentSnippet;
     setAllSnippets(prev => prev.map(snippet => 
       snippet.id === id ? updatedSnippet : snippet
     ));
@@ -565,11 +628,13 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // If content changed, re-embed if auto-embed is enabled
     // Skip embedding for image snippets (images are excluded from embeddings)
-    if (oldSnippet && updates.content && updates.content !== oldSnippet.content) {
-      const hasImages = /<img[^>]*>|!\[[^\]]*\]\([^)]+\)/.test(updates.content);
+    if (oldSnippet && processedUpdates.content && processedUpdates.content !== oldSnippet.content) {
+      // Check for images in the ORIGINAL content (before processing)
+      const hasImages = updates.content ? /<img[^>]*>|!\[[^\]]*\]\([^)]+\)/.test(updates.content) : false;
       if (!hasImages) {
         const newTitle = updates.title !== undefined ? updates.title : oldSnippet.title;
-        await autoEmbedSnippet(id, updates.content, newTitle);
+        // Use original content for embedding (with base64), not processed refs
+        await autoEmbedSnippet(id, updates.content || processedUpdates.content, newTitle);
       } else {
         console.log('⏭️  Skipping embedding for image snippet:', id);
       }

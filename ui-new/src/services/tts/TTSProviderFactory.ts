@@ -143,11 +143,14 @@ export class TTSProviderFactory {
       availableProviders.push('elevenlabs');
     }
     
-    // Sort providers by preference (local first, then specific LLM providers, then fallbacks)
+    // Sort providers by preference (LLM auto first, then specific providers, then local/fallbacks)
     const sortOrder: TTSProviderType[] = [
-      'chatterbox', 'speaches', // Local TTS providers (GPU and CPU)
+      'llm', // LLM Provider (Auto) - first choice
+      'speaches', // Local CPU TTS
       'openai-tts', 'groq-tts', 'gemini-tts', 'together-tts', // Specific LLM providers
-      'llm', 'elevenlabs', 'browser', 'speakjs' // General and fallback providers
+      'elevenlabs', // Specialized TTS service
+      'chatterbox', // Local GPU TTS (after elevenlabs)
+      'browser', 'speakjs' // Browser fallbacks
     ];
     
     return availableProviders.sort((a, b) => {
@@ -194,9 +197,12 @@ export class TTSProviderFactory {
 
   getDefaultProvider(): TTSProvider | null {
     const priorities: TTSProviderType[] = [
-      'chatterbox', 'speaches', // Local TTS first (GPU and CPU)
+      'llm', // LLM Provider (Auto) - first choice
+      'speaches', // Local CPU TTS
       'openai-tts', 'groq-tts', 'gemini-tts', 'together-tts', // Specific LLM providers
-      'llm', 'elevenlabs', 'browser', 'speakjs' // Fallbacks
+      'elevenlabs', // Specialized TTS service
+      'chatterbox', // Local GPU TTS (after elevenlabs)
+      'browser', 'speakjs' // Browser fallbacks
     ];
     
     for (const type of priorities) {
@@ -211,9 +217,12 @@ export class TTSProviderFactory {
 
   getDefaultProviderType(): TTSProviderType | null {
     const priorities: TTSProviderType[] = [
-      'chatterbox', 'speaches', // Local TTS first (GPU and CPU)
+      'llm', // LLM Provider (Auto) - first choice
+      'speaches', // Local CPU TTS
       'openai-tts', 'groq-tts', 'gemini-tts', 'together-tts', // Specific LLM providers
-      'llm', 'elevenlabs', 'browser', 'speakjs' // Fallbacks
+      'elevenlabs', // Specialized TTS service
+      'chatterbox', // Local GPU TTS (after elevenlabs)
+      'browser', 'speakjs' // Browser fallbacks
     ];
     
     for (const type of priorities) {

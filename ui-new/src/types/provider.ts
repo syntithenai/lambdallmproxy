@@ -48,6 +48,7 @@ export interface ProviderConfig {
 }
 
 export type OptimizationPreference = 'cheap' | 'balanced' | 'powerful' | 'fastest';
+export type ImageQuality = 'low' | 'medium' | 'high';
 
 export interface Settings {
   version: '2.0.0';
@@ -58,6 +59,7 @@ export interface Settings {
   language?: string;           // User's preferred UI language (ISO 639-1 code: en, es, fr, de, zh, ja, ar, nl, pt, ru)
   embeddingSource?: 'api' | 'local'; // Embedding source: 'api' = backend API, 'local' = browser-based (default: 'api')
   embeddingModel?: string;     // Selected embedding model ID (e.g., 'text-embedding-3-small' or 'Xenova/all-MiniLM-L6-v2')
+  imageQuality?: ImageQuality; // Image generation quality: 'low' (256x256), 'medium' (512x512), 'high' (1024x1024+) - default: 'low'
 }
 
 /**

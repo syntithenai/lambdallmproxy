@@ -156,7 +156,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
   };
 
   /**
-   * Handle chat action - navigate to chat with pre-filled query
+   * Handle "Chat" button click
    */
   const handleChat = async () => {
     // Track interaction
@@ -169,7 +169,8 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
     navigate('/chat', { 
       state: { 
         initialQuery: query,
-        autoSubmit: true 
+        autoSubmit: true,
+        clearChat: true // Clear existing chat before starting new conversation
       } 
     });
   };

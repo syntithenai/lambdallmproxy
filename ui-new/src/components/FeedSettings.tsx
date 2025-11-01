@@ -417,6 +417,36 @@ export default function FeedSettings() {
         </p>
       </div>
 
+      {/* Content Maturity Level */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">
+          Content Maturity Level
+        </h3>
+        
+        <p className="text-sm text-gray-600 mb-4">
+          Choose the appropriate content level for your feed. This affects language complexity, topic selection, and tone.
+        </p>
+
+        <select
+          value={localStorage.getItem('feed_maturity_level') || 'adult'}
+          onChange={(e) => {
+            localStorage.setItem('feed_maturity_level', e.target.value);
+            // Force a re-render
+            window.dispatchEvent(new Event('feed-maturity-changed'));
+          }}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="child">Child (Ages 6-12) - Simple language, educational content</option>
+          <option value="youth">Youth (Ages 13-17) - Age-appropriate topics, moderate complexity</option>
+          <option value="adult">Adult (18+) - General audience, varied complexity</option>
+          <option value="academic">Academic - Advanced topics, research-focused, technical</option>
+        </select>
+
+        <p className="text-xs text-gray-500 mt-2">
+          This setting helps tailor content to your comprehension level and interests.
+        </p>
+      </div>
+
       {/* Learned Preferences from Feed Gestures */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-3">

@@ -223,13 +223,53 @@ Return ONLY valid JSON in this exact format:
 /**
  * Process image with sharp library
  * Applies operations in sequence and returns processed image buffer
- * @param {string} imageUrl - URL of image to process
+ * @param {string|Buffer} imageUrlOrBuffer - URL or Buffer of image to process
  * @param {Array} operations - Array of operations to apply
  * @param {Function} onProgress - Progress callback
  * @param {Object} generationContext - Context for AI image generation (provider pool, API keys)
  */
-async function processImage(imageBuffer, operations, onProgress, generationContext) {
-    let sharpInstance = sharp(imageBuffer);
+async function processImage(imageUrlOrBuffer, operations, onProgress, generationContext) {
+    // Convert URL to buffer if needed
+    let imageBuffer;
+    if (typeof imageUrlOrBuffer === 'string') {
+        const imageUrl = imageUrlOrBuffer;
+        if (imageUrl.startsWith('data:')) {
+            // Data URL - extract base64
+            const base64Data = imageUrl.split(',')[1];
+            imageBuffer = Buffer.from(base64Data, 'base64');
+        } else {
+            // Remote URL - fetch it
+            const https = require('https');
+            const http = require('http');
+            const protocol = imageUrl.startsWith('https:') ? https : http;
+            
+            imageBuffer = await new Promise((resolve, reject) => {
+                protocol.get(imageUrl, (res) => {
+                    if (res.statusCode !== 200) {
+                        reject(new Error(`Failed to fetch image: ${res.statusCode}`));
+                        return;
+                    }
+                    const chunks = [];
+                    res.on('data', chunk => chunks.push(chunk));
+                    res.on('end', () => resolve(Buffer.concat(chunks)));
+                    res.on('error', reject);
+                });
+            });
+        }
+    } else {
+        imageBuffer = imageUrlOrBuffer;
+    }
+    
+    let sharpInstance;
+    try {
+        sharpInstance = sharp(imageBuffer);
+    } catch (error) {
+        if (error.message.includes('unsupported image format') || error.message.includes('Input file')) {
+            throw new Error('Unsupported image format. Please use JPG, PNG, WebP, GIF, or AVIF images.');
+        }
+        throw error;
+    }
+    
     let currentWidth, currentHeight;
     const appliedOperations = [];
     let generationCost = 0; // Track AI generation costs

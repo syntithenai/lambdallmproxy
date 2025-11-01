@@ -159,12 +159,12 @@ const imageEditTools = [
                                         // Generate params (AI-powered modifications)
                                         prompt: {
                                             type: 'string',
-                                            description: 'Text description of what to add or modify in the image. The AI will preserve the original image and add/modify as requested. Examples: "add glasses", "add a dog", "add flowers in the background", "change sky to sunset", "add a person wearing a hat", "add glasses over the eyes". If user mentions "keep original" or "preserve", extract ONLY the modification part (e.g., "keep original, add glasses" becomes "add glasses")'
+                                            description: 'Text description of what to add, remove, or modify in the image. The AI will preserve the original image and make the requested changes. Examples: ADD: "add glasses", "add a dog", "add flowers". REMOVE: "remove glasses", "remove the dog", "remove person from background", "erase the text". MODIFY: "change sky to sunset", "make hair blonde". If user mentions "keep original" or "preserve", extract ONLY the modification part (e.g., "keep original, add glasses" becomes "add glasses")'
                                         },
                                         mode: {
                                             type: 'string',
                                             enum: ['inpaint', 'outpaint', 'edit'],
-                                            description: 'Generation mode: "edit" for general AI editing (default - use this for most requests), "inpaint" to add/modify specific areas, "outpaint" to extend image borders. When in doubt, use "edit".'
+                                            description: 'Generation mode: "edit" for general AI editing including object removal (use for: remove, erase, delete - DEFAULT for most requests), "inpaint" to add objects to specific areas, "outpaint" to extend image borders. For removal/erasure, ALWAYS use "edit" mode.'
                                         }
                                     }
                                 }
@@ -241,6 +241,11 @@ function getExampleCommands() {
         { prompt: 'add glasses to the cat', operations: [{ type: 'generate', params: { prompt: 'add glasses to the cat', mode: 'inpaint' } }]},
         { prompt: 'change background to sunset', operations: [{ type: 'generate', params: { prompt: 'change background to sunset', mode: 'edit' } }]},
         { prompt: 'add a person wearing a hat', operations: [{ type: 'generate', params: { prompt: 'add a person wearing a hat', mode: 'inpaint' } }]},
+        { prompt: 'remove the glasses', operations: [{ type: 'generate', params: { prompt: 'remove the glasses', mode: 'edit' } }]},
+        { prompt: 'remove glasses', operations: [{ type: 'generate', params: { prompt: 'remove glasses', mode: 'edit' } }]},
+        { prompt: 'erase the person', operations: [{ type: 'generate', params: { prompt: 'erase the person', mode: 'edit' } }]},
+        { prompt: 'delete the text', operations: [{ type: 'generate', params: { prompt: 'delete the text', mode: 'edit' } }]},
+        { prompt: 'remove person from background', operations: [{ type: 'generate', params: { prompt: 'remove person from background', mode: 'edit' } }]},
         { prompt: 'auto enhance', operations: [{ type: 'filter', params: { filter: 'normalize' } }]},
         { prompt: 'make it brighter', operations: [{ type: 'modulate', params: { brightness: 1.2 } }]},
         { prompt: 'increase brightness by 20%', operations: [{ type: 'modulate', params: { brightness: 1.2 } }]},

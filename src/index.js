@@ -448,8 +448,8 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                     }
                 }
                 
-                // Validate required fields - just need explanation and messageData
-                if (!body.explanation || !body.messageData) {
+                // Validate required fields - messageData is required, explanation can be empty for positive feedback
+                if (!body.messageData) {
                     const errorResponse = {
                         statusCode: 400,
                         headers: {
@@ -457,7 +457,29 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                             'Access-Control-Allow-Origin': '*'
                         },
                         body: JSON.stringify({
-                            error: 'Missing required fields: explanation and messageData are required'
+                            error: 'Missing required field: messageData is required'
+                        })
+                    };
+                    const metadata = {
+                        statusCode: errorResponse.statusCode,
+                        headers: errorResponse.headers
+                    };
+                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                    responseStream.write(errorResponse.body);
+                    responseStream.end();
+                    return;
+                }
+                
+                // explanation is optional (empty for positive feedback, required for error reports)
+                if (body.feedbackType !== 'positive' && !body.explanation) {
+                    const errorResponse = {
+                        statusCode: 400,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        body: JSON.stringify({
+                            error: 'Missing required field: explanation is required for error reports'
                         })
                     };
                     const metadata = {
@@ -473,7 +495,8 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                 // Log to Google Sheets with user email from auth token
                 await logErrorReport({
                     userEmail,
-                    explanation: body.explanation,
+                    feedbackType: body.feedbackType || 'error', // positive or error
+                    explanation: body.explanation || '(No explanation provided)',
                     messageData: body.messageData,
                     timestamp: body.timestamp || new Date().toISOString()
                 }, googleAccessToken);

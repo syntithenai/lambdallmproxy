@@ -10,6 +10,7 @@ import {
   getTokenTimeRemaining
 } from '../utils/auth';
 import type { AuthState, GoogleUser } from '../utils/auth';
+import { setCurrentUser, clearUserStorage, migrateToUserScoped, USER_SCOPED_KEYS } from '../utils/userStorage';
 
 interface AuthContextType extends AuthState {
   login: (credential: string) => void;
@@ -58,6 +59,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isAuthenticated: true
       });
       
+      // SECURITY: Set current user for scoped storage
+      setCurrentUser(user.email);
+      
+      // Migrate existing non-scoped localStorage keys to user-scoped
+      migrateToUserScoped(user.email, [...USER_SCOPED_KEYS]);
+      
       console.log('User logged in:', user.email);
     } catch (error) {
       console.error('Login failed:', error);
@@ -65,12 +72,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const logout = useCallback(() => {
+    // SECURITY: Clear user-scoped storage before logging out
+    clearUserStorage();
+    
     clearAuthState();
     setAuthState({
       user: null,
       accessToken: null,
       isAuthenticated: false
     });
+    
+    // Reset to anonymous storage scope
+    setCurrentUser(null);
+    
     console.log('User logged out');
   }, []);
 
@@ -133,6 +147,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return authState.accessToken;
   }, [authState.accessToken, logout]);
+
+  // Initialize user storage scope on mount
+  useEffect(() => {
+    if (authState.user?.email) {
+      setCurrentUser(authState.user.email);
+    } else {
+      setCurrentUser(null);
+    }
+  }, [authState.user]);
 
   // Attempt auto-login on mount for returning users
   useEffect(() => {

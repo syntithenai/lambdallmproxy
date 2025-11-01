@@ -446,17 +446,27 @@ export function FeedProvider({ children }: FeedProviderProps) {
    * Refresh feed (reload from database)
    */
   const refresh = useCallback(async () => {
+    console.log('🔄 Refresh triggered - clearing all items and generating fresh feed');
     try {
       setIsLoading(true);
-      const loadedItems = await feedDB.getItems(10, 0);
-      setAllItems(loadedItems);
+      
+      // Clear all existing items from DB
+      await feedDB.clearAll();
+      
+      // Clear items in state
+      setAllItems([]);
+      
+      // Generate fresh items
+      await generateMore();
+      
+      console.log('✅ Feed refreshed successfully');
     } catch (err) {
       console.error('Failed to refresh feed:', err);
       setError(err instanceof Error ? err.message : 'Failed to refresh');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [generateMore]);
 
   const value: FeedContextValue = {
     items,

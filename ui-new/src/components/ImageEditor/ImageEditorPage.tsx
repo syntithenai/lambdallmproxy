@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useFeatures } from '../../contexts/FeaturesContext';
 import { useUsage } from '../../contexts/UsageContext';
 import { useToast } from '../ToastManager';
+import { imageStorage } from '../../utils/imageStorage';
 import { ImageGrid } from './ImageGrid';
 import { SelectionControls } from './SelectionControls';
 import { BulkOperationsBar } from './BulkOperationsBar';
@@ -22,7 +23,7 @@ export const ImageEditorPage: React.FC = () => {
   const { getToken } = useAuth();
   const { features } = useFeatures();
   const { providerCapabilities } = useUsage();
-  const { showSuccess, showInfo } = useToast();
+  const { showSuccess, showInfo, showWarning } = useToast();
 
   // Get images and editing context from navigation state
   const locationState = location.state as { 
@@ -393,30 +394,37 @@ export const ImageEditorPage: React.FC = () => {
         return;
       }
 
-      // Apply 1024×768 constraint by requesting resize if needed
-      let finalUrl = newUrl;
-      
-      // Check if image needs resizing (if width/height available in metadata)
-      // For now, trust backend to have applied constraints
-      // TODO: Add explicit resize check when metadata is available
+      console.log('Auto-updating image:', { oldUrl, newUrl, isSwagImage: oldUrl.startsWith('swag-image://') });
 
-      // Replace old URL with new base64 URL
-      // Note: Using simple string replacement instead of regex because base64 data is too long
-      // and contains special characters that break regex construction
-      let updatedContent = snippet.content;
-      
-      // Replace in markdown: ![alt](url)
-      const markdownPattern = `](${oldUrl})`;
-      updatedContent = updatedContent.split(markdownPattern).join(`](${finalUrl})`);
-      
-      // Replace in HTML: <img src="url"> (both single and double quotes)
-      const htmlPatternDouble = `src="${oldUrl}"`;
-      const htmlPatternSingle = `src='${oldUrl}'`;
-      updatedContent = updatedContent.split(htmlPatternDouble).join(`src="${finalUrl}"`);
-      updatedContent = updatedContent.split(htmlPatternSingle).join(`src='${finalUrl}'`);
+      // If the image uses swag-image:// reference, update IndexedDB
+      if (oldUrl.startsWith('swag-image://')) {
+        const imageId = oldUrl.replace('swag-image://', '');
+        
+        // Update the image data in IndexedDB while keeping the same reference
+        await imageStorage.updateImage(imageId, newUrl);
+        console.log('Updated IndexedDB image:', imageId);
+        
+        // No need to update snippet content - the swag-image:// reference stays the same
+        // The updated image will be loaded from IndexedDB when displayed
+      } else {
+        // For direct base64/URL images, replace in content
+        let updatedContent = snippet.content;
+        
+        // Replace in markdown: ![alt](url)
+        const markdownPattern = `](${oldUrl})`;
+        updatedContent = updatedContent.split(markdownPattern).join(`](${newUrl})`);
+        
+        // Replace in HTML: <img src="url"> (both single and double quotes)
+        const htmlPatternDouble = `src="${oldUrl}"`;
+        const htmlPatternSingle = `src='${oldUrl}'`;
+        updatedContent = updatedContent.split(htmlPatternDouble).join(`src="${newUrl}"`);
+        updatedContent = updatedContent.split(htmlPatternSingle).join(`src='${newUrl}'`);
 
-      // Update snippet
-      await updateSnippet(image.snippetId, { content: updatedContent });
+        // Update snippet
+        await updateSnippet(image.snippetId, { content: updatedContent });
+        console.log('Updated snippet content for direct image URL');
+      }
+      
       console.log('Auto-updated snippet:', image.snippetId);
     } catch (error) {
       console.error('Auto-update failed:', error);
@@ -685,6 +693,16 @@ export const ImageEditorPage: React.FC = () => {
       console.log(`🎨 Generating image with ${selectedProvider.type}:${model}`);
       console.log(`🔑 Using auth token:`, authToken ? `${authToken.substring(0, 20)}...` : 'NONE');
       
+      // Map imageQuality setting to API quality parameter
+      const qualityMap = {
+        low: 'standard',
+        medium: 'standard', 
+        high: 'hd'
+      };
+      const quality = qualityMap[settings.imageQuality || 'low'];
+      
+      console.log(`🎨 Using image quality: ${settings.imageQuality || 'low'} (mapped to: ${quality})`);
+      
       // Call the generate-image endpoint
       const response = await fetch(`${apiBase}/generate-image`, {
         method: 'POST',
@@ -696,9 +714,10 @@ export const ImageEditorPage: React.FC = () => {
           provider: selectedProvider.type,
           model: model,
           size: generateSize,
-          quality: 'standard',
+          quality: quality,
           style: 'natural',
           accessToken: authToken, // Backend expects accessToken in body, not header
+          imageQuality: settings.imageQuality || 'low', // Pass user preference to backend
           // Pass API keys from settings
           openaiApiKey: selectedProvider.type === 'openai' ? selectedProvider.apiKey : undefined,
           togetherApiKey: selectedProvider.type === 'together' ? selectedProvider.apiKey : undefined,
@@ -897,7 +916,7 @@ export const ImageEditorPage: React.FC = () => {
       const parseResult = await parseImageCommand(command, settings.providers, authToken);
       
       if (!parseResult.success || parseResult.operations.length === 0) {
-        alert(parseResult.explanation || 'Could not understand command. Try: "make smaller", "rotate right", "convert to jpg"');
+        showWarning(parseResult.explanation || 'Could not understand command. Try: "make smaller", "rotate right", "convert to jpg", "remove glasses"');
         setIsProcessing(false);
         return;
       }

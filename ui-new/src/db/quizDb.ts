@@ -153,7 +153,7 @@ class QuizDatabase {
       totalQuestions,
       percentage: 0,
       timeTaken: 0,
-      completedAt: new Date().toISOString(),
+      completedAt: '', // Empty until quiz is completed
       answers: [],
       enrichment,
       synced: false,
@@ -291,19 +291,37 @@ class QuizDatabase {
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STATISTICS_STORE], 'readonly');
       const store = transaction.objectStore(STATISTICS_STORE);
-      const index = store.index('completedAt');
-      const request = index.openCursor(null, 'prev'); // 'prev' for descending order
       
-      const results: QuizStatistic[] = [];
+      // Get ALL quizzes (completed and incomplete) and sort in memory
+      // This ensures incomplete quizzes (with completedAt='') are included
+      const request = store.getAll();
 
       request.onsuccess = () => {
-        const cursor = request.result;
-        if (cursor && (!limit || results.length < limit)) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          resolve(results);
-        }
+        const allQuizzes = request.result as QuizStatistic[];
+        
+        // Sort by completedAt descending (most recent first)
+        // Incomplete quizzes (completedAt='') will appear first
+        const sorted = allQuizzes.sort((a, b) => {
+          // Empty completedAt means incomplete - show at top
+          if (!a.completedAt && !b.completedAt) return 0;
+          if (!a.completedAt) return -1; // a is incomplete, comes first
+          if (!b.completedAt) return 1;  // b is incomplete, comes first
+          
+          // Both completed - sort by date descending
+          return new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime();
+        });
+        
+        // Apply limit if specified
+        const results = limit ? sorted.slice(0, limit) : sorted;
+        
+        console.log('📊 getQuizStatistics results:', {
+          total: allQuizzes.length,
+          incomplete: allQuizzes.filter(q => !q.completedAt).length,
+          completed: allQuizzes.filter(q => q.completedAt).length,
+          returned: results.length
+        });
+        
+        resolve(results);
       };
 
       request.onerror = () => {

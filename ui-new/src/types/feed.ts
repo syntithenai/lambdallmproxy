@@ -61,6 +61,7 @@ export interface GenerateFeedRequest {
   searchTerms: string[];         // Search queries
   count: number;                 // Number of items to generate
   preferences: FeedPreferences;  // User preferences
+  maturityLevel?: 'child' | 'youth' | 'adult' | 'academic'; // Content maturity level
 }
 
 export interface GenerateFeedResponse {

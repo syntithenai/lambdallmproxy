@@ -11,6 +11,13 @@ export default defineConfig(() => ({
     port: 8081,
     host: true, // Listen on all addresses
     allowedHosts:['peppertrees.asuscomm.com'],
+    watch: {
+      // Use polling for better compatibility and fewer file watchers
+      usePolling: true,
+      interval: 1000, // Check every 1 second
+      // Ignore node_modules and other large directories
+      ignored: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/docs/**', '**/coverage/**']
+    }
   },
   
   build: {

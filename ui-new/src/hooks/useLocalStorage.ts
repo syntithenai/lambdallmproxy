@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import * as userStorage from '../utils/userStorage';
 
 export function useLocalStorage<T>(key: string, initialValue: T) {
   // State to store our value
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
-      const item = window.localStorage.getItem(key);
+      // SECURITY: Use user-scoped storage
+      const item = userStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
     } catch (error) {
       console.error(`Error loading localStorage key "${key}":`, error);
@@ -20,7 +22,8 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
         const valueToStore = value instanceof Function ? value(currentValue) : value;
         
         try {
-          window.localStorage.setItem(key, JSON.stringify(valueToStore));
+          // SECURITY: Use user-scoped storage
+          userStorage.setItem(key, JSON.stringify(valueToStore));
         } catch (storageError: any) {
           // Handle QuotaExceededError
           if (storageError?.name === 'QuotaExceededError') {
@@ -37,7 +40,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
               }
               
               // Try again after cleanup
-              window.localStorage.setItem(key, JSON.stringify(valueToStore));
+              userStorage.setItem(key, JSON.stringify(valueToStore));
               console.log(`Successfully saved after cleanup`);
             } catch (retryError) {
               console.error(`Failed to save even after cleanup:`, retryError);
@@ -48,7 +51,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
                   providers: [], 
                   tavilyApiKey: '' 
                 };
-                window.localStorage.setItem(key, JSON.stringify(minimal));
+                userStorage.setItem(key, JSON.stringify(minimal));
                 console.warn('Saved minimal settings due to quota');
               }
             }
@@ -69,7 +72,8 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
 
 export function removeFromLocalStorage(key: string) {
   try {
-    window.localStorage.removeItem(key);
+    // SECURITY: Use user-scoped storage
+    userStorage.removeItem(key);
   } catch (error) {
     console.error(`Error removing localStorage key "${key}":`, error);
   }

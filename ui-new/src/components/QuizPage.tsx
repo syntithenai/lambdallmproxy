@@ -9,6 +9,9 @@ import { useProject } from '../contexts/ProjectContext';
 import { QuizCard } from './QuizCard';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
 import { googleDriveSync } from '../services/googleDriveSync';
+import { useSwag } from '../contexts/SwagContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { generateQuiz } from '../utils/api';
 
 export default function QuizPage() {
   const navigate = useNavigate();
@@ -16,6 +19,8 @@ export default function QuizPage() {
   const { showSuccess, showError, showWarning } = useToast();
   const { getToken } = useAuth();
   const { getCurrentProjectId } = useProject();
+  const { snippets } = useSwag();
+  const { settings } = useSettings();
   
   const [allStatistics, setAllStatistics] = useState<QuizStatistic[]>([]);
   
@@ -40,6 +45,7 @@ export default function QuizPage() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastQuizSave, setLastQuizSave] = useState<number>(0);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   
   // Quiz modal state
   const [showQuizModal, setShowQuizModal] = useState(false);
@@ -167,6 +173,79 @@ export default function QuizPage() {
     showError('Quiz data not available. Please generate a new quiz instead.');
   };
 
+  const handleCreateNewQuiz = async () => {
+    if (snippets.length === 0) {
+      showWarning('No snippets available. Please add some snippets first.');
+      return;
+    }
+
+    try {
+      setIsGeneratingQuiz(true);
+      const token = await getToken();
+      if (!token) {
+        showError('Authentication required. Please sign in.');
+        return;
+      }
+      
+      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
+      
+      if (enabledProviders.length === 0) {
+        showError('No LLM providers enabled. Please enable at least one provider in Settings.');
+        return;
+      }
+
+      // Combine all snippet content
+      const content = snippets
+        .map(s => `## ${s.title || 'Untitled'}\n\n${s.content}`)
+        .join('\n\n');
+      
+      if (content.trim().length === 0) {
+        showWarning('All snippets are empty. Please add content to your snippets.');
+        return;
+      }
+
+      console.log(`🎯 Generating quiz from ${snippets.length} snippet(s), ${content.length} characters`);
+
+      const enrichment = true;
+      const startTime = Date.now();
+      
+      // Generate quiz with enrichment enabled
+      const quiz = await generateQuiz(content, enrichment, enabledProviders, token);
+
+      console.log('✅ Quiz generated:', quiz.title);
+      
+      // Save generated quiz immediately with full quiz data (marked as not completed)
+      const quizId = await quizDB.saveGeneratedQuiz(
+        quiz.title,
+        snippets.map(s => s.id),
+        quiz.questions?.length || 0,
+        enrichment,
+        quiz // Pass the entire quiz object so it can be restarted later
+      );
+      
+      console.log('💾 Quiz saved to database:', quizId, 'with', quiz.questions?.length || 0, 'questions');
+      
+      // Store metadata for updating on completion
+      setQuizMetadata({
+        snippetIds: snippets.map(s => s.id),
+        startTime,
+        enrichment,
+        quizId
+      });
+      
+      // Show the quiz modal
+      setCurrentQuiz(quiz);
+      setShowQuizModal(true);
+      
+      showSuccess(`Quiz "${quiz.title}" created successfully!`);
+    } catch (error) {
+      console.error('Failed to generate quiz:', error);
+      showError(error instanceof Error ? error.message : 'Failed to generate quiz. Please try again.');
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  };
+
   const formatDuration = (ms: number): string => {
     const minutes = Math.floor(ms / 60000);
     const seconds = Math.floor((ms % 60000) / 1000);
@@ -232,11 +311,13 @@ export default function QuizPage() {
             </div>
           </div>
           <button
-            onClick={() => navigate('/swag')}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            onClick={handleCreateNewQuiz}
+            disabled={isGeneratingQuiz || snippets.length === 0}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
+            title={snippets.length === 0 ? 'No snippets available' : 'Generate quiz from all snippets'}
           >
             <Brain className="w-5 h-5" />
-            {t('quiz.createNewQuiz')}
+            {isGeneratingQuiz ? 'Generating...' : t('quiz.createNewQuiz')}
           </button>
         </div>
 

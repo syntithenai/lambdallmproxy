@@ -210,6 +210,29 @@ class FeedDatabase {
   }
 
   /**
+   * Get count of non-trashed items
+   */
+  async getCount(): Promise<number> {
+    await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['items'], 'readonly');
+      const store = transaction.objectStore('items');
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const items = request.result as FeedItem[];
+        // Count only non-trashed items
+        const count = items.filter(item => !item.trashed).length;
+        resolve(count);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
    * Get a single feed item by ID
    */
   async getItemById(id: string): Promise<FeedItem | null> {
@@ -277,6 +300,26 @@ class FeedDatabase {
       const request = store.delete(id);
 
       request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Clear all feed items (for refresh)
+   */
+  async clearAll(): Promise<void> {
+    await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['items'], 'readwrite');
+      const store = transaction.objectStore('items');
+      const request = store.clear();
+
+      request.onsuccess = () => {
+        console.log('✅ All feed items cleared');
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   }

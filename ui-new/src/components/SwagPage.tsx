@@ -9,7 +9,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useProject } from '../contexts/ProjectContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { MarkdownEditor } from './MarkdownEditor';
+import { TipTapEditor } from './TipTapEditor';
 // import { StorageStats } from './StorageStats';
 import { TagAutocomplete } from './TagAutocomplete';
 import { TagAutosuggest } from './TagAutosuggest';
@@ -673,13 +673,16 @@ export const SwagPage: React.FC = () => {
 
       console.log('✅ Quiz generated:', quiz.title);
       
-      // Save generated quiz immediately (marked as not completed)
+      // Save generated quiz immediately with full quiz data (marked as not completed)
       const quizId = await quizDB.saveGeneratedQuiz(
         quiz.title,
         selected.map(s => s.id),
         quiz.questions?.length || 0,
-        enrichment
+        enrichment,
+        quiz // Pass the entire quiz object so it can be restarted later
       );
+      
+      console.log('💾 Quiz saved to database:', quizId, 'with', quiz.questions?.length || 0, 'questions');
       
       // Store metadata for updating on completion
       setQuizMetadata({
@@ -2162,22 +2165,17 @@ export const SwagPage: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Content
                 </label>
-                <MarkdownEditor
-                  value={editContent}
-                  onChange={setEditContent}
-                  height="calc(100vh - 28rem)"
-                  placeholder="Enter markdown content..."
-                  preview="live"
-                  onImageUpload={async (file: File): Promise<string> => {
-                    // Convert image to base64 data URL
-                    return new Promise((resolve, reject) => {
-                      const reader = new FileReader();
-                      reader.onload = () => resolve(reader.result as string);
-                      reader.onerror = reject;
-                      reader.readAsDataURL(file);
-                    });
-                  }}
-                />
+                <div style={{ height: 'calc(100vh - 28rem)', overflowY: 'auto' }}>
+                  <TipTapEditor
+                    value={editContent}
+                    onChange={setEditContent}
+                    placeholder="Start typing your content..."
+                    editable={true}
+                    snippetId={editingSnippet?.id}
+                    snippetTags={editTags}
+                    onImageEdit={handleImageEdit}
+                  />
+                </div>
               </div>
             </div>
 

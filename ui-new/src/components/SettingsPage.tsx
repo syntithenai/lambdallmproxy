@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../contexts/SettingsContext';
 import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import { useLocation } from '../contexts/LocationContext';
+import { useFeatures } from '../contexts/FeaturesContext';
 import { ProviderList } from './ProviderList';
 import { ServerProviders } from './ServerProviders';
 import { TTSSettings } from './TTSSettings';
@@ -39,6 +40,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const { t, i18n } = useTranslation();
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
+  const { features } = useFeatures();
 
   const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'rag' | 'cloud'>('general');
   
@@ -46,6 +48,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [isEditingProvider, setIsEditingProvider] = useState(false);
   
   // Proxy settings state
+  const [useServerProxy, setUseServerProxy] = useState(false);
   const [proxyUsername, setProxyUsername] = useState('');
   const [proxyPassword, setProxyPassword] = useState('');
   const [proxyEnabled, setProxyEnabled] = useState(false);
@@ -56,6 +59,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     if (savedProxySettings) {
       try {
         const parsed = JSON.parse(savedProxySettings);
+        setUseServerProxy(parsed.useServerProxy || false);
         setProxyUsername(parsed.username || '');
         setProxyPassword(parsed.password || '');
         setProxyEnabled(parsed.enabled !== false); // Default to true
@@ -66,8 +70,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   }, []);
 
   // Auto-save proxy settings whenever they change
-  const saveProxySettings = (username: string, password: string, enabled: boolean) => {
+  const saveProxySettings = (serverProxy: boolean, username: string, password: string, enabled: boolean) => {
     localStorage.setItem('proxy_settings', JSON.stringify({
+      useServerProxy: serverProxy,
       username,
       password,
       enabled
@@ -698,55 +703,86 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </p>
             
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
-                  {t('settings.proxyUsername')}
-                </label>
-                <input
-                  type="text"
-                  value={proxyUsername}
-                  onChange={(e) => {
-                    const newUsername = e.target.value;
-                    setProxyUsername(newUsername);
-                    saveProxySettings(newUsername, proxyPassword, proxyEnabled);
-                  }}
-                  placeholder="exrihquq"
-                  className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
-                  {t('settings.proxyPassword')}
-                </label>
-                <input
-                  type="password"
-                  value={proxyPassword}
-                  onChange={(e) => {
-                    const newPassword = e.target.value;
-                    setProxyPassword(newPassword);
-                    saveProxySettings(proxyUsername, newPassword, proxyEnabled);
-                  }}
-                  placeholder="Enter password"
-                  className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                />
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="proxyEnabled"
-                  checked={proxyEnabled}
-                  onChange={(e) => {
-                    const newEnabled = e.target.checked;
-                    setProxyEnabled(newEnabled);
-                    saveProxySettings(proxyUsername, proxyPassword, newEnabled);
-                  }}
-                  className="w-4 h-4"
-                />
-                <label htmlFor="proxyEnabled" className="text-sm text-gray-700 dark:text-gray-300">
-                  Enable proxy for all requests
-                </label>
+              {/* Server Proxy Checkbox - Only show if backend has proxy configured */}
+              {features?.proxy && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      id="useServerProxy"
+                      checked={useServerProxy}
+                      onChange={(e) => {
+                        const newServerProxy = e.target.checked;
+                        setUseServerProxy(newServerProxy);
+                        saveProxySettings(newServerProxy, proxyUsername, proxyPassword, proxyEnabled);
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor="useServerProxy" className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Use Server Proxy (Recommended)
+                    </label>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 ml-6">
+                    Server has a proxy configured. Uses server's proxy credentials for all requests.
+                  </p>
+                </div>
+              )}
+
+              {/* User Proxy Settings - Only relevant if not using server proxy */}
+              <div className={useServerProxy ? 'opacity-50 pointer-events-none' : ''}>
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+                    {t('settings.proxyUsername')}
+                  </label>
+                  <input
+                    type="text"
+                    value={proxyUsername}
+                    onChange={(e) => {
+                      const newUsername = e.target.value;
+                      setProxyUsername(newUsername);
+                      saveProxySettings(useServerProxy, newUsername, proxyPassword, proxyEnabled);
+                    }}
+                    placeholder="exrihquq"
+                    disabled={useServerProxy}
+                    className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+                
+                <div className="mt-4">
+                  <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+                    {t('settings.proxyPassword')}
+                  </label>
+                  <input
+                    type="password"
+                    value={proxyPassword}
+                    onChange={(e) => {
+                      const newPassword = e.target.value;
+                      setProxyPassword(newPassword);
+                      saveProxySettings(useServerProxy, proxyUsername, newPassword, proxyEnabled);
+                    }}
+                    placeholder="Enter password"
+                    disabled={useServerProxy}
+                    className="input w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+                
+                <div className="flex items-center gap-2 mt-4">
+                  <input
+                    type="checkbox"
+                    id="proxyEnabled"
+                    checked={proxyEnabled}
+                    onChange={(e) => {
+                      const newEnabled = e.target.checked;
+                      setProxyEnabled(newEnabled);
+                      saveProxySettings(useServerProxy, proxyUsername, proxyPassword, newEnabled);
+                    }}
+                    disabled={useServerProxy}
+                    className="w-4 h-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <label htmlFor="proxyEnabled" className="text-sm text-gray-700 dark:text-gray-300">
+                    Enable user proxy for all requests
+                  </label>
+                </div>
               </div>
             </div>
             

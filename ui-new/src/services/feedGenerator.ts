@@ -45,12 +45,17 @@ export async function generateFeedItems(
 ): Promise<FeedItem[]> {
   const apiUrl = await getCachedApiBase();
   
+  // Get maturity level from localStorage
+  const maturityLevel = localStorage.getItem('feed_maturity_level') || 'adult';
+  console.log(`🎓 Feed maturity level: ${maturityLevel}`);
+  
   // Build request
   const requestBody: GenerateFeedRequest = {
     swagContent,
     searchTerms: preferences.searchTerms,
     count,
-    preferences
+    preferences,
+    maturityLevel: maturityLevel as 'child' | 'youth' | 'adult' | 'academic'
   };
 
   // Make SSE request
@@ -449,11 +454,19 @@ ${item.sources.length > 0 ? `SOURCES:\n${item.sources.map(s => `- ${s}`).join('\
     console.log('📝 JSON last 100 chars:', jsonString.substring(jsonString.length - 100));
     
     // Fix common LLM JSON errors: trailing commas before closing brackets
-    // This handles cases like: [...,] or {...,}
-    let jsonToParse = jsonString
-      .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
-      .replace(/,\s*}/g, '}')  // Remove trailing commas in objects
-      .trim();
+    // Apply multiple times to catch nested structures
+    let jsonToParse = jsonString;
+    let prevLength = 0;
+    
+    // Keep applying fixes until no more changes occur (handles deeply nested structures)
+    while (prevLength !== jsonToParse.length) {
+      prevLength = jsonToParse.length;
+      jsonToParse = jsonToParse
+        .replace(/,(\s*])/g, '$1')  // Remove trailing commas before array close
+        .replace(/,(\s*})/g, '$1'); // Remove trailing commas before object close
+    }
+    
+    jsonToParse = jsonToParse.trim();
     
     console.log('🔍 About to parse JSON. Starts with:', jsonToParse.substring(0, 50));
     console.log('🔍 About to parse JSON. Ends with:', jsonToParse.substring(jsonToParse.length - 50));

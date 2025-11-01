@@ -353,17 +353,13 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
     // Fetch images for feed items (in parallel) and emit each item as it completes
     eventCallback('status', { message: 'Fetching images...' });
     
-    // Determine which items should get AI-generated images (2 out of 10, evenly spaced)
+    // Determine which items should get AI-generated images (1 out of 10, 10%)
     const aiImageIndices = new Set();
-    if (items.length >= 2) {
-        // Generate AI images for items at positions 2 and 7 (0-indexed: 1 and 6)
-        // This distributes them evenly through the feed
-        aiImageIndices.add(1);
-        if (items.length >= 7) {
-            aiImageIndices.add(6);
-        } else if (items.length >= 4) {
-            aiImageIndices.add(Math.floor(items.length / 2) + 1);
-        }
+    if (items.length >= 5) {
+        // Generate AI image for one item in the middle of the feed
+        // For 10 items, this would be position 5 (0-indexed: 4)
+        const middleIndex = Math.floor(items.length / 2);
+        aiImageIndices.add(middleIndex);
     }
     
     // Artistic styles for AI-generated images (variety to stand out from photos)

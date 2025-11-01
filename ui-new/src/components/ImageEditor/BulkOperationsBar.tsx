@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { BulkOperation } from './types';
 import { useFeatures } from '../../contexts/FeaturesContext';
+import { useSettings } from '../../contexts/SettingsContext';
+import type { ImageQuality } from '../../types/provider';
 
 interface BulkOperationsBarProps {
   selectedCount: number;
@@ -14,6 +16,7 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
   disabled,
 }) => {
   const { features } = useFeatures();
+  const { settings, setSettings } = useSettings();
   const hasAIProvider = features?.imageEditingAI ?? false;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -294,6 +297,24 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
         >
           📋 Duplicate
         </button>
+
+        {/* 5. IMAGE QUALITY SELECTOR */}
+        <div className="flex items-center gap-2">
+          <label htmlFor="image-quality" className="text-xs font-medium text-gray-700">
+            Image Quality:
+          </label>
+          <select
+            id="image-quality"
+            value={settings.imageQuality || 'low'}
+            onChange={(e) => setSettings({ ...settings, imageQuality: e.target.value as ImageQuality })}
+            className="px-2 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+            title="Default quality for AI image generation (affects cost)"
+          >
+            <option value="low">Low (256×256, cheapest)</option>
+            <option value="medium">Medium (512×512)</option>
+            <option value="high">High (1024×1024+, best)</option>
+          </select>
+        </div>
       </div>
 
       <div className="text-xs text-gray-500 mt-3 flex justify-between items-center">

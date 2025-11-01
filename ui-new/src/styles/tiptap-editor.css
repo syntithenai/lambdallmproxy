@@ -1,0 +1,146 @@
+/* TipTap Editor Styles */
+
+.tiptap {
+  outline: none;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  color: #adb5bd;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Prose styles for TipTap content */
+.tiptap.prose {
+  max-width: 100%;
+}
+
+.tiptap.prose h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  color: inherit;
+}
+
+.tiptap.prose h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+  color: inherit;
+}
+
+.tiptap.prose h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: inherit;
+}
+
+.tiptap.prose p {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.75;
+}
+
+.tiptap.prose ul,
+.tiptap.prose ol {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.tiptap.prose li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.tiptap.prose ul > li {
+  list-style-type: disc;
+}
+
+.tiptap.prose ol > li {
+  list-style-type: decimal;
+}
+
+.tiptap.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  cursor: pointer;
+  position: relative;
+  transition: opacity 0.2s;
+}
+
+.tiptap.prose img:hover {
+  opacity: 0.9;
+}
+
+/* Images are clickable to open editor - entire image is interactive */
+.tiptap img {
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 8px;
+  border: 3px solid #ea580c !important;
+}
+
+.tiptap img:hover {
+  opacity: 0.9;
+  box-shadow: 0 0 20px rgba(234, 88, 12, 0.8);
+  transform: scale(1.02);
+}
+
+.tiptap.prose a {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.tiptap.prose a:hover {
+  color: #1e40af;
+}
+
+/* Dark mode */
+.dark .tiptap.prose a {
+  color: #60a5fa;
+}
+
+.dark .tiptap.prose a:hover {
+  color: #93c5fd;
+}
+
+.dark .tiptap p.is-editor-empty:first-child::before {
+  color: #6b7280;
+}
+
+/* Code blocks */
+.tiptap.prose code {
+  background-color: #f3f4f6;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.dark .tiptap.prose code {
+  background-color: #374151;
+}
+
+.tiptap.prose pre {
+  background-color: #1f2937;
+  color: #f9fafb;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.tiptap.prose pre code {
+  background-color: transparent;
+  padding: 0;
+  color: inherit;
+}
