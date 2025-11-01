@@ -462,26 +462,36 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
         <div ref={dialogRef} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           {/* Header */}
-          <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+          <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 md:px-6 py-4">
+            <div className="flex justify-between items-start gap-2">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex-shrink-0">
                 {t('planning.title')}
               </h2>
               
-              {/* Left side buttons */}
-              <div className="ml-4">
-                <button 
-                  onClick={handleSavePlan}
-                  disabled={!result || result.error}
-                  className="btn-primary text-sm flex items-center gap-1.5"
-                  title={t('planning.savePlanTooltip')}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                  </svg>
-                  {t('planning.savePlan')}
-                </button>
-              </div>
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex-shrink-0"
+                aria-label={t('common.close')}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Action buttons - wrap on mobile */}
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button 
+                onClick={handleSavePlan}
+                disabled={!result || result.error}
+                className="btn-primary text-sm flex items-center gap-1.5"
+                title={t('planning.savePlanTooltip')}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                {t('planning.savePlan')}
+              </button>
               
               <button 
                 onClick={() => setShowLoadDialog(true)} 
@@ -506,9 +516,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                 </svg>
                 🎤
               </button>
-            </div>
-            
-            <div className="flex items-center gap-2">
+              
               {/* Copy Debug Info Button */}
               <button
                 onClick={handleCopyDebugInfo}
@@ -522,7 +530,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                 {t('planning.debug')}
               </button>
               
-              {/* Transfer to Chat - Far Right */}
+              {/* Transfer to Chat */}
               {onTransferToChat && (
                 <button
                   onClick={handleTransferToChat}
@@ -535,16 +543,6 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                   {t('planning.transferToChat')}
                 </button>
               )}
-              
-              <button
-                onClick={onClose}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                aria-label={t('common.close')}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
           </div>
 

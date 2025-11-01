@@ -400,7 +400,7 @@ function AppContent() {
 
   // Show full app UI only when authenticated
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex flex-col min-h-screen bg-white dark:bg-gray-900">
       {/* Skip to main content link - Accessibility */}
       <a 
         href="#main-content" 
@@ -411,7 +411,7 @@ function AppContent() {
 
       {/* Header - Only visible when authenticated */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex justify-between items-center px-1 md:px-4 py-3 max-w-screen-2xl md:mx-auto">
+        <div className="flex justify-between items-center px-2 md:px-4 py-3 max-w-screen-2xl md:mx-auto">
           {/* Left side: Logo and Project Selector */}
           <div className="flex items-center gap-3">
             <img 
@@ -430,7 +430,7 @@ function AppContent() {
             {location.pathname !== '/billing' && (
               <button
                 onClick={() => { console.log('Billing button clicked, navigating to /billing'); handleNavigate('/billing'); }}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 min-h-11 touch-target"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 min-h-11 touch-target select-none"
                 title={usage ? `You have $${usage.creditBalance.toFixed(2)} remaining of $${usage.totalCredits.toFixed(2)} total credits` : 'View billing and usage details'}
                 aria-label="Billing and credits"
               >
@@ -438,7 +438,7 @@ function AppContent() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
                 {usage && !usageLoading && typeof usage.creditBalance === 'number' && typeof usage.totalCredits === 'number' && (
-                  <span className={`text-xs font-medium ${
+                  <span className={`text-xs font-medium select-none ${
                     usage.exceeded 
                       ? 'text-red-600 dark:text-red-400' 
                       : 'text-green-600 dark:text-green-400'
@@ -453,11 +453,11 @@ function AppContent() {
             {location.pathname !== '/' && (
               <button
                 onClick={() => navigate('/')}
-                className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
+                className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
                 title="Back to Feed"
                 aria-label="Back to Feed"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
                 <span className="text-sm hidden md:inline">Back</span>
@@ -682,7 +682,7 @@ function AppContent() {
 
       {/* Main Content - Only visible when authenticated */}
       <main id="main-content" className="flex-1 overflow-y-auto">
-        <div className="min-h-full max-w-screen-2xl md:mx-auto">
+        <div className="min-h-full max-w-screen-2xl mx-auto">
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Feed is now the default landing page */}
