@@ -12,6 +12,7 @@ export interface ChatHistoryEntry {
   messages: any[];
   timestamp: number;
   title?: string;
+  projectId?: string;              // Associated project for filtering
   // Planning context fields
   systemPrompt?: string;           // User-edited system prompt
   planningQuery?: string;           // Original planning query input
@@ -74,6 +75,7 @@ class ChatHistoryDB {
       generatedUserQuery?: string;
       selectedSnippetIds?: string[];
       todosState?: any;
+      projectId?: string;  // Associated project for filtering
     }
   ): Promise<void> {
     try {
@@ -92,7 +94,8 @@ class ChatHistoryDB {
         ...(metadata?.generatedSystemPrompt && { generatedSystemPrompt: metadata.generatedSystemPrompt }),
         ...(metadata?.generatedUserQuery && { generatedUserQuery: metadata.generatedUserQuery }),
         ...(metadata?.selectedSnippetIds && { selectedSnippetIds: metadata.selectedSnippetIds }),
-        ...(metadata?.todosState && { todosState: metadata.todosState })
+        ...(metadata?.todosState && { todosState: metadata.todosState }),
+        ...(metadata?.projectId && { projectId: metadata.projectId })
       };
 
       await new Promise<void>((resolve, reject) => {

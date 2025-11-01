@@ -1,78 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { getCachedApiBase } from '../utils/api';
-import type { AvailableFeatures } from '../contexts/FeaturesContext';
-
-interface ProviderCapability {
-  id: string;
-  type: string;
-  priority?: number;
-  enabled: boolean;
-  source: string;
-  endpoint?: string;
-  defaultModel?: string;
-  rateLimitTPM?: number;
-  allowedModels?: string[];
-  maxQuality?: string;
-  // NOTE: API keys are NEVER sent from backend (security)
-}
+import React from 'react';
+import { useUsage, type ProviderCapability } from '../contexts/UsageContext';
+import { useFeatures } from '../contexts/FeaturesContext';
 
 export const ServerProviders: React.FC = () => {
-  const { getToken } = useAuth();
-  const [providers, setProviders] = useState<ProviderCapability[]>([]);
-  const [features, setFeatures] = useState<AvailableFeatures | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const loadProviders = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const token = await getToken();
-        if (!token) {
-          setError('Authentication required');
-          setLoading(false);
-          return;
-        }
-
-        const apiBase = await getCachedApiBase();
-        const response = await fetch(`${apiBase}/billing`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include'
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        
-        if (data.providerCapabilities && Array.isArray(data.providerCapabilities)) {
-          setProviders(data.providerCapabilities);
-        } else {
-          setProviders([]);
-        }
-        
-        if (data.features) {
-          setFeatures(data.features);
-        }
-
-        setLoading(false);
-      } catch (err: any) {
-        console.error('Failed to load server providers:', err);
-        setError(err.message || 'Failed to load server providers');
-        setLoading(false);
-      }
-    };
-
-    loadProviders();
-  }, [getToken]);
+  const { providerCapabilities: providers, loading, error } = useUsage();
+  const { features } = useFeatures();
 
   if (loading) {
     return (

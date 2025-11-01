@@ -30,6 +30,7 @@ export interface QuizStatistic {
   synced: boolean; // Whether synced to Google Sheets
   completed: boolean; // Whether the quiz was actually completed (vs just generated)
   quizData?: any; // Store the actual quiz questions for restarting incomplete quizzes
+  projectId?: string; // Associated project for filtering
 }
 
 class QuizDatabase {

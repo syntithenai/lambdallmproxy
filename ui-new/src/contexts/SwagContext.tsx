@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { storage, StorageError } from '../utils/storage';
 import { useToast } from '../components/ToastManager';
 import { ragSyncService } from '../services/ragSyncService';
@@ -6,6 +6,7 @@ import { isGoogleIdentityAvailable, appendRows, formatChunksForSheets, getAccess
 import type { SyncStatus } from '../services/ragSyncService';
 import { useAuth } from './AuthContext';
 import { useSettings } from './SettingsContext';
+import { useProject } from './ProjectContext';
 import { ragDB } from '../utils/ragDB';
 import { fetchSnippetById } from '../services/snippetsSync';
 import { getCachedApiBase } from '../utils/api';
@@ -21,6 +22,7 @@ export interface ContentSnippet {
   selected?: boolean;
   tags?: string[];
   hasEmbedding?: boolean;
+  projectId?: string;  // Associated project for filtering
 }
 
 interface SwagContextType {
@@ -58,13 +60,25 @@ export const useSwag = () => {
 };
 
 export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [snippets, setSnippets] = useState<ContentSnippet[]>([]);
+  const [allSnippets, setAllSnippets] = useState<ContentSnippet[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [storageStats, setStorageStats] = useState<{ totalSize: number; limit: number; percentUsed: number } | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const { showError, showWarning, showSuccess, showPersistentToast, removeToast, updateToast } = useToast();
   const { user, getToken } = useAuth();
   const { settings } = useSettings();
+  const { getCurrentProjectId } = useProject();
+
+  // Filter snippets by current project
+  const snippets = useMemo(() => {
+    const currentProjectId = getCurrentProjectId();
+    if (!currentProjectId) {
+      // No project selected - show all snippets
+      return allSnippets;
+    }
+    // Filter by current project
+    return allSnippets.filter(s => s.projectId === currentProjectId);
+  }, [allSnippets, getCurrentProjectId]);
 
   // Load from storage on mount and sync with Google Drive
   useEffect(() => {
@@ -72,7 +86,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const saved = await storage.getItem<ContentSnippet[]>('swag-snippets');
         if (saved) {
-          setSnippets(saved);
+          setAllSnippets(saved);
         }
         setIsLoaded(true);
         
@@ -88,7 +102,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Reload snippets after download
               const updated = await storage.getItem<ContentSnippet[]>('swag-snippets');
               if (updated) {
-                setSnippets(updated);
+                setAllSnippets(updated);
               }
             }
             
@@ -124,7 +138,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const saveSnippets = async () => {
       try {
-        await storage.setItem('swag-snippets', snippets);
+        await storage.setItem('swag-snippets', allSnippets);
         
         // Update storage stats
         const stats = await storage.getStats();
@@ -156,7 +170,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     saveSnippets();
-  }, [snippets, isLoaded, showError, showWarning]);
+  }, [allSnippets, isLoaded, showError, showWarning]);
 
   // Debounced sync to Google Drive when snippets change
   useEffect(() => {
@@ -375,7 +389,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         if (remoteSnippets && remoteSnippets.length > 0) {
           // Merge downloaded snippets with local ones
-          setSnippets(prev => {
+          setAllSnippets(prev => {
             const existingIds = new Set(prev.map(s => s.id));
             const newSnippets = remoteSnippets.filter(s => !existingIds.has(s.id));
             
@@ -484,7 +498,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Mark snippet as having embedding
-      setSnippets(prev => prev.map(snippet =>
+      setAllSnippets(prev => prev.map(snippet =>
         snippet.id === snippetId ? { ...snippet, hasEmbedding: true } : snippet
       ));
 
@@ -495,7 +509,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string): Promise<ContentSnippet | undefined> => {
     // Check if content already exists (prevent duplicates)
-    const existingSnippet = snippets.find(s => s.content.trim() === content.trim());
+    const existingSnippet = allSnippets.find(s => s.content.trim() === content.trim());
     
     if (existingSnippet) {
       // Update the timestamp to move it to the top
@@ -504,6 +518,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     
     const now = Date.now();
+    const currentProjectId = getCurrentProjectId();
     const newSnippet: ContentSnippet = {
       id: `snippet-${now}-${Math.random().toString(36).substr(2, 9)}`,
       content,
@@ -511,9 +526,10 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sourceType,
       timestamp: now,
       updateDate: now,
-      selected: false
+      selected: false,
+      projectId: currentProjectId || undefined  // Auto-tag with current project
     };
-    setSnippets(prev => [newSnippet, ...prev]);
+    setAllSnippets(prev => [newSnippet, ...prev]);
 
     // Queue sync if enabled
     if (isSyncEnabled() && user?.email) {
@@ -534,7 +550,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const oldSnippet = snippets.find(s => s.id === id);
     
     const updatedSnippet = { ...oldSnippet, ...updates, updateDate: Date.now() } as ContentSnippet;
-    setSnippets(prev => prev.map(snippet => 
+    setAllSnippets(prev => prev.map(snippet => 
       snippet.id === id ? updatedSnippet : snippet
     ));
 
@@ -555,7 +571,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteSnippets = (ids: string[]) => {
-    setSnippets(prev => prev.filter(snippet => !ids.includes(snippet.id)));
+    setAllSnippets(prev => prev.filter(snippet => !ids.includes(snippet.id)));
     
     // Queue sync for each deleted snippet if enabled
     if (isSyncEnabled() && user?.email) {
@@ -590,24 +606,24 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       selected: false
     };
 
-    setSnippets(prev => [
+    setAllSnippets(prev => [
       newSnippet,
       ...prev.filter(snippet => !ids.includes(snippet.id))
     ]);
   };
 
   const toggleSelection = (id: string) => {
-    setSnippets(prev => prev.map(snippet =>
+    setAllSnippets(prev => prev.map(snippet =>
       snippet.id === id ? { ...snippet, selected: !snippet.selected } : snippet
     ));
   };
 
   const selectAll = () => {
-    setSnippets(prev => prev.map(snippet => ({ ...snippet, selected: true })));
+    setAllSnippets(prev => prev.map(snippet => ({ ...snippet, selected: true })));
   };
 
   const selectNone = () => {
-    setSnippets(prev => prev.map(snippet => ({ ...snippet, selected: false })));
+    setAllSnippets(prev => prev.map(snippet => ({ ...snippet, selected: false })));
   };
 
   const getSelectedSnippets = () => {
@@ -625,7 +641,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addTagsToSnippets = (ids: string[], tags: string[]) => {
-    setSnippets(prev => prev.map(snippet => {
+    setAllSnippets(prev => prev.map(snippet => {
       if (ids.includes(snippet.id)) {
         const existingTags = snippet.tags || [];
         const newTags = [...new Set([...existingTags, ...tags])];
@@ -636,7 +652,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const removeTagsFromSnippets = (ids: string[], tags: string[]) => {
-    setSnippets(prev => prev.map(snippet => {
+    setAllSnippets(prev => prev.map(snippet => {
       if (ids.includes(snippet.id) && snippet.tags) {
         const remainingTags = snippet.tags.filter(tag => !tags.includes(tag));
         return { 
@@ -692,7 +708,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const statusMap = await ragDB.bulkCheckEmbeddings(snippetIds);
       
       // Update snippets with embedding status
-      setSnippets(prev => prev.map(snippet => ({
+      setAllSnippets(prev => prev.map(snippet => ({
         ...snippet,
         hasEmbedding: statusMap[snippet.id] || false
       })));
@@ -1016,7 +1032,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       // Step 3: Update snippet flags
-      setSnippets(prev => prev.map(s => 
+      setAllSnippets(prev => prev.map(s => 
         embeddedSnippetIds.includes(s.id)
           ? { ...s, hasEmbedding: true }
           : s
@@ -1204,7 +1220,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             console.log(`📦 Reassembled ${remoteSnippets.length} snippets from ${rows.length} rows`);
             
-            setSnippets(prev => {
+            setAllSnippets(prev => {
               const existingIds = new Set(prev.map(s => s.id));
               const newSnippets = remoteSnippets.filter(s => !existingIds.has(s.id));
               
@@ -1372,7 +1388,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       // Add snippet to localStorage
-      setSnippets(prev => [snippet, ...prev]);
+      setAllSnippets(prev => [snippet, ...prev]);
       showSuccess(`Snippet "${snippet.title || 'Untitled'}" synced from Google Sheets`);
       console.log(`✅ Synced snippet #${snippetId} from Google Sheets:`, snippet.title);
       

@@ -2,12 +2,13 @@
  * Feed Context - Global State Management for Feed Feature
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import type { FeedItem, FeedPreferences, FeedQuiz } from '../types/feed';
 import { feedDB } from '../db/feedDb';
 import { generateFeedItems, generateFeedQuiz } from '../services/feedGenerator';
 import { useAuth } from './AuthContext';
 import { useSwag } from './SwagContext';
+import { useProject } from './ProjectContext';
 import { useToast } from '../components/ToastManager';
 import { googleDriveSync } from '../services/googleDriveSync';
 
@@ -52,9 +53,21 @@ interface FeedProviderProps {
 export function FeedProvider({ children }: FeedProviderProps) {
   const { getToken } = useAuth();
   const { snippets } = useSwag();
+  const { getCurrentProjectId } = useProject();
   const { showSuccess, showWarning, showError } = useToast();
   
-  const [items, setItems] = useState<FeedItem[]>([]);
+  const [allItems, setAllItems] = useState<FeedItem[]>([]);
+  
+  // Filter items by current project
+  const items = useMemo(() => {
+    const currentProjectId = getCurrentProjectId();
+    if (!currentProjectId) {
+      // No project selected - show all items
+      return allItems;
+    }
+    // Filter by current project
+    return allItems.filter(item => item.projectId === currentProjectId);
+  }, [allItems, getCurrentProjectId]);
   const [preferences, setPreferences] = useState<FeedPreferences>({
     searchTerms: ['latest world news'],
     likedTopics: [],
@@ -110,7 +123,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
         console.log('📂 Loading items from DB...');
         const loadedItems = await feedDB.getItems(10, 0);
         console.log('✅ Loaded items from DB:', loadedItems.length);
-        setItems(loadedItems);
+        setAllItems(loadedItems);
         
         console.log('✅ Initial data load complete');
       } catch (err) {
@@ -184,24 +197,30 @@ export function FeedProvider({ children }: FeedProviderProps) {
           
           if (event.type === 'item_generated' && event.item) {
             console.log('✨ New item generated:', event.item.title);
-            generatedItems.push(event.item);
+            // Auto-tag with current project
+            const currentProjectId = getCurrentProjectId();
+            const itemWithProject = {
+              ...event.item,
+              projectId: currentProjectId || undefined
+            };
+            generatedItems.push(itemWithProject);
             
             // Save item to IndexedDB immediately (fire-and-forget, non-blocking)
-            feedDB.saveItems([event.item])
+            feedDB.saveItems([itemWithProject])
               .then(() => {
-                console.log('💾 Saved item to DB:', event.item!.id, event.item!.title);
+                console.log('💾 Saved item to DB:', itemWithProject.id, itemWithProject.title);
               })
               .catch(dbError => {
-                console.error('❌ Failed to save item to DB:', event.item!.id, dbError);
+                console.error('❌ Failed to save item to DB:', itemWithProject.id, dbError);
               });
             
             // Update status with item count
             setGenerationStatus(`Generated ${generatedItems.length} of 10 items...`);
             
             // Immediately update UI with new item (append to bottom of list)
-            setItems(prev => {
+            setAllItems(prev => {
               // Append new item to end
-              const updated = [...prev, event.item!];
+              const updated = [...prev, itemWithProject];
               
               // Prune oldest items if exceeding 30 items (keep newest 30)
               const pruned = updated.length > 30 ? updated.slice(-30) : updated;
@@ -282,7 +301,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
       await feedDB.updateItem(itemId, { stashed: true });
 
       // Update state
-      setItems(prev => 
+      setAllItems(prev => 
         prev.map(item => 
           item.id === itemId ? { ...item, stashed: true } : item
         )
@@ -314,7 +333,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
       await feedDB.updateItem(itemId, { trashed: true });
 
       // Update state (remove from list)
-      setItems(prev => prev.filter(item => item.id !== itemId));
+      setAllItems(prev => prev.filter(item => item.id !== itemId));
 
       // Extract topics for preferences (disliked)
       const item = items.find(i => i.id === itemId);
@@ -340,7 +359,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     try {
       await feedDB.updateItem(itemId, { viewed: true });
       
-      setItems(prev => 
+      setAllItems(prev => 
         prev.map(item => 
           item.id === itemId ? { ...item, viewed: true } : item
         )
@@ -430,7 +449,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     try {
       setIsLoading(true);
       const loadedItems = await feedDB.getItems(10, 0);
-      setItems(loadedItems);
+      setAllItems(loadedItems);
     } catch (err) {
       console.error('Failed to refresh feed:', err);
       setError(err instanceof Error ? err.message : 'Failed to refresh');

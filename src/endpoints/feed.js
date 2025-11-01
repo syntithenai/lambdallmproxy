@@ -353,10 +353,152 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
     // Fetch images for feed items (in parallel) and emit each item as it completes
     eventCallback('status', { message: 'Fetching images...' });
     
+    // Determine which items should get AI-generated images (2 out of 10, evenly spaced)
+    const aiImageIndices = new Set();
+    if (items.length >= 2) {
+        // Generate AI images for items at positions 2 and 7 (0-indexed: 1 and 6)
+        // This distributes them evenly through the feed
+        aiImageIndices.add(1);
+        if (items.length >= 7) {
+            aiImageIndices.add(6);
+        } else if (items.length >= 4) {
+            aiImageIndices.add(Math.floor(items.length / 2) + 1);
+        }
+    }
+    
+    // Artistic styles for AI-generated images (variety to stand out from photos)
+    const artisticStyles = [
+        'watercolor painting style, soft edges, artistic',
+        'digital illustration, vibrant colors, modern art style',
+        'oil painting style, impressionist, rich textures',
+        'minimalist geometric art, bold shapes, abstract',
+        'vintage poster art, retro aesthetic, stylized',
+        'paper cut art style, layered, dimensional',
+        'ink wash painting, monochromatic, flowing lines',
+        'pop art style, bright colors, bold outlines'
+    ];
+    
     const itemsWithImages = [];
     let completedCount = 0;
+    let totalImageGenCost = 0; // Track AI image generation costs
     
     const imagePromises = items.map(async (item, idx) => {
+        // PRIORITY 0: AI-generated images for selected items (if image generation available)
+        if (aiImageIndices.has(idx)) {
+            try {
+                // Load PROVIDER_CATALOG and check availability
+                const fs = require('fs');
+                const path = require('path');
+                const { checkMultipleProviders } = require('../utils/provider-health');
+                
+                const catalogPath = path.join(__dirname, '..', '..', 'PROVIDER_CATALOG.json');
+                const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+                
+                if (catalog.image && catalog.image.providers) {
+                    const { generateImageDirect } = require('./generate-image');
+                    
+                    // Build creative prompt from feed item
+                    const styleIndex = idx % artisticStyles.length;
+                    const style = artisticStyles[styleIndex];
+                    const basePrompt = item.title.substring(0, 100);
+                    const topics = item.topics.slice(0, 3).join(', ');
+                    const aiPrompt = `${basePrompt}. ${topics}. ${style}`;
+                    
+                    console.log(`🎨 Generating AI image ${Array.from(aiImageIndices).indexOf(idx) + 1}/${aiImageIndices.size} for: "${item.title.substring(0, 50)}..."`);
+                    console.log(`🎨 Style: ${style.substring(0, 60)}...`);
+                    
+                    eventCallback('status', { 
+                        message: `Generating AI image ${Array.from(aiImageIndices).indexOf(idx) + 1}/${aiImageIndices.size}...` 
+                    });
+                    
+                    // Use load-balanced model selection for 'fast' quality tier
+                    const qualityTier = 'fast'; // Lowest cost
+                    const matchingModels = [];
+                    
+                    // Find all models matching the quality tier
+                    for (const [providerName, providerData] of Object.entries(catalog.image.providers)) {
+                        for (const [modelKey, modelData] of Object.entries(providerData.models || {})) {
+                            if (modelData.qualityTier === qualityTier && modelData.available !== false) {
+                                matchingModels.push({
+                                    provider: providerName,
+                                    modelKey,
+                                    model: modelData.id || modelKey,
+                                    qualityTier: modelData.qualityTier,
+                                    pricing: modelData.pricing,
+                                    fallbackPriority: modelData.fallbackPriority || 99
+                                });
+                            }
+                        }
+                    }
+                    
+                    if (matchingModels.length === 0) {
+                        console.warn(`⚠️ No 'fast' tier image models available, skipping AI generation`);
+                        // Fall through to web search
+                    } else {
+                        // Check provider availability
+                        const uniqueProviders = [...new Set(matchingModels.map(m => m.provider))];
+                        const availabilityResults = await checkMultipleProviders(uniqueProviders);
+                        
+                        // Filter to available providers
+                        const availableModels = matchingModels.filter(m => {
+                            const availability = availabilityResults[m.provider];
+                            return availability && availability.available;
+                        });
+                        
+                        if (availableModels.length === 0) {
+                            console.warn(`⚠️ No available image providers, skipping AI generation`);
+                            // Fall through to web search
+                        } else {
+                            // Sort by fallback priority (lower = preferred)
+                            availableModels.sort((a, b) => a.fallbackPriority - b.fallbackPriority);
+                            const selectedModel = availableModels[0];
+                            
+                            console.log(`🎯 Selected image model: ${selectedModel.provider}/${selectedModel.model} (priority: ${selectedModel.fallbackPriority})`);
+                            
+                            // Generate image with selected model (includes automatic fallback)
+                            const imageResult = await generateImageDirect({
+                                prompt: aiPrompt,
+                                provider: selectedModel.provider,
+                                model: selectedModel.model,
+                                modelKey: selectedModel.modelKey,
+                                size: '512x512', // Low resolution for speed/cost
+                                quality: qualityTier,
+                                style: 'natural'
+                            });
+                            
+                            if (imageResult.success && imageResult.base64) {
+                                const imageUrl = `data:image/png;base64,${imageResult.base64}`;
+                                const imageCost = imageResult.cost || 0;
+                                totalImageGenCost += imageCost;
+                                
+                                console.log(`✅ Generated AI image for: "${item.title.substring(0, 50)}..." (cost: $${imageCost.toFixed(6)}, fallback: ${imageResult.fallbackUsed || false})`);
+                                
+                                return {
+                                    ...item,
+                                    image: imageUrl,
+                                    imageThumb: imageUrl,
+                                    imageSource: 'ai_generated',
+                                    imageProvider: imageResult.provider,
+                                    imageModel: imageResult.model,
+                                    imageStyle: style,
+                                    imageCost: imageCost,
+                                    imageFallbackUsed: imageResult.fallbackUsed || false,
+                                    imageAttribution: `AI-generated image (${style.split(',')[0]})`,
+                                    imageAttributionHtml: `AI-generated image · <span style="opacity: 0.7">${style.split(',')[0]}</span>`
+                                };
+                            } else {
+                                console.warn(`⚠️ AI image generation failed for item ${idx}: ${imageResult.error || 'Unknown error'}`);
+                                // Fall through to web search
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`AI image generation failed for "${item.title}":`, error.message);
+                // Fall through to web search
+            }
+        }
+        
         // PRIORITY 1: Try to extract images from web search results
         if (item.searchResults && item.searchResults.length > 0) {
             try {
@@ -436,12 +578,21 @@ eventCallback('status', {
     message: `Generated ${items.length} items`
 });
 
+// Log AI image generation summary
+if (totalImageGenCost > 0) {
+    console.log(`🎨 Total AI image generation cost: $${totalImageGenCost.toFixed(6)} for ${aiImageIndices.size} images`);
+    eventCallback('status', { 
+        message: `Generated ${aiImageIndices.size} AI images (cost: $${totalImageGenCost.toFixed(6)})`
+    });
+}
+
 return { 
     items, // Items already emitted via item_generated events
     searchResults,
     usage: response.usage,
     model: response.model,
-    provider: response.provider
+    provider: response.provider,
+    imageGenCost: totalImageGenCost // Include image generation costs
 };
 }
 
@@ -603,7 +754,7 @@ async function handler(event, responseStream, context) {
             p.type === providerUsed && p.apiKey && !p.apiKey.startsWith('sk-proj-')
         );
         
-        const cost = calculateCost(
+        const llmCost = calculateCost(
             modelUsed,
             promptTokens,
             completionTokens,
@@ -611,7 +762,11 @@ async function handler(event, responseStream, context) {
             isUserProvidedKey
         );
         
-        console.log(`💵 Calculated cost: $${cost.toFixed(6)} (user key: ${isUserProvidedKey})`);
+        // Include AI image generation costs
+        const imageGenCost = result.imageGenCost || 0;
+        const totalCost = llmCost + imageGenCost;
+        
+        console.log(`💵 Calculated cost: LLM=$${llmCost.toFixed(6)}, Images=$${imageGenCost.toFixed(6)}, Total=$${totalCost.toFixed(6)} (user key: ${isUserProvidedKey})`);
         
         // Log to Google Sheets
         try {
@@ -624,15 +779,18 @@ async function handler(event, responseStream, context) {
                 promptTokens,
                 completionTokens,
                 totalTokens,
-                cost,
+                cost: totalCost, // Include total cost with images
                 requestId,
                 metadata: {
                     itemsGenerated: result.items.length,
                     searchTermsCount: searchTerms.length,
-                    swagItemsCount: swagContent.length
+                    swagItemsCount: swagContent.length,
+                    llmCost: llmCost,
+                    imageGenCost: imageGenCost,
+                    aiImagesGenerated: imageGenCost > 0 ? 2 : 0
                 }
             });
-            console.log(`💰 Feed generation cost: $${cost.toFixed(6)} for ${promptTokens + completionTokens} tokens`);
+            console.log(`💰 Feed generation cost: LLM=$${llmCost.toFixed(6)}, Images=$${imageGenCost.toFixed(6)}, Total=$${totalCost.toFixed(6)}`);
         } catch (logError) {
             console.error('Failed to log feed generation:', logError);
         }
@@ -642,10 +800,14 @@ async function handler(event, responseStream, context) {
             success: true,
             itemsGenerated: result.items.length,
             duration: Date.now() - startTime,
-            cost
+            cost: totalCost,
+            costBreakdown: {
+                llm: llmCost,
+                imageGeneration: imageGenCost
+            }
         });
         
-        console.log(`✅ Feed generation complete: ${result.items.length} items in ${Date.now() - startTime}ms, cost: $${cost.toFixed(6)}`);
+        console.log(`✅ Feed generation complete: ${result.items.length} items in ${Date.now() - startTime}ms, cost: $${totalCost.toFixed(6)} (LLM: $${llmCost.toFixed(6)}, Images: $${imageGenCost.toFixed(6)})`);
         
     } catch (error) {
         console.error('Feed generation error:', error);

@@ -37,19 +37,37 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
     localStorage.getItem('auto_sync_enabled') === 'true'
   );
 
-  // Load sync metadata
+  // Load sync metadata and actual local counts
   const loadSyncMetadata = async () => {
     try {
       const metadata = await googleDriveSync.getSyncMetadata();
       setLastSyncTime(metadata.lastSyncTime);
+      
+      // Get actual local counts from localStorage and IndexedDB
+      const localPlans = JSON.parse(localStorage.getItem('saved_plans') || '[]');
+      const localPlaylists = JSON.parse(localStorage.getItem('playlists') || '[]');
+      const localSnippets = JSON.parse(localStorage.getItem('swag-snippets') || '[]');
+      const localChatHistory = JSON.parse(localStorage.getItem('chat_history') || '[]');
+      
+      // Import IndexedDB modules dynamically to get counts
+      const { feedDB } = await import('../db/feedDb');
+      const { quizDB } = await import('../db/quizDb');
+      const { ragDB } = await import('../utils/ragDB');
+      
+      // Get counts from IndexedDB by fetching all items (no limit)
+      // For feedDB, we need to get all items, so use a high limit
+      const feedItems = await feedDB.getItems(10000, 0); // Get up to 10k items
+      const quizStats = await quizDB.getQuizStatistics(); // Get all statistics
+      const embeddingChunks = await ragDB.getAllChunks();
+      
       setSyncMetadata({
-        plansCount: metadata.plansCount,
-        playlistsCount: metadata.playlistsCount,
-        snippetsCount: metadata.snippetsCount || 0,
-        embeddingsCount: metadata.embeddingsCount || 0,
-        chatHistoryCount: metadata.chatHistoryCount || 0,
-        quizProgressCount: metadata.quizProgressCount || 0,
-        feedItemsCount: metadata.feedItemsCount || 0
+        plansCount: localPlans.length,
+        playlistsCount: localPlaylists.length,
+        snippetsCount: localSnippets.length,
+        embeddingsCount: embeddingChunks.length,
+        chatHistoryCount: localChatHistory.length,
+        quizProgressCount: quizStats.length,
+        feedItemsCount: feedItems.length
       });
     } catch (error) {
       console.error('Failed to load sync metadata:', error);

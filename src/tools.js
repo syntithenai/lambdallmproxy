@@ -1034,19 +1034,24 @@ async function callFunction(name, args = {}, context = {}) {
                   // Categorize links by media type
                   const categorized = parser.categorizeLinks(allLinks);
                   
-                  // Add to result with separate keys for each media type
-                  if (images.length > 0) result.images = images;
-                  if (categorized.youtube.length > 0) result.youtube = categorized.youtube;
+                  // Initialize page_content if it doesn't exist
+                  if (!result.page_content) {
+                    result.page_content = {};
+                  }
+                  
+                  // Add to page_content for frontend consumption (chat.js expects this structure)
+                  if (images.length > 0) result.page_content.images = images;
+                  if (categorized.youtube.length > 0) result.page_content.youtube = categorized.youtube;
                   if (categorized.video.length > 0 || categorized.audio.length > 0 || categorized.media.length > 0) {
-                    result.media = [
+                    result.page_content.media = [
                       ...categorized.video,
                       ...categorized.audio,
                       ...categorized.media
                     ];
                   }
-                  if (categorized.regular.length > 0) result.links = categorized.regular;
+                  if (categorized.regular.length > 0) result.page_content.links = categorized.regular;
                   
-                  console.log(`🖼️ Extracted ${images.length} images, ${categorized.youtube.length} YouTube, ${result.media?.length || 0} media, ${categorized.regular.length} links from ${r.url}`);
+                  console.log(`🖼️ Extracted ${images.length} images, ${categorized.youtube.length} YouTube, ${result.page_content.media?.length || 0} media, ${categorized.regular.length} links from ${r.url}`);
                 } catch (parseError) {
                   console.error(`Failed to parse HTML for ${r.url}:`, parseError.message);
                 }

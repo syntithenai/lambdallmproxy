@@ -78,7 +78,6 @@ export interface TTSContextValue {
   resume(): void;
   
   // Configuration methods
-  setEnabled(enabled: boolean): void;
   setProvider(provider: TTSProviderType): void;
   setVoice(voiceId: string): void;
   setRate(rate: number): void;
@@ -99,7 +98,7 @@ export interface TTSContextValue {
 // Default TTS settings
 export const DEFAULT_TTS_SETTINGS: TTSSettings = {
   version: '1.0.0',
-  isEnabled: false, // Keep disabled by default
+  isEnabled: true, // Always enabled when TTS feature is available
   currentProvider: 'llm',
   currentVoice: null,
   rate: 1.0,

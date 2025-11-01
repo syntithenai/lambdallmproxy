@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useToast } from './ToastManager';
 // Document management removed from settings - heavy features moved to SWAG page
 import { useSettings } from '../contexts/SettingsContext';
-import { getCachedApiBase } from '../utils/api';
+import { useUsage } from '../contexts/UsageContext';
 
 interface RAGConfig {
   enabled: boolean;
@@ -33,31 +33,15 @@ const LOCAL_EMBEDDING_MODELS = [
   { id: 'Xenova/bge-small-en-v1.5', name: 'BGE-Small (Highest Quality)', dimensions: 384, size: '33 MB', speed: 'Slower', description: 'Best quality for English text, slower generation' },
 ];
 
-interface EmbeddingModel {
-  id: string;
-  provider: string;
-  name: string;
-  dimensions: number;
-  maxTokens: number;
-  recommended?: boolean;
-  deprecated?: boolean;
-  description: string;
-  pricing?: {
-    perMillionTokens: number;
-  };
-}
-
 export const RAGSettings: React.FC = () => {
   const { showSuccess, showError, showPersistentToast, removeToast, updateToast } = useToast();
   const { settings, setSettings } = useSettings();
+  const { availableEmbeddings, loading: loadingEmbeddings } = useUsage();
   const [config, setConfig] = useState<RAGConfig>(DEFAULT_RAG_CONFIG);
-  const [availableEmbeddings, setAvailableEmbeddings] = useState<EmbeddingModel[]>([]);
-  const [loadingEmbeddings, setLoadingEmbeddings] = useState(true);
   const [modelLoadProgress, setModelLoadProgress] = useState<{ loading: boolean; progress: number; model: string } | null>(null);
 
   useEffect(() => {
     loadRAGConfig();
-    fetchAvailableEmbeddings();
   }, []);
   
   // Check if currently selected model is available
@@ -73,46 +57,6 @@ export const RAGSettings: React.FC = () => {
     }
     
     return availableEmbeddings.some(m => m.id === settings.embeddingModel);
-  };
-
-  const fetchAvailableEmbeddings = async () => {
-    try {
-      const apiUrl = await getCachedApiBase();
-      const token = localStorage.getItem('google_token');
-      
-      // Include UI providers in request so billing endpoint can filter embeddings
-      const providers = settings.providers
-        ?.filter(p => p.enabled !== false)
-        .map(p => ({
-          type: p.type,
-          allowedModels: p.allowedModels
-        })) || [];
-      
-      const response = await fetch(`${apiUrl}/billing`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          providers // Send UI providers to check for embedding availability
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.availableEmbeddings && Array.isArray(data.availableEmbeddings)) {
-          setAvailableEmbeddings(data.availableEmbeddings);
-          console.log('📊 Fetched available embeddings:', data.availableEmbeddings.length, 'from', providers.length, 'providers');
-        }
-      } else {
-        console.warn('Failed to fetch available embeddings from billing endpoint');
-      }
-    } catch (error) {
-      console.error('Error fetching available embeddings:', error);
-    } finally {
-      setLoadingEmbeddings(false);
-    }
   };
 
   const loadRAGConfig = async () => {
@@ -368,9 +312,23 @@ export const RAGSettings: React.FC = () => {
         )}
         
         {availableEmbeddings.length === 0 && !loadingEmbeddings && (
-          <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
-            ⚠️ No API embedding models available. Configure a provider (OpenAI, Gemini, Together AI, etc.) to use API-based embeddings.
-          </p>
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mt-2">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <h4 className="font-medium text-yellow-900 dark:text-yellow-100">No API Embedding Models Available</h4>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                  To use API-based embeddings, configure a provider in the <strong>Providers</strong> tab with an API key.
+                  Supported providers: OpenAI, Gemini, Together AI, Cohere, Voyage AI.
+                </p>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2">
+                  💡 <strong>Tip:</strong> Local browser-based embeddings work without any API keys and are perfect for getting started!
+                </p>
+              </div>
+            </div>
+          </div>
         )}
         
         <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">

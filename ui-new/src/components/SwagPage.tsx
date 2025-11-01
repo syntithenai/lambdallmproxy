@@ -6,6 +6,7 @@ import { useCast } from '../contexts/CastContext';
 import { useTTS } from '../contexts/TTSContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { useProject } from '../contexts/ProjectContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { MarkdownEditor } from './MarkdownEditor';
@@ -41,6 +42,7 @@ export const SwagPage: React.FC = () => {
   const { showSuccess, showError, showWarning } = useToast();
   const { getToken } = useAuth();
   const { settings } = useSettings();
+  const { getCurrentProjectId } = useProject();
   
   // Handler for when user clicks edit button on an individual image
   const handleImageEdit = (imageData: {
@@ -2776,6 +2778,7 @@ export const SwagPage: React.FC = () => {
                 } else {
                   // Fallback to old method if quizId is not available
                   console.warn('No quizId found, using fallback save method');
+                  const currentProjectId = getCurrentProjectId();
                   await quizDB.saveQuizStatistic({
                     quizTitle: currentQuiz.title,
                     snippetIds: quizMetadata.snippetIds,
@@ -2785,7 +2788,8 @@ export const SwagPage: React.FC = () => {
                     completedAt: new Date().toISOString(),
                     answers,
                     enrichment: quizMetadata.enrichment,
-                    completed: true
+                    completed: true,
+                    projectId: currentProjectId || undefined  // Auto-tag with current project
                   });
                 }
                 

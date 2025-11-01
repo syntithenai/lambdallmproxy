@@ -17,6 +17,7 @@ export interface UserInteraction {
   topics: string[];               // extracted topics
   source: string;                 // search result, swag snippet, etc.
   content: string;                // item text (for TF-IDF)
+  projectId?: string;             // Associated project for filtering
   
   // Quiz engagement tracking
   quizGenerated?: boolean;        // true if quiz was created from this item
@@ -641,6 +642,96 @@ class FeedDatabase {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+  }
+
+  /**
+   * Remove a topic from avoidTopics list
+   */
+  async removeAvoidTopic(userId: string = 'default', topic: string): Promise<void> {
+    const prefs = await this.getUserPreferences(userId);
+    if (!prefs) return;
+
+    prefs.avoidTopics = prefs.avoidTopics.filter(t => t !== topic);
+    prefs.lastUpdated = Date.now();
+
+    await this.updateUserPreferences(prefs);
+  }
+
+  /**
+   * Clear all avoided topics
+   */
+  async clearAvoidTopics(userId: string = 'default'): Promise<void> {
+    const prefs = await this.getUserPreferences(userId);
+    if (!prefs) return;
+
+    prefs.avoidTopics = [];
+    prefs.lastUpdated = Date.now();
+
+    await this.updateUserPreferences(prefs);
+  }
+
+  /**
+   * Get topic statistics for the last N months
+   * Returns top topics with their monthly counts
+   */
+  async getTopicStatistics(maxMonths: number = 6): Promise<Map<string, { month: string; count: number }[]>> {
+    await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const interactions = await this.getInteractions(10000);
+    const now = Date.now();
+    const monthsAgo = maxMonths * 30 * 24 * 60 * 60 * 1000;
+    const startTime = now - monthsAgo;
+
+    // Filter to last N months
+    const recentInteractions = interactions.filter(i => i.timestamp >= startTime);
+
+    // Group by topic and month
+    const topicMonthCounts = new Map<string, Map<string, number>>();
+
+    for (const interaction of recentInteractions) {
+      if (!interaction.topics || interaction.topics.length === 0) continue;
+
+      const date = new Date(interaction.timestamp);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+      for (const topic of interaction.topics) {
+        if (!topicMonthCounts.has(topic)) {
+          topicMonthCounts.set(topic, new Map());
+        }
+        const monthCounts = topicMonthCounts.get(topic)!;
+        monthCounts.set(monthKey, (monthCounts.get(monthKey) || 0) + 1);
+      }
+    }
+
+    // Convert to array format
+    const result = new Map<string, { month: string; count: number }[]>();
+    for (const [topic, monthCounts] of topicMonthCounts.entries()) {
+      const monthArray = Array.from(monthCounts.entries())
+        .map(([month, count]) => ({ month, count }))
+        .sort((a, b) => a.month.localeCompare(b.month));
+      result.set(topic, monthArray);
+    }
+
+    return result;
+  }
+
+  /**
+   * Get top N topics overall
+   */
+  async getTopTopics(limit: number = 5): Promise<Array<{ topic: string; count: number }>> {
+    const stats = await this.getTopicStatistics(6);
+    const topicTotals = new Map<string, number>();
+
+    for (const [topic, monthCounts] of stats.entries()) {
+      const total = monthCounts.reduce((sum, { count }) => sum + count, 0);
+      topicTotals.set(topic, total);
+    }
+
+    return Array.from(topicTotals.entries())
+      .map(([topic, count]) => ({ topic, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
   }
 }
 

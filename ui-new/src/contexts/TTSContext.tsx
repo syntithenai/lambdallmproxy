@@ -36,7 +36,7 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const isStoppingIntentionally = useRef(false);
   
   const [state, setState] = useState<TTSState>({
-    isEnabled: ttsSettings.isEnabled,
+    isEnabled: true, // Always enabled when TTS feature is available
     isPlaying: false,
     currentText: null,
     currentProvider: ttsSettings.currentProvider,
@@ -49,6 +49,14 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     autoSummarize: ttsSettings.autoSummarize,
     elevenlabsApiKey: ttsSettings.elevenlabsApiKey
   });
+
+  // Migration: Ensure isEnabled is always true for all users
+  useEffect(() => {
+    if (ttsSettings.isEnabled !== true) {
+      console.log('🎙️ TTS: Migrating user settings - enabling TTS');
+      setTTSSettings(prev => ({ ...prev, isEnabled: true }));
+    }
+  }, [ttsSettings.isEnabled, setTTSSettings]);
 
   // Initialize providers when settings or backend capabilities change
   useEffect(() => {
@@ -389,11 +397,6 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   }, [providerFactory]);
 
-  const setEnabled = useCallback((enabled: boolean) => {
-    setState(prev => ({ ...prev, isEnabled: enabled }));
-    setTTSSettings(prev => ({ ...prev, isEnabled: enabled }));
-  }, [setTTSSettings]);
-
   const setProvider = useCallback(async (providerType: TTSProviderType) => {
     const provider = providerFactory.getProvider(providerType);
     if (!provider) return;
@@ -480,7 +483,6 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     stop,
     pause,
     resume,
-    setEnabled,
     setProvider,
     setVoice,
     setRate,

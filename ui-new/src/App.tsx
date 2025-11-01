@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProjectProvider } from './contexts/ProjectContext';
 import { SearchResultsProvider } from './contexts/SearchResultsContext';
 import { PlaylistProvider } from './contexts/PlaylistContext';
 import { PlayerProvider } from './contexts/PlayerContext';
@@ -34,6 +35,7 @@ import { plansAdapter, playlistsAdapter } from './services/adapters';
 import { SyncStatusProvider } from './contexts/SyncStatusContext';
 import { AgentProvider, useAgents } from './contexts/AgentContext';
 import { GlobalAgentIndicator } from './components/GlobalAgentIndicator';
+import ProjectSelectorButton from './components/ProjectSelectorButton';
 
 // Lazy-loaded components for code splitting
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -408,12 +410,15 @@ function AppContent() {
       {/* Header - Only visible when authenticated */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="flex justify-between items-center px-1 md:px-4 py-3 max-w-screen-2xl md:mx-auto">
-          {/* Logo */}
-          <img 
-            src={`${import.meta.env.BASE_URL}agent.png`}
-            alt="Research Agent" 
-            className="h-10 sm:h-12 w-auto object-contain"
-          />
+          {/* Left side: Logo and Project Selector */}
+          <div className="flex items-center gap-3">
+            <img 
+              src={`${import.meta.env.BASE_URL}agent.png`}
+              alt="Research Agent" 
+              className="h-10 sm:h-12 w-auto object-contain"
+            />
+            <ProjectSelectorButton />
+          </div>
           
           {/* Desktop Navigation - Hidden on mobile */}
           <div className="hidden md:flex items-center gap-3">
@@ -772,12 +777,13 @@ function App() {
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ToastProvider>
         <AuthProvider>
-          <FeaturesProvider>
-            <UsageProvider>
-              <SettingsProvider>
-                <LocationProvider>
-                  <SyncStatusProvider>
-                    <AgentProvider>
+          <ProjectProvider>
+            <FeaturesProvider>
+              <UsageProvider>
+                <SettingsProvider>
+                  <LocationProvider>
+                    <SyncStatusProvider>
+                      <AgentProvider>
                       {TTS_FEATURE_ENABLED ? (
                         <TTSProvider>
                           <CastProvider>
@@ -819,6 +825,7 @@ function App() {
               </SettingsProvider>
             </UsageProvider>
           </FeaturesProvider>
+          </ProjectProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

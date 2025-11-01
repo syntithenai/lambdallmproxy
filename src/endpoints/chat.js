@@ -18,6 +18,7 @@ const { selectModel, selectWithFallback, RoundRobinSelector, SelectionStrategy }
 const { loadGuardrailConfig } = require('../guardrails/config');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const { loadProviderCatalog } = require('../utils/catalog-loader');
+const { cleanStreamingChunk, requiresCleaning } = require('../model-formats');
 
 // Load provider catalog using centralized loader
 let providerCatalog = loadProviderCatalog();
@@ -2538,9 +2539,15 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                         console.log(`⏱️ Time to first token: ${timeToFirstToken}ms (provider: ${provider}, model: ${model})`);
                     }
                     
-                    assistantMessage.content += delta.content;
+                    // Apply model-specific format cleaning if needed
+                    let cleanedContent = delta.content;
+                    if (requiresCleaning(model)) {
+                        cleanedContent = cleanStreamingChunk(delta.content, model);
+                    }
+                    
+                    assistantMessage.content += cleanedContent;
                     sseWriter.writeEvent('delta', {
-                        content: delta.content
+                        content: cleanedContent
                     });
                 }
                 

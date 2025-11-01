@@ -25,6 +25,7 @@ export interface FeedItem {
   viewed: boolean;               // User has seen it
   stashed: boolean;              // Stashed to Swag
   trashed: boolean;              // User dismissed
+  projectId?: string;            // Associated project for filtering
 }
 
 export interface FeedPreferences {

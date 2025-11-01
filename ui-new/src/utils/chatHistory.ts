@@ -65,6 +65,7 @@ export async function saveChatToHistory(
     generatedUserQuery?: string;
     selectedSnippetIds?: string[];
     todosState?: any;
+    projectId?: string;  // Associated project for filtering
   }
 ): Promise<string> {
   try {

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { quizDB, type QuizStatistic } from '../db/quizDb';
 import { Trophy, Brain, Clock, TrendingUp, Calendar, ArrowLeft, Trash2 } from 'lucide-react';
 import { useToast } from './ToastManager';
 import { useAuth } from '../contexts/AuthContext';
+import { useProject } from '../contexts/ProjectContext';
 import { QuizCard } from './QuizCard';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
 import { googleDriveSync } from '../services/googleDriveSync';
@@ -14,8 +15,20 @@ export default function QuizPage() {
   const { t } = useTranslation();
   const { showSuccess, showError, showWarning } = useToast();
   const { getToken } = useAuth();
+  const { getCurrentProjectId } = useProject();
   
-  const [statistics, setStatistics] = useState<QuizStatistic[]>([]);
+  const [allStatistics, setAllStatistics] = useState<QuizStatistic[]>([]);
+  
+  // Filter statistics by current project
+  const statistics = useMemo(() => {
+    const currentProjectId = getCurrentProjectId();
+    if (!currentProjectId) {
+      // No project selected - show all quizzes
+      return allStatistics;
+    }
+    // Filter by current project
+    return allStatistics.filter(quiz => quiz.projectId === currentProjectId);
+  }, [allStatistics, getCurrentProjectId]);
   const [summary, setSummary] = useState<{
     totalQuizzes: number;
     averageScore: number;
@@ -106,7 +119,7 @@ export default function QuizPage() {
         }))
       });
       
-      setStatistics(stats);
+      setAllStatistics(stats);
       setSummary(summaryData);
     } catch (error) {
       console.error('Failed to load quiz statistics:', error);
@@ -419,6 +432,7 @@ export default function QuizPage() {
                 } else {
                   // Fallback to old method if quizId is not available
                   console.warn('No quizId found, using fallback save method');
+                  const currentProjectId = getCurrentProjectId();
                   await quizDB.saveQuizStatistic({
                     quizTitle: currentQuiz.title,
                     snippetIds: quizMetadata.snippetIds,
@@ -428,7 +442,8 @@ export default function QuizPage() {
                     completedAt: new Date().toISOString(),
                     answers,
                     enrichment: quizMetadata.enrichment,
-                    completed: true
+                    completed: true,
+                    projectId: currentProjectId || undefined  // Auto-tag with current project
                   });
                 }
                 

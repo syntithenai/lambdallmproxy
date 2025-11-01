@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation as useRouterLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchResults } from '../contexts/SearchResultsContext';
 import { usePlaylist } from '../contexts/PlaylistContext';
@@ -10,6 +11,7 @@ import { useUsage } from '../contexts/UsageContext';
 import { useCast } from '../contexts/CastContext';
 import { useLocation } from '../contexts/LocationContext';
 import { useTTS } from '../contexts/TTSContext';
+import { useProject } from '../contexts/ProjectContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
@@ -103,6 +105,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { state: ttsState, speak: ttsSpeak } = useTTS();
   const { isConnected: isCastConnected, sendMessages: sendCastMessages, sendScrollPosition } = useCast();
   const { location, isLoading: locationLoading, requestLocation, clearLocation } = useLocation();
+  const { getCurrentProjectId } = useProject();
   
   // Use regular state for messages - async storage causes race conditions
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -255,7 +258,18 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Chat history tracking
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
-  const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
+  const [allChatHistory, setAllChatHistory] = useState<ChatHistoryEntry[]>([]);
+  
+  // Filter chat history by current project
+  const chatHistory = useMemo(() => {
+    const currentProjectId = getCurrentProjectId();
+    if (!currentProjectId) {
+      // No project selected - show all chats
+      return allChatHistory;
+    }
+    // Filter by current project
+    return allChatHistory.filter(chat => (chat as any).projectId === currentProjectId);
+  }, [allChatHistory, getCurrentProjectId]);
   
   // Transcription progress tracking
   const [transcriptionProgress, setTranscriptionProgress] = useState<Map<string, Array<{
@@ -456,6 +470,26 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       }
     }
   }, []);
+  
+  // Handle navigation state from feed items or other sources
+  const routerLocation = useRouterLocation();
+  useEffect(() => {
+    if (routerLocation.state?.initialQuery) {
+      const query = routerLocation.state.initialQuery;
+      setInput(query);
+      
+      // Auto-submit if requested and not currently loading
+      if (routerLocation.state?.autoSubmit && !isLoading) {
+        // Small delay to ensure input is set and UI is ready
+        setTimeout(() => {
+          handleSend(query);
+        }, 100);
+      }
+      
+      // Clear navigation state to prevent re-triggering
+      window.history.replaceState({}, document.title);
+    }
+  }, [routerLocation.state]);
   
   // Countdown timer for image generation
   useEffect(() => {
@@ -1384,6 +1418,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       // Generate ID and save. Otherwise, update existing chat.
       (async () => {
         try {
+          const currentProjectId = getCurrentProjectId();
           const id = await saveChatToHistory(
             messages, 
             currentChatId || undefined,
@@ -1392,7 +1427,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
               planningQuery: originalPlanningQuery || undefined,
               generatedSystemPrompt: generatedSystemPromptFromPlanning || undefined,
               generatedUserQuery: generatedUserQueryFromPlanning || undefined,
-              selectedSnippetIds: Array.from(selectedSnippetIds) // Convert Set to Array for storage
+              selectedSnippetIds: Array.from(selectedSnippetIds), // Convert Set to Array for storage
+              projectId: currentProjectId || undefined  // Auto-tag with current project
             }
           );
           if (!currentChatId) {
@@ -1438,7 +1474,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     if (showLoadDialog) {
       (async () => {
         const history = await getAllChatHistory();
-        setChatHistory(history);
+        setAllChatHistory(history);
       })();
     }
   }, [showLoadDialog]);
@@ -4161,7 +4197,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
   const handleDeleteChat = async (chatId: string) => {
     await deleteChatFromHistory(chatId);
     const history = await getAllChatHistory();
-    setChatHistory(history);
+    setAllChatHistory(history);
     showSuccess('Chat deleted');
   };
 
@@ -4174,7 +4210,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     }
     
     const history = await getAllChatHistory();
-    setChatHistory(history);
+    setAllChatHistory(history);
     setSelectedChatIds(new Set());
     showSuccess(`${count} chat${count > 1 ? 's' : ''} deleted`);
   };
@@ -4200,7 +4236,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
 
   const handleClearAllHistory = async () => {
     await clearAllChatHistory();
-    setChatHistory([]);
+    setAllChatHistory([]);
     setSelectedChatIds(new Set());
     setShowClearHistoryConfirm(false);
     setShowLoadDialog(false);

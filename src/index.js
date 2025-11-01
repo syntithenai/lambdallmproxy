@@ -397,8 +397,8 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             }
         }
         
-        if (method === 'GET' && path === '/billing') {
-            console.log('Routing to billing endpoint: GET /billing');
+        if ((method === 'GET' || method === 'POST') && path === '/billing') {
+            console.log(`Routing to billing endpoint: ${method} /billing`);
             await billingEndpoint.handler(event, responseStream, context);
             return;
         }

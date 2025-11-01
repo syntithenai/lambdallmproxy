@@ -4,6 +4,7 @@
 
 const https = require('https');
 const { PROVIDERS } = require('./providers');
+const { cleanModelContent, requiresCleaning } = require('./model-formats');
 
 function isOpenAIModel(model) { return typeof model === 'string' && model.startsWith('openai:'); }
 function isGroqModel(model) { return typeof model === 'string' && (model.startsWith('groq:') || model.startsWith('groq-free:')); }
@@ -226,9 +227,9 @@ function convertParameterSchema(schema) {
 }
 
 // Normalize Cohere response to OpenAI format
-function normalizeFromCohere(data) {
+function normalizeFromCohere(data, model) {
   const cohereResponse = data?.data || data;
-  const text = cohereResponse.text || '';
+  let text = cohereResponse.text || '';
   const toolCalls = [];
   
   // Convert Cohere tool_calls to OpenAI format
@@ -246,6 +247,11 @@ function normalizeFromCohere(data) {
     }
   }
   
+  // Apply model-specific format cleaning if needed
+  if (model && requiresCleaning(model)) {
+    text = cleanModelContent(text, model);
+  }
+  
   return {
     output: toolCalls,
     text: text,
@@ -256,7 +262,7 @@ function normalizeFromCohere(data) {
 }
 
 // Normalize OpenAI-compatible chat.completions tool_calls
-function normalizeFromChat(responseWithHeaders) {
+function normalizeFromChat(responseWithHeaders, model) {
   // Handle both old format (just data) and new format (data + headers)
   const data = responseWithHeaders?.data || responseWithHeaders;
   const httpHeaders = responseWithHeaders?.headers || {};
@@ -268,9 +274,16 @@ function normalizeFromChat(responseWithHeaders) {
   for (const tc of toolCalls) {
     out.push({ id: tc.id || null, call_id: tc.id || null, type: 'function_call', name: tc.function?.name, arguments: tc.function?.arguments || '{}' });
   }
+  
+  // Apply model-specific format cleaning if needed
+  let messageContent = choice?.message?.content || '';
+  if (model && requiresCleaning(model)) {
+    messageContent = cleanModelContent(messageContent, model);
+  }
+  
   return { 
     output: out, 
-    text: choice?.message?.content || '',
+    text: messageContent,
     rawResponse: data,  // Include the full raw JSON response with all metadata
     httpHeaders,        // Include HTTP response headers
     httpStatus          // Include HTTP status code
@@ -375,7 +388,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     };
     try {
       const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
-      const result = normalizeFromChat(data);
+      const result = normalizeFromChat(data, model);
       // Add provider context to successful response
       result.provider = 'openai';
       result.model = normalizedModel;
@@ -432,7 +445,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     };
     try {
       const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
-      const result = normalizeFromChat(data);
+      const result = normalizeFromChat(data, model);
       // Add provider context to successful response
       result.provider = 'groq';
       result.model = normalizedModel;
@@ -482,7 +495,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
     };
     try {
       const data = await httpsRequestJson({ hostname, path, method: 'POST', headers, bodyObj: payload, timeoutMs: options?.timeoutMs || 30000 });
-      const result = normalizeFromChat(data);
+      const result = normalizeFromChat(data, model);
       result.provider = 'together';
       result.model = normalizedModel;
       return result;
@@ -742,7 +755,7 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
         timeoutMs: options?.timeoutMs || 30000 
       });
       
-      const result = normalizeFromCohere(data);
+      const result = normalizeFromCohere(data, model);
       
       // Add provider context to successful response
       result.provider = 'cohere';

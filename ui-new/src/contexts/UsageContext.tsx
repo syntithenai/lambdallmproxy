@@ -12,6 +12,33 @@ interface TTSCapabilities {
   speakjs: boolean;
 }
 
+export interface EmbeddingModel {
+  id: string;
+  provider: string;
+  name: string;
+  dimensions: number;
+  maxTokens: number;
+  recommended?: boolean;
+  deprecated?: boolean;
+  description: string;
+  pricing?: {
+    perMillionTokens: number;
+  };
+}
+
+export interface ProviderCapability {
+  id: string;
+  type: string;
+  priority: number;
+  enabled: boolean;
+  source: string;
+  endpoint?: string;
+  defaultModel?: string;
+  rateLimitTPM?: number;
+  allowedModels?: string[];
+  maxQuality?: string;
+}
+
 interface UsageData {
   userEmail: string;
   totalCost: number;
@@ -30,6 +57,8 @@ interface UsageContextType {
   addCost: (cost: number) => void;
   isLocked: boolean;
   ttsCapabilities: TTSCapabilities | null;
+  availableEmbeddings: EmbeddingModel[];
+  providerCapabilities: ProviderCapability[];
 }
 
 const UsageContext = createContext<UsageContextType | undefined>(undefined);
@@ -40,6 +69,8 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ttsCapabilities, setTtsCapabilities] = useState<TTSCapabilities | null>(null);
+  const [availableEmbeddings, setAvailableEmbeddings] = useState<EmbeddingModel[]>([]);
+  const [providerCapabilities, setProviderCapabilities] = useState<ProviderCapability[]>([]);
 
   /**
    * Fetch usage data from billing endpoint
@@ -78,6 +109,18 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
       if (billingData.ttsCapabilities) {
         setTtsCapabilities(billingData.ttsCapabilities);
         console.log('🎙️ Server TTS capabilities:', billingData.ttsCapabilities);
+      }
+      
+      // Extract available embeddings from billing data
+      if (billingData.availableEmbeddings && Array.isArray(billingData.availableEmbeddings)) {
+        setAvailableEmbeddings(billingData.availableEmbeddings);
+        console.log('📊 Available embeddings loaded:', billingData.availableEmbeddings.length, 'models');
+      }
+      
+      // Extract provider capabilities from billing data
+      if (billingData.providerCapabilities && Array.isArray(billingData.providerCapabilities)) {
+        setProviderCapabilities(billingData.providerCapabilities);
+        console.log('🔧 Provider capabilities loaded:', billingData.providerCapabilities.length, 'providers');
       }
       
       // Calculate credit balance and total credits from transactions
@@ -168,7 +211,9 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
     refreshUsage: fetchUsage,
     addCost,
     isLocked: usage?.exceeded || false,
-    ttsCapabilities
+    ttsCapabilities,
+    availableEmbeddings,
+    providerCapabilities
   };
 
   return (
