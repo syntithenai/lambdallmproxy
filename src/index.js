@@ -64,6 +64,7 @@ const proxyEndpoint = require('./endpoints/proxy');
 const chatEndpoint = require('./endpoints/chat');
 const quizEndpoint = require('./endpoints/quiz');
 const feedEndpoint = require('./endpoints/feed');
+const syncEndpoint = require('./endpoints/sync');
 const staticEndpoint = require('./endpoints/static');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
@@ -266,6 +267,26 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                     'Access-Control-Allow-Origin': origin,
                     'Access-Control-Allow-Methods': 'POST, OPTIONS',
                     'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Unified sync endpoint - handles all data types (quizzes, snippets, feed items, config, embeddings)
+        if (method === 'POST' && path === '/sync') {
+            console.log('Routing to unified sync endpoint');
+            const response = await syncEndpoint.handleUnifiedSync(event);
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: {
+                    ...response.headers,
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Drive-Token, X-Project-ID'
                 }
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);

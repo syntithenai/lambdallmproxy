@@ -470,7 +470,6 @@ async function updateSnippet(id, updates, userEmail, projectId, accessToken) {
       throw new Error('Snippet not found');
     }
     
-    const headers = response.data.values[0];
     const dataRows = response.data.values.slice(1);
     
     // Parse rows and filter by user/project
@@ -583,7 +582,6 @@ async function removeSnippet({ id, title }, userEmail, projectId, accessToken) {
       throw new Error('No snippets found');
     }
     
-    const headers = response.data.values[0];
     const dataRows = response.data.values.slice(1);
     
     // Parse and filter by user/project
@@ -844,7 +842,7 @@ async function searchSnippets({ query, tags = [] }, userEmail, projectId, access
             // JSON array format
             try {
               parsedTags = JSON.parse(tagValue);
-            } catch (e) {
+            } catch (_e) {
               console.warn('Failed to parse tags JSON:', tagValue);
               parsedTags = [];
             }

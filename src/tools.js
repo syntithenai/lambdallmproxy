@@ -2007,6 +2007,7 @@ Brief answer with URLs:`;
     
     case 'manage_snippets': {
       const snippetsService = require('./services/google-sheets-snippets');
+      const { extractProjectId } = require('./services/user-isolation');
       
       // Debug: Log incoming arguments
       console.log('🔍 manage_snippets called with args:', JSON.stringify(args, null, 2));
@@ -2104,7 +2105,6 @@ Brief answer with URLs:`;
             }
             
             // Extract project ID from context/event headers
-            const { extractProjectId } = require('./services/user-isolation');
             const projectId = context.event ? extractProjectId(context.event) : null;
             
             const snippet = await snippetsService.insertSnippet(
@@ -2148,7 +2148,6 @@ Brief answer with URLs:`;
             }
             
             // Extract project ID from context/event headers
-            const { extractProjectId } = require('./services/user-isolation');
             const projectId = context.event ? extractProjectId(context.event) : null;
             
             const snippet = await snippetsService.insertSnippet(

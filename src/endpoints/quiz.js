@@ -14,6 +14,10 @@ const { buildModelRotationSequence, estimateTokenRequirements } = require('../mo
 const { loadProviderCatalog } = require('../utils/catalog-loader');
 const providerCatalog = loadProviderCatalog();
 
+// Quiz storage service
+const quizService = require('../services/google-sheets-quiz');
+const { extractProjectId } = require('../services/user-isolation');
+
 /**
  * Generate a quiz from content
  * @param {string} content - Content to generate quiz from
@@ -580,8 +584,265 @@ async function handleQuizSyncStatistics(event) {
     }
 }
 
+/**
+ * Get quizzes for authenticated user
+ */
+async function handleGetQuizzes(event) {
+    try {
+        const user = authenticateRequest(event);
+        
+        // Extract project ID from headers (optional filter)
+        const projectId = extractProjectId(event);
+        
+        // Get user's Google Drive OAuth token
+        const accessToken = event.headers['x-drive-token'] || event.headers['X-Drive-Token'];
+        
+        if (!accessToken) {
+            return {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Google Drive connection required',
+                    message: 'Please connect to Google Drive in Settings → Cloud Sync'
+                })
+            };
+        }
+        
+        const quizzes = await quizService.getQuizzes(user.email, projectId, accessToken);
+        
+        return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(quizzes)
+        };
+    } catch (error) {
+        console.error('Error getting quizzes:', error);
+        return {
+            statusCode: 500,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                error: error.message || 'Failed to retrieve quizzes'
+            })
+        };
+    }
+}
+
+/**
+ * Save or update a quiz
+ */
+async function handleSaveQuiz(event) {
+    try {
+        const user = authenticateRequest(event);
+        
+        // Parse request body
+        const body = JSON.parse(event.body || '{}');
+        const { id, quiz_title, source_content, questions, completed, score, completed_at } = body;
+        
+        if (!quiz_title || !questions || !Array.isArray(questions)) {
+            return {
+                statusCode: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Missing required fields',
+                    message: 'quiz_title and questions (array) are required'
+                })
+            };
+        }
+        
+        // Extract project ID from headers
+        const projectId = extractProjectId(event);
+        
+        // Get user's Google Drive OAuth token
+        const accessToken = event.headers['x-drive-token'] || event.headers['X-Drive-Token'];
+        
+        if (!accessToken) {
+            return {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Google Drive connection required',
+                    message: 'Please connect to Google Drive in Settings → Cloud Sync'
+                })
+            };
+        }
+        
+        let quiz;
+        
+        if (id) {
+            // Update existing quiz
+            const updates = {};
+            if (quiz_title !== undefined) updates.quiz_title = quiz_title;
+            if (source_content !== undefined) updates.source_content = source_content;
+            if (questions !== undefined) updates.questions = questions;
+            if (completed !== undefined) updates.completed = completed;
+            if (score !== undefined) updates.score = score;
+            if (completed_at !== undefined) updates.completed_at = completed_at;
+            
+            quiz = await quizService.updateQuiz(id, updates, user.email, projectId, accessToken);
+        } else {
+            // Insert new quiz
+            quiz = await quizService.insertQuiz({
+                quiz_title,
+                source_content,
+                questions,
+                completed: completed || false,
+                score: score || null,
+                completed_at: completed_at || ''
+            }, user.email, projectId, accessToken);
+        }
+        
+        return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(quiz)
+        };
+    } catch (error) {
+        console.error('Error saving quiz:', error);
+        return {
+            statusCode: 500,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                error: error.message || 'Failed to save quiz'
+            })
+        };
+    }
+}
+
+/**
+ * Delete a quiz
+ */
+async function handleDeleteQuiz(event) {
+    try {
+        const user = authenticateRequest(event);
+        
+        // Extract quiz ID from path parameters
+        const id = event.pathParameters?.id;
+        
+        if (!id) {
+            return {
+                statusCode: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Missing quiz ID',
+                    message: 'Quiz ID is required in the URL path'
+                })
+            };
+        }
+        
+        // Extract project ID from headers
+        const projectId = extractProjectId(event);
+        
+        // Get user's Google Drive OAuth token
+        const accessToken = event.headers['x-drive-token'] || event.headers['X-Drive-Token'];
+        
+        if (!accessToken) {
+            return {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Google Drive connection required',
+                    message: 'Please connect to Google Drive in Settings → Cloud Sync'
+                })
+            };
+        }
+        
+        const deleted = await quizService.deleteQuiz(id, user.email, projectId, accessToken);
+        
+        return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                message: `Quiz "${deleted.quiz_title}" deleted successfully`,
+                id: deleted.id
+            })
+        };
+    } catch (error) {
+        console.error('Error deleting quiz:', error);
+        return {
+            statusCode: 500,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                error: error.message || 'Failed to delete quiz'
+            })
+        };
+    }
+}
+
+/**
+ * Get a specific quiz by ID
+ */
+async function handleGetQuiz(event) {
+    try {
+        const user = authenticateRequest(event);
+        
+        // Extract quiz ID from path parameters
+        const id = event.pathParameters?.id;
+        
+        if (!id) {
+            return {
+                statusCode: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Missing quiz ID',
+                    message: 'Quiz ID is required in the URL path'
+                })
+            };
+        }
+        
+        // Extract project ID from headers
+        const projectId = extractProjectId(event);
+        
+        // Get user's Google Drive OAuth token
+        const accessToken = event.headers['x-drive-token'] || event.headers['X-Drive-Token'];
+        
+        if (!accessToken) {
+            return {
+                statusCode: 401,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Google Drive connection required',
+                    message: 'Please connect to Google Drive in Settings → Cloud Sync'
+                })
+            };
+        }
+        
+        const quiz = await quizService.getQuiz(id, user.email, projectId, accessToken);
+        
+        if (!quiz) {
+            return {
+                statusCode: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: 'Quiz not found',
+                    message: 'Quiz does not exist or you do not have access to it'
+                })
+            };
+        }
+        
+        return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(quiz)
+        };
+    } catch (error) {
+        console.error('Error getting quiz:', error);
+        return {
+            statusCode: 500,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                error: error.message || 'Failed to retrieve quiz'
+            })
+        };
+    }
+}
+
 module.exports = {
     handleQuizGenerate,
     handleQuizSyncStatistics,
+    handleGetQuizzes,
+    handleSaveQuiz,
+    handleDeleteQuiz,
+    handleGetQuiz,
     generateQuiz
 };
