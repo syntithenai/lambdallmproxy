@@ -469,8 +469,42 @@ ${item.sources.length > 0 ? `SOURCES:\n${item.sources.map(s => `- ${s}`).join('\
     
     jsonToParse = jsonToParse.trim();
     
-    console.log('🔍 About to parse JSON. Starts with:', jsonToParse.substring(0, 50));
-    console.log('🔍 About to parse JSON. Ends with:', jsonToParse.substring(jsonToParse.length - 50));
+    console.log('🔍 About to parse JSON. Length:', jsonToParse.length);
+    console.log('🔍 About to parse JSON. Starts with:', jsonToParse.substring(0, 100));
+    console.log('🔍 About to parse JSON. Ends with:', jsonToParse.substring(jsonToParse.length - 100));
+    
+    // Additional validation: check if JSON appears complete
+    const openBraces = (jsonToParse.match(/{/g) || []).length;
+    const closeBraces = (jsonToParse.match(/}/g) || []).length;
+    const openBrackets = (jsonToParse.match(/\[/g) || []).length;
+    const closeBrackets = (jsonToParse.match(/]/g) || []).length;
+    
+    console.log('🔍 Brace balance: { =', openBraces, ', } =', closeBraces);
+    console.log('🔍 Bracket balance: [ =', openBrackets, ', ] =', closeBrackets);
+    
+    if (openBraces !== closeBraces || openBrackets !== closeBrackets) {
+      console.warn('⚠️ JSON appears truncated or malformed (unbalanced braces/brackets)');
+      // Try to repair by closing unclosed structures
+      const missingBraces = openBraces - closeBraces;
+      const missingBrackets = openBrackets - closeBrackets;
+      
+      if (missingBraces > 0 || missingBrackets > 0) {
+        console.log('🔧 Attempting to auto-repair JSON by adding missing closures');
+        let repaired = jsonToParse;
+        
+        // Add missing bracket closures first (inner structures)
+        for (let i = 0; i < missingBrackets; i++) {
+          repaired += ']';
+        }
+        // Add missing brace closures (outer structures)
+        for (let i = 0; i < missingBraces; i++) {
+          repaired += '}';
+        }
+        
+        jsonToParse = repaired;
+        console.log('🔧 Repaired JSON. Now ends with:', jsonToParse.substring(jsonToParse.length - 50));
+      }
+    }
     
     quizData = JSON.parse(jsonToParse);
     console.log('✅ Successfully parsed quiz JSON');
@@ -482,15 +516,27 @@ ${item.sources.length > 0 ? `SOURCES:\n${item.sources.map(s => `- ${s}`).join('\
     console.error('❌ Error:', err);
     console.error('❌ Tool call arguments length:', toolCallArguments.length);
     console.error('❌ Response text length:', responseText.length);
-    console.error('❌ Tool call preview:', toolCallArguments.substring(0, 500));
-    console.error('❌ Response preview:', responseText.substring(0, 500));
     
     // If the error is from backend, re-throw it with original message
     if (err instanceof Error && err.message.includes('Backend error:')) {
       throw err;
     }
     
-    throw new Error('Failed to parse quiz response. The AI may be overloaded - please try again.');
+    // Extract error position if available
+    let errorDetail = '';
+    if (err instanceof SyntaxError && err.message.includes('position')) {
+      const match = err.message.match(/position (\d+)/);
+      if (match) {
+        const position = parseInt(match[1]);
+        const jsonSource = toolCallArguments.trim() || responseText;
+        const contextStart = Math.max(0, position - 50);
+        const contextEnd = Math.min(jsonSource.length, position + 50);
+        errorDetail = `\nError near position ${position}:\n"${jsonSource.substring(contextStart, contextEnd)}"`;
+        console.error('❌ Error context:', errorDetail);
+      }
+    }
+    
+    throw new Error('Failed to parse quiz response. The AI may be overloaded - please try again.' + errorDetail);
   }
 
   // Validate and transform to FeedQuiz
