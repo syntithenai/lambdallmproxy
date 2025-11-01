@@ -150,6 +150,43 @@ export async function getCurrentApiBase(): Promise<string> {
   return getCachedApiBase();
 }
 
+/**
+ * Get current project ID from localStorage
+ * Used to add X-Project-ID header to API requests for multi-tenancy
+ */
+function getCurrentProjectId(): string | null {
+  try {
+    return localStorage.getItem('currentProjectId');
+  } catch (error) {
+    console.warn('Failed to get current project ID:', error);
+    return null;
+  }
+}
+
+/**
+ * Build API request headers with authentication and project context
+ * Automatically adds X-Project-ID header for multi-tenancy support
+ * 
+ * @param token - Authentication token
+ * @param additionalHeaders - Any additional headers to include
+ * @returns Headers object with Authorization and X-Project-ID
+ */
+export function buildApiHeaders(token: string, additionalHeaders: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+    ...additionalHeaders
+  };
+  
+  // Add project ID header for multi-tenancy
+  const projectId = getCurrentProjectId();
+  if (projectId) {
+    headers['X-Project-ID'] = projectId;
+  }
+  
+  return headers;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | Array<{type: string; text?: string; image_url?: {url: string; detail?: string}}>;  // Support multimodal content
@@ -341,10 +378,7 @@ export const sendChatMessage = async (
   const apiBase = await getCachedApiBase();
   const response = await fetch(`${apiBase}/proxy`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
+    headers: buildApiHeaders(token),
     body: JSON.stringify(request),
     signal
   });
@@ -669,9 +703,7 @@ export const generateImage = async (
   try {
     const response = await fetch(`${apiBase}/generate-image`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: buildApiHeaders(token || ''),
       body: JSON.stringify(requestBody),
       credentials: 'include'
     });
@@ -753,10 +785,7 @@ export const createPayPalOrder = async (amount: number, token: string): Promise<
   try {
     const response = await fetch(`${apiBase}/paypal/create-order`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: buildApiHeaders(token),
       body: JSON.stringify({ amount }),
       credentials: 'include'
     });
@@ -794,10 +823,7 @@ export const capturePayPalOrder = async (orderId: string, token: string): Promis
   try {
     const response = await fetch(`${apiBase}/paypal/capture-order`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: buildApiHeaders(token),
       body: JSON.stringify({ orderId }),
       credentials: 'include'
     });
@@ -856,10 +882,7 @@ export const generateQuiz = async (
   
   const response = await fetch(`${apiBase}/quiz/generate`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
+    headers: buildApiHeaders(token),
     body: JSON.stringify({
       content,
       enrichment,
