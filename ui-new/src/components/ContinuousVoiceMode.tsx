@@ -369,6 +369,13 @@ export function ContinuousVoiceMode({
       
     } catch (error) {
       console.error('❌ Error processing speech:', error);
+      
+      // Check if it's a connection error (backend not running)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('ERR_CONNECTION_REFUSED')) {
+        showPersistentToast('❌ Backend server not running. Start with: make dev', 'error');
+      }
+      
       setState('hotword'); // Return to hotword mode on error
     }
   }
