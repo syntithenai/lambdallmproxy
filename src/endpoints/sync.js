@@ -38,7 +38,8 @@ const feedService = require('../services/google-sheets-feed');
  */
 async function handleUnifiedSync(event) {
     try {
-        const user = authenticateRequest(event);
+        const authHeader = event.headers?.authorization || event.headers?.Authorization;
+        const user = await authenticateRequest(authHeader);
         
         // Get user's Google Drive OAuth token
         const accessToken = event.headers['x-drive-token'] || event.headers['X-Drive-Token'];

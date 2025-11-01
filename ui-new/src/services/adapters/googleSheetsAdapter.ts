@@ -32,23 +32,28 @@ export class GoogleSheetsAdapter implements SyncAdapter {
    */
   async pull(): Promise<SyncData> {
     const apiBase = await getCachedApiBase();
-    const token = await requestGoogleAuth();
-    const headers = buildApiHeaders(token);
+    const driveToken = await requestGoogleAuth();
+    const headers = buildApiHeaders(driveToken);
 
     // Get local data to compare with remote
     const localQuizzes = await quizDB.getQuizStatistics();
     const localFeedItems = await feedDB.getItems(1000);
+    
+    // Get local snippets from storage
+    const { storage } = await import('../../utils/storage');
+    const localSnippets = await storage.getItem<any[]>('swag-snippets') || [];
 
     const response = await fetch(`${apiBase}/sync`, {
       method: 'POST',
       headers: {
         ...headers,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Drive-Token': driveToken
       },
       body: JSON.stringify({
         quizzes: { local: localQuizzes },
         feedItems: { local: localFeedItems },
-        snippets: { local: [] }, // TODO: Add snippets local data
+        snippets: { local: localSnippets },
         config: { local: null }, // TODO: Add config local data
         embeddings: { local: [] } // TODO: Add embeddings local data
       })
@@ -83,21 +88,22 @@ export class GoogleSheetsAdapter implements SyncAdapter {
   }
 
   /**
-   * Get local data from IndexedDB
+   * Get the local data for comparison
    */
   async getLocalData(): Promise<SyncData> {
-    const [quizzes, feedItems] = await Promise.all([
-      quizDB.getQuizStatistics(),
-      feedDB.getItems(1000)
-    ]);
-
+    const quizzes = await quizDB.getQuizStatistics();
+    const feedItems = await feedDB.getItems(1000);
+    
+    // Get local snippets from storage
+    const { storage } = await import('../../utils/storage');
+    const snippets = await storage.getItem<any[]>('swag-snippets') || [];
+    
     return {
       quizzes,
       feedItems,
-      snippets: [], // TODO: Add snippets local storage
+      snippets,
       config: null, // TODO: Add config local storage
-      embeddings: [], // TODO: Add embeddings local storage
-      lastModified: Date.now()
+      embeddings: [] // TODO: Add embeddings local storage
     };
   }
 
@@ -133,7 +139,13 @@ export class GoogleSheetsAdapter implements SyncAdapter {
       updates.push(feedDB.saveItems(data.feedItems));
     }
 
-    // TODO: Update snippets, config, embeddings when implemented
+    // Update snippets
+    if (data.snippets && data.snippets.length > 0) {
+      const { storage } = await import('../../utils/storage');
+      updates.push(storage.setItem('swag-snippets', data.snippets));
+    }
+
+    // TODO: Update config, embeddings when implemented
 
     await Promise.all(updates);
     console.log('✓ Google Sheets sync: Local data updated');

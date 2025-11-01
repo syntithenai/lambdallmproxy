@@ -237,6 +237,7 @@ const FileUploadDialog: React.FC<FileUploadDialogProps> = ({ isOpen, onClose, on
                   ref={fileInputRef}
                   type="file"
                   accept={acceptedFormats.join(',')}
+                  multiple
                   onChange={handleFileInputChange}
                   disabled={isUploading}
                   className="hidden"

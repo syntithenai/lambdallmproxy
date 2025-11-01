@@ -143,6 +143,12 @@ function FeaturesContent() {
               during conversations. Optional Google Drive sync keeps your data accessible across devices.</p>
             </div>
             
+            <div className="border-l-4 border-teal-500 pl-4">
+              <p className="font-semibold text-teal-700 dark:text-teal-300">✅ Learning Support</p>
+              <p className="text-sm">Curated feed to fire your imagination and interactive quizzes to lock down memories with spaced repetition. 
+              Track your progress and retain what you learn.</p>
+            </div>
+            
             <div className="border-l-4 border-pink-500 pl-4">
               <p className="font-semibold text-pink-700 dark:text-pink-300">✅ Full Transparency & Control</p>
               <p className="text-sm">See exact costs for each request, token counts, model selection reasoning, and detailed API interactions. 
@@ -339,7 +345,16 @@ function FeaturesContent() {
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">🎵 Media Playback</h3>
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">� Learning Support</h3>
+        <div className="space-y-2 pl-4">
+          <p><strong>Curated Feed:</strong> A personalized feed to fire your imagination with interesting content, discoveries, and ideas worth exploring.</p>
+          <p><strong>Interactive Quizzes:</strong> Lock down memories with spaced repetition quizzes that help you retain what you learn.</p>
+          <p><strong>Progress Tracking:</strong> Monitor your learning journey with quiz analytics and performance insights.</p>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">�🎵 Media Playback</h3>
         <div className="space-y-2 pl-4">
           <p><strong>Background Player:</strong> Play audio content from YouTube, podcasts, and other sources while continuing to use the chat interface.</p>
           <p><strong>Playlists:</strong> Queue multiple audio tracks and manage playback with standard controls.</p>
@@ -961,8 +976,7 @@ function PricingContent() {
       <section className="space-y-4">
         <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">💰 Credit-Based System</h3>
         <p className="mb-3">
-          Research Agent uses a prepaid credit system. Purchase credits via PayPal and they're automatically deducted 
-          as you use the service. Credits never expire and can be used for any API operations.
+          Transparent prepaid credit system - you can't spend more than you choose. Credits never expire.
         </p>
         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
           <p className="font-semibold mb-2">🎁 Welcome Bonus: $0.50 in free credits for new users!</p>
@@ -1276,6 +1290,60 @@ function PricingContent() {
               <strong>Profit margin:</strong> 83% (industry competitive)
             </p>
           </div>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">⚠️ Image Generation Costs</h3>
+        <div className="bg-red-50 dark:bg-red-900/20 p-5 rounded-lg border-2 border-red-400 dark:border-red-700">
+          <p className="font-bold text-red-700 dark:text-red-300 text-lg mb-3">
+            ⚠️ Warning: Image generation can be significantly more expensive than text chat!
+          </p>
+          <p className="text-sm mb-4">
+            While text chat typically costs fractions of a cent per request, image generation can cost anywhere from 
+            a few cents to over a dollar per image depending on the provider, model, resolution, and quality settings.
+          </p>
+          
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-red-300 dark:border-red-600 mb-4">
+            <p className="font-semibold mb-3">Typical Price Ranges per Image:</p>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between border-b dark:border-gray-600 pb-2">
+                <span><strong>Budget Models</strong> (DALL-E 2, Stable Diffusion):</span>
+                <span className="font-mono text-orange-600 dark:text-orange-400">$0.02 - $0.05</span>
+              </div>
+              <div className="flex justify-between border-b dark:border-gray-600 pb-2">
+                <span><strong>Standard Quality</strong> (DALL-E 3 standard):</span>
+                <span className="font-mono text-orange-600 dark:text-orange-400">$0.04 - $0.08</span>
+              </div>
+              <div className="flex justify-between border-b dark:border-gray-600 pb-2">
+                <span><strong>HD Quality</strong> (DALL-E 3 HD, high-res):</span>
+                <span className="font-mono text-red-600 dark:text-red-400">$0.08 - $0.12</span>
+              </div>
+              <div className="flex justify-between border-b dark:border-gray-600 pb-2">
+                <span><strong>Premium Models</strong> (Midjourney-style, specialized):</span>
+                <span className="font-mono text-red-600 dark:text-red-400">$0.10 - $0.50+</span>
+              </div>
+              <div className="flex justify-between pt-2 font-semibold text-base">
+                <span>Cost Comparison:</span>
+                <span className="text-red-600 dark:text-red-400">100-1000x more than text chat</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 dark:bg-yellow-900/30 p-3 rounded border border-yellow-400 dark:border-yellow-600 mb-3">
+            <p className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">💡 Cost Control Tips:</p>
+            <ul className="text-sm space-y-1 pl-4 text-yellow-900 dark:text-yellow-100">
+              <li>• Use lower resolution settings when high quality isn't needed</li>
+              <li>• Generate fewer variations per prompt</li>
+              <li>• Consider using budget-friendly providers like Stable Diffusion</li>
+              <li>• Monitor your spending in the Billing page after each generation</li>
+              <li>• Set personal budget limits and track usage closely</li>
+            </ul>
+          </div>
+
+          <p className="text-sm text-red-700 dark:text-red-300 font-semibold">
+            Always check the estimated cost before confirming image generation requests, especially when using HD or premium models.
+          </p>
         </div>
       </section>
 

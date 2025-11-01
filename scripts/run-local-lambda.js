@@ -71,7 +71,7 @@ app.use((req, res, next) => {
       }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-Google-OAuth-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Google-Access-Token', 'X-Google-OAuth-Token', 'X-YouTube-Token', 'X-Billing-Sync', 'X-Request-Id', 'X-Drive-Token', 'X-Project-ID'],
     credentials: true
   })(req, res, next);
 });

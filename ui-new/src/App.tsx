@@ -687,6 +687,7 @@ function AppContent() {
             <Routes>
               {/* Feed is now the default landing page */}
               <Route path="/" element={<FeedPage />} />
+              <Route path="/feed" element={<FeedPage />} />
               
               {/* Chat is accessible at /chat */}
               <Route 
