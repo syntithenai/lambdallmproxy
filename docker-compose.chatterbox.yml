@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   chatterbox-tts:
-    image: bhimrazy/chatterbox-tts:latest
+    image: bhimrazy/chatterbox-tts:v0.1.0
     container_name: chatterbox-tts
     ports:
       - "8000:8000"
