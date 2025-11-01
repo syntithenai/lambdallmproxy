@@ -211,7 +211,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
               console.log('Captured LLM transparency info:', data);
               break;
               
-            case 'error':
+            case 'error': {
               // Enhanced error display with provider/model info
               const errorMsg = data.error || 'Unknown error';
               const providerInfo = data.provider && data.model 
@@ -230,8 +230,9 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
               setResult({ error: fullError + errorHint });
               showError(`Planning error: ${fullError}${errorHint}`);
               break;
+            }
               
-            case 'llm_error':
+            case 'llm_error': {
               // Handle LLM-specific errors
               console.error('LLM Error:', data);
               const llmError = data.error || 'LLM request failed';
@@ -240,6 +241,7 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
                 : '';
               showError(`LLM Error${llmProviderInfo}: ${llmError}`);
               break;
+            }
           }
         },
         () => {
@@ -1109,11 +1111,12 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                                           case 'llm_response':
                                             setLlmInfo(data);
                                             break;
-                                          case 'error':
+                                          case 'error': {
                                             const errorMsg = data.error || 'Unknown error';
                                             setResult({ error: errorMsg });
                                             showError(`${t('planning.forcePlanError')}: ${errorMsg}`);
                                             break;
+                                          }
                                         }
                                       },
                                       () => {
