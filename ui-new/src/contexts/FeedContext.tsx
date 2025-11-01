@@ -317,6 +317,9 @@ export function FeedProvider({ children }: FeedProviderProps) {
         // Reload preferences
         const updatedPrefs = await feedDB.getPreferences();
         setPreferences(updatedPrefs);
+        
+        // Show success toast
+        showSuccess(`✅ Saved "${item.title}" to Swag!`);
       }
     } catch (err) {
       console.error('Failed to stash item:', err);
