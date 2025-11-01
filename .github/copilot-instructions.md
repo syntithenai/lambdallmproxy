@@ -63,13 +63,17 @@ This document provides comprehensive instructions for GitHub Copilot to effectiv
 
 #### Development Cycle
 
-1. **Make Code Changes** to backend files in `src/`
-2. **Restart Dev Server** with:
+1. **Make Code Changes** to backend files in `src/` or frontend files in `ui-new/src/`
+2. **Complete ALL code changes** in the current task/feature before testing
+3. **Restart Dev Server** with:
    ```bash
    make dev
    ```
-3. **Test Locally** at `http://localhost:3000` (backend) and `http://localhost:8081` (frontend UI)
-4. **Only Deploy to Lambda** when changes are tested and production-ready
+   - **IMPORTANT**: Only run `make dev` AFTER completing all code changes for the current task
+   - Do NOT run `make dev` after each individual file edit
+   - Complete the entire feature/fix, then test with `make dev`
+4. **Test Locally** at `http://localhost:3000` (backend) and `http://localhost:8081` (frontend UI)
+5. **Only Deploy to Lambda** when changes are tested and production-ready
 
 #### Local Development Server Details
 

@@ -5,7 +5,8 @@ export interface ImageData {
   url: string;
   name: string;
   tags: string[];
-  snippetId: string;
+  snippetId?: string;      // Optional - only set for images from Swag
+  imageIndex?: number;     // Optional - position in snippet content (0-indexed)
   width?: number;
   height?: number;
   format?: string;
@@ -29,7 +30,7 @@ export interface ProcessingStatus {
   error?: string;
 }
 
-export type BulkOperationType = 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate';
+export type BulkOperationType = 'resize' | 'rotate' | 'flip' | 'format' | 'filter' | 'crop' | 'trim' | 'autocrop' | 'facedetect' | 'modulate' | 'tint' | 'extend' | 'gamma' | 'generate';
 
 export interface BulkOperation {
   type: BulkOperationType;

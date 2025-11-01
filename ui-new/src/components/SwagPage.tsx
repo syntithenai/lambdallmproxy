@@ -51,6 +51,7 @@ export const SwagPage: React.FC = () => {
     name: string;
     tags: string[];
     snippetId?: string;
+    imageIndex?: number;
     width?: number;
     height?: number;
     format?: string;

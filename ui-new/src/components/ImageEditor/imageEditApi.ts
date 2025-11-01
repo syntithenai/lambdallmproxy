@@ -30,6 +30,8 @@ export interface ProgressEvent {
     size: number;
     dimensions?: { width: number; height: number };
     format?: string;
+    didAutoResize?: boolean;
+    originalDimensions?: { width: number; height: number };
   };
   error?: string;
   results?: any[];

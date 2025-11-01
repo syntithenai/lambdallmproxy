@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { BulkOperation } from './types';
+import { useFeatures } from '../../contexts/FeaturesContext';
 
 interface BulkOperationsBarProps {
   selectedCount: number;
@@ -12,6 +13,8 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
   onOperation,
   disabled,
 }) => {
+  const { features } = useFeatures();
+  const hasAIProvider = features?.imageEditingAI ?? false;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
@@ -49,6 +52,9 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
   const dropdownItemClass =
     'w-full text-left px-3 py-2 text-xs hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-b-0';
 
+  const sectionHeaderClass =
+    'font-semibold text-gray-600 px-3 py-1 text-[10px] uppercase tracking-wider bg-gray-50';
+
   const toggleDropdown = (name: string) => {
     if (disabled || selectedCount === 0) return;
     setOpenDropdown(openDropdown === name ? null : name);
@@ -62,138 +68,236 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
   return (
     <div className="bg-white border-b border-gray-200 p-4">
       <div className="flex flex-wrap gap-2 items-start">
-        {/* Quick Access - Resize */}
-        <div className="flex gap-1">
+        {/* 1. TRANSFORM DROPDOWN */}
+        <div className="relative" ref={(el) => { dropdownRefs.current['transform'] = el; }}>
           <button
-            onClick={() => handleOperation({ type: 'resize', params: { scale: 0.5 }, label: '50%' })}
+            onClick={() => toggleDropdown('transform')}
             disabled={disabled || selectedCount === 0}
-            className={buttonClass()}
-            title="Resize to 50%"
+            className={dropdownButtonClass(openDropdown === 'transform')}
           >
-            50%
+            🔄 Transform ▾
           </button>
-          <button
-            onClick={() => handleOperation({ type: 'resize', params: { scale: 2 }, label: '200%' })}
-            disabled={disabled || selectedCount === 0}
-            className={buttonClass()}
-            title="Resize to 200%"
-          >
-            200%
-          </button>
-        </div>
-
-        {/* More Sizes Dropdown */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['sizes'] = el; }}>
-          <button
-            onClick={() => toggleDropdown('sizes')}
-            disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'sizes')}
-          >
-            More Sizes ▾
-          </button>
-          {openDropdown === 'sizes' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[120px]">
+          {openDropdown === 'transform' && (
+            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[200px] max-h-[500px] overflow-y-auto">
+              {/* Flip */}
+              <div className={sectionHeaderClass}>Flip</div>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 0.25 }, label: '25%' })}
+                onClick={() => handleOperation({ type: 'flip', params: { direction: 'horizontal' }, label: 'Flip Horizontal' })}
                 className={dropdownItemClass}
               >
-                25%
+                ↔️ Flip Horizontal
               </button>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 0.33 }, label: '33%' })}
+                onClick={() => handleOperation({ type: 'flip', params: { direction: 'vertical' }, label: 'Flip Vertical' })}
                 className={dropdownItemClass}
               >
-                33%
+                ↕️ Flip Vertical
+              </button>
+              
+              {/* Rotate */}
+              <div className={sectionHeaderClass}>Rotate</div>
+              <button
+                onClick={() => handleOperation({ type: 'rotate', params: { degrees: 90 }, label: 'Rotate 90° CW' })}
+                className={dropdownItemClass}
+              >
+                ↻ Rotate 90° Clockwise
               </button>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 0.75 }, label: '75%' })}
+                onClick={() => handleOperation({ type: 'rotate', params: { degrees: 270 }, label: 'Rotate 90° CCW' })}
                 className={dropdownItemClass}
               >
-                75%
+                ↺ Rotate 90° Counter-Clockwise
               </button>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 1.5 }, label: '150%' })}
+                onClick={() => handleOperation({ type: 'rotate', params: { degrees: 180 }, label: 'Rotate 180°' })}
                 className={dropdownItemClass}
               >
-                150%
+                🔄 Rotate 180°
+              </button>
+              
+              {/* Crop (AI features) */}
+              <div className={sectionHeaderClass}>Crop (AI)</div>
+              <button
+                onClick={() => handleOperation({ type: 'autocrop', params: { focus: 'center' }, label: 'AI Auto-Crop' })}
+                disabled={!hasAIProvider}
+                className={dropdownItemClass}
+                title={!hasAIProvider ? 'Requires AI provider (OpenAI, Gemini, etc.)' : 'Intelligently crop to content'}
+              >
+                🤖 AI Auto-Crop {!hasAIProvider && '🔒'}
               </button>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 3 }, label: '300%' })}
+                onClick={() => handleOperation({ type: 'facedetect', params: { focus: 'face' }, label: 'AI Face-Crop' })}
+                disabled={!hasAIProvider}
+                className={dropdownItemClass}
+                title={!hasAIProvider ? 'Requires AI provider (OpenAI, Gemini, etc.)' : 'Crop to detected faces'}
+              >
+                👤 AI Face-Crop {!hasAIProvider && '🔒'}
+              </button>
+              
+              {/* Resize */}
+              <div className={sectionHeaderClass}>Resize</div>
+              <button
+                onClick={() => handleOperation({ type: 'resize', params: { scale: 0.5 }, label: '50%' })}
                 className={dropdownItemClass}
               >
-                300%
+                🔽 50% Size
               </button>
               <button
-                onClick={() => handleOperation({ type: 'resize', params: { scale: 4 }, label: '400%' })}
+                onClick={() => handleOperation({ type: 'resize', params: { scale: 2 }, label: '200%' })}
                 className={dropdownItemClass}
               >
-                400%
+                🔼 200% Size
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'resize', params: { width: 800, height: 800 }, label: 'Square 800×800' })}
+                className={dropdownItemClass}
+              >
+                ⬜ To Square (800×800)
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'resize', params: { width: 1920, height: 1080 }, label: '16:9 HD' })}
+                className={dropdownItemClass}
+              >
+                📺 To 16:9 (1920×1080)
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'resize', params: { width: 1600, height: 1200 }, label: '4:3 Standard' })}
+                className={dropdownItemClass}
+              >
+                📷 To 4:3 (1600×1200)
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'resize', params: { width: 1500, height: 1000 }, label: '3:2 Photo' })}
+                className={dropdownItemClass}
+              >
+                📸 To 3:2 (1500×1000)
               </button>
             </div>
           )}
         </div>
 
-        {/* Quick Access - Rotate */}
-        <div className="flex gap-1">
+        {/* 2. EFFECTS DROPDOWN */}
+        <div className="relative" ref={(el) => { dropdownRefs.current['effects'] = el; }}>
           <button
-            onClick={() => handleOperation({ type: 'rotate', params: { degrees: 90 }, label: '↻ 90°' })}
+            onClick={() => toggleDropdown('effects')}
             disabled={disabled || selectedCount === 0}
-            className={buttonClass()}
-            title="Rotate 90° clockwise"
+            className={dropdownButtonClass(openDropdown === 'effects')}
           >
-            ↻
+            ✨ Effects ▾
           </button>
-          <button
-            onClick={() => handleOperation({ type: 'rotate', params: { degrees: 270 }, label: '↺ 90°' })}
-            disabled={disabled || selectedCount === 0}
-            className={buttonClass()}
-            title="Rotate 90° counter-clockwise"
-          >
-            ↺
-          </button>
+          {openDropdown === 'effects' && (
+            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[200px] max-h-[500px] overflow-y-auto">
+              {/* Enhancement */}
+              <div className={sectionHeaderClass}>Enhancement</div>
+              <button
+                onClick={() => handleOperation({ type: 'filter', params: { filter: 'normalize' }, label: 'Auto Enhance' })}
+                className={dropdownItemClass}
+              >
+                📊 Auto Enhance
+              </button>
+              
+              {/* Filters */}
+              <div className={sectionHeaderClass}>Filters</div>
+              <button
+                onClick={() => handleOperation({ type: 'filter', params: { filter: 'sepia' }, label: 'Sepia' })}
+                className={dropdownItemClass}
+              >
+                🟤 Sepia
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'filter', params: { filter: 'grayscale' }, label: 'Greyscale' })}
+                className={dropdownItemClass}
+              >
+                ⚫ Greyscale
+              </button>
+              
+              {/* Adjustments */}
+              <div className={sectionHeaderClass}>Adjustments</div>
+              <button
+                onClick={() => handleOperation({ type: 'modulate', params: { brightness: 1.2 }, label: 'Brightness +20%' })}
+                className={dropdownItemClass}
+              >
+                ☀️ Brightness +20%
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'modulate', params: { brightness: 0.8 }, label: 'Brightness -20%' })}
+                className={dropdownItemClass}
+              >
+                🌙 Brightness -20%
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'modulate', params: { saturation: 1.5 }, label: 'Saturation +50%' })}
+                className={dropdownItemClass}
+              >
+                🎨 Saturation +50%
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'modulate', params: { saturation: 0.5 }, label: 'Saturation -50%' })}
+                className={dropdownItemClass}
+              >
+                🎨 Saturation -50%
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'modulate', params: { hue: 90 }, label: 'Hue Shift +90°' })}
+                className={dropdownItemClass}
+              >
+                🌈 Hue Shift +90°
+              </button>
+              
+              {/* Image Effects */}
+              <div className={sectionHeaderClass}>Image Effects</div>
+              <button
+                onClick={() => handleOperation({ type: 'filter', params: { filter: 'sharpen' }, label: 'Sharpen' })}
+                className={dropdownItemClass}
+              >
+                ✨ Sharpen
+              </button>
+              <button
+                onClick={() => handleOperation({ type: 'filter', params: { filter: 'blur', strength: 3 }, label: 'Blur' })}
+                className={dropdownItemClass}
+              >
+                🌫️ Blur
+              </button>
+              
+              {/* Borders */}
+              <div className={sectionHeaderClass}>Borders</div>
+              <button
+                onClick={() => handleOperation({ 
+                  type: 'extend', 
+                  params: { top: 20, bottom: 20, left: 20, right: 20, background: { r: 255, g: 255, b: 255 } }, 
+                  label: 'White Border' 
+                })}
+                className={dropdownItemClass}
+              >
+                ⬜ Add White Border (20px)
+              </button>
+              <button
+                onClick={() => handleOperation({ 
+                  type: 'extend', 
+                  params: { top: 20, bottom: 20, left: 20, right: 20, background: { r: 0, g: 0, b: 0 } }, 
+                  label: 'Black Border' 
+                })}
+                className={dropdownItemClass}
+              >
+                ⬛ Add Black Border (20px)
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Crop & Trim Dropdown */}
-        <div className="relative" ref={(el) => { dropdownRefs.current['crop'] = el; }}>
+        {/* 3. FORMAT DROPDOWN */}
+        <div className="relative" ref={(el) => { dropdownRefs.current['format'] = el; }}>
           <button
-            onClick={() => toggleDropdown('crop')}
+            onClick={() => toggleDropdown('format')}
             disabled={disabled || selectedCount === 0}
-            className={dropdownButtonClass(openDropdown === 'crop')}
+            className={dropdownButtonClass(openDropdown === 'format')}
           >
-            Crop & Trim ▾
+            💾 Format ▾
           </button>
-          {openDropdown === 'crop' && (
-            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[180px]">
+          {openDropdown === 'format' && (
+            <div className="absolute top-full mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[200px]">
               <button
-                onClick={() => handleOperation({ type: 'trim', params: {}, label: 'Auto-trim borders' })}
-                className={dropdownItemClass}
-                title="Remove transparent or solid-color borders"
-              >
-                ✂️ Auto-trim borders
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'autocrop', params: { focus: 'center' }, label: 'AI Crop (Center)' })
-                }
-                className={dropdownItemClass}
-                title="AI-powered crop focusing on center subject"
-              >
-                🤖 AI Crop (Center)
-              </button>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'autocrop', params: { focus: 'face' }, label: 'AI Crop (Face)' })
-                }
-                className={dropdownItemClass}
-                title="AI-powered crop focusing on face"
-              >
-                😊 AI Crop (Face)
-              </button>
-              <div className="border-t border-gray-200 my-1"></div>
-              <button
-                onClick={() =>
-                  handleOperation({ type: 'crop', params: { width: 1920, height: 1080 }, label: '1920×1080' })
-                }
+                onClick={() => handleOperation({ type: 'format', params: { format: 'jpg', quality: 90 }, label: 'JPG High' })}
                 className={dropdownItemClass}
               >
                 📺 1920×1080 (Full HD)

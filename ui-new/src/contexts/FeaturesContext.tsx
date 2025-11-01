@@ -7,6 +7,8 @@ export interface AvailableFeatures {
   chat: boolean;
   imageGeneration: boolean;
   imageEditing: boolean;
+  imageEditingBasic: boolean;  // Sharp-based transforms (always true)
+  imageEditingAI: boolean;      // AI-powered features (requires providers)
   transcription: boolean;
   textToSpeech: boolean;
   embeddings: boolean;
@@ -52,6 +54,8 @@ export const FeaturesProvider: React.FC<FeaturesProviderProps> = ({ children }) 
           chat: false,
           imageGeneration: false,
           imageEditing: false,
+          imageEditingBasic: true,   // Always available (Sharp-based)
+          imageEditingAI: false,      // Requires providers
           transcription: false,
           textToSpeech: false,
           embeddings: false,
@@ -78,13 +82,20 @@ export const FeaturesProvider: React.FC<FeaturesProviderProps> = ({ children }) 
       const data = await response.json();
 
       if (data.features) {
-        setFeatures(data.features);
+        // Ensure new fields have defaults if backend doesn't provide them yet
+        setFeatures({
+          ...data.features,
+          imageEditingBasic: data.features.imageEditingBasic ?? true,  // Default true
+          imageEditingAI: data.features.imageEditingAI ?? data.features.imageEditing ?? false
+        });
       } else {
         // Fallback to default features
         setFeatures({
           chat: false,
           imageGeneration: false,
           imageEditing: false,
+          imageEditingBasic: true,   // Always available
+          imageEditingAI: false,      // Requires providers
           transcription: false,
           textToSpeech: false,
           embeddings: false,
@@ -101,6 +112,8 @@ export const FeaturesProvider: React.FC<FeaturesProviderProps> = ({ children }) 
         chat: false,
         imageGeneration: false,
         imageEditing: false,
+        imageEditingBasic: true,   // Always available
+        imageEditingAI: false,      // Requires providers
         transcription: false,
         textToSpeech: false,
         embeddings: false,
@@ -119,6 +132,8 @@ export const FeaturesProvider: React.FC<FeaturesProviderProps> = ({ children }) 
         chat: false,
         imageGeneration: false,
         imageEditing: false,
+        imageEditingBasic: true,   // Always available
+        imageEditingAI: false,      // Requires providers
         transcription: false,
         textToSpeech: false,
         embeddings: false,

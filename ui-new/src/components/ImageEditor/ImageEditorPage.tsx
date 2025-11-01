@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSwag } from '../../contexts/SwagContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFeatures } from '../../contexts/FeaturesContext';
+import { useToast } from '../ToastManager';
 import { ImageGrid } from './ImageGrid';
 import { SelectionControls } from './SelectionControls';
 import { BulkOperationsBar } from './BulkOperationsBar';
 import { CommandInput } from './CommandInput';
+import { SwagImagePicker } from './SwagImagePicker';
 import { editImages, parseImageCommand } from './imageEditApi';
 import type { ImageData, ProcessingStatus, BulkOperation } from './types';
 
@@ -18,6 +20,7 @@ export const ImageEditorPage: React.FC = () => {
   const { settings } = useSettings();
   const { getToken } = useAuth();
   const { features } = useFeatures();
+  const { showSuccess, showInfo } = useToast();
 
   // Get images and editing context from navigation state
   const locationState = location.state as { 
@@ -27,12 +30,8 @@ export const ImageEditorPage: React.FC = () => {
   
   const initialImages = locationState?.images || [];
   const editingSnippetId = locationState?.editingSnippetId; // ID of snippet being edited (if from markdown editor)
-  
-  // Determine if this is inline editing (single image from markdown renderer)
-  const isInlineEdit = initialImages.length === 1 && initialImages[0].snippetId;
-  const sourceSnippetId = isInlineEdit ? initialImages[0].snippetId : null;
 
-  const [images] = useState<ImageData[]>(initialImages);
+  const [images, setImages] = useState<ImageData[]>(initialImages);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(() => {
     // Check if we have persisted image IDs to determine if this is a reload
     const hasPersistedImages = localStorage.getItem('image_editor_images');
@@ -93,6 +92,15 @@ export const ImageEditorPage: React.FC = () => {
   
   // Track processed image URLs (imageId -> new URL)
   const [processedImageUrls, setProcessedImageUrls] = useState<Map<string, string>>(new Map());
+  
+  // State for new action buttons (Upload, Select from Swag, Generate)
+  const [isUploading, setIsUploading] = useState(false);
+  const [showSwagPicker, setShowSwagPicker] = useState(false);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [generatePrompt, setGeneratePrompt] = useState('');
+  const [generateSize, setGenerateSize] = useState('1024x768');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Persist command to localStorage whenever it changes
   React.useEffect(() => {
@@ -213,6 +221,26 @@ export const ImageEditorPage: React.FC = () => {
             // Save processed image URL
             if (event.result?.url) {
               setProcessedImageUrls((prev) => new Map(prev).set(event.imageId!, event.result!.url));
+              
+              // AUTO-SAVE: Update or create snippet immediately after processing
+              const processedImage = allImages.find(img => img.id === event.imageId);
+              if (processedImage?.snippetId) {
+                // Image came from existing snippet - update it
+                autoUpdateSnippet(event.imageId!, event.result.url);
+                showSuccess('Image auto-saved to snippet');
+              } else {
+                // New image (uploaded/generated) - create new snippet
+                autoCreateSnippet(event.imageId!, event.result.url);
+                showSuccess('New snippet created');
+              }
+              
+              // Show auto-resize notification if it happened
+              if (event.result.didAutoResize && event.result.originalDimensions && event.result.dimensions) {
+                showInfo(
+                  `Auto-resized from ${event.result.originalDimensions.width}×${event.result.originalDimensions.height} ` +
+                  `to ${event.result.dimensions.width}×${event.result.dimensions.height} (max 1024×768)`
+                );
+              }
             }
           } else if (event.type === 'image_error' && event.imageId) {
             setProcessingStatus(
@@ -265,117 +293,276 @@ export const ImageEditorPage: React.FC = () => {
     }
   };
 
-  const handleSaveToSwag = async () => {
-    if (processedImageUrls.size === 0) {
-      alert('No processed images to save');
+  // Auto-update an existing snippet with edited image at specific index
+  const autoUpdateSnippet = async (imageId: string, newUrl: string) => {
+    const image = allImages.find((img) => img.id === imageId);
+    if (!image || !image.snippetId) {
+      console.warn('Cannot auto-update: image has no snippetId');
       return;
     }
 
-    setIsProcessing(true);
+    const snippet = swagSnippets.find(s => s.id === image.snippetId);
+    if (!snippet) {
+      console.error('Source snippet not found:', image.snippetId);
+      return;
+    }
 
     try {
-      // INLINE EDITING: Replace image in source snippet with base64 data
-      if (isInlineEdit && sourceSnippetId) {
-        const imageId = Array.from(processedImageUrls.keys())[0];
-        const newUrl = processedImageUrls.get(imageId);
-        const originalImage = allImages.find((img) => img.id === imageId);
-        
-        if (newUrl && originalImage) {
-          // The newUrl is already a base64 data URL from the backend
-          const base64 = newUrl;
-          
-          // Get the source snippet
-          const sourceSnippet = swagSnippets.find(s => s.id === sourceSnippetId);
-          if (!sourceSnippet) {
-            throw new Error('Source snippet not found');
-          }
-          
-          // Replace the original image URL with base64 data URL
-          let updatedContent = sourceSnippet.content;
-          const oldUrl = originalImage.url;
-          
-          // Replace in markdown syntax: ![alt](url)
-          updatedContent = updatedContent.replace(
-            new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(oldUrl)}\\)`, 'g'),
-            `![$1](${base64})`
-          );
-          
-          // Replace in HTML img tags: <img src="url" ...>
-          updatedContent = updatedContent.replace(
-            new RegExp(`<img([^>]*?)src="${escapeRegex(oldUrl)}"`, 'g'),
-            `<img$1src="${base64}"`
-          );
-          updatedContent = updatedContent.replace(
-            new RegExp(`<img([^>]*?)src='${escapeRegex(oldUrl)}'`, 'g'),
-            `<img$1src='${base64}'`
-          );
-          
-          // If content is just the image URL (base64 or otherwise), replace entirely
-          if (updatedContent.trim() === oldUrl || updatedContent.trim() === `![](${oldUrl})`) {
-            updatedContent = base64;
-          }
-          
-          // Update the snippet
-          await updateSnippet(sourceSnippetId, { content: updatedContent });
-          
-          // Clear localStorage to prevent stale selection on return
-          localStorage.removeItem('image_editor_selection');
-          localStorage.removeItem('image_editor_images');
-          
-          alert('Image updated inline in snippet');
-          
-          // Navigate back with the editingSnippetId to ensure the snippet is refreshed
-          navigate('/swag', { state: { updatedSnippetId: sourceSnippetId } });
-          return;
-        }
-      }
+      // Extract all image URLs from the snippet content
+      const imageUrlPattern = /<img[^>]+src=["']([^"']+)["'][^>]*>|!\[[^\]]*\]\(([^)]+)\)/g;
+      const imageUrls: string[] = [];
+      let match;
       
-      // BULK EDITING or NEW IMAGES: Save as new snippets with base64
-      let savedCount = 0;
-      
-      for (const [imageId, newUrl] of processedImageUrls.entries()) {
-        const image = allImages.find((img) => img.id === imageId);
-        if (!image) continue;
-
-        try {
-          // The newUrl is already a base64 data URL from the backend
-          const base64 = newUrl;
-          
-          // Create markdown content with base64 data URL
-          const title = `Edited Image - ${new Date().toLocaleString()}`;
-          const content = `![${image.name || 'Edited image'}](${base64})`;
-          
-          // Add as new snippet to swag
-          await addSnippet(content, 'user', title);
-          savedCount++;
-        } catch (error) {
-          console.error(`Failed to save image ${imageId}:`, error);
-        }
+      while ((match = imageUrlPattern.exec(snippet.content)) !== null) {
+        imageUrls.push(match[1] || match[2]);
       }
 
-      alert(`Successfully saved ${savedCount} edited image(s) to Swag as new snippets`);
+      // Determine which URL to replace based on imageIndex
+      const targetIndex = image.imageIndex ?? 0;
+      const oldUrl = imageUrls[targetIndex];
       
-      // Clear processed images
-      setProcessedImageUrls(new Map());
+      if (!oldUrl) {
+        console.error('Could not find image URL at index', targetIndex);
+        return;
+      }
+
+      // Apply 1024×768 constraint by requesting resize if needed
+      let finalUrl = newUrl;
       
-      // Clear localStorage to prevent stale data
-      localStorage.removeItem('image_editor_selection');
-      localStorage.removeItem('image_editor_images');
+      // Check if image needs resizing (if width/height available in metadata)
+      // For now, trust backend to have applied constraints
+      // TODO: Add explicit resize check when metadata is available
+
+      // Replace old URL with new base64 URL
+      let updatedContent = snippet.content;
       
-      // Navigate back to swag
-      navigate('/swag');
+      // Replace in markdown: ![alt](url)
+      updatedContent = updatedContent.replace(
+        new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(oldUrl)}\\)`, 'g'),
+        `![$1](${finalUrl})`
+      );
       
+      // Replace in HTML: <img src="url">
+      updatedContent = updatedContent.replace(
+        new RegExp(`<img([^>]*?)src="${escapeRegex(oldUrl)}"`, 'g'),
+        `<img$1src="${finalUrl}"`
+      );
+      updatedContent = updatedContent.replace(
+        new RegExp(`<img([^>]*?)src='${escapeRegex(oldUrl)}'`, 'g'),
+        `<img$1src='${finalUrl}'`
+      );
+
+      // Update snippet
+      await updateSnippet(image.snippetId, { content: updatedContent });
+      console.log('Auto-updated snippet:', image.snippetId);
     } catch (error) {
-      console.error('Save to swag error:', error);
-      alert(`Error saving: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsProcessing(false);
+      console.error('Auto-update failed:', error);
+    }
+  };
+
+  // Auto-create a new snippet for images without a snippetId (uploaded/generated)
+  const autoCreateSnippet = async (imageId: string, newUrl: string) => {
+    const image = allImages.find((img) => img.id === imageId);
+    if (!image) {
+      console.warn('Cannot auto-create: image not found');
+      return;
+    }
+
+    try {
+      const title = `Image - ${image.name || new Date().toLocaleString()}`;
+      const content = `<img src="${newUrl}" alt="${image.name || 'Generated image'}" />`;
+      
+      await addSnippet(content, 'user', title);
+      console.log('Auto-created snippet for new image:', imageId);
+    } catch (error) {
+      console.error('Auto-create failed:', error);
     }
   };
 
   // Helper function to escape special regex characters
   const escapeRegex = (str: string): string => {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
+  // Helper: Convert File to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Helper: Constrain image size using canvas
+  const constrainImageSize = async (base64: string, maxWidth: number, maxHeight: number): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        
+        let { width, height } = img;
+        
+        // Only resize if image exceeds limits
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.floor(width * ratio);
+          height = Math.floor(height * ratio);
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      };
+      img.src = base64;
+    });
+  };
+
+  // Handler: Upload files from local filesystem
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    setIsUploading(true);
+    try {
+      const uploadedImages: ImageData[] = [];
+      
+      for (const file of Array.from(files)) {
+        // Convert to base64
+        const base64 = await fileToBase64(file);
+        
+        // Constrain to 1024×768
+        const constrainedBase64 = await constrainImageSize(base64, 1024, 768);
+        
+        const imageId = `upload-${Date.now()}-${Math.random()}`;
+        const imageData: ImageData = {
+          id: imageId,
+          url: constrainedBase64,
+          name: file.name,
+          tags: ['uploaded']
+        };
+        
+        uploadedImages.push(imageData);
+      }
+      
+      // Add to images array (will auto-create snippets on first edit)
+      setImages(prev => [...prev, ...uploadedImages]);
+      setSelectedImages(new Set(uploadedImages.map(img => img.id)));
+      
+      showSuccess(`Uploaded ${uploadedImages.length} image(s)`);
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert(`Failed to upload images: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Handler: Select images from Swag
+  const handleSwagImagesSelected = (selectedImages: ImageData[]) => {
+    setImages(prev => [...prev, ...selectedImages]);
+    setSelectedImages(new Set(selectedImages.map(img => img.id)));
+    setShowSwagPicker(false);
+    showSuccess(`Loaded ${selectedImages.length} image(s) from Swag`);
+  };
+
+  // Handler: Generate image from text prompt using /generate-image endpoint
+  const handleGenerateFromPrompt = async () => {
+    if (!generatePrompt.trim()) return;
+    
+    setIsGenerating(true);
+    try {
+      const authToken = await getToken();
+      const apiBase = await import('../../utils/api').then(m => m.getCachedApiBase());
+      
+      // Call the generate-image endpoint
+      const response = await fetch(`${apiBase}/generate-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+          'X-Google-OAuth-Token': localStorage.getItem('google_oauth_token') || ''
+        },
+        body: JSON.stringify({
+          prompt: generatePrompt,
+          providers: settings.providers,
+          size: generateSize,
+          quality: 'standard',
+          style: 'natural'
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (!result.success || !result.imageUrl) {
+        throw new Error(result.error || 'Generation failed - no image URL returned');
+      }
+      
+      // Download the generated image and convert to base64
+      const imageResponse = await fetch(result.imageUrl);
+      const imageBlob = await imageResponse.blob();
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(imageBlob);
+      });
+      
+      // Constrain to 1024×768
+      const constrainedBase64 = await constrainImageSize(base64, 1024, 768);
+      
+      // Add generated image to editor
+      const imageId = `generated-${Date.now()}`;
+      const imageData: ImageData = {
+        id: imageId,
+        url: constrainedBase64,
+        name: `Generated: ${generatePrompt.substring(0, 50)}`,
+        tags: ['generated']
+      };
+      
+      setImages(prev => [...prev, imageData]);
+      setSelectedImages(new Set([imageId]));
+      
+      showSuccess(`Image generated successfully!`);
+      
+    } catch (error) {
+      console.error('Generation error:', error);
+      showInfo(`Failed to generate: ${error instanceof Error ? error.message : String(error)}`);
+      
+      // Fallback to placeholder SVG on error
+      const imageId = `generated-placeholder-${Date.now()}`;
+      const imageData: ImageData = {
+        id: imageId,
+        url: 'data:image/svg+xml;base64,' + btoa(`
+          <svg width="1024" height="768" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="#fee"/>
+            <text x="50%" y="50%" text-anchor="middle" fill="#c00" font-size="20" font-family="Arial">
+              Generation failed. Using placeholder.
+            </text>
+            <text x="50%" y="55%" text-anchor="middle" fill="#666" font-size="14" font-family="Arial">
+              Prompt: ${generatePrompt.substring(0, 60)}
+            </text>
+          </svg>
+        `),
+        name: `Placeholder: ${generatePrompt.substring(0, 50)}`,
+        tags: ['placeholder']
+      };
+      
+      setImages(prev => [...prev, imageData]);
+      setSelectedImages(new Set([imageId]));
+    } finally {
+      setIsGenerating(false);
+      setShowGenerateDialog(false);
+      setGeneratePrompt('');
+    }
   };
 
   const handleCommandSubmit = async () => {
@@ -421,17 +608,33 @@ export const ImageEditorPage: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Feature Availability Warning */}
-      {!features?.imageEditing && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+      {/* Feature Availability Warnings */}
+      {!features?.imageEditingBasic && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4">
           <div className="max-w-7xl mx-auto flex items-start">
-            <svg className="w-6 h-6 text-yellow-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 text-red-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <div>
-              <h3 className="text-sm font-medium text-yellow-800">Image Editing Feature Unavailable</h3>
-              <div className="mt-1 text-sm text-yellow-700">
-                <p>Image editing functionality is not currently available. The server must be configured with image generation providers (e.g., OpenAI DALL-E, Replicate Flux) to enable this feature.</p>
+              <h3 className="text-sm font-medium text-red-800">Image Editing Unavailable</h3>
+              <div className="mt-1 text-sm text-red-700">
+                <p>Image editing is currently unavailable. Please contact support.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {features?.imageEditingBasic && !features?.imageEditingAI && (
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
+          <div className="max-w-7xl mx-auto flex items-start">
+            <svg className="w-6 h-6 text-blue-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <h3 className="text-sm font-medium text-blue-800">AI Features Limited</h3>
+              <div className="mt-1 text-sm text-blue-700">
+                <p>Basic editing is available. Configure image providers in settings for AI features (AI crop, image generation).</p>
               </div>
             </div>
           </div>
@@ -468,27 +671,131 @@ export const ImageEditorPage: React.FC = () => {
             Back to Swag
           </button>
           <h1 className="text-xl font-bold text-gray-900">
-            {isInlineEdit ? 'Edit Inline Image' : 'Image Editor'}
+            Image Editor
             {selectedImages.size > 0 && ` (${selectedImages.size} selected)`}
           </h1>
-          <button
-            onClick={handleSaveToSwag}
-            disabled={processedImageUrls.size === 0 || isProcessing}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              processedImageUrls.size === 0 || isProcessing
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
-          >
-            {isProcessing 
-              ? 'Saving...' 
-              : isInlineEdit 
-                ? 'Update in Snippet'
-                : `Save to Swag (${processedImageUrls.size})`
-            }
-          </button>
+          <div className="text-sm text-gray-600">
+            {processedImageUrls.size > 0 && (
+              <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-green-50 text-green-700 border border-green-200">
+                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Auto-saved: {processedImageUrls.size} image{processedImageUrls.size > 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
         </div>
       </header>
+
+      {/* Action Buttons Row */}
+      <div className="bg-white border-b border-gray-200 p-4">
+        <div className="max-w-7xl mx-auto flex gap-3 justify-center">
+          {/* Upload File Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading || isProcessing}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            {isUploading ? 'Uploading...' : '📁 Upload File'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,image/avif"
+            multiple
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+
+          {/* Select from Swag Button */}
+          <button
+            onClick={() => setShowSwagPicker(true)}
+            disabled={isProcessing}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            📚 Select from Swag
+          </button>
+
+          {/* Generate from Prompt Button */}
+          <button
+            onClick={() => setShowGenerateDialog(true)}
+            disabled={!features?.imageEditingAI || isProcessing}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              !features?.imageEditingAI || isProcessing
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-purple-600 text-white hover:bg-purple-700'
+            }`}
+            title={!features?.imageEditingAI ? 'Configure image providers in settings to enable' : ''}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            ✨ Generate from Prompt
+          </button>
+        </div>
+      </div>
+
+      {/* Swag Image Picker Dialog */}
+      {showSwagPicker && (
+        <SwagImagePicker
+          onSelect={handleSwagImagesSelected}
+          onClose={() => setShowSwagPicker(false)}
+          allowMultiple={true}
+        />
+      )}
+
+      {/* Generate from Prompt Dialog */}
+      {showGenerateDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <h2 className="text-xl font-bold mb-4">Generate Image from Prompt</h2>
+            <textarea
+              value={generatePrompt}
+              onChange={(e) => setGeneratePrompt(e.target.value)}
+              placeholder="Describe the image you want to create..."
+              className="w-full h-32 border border-gray-300 rounded p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              autoFocus
+            />
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Image Size
+              </label>
+              <select
+                value={generateSize}
+                onChange={(e) => setGenerateSize(e.target.value)}
+                className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="1024x1024">Square (1024×1024)</option>
+                <option value="1024x768">Landscape (1024×768)</option>
+                <option value="768x1024">Portrait (768×1024)</option>
+                <option value="1792x1024">Wide (1792×1024)</option>
+                <option value="1024x1792">Tall (1024×1792)</option>
+              </select>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setShowGenerateDialog(false); setGeneratePrompt(''); }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerateFromPrompt}
+                disabled={!generatePrompt.trim() || isGenerating}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                {isGenerating ? 'Generating...' : 'Generate Image'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">

@@ -7,23 +7,26 @@ import type { ContentSnippet } from '../../contexts/SwagContext';
  * - Direct image snippets (base64 data URLs)
  * - Images embedded in HTML content (<img> tags)
  * - Images in markdown content (![alt](url))
+ * Now includes imageIndex for tracking position in snippet
  */
 export function extractImagesFromSnippets(snippets: ContentSnippet[]): ImageData[] {
   const images: ImageData[] = [];
-  let imageCounter = 0;
+  let globalCounter = 0;
 
   for (const snippet of snippets) {
     const content = snippet.content || '';
+    let snippetImageIndex = 0;
 
     // Check if snippet content is a direct base64 image
     if (content.startsWith('data:image/')) {
-      imageCounter++;
+      globalCounter++;
       images.push({
-        id: `${snippet.id}-img-${imageCounter}`,
+        id: `${snippet.id}-img-${globalCounter}`,
         url: content,
-        name: snippet.title || `Image ${imageCounter}`,
+        name: snippet.title || `Image ${globalCounter}`,
         tags: snippet.tags || [],
         snippetId: snippet.id,
+        imageIndex: 0, // Direct image is always index 0
         format: extractImageFormat(content),
       });
       continue;
@@ -31,16 +34,18 @@ export function extractImagesFromSnippets(snippets: ContentSnippet[]): ImageData
 
     // Extract images from HTML content
     if (content.includes('<img')) {
-      const htmlImages = extractImagesFromHTML(content, snippet, imageCounter);
+      const htmlImages = extractImagesFromHTML(content, snippet, snippetImageIndex);
       images.push(...htmlImages);
-      imageCounter += htmlImages.length;
+      snippetImageIndex += htmlImages.length;
+      globalCounter += htmlImages.length;
     }
 
     // Extract images from markdown content
     if (content.includes('![')) {
-      const markdownImages = extractImagesFromMarkdown(content, snippet, imageCounter);
+      const markdownImages = extractImagesFromMarkdown(content, snippet, snippetImageIndex);
       images.push(...markdownImages);
-      imageCounter += markdownImages.length;
+      snippetImageIndex += markdownImages.length;
+      globalCounter += markdownImages.length;
     }
   }
 
@@ -53,7 +58,7 @@ export function extractImagesFromSnippets(snippets: ContentSnippet[]): ImageData
 function extractImagesFromHTML(
   html: string,
   snippet: ContentSnippet,
-  startCounter: number
+  startIndex: number
 ): ImageData[] {
   const images: ImageData[] = [];
   const parser = new DOMParser();
@@ -72,11 +77,12 @@ function extractImagesFromHTML(
     const height = img.height || parseInt(img.getAttribute('height') || '0');
 
     images.push({
-      id: `${snippet.id}-html-${startCounter + index + 1}`,
+      id: `${snippet.id}-html-${startIndex + index}`,
       url: src,
       name: alt || `${snippet.title || 'Image'} - ${index + 1}`,
       tags: snippet.tags || [],
       snippetId: snippet.id,
+      imageIndex: startIndex + index, // Track position in snippet
       width: width || undefined,
       height: height || undefined,
       format: extractImageFormat(src),
@@ -92,7 +98,7 @@ function extractImagesFromHTML(
 function extractImagesFromMarkdown(
   markdown: string,
   snippet: ContentSnippet,
-  startCounter: number
+  startIndex: number
 ): ImageData[] {
   const images: ImageData[] = [];
   // Markdown image pattern: ![alt text](image url "optional title")
@@ -109,11 +115,12 @@ function extractImagesFromMarkdown(
     if (!url || url.includes('placeholder') || url.length < 10) continue;
 
     images.push({
-      id: `${snippet.id}-md-${startCounter + index + 1}`,
+      id: `${snippet.id}-md-${startIndex + index}`,
       url,
       name: title || alt || `${snippet.title || 'Image'} - ${index + 1}`,
       tags: snippet.tags || [],
       snippetId: snippet.id,
+      imageIndex: startIndex + index, // Track position in snippet
       format: extractImageFormat(url),
     });
 

@@ -68,7 +68,7 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
             
             try {
                 switch (op.type) {
-                    case 'resize':
+                    case 'resize': {
                         if (op.params.percentage) {
                             const newWidth = Math.round(currentWidth * op.params.percentage / 100);
                             const newHeight = Math.round(currentHeight * op.params.percentage / 100);
@@ -82,8 +82,8 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
                         }
                         appliedOperations.push(`resize ${op.params.percentage || op.params.width + 'x' + op.params.height}`);
                         break;
-                    
-                    case 'rotate':
+                    }
+                    case 'rotate': {
                         const angle = op.params.degrees || 90;
                         sharpInstance = sharpInstance.rotate(angle);
                         // Swap dimensions for 90/270 degree rotations
@@ -92,8 +92,8 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
                         }
                         appliedOperations.push(`rotate ${angle}°`);
                         break;
-                    
-                    case 'flip':
+                    }
+                    case 'flip': {
                         if (op.params.direction === 'horizontal') {
                             sharpInstance = sharpInstance.flop();
                             appliedOperations.push('flip horizontal');
@@ -102,15 +102,15 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
                             appliedOperations.push('flip vertical');
                         }
                         break;
-                    
-                    case 'format':
+                    }
+                    case 'format': {
                         const format = op.params.format?.toLowerCase() || 'png';
                         outputFormat = format === 'jpg' ? 'jpeg' : format;
                         // Format will be applied at the end
                         appliedOperations.push(`format ${format.toUpperCase()}`);
                         break;
-                    
-                    case 'filter':
+                    }
+                    case 'filter': {
                         const filterType = op.params.filter;
                         switch (filterType) {
                             case 'grayscale':
@@ -130,12 +130,71 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
                                 sharpInstance = sharpInstance.tint({ r: 112, g: 66, b: 20 });
                                 appliedOperations.push('sepia');
                                 break;
+                            case 'negate':
+                                // Invert colors
+                                sharpInstance = sharpInstance.negate();
+                                appliedOperations.push('negate');
+                                break;
+                            case 'normalize':
+                                // Auto-enhance (stretch luminance to cover full dynamic range)
+                                sharpInstance = sharpInstance.normalize();
+                                appliedOperations.push('normalize');
+                                break;
                             default:
                                 console.warn(`Unknown filter: ${filterType}`);
                         }
                         break;
-                    
-                    case 'generate':
+                    }
+                    case 'modulate': {
+                        // Brightness, saturation, hue adjustments
+                        const modulateParams = {};
+                        if (op.params.brightness !== undefined) modulateParams.brightness = op.params.brightness;
+                        if (op.params.saturation !== undefined) modulateParams.saturation = op.params.saturation;
+                        if (op.params.hue !== undefined) modulateParams.hue = op.params.hue;
+                        sharpInstance = sharpInstance.modulate(modulateParams);
+                        appliedOperations.push(`modulate ${JSON.stringify(modulateParams)}`);
+                        break;
+                    }
+                    case 'extend': {
+                        // Add borders/padding
+                        sharpInstance = sharpInstance.extend({
+                            top: op.params.top || 0,
+                            bottom: op.params.bottom || 0,
+                            left: op.params.left || 0,
+                            right: op.params.right || 0,
+                            background: op.params.background || { r: 255, g: 255, b: 255 }
+                        });
+                        const borderSize = op.params.top || 0;
+                        appliedOperations.push(`border ${borderSize}px`);
+                        break;
+                    }
+                    case 'gamma': {
+                        // Gamma correction
+                        const gammaValue = op.params.gamma || 2.2;
+                        sharpInstance = sharpInstance.gamma(gammaValue);
+                        appliedOperations.push(`gamma ${gammaValue}`);
+                        break;
+                    }
+                    case 'tint': {
+                        // Color tinting
+                        sharpInstance = sharpInstance.tint(op.params);
+                        appliedOperations.push(`tint ${JSON.stringify(op.params)}`);
+                        break;
+                    }
+                    case 'crop': {
+                        // Extract region (intelligent cropping)
+                        const { left = 0, top = 0, width, height } = op.params;
+                        if (width && height) {
+                            sharpInstance = sharpInstance.extract({ left, top, width, height });
+                            currentWidth = width;
+                            currentHeight = height;
+                            appliedOperations.push(`crop ${width}×${height}`);
+                        } else {
+                            console.warn('Crop requires width and height parameters');
+                        }
+                        break;
+                    }
+                    case 'generate': {
                         // AI-powered generative editing (adding objects, changing backgrounds, etc.)
                         console.log(`🎨 [Generate] AI editing request: ${op.params.prompt || 'no prompt'}, mode: ${op.params.mode || 'edit'}`);
                         
@@ -227,7 +286,7 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
                         
                         appliedOperations.push(`AI: ${op.params.prompt.substring(0, 50)}${op.params.prompt.length > 50 ? '...' : ''}`);
                         break;
-                    
+                    }
                     default:
                         console.warn(`Unknown operation type: ${op.type}`);
                 }
@@ -235,6 +294,39 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
                 console.error(`Error applying operation ${op.type}:`, opError);
                 throw new Error(`Failed to apply ${op.type}: ${opError.message}`);
             }
+        }
+        
+        onProgress({ status: 'encoding', progress: 90 });
+        
+        // AUTO-RESIZE FOR WEB: Constrain to 1024×768 max to prevent Swag UI lockups
+        // CRITICAL: This prevents large base64 images from freezing the markdown editor
+        const MAX_WEB_WIDTH = 1024;
+        const MAX_WEB_HEIGHT = 768;
+        let didAutoResize = false;
+        let originalDimensions = null;
+        
+        const finalMetadata = await sharpInstance.metadata();
+        
+        if (finalMetadata.width > MAX_WEB_WIDTH || finalMetadata.height > MAX_WEB_HEIGHT) {
+            console.log(`🔄 [AutoResize] Resizing ${finalMetadata.width}×${finalMetadata.height} → max ${MAX_WEB_WIDTH}×${MAX_WEB_HEIGHT}`);
+            
+            originalDimensions = {
+                width: finalMetadata.width,
+                height: finalMetadata.height
+            };
+            
+            sharpInstance = sharpInstance.resize(MAX_WEB_WIDTH, MAX_WEB_HEIGHT, {
+                fit: 'inside',  // Maintain aspect ratio
+                withoutEnlargement: true
+            });
+            
+            didAutoResize = true;
+            appliedOperations.push(`auto-resized to ${MAX_WEB_WIDTH}×${MAX_WEB_HEIGHT} max`);
+            
+            // Update current dimensions
+            const resizedMetadata = await sharpInstance.metadata();
+            currentWidth = resizedMetadata.width;
+            currentHeight = resizedMetadata.height;
         }
         
         onProgress({ status: 'encoding', progress: 95 });
@@ -258,7 +350,9 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
                 width: currentWidth,
                 height: currentHeight
             },
-            format: outputFormat.toUpperCase()
+            format: outputFormat.toUpperCase(),
+            didAutoResize,
+            originalDimensions: didAutoResize ? originalDimensions : undefined
         };
         
     } catch (error) {
@@ -271,9 +365,9 @@ async function processImage(imageUrl, operations, onProgress, generationContext 
  * Main handler for image editing endpoint
  * @param {Object} event - Lambda event
  * @param {Object} responseStream - Lambda response stream for SSE
- * @param {Object} context - Lambda context
+ * @param {Object} _context - Lambda context
  */
-async function handler(event, responseStream, context) {
+async function handler(event, responseStream, _context) {
     const origin = event.headers?.origin || event.headers?.Origin || '*';
     
     // Set up SSE response headers
