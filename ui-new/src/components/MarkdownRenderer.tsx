@@ -566,33 +566,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
                   />
-                  {/* Edit button overlay - visual indicator that image is editable */}
-                  <div
-                    style={{ 
-                      position: 'absolute',
-                      top: '8px',
-                      right: '8px',
-                      zIndex: 9999,
-                      backgroundColor: '#ea580c',
-                      color: 'white',
-                      borderRadius: '50%',
-                      padding: '8px',
-                      border: 'none',
-                      pointerEvents: 'none',
-                      boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-                      width: '36px',
-                      height: '36px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title="Edit image"
-                    aria-label="Edit image"
-                  >
-                    <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </div>
+                  {/* Orange border indicates image is editable - click anywhere on image to edit */}
                 </span>
               );
             }
