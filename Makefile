@@ -360,8 +360,13 @@ serve-ui-prod:
 dev:
 	@echo "🚀 Starting local development environment..."
 	@echo "🧹 Cleaning up any existing servers..."
+	@# Kill processes by name patterns
 	-@pkill -f "node scripts/run-local-lambda" 2>/dev/null || true
 	-@pkill -f "vite" 2>/dev/null || true
+	-@pkill -f "nodemon" 2>/dev/null || true
+	@# Kill processes by port (force kill any process on 3000 or 5173)
+	-@lsof -ti:3000 | xargs -r kill -9 2>/dev/null || true
+	-@lsof -ti:5173 | xargs -r kill -9 2>/dev/null || true
 	@sleep 1
 	@echo ""
 	@echo "This will start:"
