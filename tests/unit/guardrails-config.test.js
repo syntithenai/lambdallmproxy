@@ -87,7 +87,7 @@ jest.mock('../../PROVIDER_CATALOG.json', () => ({
       }
     }
   }
-}), { virtual: true });
+}));
 
 const { loadGuardrailConfig } = require('../../src/guardrails/config');
 
