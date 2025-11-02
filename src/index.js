@@ -275,6 +275,38 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        if (method === 'POST' && path === '/quiz/generate/stream') {
+            console.log('🎯 Routing to streaming quiz generation endpoint');
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache, no-transform',
+                    'Connection': 'keep-alive',
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+                    'X-Accel-Buffering': 'no'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            
+            // Event callback to send SSE events
+            const eventCallback = (eventType, data) => {
+                const sseMessage = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
+                responseStream.write(sseMessage);
+            };
+            
+            // Handle streaming quiz generation
+            await quizEndpoint.handleQuizGenerateStream(event, eventCallback);
+            
+            // Send done event
+            responseStream.write('event: done\ndata: {}\n\n');
+            responseStream.end();
+            return;
+        }
+        
         // Unified sync endpoint - handles all data types (quizzes, snippets, feed items, config, embeddings)
         if (method === 'POST' && path === '/sync') {
             console.log('Routing to unified sync endpoint');

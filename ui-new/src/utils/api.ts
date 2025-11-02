@@ -900,6 +900,116 @@ export const generateQuiz = async (
 };
 
 /**
+ * Generate quiz with streaming - emits questions progressively as they're generated
+ * @param content Content to generate quiz from
+ * @param enrichment Whether to use enrichment
+ * @param providers Provider configuration
+ * @param token Auth token
+ * @param onQuestion Callback for each question generated
+ * @param onComplete Callback when generation completes
+ * @param onError Callback for errors
+ * @returns Cleanup function to cancel the stream
+ */
+export const generateQuizStreaming = async (
+  content: string,
+  enrichment: boolean,
+  providers: Record<string, any>,
+  token: string,
+  onQuestion: (question: QuizQuestion, index: number, total: number) => void,
+  onComplete: (questionsGenerated: number, duration: number) => void,
+  onError: (error: string) => void
+): Promise<() => void> => {
+  const apiBase = await getCachedApiBase();
+  
+  const controller = new AbortController();
+  
+  try {
+    const response = await fetch(`${apiBase}/quiz/generate/stream`, {
+      method: 'POST',
+      headers: buildApiHeaders(token),
+      body: JSON.stringify({
+        content,
+        enrichment,
+        providers
+      }),
+      credentials: 'include',
+      signal: controller.signal
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      onError(error.error || `HTTP ${response.status}: ${response.statusText}`);
+      return () => {};
+    }
+    
+    if (!response.body) {
+      onError('No response body');
+      return () => {};
+    }
+    
+    // Parse SSE stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    const processStream = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Process complete SSE messages
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || ''; // Keep incomplete message in buffer
+          
+          for (const message of lines) {
+            if (!message.trim()) continue;
+            
+            // Parse SSE format: "event: type\ndata: {json}"
+            const eventMatch = message.match(/event:\s*(\w+)\ndata:\s*(.+)/s);
+            if (!eventMatch) continue;
+            
+            const [, eventType, dataStr] = eventMatch;
+            
+            try {
+              const data = JSON.parse(dataStr);
+              
+              if (eventType === 'question_generated') {
+                onQuestion(data.question, data.index, data.total);
+              } else if (eventType === 'complete') {
+                onComplete(data.questionsGenerated, data.duration);
+              } else if (eventType === 'error') {
+                onError(data.error || 'Unknown error');
+              }
+            } catch (err) {
+              console.error('Failed to parse SSE data:', err);
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Stream error');
+        }
+      }
+    };
+    
+    processStream();
+    
+    // Return cleanup function
+    return () => {
+      controller.abort();
+      reader.cancel();
+    };
+  } catch (err: any) {
+    onError(err.message || 'Connection failed');
+    return () => {};
+  }
+};
+
+/**
  * Get providers configured in backend environment variables
  */
 export interface BackendProvider {

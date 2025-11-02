@@ -837,8 +837,245 @@ async function handleGetQuiz(event) {
     }
 }
 
+/**
+ * Handle streaming quiz generation with progressive question delivery
+ * Questions are emitted as they're parsed from the streaming LLM response
+ */
+async function handleQuizGenerateStream(event, eventCallback) {
+    const { IncrementalJSONParser } = require('../utils/incremental-json-parser');
+    const { llmResponsesWithTools } = require('../llm_tools_adapter');
+    
+    const startTime = Date.now();
+    
+    try {
+        // Authenticate user
+        const authResult = await authenticateRequest(event);
+        
+        if (!authResult.authenticated) {
+            eventCallback('error', { error: 'Authentication required' });
+            return;
+        }
+        
+        const email = authResult.email;
+        console.log(`🎯 Streaming quiz generation request from: ${email}`);
+        
+        // Parse request body
+        let body;
+        try {
+            body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+        } catch (parseError) {
+            eventCallback('error', { error: 'Invalid JSON in request body' });
+            return;
+        }
+        
+        const { content, title, topics, enrichment = false, providers } = body;
+        
+        // Validate required fields
+        if (!content) {
+            eventCallback('error', { error: 'Missing required field: content' });
+            return;
+        }
+        
+        // Build provider pool
+        const userProviders = Array.isArray(providers) ? providers : [];
+        if (userProviders.length === 0) {
+            eventCallback('error', { error: 'No providers configured' });
+            return;
+        }
+        
+        const providerPool = buildProviderPool(userProviders, authResult.authorized);
+        
+        if (providerPool.length === 0) {
+            eventCallback('error', { error: 'No valid providers available' });
+            return;
+        }
+        
+        // Send status update
+        eventCallback('status', { message: 'Generating quiz questions...' });
+        
+        // Build quiz generation prompt
+        const quizPrompt = `You are a quiz generator. Create a 10-question multiple-choice quiz based on the provided content.
+
+CRITICAL: Output ONLY valid JSON in this exact format (no markdown, no extra text):
+{
+  "questions": [
+    {
+      "id": "q1",
+      "prompt": "Question text?",
+      "choices": [
+        {"id": "a", "text": "Choice A"},
+        {"id": "b", "text": "Choice B"},
+        {"id": "c", "text": "Choice C"},
+        {"id": "d", "text": "Choice D"}
+      ],
+      "correctChoiceId": "a",
+      "explanation": "Brief explanation"
+    }
+  ]
+}
+
+Rules:
+- NO trailing commas
+- NO markdown code fences
+- EXACTLY 10 questions
+- Each question has EXACTLY 4 choices
+- Brief explanations (1-2 sentences)
+
+Generate a 10-question quiz for this content:
+
+TITLE: ${title || 'Untitled'}
+
+CONTENT:
+${content}
+
+${topics ? `TOPICS: ${topics}` : ''}
+`;
+
+        // Build model sequence
+        const uiProviders = userProviders.map(p => ({
+            type: p.type,
+            apiKey: p.apiKey,
+            enabled: true
+        })).filter(p => p.type && p.apiKey);
+        
+        const estimatedTokens = estimateTokenRequirements(
+            [{ role: 'user', content: quizPrompt }],
+            false
+        );
+        
+        const modelSequence = buildModelRotationSequence(uiProviders, {
+            needsTools: false,
+            needsVision: false,
+            estimatedTokens,
+            optimization: 'cheap' // Use cheaper models for quiz generation
+        });
+        
+        if (modelSequence.length === 0) {
+            eventCallback('error', { error: 'No available models for quiz generation' });
+            return;
+        }
+        
+        const selectedModel = modelSequence[0];
+        console.log(`🎯 Using model for streaming quiz: ${selectedModel.model}`);
+        
+        // Initialize incremental JSON parser
+        const parser = new IncrementalJSONParser();
+        let questionsSent = 0;
+        
+        // Call LLM with streaming enabled
+        try {
+            const response = await llmResponsesWithTools({
+                model: selectedModel.model,
+                input: [
+                    {
+                        role: 'system',
+                        content: 'You are a quiz generator. Create a 10-question multiple-choice quiz based on the provided content.\n\nCRITICAL: Output ONLY valid JSON in this exact format (no markdown, no extra text):\n{\n  "questions": [\n    {\n      "id": "q1",\n      "prompt": "Question text?",\n      "choices": [\n        {"id": "a", "text": "Choice A"},\n        {"id": "b", "text": "Choice B"},\n        {"id": "c", "text": "Choice C"},\n        {"id": "d", "text": "Choice D"}\n      ],\n      "correctChoiceId": "a",\n      "explanation": "Brief explanation"\n    }\n  ]\n}\n\nRules:\n- NO trailing commas\n- NO markdown code fences\n- EXACTLY 10 questions\n- Each question has EXACTLY 4 choices\n- Brief explanations (1-2 sentences)'
+                    },
+                    {
+                        role: 'user',
+                        content: `Generate a 10-question quiz for this content:\n\nTITLE: ${title || 'Untitled'}\n\nCONTENT:\n${content}\n\n${topics ? `TOPICS: ${topics}\n\n` : ''}`
+                    }
+                ],
+                options: {
+                    apiKey: selectedModel.apiKey,
+                    temperature: 0.7,
+                    maxTokens: 5000,
+                    stream: true, // Enable streaming!
+                    onChunk: (chunk) => {
+                        // Process each streaming chunk
+                        const newQuestions = parser.addChunk(chunk);
+                        
+                        // Emit each new complete question immediately
+                        newQuestions.forEach(question => {
+                            questionsSent++;
+                            console.log(`✅ Question ${questionsSent} complete, emitting...`);
+                            eventCallback('question_generated', {
+                                question,
+                                index: questionsSent - 1,
+                                total: 10
+                            });
+                        });
+                    }
+                }
+            });
+            
+            // Finalize parsing - extract any remaining questions
+            const finalQuestions = parser.finalize();
+            finalQuestions.forEach(question => {
+                if (questionsSent < 10) {
+                    questionsSent++;
+                    console.log(`✅ Final question ${questionsSent} complete, emitting...`);
+                    eventCallback('question_generated', {
+                        question,
+                        index: questionsSent - 1,
+                        total: 10
+                    });
+                }
+            });
+            
+            // Get all questions
+            const allQuestions = parser.getAllItems();
+            
+            if (allQuestions.length === 0) {
+                eventCallback('error', { error: 'Failed to generate any valid questions' });
+                return;
+            }
+            
+            console.log(`✅ Generated ${allQuestions.length} questions total`);
+            
+            // Calculate cost
+            const usage = response.usage || {};
+            const cost = calculateCost(
+                selectedModel.model,
+                usage.prompt_tokens || 0,
+                usage.completion_tokens || 0,
+                null,
+                false // Assume server-side key for now
+            );
+            
+            // Log to Google Sheets
+            try {
+                await logToGoogleSheets({
+                    timestamp: new Date().toISOString(),
+                    userEmail: email,
+                    type: 'quiz_generation',
+                    model: selectedModel.model,
+                    provider: selectedModel.provider,
+                    promptTokens: usage.prompt_tokens || 0,
+                    completionTokens: usage.completion_tokens || 0,
+                    totalTokens: (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+                    cost,
+                    duration: Date.now() - startTime
+                });
+            } catch (logError) {
+                console.error('⚠️ Failed to log to Google Sheets:', logError);
+            }
+            
+            // Send completion event
+            eventCallback('complete', {
+                questionsGenerated: allQuestions.length,
+                duration: Date.now() - startTime
+            });
+            
+        } catch (error) {
+            console.error('❌ Streaming quiz generation error:', error);
+            eventCallback('error', {
+                error: error.message || 'Quiz generation failed',
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Quiz handler error:', error);
+        eventCallback('error', {
+            error: error.message || 'Request processing failed'
+        });
+    }
+}
+
 module.exports = {
     handleQuizGenerate,
+    handleQuizGenerateStream,
     handleQuizSyncStatistics,
     handleGetQuizzes,
     handleSaveQuiz,
