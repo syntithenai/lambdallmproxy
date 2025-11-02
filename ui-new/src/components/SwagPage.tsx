@@ -28,7 +28,7 @@ import {
 import type { GoogleDoc } from '../utils/googleDocs';
 import { ragDB } from '../utils/ragDB';
 import type { SearchResult } from '../utils/ragDB';
-import { getCachedApiBase, generateQuiz } from '../utils/api';
+import { getCachedApiBase, generateQuizStreaming } from '../utils/api';
 import { extractImagesFromSnippets, snippetHasImages } from './ImageEditor/extractImages';
 import { quizDB } from '../db/quizDb';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
@@ -668,21 +668,22 @@ export const SwagPage: React.FC = () => {
       const enrichment = true;
       const startTime = Date.now();
       
-      // Generate quiz with enrichment enabled
-      const quiz = await generateQuiz(content, enrichment, enabledProviders, token);
-
-      console.log('✅ Quiz generated:', quiz.title);
+      // Initialize quiz with empty questions array
+      const quiz = {
+        title: `Quiz: ${selected[0].title}${selected.length > 1 ? ` +${selected.length - 1}` : ''}`,
+        questions: []
+      };
       
-      // Save generated quiz immediately with full quiz data (marked as not completed)
+      // Save placeholder quiz immediately
       const quizId = await quizDB.saveGeneratedQuiz(
         quiz.title,
         selected.map(s => s.id),
-        quiz.questions?.length || 0,
+        0,
         enrichment,
-        quiz // Pass the entire quiz object so it can be restarted later
+        quiz
       );
       
-      console.log('💾 Quiz saved to database:', quizId, 'with', quiz.questions?.length || 0, 'questions');
+      console.log('💾 Placeholder quiz saved to database:', quizId);
       
       // Store metadata for updating on completion
       setQuizMetadata({
@@ -692,21 +693,64 @@ export const SwagPage: React.FC = () => {
         quizId
       });
       
-      // Check if a quiz is already active
-      if (showQuizModal && currentQuiz) {
-        // Show toast notification instead of opening the new quiz
-        showSuccess(`Quiz "${quiz.title}" ready! Complete the current quiz first.`);
-        console.log('⚠️ Quiz already active - new quiz ready but not shown');
-      } else {
-        // Show quiz modal
-        setCurrentQuiz(quiz);
-        setShowQuizModal(true);
-      }
+      // Set initial quiz state
+      setCurrentQuiz(quiz);
+      setShowQuizModal(true);
+      
+      // Generate quiz with streaming - questions will appear progressively
+      const cleanup = await generateQuizStreaming(
+        content,
+        enrichment,
+        enabledProviders,
+        token,
+        // onQuestion callback
+        (question, index, total) => {
+          console.log(`✅ Question ${index + 1}/${total} received:`, question.prompt);
+          
+          // Add question to quiz
+          setCurrentQuiz((prevQuiz: any) => {
+            if (!prevQuiz) return prevQuiz;
+            
+            const updatedQuiz = {
+              ...prevQuiz,
+              questions: [...prevQuiz.questions, question]
+            };
+            
+            // Update database with new question
+            quizDB.saveGeneratedQuiz(
+              updatedQuiz.title,
+              selected.map(s => s.id),
+              updatedQuiz.questions.length,
+              enrichment,
+              updatedQuiz
+            ).catch(err => console.error('Failed to update quiz in DB:', err));
+            
+            return updatedQuiz;
+          });
+        },
+        // onComplete callback
+        (questionsGenerated, duration) => {
+          console.log(`✅ Quiz complete: ${questionsGenerated} questions in ${duration}ms`);
+          showSuccess(`Quiz ready with ${questionsGenerated} questions!`);
+          setIsGeneratingQuiz(false);
+        },
+        // onError callback
+        (error) => {
+          console.error('Quiz generation error:', error);
+          showError(error);
+          setIsGeneratingQuiz(false);
+          setShowQuizModal(false);
+          setCurrentQuiz(null);
+        }
+      );
+      
+      // Store cleanup function for potential cancellation
+      // (You could add a cancel button in the UI that calls this)
+      console.log('🎯 Streaming quiz generation started');
       
     } catch (error) {
       console.error('Quiz generation error:', error);
       showError(error instanceof Error ? error.message : 'Failed to generate quiz');
-    } finally {
       setIsGeneratingQuiz(false);
     }
   };
