@@ -297,20 +297,14 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
         const content = response.text || response.content || response.message?.content || response.choices?.[0]?.message?.content || '';
         
         console.log('🔍 Feed: Parsing LLM response');
-        console.log('🔍 Feed: Response structure:', {
-            hasContent: !!response.content,
-            hasMessage: !!response.message,
-            hasMessageContent: !!response.message?.content,
-            hasText: !!response.text,
-            responseType: typeof response,
-            responseKeys: Object.keys(response),
-            contentLength: content.length,
-            contentPreview: content.substring(0, 200)
-        });
+        console.log('🔍 Feed: Content length:', content.length, 'chars');
+        console.log('🔍 Feed: Content starts with:', content.substring(0, 100));
+        console.log('🔍 Feed: Content ends with:', content.substring(content.length - 100));
         
         // Try to extract JSON from markdown code blocks first
         let jsonText = null;
-        const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+        // Use greedy matching to capture the entire JSON object (not lazy *?)
+        const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
         if (codeBlockMatch) {
             jsonText = codeBlockMatch[1];
             console.log('🔍 Feed: Found JSON in code block');
