@@ -412,7 +412,7 @@ function AppContent() {
 
       {/* Header - Only visible when authenticated */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex justify-between items-center px-0 md:px-4 py-3 max-w-screen-2xl md:mx-auto">
+        <div className="flex justify-between items-center px-0 md:px-4 py-3 w-full md:max-w-screen-2xl md:mx-auto">
           {/* Left side: Logo and Project Selector */}
           <div className="flex items-center gap-3">
             <img 
@@ -683,7 +683,7 @@ function AppContent() {
 
       {/* Main Content - Only visible when authenticated */}
       <main id="main-content" className="flex-1 overflow-y-auto">
-        <div className="min-h-full md:max-w-screen-2xl md:mx-auto">
+        <div className="min-h-full w-full md:max-w-screen-2xl md:mx-auto">
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Feed is now the default landing page */}
