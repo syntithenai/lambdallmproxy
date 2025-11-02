@@ -12,6 +12,7 @@ export interface FeedItem {
   expandedContent?: string;      // Longer article with 4+ facts
   mnemonic?: string;             // Memory aid (acronym/rhyme/connection)
   image?: string;                // Image URL (from Unsplash/Pexels)
+  imageBase64?: string;          // Base64-encoded image data URI (for offline/embedding)
   imageThumb?: string;           // Thumbnail URL
   imageSource?: string;          // Image provider: 'unsplash' | 'pexels'
   imagePhotographer?: string;    // Photographer name
