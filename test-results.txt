@@ -1,0 +1,4162 @@
+
+> lambdallmproxy@1.0.0 test
+> jest
+
+PASS tests/unit/pricing-accuracy.test.js
+  Pricing Accuracy Tests
+    ✓ Backend and frontend pricing should be loaded (3 ms)
+    ✓ Embedding models should have zero output cost
+    ✓ All embedding models should be present in both pricing databases
+    ○ skipped All backend models should exist in frontend with matching prices
+    ○ skipped Groq models should be free ($0 per million tokens)
+    ○ skipped Gemini free tier models should be free ($0 per million tokens)
+    ○ skipped Together AI free tier models (with -Free suffix) should be free
+
+FAIL tests/unit/auth.test.js
+  Authentication
+    getAllowedEmails
+      ✓ should return empty array when no emails configured (3 ms)
+      ✕ should parse single email (1 ms)
+      ✕ should parse multiple emails (1 ms)
+      ✕ should trim whitespace from emails (1 ms)
+    verifyGoogleToken
+      ✓ should be skipped when google-auth-library is not available (1 ms)
+
+  ● Authentication › getAllowedEmails › should parse single email
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "test@example.com",
+    - ]
+    + Array []
+
+      34 |       process.env.ALLOWED_EMAILS = 'test@example.com';
+      35 |       const emails = getAllowedEmails();
+    > 36 |       expect(emails).toEqual(['test@example.com']);
+         |                      ^
+      37 |     });
+      38 |
+      39 |     test('should parse multiple emails', () => {
+
+      at Object.toEqual (tests/unit/auth.test.js:36:22)
+
+  ● Authentication › getAllowedEmails › should parse multiple emails
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "test1@example.com",
+    -   "test2@example.com",
+    - ]
+    + Array []
+
+      40 |       process.env.ALLOWED_EMAILS = 'test1@example.com,test2@example.com';
+      41 |       const emails = getAllowedEmails();
+    > 42 |       expect(emails).toEqual(['test1@example.com', 'test2@example.com']);
+         |                      ^
+      43 |     });
+      44 |
+      45 |     test('should trim whitespace from emails', () => {
+
+      at Object.toEqual (tests/unit/auth.test.js:42:22)
+
+  ● Authentication › getAllowedEmails › should trim whitespace from emails
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "test1@example.com",
+    -   "test2@example.com",
+    - ]
+    + Array []
+
+      46 |       process.env.ALLOWED_EMAILS = ' test1@example.com , test2@example.com ';
+      47 |       const emails = getAllowedEmails();
+    > 48 |       expect(emails).toEqual(['test1@example.com', 'test2@example.com']);
+         |                      ^
+      49 |     });
+      50 |   });
+      51 |
+
+      at Object.toEqual (tests/unit/auth.test.js:48:22)
+
+PASS tests/unit/html-parser.test.js
+  SimpleHTMLParser
+    Constructor and Initialization
+      ✓ should initialize with HTML and query (5 ms)
+      ✓ should handle empty query
+      ✓ should filter out short query words (1 ms)
+      ✓ should normalize query to lowercase
+    Relevance Scoring
+      ✓ should calculate relevance based on query word matches (1 ms)
+      ✓ should return 0 for no query words
+      ✓ should return 0 for empty text
+      ✓ should give bonus for title/heading patterns
+      ✓ should be case-insensitive for word matching
+      ✓ should count multiple word matches (2 ms)
+      ✓ should clamp score to maximum 1.0
+    Media Type Detection
+      ✓ should detect YouTube watch URLs
+      ✓ should detect youtu.be short URLs
+      ✓ should detect YouTube embed URLs
+      ✓ should detect YouTube Shorts
+      ✓ should NOT detect YouTube playlists as videos (1 ms)
+      ✓ should NOT detect YouTube channels as videos
+      ✓ should detect video file extensions (1 ms)
+      ✓ should detect audio file extensions (1 ms)
+      ✓ should detect streaming service URLs
+      ✓ should return null for regular URLs
+      ✓ should handle URLs with query parameters
+    Image Extraction
+      ✓ should extract images with src attribute (3 ms)
+      ✓ should skip data URIs (1 ms)
+      ✓ should skip tracking pixels (1 ms)
+      ✓ should extract alt and title attributes
+      ✓ should extract image dimensions
+      ✓ should prefer larger images (quality scoring)
+      ✓ should respect limit parameter
+      ✓ should calculate relevance scores
+      ✓ should extract figcaption as caption
+    Link Extraction
+      ✓ should extract links with href and text (1 ms)
+      ✓ should filter out navigation links (1 ms)
+      ✓ should filter out javascript: and mailto: links
+      ✓ should filter out anchor-only links (1 ms)
+      ✓ should filter out ad domains
+      ✓ should filter out very short links (1 ms)
+      ✓ should filter out very long link text
+      ✓ should calculate relevance scores
+      ✓ should boost links with substantial text
+      ✓ should penalize links at page edges
+      ✓ should respect maxLinks parameter (2 ms)
+      ✓ should sort links by relevance (1 ms)
+      ✓ should detect media type in links
+    Link Categorization
+      ✓ should categorize links by media type (4 ms)
+      ✓ should handle empty links array (1 ms)
+    HTML to Text Conversion
+      ✓ should convert simple HTML to text (1 ms)
+      ✓ should remove script tags (1 ms)
+      ✓ should remove style tags (1 ms)
+      ✓ should remove navigation elements
+      ✓ should remove header and footer
+      ✓ should prefer main/article content
+      ✓ should handle empty HTML
+      ✓ should normalize whitespace
+    Strip HTML Helper
+      ✓ should strip all HTML tags (1 ms)
+      ✓ should normalize whitespace
+      ✓ should handle empty input
+      ✓ should handle nested tags
+    URL Conversion - Relative to Absolute
+      ✓ should convert relative links to absolute when baseUrl provided
+      ✓ should convert relative image URLs to absolute when baseUrl provided
+      ✓ should handle ../ relative paths correctly
+      ✓ should leave absolute URLs unchanged
+      ✓ should skip anchor-only links (1 ms)
+      ✓ should skip javascript: links
+      ✓ should work without baseUrl (backward compatibility)
+      ✓ should skip data URIs in images
+
+PASS tests/unit/providers/provider-system.test.js
+  Provider System
+    BaseProvider
+      ✓ should not allow direct instantiation (16 ms)
+      ✓ should store configuration (1 ms)
+      ✓ should use default values for optional config (1 ms)
+      ✓ should require subclass to implement getEndpoint (1 ms)
+      ✓ should require subclass to implement getHeaders
+      ✓ should require subclass to implement buildRequestBody (1 ms)
+      ✓ should require subclass to implement makeRequest (1 ms)
+      ✓ should require subclass to implement streamRequest (1 ms)
+      ✓ should require subclass to implement getSupportedModels (1 ms)
+      ✓ should provide default parseRateLimits implementation
+      ✓ should allow overriding parseRateLimits
+    ProviderFactory
+      ✓ should create OpenAI provider (1 ms)
+      ✓ should create Groq provider (1 ms)
+      ✓ should handle unknown provider type (2 ms)
+      ✓ should require apiKey for provider creation
+      ✓ should pass configuration to created provider (1 ms)
+    Provider Request Formatting
+      ✓ should format basic chat messages
+      ✓ should include tools in request body
+      ✓ should handle max_tokens parameter
+      ✓ should handle stream parameter
+    Provider Headers
+      ✓ should include API key in OpenAI headers (1 ms)
+      ✓ should include API key in Groq headers
+    Provider Endpoints
+      ✓ should return OpenAI endpoint
+      ✓ should return Groq endpoint (1 ms)
+      ✓ should use custom endpoint if provided
+    Supported Models
+      ✓ OpenAI provider should support GPT models (5 ms)
+      ✓ Groq provider should support Groq models (2 ms)
+      ✓ should check if specific model is supported
+    Token Estimation
+      ✓ should estimate tokens for messages (1 ms)
+      ✓ should estimate more tokens for longer content
+      ✓ should handle empty messages
+
+PASS tests/unit/providers/provider-streaming.test.js
+  Provider Streaming
+    Basic Streaming
+      ✓ should stream simple chunks (1 ms)
+      ✓ should handle empty chunks
+      ✓ should handle multiple choices in chunks (1 ms)
+      ✓ should return rate limits after streaming (1 ms)
+    Chunk Types
+      ✓ should handle content chunks
+      ✓ should handle role chunks (1 ms)
+      ✓ should handle tool call chunks
+      ✓ should handle finish reason chunks
+      ✓ should handle mixed chunk content (13 ms)
+    Stream Error Handling
+      ✓ should handle stream errors (14 ms)
+      ✓ should handle rate limit errors during streaming
+      ✓ should handle network errors during streaming (1 ms)
+    Stream Callback
+      ✓ should call callback for each chunk (1 ms)
+      ✓ should pass complete chunk data to callback
+      ✓ should handle callback errors gracefully (1 ms)
+    Stream Options
+      ✓ should pass stream option in request body
+      ✓ should default stream to false
+      ✓ should include other options with stream
+    Real Provider Streaming
+      ✓ should handle OpenAI streaming response format (1 ms)
+      ✓ should handle Groq streaming response format
+    Stream Performance
+      ✓ should handle rapid chunks
+      ✓ should handle large chunks (1 ms)
+
+PASS tests/unit/request-analyzer.test.js
+  RequestType Constants
+    ✓ should define all request types
+  Pattern Constants
+    ✓ should define reasoning patterns
+    ✓ should define complex patterns
+    ✓ should define creative patterns
+    ✓ should define tool patterns (1 ms)
+  countPatternMatches
+    ✓ should count matching patterns
+    ✓ should return 0 for no matches (1 ms)
+    ✓ should handle empty content
+    ✓ should handle null/undefined content
+    ✓ should be case insensitive
+  detectRequestType
+    REASONING type detection
+      ✓ should detect math problems (1 ms)
+      ✓ should detect logic problems (1 ms)
+      ✓ should detect code debugging
+      ✓ should detect step-by-step requests (4 ms)
+      ✓ should detect "why" questions
+    TOOL_HEAVY type detection
+      ✓ should detect multiple tool indicators
+      ✓ should detect web scraping requests (1 ms)
+      ✓ should not trigger on single tool mention
+    COMPLEX type detection
+      ✓ should detect detailed explanation requests
+      ✓ should detect research requests
+      ✓ should detect planning requests
+      ✓ should detect multiple approaches requests (1 ms)
+    CREATIVE type detection
+      ✓ should detect story writing
+      ✓ should detect poetry requests
+      ✓ should detect brainstorming
+      ✓ should detect fictional content
+    SIMPLE type detection
+      ✓ should detect short queries
+      ✓ should detect greetings
+      ✓ should detect basic facts
+    Length-based detection
+      ✓ should default to simple for short content
+      ✓ should default to complex for long content without patterns
+    Edge cases
+      ✓ should handle empty string
+      ✓ should handle null (1 ms)
+      ✓ should handle undefined
+      ✓ should handle non-string input
+  analyzeMessages
+    ✓ should analyze single user message
+    ✓ should focus on last user message
+    ✓ should ignore assistant messages when finding last user message
+    ✓ should handle empty messages array
+    ✓ should handle null messages
+    ✓ should handle messages without user role
+    ✓ should handle messages with empty content
+  requiresLargeContext
+    ✓ should detect large context from message length
+    ✓ should detect large context from multiple messages
+    ✓ should not flag small contexts (1 ms)
+    ✓ should use custom threshold
+    ✓ should handle empty messages (1 ms)
+    ✓ should handle null messages
+  requiresReasoning
+    ✓ should return true for reasoning requests
+    ✓ should return false for simple requests (1 ms)
+    ✓ should handle empty messages
+  isToolHeavy
+    ✓ should return true for tool-heavy requests with tools available
+    ✓ should return false when no tools available
+    ✓ should return false for non-tool-heavy requests
+    ✓ should handle empty messages (1 ms)
+  estimateConversationDepth
+    ✓ should count single turn
+    ✓ should count multiple turns
+    ✓ should handle consecutive messages from same role
+    ✓ should ignore system messages
+    ✓ should handle empty messages
+    ✓ should handle null messages (1 ms)
+  analyzeRequest
+    ✓ should provide comprehensive analysis for simple request
+    ✓ should provide comprehensive analysis for reasoning request
+    ✓ should provide comprehensive analysis for complex request
+    ✓ should detect tool-heavy requests (1 ms)
+    ✓ should detect large context requirements (1 ms)
+    ✓ should handle multi-turn conversations (1 ms)
+    ✓ should handle empty options (7 ms)
+    ✓ should handle missing options (1 ms)
+  getComplexityScore
+    ✓ should score simple requests low
+    ✓ should score reasoning requests high
+    ✓ should increase score with conversation depth
+    ✓ should increase score for large context
+    ✓ should cap score at 10 (1 ms)
+    ✓ should return integer scores
+
+PASS tests/unit/health-checker.test.js
+  HealthChecker
+    Health Check Initialization
+      ✓ should start periodic health checks on initialization (5 ms)
+      ✓ should use custom check interval (1 ms)
+      ✓ should allow disabling automatic checks
+    Provider Health Tracking
+      ✓ should track provider availability (10 ms)
+      ✓ should decrease availability on consecutive failures (2 ms)
+      ✓ should reset consecutive errors on success (1 ms)
+    Automatic Health Recovery
+      ✓ should gradually recover availability after cooldown period (2 ms)
+      ✓ should not recover during cooldown period (1 ms)
+      ✓ should cap availability at 1.0 (1 ms)
+    Error Tracking
+      ✓ should track last error details (1 ms)
+      ✓ should track error history
+      ✓ should limit error history size (2 ms)
+    Health Check Status
+      ✓ should return healthy status for good provider
+      ✓ should return unhealthy status for degraded provider (1 ms)
+      ✓ should use custom health threshold (1 ms)
+    Availability Scoring
+      ✓ should calculate availability score based on error rate
+      ✓ should weigh recent errors more heavily (1 ms)
+    Lifecycle Management
+      ✓ should stop health checks when stopped
+      ✓ should allow manual health check execution (1 ms)
+
+PASS tests/todos-manager.test.js
+  TodosManager
+    constructor
+      ✓ initializes with empty state (1 ms)
+      ✓ stores writeEvent callback
+    getState
+      ✓ returns correct state with no todos
+      ✓ returns correct state with pending todos (4 ms)
+      ✓ returns copies of items to prevent mutation (1 ms)
+      ✓ calculates remaining count correctly
+    add
+      ✓ adds single todo
+      ✓ adds multiple todos (1 ms)
+      ✓ sets first todo as current (8 ms)
+      ✓ preserves current todo when adding more
+      ✓ auto-increments IDs (4 ms)
+      ✓ trims whitespace from descriptions
+      ✓ filters out empty descriptions (1 ms)
+      ✓ emits todos_updated event
+      ✓ emits todos_current event (1 ms)
+      ✓ handles non-array input gracefully
+      ✓ handles null/undefined input
+    delete
+      ✓ deletes todo by id (1 ms)
+      ✓ deletes todo by description (1 ms)
+      ✓ deletes multiple todos
+      ✓ re-activates current if current is deleted (1 ms)
+      ✓ sets next pending as current when current deleted
+      ✓ handles deleting non-existent todo
+      ✓ handles deleting by non-existent id
+      ✓ emits events after deletion (1 ms)
+      ✓ handles non-array input gracefully
+      ✓ converts numeric ids to strings for comparison
+    completeCurrent
+      ✓ marks current as done
+      ✓ advances to next pending (1 ms)
+      ✓ handles completing last todo
+      ✓ handles completing when no current exists
+      ✓ emits events after completion
+      ✓ updates remaining count correctly
+    hasPending
+      ✓ returns true with pending todos
+      ✓ returns true with current todo
+      ✓ returns false when all done
+      ✓ returns false with no todos
+    getCurrent
+      ✓ returns current todo
+      ✓ returns null when no current (1 ms)
+      ✓ returns null when all done
+    clear
+      ✓ removes all todos
+      ✓ resets nextId counter
+      ✓ emits todos_updated event
+    SSE event emission
+      ✓ handles missing writeEvent gracefully (1 ms)
+      ✓ handles writeEvent errors gracefully
+      ✓ emits events in correct order for add
+      ✓ includes correct data in todos_updated event
+      ✓ includes correct data in todos_current event (1 ms)
+    edge cases
+      ✓ handles adding todos after all completed
+      ✓ handles mixed add and delete operations
+      ✓ maintains consistent state through multiple operations
+      ✓ handles very long descriptions (1 ms)
+      ✓ handles special characters in descriptions
+      ✓ handles Unicode characters
+    integration scenarios
+      ✓ simulates full todo workflow
+      ✓ simulates auto-progression with assessor (1 ms)
+
+PASS tests/unit/endpoints/static.test.js
+  Static File Server Endpoint
+    getContentType
+      ✓ should return correct MIME type for HTML (4 ms)
+      ✓ should return correct MIME type for CSS (1 ms)
+      ✓ should return correct MIME type for JavaScript
+      ✓ should return correct MIME type for JSON (1 ms)
+      ✓ should return correct MIME type for images
+      ✓ should return default MIME type for unknown extensions
+    readStaticFile
+      ✓ should read file from docs directory (1 ms)
+      ✓ should default to index.html for root path (1 ms)
+      ✓ should reject paths outside docs directory (20 ms)
+      ✓ should reject non-existent files (2 ms)
+      ✓ should handle read errors (5 ms)
+      ✓ should handle nested paths correctly (1 ms)
+    handler
+      ✓ should serve HTML file (2 ms)
+      ✓ should serve binary files with base64 encoding (4 ms)
+      ✓ should return 404 for non-existent files (1 ms)
+      ✓ should return 404 for paths outside docs directory
+      ✓ should include cache headers (1 ms)
+      ✓ should include CORS headers (1 ms)
+
+PASS tests/unit/guardrails-factory.test.js
+  Guardrails Factory
+    createGuardrailValidator
+      ✓ should return null when config is null (5 ms)
+      ✓ should return null when config.enabled is false
+      ✓ should throw error when no API key found for provider (20 ms)
+      ✓ should create validator with context API key (1 ms)
+      ✓ should create validator with indexed env var API key (1 ms)
+    Validator Methods
+      validateInput
+        ✓ should validate safe input (1 ms)
+        ✓ should detect unsafe input (1 ms)
+        ✓ should handle JSON wrapped in markdown code blocks
+        ✓ should fail safe on API error (1 ms)
+        ✓ should fail safe on JSON parse error
+      validateOutput
+        ✓ should validate safe output (2 ms)
+        ✓ should detect unsafe output
+        ✓ should fail safe on error (1 ms)
+    Multiple Provider Support
+      ✓ should work with OpenAI provider
+      ✓ should work with Anthropic provider
+      ✓ should work with Gemini provider (1 ms)
+    Context Priority
+      ✓ should prefer context key over indexed env var
+
+PASS tests/unit/model-categorizer.test.js
+  Model Categorization
+    categorizeModel
+      reasoning models
+        ✓ should categorize o1-preview as reasoning (4 ms)
+        ✓ should categorize o1-mini as reasoning
+        ✓ should categorize deepseek-reasoner as reasoning
+        ✓ should categorize QwQ models as reasoning (1 ms)
+      large models
+        ✓ should categorize llama-3.3-70b as large
+        ✓ should categorize llama-3.3-70b as large (1 ms)
+        ✓ should categorize llama-405b as large
+        ✓ should categorize mixtral-8x22b as large
+        ✓ should categorize gpt-4 as large (1 ms)
+        ✓ should categorize gpt-4-turbo as large
+        ✓ should categorize qwen-72b as large
+        ✓ should categorize claude-3-opus as large (1 ms)
+        ✓ should categorize gemini-pro as large
+      small models
+        ✓ should categorize llama-3.1-8b as small
+        ✓ should categorize mixtral-8x7b as small
+        ✓ should categorize gemma as small (1 ms)
+        ✓ should categorize gpt-4o-mini as small
+        ✓ should categorize gpt-3.5-turbo as small
+        ✓ should categorize claude-3-haiku as small
+        ✓ should categorize gemini-flash as small
+        ✓ should categorize qwen-32b as small
+      edge cases
+        ✓ should default to small for unknown models (1 ms)
+        ✓ should default to small for null
+        ✓ should default to small for undefined
+        ✓ should default to small for empty string (1 ms)
+        ✓ should handle mixed case model names
+    getModelsByCategory
+      ✓ should get all small models
+      ✓ should get all large models (1 ms)
+      ✓ should get all reasoning models
+      ✓ should include provider type in results (2 ms)
+      ✓ should include category in results
+      ✓ should return empty array for invalid catalog (2 ms)
+      ✓ should handle missing models array
+    getRecommendedCategory
+      ✓ should recommend reasoning for requiresReasoning=true
+      ✓ should recommend large for requiresLargeContext=true
+      ✓ should recommend large for estimatedTokens > 8000 (1 ms)
+      ✓ should recommend small for estimatedTokens <= 8000
+      ✓ should recommend small by default
+      ✓ should prioritize reasoning over large context
+      ✓ should prioritize reasoning over token count
+    supportsContextWindow
+      ✓ should return true when context window is sufficient
+      ✓ should return false when required tokens exactly match (due to 20% safety buffer)
+      ✓ should return true when required tokens are within safe range
+      ✓ should return false when context window is insufficient
+      ✓ should return false for null model
+      ✓ should return false when contextWindow is missing
+    filterByContextWindow
+      ✓ should filter models by context window requirement
+      ✓ should return all models when requiredTokens is 0 (4 ms)
+      ✓ should return all models when requiredTokens is negative
+      ✓ should return empty array when no models meet requirement
+      ✓ should return all models when requirement is very low
+    getModelInfo
+      ✓ should get model info with category
+      ✓ should find model in any provider
+      ✓ should return null for unknown model
+      ✓ should return null for invalid inputs (1 ms)
+    ModelCategory constants
+      ✓ should have correct category values
+      ✓ should be defined and accessible
+    integration scenarios
+      ✓ should find suitable small models for simple request
+      ✓ should find suitable large models for complex request (1 ms)
+      ✓ should find reasoning models when needed
+
+PASS tests/integration/system_prompt_optimization.test.js
+  System Prompt Optimization - Critical Rules Preservation
+    Tool Usage Rules
+      ✓ should mention all 4 tools (5 ms)
+      ✓ should specify strict parameter requirements (1 ms)
+      ✓ should emphasize YouTube tool priority (10 ms)
+      ✓ should mention multi-query search support
+      ✓ should warn against XML/text syntax (at least once) (1 ms)
+      ✓ should NOT have excessive repetition of XML warnings
+    Response Quality Rules
+      ✓ should specify target response length (1000-3000 words)
+      ✓ should mention markdown formatting
+      ✓ should emphasize completeness checking
+      ✓ should encourage using tools when needed
+      ✓ should mention proper structure (overview, details, examples) (1 ms)
+    Temporal Information Rules
+      ✓ should inject current date/time
+      ✓ should warn against guessing dates (1 ms)
+      ✓ should mention execute_javascript for date calculations (2 ms)
+    Optimization Metrics
+      ✓ should be significantly shorter than original (target: <2500 tokens) (1 ms)
+      ✓ should have reduced emphasis markers (CRITICAL/NEVER)
+      ✓ should have no emojis (1 ms)
+      ✓ should not have excessive examples section
+    No Functional Loss
+      ✓ should still have OpenAI function calling mention
+      ✓ should still specify all tool parameters (5 ms)
+      ✓ should still warn about brief responses
+      ✓ should still mention citing sources
+  System Prompt Structure Validation
+    ✓ should have clear sections (TOOLS, RESPONSE, etc.)
+    ✓ should start with a clear AI assistant description
+    ✓ should have date/time near the beginning (1 ms)
+    ✓ should not have excessive whitespace or line breaks
+  Token Estimation
+    ✓ should estimate tokens correctly (1 ms)
+  Critical Rules Checklist
+    ✓ CRITICAL RULE: Tool parameter restrictions (additionalProperties: false)
+    ✓ CRITICAL RULE: Date/time handling (use provided, never guess)
+    ✓ CRITICAL RULE: YouTube priority (search_youtube for videos)
+    ✓ CRITICAL RULE: Multi-query support (array of queries)
+    ✓ CRITICAL RULE: Response format (Markdown with headings, lists, code)
+    ✓ CRITICAL RULE: Completeness check before finalizing (1 ms)
+    ✓ CRITICAL RULE: Comprehensive response length (1000-3000 words)
+    ✓ CRITICAL RULE: Tool usage when helpful
+  Removed Redundancies Validation
+    ✓ should not have 8+ NEVER statements
+    ✓ should not have 12+ CRITICAL statements
+    ✓ should not have emojis (1 ms)
+    ✓ should not have verbose example categories
+    ✓ should not have excessive transitional phrases
+    ✓ should not have redundant temporal sections
+    ✓ should not have explicit markdown instruction lists
+  Output Format
+    ✓ should print optimization summary (6 ms)
+
+PASS tests/unit/token-calculator.test.js
+  Token Calculator
+    detectModelFamily
+      ✓ should detect GPT-4 family
+      ✓ should detect GPT-3.5 family (1 ms)
+      ✓ should detect Llama family
+      ✓ should detect Mixtral family (1 ms)
+      ✓ should detect Gemma family
+      ✓ should detect Qwen family
+      ✓ should detect Claude family
+      ✓ should detect Gemini family
+      ✓ should return default for unknown models
+      ✓ should be case insensitive
+    estimateMessageTokens
+      ✓ should estimate tokens for simple message (3 ms)
+      ✓ should include message overhead
+      ✓ should estimate tokens for long message
+      ✓ should handle multi-modal content (1 ms)
+      ✓ should return overhead for empty content
+      ✓ should return 0 for null/undefined message
+      ✓ should use different overhead for different models
+    estimateMessagesTokens
+      ✓ should estimate tokens for message array (1 ms)
+      ✓ should include conversation overhead
+      ✓ should return 0 for empty array
+      ✓ should return 0 for invalid input
+      ✓ should scale linearly with message count
+    estimateToolTokens
+      ✓ should estimate tokens for tool definitions
+      ✓ should scale with number of tools (1 ms)
+      ✓ should return 0 for empty array
+      ✓ should return 0 for invalid input
+    estimateInputTokens
+      ✓ should estimate total input tokens (1 ms)
+      ✓ should sum messages and tools
+      ✓ should handle missing options
+    estimateOutputTokens
+      ✓ should estimate output tokens for simple requests (1 ms)
+      ✓ should estimate output tokens for complex requests
+      ✓ should estimate output tokens for reasoning requests (1 ms)
+      ✓ should use default rate for unknown request types
+      ✓ should handle missing options
+    calculateCost
+      ✓ should calculate cost correctly
+      ✓ should return 0 for free models
+      ✓ should handle large token counts
+      ✓ should handle different input/output costs
+      ✓ should handle missing options
+    estimateRequestCost
+      ✓ should return complete cost breakdown
+      ✓ should estimate cost for free tier correctly
+      ✓ should handle complex requests with tools (1 ms)
+    fitsInContextWindow
+      ✓ should return true when request fits
+      ✓ should return true when exactly fits
+      ✓ should return false when request exceeds window
+      ✓ should handle edge cases
+    getRecommendedMaxTokens
+      ✓ should return requested tokens when plenty of space
+      ✓ should limit tokens when approaching context window (3 ms)
+      ✓ should return 0 when context window exceeded
+      ✓ should account for safety margin
+      ✓ should use default max_tokens when not specified (1 ms)
+    integration scenarios
+      ✓ should estimate cost for typical chat request
+      ✓ should estimate cost for tool-using request
+      ✓ should check if large request fits in small context window
+
+PASS tests/unit/health-tracking.test.js
+  Health Tracking
+    ModelRateLimit - Health Score Calculation
+      ✓ should initialize with perfect health (4 ms)
+      ✓ should record successful requests
+      ✓ should record errors and reduce health score
+      ✓ should mark unhealthy after 3 consecutive errors
+      ✓ should reset consecutive errors on success
+      ✓ should mark unhealthy when health score < 30
+      ✓ should handle zero requests gracefully (1 ms)
+      ✓ should cap error penalty at 30 points (1 ms)
+      ✓ should recover health score after errors clear
+    RateLimitTracker - Health Methods
+      ✓ should record success via tracker (1 ms)
+      ✓ should record error via tracker
+      ✓ should return 100 for unknown model
+      ✓ should track health across multiple models
+    Health-Based Filtering - filterByHealth
+      ✓ should filter out unhealthy models (1 ms)
+      ✓ should keep models with no history (assume healthy)
+      ✓ should return empty array if all models unhealthy (1 ms)
+      ✓ should handle empty input
+      ✓ should preserve model order after filtering
+    Header Parsing - updateFromHeaders
+      ✓ should parse standard x-ratelimit-* headers (1 ms)
+      ✓ should parse Google x-goog-quota-* headers
+      ✓ should store lastResponseHeaders for debugging
+      ✓ should handle missing headers gracefully
+    Real-World Health Scenarios
+      ✓ should handle transient errors (1 ms)
+      ✓ should detect persistent failures
+      ✓ should track recovery after outage (1 ms)
+      ✓ should handle rate limit 429 as error
+    Integration - Performance + Health
+      ✓ should track both performance and health independently
+
+PASS tests/unit/guardrails-config.test.js
+  Guardrails Auto-Detection
+    Disabled State
+      ✓ should return null when ENABLE_GUARDRAILS is not set (4 ms)
+      ✓ should return null when ENABLE_GUARDRAILS is false (1 ms)
+      ✓ should return null when ENABLE_GUARDRAILS is true but no providers available (1 ms)
+    Provider Priority - Context Keys
+      ✓ should prefer groq-free when groqApiKey is provided in context (1 ms)
+      ✓ should use gemini-free when geminiApiKey is provided and groq is not available (1 ms)
+      ✓ should use together when togetherApiKey is provided and free tiers not available
+      ✓ should use openai when openaiApiKey is provided and higher priority providers not available (1 ms)
+      ✓ should prefer groq-free over other providers when multiple keys provided
+      ✓ should prefer gemini-free over paid providers when groq not available (3 ms)
+    Provider Priority - Indexed Env Vars
+      ✓ should use groq-free from indexed provider env vars
+      ✓ should use gemini-free from indexed provider env vars
+      ✓ should skip providers without API keys in indexed format
+    Context Overrides Env Vars
+      ✓ should prefer context keys over indexed env vars (1 ms)
+    Configuration Structure
+      ✓ should return complete config structure (1 ms)
+      ✓ should set enabled to true
+      ✓ should default strictness to moderate
+      ✓ should have same model for input and output by default
+    Edge Cases
+      ✓ should handle empty context object when indexed provider available
+      ✓ should handle undefined context when indexed provider available (1 ms)
+      ✓ should handle context with null values
+      ✓ should handle whitespace-only API keys in indexed providers
+    Groq Paid Tier
+      ✓ should use groq paid tier when groq-free not available
+    Model Selection
+      ✓ should select fast small model for groq-free
+      ✓ should select flash model for gemini-free
+      ✓ should select mini model for openai (1 ms)
+
+PASS tests/unit/model-config.test.js
+  Model Configuration
+    Default Model Selection
+      ✓ should use openai/gpt-oss-120b as default model
+      ✓ should not use deprecated or problematic models as default
+    Model Availability
+      ✓ should have openai/gpt-oss-120b in Groq provider list (2 ms)
+      ✓ should have rate limit configuration for openai/gpt-oss-120b (1 ms)
+      ✓ should have pricing information for openai/gpt-oss-120b (1 ms)
+    Function Calling Support
+      ✓ should document why openai/gpt-oss-120b is the best choice
+      ✓ should prefer OpenAI format over Anthropic format
+    Model Fallback Chain
+      ✓ should have fallback models available
+    Configuration Consistency
+      ✓ should use production-ready model for chat
+      ✓ should have model documented in MODEL_RECOMMENDATION.md
+    No Content Cleaning Required
+      ✓ should not need cleanLLMContent function with better model
+      ✓ should document why content cleaning was removed (2 ms)
+  Integration with Backend
+    ✓ should pass correct model to backend API
+    ✓ should use Groq API endpoint
+  Backward Compatibility
+    ✓ should still support llama-3.3 if user has it configured (1 ms)
+    ✓ should handle user settings migration
+
+FAIL tests/integration/guardrails-auto-detection.test.js
+  Guardrails Integration
+    End-to-End Flow
+      ✓ should complete config and validator creation with groq-free (5 ms)
+      ✕ should work with indexed provider format (2 ms)
+      ✓ should skip guardrails when disabled
+      ✓ should skip guardrails when no provider available (1 ms)
+      ✓ should prefer context over environment variables (1 ms)
+      ✓ should fallback through provider priority (1 ms)
+    Cost Tracking
+      ✓ should create validator with tracking capabilities
+    Error Handling
+      ✓ should handle missing provider gracefully (1 ms)
+      ✓ should throw when config specifies unavailable provider (8 ms)
+    Indexed Provider Format
+      ✕ should work with indexed provider environment variables (1 ms)
+
+  ● Guardrails Integration › End-to-End Flow › should work with indexed provider format
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      143 |       
+      144 |       const config = loadGuardrailConfig();
+    > 145 |       expect(config).not.toBeNull();
+          |                          ^
+      146 |       expect(config.provider).toBe('groq-free');
+      147 |       
+      148 |       const validator = createGuardrailValidator(config, {});
+
+      at Object.toBeNull (tests/integration/guardrails-auto-detection.test.js:145:26)
+
+  ● Guardrails Integration › Indexed Provider Format › should work with indexed provider environment variables
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      266 |       
+      267 |       const config = loadGuardrailConfig();
+    > 268 |       expect(config).not.toBeNull();
+          |                          ^
+      269 |       
+      270 |       const validator = createGuardrailValidator(config, {});
+      271 |       expect(validator).not.toBeNull();
+
+      at Object.toBeNull (tests/integration/guardrails-auto-detection.test.js:268:26)
+
+PASS tests/unit/performance-tracking.test.js
+  Performance Tracking
+    ModelRateLimit - Performance Recording
+      ✓ should initialize with empty performance history (1 ms)
+      ✓ should record performance metrics (1 ms)
+      ✓ should limit performance history to 100 entries
+      ✓ should calculate average performance from last 20 requests (1 ms)
+      ✓ should return null average when no performance data
+      ✓ should handle partial performance data (<20 samples)
+    RateLimitTracker - Performance Methods
+      ✓ should record performance via tracker (1 ms)
+      ✓ should return null for unknown model
+      ✓ should track performance across multiple models
+    Speed Optimization - sortBySpeed
+      ✓ should sort models by historical TTFT (ascending) (1 ms)
+      ✓ should handle models without performance data
+      ✓ should return empty array for empty input (1 ms)
+    Performance Metrics Validation
+      ✓ should handle missing timestamp gracefully (1 ms)
+      ✓ should ignore invalid performance metrics
+    Real-World Performance Scenarios
+      ✓ should reflect Groq speed advantage (1 ms)
+      ✓ should track performance degradation over time
+
+PASS tests/unit/model-formats.test.js
+  Model Format Registry
+    MODEL_FORMATS
+      ✓ should include gpt-oss-20b configuration (4 ms)
+      ✓ should include gpt-oss-120b configuration
+      ✓ should have description for each model
+    getModelFormat
+      ✓ should return format for gpt-oss models (1 ms)
+      ✓ should return null for models without special formatting
+      ✓ should return null for undefined model
+    requiresCleaning
+      ✓ should return true for gpt-oss models
+      ✓ should return false for standard models
+      ✓ should return false for undefined model
+    getModelsRequiringCleaning
+      ✓ should return array of models requiring cleaning (1 ms)
+      ✓ should only return models with requiresCleaning: true (1 ms)
+  Content Cleaning Functions
+    cleanModelContent
+      ✓ should remove <function=name> tags (1 ms)
+      ✓ should remove complete XML function calls (1 ms)
+      ✓ should remove self-closing XML tags
+      ✓ should remove JSON-like objects in XML
+      ✓ should handle multiple Claude-style tags in one message (1 ms)
+      ✓ should clean up excessive whitespace after removing tags
+      ✓ should trim leading and trailing whitespace
+      ✓ should return original content for models not requiring cleaning
+      ✓ should handle empty strings
+      ✓ should handle null/undefined content (1 ms)
+      ✓ should preserve valid markdown and HTML
+      ✓ should handle multiline XML function calls
+    cleanStreamingChunk
+      ✓ should clean chunks with Claude syntax (1 ms)
+      ✓ should handle partial tags in streaming
+      ✓ should return original chunk for models not requiring cleaning
+      ✓ should handle empty chunks
+      ✓ should handle null/undefined chunks
+  Dynamic Registration
+    registerModelFormat
+      ✓ should allow registering new model format
+      ✓ should throw error if model is missing (10 ms)
+      ✓ should throw error if config is missing (1 ms)
+      ✓ should throw error if requiresCleaning is not boolean
+      ✓ should throw error if cleaningPatterns is not array (1 ms)
+      ✓ should allow overriding existing model format
+  Real-World Scenarios
+    Claude syntax patterns from gpt-oss models
+      ✓ should clean typical search web pattern
+      ✓ should clean typical execute javascript pattern
+      ✓ should clean typical scrape url pattern
+      ✓ should handle mixed valid content with Claude syntax (1 ms)
+      ✓ should preserve actual tool call responses (JSON)
+    Edge cases and corner cases
+      ✓ should handle malformed XML tags
+      ✓ should handle nested tags
+      ✓ should handle tags with special characters
+      ✓ should handle very long content efficiently (2 ms)
+
+PASS tests/unit/circuit-breaker.test.js
+  CircuitBreaker
+    Circuit States
+      ✓ should start in CLOSED state (1 ms)
+      ✓ should transition to OPEN after failure threshold
+      ✓ should transition to HALF_OPEN after timeout
+      ✓ should close circuit on success in HALF_OPEN state (1 ms)
+      ✓ should reopen circuit on failure in HALF_OPEN state
+    Failure Tracking
+      ✓ should track consecutive failures
+      ✓ should reset failures on success (1 ms)
+      ✓ should track last failure timestamp
+    Timeout Configuration
+      ✓ should use custom failure threshold
+      ✓ should use custom timeout period
+    Multiple Providers
+      ✓ should track state independently per provider
+      ✓ should get all circuit states (2 ms)
+    State Management
+      ✓ should reset circuit state (1 ms)
+      ✓ should reset all circuits
+    Edge Cases
+      ✓ should handle rapid successive calls
+      ✓ should handle state check without prior interaction (1 ms)
+      ✓ should handle time going backwards
+
+PASS tests/unit/backoff-strategy.test.js
+  BackoffStrategy
+    Exponential Backoff
+      ✓ should calculate delay with exponential growth (1 ms)
+      ✓ should use base delay for attempt 0
+      ✓ should double exponentially (1 ms)
+      ✓ should cap at max delay
+      ✓ should use custom base delay
+    Jitter Application
+      ✓ should add jitter to prevent thundering herd
+      ✓ should keep jitter within ±25% range (15 ms)
+    Retry-After Header Parsing
+      ✓ should parse numeric retry-after (seconds) (1 ms)
+      ✓ should parse string retry-after (seconds)
+      ✓ should parse HTTP date format
+      ✓ should handle past dates (1 ms)
+      ✓ should handle invalid retry-after
+      ✓ should handle missing retry-after
+      ✓ should handle undefined retry-after
+    Edge Cases
+      ✓ should handle zero base delay
+      ✓ should handle very large attempt numbers
+      ✓ should handle negative attempt numbers (1 ms)
+      ✓ should handle very small max delay
+    Realistic Scenarios
+      ✓ should provide reasonable delays for typical retry sequence (2 ms)
+      ✓ should respect retry-after over exponential backoff
+
+PASS tests/unit/html-extraction.test.js
+  HTML Content Extractor
+    htmlToMarkdown
+      ✓ should convert headings to Markdown (3 ms)
+      ✓ should convert lists to Markdown (2 ms)
+      ✓ should convert links to Markdown
+      ✓ should convert code blocks
+      ✓ should convert inline code
+      ✓ should convert emphasis
+      ✓ should remove script tags
+      ✓ should remove style tags
+      ✓ should remove navigation elements (1 ms)
+      ✓ should decode HTML entities
+      ✓ should resolve relative URLs to absolute URLs (1 ms)
+      ✓ should handle protocol-relative URLs
+      ✓ should preserve anchor and special links
+    htmlToText
+      ✓ should extract plain text from HTML (1 ms)
+      ✓ should remove scripts and styles
+      ✓ should preserve newlines between elements
+    extractMainContent
+      ✓ should extract content from main tag (1 ms)
+      ✓ should extract content from article tag (2 ms)
+      ✓ should extract content from common content classes
+      ✓ should return full HTML if no main content found (1 ms)
+    extractContent
+      ✓ should return markdown format for well-structured HTML
+      ✓ should include compression ratio (1 ms)
+      ✓ should handle empty HTML gracefully
+      ✓ should fallback to text when markdown extraction is poor
+      ✓ should handle malformed HTML
+      ✓ should extract content from complex real-world HTML (1 ms)
+      ✓ should preserve links in markdown format
+    Token efficiency
+      ✓ should significantly reduce token count
+
+PASS tests/unit/todos-manager.test.js
+  TodosManager
+    initialization
+      ✓ should start with empty state (1 ms)
+      ✓ should not emit events on initialization
+    add()
+      ✓ should add todos and activate first as current (1 ms)
+      ✓ should emit todos_updated and todos_current events (1 ms)
+      ✓ should handle empty array gracefully
+      ✓ should filter out empty or whitespace-only descriptions
+      ✓ should not activate current if one already exists (2 ms)
+      ✓ should assign sequential IDs
+    delete()
+      ✓ should delete todos by id (5 ms)
+      ✓ should delete todos by exact description
+      ✓ should emit todos_updated and todos_current events (1 ms)
+      ✓ should reactivate current if current item is deleted
+      ✓ should handle empty delete array
+      ✓ should handle non-existent ids gracefully
+    completeCurrent()
+      ✓ should mark current as done and advance to next (1 ms)
+      ✓ should emit todos_updated and todos_current events
+      ✓ should handle completing last todo
+      ✓ should do nothing if no current todo
+    hasPending()
+      ✓ should return true when there are pending todos (1 ms)
+      ✓ should return true when there is a current todo
+      ✓ should return false when all todos are done
+      ✓ should return false when there are no todos
+    getCurrent()
+      ✓ should return current todo (1 ms)
+      ✓ should return null when no current todo
+    clear()
+      ✓ should clear all todos
+      ✓ should emit todos_updated event
+      ✓ should reset ID counter
+    event emission
+      ✓ should handle writeEvent being null (1 ms)
+      ✓ should handle writeEvent throwing errors
+    state immutability
+      ✓ should return copies of items array
+      ✓ should not allow mutation of returned state
+
+PASS tests/unit/model-selector.test.js
+  SelectionStrategy
+    ✓ should define all strategies (4 ms)
+  filterByRateLimits
+    ✓ should return all models when no tracker
+    ✓ should filter out rate-limited models
+    ✓ should check token requirements (1 ms)
+  filterByCost
+    ✓ should return all models when no constraint
+    ✓ should filter by cost constraint (1 ms)
+    ✓ should calculate average of input and output
+  prioritizeFreeTier
+    ✓ should put free models first (1 ms)
+    ✓ should maintain order within tiers (1 ms)
+    ✓ should handle all free models
+    ✓ should handle no free models
+  prioritizeQuality
+    ✓ should sort by context window descending (1 ms)
+    ✓ should not mutate original array (1 ms)
+  prioritizeCost
+    ✓ should sort by cost ascending
+    ✓ should put cheapest model first (5 ms)
+    ✓ should not mutate original array
+  RoundRobinSelector
+    ✓ should initialize with empty state
+    ✓ should select first model initially (1 ms)
+    ✓ should rotate through models
+    ✓ should handle single model
+    ✓ should return null for empty array
+    ✓ should track separate keys independently (1 ms)
+    ✓ should reset specific key
+    ✓ should reset all keys
+  selectModel
+    ✓ should throw when catalog is empty (22 ms)
+    ✓ should throw when messages are empty
+    ✓ should select model for simple request (4 ms)
+    ✓ should select model for complex request
+    ✓ should select model for reasoning request (1 ms)
+    ✓ should filter by context window (2 ms)
+    ✓ should throw when no models have sufficient context (46 ms)
+    ✓ should respect rate limits
+    ✓ should throw when all models are rate limited (1 ms)
+    ✓ should respect cost constraint (1 ms)
+    ✓ should throw when no models within cost constraint (1 ms)
+    ✓ should apply FREE_TIER strategy
+    ✓ should apply COST_OPTIMIZED strategy (1 ms)
+    ✓ should apply QUALITY_OPTIMIZED strategy
+    ✓ should apply BALANCED strategy
+    ✓ should throw for unknown strategy (1 ms)
+    ✓ should use round-robin when provided
+    ✓ should include metadata in result (1 ms)
+    ✓ should handle tools in request
+    ✓ should respect max_tokens parameter
+  getFallbackCategories
+    ✓ should provide fallbacks for REASONING (1 ms)
+    ✓ should provide fallbacks for LARGE
+    ✓ should provide fallbacks for SMALL
+    ✓ should handle unknown category
+  selectWithFallback
+    ✓ should return primary selection when available (1 ms)
+    ✓ should fallback when primary category rate limited
+    ✓ should throw when all fallbacks exhausted (1 ms)
+  batchSelect
+    ✓ should throw for non-array input (1 ms)
+    ✓ should select models for multiple requests
+    ✓ should use round-robin across requests
+    ✓ should handle errors gracefully (1 ms)
+    ✓ should handle empty array
+
+PASS tests/integration/prompts-integration.test.js
+  Prompt System Integration Tests
+    Comprehensive Research Prompt
+      ✓ should generate valid prompt string (1 ms)
+      ✓ should inject current date and time
+      ✓ should include all critical tool definitions (1 ms)
+      ✓ should emphasize strict parameter requirements
+      ✓ should provide guidance on tool usage
+      ✓ should specify response quality expectations
+      ✓ should include formatting instructions (1 ms)
+      ✓ should warn against incorrect tool syntax
+      ✓ should provide date calculation guidance
+      ✓ should be reasonably concise
+    Prompt Consistency and Quality
+      ✓ prompts should be deterministic (same output for same input) (1 ms)
+      ✓ prompts should not have placeholder text
+      ✓ prompts should have proper grammar and punctuation (2 ms)
+      ✓ prompts should not have obvious typos (1 ms)
+    Prompt Composition and Flow
+      ✓ comprehensive prompt should have logical structure
+      ✓ should not have excessive repetition
+      ✓ should balance specificity with flexibility (1 ms)
+    Prompt Length and Structure
+      ✓ comprehensive prompt should have reasonable length
+      ✓ should handle prompts with code examples gracefully (1 ms)
+      ✓ should handle prompts with structured lists
+
+PASS tests/integration/lambda-handler-comprehensive.test.js
+  Lambda Handler - Comprehensive Integration Tests
+    Request Validation and Processing
+      ✓ should validate all required request parameters (4 ms)
+      ✓ should handle malformed JSON requests
+      ✓ should validate HTTP method correctly (19 ms)
+    Authentication and Authorization
+      ✓ should handle different authentication scenarios (2 ms)
+      ✓ should validate access secrets properly (2 ms)
+    Error Handling and Response Generation
+      ✓ should generate appropriate error responses for different failure modes (1 ms)
+      ✓ should maintain proper response structure for valid requests (1 ms)
+    Performance and Resource Usage
+      ✓ should handle multiple rapid requests without crashing (2 ms)
+      ✓ should process requests with different content types (1 ms)
+    Security and Input Sanitization
+      ✓ should handle malicious input gracefully (2 ms)
+    Edge Cases and Boundary Conditions
+      ✓ should handle empty and null values gracefully (2 ms)
+      ✓ should handle very long queries
+
+PASS tests/unit/weighted-scoring.test.js
+  Enhanced Weighted Scoring System
+    calculateRelevanceScore
+      ✓ should give higher scores for exact phrase matches (6 ms)
+      ✓ should score authoritative domains higher (1 ms)
+      ✓ should reward term frequency (1 ms)
+      ✓ should give position bonuses for early term appearances
+      ✓ should reward term proximity (1 ms)
+      ✓ should penalize suspicious URL patterns
+      ✓ should reward complete query coverage (1 ms)
+      ✓ should boost DuckDuckGo native scores appropriately
+    helper methods
+      ✓ calculateTermFrequency should count term occurrences (1 ms)
+      ✓ calculatePositionScore should favor early positions
+      ✓ calculateProximityScore should reward close terms
+      ✓ calculateDomainAuthorityScore should rank domains correctly
+      ✓ calculateUrlStructureScore should penalize suspicious patterns
+
+PASS tests/unit/utils.test.js
+  Utility Modules
+    Error Handling Utils
+      isQuotaLimitError
+        ✓ should detect quota limit errors
+        ✓ should not detect non-quota errors (1 ms)
+      parseWaitTimeFromMessage
+        ✓ should parse seconds from error messages (1 ms)
+        ✓ should parse milliseconds from error messages
+        ✓ should parse minutes from error messages (1 ms)
+        ✓ should return default for unparseable messages
+    Token Estimation Utils
+      estimateTokenCount
+        ✓ should estimate tokens from text length (1 ms)
+      safeParseJson
+        ✓ should parse valid JSON
+        ✓ should return fallback for invalid JSON (4 ms)
+      truncateText
+        ✓ should truncate long text (1 ms)
+
+PASS tests/unit/error-classifier.test.js
+  ErrorClassifier
+    Error Type Classification
+      ✓ should classify 429 as RATE_LIMIT (1 ms)
+      ✓ should classify 401 as AUTH
+      ✓ should classify 403 as FORBIDDEN
+      ✓ should classify 5xx as SERVER_ERROR
+      ✓ should classify 4xx as CLIENT_ERROR
+      ✓ should classify network errors (1 ms)
+      ✓ should classify unknown errors
+    Retryability Assessment
+      ✓ should mark rate limit errors as retryable
+      ✓ should mark server errors as retryable
+      ✓ should mark network errors as retryable
+      ✓ should mark auth errors as non-retryable (1 ms)
+      ✓ should mark client errors as non-retryable
+    Severity Assessment
+      ✓ should assign LOW severity to rate limit errors
+      ✓ should assign MEDIUM severity to server errors
+      ✓ should assign HIGH severity to auth errors
+      ✓ should assign MEDIUM severity to unknown errors
+    Suggested Actions
+      ✓ should suggest switching provider for rate limits
+      ✓ should suggest checking API key for auth errors
+      ✓ should suggest retry with backoff for server errors
+      ✓ should suggest contacting support for unknown errors
+    Complete Classification
+      ✓ should return all classification fields
+      ✓ should handle Error objects (1 ms)
+      ✓ should handle errors with additional metadata
+
+PASS tests/integration/quiz-analytics.test.js
+  Quiz Analytics
+    Data Collection
+      ✓ should track quiz completion with detailed analytics (1 ms)
+      ✓ should extract topics from quiz content
+      ✓ should track question-level performance
+    Study Streak Calculation
+      ✓ should calculate consecutive day streak (1 ms)
+      ✓ should reset streak if day missed
+    Topic Performance Aggregation
+      ✓ should calculate average score per topic
+      ✓ should identify performance trend (improving/declining/stable)
+    Achievement System
+      ✓ should unlock achievements based on progress (1 ms)
+      ✓ should track progress towards locked achievements
+    Question Insights
+      ✓ should identify most difficult questions
+    CSV Export
+      ✓ should export quiz data to CSV format (1 ms)
+    Dashboard Rendering
+      ✓ should display overview statistics correctly (4 ms)
+      ✓ should format time display correctly
+
+PASS tests/integration/model-selection.test.js
+  Model Selection Integration Tests
+    Simple Request Flow
+      ✓ should select small free model for simple request (7 ms)
+      ✓ should estimate tokens correctly for simple request (1 ms)
+      ✓ should include analysis in result
+    Complex Request Flow
+      ✓ should select large model for complex request (1 ms)
+      ✓ should handle multi-turn conversations (1 ms)
+      ✓ should estimate higher tokens for long conversation (1 ms)
+    Reasoning Request Flow
+      ✓ should select reasoning model for reasoning keywords
+      ✓ should detect reasoning from analyze keyword
+    Rate Limit Integration
+      ✓ should skip rate-limited models (1 ms)
+      ✓ should use rate limit info in selection
+      ✓ should throw when all models are rate-limited (21 ms)
+    Cost Optimization
+      ✓ should prefer free models over paid (1 ms)
+      ✓ should respect cost constraint
+      ✓ should use cost_optimized strategy (1 ms)
+    Fallback Scenarios
+      ✓ should fallback from small to large when rate-limited (1 ms)
+      ✓ should try multiple fallback categories (1 ms)
+    Batch Processing
+      ✓ should process multiple requests (1 ms)
+      ✓ should handle mix of request types in batch (1 ms)
+    Context Window Handling
+      ✓ should filter models by context window requirement (1 ms)
+      ✓ should throw when no model has sufficient context (22 ms)
+    Edge Cases
+      ✓ should handle empty message content gracefully (1 ms)
+      ✓ should handle special characters in messages (1 ms)
+      ✓ should handle max_tokens parameter (1 ms)
+      ✓ should handle system messages in conversation (4 ms)
+    Performance
+      ✓ should complete selection quickly (1 ms)
+      ✓ should handle large batch efficiently (3 ms)
+
+FAIL tests/unit/streaming.test.js
+  Streaming Modules
+    SSE Writer
+      StreamingResponse
+        ✓ should accumulate SSE data (4 ms)
+        ✓ should create empty stream initially (1 ms)
+        ✓ should accumulate multiple writes in order (1 ms)
+        ✓ should format event with type and data
+        ✓ should handle complex nested objects
+        ✓ should handle empty objects (1 ms)
+        ✓ should handle null values in data
+        ✓ should handle arrays as data
+        ✓ should mix write and writeEvent calls
+        ✓ should properly format SSE with double newlines
+      createSSEStreamAdapter
+        ✓ should create adapter with writeEvent method (2 ms)
+        ✕ should handle write errors gracefully (22 ms)
+        ✕ should handle write method errors gracefully (2 ms)
+        ✓ should call underlying stream write with correct format (1 ms)
+        ✕ should handle multiple sequential writes (1 ms)
+        ✕ should handle multiple sequential events
+        ✓ should preserve event type in formatted output
+        ✓ should handle special characters in event data
+        ✓ should handle empty event data (1 ms)
+    Response Formatter
+      formatJsonResponse
+        ✓ should format JSON response with CORS headers
+        ✓ should accept custom status code and headers
+        ✓ should include CORS methods in headers
+        ✓ should include CORS headers in custom responses (1 ms)
+        ✓ should serialize complex objects correctly
+        ✓ should handle null data
+        ✓ should handle empty object
+        ✓ should merge additional headers with defaults
+        ✓ should handle various HTTP status codes (1 ms)
+      formatStreamingResponse
+        ✓ should format SSE response
+        ✓ should include keep-alive header
+        ✓ should include transfer encoding header (1 ms)
+        ✓ should include CORS headers (5 ms)
+        ✓ should handle empty body
+        ✓ should handle multiple SSE events in body
+        ✓ should accept custom status code
+      formatErrorResponse
+        ✓ should format error response (1 ms)
+        ✓ should default to 500 status code
+        ✓ should include timestamp in ISO format (1 ms)
+        ✓ should include additional context
+        ✓ should handle various error status codes
+        ✓ should include CORS headers
+        ✓ should be valid JSON (1 ms)
+      formatCORSResponse
+        ✓ should format CORS preflight response
+        ✓ should allow Content-Type and Authorization headers
+        ✓ should allow GET, POST, OPTIONS methods
+        ✓ should have empty body
+        ✓ should cache preflight for 24 hours (1 ms)
+
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle write errors gracefully
+
+    expect(received).not.toThrow()
+
+    Error name:    "Error"
+    Error message: "CLIENT_DISCONNECTED"
+
+          76 |                 isConnected = false;
+          77 |                 clearInterval(checkInterval);
+        > 78 |                 throw new Error('CLIENT_DISCONNECTED');
+             |                       ^
+          79 |             }
+          80 |         },
+          81 |         write: (data) => {
+
+      at Object.writeEvent (src/streaming/sse-writer.js:78:23)
+      at writeEvent (tests/unit/streaming.test.js:147:29)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/streaming.test.js:148:24)
+      at Object.toThrow (tests/unit/streaming.test.js:148:24)
+
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle write method errors gracefully
+
+    expect(received).not.toThrow()
+
+    Error name:    "Error"
+    Error message: "CLIENT_DISCONNECTED"
+
+           97 |                 isConnected = false;
+           98 |                 clearInterval(checkInterval);
+        >  99 |                 throw new Error('CLIENT_DISCONNECTED');
+              |                       ^
+          100 |             }
+          101 |         },
+          102 |         isConnected: () => isConnected,
+
+      at Object.write (src/streaming/sse-writer.js:99:23)
+      at write (tests/unit/streaming.test.js:162:29)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/streaming.test.js:163:24)
+      at Object.toThrow (tests/unit/streaming.test.js:163:24)
+
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle multiple sequential writes
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 3
+    Received number of calls: 6
+
+      185 |                 adapter.write({ step: 3 });
+      186 |
+    > 187 |                 expect(mockStream.write).toHaveBeenCalledTimes(3);
+          |                                          ^
+      188 |             });
+      189 |
+      190 |             test('should handle multiple sequential events', () => {
+
+      at Object.toHaveBeenCalledTimes (tests/unit/streaming.test.js:187:42)
+
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle multiple sequential events
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 3
+    Received number of calls: 6
+
+      198 |                 adapter.writeEvent('complete', {});
+      199 |
+    > 200 |                 expect(mockStream.write).toHaveBeenCalledTimes(3);
+          |                                          ^
+      201 |                 expect(mockStream.write).toHaveBeenNthCalledWith(1, 'event: start\ndata: {}\n\n');
+      202 |                 expect(mockStream.write).toHaveBeenNthCalledWith(2, 'event: progress\ndata: {"percent":50}\n\n');
+      203 |                 expect(mockStream.write).toHaveBeenNthCalledWith(3, 'event: complete\ndata: {}\n\n');
+
+      at Object.toHaveBeenCalledTimes (tests/unit/streaming.test.js:200:42)
+
+PASS tests/integration/content-optimization-integration.test.js
+  Content Optimization Integration Tests
+    Max Tokens Optimization
+      ✓ should optimize for cost (cheap setting) (5 ms)
+      ✓ should optimize for quality (powerful setting)
+      ✓ should optimize for speed (fastest setting) (1 ms)
+      ✓ should provide balanced defaults
+    Request Type Adaptation
+      ✓ should allocate appropriate tokens for simple requests (1 ms)
+      ✓ should allocate more tokens for complex requests (1 ms)
+      ✓ should allocate maximum tokens for reasoning requests
+      ✓ should handle tool-heavy requests appropriately
+      ✓ should handle creative content generation (1 ms)
+    Model Capability Constraints
+      ✓ should respect model max output limits
+      ✓ should respect context window constraints
+      ✓ should handle models with very small context windows (1 ms)
+      ✓ should provide safe defaults when model info missing
+    Search Result Optimization
+      ✓ should optimize search results for cheap setting
+      ✓ should allow more results for powerful setting (1 ms)
+      ✓ should adapt to request complexity
+      ✓ should return reasonable defaults (1 ms)
+    Content Length Optimization
+      ✓ should optimize content length for cheap setting
+      ✓ should allow longer content for powerful setting (1 ms)
+      ✓ should adapt to content type
+      ✓ should return reasonable defaults
+    Optimization Summary
+      ✓ should provide comprehensive optimization summary (1 ms)
+      ✓ should summarize cheap optimization strategy
+      ✓ should summarize powerful optimization strategy (1 ms)
+    Optimization Trade-offs
+      ✓ cheap vs powerful trade-off for simple requests
+      ✓ simple vs complex request trade-off
+      ✓ fastest vs powerful trade-off (1 ms)
+    Edge Cases and Robustness
+      ✓ should handle missing optimization parameter
+      ✓ should handle missing request type
+      ✓ should handle invalid optimization values (1 ms)
+      ✓ should handle very large input tokens
+      ✓ should handle negative or zero input tokens
+      ✓ should handle models with missing or invalid properties (1 ms)
+    Optimization Consistency
+      ✓ should produce consistent results for same inputs (1 ms)
+      ✓ should scale predictably with optimization levels
+      ✓ should scale predictably with request complexity
+
+PASS tests/integration/aggressive-caching.test.js
+  Aggressive Caching
+    Cache Service
+      ✓ should export cache singleton (1 ms)
+      ✓ should hash messages consistently
+      ✓ should hash different messages differently
+    Cache Integration
+      ✓ should cache LLM responses
+      ✓ should cache search results (1 ms)
+      ✓ should respect TTL expiration
+      ✓ should enforce storage limits with LRU eviction
+    API Integration
+      ✓ should check cache before API calls
+      ✓ should cache responses asynchronously
+    Cache Management
+      ✓ should clear all cache entries
+      ✓ should enable/disable caching
+      ✓ should provide cache statistics
+
+PASS tests/unit/model-selector-legacy.test.js
+  legacy selectModel
+    ✓ avoids previously rate-limited model when selecting fallback (1 ms)
+
+PASS tests/unit/pricing-display.test.js
+  Pricing Display Functions
+    calculateCostFromLlmApiCalls
+      ✓ handles empty array (1 ms)
+      ✓ handles null/undefined input
+      ✓ calculates GPT-4o cost correctly (1 ms)
+      ✓ calculates GPT-4o-mini cost correctly
+      ✓ free models return $0
+      ✓ Groq models return $0 (1 ms)
+      ✓ aggregates costs from multiple calls
+      ✓ handles mixed free and paid models
+      ✓ handles missing usage data
+      ✓ handles missing model (1 ms)
+      ✓ handles unknown model (defaults to $0)
+      ✓ handles zero tokens
+      ✓ handles large token counts
+    formatCostDisplay
+      ✓ formats zero cost
+      ✓ formats very small costs (1 ms)
+      ✓ formats small costs with 4 decimals
+      ✓ formats medium costs with 3 decimals (2 ms)
+      ✓ formats large costs with 2 decimals (1 ms)
+      ✓ handles negative costs (edge case)
+      ✓ handles very large costs
+    Integration Tests
+      ✓ real-world scenario: multiple GPT-4o calls (1 ms)
+      ✓ real-world scenario: free models only
+      ✓ real-world scenario: mixed free and paid (1 ms)
+
+PASS tests/unit/services.test.js
+  Service Modules
+    Tracking Service
+      trackToolCall
+        ✓ should create tool call tracking record (1 ms)
+        ✓ should handle minimal tool call data (1 ms)
+      trackLLMCall
+        ✓ should create LLM call tracking record
+        ✓ should handle response with text field
+
+PASS tests/unit/prompts.test.js
+  config/prompts
+    ✓ includes JSON tool call enforcement rule (15 ms)
+
+PASS tests/unit/config.test.js
+  Configuration Modules
+    Token Configuration
+      ✓ should export token constants (1 ms)
+      ✓ should provide complexity-based token allocation (4 ms)
+    Memory Configuration
+      ✓ should export memory constants (1 ms)
+      ✓ should calculate max content size correctly
+    Prompts Configuration
+      ✓ should export prompt constants
+      ✓ should have reasonable defaults (1 ms)
+
+PASS tests/unit/evaluation-parsing.test.js
+  Evaluation Response Parsing
+    JSON Response Parsing
+      ✓ should parse valid JSON with comprehensive=true
+      ✓ should parse valid JSON with comprehensive=false
+      ✓ should extract JSON from markdown code blocks
+      ✓ should extract JSON from text with surrounding content
+      ✓ should handle JSON with extra whitespace
+    Text Response Parsing - Comprehensive Responses
+      ✓ should recognize "yes" as comprehensive (1 ms)
+      ✓ should recognize "comprehensive" as comprehensive
+      ✓ should recognize "complete" as comprehensive
+      ✓ should recognize "sufficient" as comprehensive
+      ✓ should recognize "adequate" as comprehensive
+      ✓ should recognize "thorough" as comprehensive
+      ✓ should recognize "true" as comprehensive
+    Text Response Parsing - NOT Comprehensive Responses
+      ✓ should recognize "not comprehensive" as NOT comprehensive
+      ✓ should recognize "isn't comprehensive" as NOT comprehensive
+      ✓ should recognize "is not comprehensive" as NOT comprehensive
+      ✓ should recognize "incomplete" as NOT comprehensive
+      ✓ should recognize "insufficient" as NOT comprehensive (1 ms)
+      ✓ should recognize "too brief" as NOT comprehensive
+      ✓ should recognize "too short" as NOT comprehensive
+      ✓ should recognize "lacks detail" as NOT comprehensive
+      ✓ should recognize "missing information" as NOT comprehensive (1 ms)
+      ✓ should recognize standalone "no" as NOT comprehensive
+      ✓ should recognize "false" as NOT comprehensive
+      ✓ should recognize "not enough" as NOT comprehensive
+      ✓ should recognize "not sufficient" as NOT comprehensive
+      ✓ should recognize "not complete" as NOT comprehensive
+    Edge Cases and Gemini-Specific Formats
+      ✓ should NOT match "no" in words like "know" (1 ms)
+      ✓ should handle case variations
+      ✓ should prioritize negative over positive when both present
+      ✓ should handle responses with extra punctuation
+      ✓ should handle multi-line responses
+      ✓ should assume comprehensive for ambiguous responses
+      ✓ should handle empty responses
+      ✓ should handle responses with only whitespace
+      ✓ should handle Gemini descriptive text format
+      ✓ should handle Gemini negative descriptive format
+    Invalid JSON Handling
+      ✓ should fall back to text parsing for malformed JSON
+      ✓ should handle partial JSON
+
+FAIL tests/integration/user-billing.test.js
+  ● Test suite failed to run
+
+    Vitest cannot be imported in a CommonJS module using require(). Please use "import" instead.
+
+    If you are using "import" in your source code, then it's possible it was bundled into require() automatically by your bundler. In that case, do not bundle CommonJS output since it will never work with Vitest, or use dynamic import() which is available in all CommonJS modules.
+
+      4 |  */
+      5 |
+    > 6 | const { describe, it, expect, vi, beforeAll, afterAll } = require('vitest');
+        |                                                           ^
+      7 |
+      8 | // Mock Google Sheets API
+      9 | vi.mock('googleapis', () => ({
+
+      at Object.<anonymous> (node_modules/vitest/index.cjs:1:109)
+      at Object.require (tests/integration/user-billing.test.js:6:59)
+
+FAIL tests/unit/model-selection-comprehensive.test.js
+  Model Selection - Comprehensive Coverage
+    Filter Functions
+      ✓ should handle edge cases for filterByRateLimits (4 ms)
+      ✕ should handle edge cases for filterByCost (2 ms)
+      ✓ should handle edge cases for prioritizeFreeTier (1 ms)
+      ✓ should handle edge cases for prioritizeQuality (1 ms)
+      ✓ should handle edge cases for prioritizeCost
+    RoundRobinSelector Edge Cases
+      ✓ should handle key resets properly (1 ms)
+      ✓ should handle multiple keys independently (2 ms)
+      ✕ should handle invalid inputs gracefully (11 ms)
+    selectModel Comprehensive Tests
+      ✓ should handle very large context requirements (26 ms)
+      ✓ should handle empty messages gracefully (1 ms)
+      ✓ should handle null/undefined inputs gracefully (4 ms)
+      ✓ should handle model selection with all parameters set (1 ms)
+      ✓ should handle different token count calculations (1 ms)
+      ✓ should not mutate original input data (1 ms)
+      ✕ should handle rate limiting edge cases
+      ✓ should handle multiple concurrent selections (5 ms)
+    Fallback Logic Comprehensive
+      ✓ should handle fallback for all categories (1 ms)
+      ✓ should handle fallback selection with rate limits
+      ✓ should test batch selection edge cases (1 ms)
+    Performance and Robustness
+      ✓ should handle high-volume selections without memory leaks (3 ms)
+      ✓ should handle invalid model data gracefully (1 ms)
+      ✓ should handle different strategy combinations
+    Integration and Error Handling
+      ✓ should provide meaningful error messages for various failure cases (1 ms)
+      ✓ should validate all parameter combinations
+      ✓ should maintain consistent return structure (1 ms)
+
+  ● Model Selection - Comprehensive Coverage › Filter Functions › should handle edge cases for filterByCost
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 6
+
+      149 |       // Test with zero cost constraint
+      150 |       const result1 = filterByCost(mockModelList, 0);
+    > 151 |       expect(result1.length).toBe(0);
+          |                              ^
+      152 |       
+      153 |       // Test with negative cost constraint  
+      154 |       const result2 = filterByCost(mockModelList, -1);
+
+      at Object.toBe (tests/unit/model-selection-comprehensive.test.js:151:30)
+
+  ● Model Selection - Comprehensive Coverage › RoundRobinSelector Edge Cases › should handle invalid inputs gracefully
+
+    expect(received).not.toThrow()
+
+    Error name:    "ReferenceError"
+    Error message: "models is not defined"
+
+          262 |       // Test with invalid key types
+          263 |       expect(() => {
+        > 264 |         selector.select(models, 123); // Number instead of string
+              |                         ^
+          265 |       }).not.toThrow();
+          266 |     });
+          267 |   });
+
+      at models (tests/unit/model-selection-comprehensive.test.js:264:25)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/model-selection-comprehensive.test.js:265:14)
+      at Object.toThrow (tests/unit/model-selection-comprehensive.test.js:265:14)
+
+  ● Model Selection - Comprehensive Coverage › selectModel Comprehensive Tests › should handle rate limiting edge cases
+
+    All models are rate limited
+
+      292 |     
+      293 |     if (candidates.length === 0) {
+    > 294 |       throw new Error('All models are rate limited');
+          |             ^
+      295 |     }
+      296 |     
+      297 |     console.log(`⏱️  After rate limit filter: ${candidates.length} models available`);
+
+      at selectModel (src/model-selection/selector.js:294:13)
+      at Object.selectModel (tests/unit/model-selection-comprehensive.test.js:361:22)
+
+PASS tests/unit/load-balancer.test.js
+  LoadBalancer
+    Round-Robin Distribution
+      ✓ should distribute requests evenly across providers (5 ms)
+      ✓ should maintain separate round-robin state per provider type
+      ✓ should reset to start after reaching end
+    Rate Limit Aware Distribution
+      ✓ should skip rate-limited providers (1 ms)
+      ✓ should return null when all providers are rate-limited (1 ms)
+      ✓ should resume using provider after rate limit expires (151 ms)
+    Single Provider Scenarios
+      ✓ should return same provider when only one available (1 ms)
+      ✓ should handle empty provider list
+    Token Estimation
+      ✓ should pass token estimate to rate limit check
+    State Management
+      ✓ should maintain state across multiple calls (1 ms)
+      ✓ should allow resetting round-robin state
+    Error Handling
+      ✓ should handle invalid provider list
+      ✓ should handle missing model ID
+
+PASS tests/unit/rate-limit-tracker.test.js
+  ModelRateLimit
+    Constructor
+      ✓ should initialize with default limits (5 ms)
+      ✓ should initialize with custom limits (1 ms)
+      ✓ should initialize tracking fields (1 ms)
+    canMakeRequest
+      ✓ should allow request when under limits
+      ✓ should block when request limit reached
+      ✓ should block when token limit would be exceeded
+      ✓ should block when unavailable due to 429 (1 ms)
+      ✓ should allow request after unavailable period expires (151 ms)
+      ✓ should block when daily limit reached
+    trackRequest
+      ✓ should increment request counter (1 ms)
+      ✓ should increment token counter
+      ✓ should add to history (1 ms)
+      ✓ should handle zero tokens
+    updateFromHeaders
+      ✓ should update from x-ratelimit headers
+      ✓ should handle missing headers gracefully
+      ✓ should parse reset timestamp in seconds (1 ms)
+      ✓ should parse reset timestamp in milliseconds
+      ✓ should parse reset as seconds until reset
+      ✓ should handle invalid header values
+    updateFrom429
+      ✓ should set unavailableUntil with retry-after
+      ✓ should default to 60 seconds when no retry-after
+      ✓ should block requests until unavailable period expires (1 ms)
+    getCapacity
+      ✓ should return available capacity
+      ✓ should return zero capacity when unavailable
+      ✓ should return Infinity for unlimited resources
+    reset
+      ✓ should not reset counters before time expires
+      ✓ should reset minute counters after 60 seconds (1 ms)
+      ✓ should reset daily counters after 24 hours
+    cleanHistory
+      ✓ should remove old history entries
+      ✓ should recalculate usage from history
+    parseHeader
+      ✓ should parse valid numbers
+      ✓ should return null for invalid values
+  RateLimitTracker
+    Constructor
+      ✓ should initialize empty tracker (1 ms)
+      ✓ should disable auto-reset when configured
+      ✓ should accept persistence option
+    getModelLimit
+      ✓ should create new model limit if not exists
+      ✓ should return existing model limit
+      ✓ should create separate limits for different providers (1 ms)
+      ✓ should use custom limits when provided
+    trackRequest
+      ✓ should track request for model (1 ms)
+      ✓ should create model limit if not exists
+      ✓ should call reset when autoReset enabled (1 ms)
+      ✓ should not call reset when autoReset disabled
+      ✓ should persist state when persistence configured
+    updateFromHeaders
+      ✓ should update model limit from headers
+      ✓ should persist state after update
+    updateFrom429
+      ✓ should mark model as unavailable
+      ✓ should use default retry time when not specified
+      ✓ should persist state after 429
+    isAvailable
+      ✓ should return true for untracked provider
+      ✓ should return true for untracked model
+      ✓ should return false when rate limited
+      ✓ should return false when unavailable due to 429
+      ✓ should check token requirements
+    getCapacity
+      ✓ should return infinite capacity for untracked model (1 ms)
+      ✓ should return actual capacity for tracked model
+    resetLimits
+      ✓ should reset all providers when no arguments
+      ✓ should reset all models for provider
+      ✓ should reset specific model
+      ✓ should persist state after reset (1 ms)
+    getProviders
+      ✓ should return empty array for new tracker
+      ✓ should return all tracked providers
+    getModels
+      ✓ should return empty array for untracked provider
+      ✓ should return all tracked models for provider
+    Serialization
+      ✓ should serialize to JSON (1 ms)
+      ✓ should deserialize from JSON
+      ✓ should handle invalid JSON gracefully
+      ✓ should round-trip serialize/deserialize
+    Persistence
+      ✓ should persist after tracking (1 ms)
+      ✓ should load state on initialization
+      ✓ should handle persistence without save method
+      ✓ should handle persistence without load method
+
+PASS tests/integration/feed-recommendations.test.js
+  Feed Recommender - TF-IDF with Quiz Engagement
+    Keyword Extraction with Quiz Weighting
+      ✓ should extract keywords using TF-IDF (12 ms)
+      ✓ should weight quiz-generated items 2x higher
+      ✓ should weight high-scoring quizzes (>80%) 3x higher (1 ms)
+    Topic Extraction with Quiz Engagement
+      ✓ should extract topics with frequency and recency
+      ✓ should boost topics with quiz engagement (1 ms)
+      ✓ should track average quiz score per topic
+    Avoid Topics from Trash
+      ✓ should extract topics to avoid from trashed items (1 ms)
+      ✓ should require 3+ trashes to avoid topic
+    Search Term Generation
+      ✓ should generate 60% keywords, 20% topics, 20% trending
+      ✓ should filter out avoided topics
+      ✓ should provide default terms for new users
+    Preference Learning from Interactions
+      ✓ should analyze mixed interactions correctly
+      ✓ should handle empty interactions gracefully (1 ms)
+    Performance
+      ✓ should analyze preferences in < 200ms (4 ms)
+
+FAIL tests/unit/tools-advanced.test.js
+  Tools System - Advanced Coverage
+    Tool Function Structure Validation
+      ✕ should validate all tool functions have consistent structure (8 ms)
+      ✕ should handle different tool types and their parameters
+      ✕ should validate tool parameter schemas are complete (1 ms)
+    Advanced Tool Execution Scenarios
+      ✓ should execute tools with complex parameter combinations (1 ms)
+      ✓ should handle asynchronous tool execution properly (11 ms)
+      ✓ should handle tool execution failures gracefully (5 ms)
+    Tool Parameter Validation Edge Cases
+      ✕ should validate parameters with special data types (2 ms)
+      ✕ should handle large parameter objects (2 ms)
+      ✕ should handle deeply nested parameter structures (2 ms)
+    Memory and Performance Testing
+      ✕ should not have memory leaks with repeated tool calls (2 ms)
+      ✕ should handle rapid tool execution without conflicts (14 ms)
+      ✕ should maintain performance with complex tool parameters (2 ms)
+    Tool Integration and Composition
+      ✕ should handle tool composition scenarios (2 ms)
+      ✓ should validate merged tool configurations work correctly
+      ✓ should handle complex tool parameters correctly (1 ms)
+    Error Recovery and Robustness
+      ✓ should recover gracefully from partial failures (7 ms)
+      ✓ should handle invalid tool names gracefully
+      ✕ should maintain consistency across different execution contexts (1 ms)
+
+  ● Tools System - Advanced Coverage › Tool Function Structure Validation › should validate all tool functions have consistent structure
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "required"
+    Received path: []
+
+    Received value: {"additionalProperties": false, "properties": {"add": {"description": "Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: [\"Install dependencies\", \"Configure environment\", \"Run tests\", \"Deploy application\"]", "items": {"type": "string"}, "type": "array"}, "delete": {"description": "Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue", "items": {"oneOf": [{"description": "Exact todo description to delete", "type": "string"}, {"description": "Todo ID to delete", "type": "number"}]}, "type": "array"}}, "type": "object"}
+
+      70 |         expect(func.parameters.type).toBe('object');
+      71 |         expect(func.parameters).toHaveProperty('properties');
+    > 72 |         expect(func.parameters).toHaveProperty('required');
+         |                                 ^
+      73 |       });
+      74 |     });
+      75 |
+
+      at toHaveProperty (tests/unit/tools-advanced.test.js:72:33)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools-advanced.test.js:57:21)
+
+  ● Tools System - Advanced Coverage › Tool Function Structure Validation › should handle different tool types and their parameters
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "scrape_url"
+    Received array: ["search_youtube", "get_youtube_transcript", "search_web", "scrape_web_content", "execute_javascript", "transcribe_url", "generate_image", "generate_chart", "search_knowledge_base", "manage_todos", …]
+
+      80 |       expect(toolNames).toContain('search_web');
+      81 |       expect(toolNames).toContain('execute_javascript');
+    > 82 |       expect(toolNames).toContain('scrape_url');
+         |                         ^
+      83 |       expect(toolNames).toContain('transcribe_audio');
+      84 |       
+      85 |       // Validate parameters for each tool type
+
+      at Object.toContain (tests/unit/tools-advanced.test.js:82:25)
+
+  ● Tools System - Advanced Coverage › Tool Function Structure Validation › should validate tool parameter schemas are complete
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "type"
+    Received path: []
+
+    Received value: {"description": "Search query (string) or multiple queries (array of strings)", "oneOf": [{"description": "Single search query", "type": "string"}, {"description": "Array of search queries to execute in one call", "items": {"type": "string"}, "type": "array"}]}
+
+      107 |         Object.keys(params.properties).forEach(paramName => {
+      108 |           const param = params.properties[paramName];
+    > 109 |           expect(param).toHaveProperty('type');
+          |                         ^
+      110 |           
+      111 |           if (param.type === 'object') {
+      112 |             expect(param).toHaveProperty('properties');
+
+      at toHaveProperty (tests/unit/tools-advanced.test.js:109:25)
+          at Array.forEach (<anonymous>)
+      at forEach (tests/unit/tools-advanced.test.js:107:40)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools-advanced.test.js:100:21)
+
+  ● Tools System - Advanced Coverage › Tool Parameter Validation Edge Cases › should validate parameters with special data types
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:222:30)
+
+  ● Tools System - Advanced Coverage › Tool Parameter Validation Edge Cases › should handle large parameter objects
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:243:28)
+
+  ● Tools System - Advanced Coverage › Tool Parameter Validation Edge Cases › should handle deeply nested parameter structures
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:269:28)
+
+  ● Tools System - Advanced Coverage › Memory and Performance Testing › should not have memory leaks with repeated tool calls
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:281:30)
+
+  ● Tools System - Advanced Coverage › Memory and Performance Testing › should handle rapid tool execution without conflicts
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:295:23)
+
+  ● Tools System - Advanced Coverage › Memory and Performance Testing › should maintain performance with complex tool parameters
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:323:30)
+
+  ● Tools System - Advanced Coverage › Tool Integration and Composition › should handle tool composition scenarios
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:338:33)
+
+  ● Tools System - Advanced Coverage › Error Recovery and Robustness › should maintain consistency across different execution contexts
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:435:30)
+
+FAIL tests/unit/search-comprehensive.test.js
+  ● Test suite failed to run
+
+    Jest encountered an unexpected token
+
+    Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax.
+
+    Out of the box Jest supports Babel, which will be used to transform your files into valid JS based on your Babel configuration.
+
+    By default "node_modules" folder is ignored by transformers.
+
+    Here's what you can do:
+     • If you are trying to use ECMAScript Modules, see https://jestjs.io/docs/ecmascript-modules for how to enable it.
+     • If you are trying to use TypeScript, see https://jestjs.io/docs/getting-started#using-typescript
+     • To have some of your "node_modules" files transformed, you can specify a custom "transformIgnorePatterns" in your config.
+     • If you need a custom transformation specify a "transform" option in your config.
+     • If you simply want to mock your non-JS modules (e.g. binary assets) you can stub them out with the "moduleNameMapper" config option.
+
+    You'll find more details and examples of these config options in the docs:
+    https://jestjs.io/docs/configuration
+    For information about custom transformations, see:
+    https://jestjs.io/docs/code-transformation
+
+    Details:
+
+    SyntaxError: /home/stever/projects/lambdallmproxy-codeinsiders/lambdallmproxy/tests/unit/search-comprehensive.test.js: Unexpected token (441:6)
+
+      439 |         const result = await searcher.search(input);
+      440 |         expect(result).toBeDefined();
+    > 441 |       }
+          |       ^
+      442 |     });
+      443 |   });
+      444 |
+
+      at constructor (node_modules/@babel/parser/src/parse-error.ts:95:45)
+      at Parser.toParseError [as raise] (node_modules/@babel/parser/src/tokenizer/index.ts:1507:19)
+      at Parser.raise [as unexpected] (node_modules/@babel/parser/src/tokenizer/index.ts:1547:16)
+      at Parser.unexpected [as parseExprAtom] (node_modules/@babel/parser/src/parser/expression.ts:1355:22)
+      at Parser.parseExprAtom [as parseExprSubscripts] (node_modules/@babel/parser/src/parser/expression.ts:742:23)
+      at Parser.parseExprSubscripts [as parseUpdate] (node_modules/@babel/parser/src/parser/expression.ts:721:21)
+      at Parser.parseUpdate [as parseMaybeUnary] (node_modules/@babel/parser/src/parser/expression.ts:683:23)
+      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (node_modules/@babel/parser/src/parser/expression.ts:417:14)
+      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (node_modules/@babel/parser/src/parser/expression.ts:429:23)
+      at Parser.parseExprOps [as parseMaybeConditional] (node_modules/@babel/parser/src/parser/expression.ts:384:23)
+      at Parser.parseMaybeConditional [as parseMaybeAssign] (node_modules/@babel/parser/src/parser/expression.ts:301:21)
+      at Parser.parseMaybeAssign [as parseExpressionBase] (node_modules/@babel/parser/src/parser/expression.ts:226:23)
+      at parseExpressionBase (node_modules/@babel/parser/src/parser/expression.ts:217:39)
+      at Parser.callback [as allowInAnd] (node_modules/@babel/parser/src/parser/expression.ts:3197:16)
+      at Parser.allowInAnd [as parseExpression] (node_modules/@babel/parser/src/parser/expression.ts:217:17)
+      at Parser.parseExpression [as parseStatementContent] (node_modules/@babel/parser/src/parser/statement.ts:688:23)
+      at Parser.parseStatementContent [as parseStatementLike] (node_modules/@babel/parser/src/parser/statement.ts:482:17)
+      at Parser.parseStatementLike [as parseModuleItem] (node_modules/@babel/parser/src/parser/statement.ts:419:17)
+      at Parser.parseModuleItem [as parseBlockOrModuleBlockBody] (node_modules/@babel/parser/src/parser/statement.ts:1443:16)
+      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (node_modules/@babel/parser/src/parser/statement.ts:1417:10)
+      at Parser.parseBlockBody [as parseProgram] (node_modules/@babel/parser/src/parser/statement.ts:229:10)
+      at Parser.parseProgram [as parseTopLevel] (node_modules/@babel/parser/src/parser/statement.ts:203:25)
+      at Parser.parseTopLevel [as parse] (node_modules/@babel/parser/src/parser/index.ts:88:25)
+      at parse (node_modules/@babel/parser/src/index.ts:86:38)
+      at parser (node_modules/@babel/core/src/parser/index.ts:29:19)
+          at parser.next (<anonymous>)
+      at normalizeFile (node_modules/@babel/core/src/transformation/normalize-file.ts:50:24)
+          at normalizeFile.next (<anonymous>)
+      at run (node_modules/@babel/core/src/transformation/index.ts:41:36)
+          at run.next (<anonymous>)
+      at transform (node_modules/@babel/core/src/transform.ts:29:20)
+          at transform.next (<anonymous>)
+      at evaluateSync (node_modules/gensync/index.js:251:28)
+      at sync (node_modules/gensync/index.js:89:14)
+      at fn (node_modules/@babel/core/src/errors/rewrite-stack-trace.ts:99:14)
+      at transformSync (node_modules/@babel/core/src/transform.ts:66:52)
+      at ScriptTransformer.transformSource (node_modules/@jest/transform/build/ScriptTransformer.js:545:31)
+      at ScriptTransformer._transformAndBuildScript (node_modules/@jest/transform/build/ScriptTransformer.js:674:40)
+      at ScriptTransformer.transform (node_modules/@jest/transform/build/ScriptTransformer.js:726:19)
+
+PASS tests/integration/lambda-metrics.test.js
+  Lambda Metrics Integration
+    Chat Endpoint
+      ✓ should extract Lambda metrics from context and pass to logging (261 ms)
+    RAG Endpoint
+      ✓ should extract Lambda metrics from context in RAG handler (11 ms)
+    Planning Endpoint
+      ✓ should extract Lambda metrics from context in planning handler (4 ms)
+    Google Sheets Logger
+      ✓ should accept Lambda metrics fields in logToGoogleSheets (1 ms)
+      ✓ should handle missing Lambda metrics gracefully
+    Memory Usage Calculation
+      ✓ should calculate memory usage in MB with proper precision
+
+FAIL tests/unit/endpoints/planning.test.js
+  Planning Endpoint
+    generatePlan
+      ✕ should generate a valid plan from LLM response (251 ms)
+      ✓ should throw error for empty query (1 ms)
+      ✓ should throw error for missing API key
+      ✕ should throw error for invalid LLM response format (7 ms)
+      ✕ should throw error for invalid searchKeywords format (3 ms)
+      ✕ should handle LLM errors gracefully (2 ms)
+    handler
+      ○ skipped should return 401 for missing authentication
+      ○ skipped should return 401 for invalid token
+      ○ skipped should return plan for valid authenticated request
+      ○ skipped should return 400 for missing query
+      ○ skipped should use env API key when available
+      ○ skipped should return 500 for internal errors
+      ○ skipped should include CORS headers
+
+  ● Planning Endpoint › generatePlan › should generate a valid plan from LLM response
+
+    TypeError: awslambda.streamifyResponse is not a function
+
+      1290 |  * Main Lambda handler function - streaming only
+      1291 |  */
+    > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+           |                             ^
+      1293 |     const startTime = Date.now();
+      1294 |     
+      1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:41:34)
+
+  ● Planning Endpoint › generatePlan › should throw error for invalid LLM response format
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "Invalid plan response: missing required fields"
+    Received message:   "awslambda.streamifyResponse is not a function"
+
+          1290 |  * Main Lambda handler function - streaming only
+          1291 |  */
+        > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+               |                             ^
+          1293 |     const startTime = Date.now();
+          1294 |     
+          1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:68:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/endpoints/planning.test.js:68:78)
+
+  ● Planning Endpoint › generatePlan › should throw error for invalid searchKeywords format
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "searchKeywords must be an array of arrays"
+    Received message:   "awslambda.streamifyResponse is not a function"
+
+          1290 |  * Main Lambda handler function - streaming only
+          1291 |  */
+        > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+               |                             ^
+          1293 |     const startTime = Date.now();
+          1294 |     
+          1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:83:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/endpoints/planning.test.js:83:78)
+
+  ● Planning Endpoint › generatePlan › should handle LLM errors gracefully
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "LLM service unavailable"
+    Received message:   "awslambda.streamifyResponse is not a function"
+
+          1290 |  * Main Lambda handler function - streaming only
+          1291 |  */
+        > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+               |                             ^
+          1293 |     const startTime = Date.now();
+          1294 |     
+          1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:89:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/endpoints/planning.test.js:89:78)
+
+PASS tests/unit/pricing.test.js
+  Pricing Module
+    Pricing Data Loading
+      ✓ should load pricing data for all providers (5 ms)
+      ✓ should have pricing for common OpenAI models (271 ms)
+      ✓ should have pricing for common Groq models (229 ms)
+    Cost Calculations
+      ✓ should calculate OpenAI GPT-4o cost correctly
+      ✓ should calculate Groq Llama cost correctly (1 ms)
+      ✓ should handle unknown provider (1 ms)
+      ✓ should handle unknown model
+      ✓ should handle case insensitive provider names
+
+PASS tests/integration/image-search-feed.test.js
+  Image Search Feed Integration
+    extractImagesFromSearchResults
+      ✓ should extract images from search result metadata (3 ms)
+      ✓ should filter out junk images
+      ✓ should extract images from HTML content (1 ms)
+    Feed item image priority
+      ✓ should prioritize web search images over API images
+    Image source attribution
+      ✓ should properly attribute web search images (1 ms)
+      ✓ should properly attribute API images
+
+PASS tests/unit/providers/provider-errors.test.js
+  Provider Error Handling
+    Error Standardization
+      ✓ should standardize basic errors (5 ms)
+      ✓ should preserve error codes (1 ms)
+      ✓ should include context in errors
+      ✓ should handle errors without messages (1 ms)
+    Rate Limit Errors
+      ✓ should detect rate limit from status code
+      ✓ should detect rate limit from message (1 ms)
+      ✓ should preserve original rate limit error info
+    Authentication Errors
+      ✓ should detect 401 unauthorized errors
+      ✓ should detect 403 forbidden errors (1 ms)
+      ✓ should mark auth errors as non-retryable
+    Timeout Errors
+      ✓ should detect ETIMEDOUT errors
+      ✓ should detect timeout from message (1 ms)
+      ✓ should mark timeout errors as retryable (1 ms)
+    Network Errors
+      ✓ should detect ECONNREFUSED errors
+      ✓ should detect ENOTFOUND errors
+      ✓ should mark network errors as retryable (1 ms)
+    Provider-Specific Error Info
+      ✓ should include provider type in errors
+      ✓ should include provider ID in errors
+      ✓ should preserve original error for debugging (1 ms)
+    Error Context
+      ✓ should include request context in errors
+      ✓ should handle empty context
+      ✓ should handle missing context
+    Real Provider Error Handling
+      ✓ should handle OpenAI provider errors (468 ms)
+      ✓ should handle Groq provider errors (229 ms)
+    Error Recovery
+      ✓ should identify retryable errors
+      ✓ should not mark unknown errors as retryable (1 ms)
+
+FAIL tests/google-sheets-snippets.test.js
+  Google Sheets Snippets Service
+    getOrCreateSnippetsSheet
+      ✕ creates new folder and spreadsheet if none exist (3 ms)
+      ✕ uses existing folder and spreadsheet
+      ✕ caches spreadsheet ID for subsequent calls
+    insertSnippet
+      ✕ inserts snippet with all fields
+      ✕ normalizes tags to lowercase and sorts
+      ✕ handles empty tags
+      ✓ throws error if title is missing (1 ms)
+    getSnippet
+      ✕ gets snippet by ID (1 ms)
+      ✕ gets snippet by title
+      ✓ returns null if snippet not found
+      ✓ returns null if no identifier provided
+    searchSnippets
+      ✕ searches by query text in title (1 ms)
+      ✕ searches by query text in content (1 ms)
+      ✕ filters by tags (AND logic)
+      ✕ combines query and tags
+      ✓ returns empty array if no matches (4 ms)
+      ✕ returns all snippets if no query or tags
+      ✕ search is case-insensitive
+    removeSnippet
+      ✕ removes snippet by ID
+      ✕ removes snippet by title (1 ms)
+      ✕ throws error if snippet not found (5 ms)
+      ✓ throws error if no identifier provided
+    updateSnippet
+      ✕ updates snippet title and content (1 ms)
+      ✕ updates tags
+      ✕ preserves created_at timestamp
+      ✓ throws error if snippet not found (1 ms)
+    error handling
+      ✓ handles Drive API errors gracefully
+      ✓ handles Sheets API errors gracefully
+      ✓ handles missing access token (1 ms)
+      ✓ handles missing user email
+
+  ● Google Sheets Snippets Service › getOrCreateSnippetsSheet › creates new folder and spreadsheet if none exist
+
+    TypeError: sheets.spreadsheets.get is not a function
+
+      161 |   
+      162 |   // Get the actual sheet ID for "Snippets" sheet
+    > 163 |   const spreadsheet = await sheets.spreadsheets.get({
+          |                                                 ^
+      164 |     spreadsheetId,
+      165 |     fields: 'sheets.properties'
+      166 |   });
+
+      at get (src/services/google-sheets-snippets.js:163:49)
+      at initializeSnippetsSheet (src/services/google-sheets-snippets.js:144:9)
+      at Object.getOrCreateSnippetsSheet (src/services/google-sheets-snippets.js:316:23)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:115:22)
+
+  ● Google Sheets Snippets Service › getOrCreateSnippetsSheet › uses existing folder and spreadsheet
+
+    TypeError: sheets.spreadsheets.get is not a function
+
+      246 |   try {
+      247 |     // Get spreadsheet metadata to check existing sheets
+    > 248 |     const spreadsheet = await sheets.spreadsheets.get({
+          |                                                   ^
+      249 |       spreadsheetId,
+      250 |       fields: 'sheets.properties'
+      251 |     });
+
+      at get (src/services/google-sheets-snippets.js:248:51)
+      at Object.ensureSnippetsSheetExists [as getOrCreateSnippetsSheet] (src/services/google-sheets-snippets.js:319:13)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:150:22)
+
+  ● Google Sheets Snippets Service › getOrCreateSnippetsSheet › caches spreadsheet ID for subsequent calls
+
+    TypeError: sheets.spreadsheets.get is not a function
+
+      246 |   try {
+      247 |     // Get spreadsheet metadata to check existing sheets
+    > 248 |     const spreadsheet = await sheets.spreadsheets.get({
+          |                                                   ^
+      249 |       spreadsheetId,
+      250 |       fields: 'sheets.properties'
+      251 |     });
+
+      at get (src/services/google-sheets-snippets.js:248:51)
+      at Object.ensureSnippetsSheetExists [as getOrCreateSnippetsSheet] (src/services/google-sheets-snippets.js:319:13)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:170:7)
+
+  ● Google Sheets Snippets Service › insertSnippet › inserts snippet with all fields
+
+    Failed to insert snippet: sheets.spreadsheets.get is not a function
+
+      436 |   } catch (error) {
+      437 |     console.error('❌ Snippets: Error inserting snippet:', error.message);
+    > 438 |     throw new Error(`Failed to insert snippet: ${error.message}`);
+          |           ^
+      439 |   }
+      440 | }
+      441 |
+
+      at Object.insertSnippet (src/services/google-sheets-snippets.js:438:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:216:22)
+
+  ● Google Sheets Snippets Service › insertSnippet › normalizes tags to lowercase and sorts
+
+    Failed to insert snippet: sheets.spreadsheets.get is not a function
+
+      436 |   } catch (error) {
+      437 |     console.error('❌ Snippets: Error inserting snippet:', error.message);
+    > 438 |     throw new Error(`Failed to insert snippet: ${error.message}`);
+          |           ^
+      439 |   }
+      440 | }
+      441 |
+
+      at Object.insertSnippet (src/services/google-sheets-snippets.js:438:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:273:22)
+
+  ● Google Sheets Snippets Service › insertSnippet › handles empty tags
+
+    Failed to insert snippet: sheets.spreadsheets.get is not a function
+
+      436 |   } catch (error) {
+      437 |     console.error('❌ Snippets: Error inserting snippet:', error.message);
+    > 438 |     throw new Error(`Failed to insert snippet: ${error.message}`);
+          |           ^
+      439 |   }
+      440 | }
+      441 |
+
+      at Object.insertSnippet (src/services/google-sheets-snippets.js:438:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:298:22)
+
+  ● Google Sheets Snippets Service › getSnippet › gets snippet by ID
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: null
+
+      342 |       );
+      343 |       
+    > 344 |       expect(result).toMatchObject({
+          |                      ^
+      345 |         id: 1,
+      346 |         title: 'Snippet 1',
+      347 |         content: 'Content 1',
+
+      at Object.toMatchObject (tests/google-sheets-snippets.test.js:344:22)
+
+  ● Google Sheets Snippets Service › getSnippet › gets snippet by title
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: null
+
+      358 |       );
+      359 |       
+    > 360 |       expect(result).toMatchObject({
+          |                      ^
+      361 |         id: 2,
+      362 |         title: 'Snippet 2',
+      363 |         content: 'Content 2',
+
+      at Object.toMatchObject (tests/google-sheets-snippets.test.js:360:22)
+
+  ● Google Sheets Snippets Service › searchSnippets › searches by query text in title
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+      414 |       );
+      415 |       
+    > 416 |       expect(results).toHaveLength(2);
+          |                       ^
+      417 |       expect(results.map(r => r.title)).toEqual([
+      418 |         'JavaScript Tips',
+      419 |         'Advanced JavaScript'
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:416:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › searches by query text in content
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      428 |       );
+      429 |       
+    > 430 |       expect(results).toHaveLength(1);
+          |                       ^
+      431 |       expect(results[0].title).toBe('Python Guide');
+      432 |     });
+      433 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:430:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › filters by tags (AND logic)
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      439 |       );
+      440 |       
+    > 441 |       expect(results).toHaveLength(1);
+          |                       ^
+      442 |       expect(results[0].title).toBe('Advanced JavaScript');
+      443 |     });
+      444 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:441:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › combines query and tags
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      450 |       );
+      451 |       
+    > 452 |       expect(results).toHaveLength(1);
+          |                       ^
+      453 |       expect(results[0].title).toBe('Advanced JavaScript');
+      454 |     });
+      455 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:452:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › returns all snippets if no query or tags
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 3
+    Received length: 0
+    Received array:  []
+
+      471 |       );
+      472 |       
+    > 473 |       expect(results).toHaveLength(3);
+          |                       ^
+      474 |     });
+      475 |
+      476 |     test('search is case-insensitive', async () => {
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:473:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › search is case-insensitive
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+      481 |       );
+      482 |       
+    > 483 |       expect(results).toHaveLength(2);
+          |                       ^
+      484 |     });
+      485 |   });
+      486 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:483:23)
+
+  ● Google Sheets Snippets Service › removeSnippet › removes snippet by ID
+
+    Failed to remove snippet: sheets.spreadsheets.get is not a function
+
+      653 |   } catch (error) {
+      654 |     console.error('❌ Snippets: Error removing snippet:', error.message);
+    > 655 |     throw new Error(`Failed to remove snippet: ${error.message}`);
+          |           ^
+      656 |   }
+      657 | }
+      658 |
+
+      at Object.removeSnippet (src/services/google-sheets-snippets.js:655:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:510:22)
+
+  ● Google Sheets Snippets Service › removeSnippet › removes snippet by title
+
+    Failed to remove snippet: sheets.spreadsheets.get is not a function
+
+      653 |   } catch (error) {
+      654 |     console.error('❌ Snippets: Error removing snippet:', error.message);
+    > 655 |     throw new Error(`Failed to remove snippet: ${error.message}`);
+          |           ^
+      656 |   }
+      657 | }
+      658 |
+
+      at Object.removeSnippet (src/services/google-sheets-snippets.js:655:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:537:22)
+
+  ● Google Sheets Snippets Service › removeSnippet › throws error if snippet not found
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "Failed to remove snippet: Snippet not found"
+    Received message:   "Failed to remove snippet: sheets.spreadsheets.get is not a function"
+
+          653 |   } catch (error) {
+          654 |     console.error('❌ Snippets: Error removing snippet:', error.message);
+        > 655 |     throw new Error(`Failed to remove snippet: ${error.message}`);
+              |           ^
+          656 |   }
+          657 | }
+          658 |
+
+      at Object.removeSnippet (src/services/google-sheets-snippets.js:655:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:547:7)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/google-sheets-snippets.test.js:553:17)
+
+  ● Google Sheets Snippets Service › updateSnippet › updates snippet title and content
+
+    Failed to update snippet: sheets.spreadsheets.get is not a function
+
+      547 |   } catch (error) {
+      548 |     console.error('❌ Snippets: Error updating snippet:', error.message);
+    > 549 |     throw new Error(`Failed to update snippet: ${error.message}`);
+          |           ^
+      550 |   }
+      551 | }
+      552 |
+
+      at Object.updateSnippet (src/services/google-sheets-snippets.js:549:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:593:22)
+
+  ● Google Sheets Snippets Service › updateSnippet › updates tags
+
+    Failed to update snippet: sheets.spreadsheets.get is not a function
+
+      547 |   } catch (error) {
+      548 |     console.error('❌ Snippets: Error updating snippet:', error.message);
+    > 549 |     throw new Error(`Failed to update snippet: ${error.message}`);
+          |           ^
+      550 |   }
+      551 | }
+      552 |
+
+      at Object.updateSnippet (src/services/google-sheets-snippets.js:549:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:617:22)
+
+  ● Google Sheets Snippets Service › updateSnippet › preserves created_at timestamp
+
+    Failed to update snippet: sheets.spreadsheets.get is not a function
+
+      547 |   } catch (error) {
+      548 |     console.error('❌ Snippets: Error updating snippet:', error.message);
+    > 549 |     throw new Error(`Failed to update snippet: ${error.message}`);
+          |           ^
+      550 |   }
+      551 | }
+      552 |
+
+      at Object.updateSnippet (src/services/google-sheets-snippets.js:549:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:630:22)
+
+PASS tests/unit/retry-handler.test.js
+  RetryHandler
+    Successful Requests
+      ✓ should return result on first successful attempt (5 ms)
+      ✓ should not retry on success
+    Retry Logic
+      ✓ should retry on rate limit error (429) (1 ms)
+      ✓ should retry on server errors (5xx) (1 ms)
+      ✓ should retry on network errors (1 ms)
+      ✓ should not retry on client errors (4xx except 429) (13 ms)
+      ✓ should not retry on auth errors (401) (1 ms)
+    Retry Attempts
+      ✓ should respect max retry limit (1 ms)
+      ✓ should succeed on last retry attempt
+      ✓ should use custom max retries (1 ms)
+    Backoff Strategy
+      ✓ should apply exponential backoff between retries (1 ms)
+      ✓ should use retry-after header when available
+      ✓ should cap delay at maximum (1 ms)
+    Error Classification
+      ✓ should classify errors before retry decision (1 ms)
+      ✓ should respect classifier retryable decision (3 ms)
+    Error Context
+      ✓ should preserve error information
+      ✓ should include retry metadata in final error (1 ms)
+      ✓ should track all errors from retry attempts (1 ms)
+    Request Execution
+      ✓ should pass arguments to request executor
+      ✓ should support async request executors (12 ms)
+      ✓ should handle promise rejections (1 ms)
+    Retry Callbacks
+      ✓ should call onRetry callback before each retry
+      ✓ should call onSuccess callback after successful request
+      ✓ should call onFailure callback after all retries exhausted (1 ms)
+    Edge Cases
+      ✓ should handle executor returning null
+      ✓ should handle errors without code property
+      ✓ should handle synchronous executor functions (1 ms)
+      ✓ should handle zero max retries (944 ms)
+
+FAIL tests/unit/tools-comprehensive.test.js
+  Tools System - Comprehensive Coverage
+    Tool Parameter Validation
+      ✓ should handle all tool parameter combinations correctly (4 ms)
+      ✕ should validate tool parameter types (2 ms)
+    Tool Execution Edge Cases
+      ✓ should handle extremely long queries gracefully
+      ✓ should handle Unicode and special characters in queries (1 ms)
+      ✓ should handle empty arrays in query parameter
+      ✓ should handle very large limit values (1 ms)
+    Tool Execution Error Handling
+      ✕ should handle network timeouts gracefully
+      ✕ should handle invalid URLs gracefully
+      ✓ should handle cache errors gracefully (1376 ms)
+      ✓ should handle tool-specific errors (1 ms)
+    Tool Execution Flow
+      ✓ should execute tools in correct sequence (1 ms)
+      ✓ should support multiple concurrent tool calls
+      ✓ should maintain consistent error message format
+    Tool Configuration Validation
+      ✕ should validate tool function structure consistently (3 ms)
+      ✓ should handle tool descriptions with special characters (1 ms)
+      ✓ should validate parameter schemas are complete
+    Integration with Other Modules
+      ✓ should integrate properly with caching system (1 ms)
+      ✓ should integrate with content optimization utilities
+    Performance and Resource Management
+      ✓ should not leak memory with many tool calls (1 ms)
+      ✓ should handle large result sets without crashing
+    Security and Sanitization
+      ✓ should handle malicious JavaScript input safely
+      ✓ should sanitize tool input parameters (1 ms)
+
+  ● Tools System - Comprehensive Coverage › Tool Parameter Validation › should validate tool parameter types
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-comprehensive.test.js:109:30)
+
+  ● Tools System - Comprehensive Coverage › Tool Execution Error Handling › should handle network timeouts gracefully
+
+    Network timeout
+
+      218 |       // Mock network timeout
+      219 |       DuckDuckGoSearcher.mockReturnValue({
+    > 220 |         search: jest.fn().mockRejectedValue(new Error('Network timeout'))
+          |                                             ^
+      221 |       });
+      222 |
+      223 |       const result = await callFunction('search_web', {
+
+      at Object.<anonymous> (tests/unit/tools-comprehensive.test.js:220:45)
+
+  ● Tools System - Comprehensive Coverage › Tool Execution Error Handling › should handle invalid URLs gracefully
+
+    Invalid URL
+
+      234 |     test('should handle invalid URLs gracefully', async () => {
+      235 |       DuckDuckGoSearcher.mockReturnValue({
+    > 236 |         search: jest.fn().mockRejectedValue(new Error('Invalid URL'))
+          |                                             ^
+      237 |       });
+      238 |
+      239 |       const result = await callFunction('search_web', {
+
+      at Object.<anonymous> (tests/unit/tools-comprehensive.test.js:236:45)
+
+  ● Tools System - Comprehensive Coverage › Tool Configuration Validation › should validate tool function structure consistently
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "required"
+    Received path: []
+
+    Received value: {"additionalProperties": false, "properties": {"add": {"description": "Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: [\"Install dependencies\", \"Configure environment\", \"Run tests\", \"Deploy application\"]", "items": {"type": "string"}, "type": "array"}, "delete": {"description": "Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue", "items": {"oneOf": [{"description": "Exact todo description to delete", "type": "string"}, {"description": "Todo ID to delete", "type": "number"}]}, "type": "array"}}, "type": "object"}
+
+      342 |         expect(tool.function.parameters).toHaveProperty('type', 'object');
+      343 |         expect(tool.function.parameters).toHaveProperty('properties');
+    > 344 |         expect(tool.function.parameters).toHaveProperty('required');
+          |                                          ^
+      345 |       });
+      346 |     });
+      347 |
+
+      at toHaveProperty (tests/unit/tools-comprehensive.test.js:344:42)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools-comprehensive.test.js:337:21)
+
+FAIL tests/unit/tools.test.js
+  Tools System
+    Tool Registry (toolFunctions)
+      ✓ should export array of tool functions
+      ✕ all tools should have required structure (4 ms)
+      ✓ tool names should be unique
+      ✓ should include critical tools
+      ✓ search_web tool should have correct parameters (1 ms)
+      ✓ execute_javascript tool should have code parameter
+    getToolFunctions()
+      ✓ should return all tools when no filter
+      ✓ should return tools array with OpenAI-compatible format (3 ms)
+    Tool Execution - search_web
+      ✓ should execute search_web with single query (4 ms)
+      ✓ should handle array of queries
+      ✓ should return error for missing query (1 ms)
+      ✓ should emit progress events
+      ✓ should use Tavily when API key provided (1 ms)
+      ✓ should respect limit parameter
+      ✓ should clamp timeout values to valid range
+      ✓ should handle multiple queries in single call
+    Tool Execution - execute_javascript
+      ✕ should execute simple JavaScript code (2 ms)
+      ✓ should capture console.log output (1 ms)
+      ✕ should return execution result (1 ms)
+      ✓ should handle errors gracefully (1 ms)
+      ✓ should handle syntax errors (25 ms)
+      ✓ should respect timeout parameter (1002 ms)
+      ✕ should handle Math operations (1 ms)
+      ✕ should handle array operations (1 ms)
+      ✓ should not have access to require()
+      ✓ should not have access to global process (1 ms)
+    Tool Execution - scrape_web_content
+      ✓ should require URL parameter
+      ✓ should validate URL is not empty string
+      ✓ should return cached content when available
+      ✓ should handle timeout parameter validation (774 ms)
+    Tool Execution - transcribe_url
+      ✓ should require URL parameter
+      ✓ should require API key for Whisper transcription (1 ms)
+      ✕ should reject Gemini API keys for transcription
+      ✕ should detect YouTube URLs and require OAuth when Whisper disabled (1 ms)
+    Parameter Validation
+      ✓ should clamp limit parameter to valid range
+      ✓ should handle missing required parameters
+      ✓ should handle invalid parameter types (1 ms)
+      ✓ should handle empty string parameters
+    compressSearchResultsForLLM()
+      ✓ should compress results into markdown format
+      ✓ should handle empty results
+      ✓ should handle null results
+      ✓ should format multiple results (1 ms)
+      ✓ should strip markdown formatting from content
+    Unknown Tool Handling
+      ✓ should return error for unknown tool
+      ✓ should handle empty string tool name
+    Context Propagation
+      ✓ should pass context to tool execution
+      ✓ should use optimization context for result count
+    Error Handling
+      ✓ should handle search errors gracefully (24 ms)
+      ✓ should handle invalid JavaScript execution (1 ms)
+      ✓ should require parameters for tools
+
+  ● Tools System › Tool Registry (toolFunctions) › all tools should have required structure
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "required"
+    Received path: []
+
+    Received value: {"additionalProperties": false, "properties": {"add": {"description": "Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: [\"Install dependencies\", \"Configure environment\", \"Run tests\", \"Deploy application\"]", "items": {"type": "string"}, "type": "array"}, "delete": {"description": "Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue", "items": {"oneOf": [{"description": "Exact todo description to delete", "type": "string"}, {"description": "Todo ID to delete", "type": "number"}]}, "type": "array"}}, "type": "object"}
+
+      83 |         expect(tool.function.parameters).toHaveProperty('type', 'object');
+      84 |         expect(tool.function.parameters).toHaveProperty('properties');
+    > 85 |         expect(tool.function.parameters).toHaveProperty('required');
+         |                                          ^
+      86 |       });
+      87 |     });
+      88 |
+
+      at toHaveProperty (tests/unit/tools.test.js:85:42)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools.test.js:77:21)
+
+  ● Tools System › Tool Execution - execute_javascript › should execute simple JavaScript code
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "result"
+    Received path: []
+
+    Received value: {}
+
+      316 |       expect(typeof result).toBe('string');
+      317 |       const parsed = JSON.parse(result);
+    > 318 |       expect(parsed).toHaveProperty('result');
+          |                      ^
+      319 |     });
+      320 |
+      321 |     test('should capture console.log output', async () => {
+
+      at Object.toHaveProperty (tests/unit/tools.test.js:318:22)
+
+  ● Tools System › Tool Execution - execute_javascript › should return execution result
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4
+    Received: undefined
+
+      334 |
+      335 |       const parsed = JSON.parse(result);
+    > 336 |       expect(parsed.result).toBe(4);
+          |                             ^
+      337 |     });
+      338 |
+      339 |     test('should handle errors gracefully', async () => {
+
+      at Object.toBe (tests/unit/tools.test.js:336:29)
+
+  ● Tools System › Tool Execution - execute_javascript › should handle Math operations
+
+    expect(received).toBeCloseTo(expected, precision)
+
+    Matcher error: received value must be a number
+
+    Received has value: undefined
+
+      373 |
+      374 |       const parsed = JSON.parse(result);
+    > 375 |       expect(parsed.result).toBeCloseTo(78.54, 1);
+          |                             ^
+      376 |     });
+      377 |
+      378 |     test('should handle array operations', async () => {
+
+      at Object.toBeCloseTo (tests/unit/tools.test.js:375:29)
+
+  ● Tools System › Tool Execution - execute_javascript › should handle array operations
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: [2, 4, 6]
+    Received: undefined
+
+      382 |
+      383 |       const parsed = JSON.parse(result);
+    > 384 |       expect(parsed.result).toEqual([2, 4, 6]);
+          |                             ^
+      385 |     });
+      386 |
+      387 |     test('should not have access to require()', async () => {
+
+      at Object.toEqual (tests/unit/tools.test.js:384:29)
+
+  ● Tools System › Tool Execution - transcribe_url › should reject Gemini API keys for transcription
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "Gemini does not support"
+    Received string:    "No Whisper-compatible API key found. Audio transcription requires OpenAI or Groq credentials."
+
+      494 |       const parsed = JSON.parse(result);
+      495 |       expect(parsed).toHaveProperty('error');
+    > 496 |       expect(parsed.error).toContain('Gemini does not support');
+          |                            ^
+      497 |     });
+      498 |
+      499 |     test('should detect YouTube URLs and require OAuth when Whisper disabled', async () => {
+
+      at Object.toContain (tests/unit/tools.test.js:496:28)
+
+  ● Tools System › Tool Execution - transcribe_url › should detect YouTube URLs and require OAuth when Whisper disabled
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: undefined
+
+      510 |       const parsed = JSON.parse(result);
+      511 |       expect(parsed).toHaveProperty('error');
+    > 512 |       expect(parsed.whisperDisabled).toBe(true);
+          |                                      ^
+      513 |
+      514 |       // Restore environment
+      515 |       if (originalEnv) {
+
+      at Object.toBe (tests/unit/tools.test.js:512:38)
+
+PASS tests/unit/search.test.js (67.839 s)
+  DuckDuckGoSearcher
+    search
+      ✓ should return search results for valid query (10801 ms)
+      ✓ should handle search errors by throwing (26 ms)
+      ✓ should respect timeout parameter (6129 ms)
+      ✓ should limit results to specified count (11312 ms)
+    memory tracking
+      ✓ should track memory usage during search (10568 ms)
+    Anti-blocking Features
+      Request Spacing
+        ✓ should enforce minimum request interval (240 ms)
+        ✓ should apply exponential backoff on failures (4125 ms)
+      Circuit Breaker
+        ✓ should open circuit breaker after max failures (1019 ms)
+        ✓ should reject requests when circuit breaker is open (1 ms)
+        ✓ should close circuit breaker after timeout (11228 ms)
+      Request Tracking
+        ✓ should track successful requests (10974 ms)
+        ✓ should track failed requests (1 ms)
+        ✓ should limit request history size
+      Enhanced User Agent Rotation
+        ✓ should use different browser fingerprints
+      CAPTCHA Detection
+        ✓ should detect and track CAPTCHA responses (1 ms)
+      Session Management
+        ✓ should initialize session state correctly (1 ms)
+        ✓ should handle rapid consecutive requests with spacing (1049 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Summary of all failing tests
+FAIL tests/unit/auth.test.js
+  ● Authentication › getAllowedEmails › should parse single email
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "test@example.com",
+    - ]
+    + Array []
+
+      34 |       process.env.ALLOWED_EMAILS = 'test@example.com';
+      35 |       const emails = getAllowedEmails();
+    > 36 |       expect(emails).toEqual(['test@example.com']);
+         |                      ^
+      37 |     });
+      38 |
+      39 |     test('should parse multiple emails', () => {
+
+      at Object.toEqual (tests/unit/auth.test.js:36:22)
+
+  ● Authentication › getAllowedEmails › should parse multiple emails
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "test1@example.com",
+    -   "test2@example.com",
+    - ]
+    + Array []
+
+      40 |       process.env.ALLOWED_EMAILS = 'test1@example.com,test2@example.com';
+      41 |       const emails = getAllowedEmails();
+    > 42 |       expect(emails).toEqual(['test1@example.com', 'test2@example.com']);
+         |                      ^
+      43 |     });
+      44 |
+      45 |     test('should trim whitespace from emails', () => {
+
+      at Object.toEqual (tests/unit/auth.test.js:42:22)
+
+  ● Authentication › getAllowedEmails › should trim whitespace from emails
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "test1@example.com",
+    -   "test2@example.com",
+    - ]
+    + Array []
+
+      46 |       process.env.ALLOWED_EMAILS = ' test1@example.com , test2@example.com ';
+      47 |       const emails = getAllowedEmails();
+    > 48 |       expect(emails).toEqual(['test1@example.com', 'test2@example.com']);
+         |                      ^
+      49 |     });
+      50 |   });
+      51 |
+
+      at Object.toEqual (tests/unit/auth.test.js:48:22)
+
+FAIL tests/integration/guardrails-auto-detection.test.js
+  ● Guardrails Integration › End-to-End Flow › should work with indexed provider format
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      143 |       
+      144 |       const config = loadGuardrailConfig();
+    > 145 |       expect(config).not.toBeNull();
+          |                          ^
+      146 |       expect(config.provider).toBe('groq-free');
+      147 |       
+      148 |       const validator = createGuardrailValidator(config, {});
+
+      at Object.toBeNull (tests/integration/guardrails-auto-detection.test.js:145:26)
+
+  ● Guardrails Integration › Indexed Provider Format › should work with indexed provider environment variables
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      266 |       
+      267 |       const config = loadGuardrailConfig();
+    > 268 |       expect(config).not.toBeNull();
+          |                          ^
+      269 |       
+      270 |       const validator = createGuardrailValidator(config, {});
+      271 |       expect(validator).not.toBeNull();
+
+      at Object.toBeNull (tests/integration/guardrails-auto-detection.test.js:268:26)
+
+FAIL tests/unit/streaming.test.js
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle write errors gracefully
+
+    expect(received).not.toThrow()
+
+    Error name:    "Error"
+    Error message: "CLIENT_DISCONNECTED"
+
+          76 |                 isConnected = false;
+          77 |                 clearInterval(checkInterval);
+        > 78 |                 throw new Error('CLIENT_DISCONNECTED');
+             |                       ^
+          79 |             }
+          80 |         },
+          81 |         write: (data) => {
+
+      at Object.writeEvent (src/streaming/sse-writer.js:78:23)
+      at writeEvent (tests/unit/streaming.test.js:147:29)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/streaming.test.js:148:24)
+      at Object.toThrow (tests/unit/streaming.test.js:148:24)
+
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle write method errors gracefully
+
+    expect(received).not.toThrow()
+
+    Error name:    "Error"
+    Error message: "CLIENT_DISCONNECTED"
+
+           97 |                 isConnected = false;
+           98 |                 clearInterval(checkInterval);
+        >  99 |                 throw new Error('CLIENT_DISCONNECTED');
+              |                       ^
+          100 |             }
+          101 |         },
+          102 |         isConnected: () => isConnected,
+
+      at Object.write (src/streaming/sse-writer.js:99:23)
+      at write (tests/unit/streaming.test.js:162:29)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/streaming.test.js:163:24)
+      at Object.toThrow (tests/unit/streaming.test.js:163:24)
+
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle multiple sequential writes
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 3
+    Received number of calls: 6
+
+      185 |                 adapter.write({ step: 3 });
+      186 |
+    > 187 |                 expect(mockStream.write).toHaveBeenCalledTimes(3);
+          |                                          ^
+      188 |             });
+      189 |
+      190 |             test('should handle multiple sequential events', () => {
+
+      at Object.toHaveBeenCalledTimes (tests/unit/streaming.test.js:187:42)
+
+  ● Streaming Modules › SSE Writer › createSSEStreamAdapter › should handle multiple sequential events
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 3
+    Received number of calls: 6
+
+      198 |                 adapter.writeEvent('complete', {});
+      199 |
+    > 200 |                 expect(mockStream.write).toHaveBeenCalledTimes(3);
+          |                                          ^
+      201 |                 expect(mockStream.write).toHaveBeenNthCalledWith(1, 'event: start\ndata: {}\n\n');
+      202 |                 expect(mockStream.write).toHaveBeenNthCalledWith(2, 'event: progress\ndata: {"percent":50}\n\n');
+      203 |                 expect(mockStream.write).toHaveBeenNthCalledWith(3, 'event: complete\ndata: {}\n\n');
+
+      at Object.toHaveBeenCalledTimes (tests/unit/streaming.test.js:200:42)
+
+FAIL tests/integration/user-billing.test.js
+  ● Test suite failed to run
+
+    Vitest cannot be imported in a CommonJS module using require(). Please use "import" instead.
+
+    If you are using "import" in your source code, then it's possible it was bundled into require() automatically by your bundler. In that case, do not bundle CommonJS output since it will never work with Vitest, or use dynamic import() which is available in all CommonJS modules.
+
+      4 |  */
+      5 |
+    > 6 | const { describe, it, expect, vi, beforeAll, afterAll } = require('vitest');
+        |                                                           ^
+      7 |
+      8 | // Mock Google Sheets API
+      9 | vi.mock('googleapis', () => ({
+
+      at Object.<anonymous> (node_modules/vitest/index.cjs:1:109)
+      at Object.require (tests/integration/user-billing.test.js:6:59)
+
+FAIL tests/unit/model-selection-comprehensive.test.js
+  ● Model Selection - Comprehensive Coverage › Filter Functions › should handle edge cases for filterByCost
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 6
+
+      149 |       // Test with zero cost constraint
+      150 |       const result1 = filterByCost(mockModelList, 0);
+    > 151 |       expect(result1.length).toBe(0);
+          |                              ^
+      152 |       
+      153 |       // Test with negative cost constraint  
+      154 |       const result2 = filterByCost(mockModelList, -1);
+
+      at Object.toBe (tests/unit/model-selection-comprehensive.test.js:151:30)
+
+  ● Model Selection - Comprehensive Coverage › RoundRobinSelector Edge Cases › should handle invalid inputs gracefully
+
+    expect(received).not.toThrow()
+
+    Error name:    "ReferenceError"
+    Error message: "models is not defined"
+
+          262 |       // Test with invalid key types
+          263 |       expect(() => {
+        > 264 |         selector.select(models, 123); // Number instead of string
+              |                         ^
+          265 |       }).not.toThrow();
+          266 |     });
+          267 |   });
+
+      at models (tests/unit/model-selection-comprehensive.test.js:264:25)
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.toThrow (tests/unit/model-selection-comprehensive.test.js:265:14)
+      at Object.toThrow (tests/unit/model-selection-comprehensive.test.js:265:14)
+
+  ● Model Selection - Comprehensive Coverage › selectModel Comprehensive Tests › should handle rate limiting edge cases
+
+    All models are rate limited
+
+      292 |     
+      293 |     if (candidates.length === 0) {
+    > 294 |       throw new Error('All models are rate limited');
+          |             ^
+      295 |     }
+      296 |     
+      297 |     console.log(`⏱️  After rate limit filter: ${candidates.length} models available`);
+
+      at selectModel (src/model-selection/selector.js:294:13)
+      at Object.selectModel (tests/unit/model-selection-comprehensive.test.js:361:22)
+
+FAIL tests/unit/tools-advanced.test.js
+  ● Tools System - Advanced Coverage › Tool Function Structure Validation › should validate all tool functions have consistent structure
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "required"
+    Received path: []
+
+    Received value: {"additionalProperties": false, "properties": {"add": {"description": "Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: [\"Install dependencies\", \"Configure environment\", \"Run tests\", \"Deploy application\"]", "items": {"type": "string"}, "type": "array"}, "delete": {"description": "Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue", "items": {"oneOf": [{"description": "Exact todo description to delete", "type": "string"}, {"description": "Todo ID to delete", "type": "number"}]}, "type": "array"}}, "type": "object"}
+
+      70 |         expect(func.parameters.type).toBe('object');
+      71 |         expect(func.parameters).toHaveProperty('properties');
+    > 72 |         expect(func.parameters).toHaveProperty('required');
+         |                                 ^
+      73 |       });
+      74 |     });
+      75 |
+
+      at toHaveProperty (tests/unit/tools-advanced.test.js:72:33)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools-advanced.test.js:57:21)
+
+  ● Tools System - Advanced Coverage › Tool Function Structure Validation › should handle different tool types and their parameters
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "scrape_url"
+    Received array: ["search_youtube", "get_youtube_transcript", "search_web", "scrape_web_content", "execute_javascript", "transcribe_url", "generate_image", "generate_chart", "search_knowledge_base", "manage_todos", …]
+
+      80 |       expect(toolNames).toContain('search_web');
+      81 |       expect(toolNames).toContain('execute_javascript');
+    > 82 |       expect(toolNames).toContain('scrape_url');
+         |                         ^
+      83 |       expect(toolNames).toContain('transcribe_audio');
+      84 |       
+      85 |       // Validate parameters for each tool type
+
+      at Object.toContain (tests/unit/tools-advanced.test.js:82:25)
+
+  ● Tools System - Advanced Coverage › Tool Function Structure Validation › should validate tool parameter schemas are complete
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "type"
+    Received path: []
+
+    Received value: {"description": "Search query (string) or multiple queries (array of strings)", "oneOf": [{"description": "Single search query", "type": "string"}, {"description": "Array of search queries to execute in one call", "items": {"type": "string"}, "type": "array"}]}
+
+      107 |         Object.keys(params.properties).forEach(paramName => {
+      108 |           const param = params.properties[paramName];
+    > 109 |           expect(param).toHaveProperty('type');
+          |                         ^
+      110 |           
+      111 |           if (param.type === 'object') {
+      112 |             expect(param).toHaveProperty('properties');
+
+      at toHaveProperty (tests/unit/tools-advanced.test.js:109:25)
+          at Array.forEach (<anonymous>)
+      at forEach (tests/unit/tools-advanced.test.js:107:40)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools-advanced.test.js:100:21)
+
+  ● Tools System - Advanced Coverage › Tool Parameter Validation Edge Cases › should validate parameters with special data types
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:222:30)
+
+  ● Tools System - Advanced Coverage › Tool Parameter Validation Edge Cases › should handle large parameter objects
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:243:28)
+
+  ● Tools System - Advanced Coverage › Tool Parameter Validation Edge Cases › should handle deeply nested parameter structures
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:269:28)
+
+  ● Tools System - Advanced Coverage › Memory and Performance Testing › should not have memory leaks with repeated tool calls
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:281:30)
+
+  ● Tools System - Advanced Coverage › Memory and Performance Testing › should handle rapid tool execution without conflicts
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:295:23)
+
+  ● Tools System - Advanced Coverage › Memory and Performance Testing › should maintain performance with complex tool parameters
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:323:30)
+
+  ● Tools System - Advanced Coverage › Tool Integration and Composition › should handle tool composition scenarios
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:338:33)
+
+  ● Tools System - Advanced Coverage › Error Recovery and Robustness › should maintain consistency across different execution contexts
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-advanced.test.js:435:30)
+
+FAIL tests/unit/search-comprehensive.test.js
+  ● Test suite failed to run
+
+    Jest encountered an unexpected token
+
+    Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax.
+
+    Out of the box Jest supports Babel, which will be used to transform your files into valid JS based on your Babel configuration.
+
+    By default "node_modules" folder is ignored by transformers.
+
+    Here's what you can do:
+     • If you are trying to use ECMAScript Modules, see https://jestjs.io/docs/ecmascript-modules for how to enable it.
+     • If you are trying to use TypeScript, see https://jestjs.io/docs/getting-started#using-typescript
+     • To have some of your "node_modules" files transformed, you can specify a custom "transformIgnorePatterns" in your config.
+     • If you need a custom transformation specify a "transform" option in your config.
+     • If you simply want to mock your non-JS modules (e.g. binary assets) you can stub them out with the "moduleNameMapper" config option.
+
+    You'll find more details and examples of these config options in the docs:
+    https://jestjs.io/docs/configuration
+    For information about custom transformations, see:
+    https://jestjs.io/docs/code-transformation
+
+    Details:
+
+    SyntaxError: /home/stever/projects/lambdallmproxy-codeinsiders/lambdallmproxy/tests/unit/search-comprehensive.test.js: Unexpected token (441:6)
+
+      439 |         const result = await searcher.search(input);
+      440 |         expect(result).toBeDefined();
+    > 441 |       }
+          |       ^
+      442 |     });
+      443 |   });
+      444 |
+
+      at constructor (node_modules/@babel/parser/src/parse-error.ts:95:45)
+      at Parser.toParseError [as raise] (node_modules/@babel/parser/src/tokenizer/index.ts:1507:19)
+      at Parser.raise [as unexpected] (node_modules/@babel/parser/src/tokenizer/index.ts:1547:16)
+      at Parser.unexpected [as parseExprAtom] (node_modules/@babel/parser/src/parser/expression.ts:1355:22)
+      at Parser.parseExprAtom [as parseExprSubscripts] (node_modules/@babel/parser/src/parser/expression.ts:742:23)
+      at Parser.parseExprSubscripts [as parseUpdate] (node_modules/@babel/parser/src/parser/expression.ts:721:21)
+      at Parser.parseUpdate [as parseMaybeUnary] (node_modules/@babel/parser/src/parser/expression.ts:683:23)
+      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (node_modules/@babel/parser/src/parser/expression.ts:417:14)
+      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (node_modules/@babel/parser/src/parser/expression.ts:429:23)
+      at Parser.parseExprOps [as parseMaybeConditional] (node_modules/@babel/parser/src/parser/expression.ts:384:23)
+      at Parser.parseMaybeConditional [as parseMaybeAssign] (node_modules/@babel/parser/src/parser/expression.ts:301:21)
+      at Parser.parseMaybeAssign [as parseExpressionBase] (node_modules/@babel/parser/src/parser/expression.ts:226:23)
+      at parseExpressionBase (node_modules/@babel/parser/src/parser/expression.ts:217:39)
+      at Parser.callback [as allowInAnd] (node_modules/@babel/parser/src/parser/expression.ts:3197:16)
+      at Parser.allowInAnd [as parseExpression] (node_modules/@babel/parser/src/parser/expression.ts:217:17)
+      at Parser.parseExpression [as parseStatementContent] (node_modules/@babel/parser/src/parser/statement.ts:688:23)
+      at Parser.parseStatementContent [as parseStatementLike] (node_modules/@babel/parser/src/parser/statement.ts:482:17)
+      at Parser.parseStatementLike [as parseModuleItem] (node_modules/@babel/parser/src/parser/statement.ts:419:17)
+      at Parser.parseModuleItem [as parseBlockOrModuleBlockBody] (node_modules/@babel/parser/src/parser/statement.ts:1443:16)
+      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (node_modules/@babel/parser/src/parser/statement.ts:1417:10)
+      at Parser.parseBlockBody [as parseProgram] (node_modules/@babel/parser/src/parser/statement.ts:229:10)
+      at Parser.parseProgram [as parseTopLevel] (node_modules/@babel/parser/src/parser/statement.ts:203:25)
+      at Parser.parseTopLevel [as parse] (node_modules/@babel/parser/src/parser/index.ts:88:25)
+      at parse (node_modules/@babel/parser/src/index.ts:86:38)
+      at parser (node_modules/@babel/core/src/parser/index.ts:29:19)
+          at parser.next (<anonymous>)
+      at normalizeFile (node_modules/@babel/core/src/transformation/normalize-file.ts:50:24)
+          at normalizeFile.next (<anonymous>)
+      at run (node_modules/@babel/core/src/transformation/index.ts:41:36)
+          at run.next (<anonymous>)
+      at transform (node_modules/@babel/core/src/transform.ts:29:20)
+          at transform.next (<anonymous>)
+      at evaluateSync (node_modules/gensync/index.js:251:28)
+      at sync (node_modules/gensync/index.js:89:14)
+      at fn (node_modules/@babel/core/src/errors/rewrite-stack-trace.ts:99:14)
+      at transformSync (node_modules/@babel/core/src/transform.ts:66:52)
+      at ScriptTransformer.transformSource (node_modules/@jest/transform/build/ScriptTransformer.js:545:31)
+      at ScriptTransformer._transformAndBuildScript (node_modules/@jest/transform/build/ScriptTransformer.js:674:40)
+      at ScriptTransformer.transform (node_modules/@jest/transform/build/ScriptTransformer.js:726:19)
+
+FAIL tests/unit/endpoints/planning.test.js
+  ● Planning Endpoint › generatePlan › should generate a valid plan from LLM response
+
+    TypeError: awslambda.streamifyResponse is not a function
+
+      1290 |  * Main Lambda handler function - streaming only
+      1291 |  */
+    > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+           |                             ^
+      1293 |     const startTime = Date.now();
+      1294 |     
+      1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:41:34)
+
+  ● Planning Endpoint › generatePlan › should throw error for invalid LLM response format
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "Invalid plan response: missing required fields"
+    Received message:   "awslambda.streamifyResponse is not a function"
+
+          1290 |  * Main Lambda handler function - streaming only
+          1291 |  */
+        > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+               |                             ^
+          1293 |     const startTime = Date.now();
+          1294 |     
+          1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:68:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/endpoints/planning.test.js:68:78)
+
+  ● Planning Endpoint › generatePlan › should throw error for invalid searchKeywords format
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "searchKeywords must be an array of arrays"
+    Received message:   "awslambda.streamifyResponse is not a function"
+
+          1290 |  * Main Lambda handler function - streaming only
+          1291 |  */
+        > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+               |                             ^
+          1293 |     const startTime = Date.now();
+          1294 |     
+          1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:83:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/endpoints/planning.test.js:83:78)
+
+  ● Planning Endpoint › generatePlan › should handle LLM errors gracefully
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "LLM service unavailable"
+    Received message:   "awslambda.streamifyResponse is not a function"
+
+          1290 |  * Main Lambda handler function - streaming only
+          1291 |  */
+        > 1292 | exports.handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+               |                             ^
+          1293 |     const startTime = Date.now();
+          1294 |     
+          1295 |     // DEBUG: Log the event structure
+
+      at Object.streamifyResponse (src/lambda_search_llm_handler.js:1292:29)
+      at require (src/endpoints/planning.js:128:40)
+      at Object.generatePlan (tests/unit/endpoints/planning.test.js:89:26)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/unit/endpoints/planning.test.js:89:78)
+
+FAIL tests/google-sheets-snippets.test.js
+  ● Google Sheets Snippets Service › getOrCreateSnippetsSheet › creates new folder and spreadsheet if none exist
+
+    TypeError: sheets.spreadsheets.get is not a function
+
+      161 |   
+      162 |   // Get the actual sheet ID for "Snippets" sheet
+    > 163 |   const spreadsheet = await sheets.spreadsheets.get({
+          |                                                 ^
+      164 |     spreadsheetId,
+      165 |     fields: 'sheets.properties'
+      166 |   });
+
+      at get (src/services/google-sheets-snippets.js:163:49)
+      at initializeSnippetsSheet (src/services/google-sheets-snippets.js:144:9)
+      at Object.getOrCreateSnippetsSheet (src/services/google-sheets-snippets.js:316:23)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:115:22)
+
+  ● Google Sheets Snippets Service › getOrCreateSnippetsSheet › uses existing folder and spreadsheet
+
+    TypeError: sheets.spreadsheets.get is not a function
+
+      246 |   try {
+      247 |     // Get spreadsheet metadata to check existing sheets
+    > 248 |     const spreadsheet = await sheets.spreadsheets.get({
+          |                                                   ^
+      249 |       spreadsheetId,
+      250 |       fields: 'sheets.properties'
+      251 |     });
+
+      at get (src/services/google-sheets-snippets.js:248:51)
+      at Object.ensureSnippetsSheetExists [as getOrCreateSnippetsSheet] (src/services/google-sheets-snippets.js:319:13)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:150:22)
+
+  ● Google Sheets Snippets Service › getOrCreateSnippetsSheet › caches spreadsheet ID for subsequent calls
+
+    TypeError: sheets.spreadsheets.get is not a function
+
+      246 |   try {
+      247 |     // Get spreadsheet metadata to check existing sheets
+    > 248 |     const spreadsheet = await sheets.spreadsheets.get({
+          |                                                   ^
+      249 |       spreadsheetId,
+      250 |       fields: 'sheets.properties'
+      251 |     });
+
+      at get (src/services/google-sheets-snippets.js:248:51)
+      at Object.ensureSnippetsSheetExists [as getOrCreateSnippetsSheet] (src/services/google-sheets-snippets.js:319:13)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:170:7)
+
+  ● Google Sheets Snippets Service › insertSnippet › inserts snippet with all fields
+
+    Failed to insert snippet: sheets.spreadsheets.get is not a function
+
+      436 |   } catch (error) {
+      437 |     console.error('❌ Snippets: Error inserting snippet:', error.message);
+    > 438 |     throw new Error(`Failed to insert snippet: ${error.message}`);
+          |           ^
+      439 |   }
+      440 | }
+      441 |
+
+      at Object.insertSnippet (src/services/google-sheets-snippets.js:438:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:216:22)
+
+  ● Google Sheets Snippets Service › insertSnippet › normalizes tags to lowercase and sorts
+
+    Failed to insert snippet: sheets.spreadsheets.get is not a function
+
+      436 |   } catch (error) {
+      437 |     console.error('❌ Snippets: Error inserting snippet:', error.message);
+    > 438 |     throw new Error(`Failed to insert snippet: ${error.message}`);
+          |           ^
+      439 |   }
+      440 | }
+      441 |
+
+      at Object.insertSnippet (src/services/google-sheets-snippets.js:438:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:273:22)
+
+  ● Google Sheets Snippets Service › insertSnippet › handles empty tags
+
+    Failed to insert snippet: sheets.spreadsheets.get is not a function
+
+      436 |   } catch (error) {
+      437 |     console.error('❌ Snippets: Error inserting snippet:', error.message);
+    > 438 |     throw new Error(`Failed to insert snippet: ${error.message}`);
+          |           ^
+      439 |   }
+      440 | }
+      441 |
+
+      at Object.insertSnippet (src/services/google-sheets-snippets.js:438:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:298:22)
+
+  ● Google Sheets Snippets Service › getSnippet › gets snippet by ID
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: null
+
+      342 |       );
+      343 |       
+    > 344 |       expect(result).toMatchObject({
+          |                      ^
+      345 |         id: 1,
+      346 |         title: 'Snippet 1',
+      347 |         content: 'Content 1',
+
+      at Object.toMatchObject (tests/google-sheets-snippets.test.js:344:22)
+
+  ● Google Sheets Snippets Service › getSnippet › gets snippet by title
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: null
+
+      358 |       );
+      359 |       
+    > 360 |       expect(result).toMatchObject({
+          |                      ^
+      361 |         id: 2,
+      362 |         title: 'Snippet 2',
+      363 |         content: 'Content 2',
+
+      at Object.toMatchObject (tests/google-sheets-snippets.test.js:360:22)
+
+  ● Google Sheets Snippets Service › searchSnippets › searches by query text in title
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+      414 |       );
+      415 |       
+    > 416 |       expect(results).toHaveLength(2);
+          |                       ^
+      417 |       expect(results.map(r => r.title)).toEqual([
+      418 |         'JavaScript Tips',
+      419 |         'Advanced JavaScript'
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:416:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › searches by query text in content
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      428 |       );
+      429 |       
+    > 430 |       expect(results).toHaveLength(1);
+          |                       ^
+      431 |       expect(results[0].title).toBe('Python Guide');
+      432 |     });
+      433 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:430:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › filters by tags (AND logic)
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      439 |       );
+      440 |       
+    > 441 |       expect(results).toHaveLength(1);
+          |                       ^
+      442 |       expect(results[0].title).toBe('Advanced JavaScript');
+      443 |     });
+      444 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:441:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › combines query and tags
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      450 |       );
+      451 |       
+    > 452 |       expect(results).toHaveLength(1);
+          |                       ^
+      453 |       expect(results[0].title).toBe('Advanced JavaScript');
+      454 |     });
+      455 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:452:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › returns all snippets if no query or tags
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 3
+    Received length: 0
+    Received array:  []
+
+      471 |       );
+      472 |       
+    > 473 |       expect(results).toHaveLength(3);
+          |                       ^
+      474 |     });
+      475 |
+      476 |     test('search is case-insensitive', async () => {
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:473:23)
+
+  ● Google Sheets Snippets Service › searchSnippets › search is case-insensitive
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+      481 |       );
+      482 |       
+    > 483 |       expect(results).toHaveLength(2);
+          |                       ^
+      484 |     });
+      485 |   });
+      486 |
+
+      at Object.toHaveLength (tests/google-sheets-snippets.test.js:483:23)
+
+  ● Google Sheets Snippets Service › removeSnippet › removes snippet by ID
+
+    Failed to remove snippet: sheets.spreadsheets.get is not a function
+
+      653 |   } catch (error) {
+      654 |     console.error('❌ Snippets: Error removing snippet:', error.message);
+    > 655 |     throw new Error(`Failed to remove snippet: ${error.message}`);
+          |           ^
+      656 |   }
+      657 | }
+      658 |
+
+      at Object.removeSnippet (src/services/google-sheets-snippets.js:655:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:510:22)
+
+  ● Google Sheets Snippets Service › removeSnippet › removes snippet by title
+
+    Failed to remove snippet: sheets.spreadsheets.get is not a function
+
+      653 |   } catch (error) {
+      654 |     console.error('❌ Snippets: Error removing snippet:', error.message);
+    > 655 |     throw new Error(`Failed to remove snippet: ${error.message}`);
+          |           ^
+      656 |   }
+      657 | }
+      658 |
+
+      at Object.removeSnippet (src/services/google-sheets-snippets.js:655:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:537:22)
+
+  ● Google Sheets Snippets Service › removeSnippet › throws error if snippet not found
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "Failed to remove snippet: Snippet not found"
+    Received message:   "Failed to remove snippet: sheets.spreadsheets.get is not a function"
+
+          653 |   } catch (error) {
+          654 |     console.error('❌ Snippets: Error removing snippet:', error.message);
+        > 655 |     throw new Error(`Failed to remove snippet: ${error.message}`);
+              |           ^
+          656 |   }
+          657 | }
+          658 |
+
+      at Object.removeSnippet (src/services/google-sheets-snippets.js:655:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:547:7)
+      at Object.toThrow (node_modules/expect/build/index.js:218:22)
+      at Object.toThrow (tests/google-sheets-snippets.test.js:553:17)
+
+  ● Google Sheets Snippets Service › updateSnippet › updates snippet title and content
+
+    Failed to update snippet: sheets.spreadsheets.get is not a function
+
+      547 |   } catch (error) {
+      548 |     console.error('❌ Snippets: Error updating snippet:', error.message);
+    > 549 |     throw new Error(`Failed to update snippet: ${error.message}`);
+          |           ^
+      550 |   }
+      551 | }
+      552 |
+
+      at Object.updateSnippet (src/services/google-sheets-snippets.js:549:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:593:22)
+
+  ● Google Sheets Snippets Service › updateSnippet › updates tags
+
+    Failed to update snippet: sheets.spreadsheets.get is not a function
+
+      547 |   } catch (error) {
+      548 |     console.error('❌ Snippets: Error updating snippet:', error.message);
+    > 549 |     throw new Error(`Failed to update snippet: ${error.message}`);
+          |           ^
+      550 |   }
+      551 | }
+      552 |
+
+      at Object.updateSnippet (src/services/google-sheets-snippets.js:549:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:617:22)
+
+  ● Google Sheets Snippets Service › updateSnippet › preserves created_at timestamp
+
+    Failed to update snippet: sheets.spreadsheets.get is not a function
+
+      547 |   } catch (error) {
+      548 |     console.error('❌ Snippets: Error updating snippet:', error.message);
+    > 549 |     throw new Error(`Failed to update snippet: ${error.message}`);
+          |           ^
+      550 |   }
+      551 | }
+      552 |
+
+      at Object.updateSnippet (src/services/google-sheets-snippets.js:549:11)
+      at Object.<anonymous> (tests/google-sheets-snippets.test.js:630:22)
+
+FAIL tests/unit/tools-comprehensive.test.js
+  ● Tools System - Comprehensive Coverage › Tool Parameter Validation › should validate tool parameter types
+
+    TypeError: searcher.search is not a function
+
+      964 |           
+      965 |           console.log('�� Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
+    > 966 |           const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
+          |                                      ^
+      967 |           
+      968 |           // Emit content loading event
+      969 |           if (context?.writeEvent && out?.results?.length > 0) {
+
+      at search (src/tools.js:966:38)
+      at Object.callFunction (tests/unit/tools-comprehensive.test.js:109:30)
+
+  ● Tools System - Comprehensive Coverage › Tool Execution Error Handling › should handle network timeouts gracefully
+
+    Network timeout
+
+      218 |       // Mock network timeout
+      219 |       DuckDuckGoSearcher.mockReturnValue({
+    > 220 |         search: jest.fn().mockRejectedValue(new Error('Network timeout'))
+          |                                             ^
+      221 |       });
+      222 |
+      223 |       const result = await callFunction('search_web', {
+
+      at Object.<anonymous> (tests/unit/tools-comprehensive.test.js:220:45)
+
+  ● Tools System - Comprehensive Coverage › Tool Execution Error Handling › should handle invalid URLs gracefully
+
+    Invalid URL
+
+      234 |     test('should handle invalid URLs gracefully', async () => {
+      235 |       DuckDuckGoSearcher.mockReturnValue({
+    > 236 |         search: jest.fn().mockRejectedValue(new Error('Invalid URL'))
+          |                                             ^
+      237 |       });
+      238 |
+      239 |       const result = await callFunction('search_web', {
+
+      at Object.<anonymous> (tests/unit/tools-comprehensive.test.js:236:45)
+
+  ● Tools System - Comprehensive Coverage › Tool Configuration Validation › should validate tool function structure consistently
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "required"
+    Received path: []
+
+    Received value: {"additionalProperties": false, "properties": {"add": {"description": "Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: [\"Install dependencies\", \"Configure environment\", \"Run tests\", \"Deploy application\"]", "items": {"type": "string"}, "type": "array"}, "delete": {"description": "Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue", "items": {"oneOf": [{"description": "Exact todo description to delete", "type": "string"}, {"description": "Todo ID to delete", "type": "number"}]}, "type": "array"}}, "type": "object"}
+
+      342 |         expect(tool.function.parameters).toHaveProperty('type', 'object');
+      343 |         expect(tool.function.parameters).toHaveProperty('properties');
+    > 344 |         expect(tool.function.parameters).toHaveProperty('required');
+          |                                          ^
+      345 |       });
+      346 |     });
+      347 |
+
+      at toHaveProperty (tests/unit/tools-comprehensive.test.js:344:42)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools-comprehensive.test.js:337:21)
+
+FAIL tests/unit/tools.test.js
+  ● Tools System › Tool Registry (toolFunctions) › all tools should have required structure
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "required"
+    Received path: []
+
+    Received value: {"additionalProperties": false, "properties": {"add": {"description": "Array of todo descriptions to add to the queue. Descriptions should be clear, actionable steps in order. Example: [\"Install dependencies\", \"Configure environment\", \"Run tests\", \"Deploy application\"]", "items": {"type": "string"}, "type": "array"}, "delete": {"description": "Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue", "items": {"oneOf": [{"description": "Exact todo description to delete", "type": "string"}, {"description": "Todo ID to delete", "type": "number"}]}, "type": "array"}}, "type": "object"}
+
+      83 |         expect(tool.function.parameters).toHaveProperty('type', 'object');
+      84 |         expect(tool.function.parameters).toHaveProperty('properties');
+    > 85 |         expect(tool.function.parameters).toHaveProperty('required');
+         |                                          ^
+      86 |       });
+      87 |     });
+      88 |
+
+      at toHaveProperty (tests/unit/tools.test.js:85:42)
+          at Array.forEach (<anonymous>)
+      at Object.forEach (tests/unit/tools.test.js:77:21)
+
+  ● Tools System › Tool Execution - execute_javascript › should execute simple JavaScript code
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "result"
+    Received path: []
+
+    Received value: {}
+
+      316 |       expect(typeof result).toBe('string');
+      317 |       const parsed = JSON.parse(result);
+    > 318 |       expect(parsed).toHaveProperty('result');
+          |                      ^
+      319 |     });
+      320 |
+      321 |     test('should capture console.log output', async () => {
+
+      at Object.toHaveProperty (tests/unit/tools.test.js:318:22)
+
+  ● Tools System › Tool Execution - execute_javascript › should return execution result
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4
+    Received: undefined
+
+      334 |
+      335 |       const parsed = JSON.parse(result);
+    > 336 |       expect(parsed.result).toBe(4);
+          |                             ^
+      337 |     });
+      338 |
+      339 |     test('should handle errors gracefully', async () => {
+
+      at Object.toBe (tests/unit/tools.test.js:336:29)
+
+  ● Tools System › Tool Execution - execute_javascript › should handle Math operations
+
+    expect(received).toBeCloseTo(expected, precision)
+
+    Matcher error: received value must be a number
+
+    Received has value: undefined
+
+      373 |
+      374 |       const parsed = JSON.parse(result);
+    > 375 |       expect(parsed.result).toBeCloseTo(78.54, 1);
+          |                             ^
+      376 |     });
+      377 |
+      378 |     test('should handle array operations', async () => {
+
+      at Object.toBeCloseTo (tests/unit/tools.test.js:375:29)
+
+  ● Tools System › Tool Execution - execute_javascript › should handle array operations
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: [2, 4, 6]
+    Received: undefined
+
+      382 |
+      383 |       const parsed = JSON.parse(result);
+    > 384 |       expect(parsed.result).toEqual([2, 4, 6]);
+          |                             ^
+      385 |     });
+      386 |
+      387 |     test('should not have access to require()', async () => {
+
+      at Object.toEqual (tests/unit/tools.test.js:384:29)
+
+  ● Tools System › Tool Execution - transcribe_url › should reject Gemini API keys for transcription
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "Gemini does not support"
+    Received string:    "No Whisper-compatible API key found. Audio transcription requires OpenAI or Groq credentials."
+
+      494 |       const parsed = JSON.parse(result);
+      495 |       expect(parsed).toHaveProperty('error');
+    > 496 |       expect(parsed.error).toContain('Gemini does not support');
+          |                            ^
+      497 |     });
+      498 |
+      499 |     test('should detect YouTube URLs and require OAuth when Whisper disabled', async () => {
+
+      at Object.toContain (tests/unit/tools.test.js:496:28)
+
+  ● Tools System › Tool Execution - transcribe_url › should detect YouTube URLs and require OAuth when Whisper disabled
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: undefined
+
+      510 |       const parsed = JSON.parse(result);
+      511 |       expect(parsed).toHaveProperty('error');
+    > 512 |       expect(parsed.whisperDisabled).toBe(true);
+          |                                      ^
+      513 |
+      514 |       // Restore environment
+      515 |       if (originalEnv) {
+
+      at Object.toBe (tests/unit/tools.test.js:512:38)
+
+
+Test Suites: 11 failed, 10 skipped, 46 passed, 57 of 67 total
+Tests:       58 failed, 113 skipped, 1326 passed, 1497 total
+Snapshots:   0 total
+Time:        68.505 s, estimated 70 s
+Ran all test suites.

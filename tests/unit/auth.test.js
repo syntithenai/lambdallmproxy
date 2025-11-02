@@ -31,19 +31,19 @@ describe('Authentication', () => {
     });
 
     test('should parse single email', () => {
-      process.env.ALLOWED_EMAILS = 'test@example.com';
+      process.env.ALLOW_EM = 'test@example.com';
       const emails = getAllowedEmails();
       expect(emails).toEqual(['test@example.com']);
     });
 
     test('should parse multiple emails', () => {
-      process.env.ALLOWED_EMAILS = 'test1@example.com,test2@example.com';
+      process.env.ALLOW_EM = 'test1@example.com,test2@example.com';
       const emails = getAllowedEmails();
       expect(emails).toEqual(['test1@example.com', 'test2@example.com']);
     });
 
     test('should trim whitespace from emails', () => {
-      process.env.ALLOWED_EMAILS = ' test1@example.com , test2@example.com ';
+      process.env.ALLOW_EM = ' test1@example.com , test2@example.com ';
       const emails = getAllowedEmails();
       expect(emails).toEqual(['test1@example.com', 'test2@example.com']);
     });
