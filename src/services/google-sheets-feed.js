@@ -20,6 +20,7 @@
  * - downvote_count (number)
  * - user_vote (string: 'up', 'down', or empty)
  * - is_blocked (boolean - user blocked this topic)
+ * - imageBase64 (base64-encoded image data URI for offline/embedding)
  */
 
 const { google } = require('googleapis');
@@ -137,7 +138,8 @@ async function createFeedSpreadsheet(folderId, accessToken) {
               { userEnteredValue: { stringValue: 'upvote_count' }, userEnteredFormat: { textFormat: { bold: true } } },
               { userEnteredValue: { stringValue: 'downvote_count' }, userEnteredFormat: { textFormat: { bold: true } } },
               { userEnteredValue: { stringValue: 'user_vote' }, userEnteredFormat: { textFormat: { bold: true } } },
-              { userEnteredValue: { stringValue: 'is_blocked' }, userEnteredFormat: { textFormat: { bold: true } } }
+              { userEnteredValue: { stringValue: 'is_blocked' }, userEnteredFormat: { textFormat: { bold: true } } },
+              { userEnteredValue: { stringValue: 'imageBase64' }, userEnteredFormat: { textFormat: { bold: true } } }
             ]
           }]
         }]
@@ -241,12 +243,13 @@ async function insertFeedItem(feedItem, userEmail, projectId, accessToken) {
     0, // upvote_count
     0, // downvote_count
     '', // user_vote
-    false // is_blocked
+    false, // is_blocked
+    feedItem.imageBase64 || '' // base64 image data URI
   ]];
   
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: 'Feed!A:N',
+    range: 'Feed!A:O',
     valueInputOption: 'RAW',
     requestBody: { values }
   });
@@ -292,7 +295,7 @@ async function getFeedItems(userEmail, projectId, accessToken) {
     
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Feed!A:N'
+      range: 'Feed!A:O'
     });
     
     const rows = response.data.values || [];
@@ -358,7 +361,7 @@ async function updateFeedItem(itemId, updates, userEmail, projectId, accessToken
   // Get all rows
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Feed!A:N'
+    range: 'Feed!A:O'
   });
   
   const rows = response.data.values || [];
@@ -383,7 +386,7 @@ async function updateFeedItem(itemId, updates, userEmail, projectId, accessToken
   
   // Apply updates
   header.forEach((key, index) => {
-    if (updates.hasOwnProperty(key) && key !== 'id' && key !== 'user_email' && key !== 'created_at') {
+    if (Object.prototype.hasOwnProperty.call(updates, key) && key !== 'id' && key !== 'user_email' && key !== 'created_at') {
       if (key === 'topics' && Array.isArray(updates[key])) {
         updatedRow[index] = updates[key].join(', ');
       } else {
@@ -402,7 +405,7 @@ async function updateFeedItem(itemId, updates, userEmail, projectId, accessToken
   const sheetRowNumber = rowIndex + 2; // +1 for header, +1 for 1-based indexing
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Feed!A${sheetRowNumber}:N${sheetRowNumber}`,
+    range: `Feed!A${sheetRowNumber}:O${sheetRowNumber}`,
     valueInputOption: 'RAW',
     requestBody: {
       values: [updatedRow]
@@ -451,7 +454,7 @@ async function deleteFeedItem(itemId, userEmail, projectId, accessToken) {
   // Get all rows
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Feed!A:N'
+    range: 'Feed!A:O'
   });
   
   const rows = response.data.values || [];
@@ -517,7 +520,7 @@ async function voteFeedItem(itemId, vote, userEmail, projectId, accessToken) {
   // Get all rows
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Feed!A:N'
+    range: 'Feed!A:O'
   });
   
   const rows = response.data.values || [];
@@ -573,7 +576,7 @@ async function voteFeedItem(itemId, vote, userEmail, projectId, accessToken) {
   const sheetRowNumber = rowIndex + 2;
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Feed!A${sheetRowNumber}:N${sheetRowNumber}`,
+    range: `Feed!A${sheetRowNumber}:O${sheetRowNumber}`,
     valueInputOption: 'RAW',
     requestBody: {
       values: [updatedRow]
