@@ -444,10 +444,22 @@
 body {
   overflow-x: hidden;
   overflow-y: auto; /* Ensure vertical scrolling is enabled */
+  margin: 0;
+  padding: 0;
 }
 
 html {
   overflow-y: auto; /* Ensure vertical scrolling on html element too */
+  margin: 0;
+  padding: 0;
+}
+
+/* Remove default margins and padding from root */
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
 }
 
 /* Safe area insets for notched devices (iPhone X+) */
