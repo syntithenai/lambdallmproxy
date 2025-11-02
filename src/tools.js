@@ -708,6 +708,7 @@ Call this tool with ONLY the code parameter - never include result, output, type
             description: 'Array of todo IDs (numbers) or exact descriptions (strings) to remove from the queue'
           }
         },
+        required: [],
         additionalProperties: false
       }
     }
@@ -2428,7 +2429,13 @@ Brief answer with URLs:`;
         const vmContextSecure = vm.createContext(vmContext);
         
         // Wrap code in async function to support await
-        const wrappedCode = `(async () => { ${code} })()`;
+        // Try to detect if code is an expression or statement
+        // Simple heuristic: if it contains certain keywords or semicolons, treat as statement
+        const isStatement = /^(const|let|var|function|class|if|for|while|do|switch|return|throw|try)\s/i.test(code.trim()) || 
+                           code.includes(';') && !code.trim().endsWith(';');
+        const wrappedCode = isStatement 
+          ? `(async () => { ${code} })()` 
+          : `(async () => { return (${code}) })()`;
         
         // Execute code with timeout - use runInNewContext for better async support
         let result;
@@ -4748,5 +4755,3 @@ module.exports = {
   mergeTools,
   executeMCPTool
 };
-// Test change Fri 17 Oct 2025 12:59:56 AEDT
-// Another test comment

@@ -45,6 +45,7 @@ describe('Google Sheets Snippets Service', () => {
     mockSheets = {
       spreadsheets: {
         create: jest.fn(),
+        get: jest.fn(),
         values: {
           get: jest.fn(),
           update: jest.fn(),
@@ -94,6 +95,20 @@ describe('Google Sheets Snippets Service', () => {
         data: {
           spreadsheetId: testSpreadsheetId,
           spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${testSpreadsheetId}`
+        }
+      });
+      
+      // Mock spreadsheets.get (for sheet properties)
+      mockSheets.spreadsheets.get.mockResolvedValueOnce({
+        data: {
+          sheets: [
+            {
+              properties: {
+                sheetId: 0,
+                title: 'Snippets'
+              }
+            }
+          ]
         }
       });
       
@@ -147,6 +162,20 @@ describe('Google Sheets Snippets Service', () => {
         }
       });
       
+      // Mock spreadsheets.get (for existing spreadsheet)
+      mockSheets.spreadsheets.get.mockResolvedValueOnce({
+        data: {
+          sheets: [
+            {
+              properties: {
+                sheetId: 0,
+                title: 'Snippets'
+              }
+            }
+          ]
+        }
+      });
+      
       const result = await snippetsService.getOrCreateSnippetsSheet(
         testUserEmail,
         testAccessToken
@@ -164,6 +193,20 @@ describe('Google Sheets Snippets Service', () => {
       mockDrive.files.list.mockResolvedValue({
         data: {
           files: [{ id: testFolderId }]
+        }
+      });
+      
+      // Mock spreadsheets.get for first call
+      mockSheets.spreadsheets.get.mockResolvedValue({
+        data: {
+          sheets: [
+            {
+              properties: {
+                sheetId: 0,
+                title: 'Snippets'
+              }
+            }
+          ]
         }
       });
       
@@ -185,6 +228,20 @@ describe('Google Sheets Snippets Service', () => {
       mockDrive.files.list.mockResolvedValue({
         data: {
           files: [{ id: testFolderId }]
+        }
+      });
+      
+      // Mock spreadsheets.get for sheet structure
+      mockSheets.spreadsheets.get.mockResolvedValue({
+        data: {
+          sheets: [
+            {
+              properties: {
+                sheetId: 0,
+                title: 'Snippets'
+              }
+            }
+          ]
         }
       });
     });
@@ -695,4 +752,61 @@ describe('Google Sheets Snippets Service', () => {
       ).rejects.toThrow();
     });
   });
+});
+});
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(testUserEmail + '_error3', null)
+      ).rejects.toThrow();
+    });
+
+    test('handles missing user email', async () => {
+      // Missing email should cause issues with cache key
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(null, testAccessToken)
+      ).rejects.toThrow();
+    });
+  });
+});
+});
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(testUserEmail + '_error3', null)
+      ).rejects.toThrow();
+    });
+
+    test('handles missing user email', async () => {
+      // Missing email should cause issues with cache key
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(null, testAccessToken)
+      ).rejects.toThrow();
+    });
+  });
+});
+});
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(testUserEmail + '_error3', null)
+      ).rejects.toThrow();
+    });
+
+    test('handles missing user email', async () => {
+      // Missing email should cause issues with cache key
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(null, testAccessToken)
+      ).rejects.toThrow();
+    });
+  });
+});
+});
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(testUserEmail + '_error3', null)
+      ).rejects.toThrow();
+    });
+
+    test('handles missing user email', async () => {
+      // Missing email should cause issues with cache key
+      await expect(
+        snippetsService.getOrCreateSnippetsSheet(null, testAccessToken)
+      ).rejects.toThrow();
+    });
+  });
+});
 });
