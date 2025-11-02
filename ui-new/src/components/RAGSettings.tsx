@@ -120,7 +120,7 @@ export const RAGSettings: React.FC = () => {
       
       // Load model with progress callback
       await embeddingService.loadModel(modelId, (progress) => {
-        const percentage = Math.round(progress.progress * 100);
+        const percentage = Math.round(progress.progress); // Already 0-100, don't multiply by 100
         setModelLoadProgress({ loading: true, progress: percentage, model: modelId });
         
         // Update persistent toast
