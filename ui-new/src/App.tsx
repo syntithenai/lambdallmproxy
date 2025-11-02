@@ -282,7 +282,10 @@ function AppContent() {
           return;
         }
 
-        // Make a test request to check if user needs provider setup
+        // Show UI immediately - we have a valid JWT
+        setHasCheckedAuth(true);
+
+        // Check provider setup in background (non-blocking)
         const lambdaUrl = await getCachedApiBase();
         const response = await fetch(`${lambdaUrl}/chat`, {
           method: 'POST',
@@ -307,8 +310,6 @@ function AppContent() {
         // Silently handle network errors - they're not critical for app functionality
         // The auth check is just for provider setup verification
         console.log('Unable to verify provider setup status (this is not critical)');
-      } finally {
-        setHasCheckedAuth(true);
       }
     };
 
