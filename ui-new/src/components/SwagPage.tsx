@@ -1292,7 +1292,7 @@ export const SwagPage: React.FC = () => {
       )}
 
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-0 md:px-4 py-2">
         <div className="flex items-center justify-between gap-4 mb-2">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white">
