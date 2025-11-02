@@ -1638,7 +1638,7 @@ export const SwagPage: React.FC = () => {
       )}
 
       {/* Content Grid */}
-      <div className="flex-1 overflow-y-auto p-6 pb-32 min-h-0">
+      <div className="flex-1 overflow-y-auto px-0 md:px-6 py-6 pb-32 min-h-0">
         {snippets.length === 0 ? (
           <div className="text-center py-16 px-4">
             <svg className="w-20 h-20 mx-auto mb-6 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
