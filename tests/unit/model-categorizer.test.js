@@ -236,9 +236,17 @@ describe('Model Categorization', () => {
       expect(supportsContextWindow(model, 4000)).toBe(true);
     });
 
-    it('should return true when context window exactly matches', () => {
+    it('should return false when required tokens exactly match (due to 20% safety buffer)', () => {
       const model = { name: 'test', contextWindow: 8192 };
-      expect(supportsContextWindow(model, 8192)).toBe(true);
+      // With 20% safety buffer, requiring 8192 tokens needs 8192*1.2 = 9830 tokens
+      // So the model with 8192 context window cannot support this
+      expect(supportsContextWindow(model, 8192)).toBe(false);
+    });
+
+    it('should return true when required tokens are within safe range', () => {
+      const model = { name: 'test', contextWindow: 8192 };
+      // 6800 * 1.2 = 8160, which is less than 8192
+      expect(supportsContextWindow(model, 6800)).toBe(true);
     });
 
     it('should return false when context window is insufficient', () => {

@@ -87,8 +87,8 @@ describe('Guardrails Factory', () => {
     });
 
     test('should create validator with indexed env var API key', () => {
-      process.env.P_T0 = 'groq-free';
-      process.env.P_K0 = 'indexed-groq-key';
+      process.env.LP_TYPE_0 = 'groq-free';
+      process.env.LP_KEY_0 = 'indexed-groq-key';
       const config = {
         enabled: true,
         provider: 'groq-free',
@@ -105,6 +105,10 @@ describe('Guardrails Factory', () => {
         apiKey: 'indexed-groq-key',
         source: 'guardrail'
       });
+      
+      // Cleanup
+      delete process.env.LP_TYPE_0;
+      delete process.env.LP_KEY_0;
     });
   });
 
