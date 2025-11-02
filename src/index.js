@@ -408,6 +408,26 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        if (method === 'POST' && path === '/fetch-images') {
+            console.log('Routing to batch image fetch endpoint');
+            const fetchImagesEndpoint = require('./endpoints/fetch-images');
+            const response = await fetchImagesEndpoint.handler(event);
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: {
+                    ...response.headers,
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
         if (method === 'GET' && path.startsWith('/feed/image')) {
             console.log('Routing to feed image proxy endpoint');
             // Extract URL parameter

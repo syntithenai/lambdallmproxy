@@ -1051,3 +1051,57 @@ export const getBackendProviders = async (): Promise<BackendProvider[]> => {
   }
 };
 
+/**
+ * Batch fetch images and convert to base64
+ * @param images Array of image requests with itemId, searchTerms, and optional source
+ * @param token Auth token
+ * @returns Promise resolving to array of image results with base64 data
+ */
+export interface ImageRequest {
+  itemId: string;
+  searchTerms: string;
+  source?: 'auto' | 'unsplash' | 'pexels' | 'ai';
+}
+
+export interface ImageResult {
+  itemId: string;
+  success: boolean;
+  image?: string; // base64 data URI
+  thumb?: string; // base64 data URI
+  source?: string;
+  photographer?: string;
+  photographerUrl?: string;
+  attribution?: string;
+  attributionHtml?: string;
+  error?: string;
+}
+
+export const fetchImagesBase64 = async (
+  images: ImageRequest[],
+  token: string
+): Promise<ImageResult[]> => {
+  const apiBase = await getCachedApiBase();
+  
+  try {
+    const response = await fetch(`${apiBase}/fetch-images`, {
+      method: 'POST',
+      headers: buildApiHeaders(token),
+      body: JSON.stringify({ images }),
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log(`✅ Batch fetched ${data.stats.succeeded}/${data.stats.total} images in ${data.stats.duration}ms`);
+    
+    return data.images || [];
+  } catch (error) {
+    console.error('Failed to fetch images:', error);
+    throw error;
+  }
+};
+
