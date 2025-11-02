@@ -683,7 +683,7 @@ function AppContent() {
 
       {/* Main Content - Only visible when authenticated */}
       <main id="main-content" className="flex-1 overflow-y-auto">
-        <div className="min-h-full max-w-screen-2xl mx-auto">
+        <div className="min-h-full md:max-w-screen-2xl md:mx-auto">
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Feed is now the default landing page */}
