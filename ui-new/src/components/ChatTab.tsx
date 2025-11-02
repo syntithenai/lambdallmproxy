@@ -958,19 +958,27 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         return;
       }
       
+      if (!message) {
+        console.warn('⚠️ Tried to submit feedback for missing message index:', messageIndex);
+        showError('Message not found for feedback');
+        return;
+      }
+      
       const apiBase = await getCachedApiBase();
       
       const response = await fetch(`${apiBase}/report-error`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'X-Google-Access-Token': token
         },
         body: JSON.stringify({
           userEmail: user?.email,
           feedbackType: 'positive',
           explanation: '',
           messageData: {
+            messageId: (message as any)?.messageId || (message as any)?.id || '',
             messageContent: getMessageText(message.content),
             llmApiCalls: message.llmApiCalls || [],
             evaluations: (message as any).evaluations || [],

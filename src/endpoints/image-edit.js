@@ -860,12 +860,17 @@ async function handler(event, responseStream, _context) {
         
         console.log(`📦 [ImageEdit] Generation context: ${generationContext.providerPool.length} providers (${isUserProvidedKey ? 'from request' : 'from environment'})`);
         
-        // Verify authentication
+        // Verify authentication and attach user email to generation context when possible
         const googleToken = event.headers?.['x-google-oauth-token'] || event.headers?.['X-Google-OAuth-Token'];
         if (googleToken) {
             try {
-                await verifyGoogleToken(googleToken);
+                const decoded = await verifyGoogleToken(googleToken);
                 console.log('✅ Google OAuth token verified');
+                if (decoded && decoded.email) {
+                    generationContext.userEmail = decoded.email;
+                    generationContext.accessToken = googleToken;
+                    console.log(`📧 [ImageEdit] Attributing generation to user: ${decoded.email}`);
+                }
             } catch (error) {
                 console.error('❌ Google OAuth verification failed:', error.message);
                 responseStream.write(`data: ${JSON.stringify({

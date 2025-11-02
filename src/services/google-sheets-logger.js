@@ -34,7 +34,7 @@ function sanitizeEmailForSheetName(email) {
         .toLowerCase()
         .replace(/@/g, '_at_')
         .replace(/\./g, '_dot_')
-        .replace(/[:/\?*\[\]\\]/g, '_'); // Remove invalid characters
+        .replace(/[:/?*[\]\\]/g, '_'); // Remove invalid characters
     
     // Truncate to 100 characters (Google Sheets limit)
     if (sanitized.length > 100) {
@@ -87,8 +87,8 @@ const PRICING = {
     
     // Together AI models (paid service)
     // Source: https://www.together.ai/pricing (Oct 2025)
-    'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8': { input: 0.20, output: 0.20 },
-    'meta-llama/Llama-4-Scout-17B-16E-Instruct': { input: 0.20, output: 0.20 },
+    'meta-llama/llama-4-maverick-17b-128e-instruct': { input: 0.20, output: 0.20 }, // FIXED: lowercase to match actual model name
+    'meta-llama/llama-4-scout-17b-16e-instruct': { input: 0.20, output: 0.20 }, // FIXED: lowercase to match actual model name
     'meta-llama/Llama-3.3-70B-Instruct-Turbo': { input: 0.88, output: 0.88 },
     'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free': { input: 0.88, output: 0.88 }, // Uses trial credits
     'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo': { input: 3.50, output: 3.50 },
@@ -1378,15 +1378,19 @@ async function logToGoogleSheets(logData) {
             // For credit purchases (PayPal, etc.), use the exact amount without surcharge
             cost = logData.cost;
             console.log('💰 Credit purchase: using exact amount:', cost);
+        } else if (logData.cost !== undefined && logData.cost !== null && logData.cost !== 0) {
+            // Cost already calculated (from cost-logger service), use it directly
+            cost = logData.cost;
+            console.log('💰 Using pre-calculated cost:', cost);
         } else {
-            // For regular LLM/Lambda calls, calculate cost with surcharge
+            // For regular LLM/Lambda calls, calculate cost with surcharge from tokens
             cost = calculateCost(
                 logData.model,
                 logData.promptTokens || 0,
                 logData.completionTokens || 0,
-                logData.cost  // Pass through fixed cost if provided (e.g., for image generation)
+                null  // Don't pass fixed cost here - calculate from tokens
             );
-            console.log('💰 Calculated cost:', cost);
+            console.log('💰 Calculated cost from tokens:', cost);
         }
         
         // Format duration
@@ -1403,7 +1407,7 @@ async function logToGoogleSheets(logData) {
             logData.provider || 'unknown',                  // E: provider
             logData.promptTokens || 0,                      // F: tokensIn
             logData.completionTokens || 0,                  // G: tokensOut
-            cost.toFixed(4),                                // H: cost
+            cost.toFixed(8),                                // H: cost (8 decimals for micro-costs)
             durationMs.toString(),                          // I: durationMs
             logData.errorCode ? 'ERROR' : 'SUCCESS',        // J: status
             '',                                             // K: periodStart (empty for regular transactions)
