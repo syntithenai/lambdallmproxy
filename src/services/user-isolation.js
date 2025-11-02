@@ -100,7 +100,8 @@ function filterByUserAndProject(rows, userEmail, projectId = null) {
  * @returns {boolean} True if row belongs to user
  */
 function belongsToUser(row, userEmail) {
-    return row && row.user_email === userEmail;
+    if (!row) return false;
+    return row.user_email === userEmail;
 }
 
 /**
