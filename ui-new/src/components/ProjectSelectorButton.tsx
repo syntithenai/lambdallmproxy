@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { MouseEvent } from 'react';
 import { useProject } from '../contexts/ProjectContext';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, ChevronDown } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import ProjectSelectorDialog from './ProjectSelectorDialog';
 
 /**
@@ -35,17 +35,15 @@ export default function ProjectSelectorButton() {
     <>
       <button
         onClick={handleClick}
-        className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 
+        className="flex items-center justify-center p-2 text-gray-700 dark:text-gray-200 
                    bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 
                    rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 
                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
                    transition-colors duration-200"
-        title={t('projects.selectProject', 'Select Project')}
-        aria-label={t('projects.selectProject', 'Select Project')}
+        title={`${t('projects.selectProject', 'Select Project')}: ${displayText}`}
+        aria-label={`${t('projects.selectProject', 'Select Project')}: ${displayText}`}
       >
-        <FolderOpen className="w-4 h-4" />
-        <span className="max-w-[150px] truncate">{displayText}</span>
-        <ChevronDown className="w-4 h-4" />
+        <FolderOpen className="w-5 h-5" />
       </button>
 
       {isDialogOpen && (
