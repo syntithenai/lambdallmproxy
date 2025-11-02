@@ -96,103 +96,103 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6 overflow-x-auto">
           <button
             onClick={() => setActiveTab('general')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
               activeTab === 'general'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            ⚙️ {t('settings.tabs.general')}
+            ⚙️ <span className="hidden sm:inline">{t('settings.tabs.general')}</span>
           </button>
           <button
             onClick={() => setActiveTab('provider')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
               activeTab === 'provider'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🔌 {t('settings.tabs.provider')}
+            🔌 <span className="hidden sm:inline">{t('settings.tabs.provider')}</span>
           </button>
           <button
             onClick={() => setActiveTab('feed')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'feed'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🎯 Feed
+            🎯 <span className="hidden sm:inline">Feed</span>
           </button>
           <button
             onClick={() => setActiveTab('cloud')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'cloud'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            ☁️ {t('settings.tabs.cloud')}
+            ☁️ <span className="hidden sm:inline">{t('settings.tabs.cloud')}</span>
           </button>
           <button
             onClick={() => setActiveTab('tools')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'tools'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🛠️ {t('settings.tabs.tools')}
+            🛠️ <span className="hidden sm:inline">{t('settings.tabs.tools')}</span>
           </button>
           <button
             onClick={() => setActiveTab('proxy')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'proxy'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🌐 {t('settings.tabs.proxy')}
+            🌐 <span className="hidden sm:inline">{t('settings.tabs.proxy')}</span>
           </button>
           <button
             onClick={() => setActiveTab('location')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'location'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            📍 {t('settings.tabs.location')}
+            📍 <span className="hidden sm:inline">{t('settings.tabs.location')}</span>
           </button>
           <button
             onClick={() => setActiveTab('tts')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'tts'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🔊 {t('settings.tabs.tts')}
+            🔊 <span className="hidden sm:inline">{t('settings.tabs.tts')}</span>
           </button>
           <button
             onClick={() => setActiveTab('voice')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'voice'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🎤 Voice
+            🎤 <span className="hidden sm:inline">Voice</span>
           </button>
           <button
             onClick={() => setActiveTab('rag')}
-            className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
+            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'rag'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
             }`}
           >
-            🧠 {t('settings.tabs.rag')}
+            🧠 <span className="hidden sm:inline">{t('settings.tabs.rag')}</span>
           </button>
         </div>
 

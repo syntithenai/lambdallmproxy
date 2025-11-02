@@ -2,7 +2,7 @@
  * Google Sheets Quiz Service
  * Manages user's quiz data in their Google Drive
  * 
- * Spreadsheet location: "Research Agent/Quizzes"
+ * Spreadsheet location: "Research Agent/Research Agent Swag"
  * Sheet name: "Quizzes"
  * 
  * Schema (A:L, 12 columns):
@@ -111,7 +111,7 @@ async function createQuizSpreadsheet(folderId, accessToken) {
   const spreadsheet = await sheets.spreadsheets.create({
     requestBody: {
       properties: {
-        title: 'Quizzes'
+        title: 'Research Agent Swag'
       },
       sheets: [{
         properties: {
@@ -158,8 +158,77 @@ async function createQuizSpreadsheet(folderId, accessToken) {
     fields: 'id, parents'
   });
   
-  console.log(`📊 Quiz: Created new spreadsheet "Quizzes" with ID ${spreadsheetId}`);
+  console.log(`📊 Quiz: Created new spreadsheet "Research Agent Swag" with ID ${spreadsheetId}`);
   return spreadsheetId;
+}
+
+/**
+ * Ensure Quizzes sheet exists in the spreadsheet
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} accessToken - User's OAuth access token
+ */
+async function ensureQuizzesSheetExists(spreadsheetId, accessToken) {
+  const sheets = google.sheets({
+    version: 'v4',
+    auth: new google.auth.OAuth2()
+  });
+  
+  sheets.context._options.auth.setCredentials({ access_token: accessToken });
+  
+  // Get existing sheets
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties'
+  });
+  
+  const sheetExists = spreadsheet.data.sheets.some(
+    sheet => sheet.properties.title === 'Quizzes'
+  );
+  
+  if (sheetExists) {
+    console.log('📊 Quiz: Sheet "Quizzes" already exists');
+    return;
+  }
+  
+  // Create Quizzes sheet with headers
+  console.log('📊 Quiz: Creating "Quizzes" sheet...');
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        addSheet: {
+          properties: {
+            title: 'Quizzes'
+          }
+        }
+      }]
+    }
+  });
+  
+  // Add headers
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: 'Quizzes!A1:L1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [[
+        'id',
+        'user_email',
+        'project_id',
+        'created_at',
+        'updated_at',
+        'quiz_title',
+        'source_content',
+        'questions',
+        'total_questions',
+        'completed',
+        'score',
+        'completed_at'
+      ]]
+    }
+  });
+  
+  console.log('✅ Quiz: Created "Quizzes" sheet with headers');
 }
 
 /**
@@ -181,11 +250,15 @@ async function getOrCreateQuizSheet(userEmail, accessToken) {
     // Find or create "Research Agent" folder
     const folderId = await findOrCreateFolder('Research Agent', accessToken);
     
-    // Find or create "Quizzes" spreadsheet
-    let spreadsheetId = await findSheetInFolder('Quizzes', folderId, accessToken);
+    // Find or create "Research Agent Swag" spreadsheet
+    let spreadsheetId = await findSheetInFolder('Research Agent Swag', folderId, accessToken);
     
     if (!spreadsheetId) {
+      // Create new spreadsheet with Quizzes sheet
       spreadsheetId = await createQuizSpreadsheet(folderId, accessToken);
+    } else {
+      // Existing spreadsheet found - ensure "Quizzes" sheet exists
+      await ensureQuizzesSheetExists(spreadsheetId, accessToken);
     }
     
     const result = { spreadsheetId, folderId };

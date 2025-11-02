@@ -166,33 +166,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       setHasAttemptedAutoLogin(true);
 
-      // If user is already authenticated, nothing to do
-      if (authState.isAuthenticated) {
+      // If user is already authenticated (loaded from localStorage on mount), verify token validity
+      if (authState.isAuthenticated && authState.accessToken) {
+        console.log('🔑 User already authenticated from localStorage:', authState.user?.email);
+        
+        // Check if token is expired or expiring soon
+        if (isTokenExpiringSoon(authState.accessToken)) {
+          console.log('⚠️ Saved token expired, clearing auth state');
+          clearAuthState();
+          setAuthState({
+            user: null,
+            accessToken: null,
+            isAuthenticated: false
+          });
+        } else {
+          console.log('✅ Token still valid, user remains authenticated');
+        }
         return;
       }
 
-      // Check if we have saved auth state
+      // Not authenticated - check if we have saved auth state that wasn't loaded
       const savedState = loadAuthState();
       if (!savedState.accessToken || !savedState.user) {
-        console.log('No saved auth state found');
+        console.log('ℹ️ No saved auth state found');
         return;
       }
 
-      console.log('Attempting auto-login for:', savedState.user.email);
+      console.log('🔑 Attempting auto-login for:', savedState.user.email);
 
       // Check if token is expired or expiring soon
       if (isTokenExpiringSoon(savedState.accessToken)) {
-        console.log('Saved token expired, clearing auth state');
+        console.log('⚠️ Saved token expired, clearing auth state');
         clearAuthState();
       } else {
         // Token is still valid, restore auth state
         setAuthState(savedState);
-        console.log('Auto-login successful with existing token');
+        console.log('✅ Auto-login successful with existing token');
       }
     };
 
     attemptAutoLogin();
-  }, [hasAttemptedAutoLogin, authState.isAuthenticated, login]);
+  }, [hasAttemptedAutoLogin, authState.isAuthenticated, authState.accessToken, authState.user]);
 
   // Cancel Google One Tap when authenticated to prevent popup spam
   useEffect(() => {

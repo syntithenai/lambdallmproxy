@@ -2,7 +2,7 @@
  * Google Sheets Feed Service
  * Manages user's personalized AI feed items in their Google Drive
  * 
- * Spreadsheet location: "Research Agent/Feed Items"
+ * Spreadsheet location: "Research Agent/Research Agent Swag"
  * Sheet name: "Feed"
  * 
  * Schema:
@@ -114,7 +114,7 @@ async function createFeedSpreadsheet(folderId, accessToken) {
   const spreadsheet = await sheets.spreadsheets.create({
     requestBody: {
       properties: {
-        title: 'Feed Items'
+        title: 'Research Agent Swag'
       },
       sheets: [{
         properties: {
@@ -164,8 +164,80 @@ async function createFeedSpreadsheet(folderId, accessToken) {
     fields: 'id, parents'
   });
   
-  console.log(`📊 Feed: Created new spreadsheet "Feed Items"`);
+  console.log(`📊 Feed: Created new spreadsheet "Research Agent Swag"`);
   return spreadsheetId;
+}
+
+/**
+ * Ensure Feed sheet exists in the spreadsheet
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} accessToken - User's OAuth access token
+ */
+async function ensureFeedSheetExists(spreadsheetId, accessToken) {
+  const sheets = google.sheets({
+    version: 'v4',
+    auth: new google.auth.OAuth2()
+  });
+  
+  sheets.context._options.auth.setCredentials({ access_token: accessToken });
+  
+  // Get existing sheets
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties'
+  });
+  
+  const sheetExists = spreadsheet.data.sheets.some(
+    sheet => sheet.properties.title === 'Feed'
+  );
+  
+  if (sheetExists) {
+    console.log('📊 Feed: Sheet "Feed" already exists');
+    return;
+  }
+  
+  // Create Feed sheet with headers
+  console.log('📊 Feed: Creating "Feed" sheet...');
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        addSheet: {
+          properties: {
+            title: 'Feed'
+          }
+        }
+      }]
+    }
+  });
+  
+  // Add headers
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: 'Feed!A1:O1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [[
+        'id',
+        'user_email',
+        'project_id',
+        'created_at',
+        'updated_at',
+        'title',
+        'content',
+        'url',
+        'source',
+        'topics',
+        'upvote_count',
+        'downvote_count',
+        'user_vote',
+        'is_blocked',
+        'imageBase64'
+      ]]
+    }
+  });
+  
+  console.log('✅ Feed: Created "Feed" sheet with headers');
 }
 
 /**
@@ -187,11 +259,15 @@ async function getOrCreateFeedSheet(userEmail, accessToken) {
   // Find or create "Research Agent" folder
   const folderId = await findOrCreateFolder('Research Agent', accessToken);
   
-  // Find or create "Feed Items" spreadsheet
-  let spreadsheetId = await findSheetInFolder('Feed Items', folderId, accessToken);
+  // Find or create "Research Agent Swag" spreadsheet
+  let spreadsheetId = await findSheetInFolder('Research Agent Swag', folderId, accessToken);
   
   if (!spreadsheetId) {
+    // Create new spreadsheet with Feed sheet
     spreadsheetId = await createFeedSpreadsheet(folderId, accessToken);
+  } else {
+    // Existing spreadsheet found - ensure "Feed" sheet exists
+    await ensureFeedSheetExists(spreadsheetId, accessToken);
   }
   
   // Cache the spreadsheet ID

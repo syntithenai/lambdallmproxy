@@ -30,8 +30,11 @@ interface FeedItemCardProps {
 export default function FeedItemCard({ item }: FeedItemCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { stashItem, trashItem, markViewed, startQuiz, isGeneratingQuiz } = useFeed();
+  const { stashItem, trashItem, markViewed, startQuiz, generatingQuizForItem } = useFeed();
   const { addSnippet } = useSwag();
+  
+  // Check if THIS specific item is generating a quiz
+  const isGeneratingQuiz = generatingQuizForItem === item.id;
   
   const cardRef = useRef<HTMLDivElement>(null);
   const [showDialog, setShowDialog] = useState(false);
@@ -52,14 +55,19 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
     }
   });
 
-  // Attach swipe listeners
+  // Attach swipe listeners only on mobile devices
   useEffect(() => {
-    if (cardRef.current) {
+    // Check if device is mobile (touch-capable with small screen)
+    const isMobile = 'ontouchstart' in window && window.innerWidth < 768;
+    
+    if (cardRef.current && isMobile) {
       attachListeners(cardRef.current);
     }
 
     return () => {
-      detachListeners();
+      if (isMobile) {
+        detachListeners();
+      }
     };
   }, [attachListeners, detachListeners]);
 
@@ -128,7 +136,9 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
       });
     }
 
-    await addSnippet(content, 'tool', item.title);
+    // Pass feed item topics as tags to the snippet + admin:feed tag to identify source
+    const tagsWithFeedMarker = [...(item.topics || []), 'admin:feed'];
+    await addSnippet(content, 'tool', item.title, tagsWithFeedMarker);
 
     // Mark as stashed
     await stashItem(item.id);
@@ -206,7 +216,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
   return (
     <div
       ref={cardRef}
-      className="bg-white rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md cursor-pointer relative"
+      className="bg-white sm:rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md cursor-pointer relative"
       style={{
         transform: getSwipeTransform(),
         backgroundColor: getSwipeBackgroundColor(),
@@ -283,14 +293,14 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
           className="cursor-pointer"
         >
           <p className="text-gray-700 mb-3 line-clamp-3">
-            {item.content}
+            {typeof item.content === 'string' ? item.content : (item.content as any)?.summary || 'No content available'}
           </p>
 
           {/* Mnemonic - Always visible */}
           {item.mnemonic && (
             <div className="bg-purple-50 border-l-4 border-purple-400 p-3 mb-3 rounded">
               <p className="text-sm font-medium text-purple-900">
-                💡 {item.mnemonic}
+                💡 {typeof item.mnemonic === 'string' ? item.mnemonic : JSON.stringify(item.mnemonic)}
               </p>
             </div>
           )}
@@ -361,26 +371,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
           </div>
         )}
 
-        {/* Search Terms - Clickable Google Search Links */}
-        {item.searchTerms && item.searchTerms.length > 0 && (
-          <div className="border-t border-gray-200 pt-3 mb-3">
-            <p className="text-xs text-gray-500 font-semibold inline">Search: </p>
-            {item.searchTerms.map((term, idx) => (
-              <span key={idx}>
-                <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(term)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
-                  title={`Search Google for "${term}"`}
-                >
-                  {term}
-                </a>
-                {idx < (item.searchTerms?.length || 0) - 1 && <span className="text-xs text-gray-500">, </span>}
-              </span>
-            ))}
-          </div>
-        )}
+
 
         {/* Large Action Buttons Row */}
         <div className="border-t border-gray-200 pt-3 grid grid-cols-4 gap-2">
@@ -500,20 +491,15 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                   {item.topics.length > 0 && (
                     <div className="flex items-center gap-1 flex-wrap text-xs">
                       <span className="text-gray-600">Topics:</span>
-                      {item.topics.map((topic, idx) => (
-                        <span key={idx}>
-                          <a
-                            href={`https://www.google.com/search?q=${encodeURIComponent(topic)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-700 hover:underline"
-                            title={`Search Google for "${topic}"`}
-                          >
-                            {topic}
-                          </a>
-                          {idx < item.topics.length - 1 && <span className="text-gray-500">, </span>}
-                        </span>
-                      ))}
+                      <a
+                        href={`https://www.google.com/search?q=${encodeURIComponent(item.topics.join(' '))}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-700 hover:underline"
+                        title={`Search Google for "${item.topics.join(', ')}"`}
+                      >
+                        {item.topics.join(', ')}
+                      </a>
                     </div>
                   )}
                 </div>
@@ -524,7 +510,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                 <div className="mb-4">
                   <h3 className="font-semibold text-gray-900 mb-3">📖 Deep Dive</h3>
                   <div className="text-gray-700 leading-relaxed space-y-3 whitespace-pre-line">
-                    {item.expandedContent}
+                    {typeof item.expandedContent === 'string' ? item.expandedContent : JSON.stringify(item.expandedContent, null, 2)}
                   </div>
                 </div>
               )}
@@ -587,26 +573,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                 </div>
               )}
 
-              {/* Search Terms */}
-              {item.searchTerms && item.searchTerms.length > 0 && (
-                <div className="border-t border-gray-200 pt-4">
-                  <p className="text-sm text-gray-700 font-semibold inline">Search: </p>
-                  {item.searchTerms.map((term, idx) => (
-                    <span key={idx}>
-                      <a
-                        href={`https://www.google.com/search?q=${encodeURIComponent(term)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
-                        title={`Search Google for "${term}"`}
-                      >
-                        {term}
-                      </a>
-                      {idx < (item.searchTerms?.length || 0) - 1 && <span className="text-sm text-gray-500">, </span>}
-                    </span>
-                  ))}
-                </div>
-              )}
+
             </div>
 
             {/* Action Buttons */}

@@ -26,7 +26,7 @@ export function HelpPage() {
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+      <div className="flex items-center justify-between p-4 border-b dark:border-gray-700 sticky top-0 z-10 bg-white dark:bg-gray-900">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/')}
@@ -59,19 +59,19 @@ export function HelpPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-2 border-b dark:border-gray-700 overflow-x-auto bg-gray-50 dark:bg-gray-800">
+      <div className="flex gap-1 p-2 border-b dark:border-gray-700 overflow-x-auto bg-gray-50 dark:bg-gray-800 sticky top-[73px] z-10">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
+            className={`flex items-center gap-2 px-4 sm:px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
               activeTab === tab.id
                 ? 'bg-blue-600 text-white'
                 : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
             }`}
           >
             <span>{tab.icon}</span>
-            <span className="text-sm font-medium">{tab.label}</span>
+            <span className="text-sm font-medium hidden sm:inline">{tab.label}</span>
           </button>
         ))}
       </div>

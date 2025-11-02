@@ -366,7 +366,7 @@ class FeedDatabase {
       request.onsuccess = () => {
         const prefs = request.result || {
           id: 'default',
-          searchTerms: ['latest world news'],
+          searchTerms: [],
           likedTopics: [],
           dislikedTopics: [],
           lastGenerated: new Date().toISOString()
@@ -395,7 +395,7 @@ class FeedDatabase {
       getRequest.onsuccess = () => {
         const existing = getRequest.result || {
           id: 'default',
-          searchTerms: ['latest world news'],
+          searchTerms: [],
           likedTopics: [],
           dislikedTopics: [],
           lastGenerated: new Date().toISOString()
@@ -480,6 +480,26 @@ class FeedDatabase {
 
       request.onsuccess = () => {
         resolve(request.result || null);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get all quizzes
+   */
+  async getAllQuizzes(): Promise<FeedQuiz[]> {
+    await this.init();
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['quizzes'], 'readonly');
+      const store = transaction.objectStore('quizzes');
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        resolve(request.result || []);
       };
 
       request.onerror = () => reject(request.error);

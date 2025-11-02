@@ -48,6 +48,7 @@ const BillingPage = lazy(() => import('./components/BillingPage'));
 const HelpPage = lazy(() => import('./components/HelpPage').then(m => ({ default: m.HelpPage })));
 const PrivacyPolicy = lazy(() => import('./components/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
 const SharedSnippetViewer = lazy(() => import('./components/SharedSnippetViewer').then(m => ({ default: m.SharedSnippetViewer })));
+const SharedChatViewer = lazy(() => import('./components/SharedChatViewer').then(m => ({ default: m.SharedChatViewer })));
 const ImageEditorPage = lazy(() => import('./components/ImageEditor/ImageEditorPage').then(m => ({ default: m.ImageEditorPage })));
 const AgentManager = lazy(() => import('./components/AgentManager').then(m => ({ default: m.AgentManager })));
 
@@ -342,11 +343,13 @@ function AppContent() {
     return () => window.removeEventListener('show-welcome-wizard', handleShowWelcomeWizard);
   }, []);
 
-  // Check if we're on a public route (shared snippet viewer, privacy policy, help page)
+  // Check if we're on a public route (shared snippet viewer, shared chat, privacy policy, help page)
+  const hasShareParam = new URLSearchParams(location.search).has('share');
   const isPublicRoute = location.pathname.startsWith('/snippet/shared') || 
                         location.hash.includes('/snippet/shared') ||
                         location.pathname === '/privacy' ||
-                        location.pathname === '/help';
+                        location.pathname === '/help' ||
+                        hasShareParam;
   
   // Show public pages without authentication
   if (isPublicRoute) {
@@ -355,6 +358,8 @@ function AppContent() {
         <Suspense fallback={<LoadingFallback />}>
           {location.pathname.startsWith('/snippet/shared') || location.hash.includes('/snippet/shared') ? (
             <SharedSnippetViewer />
+          ) : hasShareParam ? (
+            <SharedChatViewer />
           ) : location.pathname === '/privacy' ? (
             <PrivacyPolicy />
           ) : location.pathname === '/help' ? (
@@ -411,7 +416,7 @@ function AppContent() {
       </a>
 
       {/* Header - Only visible when authenticated */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="flex justify-between items-center px-0 md:px-4 py-3 w-full md:max-w-screen-2xl md:mx-auto">
           {/* Left side: Logo and Project Selector */}
           <div className="flex items-center gap-3">
@@ -682,7 +687,7 @@ function AppContent() {
       <BackgroundPlayer />
 
       {/* Main Content - Only visible when authenticated */}
-      <main id="main-content" className="flex-1 overflow-y-auto">
+      <main id="main-content" className="flex-1 overflow-y-auto pt-[73px]">
         <div className="min-h-full w-full md:max-w-screen-2xl md:mx-auto">
           <Suspense fallback={<LoadingFallback />}>
             <Routes>

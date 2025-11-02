@@ -16,12 +16,14 @@ import { getCachedApiBase } from '../utils/api';
  * Event types from SSE stream
  */
 interface FeedGenerationEvent {
-  type: 'status' | 'search_complete' | 'item_generated' | 'complete' | 'error' | 'personalization';
+  type: 'status' | 'search_complete' | 'item_generated' | 'complete' | 'error' | 'personalization' | 
+        'context_prepared' | 'search_starting' | 'search_term' | 'search_term_complete' | 'search_term_error';
   message?: string;
   item?: FeedItem;
   searchResults?: number;
   resultsCount?: number;
   terms?: string[];
+  term?: string;
   error?: string;
   success?: boolean;
   itemsGenerated?: number;
@@ -31,6 +33,14 @@ interface FeedGenerationEvent {
   topicsUsed?: number;
   quizEngagementCount?: number;
   searchTermsGenerated?: number;
+  // Context prepared event
+  swagCount?: number;
+  searchTermsCount?: number;
+  likedTopicsCount?: number;
+  dislikedTopicsCount?: number;
+  // Search result details
+  results?: Array<{ title: string; url: string }>;
+  topResults?: Array<{ title: string; url: string; snippet?: string }>;
 }
 
 /**

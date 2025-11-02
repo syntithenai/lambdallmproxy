@@ -1092,7 +1092,7 @@ async function isSheetEmpty(spreadsheetId, sheetName, accessToken) {
  * Add header row to sheet
  */
 async function addHeaderRow(spreadsheetId, sheetName, accessToken) {
-    // NEW 14-column schema (A-N)
+    // NEW 15-column schema (A-O) - Added Request ID back for tracking related API calls
     const headers = [
         'Timestamp',        // A
         'Email',            // B
@@ -1107,7 +1107,8 @@ async function addHeaderRow(spreadsheetId, sheetName, accessToken) {
         'Period Start',     // K (for summary entries)
         'Period End',       // L (for summary entries)
         'Transaction Count',// M (for summary entries)
-        'Breakdown JSON'    // N (for summary entries)
+        'Breakdown JSON',   // N (for summary entries)
+        'Request ID'        // O (for grouping related API calls)
     ];
     
     return new Promise((resolve, reject) => {
@@ -1116,7 +1117,7 @@ async function addHeaderRow(spreadsheetId, sheetName, accessToken) {
         };
         
         const postData = JSON.stringify(payload);
-        const encodedRange = encodeURIComponent(`${sheetName}!A1:N1`); // 14 columns (A-N)
+        const encodedRange = encodeURIComponent(`${sheetName}!A1:O1`); // 15 columns (A-O)
         
         const options = {
             hostname: 'sheets.googleapis.com',
@@ -1396,9 +1397,9 @@ async function logToGoogleSheets(logData) {
         // Format duration
         const durationMs = logData.duration || logData.durationMs || 0;
         
-        // Prepare row data in NEW 14-COLUMN SCHEMA
+        // Prepare row data in NEW 15-COLUMN SCHEMA (added Request ID back)
         // Old schema had: timestamp, email, provider, model, type, promptTokens, completionTokens, totalTokens, cost, duration, memoryLimitMB, memoryUsedMB, requestId, errorCode, errorMessage, hostname (16 columns)
-        // New schema has: timestamp, email, type, model, provider, tokensIn, tokensOut, cost, durationMs, status, periodStart, periodEnd, transactionCount, breakdownJson (14 columns)
+        // New schema has: timestamp, email, type, model, provider, tokensIn, tokensOut, cost, durationMs, status, periodStart, periodEnd, transactionCount, breakdownJson, requestId (15 columns)
         const rowData = [
             logData.timestamp || new Date().toISOString(),  // A: timestamp
             logData.userEmail || 'unknown',                 // B: email
@@ -1413,13 +1414,14 @@ async function logToGoogleSheets(logData) {
             '',                                             // K: periodStart (empty for regular transactions)
             '',                                             // L: periodEnd (empty for regular transactions)
             '',                                             // M: transactionCount (empty for regular transactions)
-            ''                                              // N: breakdownJson (empty for regular transactions)
+            '',                                             // N: breakdownJson (empty for regular transactions)
+            logData.requestId || ''                         // O: requestId (CRITICAL for grouping related API calls)
         ];
         
         console.log('📤 Appending row to user sheet...');
         console.log(`   User: ${userEmail}`);
         console.log(`   Sheet: ${sheetName}`);
-        console.log('   Range:', `${sheetName}!A:N`);  // ⚡ SCHEMA UPDATE: Now using 14 columns (A-N)
+        console.log('   Range:', `${sheetName}!A:O`);  // ⚡ SCHEMA UPDATE: Now using 15 columns (A-O)
         console.log('   Data preview:', {
             timestamp: rowData[0],
             email: rowData[1],
@@ -1429,10 +1431,10 @@ async function logToGoogleSheets(logData) {
             cost: rowData[7]
         });
         
-        // Append to user-specific sheet (now 14 columns)
+        // Append to user-specific sheet (now 15 columns with Request ID)
         try {
-            await appendToSheet(spreadsheetId, `${sheetName}!A:N`, rowData, accessToken);
-            console.log(`✅ Logged to Google Sheets [${sheetName}]: ${logData.model} (${logData.promptTokens + logData.completionTokens} tokens, $${cost.toFixed(4)})`);
+            await appendToSheet(spreadsheetId, `${sheetName}!A:O`, rowData, accessToken);
+            console.log(`✅ Logged to Google Sheets [${sheetName}]: ${logData.model} (${logData.promptTokens + logData.completionTokens} tokens, $${cost.toFixed(4)}, requestId: ${logData.requestId || 'none'})`);
         } catch (appendError) {
             console.error('❌ Append to sheet error:', appendError.message);
             console.error('   Stack:', appendError.stack);
@@ -1474,8 +1476,8 @@ async function initializeSheet() {
         // Ensure the sheet tab exists
         await ensureSheetExists(spreadsheetId, sheetName, accessToken);
         
-        // Add headers (including Type, Lambda metrics)
-        // ⚡ NEW 14-COLUMN SCHEMA (reduced from 16 columns)
+        // Add headers (including Type, Lambda metrics, Request ID)
+        // ⚡ NEW 15-COLUMN SCHEMA (added Request ID back)
         const headers = [
             'Timestamp',           // A - ISO timestamp
             'Email',               // B - User email
@@ -1490,12 +1492,13 @@ async function initializeSheet() {
             'Period Start',        // K - Summary period start (for summaries only)
             'Period End',          // L - Summary period end (for summaries only)
             'Transaction Count',   // M - Number of transactions in summary (for summaries only)
-            'Breakdown JSON'       // N - Provider/model breakdown for summaries (JSON string)
+            'Breakdown JSON',      // N - Provider/model breakdown for summaries (JSON string)
+            'Request ID'           // O - Request ID for grouping related API calls
         ];
         
-        await appendToSheet(spreadsheetId, `${sheetName}!A1:N1`, headers, accessToken);
+        await appendToSheet(spreadsheetId, `${sheetName}!A1:O1`, headers, accessToken);
         
-        console.log('✅ Google Sheets initialized with 14-column headers');
+        console.log('✅ Google Sheets initialized with 15-column headers (including Request ID)');
     } catch (error) {
         console.error('❌ Failed to initialize Google Sheets:', error.message);
     }
@@ -1707,9 +1710,9 @@ async function getUserBillingData(userEmail, filters = {}) {
         // Get OAuth access token
         const accessToken = await getAccessToken(serviceAccountEmail, formattedKey);
         
-        // ⚡ SCHEMA UPDATE: Read all data from the user's sheet (columns A-N, skip header row)
-        // NEW Schema: Timestamp, Email, Type, Model, Provider, Tokens In, Tokens Out, Cost, Duration, Status, Period Start, Period End, Transaction Count, Breakdown JSON
-        const range = `${sheetName}!A2:N`;
+        // ⚡ SCHEMA UPDATE: Read all data from the user's sheet (columns A-O, skip header row)
+        // NEW Schema: Timestamp, Email, Type, Model, Provider, Tokens In, Tokens Out, Cost, Duration, Status, Period Start, Period End, Transaction Count, Breakdown JSON, Request ID
+        const range = `${sheetName}!A2:O`;
         
         let sheetData;
         try {
@@ -1738,7 +1741,7 @@ async function getUserBillingData(userEmail, filters = {}) {
         const transactions = [];
         
         for (const row of sheetData.values) {
-            // ⚡ NEW SCHEMA MAPPING (14 columns A-N):
+            // ⚡ NEW SCHEMA MAPPING (15 columns A-O):
             const timestamp = row[0];                  // Column A - ISO timestamp
             const email = row[1];                      // Column B - User email
             const type = row[2] || 'chat';             // Column C - Type (chat, tts, transcription, credit_added, summary)
@@ -1753,6 +1756,7 @@ async function getUserBillingData(userEmail, filters = {}) {
             const periodEnd = row[11] || '';           // Column L - Period end (for summaries)
             const transactionCount = row[12] || '';    // Column M - Transaction count (for summaries)
             const breakdownJson = row[13] || '';       // Column N - Breakdown JSON (for summaries)
+            const requestId = row[14] || '';           // Column O - Request ID (for grouping related API calls)
             
             const totalTokens = tokensIn + tokensOut;
             
@@ -1769,7 +1773,7 @@ async function getUserBillingData(userEmail, filters = {}) {
             // Apply provider filter
             if (providerFilter && provider.toLowerCase() !== providerFilter) continue;
             
-            // Create transaction object (matching new schema)
+            // Create transaction object (matching new schema with Request ID)
             const transaction = {
                 timestamp,
                 email,
@@ -1785,7 +1789,8 @@ async function getUserBillingData(userEmail, filters = {}) {
                 periodStart,      // For summary entries
                 periodEnd,        // For summary entries
                 transactionCount, // For summary entries
-                breakdownJson     // For summary entries
+                breakdownJson,    // For summary entries
+                requestId         // CRITICAL: For grouping related API calls from single user query
             };
             
             transactions.push(transaction);
@@ -1892,45 +1897,49 @@ async function logLambdaInvocation(logData) {
         const os = require('os');
         const hostname = logData.hostname || process.env.AWS_FN || os.hostname() || 'unknown';
         
-        // Prepare row data - use same schema as LLM logs but with lambda_invocation type
+        // Prepare row data - use same NEW 15-COLUMN SCHEMA as LLM logs
+        // Lambda invocations store only allocated memory (used memory not relevant for pricing)
+        const lambdaMetadata = JSON.stringify({
+            memoryLimitMB: logData.memoryLimitMB
+        });
+        
         const rowData = [
-            logData.timestamp || new Date().toISOString(),
-            logData.userEmail || 'unknown',
-            'aws-lambda',                      // Provider = 'aws-lambda' for Lambda invocations
-            logData.endpoint || 'unknown',     // Model = endpoint path
-            'lambda_invocation',               // Type = 'lambda_invocation'
-            0,                                 // Tokens In (N/A for Lambda)
-            0,                                 // Tokens Out (N/A for Lambda)
-            0,                                 // Total Tokens (N/A for Lambda)
-            lambdaCost.toFixed(8),            // Cost (8 decimals for precision)
-            durationSeconds,                   // Duration in seconds
-            logData.memoryLimitMB || '',       // Lambda memory limit
-            logData.memoryUsedMB || '',        // Lambda memory used
-            logData.requestId || '',           // Lambda request ID
-            logData.errorCode || '',           // Error code
-            logData.errorMessage || '',        // Error message
-            hostname                           // Server hostname
+            logData.timestamp || new Date().toISOString(),  // A: timestamp
+            logData.userEmail || 'unknown',                 // B: email
+            'lambda_invocation',                            // C: type
+            logData.endpoint || 'unknown',                  // D: model (endpoint path)
+            'aws-lambda',                                   // E: provider
+            0,                                              // F: tokensIn (N/A for Lambda)
+            0,                                              // G: tokensOut (N/A for Lambda)
+            lambdaCost.toFixed(8),                          // H: cost (8 decimals)
+            logData.durationMs || 0,                        // I: durationMs
+            logData.errorCode ? 'ERROR' : 'SUCCESS',        // J: status
+            '',                                             // K: periodStart (empty)
+            '',                                             // L: periodEnd (empty)
+            '',                                             // M: transactionCount (empty)
+            lambdaMetadata,                                 // N: breakdownJson (Lambda metadata)
+            logData.requestId || ''                         // O: requestId
         ];
         
         console.log('📤 [Lambda Log] Appending row to user sheet...');
         console.log(`   User: ${userEmail}`);
         console.log(`   Sheet: ${sheetName}`);
-        console.log('   Range:', `${sheetName}!A:P`);
+        console.log('   Range:', `${sheetName}!A:O`);
         console.log('   Data preview:', {
             timestamp: rowData[0],
             email: rowData[1],
-            provider: rowData[2],
+            type: rowData[2],
             endpoint: rowData[3],
-            type: rowData[4],
-            cost: rowData[8],
-            duration: rowData[9],
-            memoryUsed: rowData[11]
+            provider: rowData[4],
+            cost: rowData[7],
+            duration: rowData[8],
+            requestId: rowData[14]
         });
         
-        // Append to user-specific sheet
+        // Append to user-specific sheet (15 columns)
         try {
-            await appendToSheet(spreadsheetId, `${sheetName}!A:P`, rowData, accessToken);
-            console.log(`✅ Logged Lambda invocation [${sheetName}]: ${logData.endpoint} (${logData.durationMs}ms, ${logData.memoryUsedMB}MB, $${lambdaCost.toFixed(8)})`);
+            await appendToSheet(spreadsheetId, `${sheetName}!A:O`, rowData, accessToken);
+            console.log(`✅ Logged Lambda invocation [${sheetName}]: ${logData.endpoint} (${logData.durationMs}ms, ${logData.memoryUsedMB}MB, $${lambdaCost.toFixed(8)}, requestId: ${logData.requestId || 'none'})`);
         } catch (appendError) {
             console.error('❌ [Lambda Log] Append to sheet error:', appendError.message);
             console.error('   Stack:', appendError.stack);

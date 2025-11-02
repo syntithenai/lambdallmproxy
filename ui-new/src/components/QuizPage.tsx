@@ -59,6 +59,18 @@ export default function QuizPage() {
 
   useEffect(() => {
     loadStatistics();
+    
+    // Listen for new quiz saves from other pages (e.g., Feed page)
+    const handleQuizSaved = () => {
+      console.log('🔔 Quiz saved event received, reloading statistics');
+      loadStatistics();
+    };
+    
+    window.addEventListener('quiz-saved', handleQuizSaved);
+    
+    return () => {
+      window.removeEventListener('quiz-saved', handleQuizSaved);
+    };
   }, []);
 
   // Sync quiz progress to Google Drive (debounced 10 seconds)

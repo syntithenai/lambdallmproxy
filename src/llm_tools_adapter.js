@@ -776,6 +776,92 @@ async function llmResponsesWithTools({ model, input, tools, options }) {
   throw new Error(`Unsupported model for tool calls: ${model} (normalized: ${normalizedModel})`);
 }
 
+/**
+ * Get structured output capabilities for a provider
+ * @param {string} model - Model identifier (e.g., "openai:gpt-4", "groq:llama-3.3-70b")
+ * @returns {object} Capabilities: {supportsTools, supportsJsonMode, supportsStreaming, supportsToolStreaming}
+ */
+function getStructuredOutputCapabilities(model) {
+  const capabilities = {
+    supportsTools: false,
+    supportsJsonMode: false,
+    supportsStreaming: false,
+    supportsToolStreaming: false,
+    provider: null
+  };
+
+  if (!model || typeof model !== 'string') {
+    return capabilities;
+  }
+
+  // OpenAI - Full support for everything
+  if (isOpenAIModel(model)) {
+    capabilities.provider = 'openai';
+    capabilities.supportsTools = true;
+    capabilities.supportsJsonMode = true;
+    capabilities.supportsStreaming = true;
+    capabilities.supportsToolStreaming = true;
+    return capabilities;
+  }
+
+  // Groq - Full support for everything
+  if (isGroqModel(model)) {
+    capabilities.provider = 'groq';
+    capabilities.supportsTools = true;
+    capabilities.supportsJsonMode = true;
+    capabilities.supportsStreaming = true;
+    capabilities.supportsToolStreaming = true;
+    return capabilities;
+  }
+
+  // Gemini - Tools only, no JSON mode
+  if (isGeminiModel(model)) {
+    capabilities.provider = 'gemini';
+    capabilities.supportsTools = true;
+    capabilities.supportsJsonMode = false;
+    capabilities.supportsStreaming = true;
+    capabilities.supportsToolStreaming = true;
+    return capabilities;
+  }
+
+  // Anthropic - Tools only via bedrock
+  const anthropicMatch = model.match(/^anthropic:(.+)/);
+  if (anthropicMatch) {
+    capabilities.provider = 'anthropic';
+    capabilities.supportsTools = true;
+    capabilities.supportsJsonMode = false;
+    capabilities.supportsStreaming = true;
+    capabilities.supportsToolStreaming = true;
+    return capabilities;
+  }
+
+  // Cohere - Limited tool support, no JSON mode
+  if (isCohereModel(model)) {
+    capabilities.provider = 'cohere';
+    capabilities.supportsTools = true;
+    capabilities.supportsJsonMode = false;
+    capabilities.supportsStreaming = true;
+    capabilities.supportsToolStreaming = false; // Cohere's tool streaming is limited
+    return capabilities;
+  }
+
+  // Together - Varies by model
+  if (isTogetherModel(model)) {
+    capabilities.provider = 'together';
+    const modelName = model.replace(/^together:/, '');
+    // Most Together models support tools
+    capabilities.supportsTools = true;
+    // JSON mode support varies
+    capabilities.supportsJsonMode = true;
+    capabilities.supportsStreaming = true;
+    capabilities.supportsToolStreaming = true;
+    return capabilities;
+  }
+
+  return capabilities;
+}
+
 module.exports = {
-  llmResponsesWithTools
+  llmResponsesWithTools,
+  getStructuredOutputCapabilities
 };

@@ -462,4 +462,15 @@ html {
   min-height: 100vh;
 }
 
+/* Mobile-specific: ensure full width with no borders */
+@media (max-width: 640px) {
+  body, html, #root {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+}
+
 /* Safe area insets removed - causing unwanted white borders on mobile */

@@ -5,6 +5,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import type { FeedItem, FeedPreferences, FeedQuiz } from '../types/feed';
 import { feedDB } from '../db/feedDb';
+import { quizDB } from '../db/quizDb';
 import { generateFeedItems, generateFeedQuiz } from '../services/feedGenerator';
 import { fetchImagesBase64 } from '../utils/api';
 import { useAuth } from './AuthContext';
@@ -20,7 +21,7 @@ interface FeedContextValue {
   currentQuiz: FeedQuiz | null;
   isLoading: boolean;
   isGenerating: boolean;
-  isGeneratingQuiz: boolean; // NEW: Quiz generation indicator
+  generatingQuizForItem: string | null; // Track which specific item is generating a quiz (itemId)
   generationStatus: string; // Current status message during generation
   error: string | null;
   selectedTags: string[]; // Tags to filter Swag content for feed generation
@@ -70,7 +71,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     return allItems.filter(item => item.projectId === currentProjectId);
   }, [allItems, getCurrentProjectId]);
   const [preferences, setPreferences] = useState<FeedPreferences>({
-    searchTerms: ['latest world news'],
+    searchTerms: [],
     likedTopics: [],
     dislikedTopics: [],
     lastGenerated: new Date().toISOString()
@@ -78,7 +79,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
   const [currentQuiz, setCurrentQuiz] = useState<FeedQuiz | null>(null);
   const [isLoading, setIsLoading] = useState(true); // Start as true, set to false after initial load
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [generatingQuizForItem, setGeneratingQuizForItem] = useState<string | null>(null); // Track which item is generating a quiz
   const [generationStatus, setGenerationStatus] = useState<string>(''); // Status message during generation
   const [error, setError] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]); // Filter Swag by these tags
@@ -109,6 +110,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
       console.log('📂 FeedContext: Starting initial data load...');
       try {
         setIsLoading(true);
+        setError(null); // Clear any previous errors on mount
         
         console.log('📂 Initializing feedDB...');
         await feedDB.init();
@@ -207,6 +209,25 @@ export function FeedProvider({ children }: FeedProviderProps) {
       const swagContent = filteredSnippets.slice(-20).map(s => s.content || '');
       console.log('📚 Swag items:', swagContent.length);
 
+      // Extract all tags from snippets (excluding admin: and blocked tags)
+      const allTags = new Set<string>();
+      filteredSnippets.forEach(snippet => {
+        if (snippet.tags) {
+          snippet.tags.forEach(tag => {
+            // Exclude admin tags and blocked tags
+            if (!tag.startsWith('admin:') && !preferencesRef.current.dislikedTopics.includes(tag)) {
+              allTags.add(tag);
+            }
+          });
+        }
+      });
+      const snippetTags = Array.from(allTags);
+      console.log('🏷️ Extracted tags from snippets:', snippetTags);
+
+      // Use snippet tags as search terms for news (instead of 'latest world news')
+      const searchTermsForGeneration = snippetTags.length > 0 ? snippetTags : preferencesRef.current.searchTerms;
+      console.log('🔍 Search terms for generation:', searchTermsForGeneration);
+
       // Track generated items as they arrive
       const generatedItems: FeedItem[] = [];
 
@@ -215,18 +236,78 @@ export function FeedProvider({ children }: FeedProviderProps) {
       console.log('🎓 Using maturity level:', maturityLevel);
 
       // Generate new items via backend - use ref to avoid dependency
-      console.log('🔍 Calling generateFeedItems with preferences:', preferencesRef.current);
+      // Use snippet tags instead of preferences.searchTerms
+      const preferencesWithTags = {
+        ...preferencesRef.current,
+        searchTerms: searchTermsForGeneration
+      };
+      console.log('🔍 Calling generateFeedItems with preferences:', preferencesWithTags);
       const newItems = await generateFeedItems(
         token,
         swagContent,
-        preferencesRef.current,
+        preferencesWithTags,
         10,
         maturityLevel,
         // Progress callback - update UI as items arrive
         (event) => {
           console.log('📨 Feed event:', event.type, event);
           
-          if (event.type === 'item_generated' && event.item) {
+          // Context preparation event
+          if (event.type === 'context_prepared') {
+            console.log('📦 Context:', {
+              swagItems: event.swagCount,
+              searchTerms: event.searchTermsCount,
+              likedTopics: event.likedTopicsCount,
+              dislikedTopics: event.dislikedTopicsCount
+            });
+            setGenerationStatus(`Using ${event.swagCount} saved items and ${event.searchTermsCount} search terms`);
+          }
+          
+          // Search starting event
+          else if (event.type === 'search_starting') {
+            console.log('🔍 Starting search for:', event.terms);
+            setGenerationStatus(event.message);
+          }
+          
+          // Individual search term event
+          else if (event.type === 'search_term') {
+            console.log('🔎 Searching:', event.term);
+          }
+          
+          // Search term complete event
+          else if (event.type === 'search_term_complete') {
+            console.log(`✅ Found ${event.resultsCount} results for "${event.term}"`);
+            if (event.results && event.results.length > 0) {
+              console.log('   Top results:', event.results);
+            }
+          }
+          
+          // Search term error event
+          else if (event.type === 'search_term_error') {
+            console.warn('⚠️ Search error:', event.term, event.error);
+          }
+          
+          // Search complete event
+          else if (event.type === 'search_complete') {
+            console.log('🔍 Search complete:', {
+              totalResults: event.resultsCount,
+              terms: event.terms
+            });
+            if (event.topResults && event.topResults.length > 0) {
+              console.log('   Top 5 results:');
+              event.topResults.forEach((result, idx) => {
+                console.log(`   ${idx + 1}. ${result.title}`);
+                console.log(`      ${result.url}`);
+                if (result.snippet) {
+                  console.log(`      ${result.snippet}...`);
+                }
+              });
+            }
+            setGenerationStatus(`Found ${event.resultsCount} results, generating content...`);
+          }
+          
+          // Item generated event
+          else if (event.type === 'item_generated' && event.item) {
             console.log('✨ New item generated:', event.item.title);
             // Auto-tag with current project
             const currentProjectId = getCurrentProjectId();
@@ -259,18 +340,29 @@ export function FeedProvider({ children }: FeedProviderProps) {
               console.log('📊 Items in state after adding:', pruned.length, 'items');
               return pruned;
             });
-          } else if (event.type === 'status' && event.message) {
+          }
+          
+          // Status event
+          else if (event.type === 'status' && event.message) {
             console.log('📊 Status:', event.message);
-            setGenerationStatus(event.message); // Update UI with status message
-          } else if (event.type === 'search_complete') {
-            console.log('🔍 Search complete:', event.searchResults, 'results');
-            setGenerationStatus(`Search complete - found ${event.searchResults || 0} results`);
-          } else if (event.type === 'complete' && event.cost !== undefined) {
+            // Filter out model failure messages - don't show to users
+            const isModelFailure = event.message.toLowerCase().includes('unavailable') || 
+                                  event.message.toLowerCase().includes('trying alternative');
+            if (!isModelFailure) {
+              setGenerationStatus(event.message); // Update UI with status message
+            }
+          }
+          
+          // Complete event
+          else if (event.type === 'complete' && event.cost !== undefined) {
             console.log('💰 Total cost:', event.cost);
             if (event.cost !== undefined) {
               setGenerationStatus(`Complete! Cost: $${event.cost.toFixed(6)}`);
             }
-          } else if (event.type === 'error') {
+          }
+          
+          // Error event
+          else if (event.type === 'error') {
             console.error('❌ Generation error:', event.error);
             setError(event.error || 'Generation failed');
             setGenerationStatus('Generation failed');
@@ -472,7 +564,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
       if (!quiz) {
         // Generate new quiz - show toast as this takes time
         showWarning('🧠 Generating quiz... this may take 30-60 seconds. Please wait.');
-        setIsGeneratingQuiz(true);
+        setGeneratingQuizForItem(itemId); // Mark THIS specific item as generating
         
         const item = items.find(i => i.id === itemId);
         if (!item) {
@@ -481,9 +573,52 @@ export function FeedProvider({ children }: FeedProviderProps) {
 
         quiz = await generateFeedQuiz(token, item);
         
-        // Save to cache
+        // Save to feedDB cache
         await feedDB.saveQuiz(quiz);
+        
+        // Also save to quizDB so it appears in Quiz page
+        const currentProjectId = getCurrentProjectId();
+        const quizStatistic = {
+          id: `feed-quiz-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          quizTitle: quiz.title,
+          snippetIds: [itemId], // Use feed item ID
+          score: 0,
+          totalQuestions: quiz.questions.length,
+          percentage: 0,
+          timeTaken: 0,
+          completedAt: new Date().toISOString(),
+          answers: [],
+          enrichment: false,
+          synced: false,
+          completed: false, // Mark as not completed yet
+          quizData: quiz, // Store the full quiz for restarting
+          projectId: currentProjectId || undefined
+        };
+        await quizDB.saveQuizStatistic(quizStatistic);
+        
+        // Sync quiz to Google Sheets if enabled
+        const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+        const googleLinked = localStorage.getItem('rag_google_linked') === 'true';
+        if (spreadsheetId && googleLinked) {
+          try {
+            const { syncQuizzesToSheets, isGoogleIdentityAvailable } = await import('../services/googleSheetsClient');
+            if (isGoogleIdentityAvailable()) {
+              console.log('📤 Syncing quiz to Google Sheets (client-side)...');
+              await syncQuizzesToSheets(spreadsheetId, [quizStatistic]);
+            }
+          } catch (syncError) {
+            console.error('❌ Failed to sync quiz to Sheets:', syncError);
+            // Non-blocking - quiz is still saved locally
+          }
+        }
+        
+        // Notify Quiz page to refresh
+        window.dispatchEvent(new Event('quiz-saved'));
+        
         showSuccess('✅ Quiz ready!');
+      } else {
+        // Quiz already exists - just show it
+        console.log('📚 Loading existing quiz from cache');
       }
 
       setCurrentQuiz(quiz);
@@ -494,9 +629,9 @@ export function FeedProvider({ children }: FeedProviderProps) {
       showError(`❌ ${errorMsg}`);
     } finally {
       setIsLoading(false);
-      setIsGeneratingQuiz(false);
+      setGeneratingQuizForItem(null); // Clear generating state
     }
-  }, [getToken, items, showWarning, showSuccess, showError]);
+  }, [getToken, items, showWarning, showSuccess, showError, getCurrentProjectId]);
 
   /**
    * Close quiz overlay
@@ -560,7 +695,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     currentQuiz,
     isLoading,
     isGenerating,
-    isGeneratingQuiz,
+    generatingQuizForItem,
     generationStatus,
     error,
     selectedTags,

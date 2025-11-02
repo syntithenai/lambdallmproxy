@@ -1129,6 +1129,17 @@ async function handler(event, responseStream, context) {
         model = body.model; // Assign to function-scoped variable
         const tavilyApiKey = body.tavilyApiKey || '';
         
+        // Detect test/health check requests from frontend (e.g., App.tsx provider setup check)
+        // These should not be logged or processed to avoid phantom chat logs
+        const isTestRequest = messages && 
+                              messages.length === 1 && 
+                              messages[0].role === 'user' && 
+                              messages[0].content === 'test';
+        
+        if (isTestRequest) {
+            console.log('🧪 Test request detected - checking provider setup only (no logging)');
+        }
+        
         // Extract local Whisper settings (for local development with local Whisper service)
         const whisperUseLocal = useLocalWhisper === true;
         const whisperLocalUrl = localWhisperUrl || 'http://localhost:8000';
@@ -1448,6 +1459,17 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                 statusCode: 403,
                 requiresProviderSetup: true,
                 authorized: authResult.authorized
+            });
+            responseStream.end();
+            return;
+        }
+        
+        // If this is a test request, return success now (don't process or log)
+        if (isTestRequest) {
+            console.log('✅ Test request passed provider check - returning success (no processing)');
+            sseWriter.writeEvent('done', { 
+                message: 'Provider check passed',
+                test: true 
             });
             responseStream.end();
             return;
