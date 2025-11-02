@@ -1292,18 +1292,15 @@ export const SwagPage: React.FC = () => {
       )}
 
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-0 md:px-4 py-2">
-        <div className="flex items-center justify-between gap-4 mb-2">
-          <div className="flex items-center gap-3">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-2 md:px-4 py-2">
+        <div className="flex items-center justify-between gap-2 md:gap-4 mb-2">
+          <div className="flex items-center gap-2 md:gap-3">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white">
               Swag
             </h1>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {snippets.length} snippet{snippets.length !== 1 ? 's' : ''}
-            </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* New Snippet Button */}
             <button
               onClick={handleCreateNewSnippet}
@@ -1380,9 +1377,9 @@ export const SwagPage: React.FC = () => {
               </select>
             )}
 
-            {/* Storage and Search Index Progress Indicators (floating right) */}
+            {/* Storage and Search Index Progress Indicators - Desktop only */}
             {snippets.length > 0 && (
-              <div className="flex flex-col gap-1">
+              <div className="hidden md:flex flex-col gap-1">
                 {/* Storage Capacity Indicator */}
                 {storageStats && (
                   <div className="flex items-center gap-2 text-xs">
@@ -1417,6 +1414,53 @@ export const SwagPage: React.FC = () => {
                   </span>
                 </div>
               </div>
+            )}
+            
+            {/* Mobile Info Dropdown */}
+            {snippets.length > 0 && (
+              <details className="md:hidden relative">
+                <summary className="p-2 cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
+                  <svg className="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </summary>
+                <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 z-10 min-w-[240px]">
+                  {storageStats && (
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-gray-600 dark:text-gray-400">Storage:</span>
+                        <span className="text-gray-600 dark:text-gray-400 font-medium">
+                          {storageStats.percentUsed.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-300 ${
+                            storageStats.percentUsed < 50 ? 'bg-green-500' :
+                            storageStats.percentUsed < 80 ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`}
+                          style={{width: `${Math.min(storageStats.percentUsed, 100)}%`}}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-gray-600 dark:text-gray-400">Search Index:</span>
+                      <span className="text-gray-600 dark:text-gray-400 font-medium">
+                        {embeddedCount}/{snippets.length}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-green-500 transition-all duration-300"
+                        style={{width: `${snippets.length > 0 ? (embeddedCount / snippets.length) * 100 : 0}%`}}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </details>
             )}
           </div>
         </div>
@@ -1574,7 +1618,7 @@ export const SwagPage: React.FC = () => {
                 />
               </div>
               
-              {/* Select All/None buttons - moved from floating toolbar */}
+              {/* Select All/None buttons with snippet count */}
               {snippets.length > 0 && !viewingSnippet && !editingSnippet && (
                 <>
                   <div className="h-4 w-px bg-gray-300 dark:bg-gray-600 mx-1" />
@@ -1598,18 +1642,12 @@ export const SwagPage: React.FC = () => {
                     </svg>
                     <span>Select None</span>
                   </button>
+                  <span className="text-xs text-gray-600 dark:text-gray-400 font-medium ml-2">
+                    {getSelectedSnippets().length > 0 ? `${getSelectedSnippets().length}/` : ''}{snippets.length} snippet{snippets.length !== 1 ? 's' : ''}
+                  </span>
                 </>
               )}
             </div>
-          </div>
-        )}
-
-        {/* Bulk Actions Bar - Selection count only (Select All/None moved to floating toolbar) */}
-        {snippets.length > 0 && getSelectedSnippets().length > 0 && !viewingSnippet && !editingSnippet && (
-          <div className="mt-2 flex items-center justify-end">
-            <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">
-              {getSelectedSnippets().length} selected
-            </span>
           </div>
         )}
       </div>
@@ -1701,7 +1739,7 @@ export const SwagPage: React.FC = () => {
         ) : (
           viewMode === 'grid' ? (
             /* Grid View */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
               {sortedSnippets.map(snippet => (
               <div
                 key={snippet.id}
