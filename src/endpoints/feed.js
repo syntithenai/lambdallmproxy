@@ -764,30 +764,17 @@ async function handler(event, responseStream, context) {
                 topics: item.topics
             }));
             
-            // Save each item to Google Sheets
-            let savedCount = 0;
-            for (const feedItem of feedItemsToSave) {
-                try {
-                    await feedService.insertFeedItem(
-                        feedItem,
-                        userEmail,
-                        projectId,
-                        verifiedUser.accessToken
-                    );
-                    savedCount++;
-                } catch (saveError) {
-                    console.error(`Failed to save feed item "${feedItem.title}":`, saveError);
-                    // Continue saving other items
-                }
-            }
-            
-            console.log(`✅ Saved ${savedCount}/${feedItemsToSave.length} feed items to Google Sheets`);
-            sseWriter.writeEvent('status', { message: `Saved ${savedCount} items` });
+            // NOTE: Google Sheets saving is now handled by frontend FeedContext
+            // after batch image fetching completes. This eliminates OAuth token
+            // expiration issues and provides better error handling.
+            // The frontend calls feedSyncService.fullSync() which uses the
+            // user's fresh access token from localStorage.
+            console.log(`✅ Generated ${feedItemsToSave.length} feed items (sync deferred to frontend)`);
+            sseWriter.writeEvent('status', { message: `Generated ${feedItemsToSave.length} items` });
         } catch (saveError) {
-            console.error('Failed to save feed items to Google Sheets:', saveError);
-            // Don't fail the entire request - items were still generated
-            sseWriter.writeEvent('warning', { 
-                message: 'Feed items generated but not saved to storage',
+            console.error('Failed to generate feed items:', saveError);
+            sseWriter.writeEvent('error', { 
+                message: 'Feed generation failed',
                 error: saveError.message 
             });
         }
