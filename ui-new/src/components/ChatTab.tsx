@@ -4599,7 +4599,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       {/* Messages Area */}
       <div 
         ref={messagesContainerRef} 
-        className="flex-1 overflow-y-auto md:px-4 py-4 space-y-4"
+        className="flex-1 overflow-y-auto px-0 md:px-4 py-4 space-y-4"
         aria-live="polite"
         aria-atomic="false"
         aria-relevant="additions text"

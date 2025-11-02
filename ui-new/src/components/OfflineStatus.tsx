@@ -1,28 +1,66 @@
 import { useState, useEffect } from 'react';
-import { WifiOff, RefreshCw } from 'lucide-react';
+import { WifiOff, RefreshCw, Cloud } from 'lucide-react';
+import { getCachedApiBase } from '../utils/api';
+
+interface ConnectionStatus {
+  hasInternet: boolean;
+  backendAvailable: boolean;
+}
 
 /**
  * OfflineStatus Component
  * 
- * Displays an overlay when the user is offline with:
- * - Clear offline message
+ * Displays an overlay when the user is offline or backend is unavailable:
+ * - Detects internet connectivity
+ * - Checks backend availability
+ * - Clear offline/backend unavailable message
  * - Retry button to check connection
  * - Auto-detection of connection restoration
  */
 export function OfflineStatus() {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [status, setStatus] = useState<ConnectionStatus>({
+    hasInternet: navigator.onLine,
+    backendAvailable: true
+  });
   const [isRetrying, setIsRetrying] = useState(false);
+
+  const checkConnectivity = async () => {
+    const hasInternet = navigator.onLine;
+    let backendAvailable = false;
+
+    if (hasInternet) {
+      try {
+        // Check if backend is reachable
+        const apiBase = await getCachedApiBase();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`${apiBase}/health`, {
+          method: 'GET',
+          signal: controller.signal
+        }).catch(() => null);
+        
+        clearTimeout(timeout);
+        backendAvailable = response?.ok || false;
+      } catch {
+        backendAvailable = false;
+      }
+    }
+
+    setStatus({ hasInternet, backendAvailable });
+    return { hasInternet, backendAvailable };
+  };
 
   useEffect(() => {
     const handleOnline = () => {
-      console.log('🌐 Connection restored');
-      setIsOnline(true);
+      console.log('🌐 Internet connection restored');
+      checkConnectivity();
       setIsRetrying(false);
     };
 
     const handleOffline = () => {
-      console.log('📴 Connection lost');
-      setIsOnline(false);
+      console.log('📴 Internet connection lost');
+      setStatus({ hasInternet: false, backendAvailable: false });
     };
 
     // Listen for online/offline events
@@ -30,62 +68,79 @@ export function OfflineStatus() {
     window.addEventListener('offline', handleOffline);
 
     // Initial check
-    setIsOnline(navigator.onLine);
+    checkConnectivity();
+
+    // Periodic check every 30 seconds if offline
+    const interval = setInterval(() => {
+      if (!status.hasInternet || !status.backendAvailable) {
+        checkConnectivity();
+      }
+    }, 30000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
     };
-  }, []);
+  }, [status.hasInternet, status.backendAvailable]);
 
   const handleRetry = async () => {
     setIsRetrying(true);
+    const { hasInternet, backendAvailable } = await checkConnectivity();
     
-    try {
-      // Try to fetch a lightweight endpoint to verify connectivity
-      // Use a small image or endpoint that's likely to be cached
-      const response = await fetch('/favicon.svg', { 
-        method: 'HEAD',
-        cache: 'no-cache'
-      });
-      
-      if (response.ok) {
-        console.log('✅ Connection verified');
-        setIsOnline(true);
-      } else {
-        console.log('❌ Connection check failed');
-        setIsOnline(false);
-      }
-    } catch (error) {
-      console.log('❌ Still offline:', error);
-      setIsOnline(false);
-    } finally {
+    if (hasInternet && backendAvailable) {
+      // Both are available, reload the page
+      window.location.reload();
+    } else {
       setIsRetrying(false);
     }
   };
 
-  // Don't render anything if online
-  if (isOnline) {
+  // Don't render anything if fully online
+  if (status.hasInternet && status.backendAvailable) {
     return null;
   }
+
+  const isFullyOffline = !status.hasInternet;
+  const Icon = isFullyOffline ? WifiOff : Cloud;
+  const title = isFullyOffline ? "You're Offline" : "Backend Unavailable";
+  const message = isFullyOffline 
+    ? "It looks like you've lost your internet connection. Please check your network settings and try again."
+    : "Unable to reach the server. The backend may be temporarily unavailable or under maintenance.";
 
   return (
     <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
         {/* Icon */}
         <div className="flex justify-center mb-6">
-          <div className="bg-orange-100 dark:bg-orange-900 rounded-full p-6">
-            <WifiOff className="h-16 w-16 text-orange-600 dark:text-orange-400" />
+          <div className={`${isFullyOffline ? 'bg-orange-100 dark:bg-orange-900' : 'bg-yellow-100 dark:bg-yellow-900'} rounded-full p-6`}>
+            <Icon className={`h-16 w-16 ${isFullyOffline ? 'text-orange-600 dark:text-orange-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
           </div>
         </div>
 
         {/* Message */}
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
-          You're Offline
+          {title}
         </h2>
-        <p className="text-gray-600 dark:text-gray-400 mb-6">
-          It looks like you've lost your internet connection. Please check your network settings and try again.
+        <p className="text-gray-600 dark:text-gray-400 mb-4">
+          {message}
         </p>
+
+        {/* Connection Status Details */}
+        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-6 space-y-2 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Internet:</span>
+            <span className={`font-medium ${status.hasInternet ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              {status.hasInternet ? '✓ Connected' : '✗ Offline'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Backend:</span>
+            <span className={`font-medium ${status.backendAvailable ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              {status.backendAvailable ? '✓ Available' : '✗ Unavailable'}
+            </span>
+          </div>
+        </div>
 
         {/* Retry Button */}
         <button
