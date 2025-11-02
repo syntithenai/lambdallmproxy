@@ -10,6 +10,25 @@ interface GitHubLinkProps {
 export const GitHubLink: React.FC<GitHubLinkProps> = ({ hideGitHub = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Hide when offline (OfflineStatus component checks navigator.onLine)
+  const [isOnline, setIsOnline] = React.useState(navigator.onLine);
+  
+  React.useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+  
+  // Don't render if offline
+  if (!isOnline) return null;
 
   return (
     <div className="hidden md:flex fixed bottom-4 right-4 flex-col gap-2 z-50" style={{ zIndex: 9999 }}>
