@@ -121,9 +121,10 @@ async function handler(event) {
     
     try {
         // Authenticate request
-        const authResult = await authenticateRequest(event);
+        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+        const authResult = await authenticateRequest(authHeader);
         
-        if (!authResult.authenticated) {
+        if (!authResult || !authResult.email) {
             return {
                 statusCode: 401,
                 headers: {
