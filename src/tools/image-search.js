@@ -17,6 +17,12 @@ const https = require('https');
 // In-memory cache for search results (1 hour TTL)
 const cache = new Map();
 const CACHE_TTL = 3600000; // 1 hour in milliseconds
+const RATE_LIMIT_COOLDOWN = 3600000; // 1 hour cooldown after rate limit
+
+// Load balancing state - alternates between providers with rate limit tracking
+let providerRotation = 0; // 0 = Unsplash, 1 = Pexels
+let unsplashRateLimitUntil = 0;
+let pexelsRateLimitUntil = 0;
 
 /**
  * Make HTTPS request
@@ -166,11 +172,13 @@ async function searchPexels(query, count = 1) {
 }
 
 /**
- * Search for images using multiple providers with fallback
+ * Search for images using available providers
  * 
  * Strategy:
- * 1. Try Unsplash first (higher quality, curated)
- * 2. Fall back to Pexels if Unsplash fails or no results
+ * 1. Load balance between Unsplash and Pexels (round-robin rotation)
+ * 2. Check rate limits before trying each provider
+ * 3. Automatic failover if one provider is rate-limited
+ * 4. Track rate limits for 1 hour after 403 errors
  * 
  * @param {string} query - Search query
  * @param {Object} options - Search options
@@ -178,6 +186,139 @@ async function searchPexels(query, count = 1) {
  * @param {string} options.provider - Preferred provider: 'unsplash', 'pexels', 'auto' (default: 'auto')
  * @returns {Promise<Object|null>} Image object or null if no results
  */
+async function searchImage(query, options = {}) {
+  const { count = 1, provider = 'auto' } = options;
+  
+  if (!query || typeof query !== 'string') {
+    console.warn('⚠️  Invalid image search query:', query);
+    return null;
+  }
+
+  // Check cache first
+  const cacheKey = `${query}-${provider}-${count}`;
+  const cached = cache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+    console.log(`💾 Using cached image for: "${query}"`);
+    return cached.result;
+  }
+
+  const now = Date.now();
+  let results = [];
+
+  // Handle explicit provider selection
+  if (provider === 'unsplash') {
+    if (now < unsplashRateLimitUntil) {
+      console.warn(`⏱️  Unsplash rate-limited until ${new Date(unsplashRateLimitUntil).toISOString()}`);
+      return null;
+    }
+    try {
+      results = await searchUnsplash(query, count);
+    } catch (error) {
+      if (error.message?.includes('403') || error.message?.includes('rate limit')) {
+        unsplashRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
+        console.warn(`⏱️  Unsplash rate limit detected. Cooldown for 1 hour.`);
+      }
+    }
+  } else if (provider === 'pexels') {
+    if (now < pexelsRateLimitUntil) {
+      console.warn(`⏱️  Pexels rate-limited until ${new Date(pexelsRateLimitUntil).toISOString()}`);
+      return null;
+    }
+    try {
+      results = await searchPexels(query, count);
+    } catch (error) {
+      if (error.message?.includes('403') || error.message?.includes('rate limit')) {
+        pexelsRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
+        console.warn(`⏱️  Pexels rate limit detected. Cooldown for 1 hour.`);
+      }
+    }
+  } else if (provider === 'auto') {
+    // Auto mode: Load balance with failover
+    const primaryProvider = providerRotation % 2 === 0 ? 'unsplash' : 'pexels';
+    const fallbackProvider = primaryProvider === 'unsplash' ? 'pexels' : 'unsplash';
+    
+    // Try primary provider
+    let primaryAvailable = true;
+    if (primaryProvider === 'unsplash' && now < unsplashRateLimitUntil) {
+      console.log(`⏭️  Skipping Unsplash (rate-limited), trying Pexels`);
+      primaryAvailable = false;
+    } else if (primaryProvider === 'pexels' && now < pexelsRateLimitUntil) {
+      console.log(`⏭️  Skipping Pexels (rate-limited), trying Unsplash`);
+      primaryAvailable = false;
+    }
+
+    if (primaryAvailable) {
+      try {
+        console.log(`🔄 Load balancing: Trying ${primaryProvider} first (rotation: ${providerRotation})`);
+        results = primaryProvider === 'unsplash' 
+          ? await searchUnsplash(query, count)
+          : await searchPexels(query, count);
+      } catch (error) {
+        if (error.message?.includes('403') || error.message?.includes('rate limit')) {
+          if (primaryProvider === 'unsplash') {
+            unsplashRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
+            console.warn(`⏱️  Unsplash rate limit detected. Cooldown for 1 hour.`);
+          } else {
+            pexelsRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
+            console.warn(`⏱️  Pexels rate limit detected. Cooldown for 1 hour.`);
+          }
+        }
+      }
+    }
+
+    // Fallback to secondary provider if needed
+    if (results.length === 0) {
+      const fallbackAvailable = fallbackProvider === 'unsplash' 
+        ? now >= unsplashRateLimitUntil
+        : now >= pexelsRateLimitUntil;
+
+      if (fallbackAvailable) {
+        try {
+          console.log(`🔀 Failover to ${fallbackProvider}`);
+          results = fallbackProvider === 'unsplash'
+            ? await searchUnsplash(query, count)
+            : await searchPexels(query, count);
+        } catch (error) {
+          if (error.message?.includes('403') || error.message?.includes('rate limit')) {
+            if (fallbackProvider === 'unsplash') {
+              unsplashRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
+              console.warn(`⏱️  Unsplash rate limit detected. Cooldown for 1 hour.`);
+            } else {
+              pexelsRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
+              console.warn(`⏱️  Pexels rate limit detected. Cooldown for 1 hour.`);
+            }
+          }
+        }
+      } else {
+        console.warn(`⚠️  Both providers rate-limited`);
+      }
+    }
+
+    // Rotate for next call
+    providerRotation++;
+  }
+
+  // Return first result (or null if none found)
+  const result = results.length > 0 ? results[0] : null;
+
+  // Cache the result
+  cache.set(cacheKey, {
+    result,
+    timestamp: Date.now()
+  });
+
+  // Clean old cache entries periodically
+  if (cache.size > 100) {
+    const now = Date.now();
+    for (const [key, value] of cache.entries()) {
+      if (now - value.timestamp > CACHE_TTL) {
+        cache.delete(key);
+      }
+    }
+  }
+
+  return result;
+}
 async function searchImage(query, options = {}) {
   const { count = 1, provider = 'auto' } = options;
   

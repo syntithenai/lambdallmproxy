@@ -4,7 +4,7 @@
  * combined with web search results
  */
 
-const { llmResponsesWithTools } = require('../llm_tools_adapter');
+const { llmResponsesWithTools, getStructuredOutputCapabilities } = require('../llm_tools_adapter');
 const { performDuckDuckGoSearch } = require('../tools/search_web');
 const { searchImage, trackUnsplashDownload } = require('../tools/image-search');
 const { authenticateRequest } = require('../auth');
@@ -14,6 +14,7 @@ const feedRecommender = require('../services/feed-recommender');
 const { buildModelRotationSequence, estimateTokenRequirements } = require('../model-selector-v2');
 const feedService = require('../services/google-sheets-feed');
 const { extractProjectId } = require('../services/user-isolation');
+const { robustJsonParse, tryParseJson } = require('../utils/json-parser');
 
 /**
  * Extract images from web search results
@@ -112,6 +113,15 @@ async function generateFeedItems(
     eventCallback,
     generationContext = {}
 ) {
+    // Emit event about context being used
+    eventCallback('context_prepared', {
+        message: `Using ${swagContent.length} Swag items and ${searchTerms.length} search terms`,
+        swagCount: swagContent.length,
+        searchTermsCount: searchTerms.length,
+        likedTopicsCount: preferences.likedTopics?.length || 0,
+        dislikedTopicsCount: preferences.dislikedTopics?.length || 0
+    });
+    
     // Prepare context summaries
     const swagSummary = swagContent.slice(0, 20).join('\n\n').substring(0, 2000);
     const likedTopics = preferences.likedTopics.join(', ');
@@ -122,14 +132,35 @@ async function generateFeedItems(
     const searchResults = [];
     
     if (searchTerms && searchTerms.length > 0) {
-        eventCallback('status', { message: 'Searching the web...' });
+        eventCallback('search_starting', { 
+            message: `Searching for: ${searchTerms.join(', ')}`,
+            terms: searchTerms,
+            termsCount: searchTerms.length
+        });
         
         for (const term of searchTerms.slice(0, 3)) { // Limit to 3 search terms
             try {
+                eventCallback('search_term', { 
+                    message: `Searching for "${term}"...`,
+                    term: term
+                });
+                
                 const results = await performDuckDuckGoSearch(term, 5);
                 searchResults.push(...results);
+                
+                eventCallback('search_term_complete', { 
+                    message: `Found ${results.length} results for "${term}"`,
+                    term: term,
+                    resultsCount: results.length,
+                    results: results.slice(0, 3).map(r => ({ title: r.title, url: r.url }))
+                });
             } catch (error) {
                 console.error(`Search failed for term "${term}":`, error);
+                eventCallback('search_term_error', { 
+                    message: `Search failed for "${term}": ${error.message}`,
+                    term: term,
+                    error: error.message
+                });
             }
         }
         
@@ -139,8 +170,10 @@ async function generateFeedItems(
             .join('\n');
         
         eventCallback('search_complete', { 
+            message: `Found ${searchResults.length} total results from ${searchTerms.length} search terms`,
             resultsCount: searchResults.length,
-            terms: searchTerms
+            terms: searchTerms,
+            topResults: searchResults.slice(0, 5).map(r => ({ title: r.title, url: r.url, snippet: r.snippet?.substring(0, 100) }))
         });
     }
     
@@ -153,14 +186,14 @@ ${searchSummary ? `Recent news/searches:\n${searchSummary}\n\n` : ''}
 ${likedTopics ? `User liked topics: ${likedTopics}\n` : ''}
 ${dislikedTopics ? `User disliked topics (AVOID): ${dislikedTopics}\n` : ''}
 
-TASK: Generate ${count} high-quality educational items mixing:
-- "Did You Know" facts (70%) - surprising, educational facts
-- Question & Answer pairs (30%) - thought-provoking Q&A
+TASK: Generate ${count} high-quality educational items${searchSummary ? ' based on the search results provided above' : ''} mixing:
+- "Did You Know" facts (70%) - surprising, educational facts${searchSummary ? ' drawn from the search results' : ''}
+- Question & Answer pairs (30%) - thought-provoking Q&A${searchSummary ? ' based on search findings' : ''}
 
-CRITICAL REQUIREMENTS:
+${searchSummary ? '⚠️ CRITICAL: You MUST base your content on the "Recent news/searches" section above. Use the titles, snippets, and information from those search results as your primary source material. Do NOT generate generic facts - use the specific information provided in the search results.\n\n' : ''}CRITICAL REQUIREMENTS:
 1. Each item MUST have:
-   - Short summary (2-3 sentences) in "content"
-   - Expanded article (4-6 paragraphs) in "expandedContent" with AT LEAST 4 interesting facts
+   - Short summary (2-3 sentences) in "content"${searchSummary ? ' that references information from the search results' : ''}
+   - Expanded article (4-6 paragraphs) in "expandedContent" with AT LEAST 4 interesting facts${searchSummary ? ' drawn from the search results' : ''}
    - Creative mnemonic in "mnemonic" - use acronyms, rhymes, or surprising connections
    
 2. Mnemonics should be MEMORABLE:
@@ -169,58 +202,97 @@ CRITICAL REQUIREMENTS:
    - Connections: Link to pop culture, celebrities, or surprising parallels
    
 3. Expanded content should:
-   - Include specific numbers, dates, and measurements
+   - Include specific numbers, dates, and measurements${searchSummary ? ' from the search results' : ''}
    - Feature surprising comparisons or contrasts
    - Cite historical context or modern relevance
    - Use vivid, memorable details
 
 4. Connect to user's interests when possible
 5. Avoid disliked topics completely
-6. Include specific topics/keywords for image search
+6. Include specific topics/keywords for image search${searchSummary ? '\n7. ⚠️ Base ALL content on the search results provided - do NOT make up generic facts' : ''}
 
-OUTPUT FORMAT (JSON):
-{
-  "items": [
-    {
-      "type": "did-you-know",
-      "title": "Brief headline (max 80 chars)",
-      "content": "Engaging 2-3 sentence summary for preview",
-      "expandedContent": "4-6 paragraphs with AT LEAST 4 fascinating facts. Include specific details, numbers, and memorable comparisons. Make it educational and surprising.",
-      "mnemonic": "Creative memory aid - acronym, rhyme, or surprising connection to help remember the key fact",
-      "topics": ["topic1", "topic2", "topic3"],
-      "imageSearchTerms": "specific search query for image"
-    }
-  ]
-}
+Generate exactly ${count} items. Return valid JSON.`;
 
-IMPORTANT: Since generating detailed content takes more tokens, you're generating ${count} items.
-Focus on QUALITY over quantity. Each item should be fascinating and memorable.
-
-Generate exactly ${count} items. Return ONLY valid JSON.`;
+    // Define feed item tool for structured output
+    // Note: Tool generates ALL items in a single call (returns array)
+    const feedItemTool = {
+        type: 'function',
+        function: {
+            name: 'generate_feed_items',
+            description: `Generate exactly ${count} educational feed items. Return an array of all items.`,
+            parameters: {
+                type: 'object',
+                properties: {
+                    items: {
+                        type: 'array',
+                        description: `Array of exactly ${count} feed items`,
+                        items: {
+                            type: 'object',
+                            properties: {
+                                type: {
+                                    type: 'string',
+                                    enum: ['did-you-know', 'question-answer'],
+                                    description: 'Type of feed item'
+                                },
+                                title: {
+                                    type: 'string',
+                                    description: 'Brief headline (max 80 characters)'
+                                },
+                                content: {
+                                    type: 'string',
+                                    description: 'Engaging 2-3 sentence summary for preview'
+                                },
+                                expandedContent: {
+                                    type: 'string',
+                                    description: '4-6 paragraphs with AT LEAST 4 fascinating facts. Include specific details, numbers, and memorable comparisons.'
+                                },
+                                mnemonic: {
+                                    type: 'string',
+                                    description: 'Creative memory aid - acronym, rhyme, or surprising connection'
+                                },
+                                topics: {
+                                    type: 'array',
+                                    items: { type: 'string' },
+                                    description: 'Array of topic keywords'
+                                },
+                                imageSearchTerms: {
+                                    type: 'string',
+                                    description: 'Specific search query for finding relevant images'
+                                }
+                            },
+                            required: ['type', 'title', 'content', 'expandedContent', 'mnemonic', 'topics', 'imageSearchTerms']
+                        },
+                        minItems: count,
+                        maxItems: count
+                    }
+                },
+                required: ['items']
+            }
+        }
+    };
 
     eventCallback('status', { message: 'Generating feed items...' });
     
     // Build model rotation sequence using intelligent selector
     const estimatedTokens = estimateTokenRequirements(
         [{ role: 'user', content: systemPrompt }],
-        false // no tools needed
+        true // tools needed for structured output
     );
     
     // providerPool is already in the correct array format
-    // Each item has: {type, apiKey, model, endpoint, ...}
     const uiProviders = providers.map(p => ({
         type: p.type,
         apiKey: p.apiKey,
         enabled: true
     })).filter(p => p.type && p.apiKey);
     
-    console.log(`🔍 Feed: Using ${uiProviders.length} providers for model selection (${providers.length} total in pool)`);
+    console.log(`🔍 Feed: Using ${uiProviders.length} providers for model selection`);
     
     const modelSequence = buildModelRotationSequence(uiProviders, {
-        needsTools: false,
+        needsTools: true, // Prefer tool support for structured output
         needsVision: false,
         estimatedTokens,
-        optimization: 'quality' // Use best models for feed generation
+        optimization: 'quality'
     });
     
     console.log(`🔍 Feed: Model sequence has ${modelSequence.length} models`);
@@ -229,46 +301,89 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
         throw new Error('No available models for feed generation');
     }
     
-    // Try models in sequence until one succeeds (automatic failover)
+    // Generate ALL items in a single LLM call, then stream results as we extract them
     let response = null;
     let lastError = null;
+    let selectedModel = null;
     
-    for (let i = 0; i < modelSequence.length; i++) {
-        const selectedModel = modelSequence[i];
-        console.log(`🎯 Feed: Trying model ${i + 1}/${modelSequence.length}: ${selectedModel.model}`);
+    for (let modelIndex = 0; modelIndex < modelSequence.length; modelIndex++) {
+        selectedModel = modelSequence[modelIndex];
+        console.log(`🎯 Feed: Trying model ${modelIndex + 1}/${modelSequence.length}: ${selectedModel.model}`);
+        
+        // Check provider capabilities
+        const capabilities = getStructuredOutputCapabilities(selectedModel.model);
+        console.log(`🎯 Feed: Provider capabilities:`, capabilities);
         
         try {
-            // Call LLM with new signature
-            response = await llmResponsesWithTools({
-                model: selectedModel.model,
-                input: [
-                    { role: 'user', content: systemPrompt }
-                ],
-                tools: [], // No tools needed for feed generation
-                options: {
-                    apiKey: selectedModel.apiKey,
-                    temperature: 0.8,
-                    maxTokens: 4096,
-                    stream: false
-                }
-            });
+            // Layer 1: Use tool definitions (preferred - LLM can make multiple tool calls)
+            if (capabilities.supportsTools) {
+                console.log(`🎯 Using tool definitions for structured output (${count} items)`);
+                response = await llmResponsesWithTools({
+                    model: selectedModel.model,
+                    input: [{ role: 'user', content: systemPrompt }],
+                    tools: [feedItemTool],
+                    // Note: Don't force tool_choice - let LLM decide how many times to call the tool
+                    options: {
+                        apiKey: selectedModel.apiKey,
+                        temperature: 0.8,
+                        maxTokens: 4096,
+                        stream: false
+                    }
+                });
+                
+                console.log(`✅ Feed: Successfully generated with ${selectedModel.model}`);
+                break;
+            }
             
-            // Success! Break out of retry loop
-            console.log(`✅ Feed: Successfully generated with ${selectedModel.model}`);
-            break;
+            // Layer 2: Use JSON mode (if tools not available but JSON mode is)
+            else if (capabilities.supportsJsonMode) {
+                console.log(`🎯 Using JSON mode for structured output (${count} items)`);
+                response = await llmResponsesWithTools({
+                    model: selectedModel.model,
+                    input: [{ role: 'user', content: systemPrompt }],
+                    tools: [],
+                    options: {
+                        apiKey: selectedModel.apiKey,
+                        temperature: 0.8,
+                        maxTokens: 4096,
+                        stream: false,
+                        response_format: { type: 'json_object' }
+                    }
+                });
+                
+                console.log(`✅ Feed: Successfully generated with ${selectedModel.model}`);
+                break;
+            }
+            
+            // Layer 3: Plain text with prompt (last resort)
+            else {
+                console.log(`🎯 Using plain text with prompt (${count} items)`);
+                response = await llmResponsesWithTools({
+                    model: selectedModel.model,
+                    input: [{ role: 'user', content: systemPrompt }],
+                    tools: [],
+                    options: {
+                        apiKey: selectedModel.apiKey,
+                        temperature: 0.8,
+                        maxTokens: 4096,
+                        stream: false
+                    }
+                });
+                
+                console.log(`✅ Feed: Successfully generated with ${selectedModel.model}`);
+                break;
+            }
             
         } catch (error) {
             lastError = error;
             const isRateLimitError = error.message?.includes('429') || 
-                                    error.message?.includes('rate limit') ||
-                                    error.message?.includes('quota exceeded');
+                                    error.message?.includes('rate limit');
             const isDecommissionedError = error.message?.includes('decommissioned') ||
                                          error.message?.includes('400');
             
             console.error(`❌ Feed: Model ${selectedModel.model} failed:`, error.message?.substring(0, 200));
             
-            // If not the last model, try next one
-            if (i < modelSequence.length - 1) {
+            if (modelIndex < modelSequence.length - 1) {
                 if (isRateLimitError) {
                     console.log(`⏭️ Feed: Rate limit hit, trying next model...`);
                 } else if (isDecommissionedError) {
@@ -284,75 +399,152 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
         }
     }
     
-    // If all models failed, throw the last error
     if (!response) {
         console.error(`❌ Feed: All ${modelSequence.length} models failed. Last error:`, lastError?.message);
         throw new Error(`All models failed. Last error: ${lastError?.message || 'Unknown error'}`);
     }
     
-    // Parse response
-    let parsedData;
-    try {
-        // Extract JSON from response - check multiple possible locations
-        const content = response.text || response.content || response.message?.content || response.choices?.[0]?.message?.content || '';
+    // Extract items from response and stream them as we find complete ones
+    const items = [];
+    let itemsData = [];
+    
+    // Try to extract from tool calls first (best case - structured output)
+    // Note: normalizeFromChat returns tool calls in response.output, not response.tool_calls
+    const toolCalls = response.output || response.tool_calls || [];
+    if (toolCalls && toolCalls.length > 0) {
+        console.log(`🎯 Feed: Found ${toolCalls.length} tool call(s)`);
         
-        console.log('🔍 Feed: Parsing LLM response');
-        console.log('🔍 Feed: Content length:', content.length, 'chars');
-        console.log('🔍 Feed: Content starts with:', content.substring(0, 100));
-        console.log('🔍 Feed: Content ends with:', content.substring(content.length - 100));
-        
-        // Try to extract JSON from markdown code blocks first
-        let jsonText = null;
-        // Use greedy matching to capture the entire JSON object (not lazy *?)
-        const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-        if (codeBlockMatch) {
-            jsonText = codeBlockMatch[1];
-            console.log('🔍 Feed: Found JSON in code block');
-        } else {
-            const jsonMatch = content.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                jsonText = jsonMatch[0];
-                console.log('🔍 Feed: Found JSON without code block');
+        for (let i = 0; i < toolCalls.length; i++) {
+            const toolCall = toolCalls[i];
+            // Handle normalized format (name, arguments) and raw format (function.name, function.arguments)
+            const toolName = toolCall.name || toolCall.function?.name;
+            const toolArgs = toolCall.arguments || toolCall.function?.arguments;
+            
+            if (toolName === 'generate_feed_items') {
+                try {
+                    const parsedArgs = typeof toolArgs === 'string'
+                        ? JSON.parse(toolArgs)
+                        : toolArgs;
+                    
+                    // Extract items array from tool call arguments
+                    const itemsArray = parsedArgs.items || [];
+                    console.log(`✅ Extracted ${itemsArray.length} items from tool call`);
+                    
+                    // Process and stream each item
+                    for (let j = 0; j < itemsArray.length; j++) {
+                        const itemData = itemsArray[j];
+                        itemsData.push(itemData);
+                        
+                        // Stream this item immediately
+                        const processedItem = {
+                            id: `feed-${Date.now()}-${j}`,
+                            type: itemData.type || 'did-you-know',
+                            title: itemData.title || `Fact ${j + 1}`,
+                            content: itemData.content || '',
+                            expandedContent: itemData.expandedContent || '',
+                            mnemonic: itemData.mnemonic || '',
+                            topics: itemData.topics || [],
+                            searchTerms: searchTerms,
+                            imageSearchTerms: itemData.imageSearchTerms || '',
+                            sources: searchResults.map(r => r.url).slice(0, 3),
+                            searchResults: searchResults
+                        };
+                        
+                        items.push(processedItem);
+                        
+                        // Emit incremental progress event
+                        eventCallback('item_generated', { 
+                            item: processedItem,
+                            progress: { current: j + 1, total: itemsArray.length }
+                        });
+                    }
+                } catch (parseError) {
+                    console.warn(`⚠️ Failed to parse tool call ${i + 1}:`, parseError.message);
+                }
             }
         }
+    }
+    
+    // If no tool calls or not enough items, try to parse JSON response
+    if (itemsData.length === 0) {
+        console.log('🎯 Feed: No tool calls found, trying JSON parsing');
+        const content = response.text || response.content || '';
         
-        if (!jsonText) {
-            console.error('❌ Feed: No JSON found in response');
-            console.error('Content length:', content.length);
-            console.error('Content preview:', content.substring(0, 500));
-            console.error('Full content:', content);
-            throw new Error('No JSON found in response');
+        console.log('🔍 Feed: Response content preview:', content.substring(0, 500));
+        console.log('🔍 Feed: Response structure:', {
+            hasText: !!response.text,
+            hasContent: !!response.content,
+            hasOutput: !!response.output,
+            hasToolCalls: !!response.tool_calls,
+            outputLength: response.output?.length || 0,
+            toolCallsLength: response.tool_calls?.length || 0,
+            keys: Object.keys(response)
+        });
+        
+        // Try robust JSON parsing to get items array
+        const parsedData = tryParseJson(content, { logAttempts: true });
+        
+        if (parsedData) {
+            console.log('🔍 Feed: Parsed data structure:', {
+                type: typeof parsedData,
+                isArray: Array.isArray(parsedData),
+                hasItems: !!parsedData.items,
+                keys: typeof parsedData === 'object' ? Object.keys(parsedData) : []
+            });
+            
+            if (parsedData.items && Array.isArray(parsedData.items)) {
+                itemsData = parsedData.items;
+                console.log(`✅ Parsed ${itemsData.length} items from JSON response`);
+            } else if (Array.isArray(parsedData)) {
+                itemsData = parsedData;
+                console.log(`✅ Parsed ${itemsData.length} items from JSON array`);
+            } else if (parsedData.type || parsedData.title || parsedData.content) {
+                // Single item returned without wrapper
+                itemsData = [parsedData];
+                console.log(`✅ Parsed 1 item from JSON response`);
+            } else {
+                console.error('❌ Parsed data but no recognizable structure:', parsedData);
+                throw new Error(`Failed to extract items from parsed data. Structure: ${JSON.stringify(Object.keys(parsedData))}`);
+            }
+            
+            // Stream each parsed item
+            for (let i = 0; i < itemsData.length; i++) {
+                const itemData = itemsData[i];
+                const processedItem = {
+                    id: `feed-${Date.now()}-${i}`,
+                    type: itemData.type || 'did-you-know',
+                    title: itemData.title || `Fact ${i + 1}`,
+                    content: itemData.content || '',
+                    expandedContent: itemData.expandedContent || '',
+                    mnemonic: itemData.mnemonic || '',
+                    topics: itemData.topics || [],
+                    searchTerms: searchTerms,
+                    imageSearchTerms: itemData.imageSearchTerms || '',
+                    sources: searchResults.map(r => r.url).slice(0, 3),
+                    searchResults: searchResults
+                };
+                
+                items.push(processedItem);
+                
+                // Emit incremental progress event
+                eventCallback('item_generated', { 
+                    item: processedItem,
+                    progress: { current: i + 1, total: Math.max(count, itemsData.length) }
+                });
+            }
+        } else {
+            console.error('❌ Feed: Failed to parse response content');
+            console.error('Response content length:', content.length);
+            console.error('Response content sample:', content.substring(0, 1000));
+            throw new Error('Failed to parse any items from LLM response. Check logs for response content.');
         }
-        
-        console.log('🔍 Feed: Attempting to parse JSON, length:', jsonText.length);
-        parsedData = JSON.parse(jsonText);
-        console.log('✅ Feed: Successfully parsed JSON');
-    } catch (error) {
-        console.error('❌ Feed: Failed to parse LLM response:', error);
-        console.error('Response type:', typeof response);
-        console.error('Response keys:', Object.keys(response));
-        console.error('Raw response:', response);
-        throw new Error('Failed to parse LLM response');
     }
     
-    if (!parsedData.items || !Array.isArray(parsedData.items)) {
-        throw new Error('Invalid response format: missing items array');
-    }
+    console.log(`✅ Feed: Extracted ${items.length} items total`);
     
-    // Process items and add metadata including search results
-    const items = parsedData.items.map((itemData, idx) => ({
-        id: `feed-${Date.now()}-${idx}`, // Add unique ID
-        type: itemData.type || 'did-you-know',
-        title: itemData.title || `Fact ${idx + 1}`,
-        content: itemData.content || '',
-        expandedContent: itemData.expandedContent || '', // Detailed article
-        mnemonic: itemData.mnemonic || '', // Memory aid
-        topics: itemData.topics || [],
-        searchTerms: searchTerms, // Pass original search terms
-        imageSearchTerms: itemData.imageSearchTerms || '',
-        sources: searchResults.map(r => r.url).slice(0, 3),
-        searchResults: searchResults // Pass search results for image extraction
-    }));
+    if (items.length === 0) {
+        throw new Error('No items generated from LLM response');
+    }
     
     // Fetch images for feed items (in parallel) and emit each item as it completes
     eventCallback('status', { message: 'Fetching images...' });
@@ -449,11 +641,17 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
                             console.warn(`⚠️ No available image providers, skipping AI generation`);
                             // Fall through to web search
                         } else {
-                            // Sort by fallback priority (lower = preferred)
-                            availableModels.sort((a, b) => a.fallbackPriority - b.fallbackPriority);
+                            // Sort by pricing (lowest cost first), then fallback priority
+                            availableModels.sort((a, b) => {
+                                const costA = parseFloat(a.pricing?.perImage || '999');
+                                const costB = parseFloat(b.pricing?.perImage || '999');
+                                if (costA !== costB) return costA - costB;
+                                return a.fallbackPriority - b.fallbackPriority;
+                            });
                             const selectedModel = availableModels[0];
+                            const costPerImage = parseFloat(selectedModel.pricing?.perImage || '0');
                             
-                            console.log(`🎯 Selected image model: ${selectedModel.provider}/${selectedModel.model} (priority: ${selectedModel.fallbackPriority})`);
+                            console.log(`🎯 Selected cheapest image model: ${selectedModel.provider}/${selectedModel.model} ($${costPerImage.toFixed(6)}/image, priority: ${selectedModel.fallbackPriority})`);
                             
                             // Generate image with selected model (includes automatic fallback)
                             const userEmailForImages = generationContext.userEmail || generationContext.email || generationContext.user;
@@ -670,7 +868,11 @@ async function handler(event, responseStream, context) {
         const userPreferences = body.userPreferences || null;
         let personalizedSearchTerms = searchTerms;
         
-        if (userPreferences && interactions.length > 0) {
+        // PRIORITY: User-provided search terms take precedence over personalization
+        if (searchTerms && searchTerms.length > 0) {
+            console.log(`👤 Using ${searchTerms.length} user-provided search terms:`, searchTerms);
+            personalizedSearchTerms = searchTerms;
+        } else if (userPreferences && interactions.length > 0) {
             console.log(`🎯 Personalizing feed using ${interactions.length} interactions, ${userPreferences.quizEngagementCount} quiz engagements`);
             
             try {
@@ -701,7 +903,7 @@ async function handler(event, responseStream, context) {
                 // Fallback to provided search terms
             }
         } else {
-            console.log(`📋 Using ${searchTerms.length} default search terms (no personalization data)`);
+            console.log(`📋 No search terms provided and no personalization data available`);
         }
         
         console.log(`📰 Feed generation request from ${userEmail}:`, {

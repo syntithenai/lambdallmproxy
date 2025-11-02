@@ -3,12 +3,13 @@
  * Generates interactive multiple-choice quizzes from content using LLM
  */
 
-const { llmResponsesWithTools } = require('../llm_tools_adapter');
+const { llmResponsesWithTools, getStructuredOutputCapabilities } = require('../llm_tools_adapter');
 const { authenticateRequest } = require('../auth');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
 const { buildProviderPool } = require('../credential-pool');
 const { searchWeb } = require('../tools/search_web');
 const { buildModelRotationSequence, estimateTokenRequirements } = require('../model-selector-v2');
+const { robustJsonParse, tryParseJson } = require('../utils/json-parser');
 
 // Load provider catalog
 const { loadProviderCatalog } = require('../utils/catalog-loader');
@@ -216,19 +217,58 @@ Generate a quiz with exactly 10 questions. Each question must test understanding
         const selectedModel = modelSequence[i];
         console.log(`🎯 Quiz: Trying model ${i + 1}/${modelSequence.length}: ${selectedModel.model}`);
         
+        // Check provider capabilities
+        const capabilities = getStructuredOutputCapabilities(selectedModel.model);
+        console.log(`🎯 Quiz: Provider capabilities:`, capabilities);
+        
         try {
-            result = await llmResponsesWithTools({
-                model: selectedModel.model,
-                input: [{ role: 'user', content: quizPrompt }],
-                tools: [quizTool],
-                tool_choice: { type: 'function', function: { name: 'generate_quiz' } },
-                options: {
-                    apiKey: selectedModel.apiKey,
-                    temperature: 0.7,
-                    maxTokens: 5000,
-                    stream: false
-                }
-            });
+            // Layer 1: Use tool definitions (preferred)
+            if (capabilities.supportsTools) {
+                console.log('🎯 Using tool definitions for structured quiz output');
+                result = await llmResponsesWithTools({
+                    model: selectedModel.model,
+                    input: [{ role: 'user', content: quizPrompt }],
+                    tools: [quizTool],
+                    tool_choice: { type: 'function', function: { name: 'generate_quiz' } },
+                    options: {
+                        apiKey: selectedModel.apiKey,
+                        temperature: 0.7,
+                        maxTokens: 5000,
+                        stream: false
+                    }
+                });
+            }
+            // Layer 2: Use JSON mode (if tools not supported but JSON mode is)
+            else if (capabilities.supportsJsonMode) {
+                console.log('🎯 Using JSON mode for structured quiz output');
+                result = await llmResponsesWithTools({
+                    model: selectedModel.model,
+                    input: [{ role: 'user', content: quizPrompt }],
+                    tools: [],
+                    options: {
+                        apiKey: selectedModel.apiKey,
+                        temperature: 0.7,
+                        maxTokens: 5000,
+                        stream: false,
+                        response_format: { type: 'json_object' }
+                    }
+                });
+            }
+            // Layer 3: Plain text with prompt (last resort)
+            else {
+                console.log('🎯 Using plain text with prompt for quiz output');
+                result = await llmResponsesWithTools({
+                    model: selectedModel.model,
+                    input: [{ role: 'user', content: quizPrompt }],
+                    tools: [],
+                    options: {
+                        apiKey: selectedModel.apiKey,
+                        temperature: 0.7,
+                        maxTokens: 5000,
+                        stream: false
+                    }
+                });
+            }
             
             console.log(`✅ Quiz: Successfully generated with ${selectedModel.model}`);
             break;
@@ -265,14 +305,13 @@ Generate a quiz with exactly 10 questions. Each question must test understanding
         throw new Error(`All models failed. Last error: ${lastError?.message || 'Unknown error'}`);
     }
     
-    // Extract quiz data from tool call response
+    // Extract quiz data with multi-layer approach
     let quiz;
     try {
-        // Check if response has tool calls (structured output)
+        // Layer 1: Extract from tool calls (preferred)
         if (result.tool_calls && result.tool_calls.length > 0) {
             const toolCall = result.tool_calls[0];
             if (toolCall.function && toolCall.function.name === 'generate_quiz') {
-                // Parse arguments (might be string or object)
                 quiz = typeof toolCall.function.arguments === 'string'
                     ? JSON.parse(toolCall.function.arguments)
                     : toolCall.function.arguments;
@@ -280,13 +319,18 @@ Generate a quiz with exactly 10 questions. Each question must test understanding
             }
         }
         
-        // Fallback to parsing content as JSON (if no tool call)
+        // Layer 2: Robust JSON parsing (fallback)
         if (!quiz) {
-            const response = (result.content || result.text || '').trim();
-            const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, response];
-            const jsonStr = jsonMatch[1] || response;
-            quiz = JSON.parse(jsonStr);
-            console.log('✅ Parsed quiz from JSON response');
+            const content = (result.content || result.text || '').trim();
+            quiz = tryParseJson(content, { logAttempts: true });
+            
+            if (quiz) {
+                console.log('✅ Parsed quiz using robust JSON parser');
+            }
+        }
+        
+        if (!quiz) {
+            throw new Error('Failed to extract quiz data from response');
         }
     } catch (parseError) {
         console.error('❌ Failed to extract quiz data:', parseError.message);

@@ -6,7 +6,7 @@ export function PrivacyPolicy() {
   return (
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+      <div className="flex items-center justify-between p-4 border-b dark:border-gray-700 sticky top-0 z-10 bg-white dark:bg-gray-900">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/')}

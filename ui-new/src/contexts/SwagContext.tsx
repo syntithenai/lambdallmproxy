@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { storage, StorageError } from '../utils/storage';
 import { useToast } from '../components/ToastManager';
 import { ragSyncService } from '../services/ragSyncService';
@@ -28,7 +28,7 @@ export interface ContentSnippet {
 
 interface SwagContextType {
   snippets: ContentSnippet[];
-  addSnippet: (content: string, sourceType: ContentSnippet['sourceType'], title?: string) => Promise<ContentSnippet | undefined>;
+  addSnippet: (content: string, sourceType: ContentSnippet['sourceType'], title?: string, tags?: string[]) => Promise<ContentSnippet | undefined>;
   updateSnippet: (id: string, updates: Partial<ContentSnippet>) => Promise<void>;
   deleteSnippets: (ids: string[]) => void;
   mergeSnippets: (ids: string[]) => void;
@@ -69,6 +69,55 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { user, getToken } = useAuth();
   const { settings } = useSettings();
   const { getCurrentProjectId } = useProject();
+  
+  // Sync queue to batch multiple snippet operations
+  const syncQueueRef = useRef<{ snippets: ContentSnippet[]; timeoutId?: NodeJS.Timeout }>({
+    snippets: [],
+  });
+  
+  // Flush sync queue - sends batched snippets to Google Sheets
+  const flushSyncQueue = useCallback(async () => {
+    if (syncQueueRef.current.snippets.length === 0) return;
+    
+    const toSync = [...syncQueueRef.current.snippets];
+    syncQueueRef.current.snippets = [];
+    
+    const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+    const googleLinked = localStorage.getItem('rag_google_linked') === 'true';
+    const canUseClientSync = spreadsheetId && googleLinked && isGoogleIdentityAvailable();
+    
+    if (canUseClientSync && user?.email) {
+      try {
+        const { syncSnippetsToSheets } = await import('../services/googleSheetsClient');
+        await syncSnippetsToSheets(spreadsheetId, toSync);
+      } catch (error) {
+        console.error('❌ Failed to sync batch:', error);
+        // Fallback: queue individually via backend
+        toSync.forEach(snippet => {
+          ragSyncService.queueSync({
+            type: 'push-snippet',
+            data: snippet,
+            userEmail: user.email!,
+          });
+        });
+      }
+    }
+  }, [user?.email]);
+  
+  // Queue a snippet for batched sync
+  const queueSnippetSync = useCallback((snippet: ContentSnippet) => {
+    syncQueueRef.current.snippets.push(snippet);
+    
+    // Clear existing timeout
+    if (syncQueueRef.current.timeoutId) {
+      clearTimeout(syncQueueRef.current.timeoutId);
+    }
+    
+    // Set new timeout to flush after 2 seconds of inactivity
+    syncQueueRef.current.timeoutId = setTimeout(() => {
+      flushSyncQueue();
+    }, 2000);
+  }, [flushSyncQueue]);
 
   // Filter snippets by current project
   const snippets = useMemo(() => {
@@ -545,7 +594,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string): Promise<ContentSnippet | undefined> => {
+  const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string, tags?: string[]): Promise<ContentSnippet | undefined> => {
     // Process content: Extract base64 images and replace with references
     let processedContent = content;
     try {
@@ -561,8 +610,13 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const existingSnippet = allSnippets.find(s => s.content.trim() === processedContent.trim());
     
     if (existingSnippet) {
-      // Update the timestamp to move it to the top
-      await updateSnippet(existingSnippet.id, { updateDate: Date.now() });
+      // Update the timestamp to move it to the top, and merge tags if provided
+      const updates: Partial<ContentSnippet> = { updateDate: Date.now() };
+      if (tags && tags.length > 0) {
+        const existingTags = existingSnippet.tags || [];
+        updates.tags = [...new Set([...existingTags, ...tags])];
+      }
+      await updateSnippet(existingSnippet.id, updates);
       return existingSnippet;
     }
     
@@ -576,17 +630,28 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       timestamp: now,
       updateDate: now,
       selected: false,
+      tags: tags && tags.length > 0 ? tags : undefined,
       projectId: currentProjectId || undefined  // Auto-tag with current project
     };
     setAllSnippets(prev => [newSnippet, ...prev]);
 
-    // Queue sync if enabled
+    // Queue snippet for batched sync if enabled
     if (isSyncEnabled() && user?.email) {
-      ragSyncService.queueSync({
-        type: 'push-snippet',
-        data: newSnippet,
-        userEmail: user.email,
-      });
+      const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+      const googleLinked = localStorage.getItem('rag_google_linked') === 'true';
+      const canUseClientSync = spreadsheetId && googleLinked && isGoogleIdentityAvailable();
+      
+      if (canUseClientSync) {
+        // Add to sync queue (batched to avoid rate limits)
+        queueSnippetSync(newSnippet);
+      } else {
+        // Backend sync (Lambda)
+        ragSyncService.queueSync({
+          type: 'push-snippet',
+          data: newSnippet,
+          userEmail: user.email,
+        });
+      }
     }
 
     // Auto-embed if enabled (use original content for embedding, not refs)
@@ -617,13 +682,22 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       snippet.id === id ? updatedSnippet : snippet
     ));
 
-    // Queue sync if enabled
+    // Queue updated snippet for batched sync if enabled
     if (isSyncEnabled() && user?.email) {
-      ragSyncService.queueSync({
-        type: 'push-snippet',
-        data: updatedSnippet,
-        userEmail: user.email,
-      });
+      const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+      const googleLinked = localStorage.getItem('rag_google_linked') === 'true';
+      const canUseClientSync = spreadsheetId && googleLinked && isGoogleIdentityAvailable();
+      
+      if (canUseClientSync) {
+        // Add to sync queue (batched to avoid rate limits)
+        queueSnippetSync(updatedSnippet);
+      } else {
+        ragSyncService.queueSync({
+          type: 'push-snippet',
+          data: updatedSnippet,
+          userEmail: user.email,
+        });
+      }
     }
 
     // If content changed, re-embed if auto-embed is enabled
@@ -641,18 +715,43 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteSnippets = (ids: string[]) => {
+  const deleteSnippets = async (ids: string[]) => {
     setAllSnippets(prev => prev.filter(snippet => !ids.includes(snippet.id)));
     
-    // Queue sync for each deleted snippet if enabled
+    // Delete from Google Sheets if enabled
     if (isSyncEnabled() && user?.email) {
-      ids.forEach(id => {
-        ragSyncService.queueSync({
-          type: 'delete-snippet',
-          data: { id },
-          userEmail: user!.email!,
+      const spreadsheetId = localStorage.getItem('rag_spreadsheet_id');
+      const googleLinked = localStorage.getItem('rag_google_linked') === 'true';
+      const canUseClientSync = spreadsheetId && googleLinked && isGoogleIdentityAvailable();
+      
+      if (canUseClientSync) {
+        // Client-side direct delete (no Lambda)
+        try {
+          console.log(`🗑️  Deleting ${ids.length} snippets from Google Sheets (client-side)...`);
+          const { deleteSnippetsFromSheets } = await import('../services/googleSheetsClient');
+          const deletedCount = await deleteSnippetsFromSheets(spreadsheetId, ids);
+          console.log(`✅ Deleted ${deletedCount} snippets from Google Sheets`);
+        } catch (clientError) {
+          console.error('❌ Client-side snippet delete failed, falling back to backend:', clientError);
+          // Fallback to backend
+          ids.forEach(id => {
+            ragSyncService.queueSync({
+              type: 'delete-snippet',
+              data: { id },
+              userEmail: user!.email!,
+            });
+          });
+        }
+      } else {
+        // Backend delete (Lambda)
+        ids.forEach(id => {
+          ragSyncService.queueSync({
+            type: 'delete-snippet',
+            data: { id },
+            userEmail: user!.email!,
+          });
         });
-      });
+      }
     }
   };
 
@@ -705,7 +804,12 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const tagSet = new Set<string>();
     snippets.forEach(snippet => {
       if (snippet.tags) {
-        snippet.tags.forEach(tag => tagSet.add(tag));
+        snippet.tags.forEach(tag => {
+          // Exclude admin: tags from display and filtering
+          if (!tag.startsWith('admin:')) {
+            tagSet.add(tag);
+          }
+        });
       }
     });
     return Array.from(tagSet).sort();

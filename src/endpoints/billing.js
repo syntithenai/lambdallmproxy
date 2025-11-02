@@ -5,7 +5,7 @@
  */
 
 const { authenticateRequest } = require('../auth');
-const { getUserTotalCost, getUserBillingData } = require('../services/google-sheets-logger');
+const { getUserTotalCost, getUserBillingData, logLambdaInvocation: logLambdaInvocationToSheets } = require('../services/google-sheets-logger');
 const { getCachedCreditBalance } = require('../utils/credit-cache');
 const { CREDIT_LIMIT } = require('./usage');
 const { loadEnvironmentProviders } = require('../credential-pool');
@@ -18,6 +18,47 @@ function getResponseHeaders() {
     return {
         'Content-Type': 'application/json'
     };
+}
+
+/**
+ * Log Lambda invocation to Google Sheets
+ * @param {string} authHeader - Authorization header
+ * @param {string} endpoint - Endpoint path
+ * @param {number} requestStartTime - Request start timestamp
+ * @param {number} memoryLimitMB - Lambda memory limit
+ * @param {string} requestId - Lambda request ID
+ * @param {string|null} errorCode - Error code if request failed
+ * @param {string} userEmail - User email (optional, extracted from auth if not provided)
+ */
+async function logLambdaInvocation(authHeader, endpoint, requestStartTime, memoryLimitMB, requestId, errorCode = null, userEmail = null) {
+    try {
+        const durationMs = Date.now() - requestStartTime;
+        
+        // If userEmail not provided, try to extract from auth header
+        if (!userEmail && authHeader) {
+            try {
+                const authResult = await authenticateRequest(authHeader);
+                userEmail = authResult.email || 'unknown';
+            } catch (err) {
+                userEmail = 'unknown';
+            }
+        }
+        
+        await logLambdaInvocationToSheets({
+            userEmail: userEmail || 'unknown',
+            endpoint,
+            durationMs,
+            memoryLimitMB,
+            requestId,
+            errorCode,
+            timestamp: new Date().toISOString()
+        });
+        
+        console.log(`💰 Logged Lambda invocation: ${endpoint} (${durationMs}ms, ${memoryLimitMB}MB, $${(durationMs * memoryLimitMB * 0.0000000167).toFixed(8)})`);
+    } catch (err) {
+        console.error('⚠️ Failed to log Lambda invocation:', err.message);
+        // Don't throw - logging failure shouldn't break the request
+    }
 }
 
 /**
@@ -111,8 +152,12 @@ function calculateTotals(transactions) {
  * Handle GET /billing - Read user's billing data
  * @param {Object} event - Lambda event
  * @param {Object} responseStream - Response stream
+ * @param {Object} context - Lambda context
+ * @param {number} requestStartTime - Request start timestamp
+ * @param {number} memoryLimitMB - Lambda memory limit
+ * @param {string} requestId - Lambda request ID
  */
-async function handleGetBilling(event, responseStream) {
+async function handleGetBilling(event, responseStream, context, requestStartTime, memoryLimitMB, requestId) {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') 
         ? globalThis.awslambda 
         : require('aws-lambda');
@@ -120,6 +165,8 @@ async function handleGetBilling(event, responseStream) {
     console.log('📊 [BILLING] handleGetBilling called');
     console.log('📊 [BILLING] Event headers:', JSON.stringify(event.headers || {}, null, 2));
     console.log('📊 [BILLING] Event path:', event.rawPath || event.path);
+
+    let userEmail = 'unknown'; // Track for logging
 
     try {
         // Authenticate request
@@ -137,6 +184,10 @@ async function handleGetBilling(event, responseStream) {
 
         if (!authResult.authenticated) {
             console.error('❌ [BILLING] Authentication failed');
+            
+            // Log Lambda invocation (unauthenticated request)
+            await logLambdaInvocation(authHeader, '/billing', requestStartTime, memoryLimitMB, requestId, 'UNAUTHORIZED');
+            
             const metadata = {
                 statusCode: 401,
                 headers: getResponseHeaders()
@@ -150,7 +201,7 @@ async function handleGetBilling(event, responseStream) {
             return;
         }
 
-        const userEmail = authResult.email || 'unknown';
+        userEmail = authResult.email || 'unknown';
 
         // Parse query parameters for filtering
         const filters = {};
@@ -423,12 +474,18 @@ async function handleGetBilling(event, responseStream) {
         }));
         responseStream.end();
 
+        // Log Lambda invocation (success)
+        await logLambdaInvocation(authHeader, '/billing', requestStartTime, memoryLimitMB, requestId, null, userEmail);
+
     } catch (error) {
         console.error('❌ [BILLING] Error reading billing data:', {
             message: error.message,
             stack: error.stack,
             name: error.name
         });
+
+        // Log Lambda invocation (error)
+        await logLambdaInvocation(authHeader, '/billing', requestStartTime, memoryLimitMB, requestId, 'ERROR', userEmail);
 
         const metadata = {
             statusCode: 500,
@@ -449,11 +506,17 @@ async function handleGetBilling(event, responseStream) {
  * Handle DELETE /billing/clear - Clear billing data
  * @param {Object} event - Lambda event
  * @param {Object} responseStream - Response stream
+ * @param {Object} context - Lambda context
+ * @param {number} requestStartTime - Request start timestamp
+ * @param {number} memoryLimitMB - Lambda memory limit
+ * @param {string} requestId - Lambda request ID
  */
-async function handleClearBilling(event, responseStream) {
+async function handleClearBilling(event, responseStream, context, requestStartTime, memoryLimitMB, requestId) {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') 
         ? globalThis.awslambda 
         : require('aws-lambda');
+
+    let userEmail = 'unknown'; // Track for logging
 
     try {
         // Authenticate request
@@ -461,6 +524,9 @@ async function handleClearBilling(event, responseStream) {
         const authResult = await authenticateRequest(authHeader);
 
         if (!authResult.authenticated) {
+            // Log Lambda invocation (unauthenticated request)
+            await logLambdaInvocation(authHeader, '/billing/clear', requestStartTime, memoryLimitMB, requestId, 'UNAUTHORIZED');
+            
             const metadata = {
                 statusCode: 401,
                 headers: getResponseHeaders()
@@ -474,10 +540,10 @@ async function handleClearBilling(event, responseStream) {
             return;
         }
 
-        const userEmail = authResult.email || 'unknown';
+        userEmail = authResult.email || 'unknown';
 
-        // Extract Google Drive access token from custom header (for Sheets API access)
-        let accessToken = event.headers?.['X-Google-Access-Token'] || event.headers?.['x-google-access-token'];
+        // Extract Google Drive access token from custom header
+        const driveAccessToken = event.headers['x-drive-token'] || event.headers['X-Drive-Token'] || null;
         
         if (!accessToken) {
             const metadata = {
@@ -552,8 +618,14 @@ async function handleClearBilling(event, responseStream) {
         }));
         responseStream.end();
 
+        // Log Lambda invocation (success)
+        await logLambdaInvocation(authHeader, '/billing/clear', requestStartTime, memoryLimitMB, requestId, null, userEmail);
+
     } catch (error) {
         console.error('❌ Error clearing billing data:', error);
+
+        // Log Lambda invocation (error)
+        await logLambdaInvocation(authHeader, '/billing/clear', requestStartTime, memoryLimitMB, requestId, 'ERROR', userEmail);
 
         const metadata = {
             statusCode: 500,
@@ -573,13 +645,19 @@ async function handleClearBilling(event, responseStream) {
  * Handle GET /billing/transactions - Get user transaction history with credit balance
  * @param {Object} event - Lambda event
  * @param {Object} responseStream - Response stream
+ * @param {Object} context - Lambda context
+ * @param {number} requestStartTime - Request start timestamp
+ * @param {number} memoryLimitMB - Lambda memory limit
+ * @param {string} requestId - Lambda request ID
  */
-async function handleGetTransactions(event, responseStream) {
+async function handleGetTransactions(event, responseStream, context, requestStartTime, memoryLimitMB, requestId) {
     const awslambda = (typeof globalThis.awslambda !== 'undefined') 
         ? globalThis.awslambda 
         : require('aws-lambda');
 
     console.log('📊 [BILLING] handleGetTransactions called');
+
+    let userEmail = 'unknown'; // Track for logging
 
     try {
         // Authenticate request
@@ -587,6 +665,9 @@ async function handleGetTransactions(event, responseStream) {
         const authResult = await authenticateRequest(authHeader);
 
         if (!authResult.authenticated) {
+            // Log Lambda invocation (unauthenticated request)
+            await logLambdaInvocation(authHeader, '/billing/transactions', requestStartTime, memoryLimitMB, requestId, 'UNAUTHORIZED');
+            
             const metadata = {
                 statusCode: 401,
                 headers: getResponseHeaders()
@@ -600,7 +681,7 @@ async function handleGetTransactions(event, responseStream) {
             return;
         }
 
-        const userEmail = authResult.email || 'unknown';
+        userEmail = authResult.email || 'unknown';
         console.log(`📊 Getting transactions for user: ${userEmail}`);
 
         // Get transactions from service sheet
@@ -622,6 +703,9 @@ async function handleGetTransactions(event, responseStream) {
             count: transactions.length
         }));
         responseStream.end();
+        
+        // Log Lambda invocation (success)
+        await logLambdaInvocation(event.headers?.Authorization || event.headers?.authorization || '', '/billing/transactions', requestStartTime, memoryLimitMB, requestId, null, userEmail);
 
     } catch (error) {
         console.error('❌ [BILLING] Error getting transactions:', error);
@@ -637,6 +721,9 @@ async function handleGetTransactions(event, responseStream) {
             code: 'READ_ERROR'
         }));
         responseStream.end();
+        
+        // Log Lambda invocation (error)
+        await logLambdaInvocation(event.headers?.Authorization || event.headers?.authorization || '', '/billing/transactions', requestStartTime, memoryLimitMB, requestId, 'ERROR', userEmail);
     }
 }
 
@@ -652,20 +739,25 @@ async function handler(event, responseStream, context) {
 
     console.log(`📊 Billing endpoint: ${method} ${path}`);
 
+    // Extract Lambda metrics for logging
+    const requestStartTime = Date.now();
+    const memoryLimitMB = context?.memoryLimitInMB || 0;
+    const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}`;
+
     // GET /billing/transactions - Get transaction history with credit balance
     if (path === '/billing/transactions' && method === 'GET') {
-        return await handleGetTransactions(event, responseStream);
+        return await handleGetTransactions(event, responseStream, context, requestStartTime, memoryLimitMB, requestId);
     }
 
     // GET/POST /billing - Read billing data (includes TTS capabilities)
     // POST accepts UI providers in body for embedding availability check
     if (path === '/billing' && (method === 'GET' || method === 'POST')) {
-        return await handleGetBilling(event, responseStream);
+        return await handleGetBilling(event, responseStream, context, requestStartTime, memoryLimitMB, requestId);
     }
 
     // DELETE /billing/clear - Clear billing data
     if (path === '/billing/clear' && method === 'DELETE') {
-        return await handleClearBilling(event, responseStream);
+        return await handleClearBilling(event, responseStream, context, requestStartTime, memoryLimitMB, requestId);
     }
 
     // Unknown route

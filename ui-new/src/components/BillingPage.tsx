@@ -45,6 +45,14 @@ interface Totals {
     provider: string; 
     model: string;
   }>;
+  byEndpoint?: Record<string, { 
+    cost: number; 
+    count: number; 
+    totalDuration: number; 
+    avgDuration: number; 
+    totalMemory: number; 
+    avgMemory: number;
+  }>;
   dateRange?: {
     start: string | null;
     end: string | null;
@@ -453,7 +461,7 @@ const BillingPage: React.FC = () => {
       t.tokensIn,
       t.tokensOut,
       t.totalTokens,
-      t.cost.toFixed(6),
+      t.cost.toFixed(8),
       t.durationMs,
       t.memoryLimitMB || '',
       t.memoryUsedMB || '',
@@ -706,33 +714,75 @@ const BillingPage: React.FC = () => {
   const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
 
   // Calculate totals from filtered data
-  const calculateFilteredTotals = (transactions: Transaction[], excludeCredits: boolean = false) => {
+  const calculateFilteredTotals = (transactions: Transaction[], excludeCredits: boolean = false, excludeAWS: boolean = false) => {
     const byType: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number }> = {};
     const byProvider: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number }> = {};
     const byModel: Record<string, { cost: number; tokens: number; tokensIn: number; tokensOut: number; count: number; provider: string }> = {};
+    const byEndpoint: Record<string, { cost: number; count: number; totalDuration: number; avgDuration: number; totalMemory: number; avgMemory: number }> = {};
     let totalCost = 0;
     let totalTokens = 0;
     let totalTokensIn = 0;
     let totalTokensOut = 0;
 
     // Count user queries vs LLM calls correctly:
-    // - User queries: Count only 'chat' type transactions (initial user requests)
+    // - User queries: Count unique request IDs (each user query has a unique requestId)
     // - LLM calls: Count all LLM API calls (chat, chat_iteration, guardrail, etc.)
-    const userTransactions = transactions.filter(tx => 
-      tx.type === 'chat'  // Only count initial user chat requests
+    
+    // Count unique request IDs to get user queries
+    const uniqueRequestIds = new Set(
+      transactions
+        .filter(tx => tx.requestId && tx.type !== 'lambda_invocation' && tx.type !== 'credit_added')
+        .map(tx => tx.requestId)
     );
+    const totalUserQueries = uniqueRequestIds.size;
+    
+    // Count all LLM calls (excluding Lambda invocations and credits)
     const llmCalls = transactions.filter(tx => 
       tx.type !== 'summary' && 
       tx.type !== 'credit_added' && 
-      tx.type !== 'lambda_invocation'  // Exclude non-LLM transactions
+      tx.type !== 'lambda_invocation'
     );
-    const totalUserQueries = userTransactions.length;
     const totalLLMCalls = llmCalls.length;
+    
+    console.log('📊 Transaction counts:', {
+      totalTransactions: transactions.length,
+      uniqueRequestIds: totalUserQueries,
+      totalLLMCalls: totalLLMCalls,
+      sampleTransactionTypes: transactions.slice(0, 5).map(tx => ({ type: tx.type, requestId: tx.requestId, model: tx.model }))
+    });
 
     transactions.forEach(tx => {
       // Skip invalid transactions
-      if (!tx || !tx.model || !tx.provider) {
+      if (!tx || !tx.model) {
         console.warn('Skipping invalid transaction:', tx);
+        return;
+      }
+      
+      // Fix unknown provider for known models
+      let provider = tx.provider || 'unknown';
+      if (provider === 'unknown' && tx.model) {
+        // Detect provider from model name
+        if (tx.model.includes('gemini')) {
+          provider = 'gemini';
+        } else if (tx.model.includes('gpt') || tx.model.includes('o1-')) {
+          provider = 'openai';
+        } else if (tx.model.includes('llama') || tx.model.includes('mixtral')) {
+          provider = 'groq';
+        }
+      }
+      
+      // Normalize AWS provider names (can be 'aws', 'aws-lambda', or 'AWS')
+      if (provider && (provider === 'aws-lambda' || provider.toLowerCase() === 'aws')) {
+        provider = 'aws';
+      }
+      
+      // Update transaction provider if it was fixed
+      if (provider !== tx.provider) {
+        tx.provider = provider;
+      }
+      
+      // Skip AWS transactions if requested
+      if (excludeAWS && provider === 'aws') {
         return;
       }
       
@@ -744,30 +794,69 @@ const BillingPage: React.FC = () => {
       totalTokensIn += tx.tokensIn || 0;
       totalTokensOut += tx.tokensOut || 0;
 
-      // By type
-      const type = String(tx.type);
-      if (!byType[type]) byType[type] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0 };
-      byType[type].cost += tx.cost;
-      byType[type].tokens += tx.totalTokens || 0;
-      byType[type].tokensIn += tx.tokensIn || 0;
-      byType[type].tokensOut += tx.tokensOut || 0;
-      byType[type].count += 1;
+      // By type (exclude AWS)
+      if (provider !== 'aws') {
+        const type = String(tx.type);
+        if (!byType[type]) byType[type] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0 };
+        byType[type].cost += tx.cost;
+        byType[type].tokens += tx.totalTokens || 0;
+        byType[type].tokensIn += tx.tokensIn || 0;
+        byType[type].tokensOut += tx.tokensOut || 0;
+        byType[type].count += 1;
+      }
 
-      // By provider
-      if (!byProvider[tx.provider]) byProvider[tx.provider] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0 };
-      byProvider[tx.provider].cost += tx.cost;
-      byProvider[tx.provider].tokens += tx.totalTokens || 0;
-      byProvider[tx.provider].tokensIn += tx.tokensIn || 0;
-      byProvider[tx.provider].tokensOut += tx.tokensOut || 0;
-      byProvider[tx.provider].count += 1;
+      // By provider (exclude AWS)
+      if (provider !== 'aws') {
+        if (!byProvider[provider]) byProvider[provider] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0 };
+        byProvider[provider].cost += tx.cost;
+        byProvider[provider].tokens += tx.totalTokens || 0;
+        byProvider[provider].tokensIn += tx.tokensIn || 0;
+        byProvider[provider].tokensOut += tx.tokensOut || 0;
+        byProvider[provider].count += 1;
+      }
 
-      // By model (with provider information)
-      if (!byModel[tx.model]) byModel[tx.model] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0, provider: tx.provider };
-      byModel[tx.model].cost += tx.cost;
-      byModel[tx.model].tokens += tx.totalTokens || 0;
-      byModel[tx.model].tokensIn += tx.tokensIn || 0;
-      byModel[tx.model].tokensOut += tx.tokensOut || 0;
-      byModel[tx.model].count += 1;
+      // By model (exclude AWS)
+      if (provider !== 'aws') {
+        if (!byModel[tx.model]) byModel[tx.model] = { cost: 0, tokens: 0, tokensIn: 0, tokensOut: 0, count: 0, provider: provider };
+        byModel[tx.model].cost += tx.cost;
+        byModel[tx.model].tokens += tx.totalTokens || 0;
+        byModel[tx.model].tokensIn += tx.tokensIn || 0;
+        byModel[tx.model].tokensOut += tx.tokensOut || 0;
+        byModel[tx.model].count += 1;
+      }
+      
+      // By endpoint (AWS only)
+      if (provider === 'aws') {
+        const endpoint = tx.model || 'unknown';
+        if (!byEndpoint[endpoint]) byEndpoint[endpoint] = { cost: 0, count: 0, totalDuration: 0, avgDuration: 0, totalMemory: 0, avgMemory: 0 };
+        byEndpoint[endpoint].cost += tx.cost;
+        byEndpoint[endpoint].count += 1;
+        byEndpoint[endpoint].totalDuration += tx.durationMs || 0;
+        
+        // Extract allocated memory from breakdownJson (only allocated memory matters for Lambda pricing)
+        let memoryLimitMB = 0;
+        if (tx.breakdownJson) {
+          try {
+            const metadata = JSON.parse(tx.breakdownJson);
+            memoryLimitMB = metadata.memoryLimitMB || 0;
+          } catch (e) {
+            // If parsing fails, try direct field access (old schema)
+            memoryLimitMB = (tx as any).memoryLimitMB || 0;
+          }
+        } else {
+          // Fallback to direct field (old schema)
+          memoryLimitMB = (tx as any).memoryLimitMB || 0;
+        }
+        byEndpoint[endpoint].totalMemory += memoryLimitMB;
+      }
+    });
+    
+    // Calculate averages for AWS endpoints
+    Object.values(byEndpoint).forEach(endpoint => {
+      if (endpoint.count > 0) {
+        endpoint.avgDuration = endpoint.totalDuration / endpoint.count;
+        endpoint.avgMemory = endpoint.totalMemory / endpoint.count;
+      }
     });
 
     return { 
@@ -779,12 +868,13 @@ const BillingPage: React.FC = () => {
       totalLLMCalls, 
       byType, 
       byProvider, 
-      byModel 
+      byModel,
+      byEndpoint
     };
   };
 
-  // Calculate totals excluding credit transactions from cost
-  const filteredTotals = calculateFilteredTotals(filteredTransactions, true);
+  // Calculate totals excluding credit transactions from cost AND excluding AWS from Type/Provider/Model sections
+  const filteredTotals = calculateFilteredTotals(filteredTransactions, true, true);
 
   const uniqueProviders = Array.from(
     new Set(billingData.transactions.map(t => t.provider))
@@ -1038,7 +1128,7 @@ const BillingPage: React.FC = () => {
             
             <div className="summary-card">
               <div className="summary-label">{t('billing.totalCost')}</div>
-              <div className="summary-value">${filteredTotals.totalCost.toFixed(4)}</div>
+              <div className="summary-value">${filteredTotals.totalCost.toFixed(8)}</div>
               <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px' }}>
                 {t('billing.usageOnly')}
               </div>
@@ -1058,6 +1148,37 @@ const BillingPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* AWS Lambda Invocations Section */}
+          {filteredTotals.byEndpoint && Object.keys(filteredTotals.byEndpoint).length > 0 && (
+            <div className="breakdown-section">
+              <h3>AWS Lambda Invocations</h3>
+              <table className="breakdown-table">
+                <thead>
+                  <tr>
+                    <th>Endpoint</th>
+                    <th>Requests</th>
+                    <th>Allocated Memory (MB)</th>
+                    <th>Avg Duration (ms)</th>
+                    <th>Total Cost ($)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(filteredTotals.byEndpoint)
+                    .sort((a, b) => b[1].cost - a[1].cost) // Sort by cost descending
+                    .map(([endpoint, data]) => (
+                      <tr key={endpoint}>
+                        <td>{endpoint}</td>
+                        <td>{data.count}</td>
+                        <td>{data.avgMemory.toFixed(1)}</td>
+                        <td>{data.avgDuration.toFixed(0)}</td>
+                        <td>${data.cost.toFixed(8)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {filteredTotals.byType && Object.keys(filteredTotals.byType).length > 0 && (
             <div className="breakdown-section">
@@ -1081,7 +1202,7 @@ const BillingPage: React.FC = () => {
                       <td>{data.tokensIn.toLocaleString()}</td>
                       <td>{data.tokensOut.toLocaleString()}</td>
                       <td>{data.tokens.toLocaleString()}</td>
-                      <td>${data.cost.toFixed(4)}</td>
+                      <td>${data.cost.toFixed(8)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1111,7 +1232,7 @@ const BillingPage: React.FC = () => {
                       <td>{data.tokensIn.toLocaleString()}</td>
                       <td>{data.tokensOut.toLocaleString()}</td>
                       <td>{data.tokens.toLocaleString()}</td>
-                      <td>${data.cost.toFixed(4)}</td>
+                      <td>${data.cost.toFixed(8)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1152,7 +1273,7 @@ const BillingPage: React.FC = () => {
                         <td>{data.tokensIn.toLocaleString()}</td>
                         <td>{data.tokensOut.toLocaleString()}</td>
                         <td>{data.tokens.toLocaleString()}</td>
-                        <td>${data.cost.toFixed(4)}</td>
+                        <td>${data.cost.toFixed(8)}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -1256,7 +1377,7 @@ const BillingPage: React.FC = () => {
                       <td>{tx.provider}</td>
                       <td>{tx.model}</td>
                       <td>{tx.totalTokens.toLocaleString()}</td>
-                      <td>${tx.cost.toFixed(6)}</td>
+                      <td>${tx.cost.toFixed(8)}</td>
                       <td>{tx.durationMs}ms</td>
                       <td className={tx.status === 'success' ? 'status-success' : 'status-error'}>
                         {tx.status}
@@ -1304,7 +1425,7 @@ const BillingPage: React.FC = () => {
                               </div>
                             </td>
                             <td>{groupTokens.toLocaleString()}</td>
-                            <td><strong>${groupCost.toFixed(6)}</strong></td>
+                            <td><strong>${groupCost.toFixed(8)}</strong></td>
                             <td>{groupDuration}ms</td>
                             <td className={txs.every(tx => tx.status === 'success') ? 'status-success' : 'status-error'}>
                               {txs.every(tx => tx.status === 'success') ? 'success' : 'partial'}
@@ -1344,7 +1465,7 @@ const BillingPage: React.FC = () => {
                               <td>{tx.provider}</td>
                               <td>{tx.model}</td>
                               <td>{tx.totalTokens.toLocaleString()}</td>
-                              <td>${tx.cost.toFixed(6)}</td>
+                              <td>${tx.cost.toFixed(8)}</td>
                               <td>{tx.durationMs}ms</td>
                               <td className={tx.status === 'success' ? 'status-success' : 'status-error'}>
                                 {tx.status}
@@ -1380,7 +1501,7 @@ const BillingPage: React.FC = () => {
                         <td>{tx.provider}</td>
                         <td>{tx.model}</td>
                         <td>{tx.totalTokens.toLocaleString()}</td>
-                        <td>${tx.cost.toFixed(6)}</td>
+                        <td>${tx.cost.toFixed(8)}</td>
                         <td>{tx.durationMs}ms</td>
                         <td className={tx.status === 'success' ? 'status-success' : 'status-error'}>
                           {tx.status}
