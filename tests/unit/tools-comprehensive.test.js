@@ -96,6 +96,17 @@ describe('Tools System - Comprehensive Coverage', () => {
     });
 
     test('should validate tool parameter types', async () => {
+      // Set up default mock for all test cases
+      DuckDuckGoSearcher.mockReturnValue({
+        search: jest.fn().mockResolvedValue([])
+      });
+      
+      extractContent.mockResolvedValue({
+        content: 'Test content',
+        images: [],
+        links: []
+      });
+      
       // Test with invalid parameter types
       const invalidParams = [
         { query: 123 }, // Number instead of string
@@ -106,7 +117,9 @@ describe('Tools System - Comprehensive Coverage', () => {
       ];
 
       for (const params of invalidParams) {
-        const result = await callFunction('search_web', params, {});
+        const result = await callFunction('search_web', params, {
+          writeEvent: jest.fn()
+        });
         
         // Should return error response, not crash
         expect(typeof result).toBe('string');
@@ -215,10 +228,11 @@ describe('Tools System - Comprehensive Coverage', () => {
   describe('Tool Execution Error Handling', () => {
     
     test('should handle network timeouts gracefully', async () => {
-      // Mock network timeout
-      DuckDuckGoSearcher.mockReturnValue({
-        search: jest.fn().mockRejectedValue(new Error('Network timeout'))
-      });
+      // Mock network timeout - use mockImplementation to avoid synchronous throw
+      const mockSearch = jest.fn().mockRejectedValue(new Error('Network timeout'));
+      DuckDuckGoSearcher.mockImplementation(() => ({
+        search: mockSearch
+      }));
 
       const result = await callFunction('search_web', {
         query: 'test',
@@ -232,9 +246,10 @@ describe('Tools System - Comprehensive Coverage', () => {
     });
 
     test('should handle invalid URLs gracefully', async () => {
-      DuckDuckGoSearcher.mockReturnValue({
-        search: jest.fn().mockRejectedValue(new Error('Invalid URL'))
-      });
+      const mockSearch = jest.fn().mockRejectedValue(new Error('Invalid URL'));
+      DuckDuckGoSearcher.mockImplementation(() => ({
+        search: mockSearch
+      }));
 
       const result = await callFunction('search_web', {
         query: 'test'

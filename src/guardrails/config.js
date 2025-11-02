@@ -59,14 +59,16 @@ function hasProviderApiKey(providerType, context = {}) {
     return true;
   }
   
-  // Check indexed providers (LP_TYPE_*)
+  // Check indexed providers (LP_TYPE_* and P_T* formats)
   let index = 0;
   while (true) {
-    const typeVar = `LP_TYPE_${index}`;
-    const keyVar = `LP_KEY_${index}`;
+    const typeVar1 = `LP_TYPE_${index}`;
+    const keyVar1 = `LP_KEY_${index}`;
+    const typeVar2 = `P_T${index}`;
+    const keyVar2 = `P_K${index}`;
     
-    const providerType = process.env[typeVar];
-    const providerKey = process.env[keyVar];
+    const providerType = process.env[typeVar1] || process.env[typeVar2];
+    const providerKey = process.env[keyVar1] || process.env[keyVar2];
     
     if (!providerType) break;
     

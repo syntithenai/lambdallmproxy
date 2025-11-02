@@ -2430,12 +2430,20 @@ Brief answer with URLs:`;
         
         // Wrap code in async function to support await
         // Try to detect if code is an expression or statement
-        // Simple heuristic: if it contains certain keywords or semicolons, treat as statement
-        const isStatement = /^(const|let|var|function|class|if|for|while|do|switch|return|throw|try)\s/i.test(code.trim()) || 
-                           code.includes(';') && !code.trim().endsWith(';');
+        // Simple heuristic: if it contains certain keywords, treat as statement
+        const trimmedCode = code.trim();
+        const isStatement = /^(const|let|var|function|class|if|for|while|do|switch|return|throw|try)[\s(]/i.test(trimmedCode) || 
+                           (code.includes(';') && !trimmedCode.endsWith(';'));
+        
+        // For expressions that end with semicolon, strip it so they can be returned
+        let codeToWrap = code;
+        if (!isStatement && trimmedCode.endsWith(';')) {
+          codeToWrap = trimmedCode.slice(0, -1);
+        }
+        
         const wrappedCode = isStatement 
-          ? `(async () => { ${code} })()` 
-          : `(async () => { return (${code}) })()`;
+          ? `(async () => { ${codeToWrap} })()` 
+          : `(async () => { return (${codeToWrap}) })()`;
         
         // Execute code with timeout - use runInNewContext for better async support
         let result;
@@ -2609,6 +2617,16 @@ Brief answer with URLs:`;
 
         // Fallback to legacy context properties if provider pool not available
         if (!apiKey) {
+          // Check if the API key is actually a Gemini key (which doesn't support Whisper) FIRST
+          if (context.apiKey?.startsWith('AIza')) {
+            return JSON.stringify({
+              error: 'Audio transcription requires OpenAI or Groq API credentials. Gemini does not support Whisper transcription. Please configure LP_TYPE_N=openai or groq-free with the corresponding API key to enable transcription.',
+              url,
+              source: 'whisper',
+              hint: 'Add an OpenAI provider (for Whisper-1) or Groq provider (for Whisper-large-v3-turbo) to your environment configuration.'
+            });
+          }
+          
           // Helper function to check if provider has voice capability enabled (legacy)
           const hasVoiceCapability = (providerType) => {
             if (!context.providers || !Array.isArray(context.providers)) return true;
@@ -2642,16 +2660,6 @@ Brief answer with URLs:`;
             apiKey = context.apiKey;
             console.log('🎤 Using OpenAI Whisper (legacy main API key) - PAID transcription');
           }
-        }
-
-        // Check if the API key is actually a Gemini key (which doesn't support Whisper)
-        if (apiKey && apiKey.startsWith('AIza')) {
-          return JSON.stringify({
-            error: 'Audio transcription requires OpenAI or Groq API credentials. Gemini does not support Whisper transcription. Please configure LP_TYPE_N=openai or groq-free with the corresponding API key to enable transcription.',
-            url,
-            source: 'whisper',
-            hint: 'Add an OpenAI provider (for Whisper-1) or Groq provider (for Whisper-large-v3-turbo) to your environment configuration.'
-          });
         }
 
         // Validate that we have a suitable API key

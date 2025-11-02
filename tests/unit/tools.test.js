@@ -498,8 +498,8 @@ describe('Tools System', () => {
 
     test('should detect YouTube URLs and require OAuth when Whisper disabled', async () => {
       // Set environment variable to disable Whisper for YouTube
-      const originalEnv = process.env.DISABLE_YOUTUBE_TRANSCRIPTION;
-      process.env.DISABLE_YOUTUBE_TRANSCRIPTION = 'true';
+      const originalEnv = process.env.NO_YT_TRANS;
+      process.env.NO_YT_TRANS = 'true';
 
       const result = await callFunction('transcribe_url', {
         url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
@@ -513,9 +513,9 @@ describe('Tools System', () => {
 
       // Restore environment
       if (originalEnv) {
-        process.env.DISABLE_YOUTUBE_TRANSCRIPTION = originalEnv;
+        process.env.NO_YT_TRANS = originalEnv;
       } else {
-        delete process.env.DISABLE_YOUTUBE_TRANSCRIPTION;
+        delete process.env.NO_YT_TRANS;
       }
     });
   });
