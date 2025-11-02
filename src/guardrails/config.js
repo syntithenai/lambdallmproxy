@@ -177,7 +177,7 @@ function autoDetectGuardrailProvider(context = {}) {
  * @returns {Object|null} Configuration object or null if disabled
  */
 function loadGuardrailConfig(context = {}) {
-  const enabled = process.env.EN_GUARD === 'true';
+  const enabled = process.env.ENABLE_GUARDRAILS === 'true';
   
   if (!enabled) {
     console.log('🛡️ Content guardrails: DISABLED');
