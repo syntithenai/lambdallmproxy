@@ -255,9 +255,9 @@ async function handleGenerateImage(event) {
       const { logToGoogleSheets } = require('../services/google-sheets-logger');
       const os = require('os');
       
-      // Extract request ID and Lambda metrics from context
-      const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const memoryLimitMB = context?.memoryLimitInMB || parseInt(process.env.AWS_MEM) || 0;
+      // Extract request ID and Lambda metrics (no context available in HTTP handler)
+      const requestId = `http-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const memoryLimitMB = parseInt(process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE) || 0;
       const memoryUsedMB = memoryLimitMB > 0 ? Math.round(process.memoryUsage().heapUsed / 1024 / 1024) : 0;
       
       // Log image generation request
@@ -648,7 +648,27 @@ async function generateImageDirect(params) {
     try {
       const { logToGoogleSheets } = require('../services/google-sheets-logger');
       const os = require('os');
-      const userEmail = context?.userEmail || context?.email || context?.user || 'tool-generated';
+
+      // Determine user email for attribution. Prefer explicit context values, but
+      // fall back to verifying any access token supplied in context so tool calls
+      // invoked server-side (like feed generation) can be attributed to the
+      // initiating user instead of falling back to 'tool-generated'.
+      let userEmail = context?.userEmail || context?.email || context?.user || null;
+      if (!userEmail) {
+        const possibleToken = context?.accessToken || context?.authorization || context?.authToken || context?.access_token;
+        if (possibleToken) {
+          try {
+            const decoded = await verifyGoogleOAuthToken(possibleToken);
+            if (decoded && decoded.email) {
+              userEmail = decoded.email;
+              console.log(`📧 [Direct] Extracted user email from context token: ${userEmail}`);
+            }
+          } catch (tokenErr) {
+            console.warn('⚠️ [Direct] Could not verify token for user attribution:', tokenErr.message);
+          }
+        }
+      }
+      userEmail = userEmail || 'tool-generated';
       
       // Extract request ID and Lambda metrics from context
       const requestId = context?.requestId || context?.awsRequestId || `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

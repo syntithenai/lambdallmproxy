@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFeed } from '../contexts/FeedContext';
-import { Plus, X, Tag, Brain, Trash2, TrendingUp } from 'lucide-react';
+import { X, Brain, Trash2, TrendingUp } from 'lucide-react';
 import { feedDB, type UserPreferences, type TopicWeight } from '../db/feedDb';
 import {
   LineChart,
@@ -20,19 +20,12 @@ import {
 
 export default function FeedSettings() {
   const { t } = useTranslation();
-  const { preferences, updateSearchTerms } = useFeed();
+  const { preferences } = useFeed();
   
-  const [searchTerms, setSearchTerms] = useState<string[]>([]);
-  const [newTerm, setNewTerm] = useState('');
   const [userPreferences, setUserPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [topicStats, setTopicStats] = useState<Map<string, { month: string; count: number }[]>>(new Map());
   const [topTopics, setTopTopics] = useState<Array<{ topic: string; count: number }>>([]);
-
-  // Initialize from preferences
-  useEffect(() => {
-    setSearchTerms(preferences.searchTerms);
-  }, [preferences.searchTerms]);
 
   // Load user preferences and statistics
   useEffect(() => {
@@ -60,48 +53,6 @@ export default function FeedSettings() {
       console.error('Failed to load feed statistics:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  /**
-   * Add new search term
-   */
-  const handleAddTerm = () => {
-    const trimmed = newTerm.trim();
-    
-    if (!trimmed) return;
-    
-    if (searchTerms.includes(trimmed)) {
-      alert(t('feed.searchTermExists'));
-      return;
-    }
-
-    if (searchTerms.length >= 5) {
-      alert(t('feed.maxSearchTerms'));
-      return;
-    }
-
-    const updated = [...searchTerms, trimmed];
-    setSearchTerms(updated);
-    setNewTerm('');
-    updateSearchTerms(updated);
-  };
-
-  /**
-   * Remove search term
-   */
-  const handleRemoveTerm = (term: string) => {
-    const updated = searchTerms.filter(t => t !== term);
-    setSearchTerms(updated);
-    updateSearchTerms(updated);
-  };
-
-  /**
-   * Handle Enter key
-   */
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleAddTerm();
     }
   };
 
@@ -348,74 +299,6 @@ export default function FeedSettings() {
           </div>
         </div>
       )}
-
-      {/* Search Terms */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-center gap-2 mb-3">
-          <Tag className="h-5 w-5 text-gray-600" />
-          <h3 className="text-lg font-semibold text-gray-900">
-            {t('feed.searchTerms')}
-          </h3>
-        </div>
-        
-        <p className="text-sm text-gray-600 mb-4">
-          {t('feed.searchTermsDescription')}
-        </p>
-
-        {/* Current search terms */}
-        <div className="space-y-2 mb-4">
-          {searchTerms.map((term, index) => (
-            <div
-              key={index}
-              className="flex items-center justify-between bg-gray-50 rounded-lg p-3"
-            >
-              <span className="text-gray-900 font-medium">{term}</span>
-              
-              <button
-                onClick={() => handleRemoveTerm(term)}
-                className="p-1 rounded hover:bg-gray-200 transition-colors"
-                title={t('feed.removeSearchTerm')}
-              >
-                <X className="h-4 w-4 text-gray-600" />
-              </button>
-            </div>
-          ))}
-
-          {searchTerms.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              {t('feed.noSearchTerms')}
-            </div>
-          )}
-        </div>
-
-        {/* Add new term */}
-        {searchTerms.length < 5 && (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newTerm}
-              onChange={(e) => setNewTerm(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={t('feed.searchTermPlaceholder')}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              maxLength={100}
-            />
-            
-            <button
-              onClick={handleAddTerm}
-              disabled={!newTerm.trim()}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 font-medium"
-            >
-              <Plus className="h-4 w-4" />
-              {t('feed.add')}
-            </button>
-          </div>
-        )}
-
-        <p className="text-xs text-gray-500 mt-2">
-          {t('feed.searchTermCount', { count: searchTerms.length })}
-        </p>
-      </div>
 
       {/* Content Maturity Level */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">

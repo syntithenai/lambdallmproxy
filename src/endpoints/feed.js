@@ -103,7 +103,15 @@ function isJunkImage(url) {
  * @param {function} eventCallback - SSE event callback
  * @returns {Promise<object[]>} Generated feed items
  */
-async function generateFeedItems(swagContent, searchTerms, count, preferences, providers, eventCallback) {
+async function generateFeedItems(
+    swagContent,
+    searchTerms,
+    count,
+    preferences,
+    providers,
+    eventCallback,
+    generationContext = {}
+) {
     // Prepare context summaries
     const swagSummary = swagContent.slice(0, 20).join('\n\n').substring(0, 2000);
     const likedTopics = preferences.likedTopics.join(', ');
@@ -454,6 +462,7 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
                             console.log(`🎯 Selected image model: ${selectedModel.provider}/${selectedModel.model} (priority: ${selectedModel.fallbackPriority})`);
                             
                             // Generate image with selected model (includes automatic fallback)
+                            const userEmailForImages = generationContext.userEmail || generationContext.email || generationContext.user;
                             const imageResult = await generateImageDirect({
                                 prompt: aiPrompt,
                                 provider: selectedModel.provider,
@@ -461,7 +470,16 @@ Generate exactly ${count} items. Return ONLY valid JSON.`;
                                 modelKey: selectedModel.modelKey,
                                 size: '800x600', // 4:3 aspect ratio for news feed thumbnails
                                 quality: qualityTier,
-                                style: 'natural'
+                                style: 'natural',
+                                context: {
+                                    userEmail: userEmailForImages,
+                                    email: userEmailForImages,
+                                    user: userEmailForImages,
+                                    providerPool: generationContext.providerPool || providers,
+                                    requestId: generationContext.requestId,
+                                    awsRequestId: generationContext.awsRequestId,
+                                    memoryLimitInMB: generationContext.memoryLimitInMB
+                                }
                             });
                             
                             if (imageResult.success && imageResult.base64) {
@@ -727,6 +745,14 @@ async function handler(event, responseStream, context) {
             providerPool, // Pass provider array directly
             (eventType, eventData) => {
                 sseWriter.writeEvent(eventType, eventData);
+            },
+            {
+                userEmail,
+                accessToken: verifiedUser.accessToken,
+                providerPool,
+                requestId,
+                awsRequestId: context?.awsRequestId,
+                memoryLimitInMB: context?.memoryLimitInMB
             }
         );
         

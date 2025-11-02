@@ -43,6 +43,7 @@ async function logLLMCost({
       userEmail: userEmail || 'anonymous',
       model: model,
       type: type,
+      provider: provider,  // Add provider as top-level property
       promptTokens: promptTokens,
       completionTokens: completionTokens,
       totalTokens: promptTokens + completionTokens,
@@ -51,7 +52,7 @@ async function logLLMCost({
       timestamp: new Date().toISOString(),
       requestId: requestId,
       metadata: {
-        provider: provider,
+        provider: provider,  // Keep in metadata for backwards compatibility
         isUIKey: isUIKey,
         ...metadata
       }

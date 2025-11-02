@@ -395,6 +395,18 @@ async function insertSnippet({ title, content, tags = [], source = 'manual', url
     const now = new Date().toISOString();
     const tagsStr = Array.isArray(tags) ? tags.map(t => t.toLowerCase()).sort().join(', ') : '';
     
+    // Google Sheets has a 50,000 character limit per cell
+    // Truncate content if too long and add a warning
+    const MAX_CELL_LENGTH = 50000;
+    let truncatedContent = content || '';
+    
+    if (truncatedContent.length > MAX_CELL_LENGTH) {
+      truncatedContent = truncatedContent.substring(0, MAX_CELL_LENGTH - 200) + 
+        '\n\n[⚠️ CONTENT TRUNCATED - Original length: ' + content.length + 
+        ' characters. Google Sheets limit: 50,000 characters per cell.]';
+      console.warn(`⚠️ Snippets: Content truncated from ${content.length} to ${truncatedContent.length} chars for snippet "${title}"`);
+    }
+    
     const row = [
       id,
       userEmail,
@@ -402,7 +414,7 @@ async function insertSnippet({ title, content, tags = [], source = 'manual', url
       now,
       now,
       title || '',
-      content || '',
+      truncatedContent,
       tagsStr,
       source,
       url || ''
