@@ -167,10 +167,10 @@ async function handleGetBilling(event, responseStream, context, requestStartTime
     console.log('📊 [BILLING] Event path:', event.rawPath || event.path);
 
     let userEmail = 'unknown'; // Track for logging
+    const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
 
     try {
         // Authenticate request
-        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
         console.log('🔐 [BILLING] Auth header present:', !!authHeader);
         console.log('🔐 [BILLING] Auth header length:', authHeader?.length || 0);
         
@@ -517,10 +517,10 @@ async function handleClearBilling(event, responseStream, context, requestStartTi
         : require('aws-lambda');
 
     let userEmail = 'unknown'; // Track for logging
+    const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
 
     try {
         // Authenticate request
-        const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
         const authResult = await authenticateRequest(authHeader);
 
         if (!authResult.authenticated) {
@@ -545,7 +545,7 @@ async function handleClearBilling(event, responseStream, context, requestStartTi
         // Extract Google Drive access token from custom header
         const driveAccessToken = event.headers['x-drive-token'] || event.headers['X-Drive-Token'] || null;
         
-        if (!accessToken) {
+        if (!driveAccessToken) {
             const metadata = {
                 statusCode: 401,
                 headers: getResponseHeaders()

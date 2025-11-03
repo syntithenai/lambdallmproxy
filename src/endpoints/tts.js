@@ -377,7 +377,7 @@ async function handleTTS(event, responseStream, context) {
                 case 'elevenlabs':
                     apiKey = process.env.ELEVENLABS_KEY;
                     break;
-                default:
+                default: {
                     const metadata = {
                         statusCode: 400,
                         headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
@@ -389,6 +389,7 @@ async function handleTTS(event, responseStream, context) {
                     }));
                     responseStream.end();
                     return;
+                }
             }
         }
 
