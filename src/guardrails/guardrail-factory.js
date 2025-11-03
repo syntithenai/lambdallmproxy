@@ -55,14 +55,17 @@ function getProviderApiKey(provider, context = {}) {
     return context[contextKey];
   }
   
-  // Check indexed format (LP_*) - ONLY source for guardrails
+  // Check indexed format - supports both LP_TYPE_* and P_T* formats
   let index = 0;
   while (true) {
-    const typeVar = `LP_TYPE_${index}`;
-    const keyVar = `LP_KEY_${index}`;
+    // Check both naming conventions
+    const lpTypeVar = `LP_TYPE_${index}`;
+    const lpKeyVar = `LP_KEY_${index}`;
+    const pTypeVar = `P_T${index}`;
+    const pKeyVar = `P_K${index}`;
     
-    const providerType = process.env[typeVar];
-    const providerKey = process.env[keyVar];
+    const providerType = process.env[lpTypeVar] || process.env[pTypeVar];
+    const providerKey = process.env[lpKeyVar] || process.env[pKeyVar];
     
     if (!providerType) break; // No more providers
     
