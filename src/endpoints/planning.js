@@ -751,6 +751,7 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
             let enhancedUserPrompt = parsed.enhancedUserPrompt || parsed.enhanced_user_prompt || '';
             
             // ALWAYS regenerate enhanced prompts with explicit tool instructions (override LLM's vague prompts)
+            // eslint-disable-next-line no-constant-condition
             if (true) {  // Always regenerate to ensure explicit tool-calling instructions
                 enhancedSystemPrompt = `${persona || 'You are a research expert.'} 
 
@@ -837,6 +838,7 @@ Answer these key research questions:`;
             }
             
             // ALWAYS regenerate enhanced user prompt with explicit tool instructions (override LLM's vague prompts)
+            // eslint-disable-next-line no-constant-condition
             if (true) {  // Always regenerate to ensure explicit tool-calling instructions
                 enhancedUserPrompt = `📋 **RESEARCH EXECUTION INSTRUCTIONS**
 
@@ -970,6 +972,7 @@ Your FIRST response MUST include:
             const todos = parsed.todos || [];
             
             // ALWAYS regenerate enhanced prompts with explicit tool instructions (override LLM's vague prompts)
+            // eslint-disable-next-line no-constant-condition
             if (true) {  // Always regenerate to ensure explicit tool-calling instructions
                 enhancedSystemPrompt = `${persona || 'You are a research and writing expert.'} 
 
@@ -1042,6 +1045,7 @@ Start executing NOW - your first response must include manage_todos + multiple s
             }
             
             // ALWAYS regenerate enhanced user prompt with explicit tool instructions (override LLM's vague prompts)
+            // eslint-disable-next-line no-constant-condition
             if (true) {  // Always regenerate to ensure explicit tool-calling instructions
                 enhancedUserPrompt = `**EXECUTE RESEARCH AND DOCUMENTATION TASK**
 

@@ -598,8 +598,8 @@ IMPORTANT: Only include fields relevant to the query_type. Be decisive in classi
                         provider, // Add provider to context for tools like transcribe_url
                         apiKey, 
                         openaiApiKey: apiKey, // Ensure openaiApiKey is available for Whisper
-                        googleToken,
-                        tavilyApiKey, // Add Tavily API key for search/scrape tools
+                        googleToken: null, // Not available in this context
+                        tavilyApiKey: process.env.TAVILY_API_KEY || null, // Try to get from environment
                         writeEvent: stream?.writeEvent,
                         toolCallId: call_id
                     };

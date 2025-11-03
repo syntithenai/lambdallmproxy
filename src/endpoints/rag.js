@@ -10,6 +10,22 @@ const { calculateLLMCost, isUIKey } = require('../utils/pricing-service');
 const { authenticateRequest } = require('../auth');
 const { buildProviderPool } = require('../credential-pool');
 
+// Placeholder functions for unimplemented features
+// eslint-disable-next-line no-unused-vars
+function ingestDocument(content, options) {
+    throw new Error('Document ingestion not yet implemented');
+}
+
+// eslint-disable-next-line no-unused-vars
+function hasEmbedding(snippetId) {
+    throw new Error('Embedding status check not yet implemented');
+}
+
+// eslint-disable-next-line no-unused-vars
+function getEmbeddingDetails(snippetIds) {
+    throw new Error('Embedding details retrieval not yet implemented');
+}
+
 /**
  * Get CORS headers for responses
  * NOTE: Lambda Function URL already handles CORS, so we return empty object

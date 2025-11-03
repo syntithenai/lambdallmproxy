@@ -1945,7 +1945,7 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                 model: selectedModel,
                 optimization: optimizationPreference,
                 requestType: selection?.analysis?.type || 'SIMPLE',
-                inputTokens: selection?.inputTokens || estimatedInputTokens,
+                inputTokens: selection?.inputTokens || selection?.analysis?.estimatedTokens || 1000,
                 rateLimitTracker: rateLimitTracker,
                 provider: provider
             });
@@ -1974,7 +1974,7 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
             // STEP 11: Pass model context for content optimization
             selectedModel: selectedModel,
             optimization: optimizationPreference,
-            inputTokens: selection?.inputTokens || estimatedInputTokens,
+            inputTokens: selection?.inputTokens || selection?.analysis?.estimatedTokens || 1000,
             // TodosManager for backend-managed multi-step workflows
             __todosManager: todosManager,
             writeEvent: (type, data) => sseWriter.writeEvent(type, data),
@@ -3165,11 +3165,11 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                                 
                                 // Add llmApiCall to the tracking array for LLM transparency dialog
                                 if (parsed.llmApiCall) {
-                                    if (!llmApiCalls) {
-                                        llmApiCalls = [];
+                                    if (!assistantMessage.llmApiCalls) {
+                                        assistantMessage.llmApiCalls = [];
                                     }
-                                    llmApiCalls.push(parsed.llmApiCall);
-                                    console.log(`   Added image generation llmApiCall to tracking (total: ${llmApiCalls.length})`);
+                                    assistantMessage.llmApiCalls.push(parsed.llmApiCall);
+                                    console.log(`   Added image generation llmApiCall to tracking (total: ${assistantMessage.llmApiCalls.length})`);
                                 }
                                 
                                 console.log(`   Added to imageGenerations array as complete (total: ${imageGenerations.length})`);
@@ -3451,6 +3451,7 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
             const MAX_EVALUATION_RETRIES = 4; // Increased from 2 to 4 for better completion rate
             let evaluationRetries = 0;
             
+            // eslint-disable-next-line no-constant-condition
             if (false) { // Disabled - moved to after main loop
                 console.log(`🔍 Self-evaluation attempt ${evaluationRetries + 1}/${MAX_EVALUATION_RETRIES + 1}`);
                 
@@ -4035,10 +4036,9 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                     } else {
                         console.log(`ℹ️ Response not perfect but acceptable - completing anyway`);
                     }
-                } else if (evaluation && evaluation.skipEvaluation) {
-                    console.log(`⚠️ Evaluation skipped due to API error - proceeding with current response`);
                 } else {
-                    console.log(`⚠️ Max iterations reached - proceeding with current response despite incomplete assessment`);
+                    // evaluation is null/undefined or skipEvaluation is true
+                    console.log(`⚠️ Evaluation unavailable or max iterations reached - proceeding with current response`);
                 }
                 } // End of assessment else block
             } // End of lastAssistantMessage check
