@@ -526,11 +526,8 @@ Generate exactly ${count} items. Return valid JSON.`;
                 
                 items.push(processedItem);
                 
-                // Emit incremental progress event
-                eventCallback('item_generated', { 
-                    item: processedItem,
-                    progress: { current: i + 1, total: Math.max(count, itemsData.length) }
-                });
+                // Don't emit here - wait for images to be added
+                // Items will be emitted one-by-one as images complete (line ~779)
             }
         } else {
             console.error('❌ Feed: Failed to parse response content');
