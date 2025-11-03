@@ -7,7 +7,8 @@ import type { FeedItem, FeedPreferences, FeedQuiz } from '../types/feed';
 import { feedDB } from '../db/feedDb';
 import { quizDB } from '../db/quizDb';
 import { generateFeedItems, generateFeedQuiz } from '../services/feedGenerator';
-import { fetchImagesBase64 } from '../utils/api';
+// Images now embedded in SSE stream - no separate fetch needed
+// import { fetchImagesBase64 } from '../utils/api';
 import { useAuth } from './AuthContext';
 import { useSwag } from './SwagContext';
 import { useProject } from './ProjectContext';
@@ -382,52 +383,10 @@ export function FeedProvider({ children }: FeedProviderProps) {
       console.log('✅ Items via events:', generatedItems.length);
       console.log('📄 Items preview:', newItems.map(i => ({ id: i.title })));
 
-      // Batch fetch images for all generated items
-      if (token && generatedItems.length > 0) {
-        try {
-          setGenerationStatus('Loading images...');
-          console.log('🖼️ Fetching images for', generatedItems.length, 'items...');
-          
-          // Build image requests from generated items
-          const imageRequests = generatedItems.map(item => ({
-            itemId: item.id,
-            searchTerms: Array.isArray(item.searchTerms) 
-              ? item.searchTerms.join(' ') 
-              : (item.searchTerms || item.title),
-            source: 'unsplash' as const // Default to Unsplash
-          }));
-          
-          // Fetch images in batch
-          const imageResults = await fetchImagesBase64(imageRequests, token);
-          console.log('🖼️ Received', imageResults.length, 'image results');
-          
-          // Update items with base64 images
-          const updatedItems = generatedItems.map(item => {
-            const imageResult = imageResults.find((r: { itemId: string; success: boolean; image?: string; attribution?: string }) => r.itemId === item.id);
-            if (imageResult?.success && imageResult.image) {
-              return {
-                ...item,
-                imageBase64: imageResult.image,
-                imageAttribution: imageResult.attribution
-              };
-            }
-            return item;
-          });
-          
-          // Save updated items to IndexedDB
-          console.log('💾 Saving items with embedded images to IndexedDB...');
-          await feedDB.saveItems(updatedItems);
-          
-          // Update UI with items containing base64 images
-          const allItemsWithImages = await feedDB.getItems(100, 0);
-          setAllItems(allItemsWithImages);
-          
-          console.log('✅ Images embedded successfully');
-        } catch (imgError) {
-          console.error('❌ Failed to fetch images:', imgError);
-          // Continue without images - items already saved with URLs
-        }
-      }
+      // Images are now included in the SSE stream from backend (base64 embedded)
+      // No need for batch image fetching - items already have images from generation
+      // Items were already saved to DB and added to UI via event callback above
+      console.log('✅ Feed generation complete with embedded images from backend');
 
       // Note: Items already added to UI AND saved to DB via event callback
       // Just need to update lastGenerated timestamp

@@ -183,14 +183,14 @@ async function generateFeedItems(
 INPUT CONTEXT:
 ${swagSummary ? `User's saved content:\n${swagSummary}\n\n` : ''}
 ${searchSummary ? `Recent news/searches:\n${searchSummary}\n\n` : ''}
-${likedTopics ? `User liked topics: ${likedTopics}\n` : ''}
-${dislikedTopics ? `User disliked topics (AVOID): ${dislikedTopics}\n` : ''}
+${likedTopics ? `✨ USER'S FAVORITE TOPICS (prioritize these): ${likedTopics}\n` : ''}
+${dislikedTopics ? `🚫 USER DISLIKES (completely AVOID these): ${dislikedTopics}\n` : ''}
 
 TASK: Generate ${count} high-quality educational items${searchSummary ? ' based on the search results provided above' : ''} mixing:
 - "Did You Know" facts (70%) - surprising, educational facts${searchSummary ? ' drawn from the search results' : ''}
 - Question & Answer pairs (30%) - thought-provoking Q&A${searchSummary ? ' based on search findings' : ''}
 
-${searchSummary ? '⚠️ CRITICAL: You MUST base your content on the "Recent news/searches" section above. Use the titles, snippets, and information from those search results as your primary source material. Do NOT generate generic facts - use the specific information provided in the search results.\n\n' : ''}CRITICAL REQUIREMENTS:
+${searchSummary ? '⚠️ CRITICAL: You MUST base your content on the "Recent news/searches" section above. Use the titles, snippets, and information from those search results as your primary source material. Do NOT generate generic facts - use the specific information provided in the search results.\n\n' : ''}${likedTopics ? '✨ PRIORITIZE USER INTERESTS: The user is particularly interested in: ' + likedTopics + '. Make sure to include content related to these topics whenever possible, even when working with search results.\n\n' : ''}CRITICAL REQUIREMENTS:
 1. Each item MUST have:
    - Short summary (2-3 sentences) in "content"${searchSummary ? ' that references information from the search results' : ''}
    - Expanded article (4-6 paragraphs) in "expandedContent" with AT LEAST 4 interesting facts${searchSummary ? ' drawn from the search results' : ''}
@@ -549,13 +549,19 @@ Generate exactly ${count} items. Return valid JSON.`;
     // Fetch images for feed items (in parallel) and emit each item as it completes
     eventCallback('status', { message: 'Fetching images...' });
     
-    // Determine which items should get AI-generated images (1 out of 10, 10%)
+    // Determine which items should get AI-generated images (30% - 3 out of 10)
     const aiImageIndices = new Set();
-    if (items.length >= 5) {
-        // Generate AI image for one item in the middle of the feed
-        // For 10 items, this would be position 5 (0-indexed: 4)
-        const middleIndex = Math.floor(items.length / 2);
-        aiImageIndices.add(middleIndex);
+    const aiImageCount = Math.max(1, Math.ceil(items.length * 0.3)); // 30% of items
+    
+    if (items.length > 0) {
+        // Distribute AI images evenly across the feed
+        // For 10 items: positions 0, 4, 8 (first, middle, near end)
+        const spacing = Math.floor(items.length / aiImageCount);
+        for (let i = 0; i < aiImageCount && i * spacing < items.length; i++) {
+            const index = i === 0 ? 0 : Math.min(i * spacing, items.length - 1);
+            aiImageIndices.add(index);
+        }
+        console.log(`🎨 Will generate ${aiImageIndices.size} AI images at positions: ${Array.from(aiImageIndices).join(', ')}`);
     }
     
     // Artistic styles for AI-generated images (variety to stand out from photos)
