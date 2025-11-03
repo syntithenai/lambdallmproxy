@@ -1067,6 +1067,130 @@
           }
         }
       },
+      "alibaba": {
+        "name": "Alibaba Cloud (DashScope)",
+        "type": "alibaba",
+        "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "supportsStreaming": true,
+        "supportsTools": true,
+        "freeTier": {
+          "available": true,
+          "limits": {
+            "note": "Free tier available with API key registration"
+          }
+        },
+        "rateLimitHeaders": {
+          "format": "standard",
+          "prefix": "x-ratelimit-"
+        },
+        "models": {
+          "qwen-turbo": {
+            "id": "qwen-turbo",
+            "category": "small",
+            "contextWindow": 8192,
+            "maxOutput": 2048,
+            "pricing": {
+              "input": 0.4,
+              "output": 1.2,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 60000,
+              "requestsPerMinute": 60
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Qwen Turbo - Fast and cost-effective"
+          },
+          "qwen-plus": {
+            "id": "qwen-plus",
+            "category": "medium",
+            "contextWindow": 32768,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 2.0,
+              "output": 6.0,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 60000,
+              "requestsPerMinute": 60
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Qwen Plus - Enhanced performance"
+          },
+          "qwen-max": {
+            "id": "qwen-max",
+            "category": "large",
+            "contextWindow": 32768,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 20.0,
+              "output": 60.0,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": false,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 60000,
+              "requestsPerMinute": 60
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Qwen Max - Best performance for complex tasks"
+          },
+          "qwen-vl-plus": {
+            "id": "qwen-vl-plus",
+            "category": "medium",
+            "contextWindow": 32768,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 4.0,
+              "output": 12.0,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 60000,
+              "requestsPerMinute": 60
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Qwen VL Plus - Vision-language model"
+          },
+          "qwen-vl-max": {
+            "id": "qwen-vl-max",
+            "category": "large",
+            "contextWindow": 32768,
+            "maxOutput": 8192,
+            "pricing": {
+              "input": 20.0,
+              "output": 60.0,
+              "unit": "per_million_tokens"
+            },
+            "supportsTools": true,
+            "supportsVision": true,
+            "supportsStreaming": true,
+            "rateLimits": {
+              "tokensPerMinute": 60000,
+              "requestsPerMinute": 60
+            },
+            "deprecated": false,
+            "available": true,
+            "description": "Qwen VL Max - Advanced vision-language model"
+          }
+        }
+      },
       "together": {
         "name": "Together AI",
         "type": "together",
