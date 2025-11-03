@@ -6,7 +6,7 @@ const RUNTIME_CACHE = 'runtime-cache-v1.0.2';
 
 // Assets to cache on install (critical for offline functionality)
 const STATIC_ASSETS = [
-  '/index.html',
+  '/offline.html',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',
@@ -151,8 +151,24 @@ self.addEventListener('fetch', (event) => {
           }
           
           // Return offline page if no cache available
-          return caches.match('/').then((fallback) => {
-            return fallback || new Response('Offline', { status: 503 });
+          return caches.match('/offline.html').then((fallback) => {
+            if (fallback) {
+              return fallback;
+            }
+            
+            // Last resort: inline offline message
+            return new Response(
+              `<!DOCTYPE html>
+<html><head><title>Offline</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#667eea;color:#fff;text-align:center;padding:20px}h1{font-size:2em;margin-bottom:0.5em}</style>
+</head><body><div><h1>📡 You're Offline</h1><p>No internet connection detected.</p><p>Please check your network and try again.</p>
+<button onclick="location.reload()" style="margin-top:20px;padding:12px 24px;font-size:16px;background:#fff;color:#667eea;border:none;border-radius:8px;cursor:pointer">Retry</button></div></body></html>`,
+              { 
+                status: 503,
+                statusText: 'Service Unavailable',
+                headers: { 'Content-Type': 'text/html' }
+              }
+            );
           });
         });
       })

@@ -29,8 +29,11 @@ const loadPayPalSDK = () => {
 
 loadPayPalSDK();
 
-// Register Service Worker for PWA functionality
-if ('serviceWorker' in navigator) {
+// Register Service Worker for PWA functionality (production only)
+// In development, skip service worker to avoid caching issues with Vite HMR
+const isDevelopment = import.meta.env.DEV;
+
+if ('serviceWorker' in navigator && !isDevelopment) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then((registration) => {
@@ -61,6 +64,19 @@ if ('serviceWorker' in navigator) {
         console.error('❌ Service Worker registration failed:', error);
       });
   });
+} else if (isDevelopment) {
+  console.log('🔧 Development mode: Service Worker disabled for Vite HMR');
+  
+  // Unregister any existing service workers from production testing
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations.forEach((registration) => {
+        registration.unregister().then(() => {
+          console.log('🧹 Unregistered existing service worker');
+        });
+      });
+    });
+  }
 } else {
   console.warn('⚠️ Service Workers not supported in this browser');
 }
