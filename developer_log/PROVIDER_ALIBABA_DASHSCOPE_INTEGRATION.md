@@ -66,11 +66,20 @@ LP_CAPABILITIES_8=chat
 
 ## Getting Your API Key
 
-### Step 1: Create Alibaba Cloud Account
+### ⚠️ Important: China Region Only
 
-1. Go to: https://dashscope.console.aliyun.com
-2. Sign up or log in
-3. Complete identity verification (if required)
+**DashScope is currently only available on Alibaba Cloud China (aliyun.com)**
+- ❌ NOT available on international Alibaba Cloud (alibabacloud.com)
+- ✅ Only available on China mainland platform
+- Requires Chinese phone number for verification
+- Alternative: Use other providers (Groq, Gemini, OpenAI) if outside China
+
+### Step 1: Create Alibaba Cloud China Account
+
+1. Go to: https://dashscope.console.aliyun.com (China only)
+2. Sign up with Chinese phone number
+3. Complete identity verification
+4. May require Chinese bank account for payment
 
 ### Step 2: Create API Key
 
@@ -176,16 +185,33 @@ Alibaba is **mid-tier pricing** - not the cheapest, but competitive for Chinese 
 **DashScope API Key** (Correct ✅):
 - Format: `sk-xxxxxxxxxxxxxxxxxxxxxxxx`
 - Used with: OpenAI-compatible endpoint
-- Get from: https://dashscope.console.aliyun.com/apiKey
+- Get from: https://dashscope.console.aliyun.com/apiKey (China only)
 
 **AccessKey ID/Secret** (Incorrect ❌):
 - Format: `LTAI5tQyyrWXfZN77MvQgfgr` + secret
 - Used with: Alibaba Cloud native SDK (not OpenAI-compatible)
 - Not compatible with this implementation
 
-**Important**: The credentials you provided appear to be AccessKey format. You need to:
-1. Log into DashScope console
-2. Generate a new API Key (starts with `sk-`)
+### ⚠️ Regional Availability Issue
+
+**Your AccessKey appears to be from international Alibaba Cloud (alibabacloud.com)**
+
+DashScope is **NOT YET AVAILABLE** on the international platform. You have two options:
+
+**Option A: Wait for International Release**
+- DashScope will be released on alibabacloud.com in the future
+- Monitor: https://www.alibabacloud.com/product/dashscope
+- Your current AccessKey will not work until then
+
+**Option B: Use Alternative Providers (Recommended)**
+- Groq: Free tier, fast models
+- Gemini: Free tier, good performance
+- OpenAI: Paid, industry standard
+- Together AI: Mix of free and paid models
+
+If you're in China and want to use DashScope now, you need to:
+1. Register on aliyun.com (Chinese platform)
+2. Generate DashScope API Key from console
 3. Use that key instead
 
 ---
@@ -309,7 +335,21 @@ make deploy-lambda
 ✅ **Alibaba Cloud DashScope integrated**  
 ✅ **5 Qwen models available**  
 ✅ **OpenAI-compatible API**  
-⚠️ **Requires DashScope API Key** (not AccessKey)  
-⚠️ **User must generate API key from console**  
+⚠️ **CHINA REGION ONLY** - Not available on international platform yet  
+⚠️ **Requires DashScope API Key** (sk-*, not AccessKey)  
+⚠️ **Requires Chinese phone number** for account verification  
 
-Ready to use once proper API key is configured!
+### Current Status
+
+- **Available**: Alibaba Cloud China (aliyun.com) ✅
+- **Not Available**: International Alibaba Cloud (alibabacloud.com) ❌
+- **Release Date**: To be announced
+
+### Recommendation
+
+If you're on international Alibaba Cloud, use alternative providers:
+- **Groq**: Free, fast (already configured: LP_KEY_0, LP_KEY_5)
+- **Gemini**: Free tier (already configured: LP_KEY_2, LP_KEY_6)
+- **Together AI**: Free image gen (already configured: LP_KEY_3)
+
+The Alibaba integration is ready for when DashScope becomes available internationally!
