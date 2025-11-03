@@ -28,7 +28,7 @@ interface FeedContextValue {
   selectedTags: string[]; // Tags to filter Swag content for feed generation
   
   // Actions
-  generateMore: () => Promise<void>;
+  generateMore: (userInterests?: string[]) => Promise<void>;
   stashItem: (itemId: string) => Promise<void>;
   trashItem: (itemId: string) => Promise<void>;
   markViewed: (itemId: string) => Promise<void>;
@@ -169,9 +169,10 @@ export function FeedProvider({ children }: FeedProviderProps) {
 
   /**
    * Generate more feed items
+   * @param userInterests - Optional user interests to use instead of preferences (for immediate generation after user input)
    */
-  const generateMore = useCallback(async () => {
-    console.log('🎯 generateMore called');
+  const generateMore = useCallback(async (userInterests?: string[]) => {
+    console.log('🎯 generateMore called', userInterests ? `with user interests: ${userInterests}` : '');
     
     const token = await getToken();
     console.log('🔑 Token retrieved:', token ? `${token.substring(0, 20)}...` : 'NULL');
@@ -225,9 +226,22 @@ export function FeedProvider({ children }: FeedProviderProps) {
       const snippetTags = Array.from(allTags);
       console.log('🏷️ Extracted tags from snippets:', snippetTags);
 
-      // Use snippet tags as search terms for news (instead of 'latest world news')
-      const searchTermsForGeneration = snippetTags.length > 0 ? snippetTags : preferencesRef.current.searchTerms;
-      console.log('🔍 Search terms for generation:', searchTermsForGeneration);
+      // Priority order for search terms:
+      // 1. User-provided interests (from prompt) - highest priority
+      // 2. Snippet tags - second priority
+      // 3. Saved preferences - fallback
+      let searchTermsForGeneration: string[];
+      if (userInterests && userInterests.length > 0) {
+        searchTermsForGeneration = userInterests;
+        console.log('✨ Using user-provided interests from prompt:', searchTermsForGeneration);
+      } else if (snippetTags.length > 0) {
+        searchTermsForGeneration = snippetTags;
+        console.log('🏷️ Using snippet tags as search terms:', searchTermsForGeneration);
+      } else {
+        searchTermsForGeneration = preferencesRef.current.searchTerms;
+        console.log('💾 Using saved preferences as search terms:', searchTermsForGeneration);
+      }
+      console.log('🔍 Final search terms for generation:', searchTermsForGeneration);
 
       // Track generated items as they arrive
       const generatedItems: FeedItem[] = [];

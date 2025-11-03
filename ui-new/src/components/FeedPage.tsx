@@ -300,11 +300,12 @@ export default function FeedPage() {
                         onChange={(e) => setInterestsInput(e.target.value)}
                         onKeyDown={async (e) => {
                           if (e.key === 'Enter' && interestsInput.trim() && !isGenerating) {
-                            // Update search terms with user input
-                            await updateSearchTerms([interestsInput.trim()]);
+                            const userInterests = [interestsInput.trim()];
+                            // Update search terms with user input (save for future use)
+                            await updateSearchTerms(userInterests);
                             setInterestsInput('');
-                            // Trigger generation (don't refresh, just generate)
-                            await generateMore();
+                            // Trigger generation with user interests immediately (don't wait for state update)
+                            await generateMore(userInterests);
                           }
                         }}
                         placeholder="e.g., artificial intelligence, space exploration, history..."
@@ -313,11 +314,12 @@ export default function FeedPage() {
                       <button
                         onClick={async () => {
                           if (interestsInput.trim() && !isGenerating) {
-                            // Update search terms with user input
-                            await updateSearchTerms([interestsInput.trim()]);
+                            const userInterests = [interestsInput.trim()];
+                            // Update search terms with user input (save for future use)
+                            await updateSearchTerms(userInterests);
                             setInterestsInput('');
-                            // Trigger generation (don't refresh, just generate)
-                            await generateMore();
+                            // Trigger generation with user interests immediately (don't wait for state update)
+                            await generateMore(userInterests);
                           }
                         }}
                         disabled={!interestsInput.trim() || isGenerating}
