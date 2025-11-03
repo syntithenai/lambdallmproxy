@@ -68,12 +68,39 @@ async function fetchSingleImage(imageRequest) {
         const imageData = await searchImage(searchTerms, { provider: source });
         
         if (!imageData || !imageData.url) {
-            console.warn(`⚠️ No image found for "${searchTerms}"`);
-            return {
-                itemId,
-                success: false,
-                error: 'No image found'
-            };
+            console.warn(`⚠️ No image found for "${searchTerms}" - using placeholder`);
+            
+            // Generate placeholder image URL from first few letters of search term
+            const firstLetters = searchTerms
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase())
+                .join('')
+                .substring(0, 3);
+            
+            // Use placeholder.com for reliable placeholder images
+            const placeholderUrl = `https://via.placeholder.com/800x600/4F46E5/FFFFFF?text=${encodeURIComponent(firstLetters || 'IMG')}`;
+            
+            try {
+                const placeholderBase64 = await urlToBase64(placeholderUrl);
+                return {
+                    itemId,
+                    success: true,
+                    image: placeholderBase64,
+                    thumb: placeholderBase64,
+                    source: 'placeholder',
+                    photographer: 'Placeholder',
+                    photographerUrl: '',
+                    attribution: 'Placeholder image',
+                    attributionHtml: 'Placeholder image'
+                };
+            } catch (placeholderError) {
+                console.error('Failed to fetch placeholder:', placeholderError);
+                return {
+                    itemId,
+                    success: false,
+                    error: 'No image found and placeholder failed'
+                };
+            }
         }
         
         // Track Unsplash download if applicable
