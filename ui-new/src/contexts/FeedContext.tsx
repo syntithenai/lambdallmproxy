@@ -327,17 +327,25 @@ export function FeedProvider({ children }: FeedProviderProps) {
               });
             
             // Update status with item count
-            setGenerationStatus(`Generated ${generatedItems.length} of 10 items...`);
+            setGenerationStatus(`Generated ${generatedItems.length} items...`);
             
-            // Immediately update UI with new item (append to bottom of list)
+            // ⚡ CRITICAL: Immediately update UI with new item (one at a time for streaming effect)
+            // Force synchronous update using functional state setter with unique key
             setAllItems(prev => {
-              // Append new item to end
+              // Check if item already exists (prevent duplicates)
+              const exists = prev.some(existing => existing.id === itemWithProject.id);
+              if (exists) {
+                console.log('⚠️  Item already exists in state:', itemWithProject.id);
+                return prev;
+              }
+              
+              // Append new item to END of list (appears at bottom)
               const updated = [...prev, itemWithProject];
               
               // Prune oldest items if exceeding 30 items (keep newest 30)
               const pruned = updated.length > 30 ? updated.slice(-30) : updated;
               
-              console.log('📊 Items in state after adding:', pruned.length, 'items');
+              console.log('📊 Items in state after adding:', pruned.length, 'items (latest:', itemWithProject.title.substring(0, 50), '...)');
               return pruned;
             });
           }

@@ -290,7 +290,8 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
         {/* Content - Click to expand */}
         <div 
           onClick={() => setShowDialog(true)}
-          className="cursor-pointer"
+          className="cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors"
+          title="Click to read full article"
         >
           <p className="text-gray-700 mb-3 line-clamp-3">
             {typeof item.content === 'string' ? item.content : (item.content as any)?.summary || 'No content available'}
