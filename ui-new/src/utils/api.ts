@@ -69,11 +69,19 @@ async function isLocalLambdaAvailable(): Promise<boolean> {
 
 /**
  * Get the appropriate API base URL
+ * - If running in dev mode (port 8081), ALWAYS use local Lambda at :3000
  * - If VITE_API_BASE env var is set, always use it (production build)
  * - Otherwise, check if local Lambda is available at :3000 on current hostname
  * - Fall back to remote Lambda if local is not available
  */
 async function getApiBase(): Promise<string> {
+  // If running Vite dev server (port 8081), ALWAYS use local Lambda
+  if (window.location.port === '8081') {
+    const localUrl = getLocalLambdaUrl();
+    console.log('🏠 Dev mode detected (port 8081) - Using local Lambda server at', localUrl);
+    return localUrl;
+  }
+  
   // If environment variable is set, always use it (production build)
   if (import.meta.env.VITE_API) {
     console.log('🌐 Using VITE_API_BASE:', import.meta.env.VITE_API);

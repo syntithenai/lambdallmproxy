@@ -38,6 +38,18 @@ export default function FeedPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  
+  // Refs for infinite scroll to avoid stale closures
+  const isGeneratingRef = useRef(isGenerating);
+  const isLoadingRef = useRef(isLoading);
+  const generateMoreRef = useRef(generateMore);
+  
+  // Keep refs in sync with latest values
+  useEffect(() => {
+    isGeneratingRef.current = isGenerating;
+    isLoadingRef.current = isLoading;
+    generateMoreRef.current = generateMore;
+  }, [isGenerating, isLoading, generateMore]);
 
   /**
    * Debug: Log items whenever they change
@@ -64,6 +76,12 @@ export default function FeedPage() {
       (entries) => {
         const [entry] = entries;
         
+        console.log('👁️ IntersectionObserver fired:', {
+          isIntersecting: entry.isIntersecting,
+          itemsLength: items.length,
+          snippetsLength: snippets.length
+        });
+        
         // Only trigger if we have items OR have tags on snippets
         // This prevents infinite scroll from auto-generating when user has no content
         const hasSnippetTags = snippets.some(s => 
@@ -71,12 +89,28 @@ export default function FeedPage() {
         );
         const shouldAllowInfiniteScroll = items.length > 0 || hasSnippetTags;
         
+        // ⚡ Use refs to avoid stale closure - always read current state
+        const currentIsLoading = isLoadingRef.current;
+        const currentIsGenerating = isGeneratingRef.current;
+        const currentGenerateMore = generateMoreRef.current;
+        
+        console.log('🔍 Infinite scroll check:', {
+          isIntersecting: entry.isIntersecting,
+          currentIsLoading,
+          currentIsGenerating,
+          shouldAllowInfiniteScroll,
+          hasSnippetTags,
+          itemsLength: items.length
+        });
+        
         // Load more when sentinel is visible and not already loading
-        if (entry.isIntersecting && !isLoading && !isGenerating && shouldAllowInfiniteScroll) {
-          console.log('📜 Infinite scroll triggered');
-          generateMore();
+        if (entry.isIntersecting && !currentIsLoading && !currentIsGenerating && shouldAllowInfiniteScroll) {
+          console.log('📜 Infinite scroll triggered - generating more items...');
+          currentGenerateMore();
         } else if (entry.isIntersecting && !shouldAllowInfiniteScroll) {
           console.log('📜 Infinite scroll blocked: no items and no snippet tags');
+        } else if (entry.isIntersecting && (currentIsLoading || currentIsGenerating)) {
+          console.log('📜 Infinite scroll blocked: already generating/loading');
         }
       },
       {

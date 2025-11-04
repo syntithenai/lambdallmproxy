@@ -293,7 +293,10 @@ function normalizeFromChat(responseWithHeaders, model) {
 
 async function llmResponsesWithTools({ model, input, tools, options }) {
   const toolsConfigured = Array.isArray(tools) && tools.length > 0;
-  const defaultToolChoice = toolsConfigured ? 'required' : 'auto';
+  // Changed from 'required' to 'auto' - let models decide if they can handle tool calling
+  // Many models claim tool support but format responses incorrectly (markdown wrappers, XML tags, etc.)
+  // This allows fallback to JSON mode instead of forcing malformed tool calls
+  const defaultToolChoice = 'auto';
   const defaultResponseFormat = toolsConfigured ? { type: 'json_object' } : undefined;
 
   // Default parameters optimized for comprehensive, detailed, verbose responses

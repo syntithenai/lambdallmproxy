@@ -452,7 +452,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                         
                         items.push(processedItem);
                         
-                        // Emit incremental progress event
+                        // ⚡ STREAM IMMEDIATELY: Emit item without images first for instant display
                         eventCallback('item_generated', { 
                             item: processedItem,
                             progress: { current: j + 1, total: itemsArray.length }
@@ -526,8 +526,11 @@ Generate exactly ${count} items. Return valid JSON.`;
                 
                 items.push(processedItem);
                 
-                // Don't emit here - wait for images to be added
-                // Items will be emitted one-by-one as images complete (line ~779)
+                // ⚡ STREAM IMMEDIATELY: Emit item without images first for instant display
+                eventCallback('item_generated', { 
+                    item: processedItem,
+                    progress: { current: i + 1, total: itemsData.length }
+                });
             }
         } else {
             console.error('❌ Feed: Failed to parse response content');
@@ -771,19 +774,26 @@ Generate exactly ${count} items. Return valid JSON.`;
     }
     
     return { ...item, image: null, imageAttribution: null };
-}).map(async (itemPromise, idx) => {
-    // Wait for this item to complete
-    const completedItem = await itemPromise;
-    completedCount++;
-    
-    // Emit item_generated event immediately as each item completes
-    eventCallback('item_generated', { item: completedItem });
-    eventCallback('status', { message: `Completed ${completedCount} of ${items.length} items...` });
-    
-    return completedItem;
 });
 
-const completedItems = await Promise.all(imagePromises);
+// ⚡ PROGRESSIVE STREAMING: Emit image updates as each completes (in parallel)
+const completedItems = await Promise.all(
+    imagePromises.map(async (itemPromise, idx) => {
+        const completedItem = await itemPromise;
+        completedCount++;
+        
+        // Only emit image update if image was added (avoid duplicate emissions)
+        if (completedItem.image) {
+            eventCallback('item_updated', { 
+                item: completedItem,
+                field: 'image'
+            });
+        }
+        eventCallback('status', { message: `Completed ${completedCount} of ${items.length} items...` });
+        
+        return completedItem;
+    })
+);
     
 eventCallback('status', { 
     message: `Generated ${items.length} items`

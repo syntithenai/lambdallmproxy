@@ -49,6 +49,7 @@ const HelpPage = lazy(() => import('./components/HelpPage').then(m => ({ default
 const PrivacyPolicy = lazy(() => import('./components/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
 const SharedSnippetViewer = lazy(() => import('./components/SharedSnippetViewer').then(m => ({ default: m.SharedSnippetViewer })));
 const SharedChatViewer = lazy(() => import('./components/SharedChatViewer').then(m => ({ default: m.SharedChatViewer })));
+const SharedFeedItemViewer = lazy(() => import('./components/SharedFeedItemViewer').then(m => ({ default: m.SharedFeedItemViewer })));
 const ImageEditorPage = lazy(() => import('./components/ImageEditor/ImageEditorPage').then(m => ({ default: m.ImageEditorPage })));
 const AgentManager = lazy(() => import('./components/AgentManager').then(m => ({ default: m.AgentManager })));
 
@@ -92,12 +93,19 @@ function AppContent() {
     console.log('🎓 showWelcomeWizard changed to:', showWelcomeWizard);
   }, [showWelcomeWizard]);
   
-  // Initialize unified sync system
+  // Initialize unified sync system - ONLY after authentication
   useEffect(() => {
-    // Register sync adapters
+    // Register sync adapters (always register, even if not starting)
     unifiedSync.registerAdapter(plansAdapter);
     unifiedSync.registerAdapter(playlistsAdapter);
     unifiedSync.registerAdapter(googleSheetsAdapter);
+    
+    // ⚠️ CRITICAL: Only start sync if user is authenticated
+    // This prevents Google Sheets sync errors on login page
+    if (!isAuthenticated) {
+      console.log('⚠️ User not authenticated, unified sync disabled');
+      return;
+    }
     
     // Check if auto-sync is enabled (default to enabled, opt-out)
     const autoSyncEnabled = localStorage.getItem('auto_sync_enabled') !== 'false';
@@ -114,7 +122,7 @@ function AppContent() {
     return () => {
       unifiedSync.stop();
     };
-  }, []);
+  }, [isAuthenticated]); // Dependency on isAuthenticated to restart sync after login
   
   // Handle language changes and document direction
   useEffect(() => {
@@ -343,13 +351,30 @@ function AppContent() {
     return () => window.removeEventListener('show-welcome-wizard', handleShowWelcomeWizard);
   }, []);
 
-  // Check if we're on a public route (shared snippet viewer, shared chat, privacy policy, help page)
-  const hasShareParam = new URLSearchParams(location.search).has('share');
+  // Check if we're on a public route (shared snippet viewer, shared chat, shared feed, privacy policy, help page)
+  const hasShareParam = new URLSearchParams(location.search).has('share'); // Legacy format
+  const isChatShared = location.hash.includes('/chat/shared'); // New hash-based format
+  const isFeedShared = location.pathname.startsWith('/feed/share/'); // Feed share format (path-based)
   const isPublicRoute = location.pathname.startsWith('/snippet/shared') || 
                         location.hash.includes('/snippet/shared') ||
                         location.pathname === '/privacy' ||
                         location.pathname === '/help' ||
-                        hasShareParam;
+                        hasShareParam ||
+                        isChatShared ||
+                        isFeedShared;
+  
+  // Debug: Log public route detection
+  useEffect(() => {
+    console.log('🔍 Public route detection:', {
+      pathname: location.pathname,
+      search: location.search,
+      hash: location.hash,
+      hasShareParam,
+      isChatShared,
+      isFeedShared,
+      isPublicRoute
+    });
+  }, [location.pathname, location.search, location.hash, hasShareParam, isChatShared, isFeedShared, isPublicRoute]);
   
   // Show public pages without authentication
   if (isPublicRoute) {
@@ -358,8 +383,10 @@ function AppContent() {
         <Suspense fallback={<LoadingFallback />}>
           {location.pathname.startsWith('/snippet/shared') || location.hash.includes('/snippet/shared') ? (
             <SharedSnippetViewer />
-          ) : hasShareParam ? (
+          ) : hasShareParam || isChatShared ? (
             <SharedChatViewer />
+          ) : isFeedShared ? (
+            <SharedFeedItemViewer />
           ) : location.pathname === '/privacy' ? (
             <PrivacyPolicy />
           ) : location.pathname === '/help' ? (
@@ -713,6 +740,7 @@ function AppContent() {
               <Route path="/quiz" element={<QuizPage />} />
               <Route path="/image-editor" element={<ImageEditorPage />} />
               <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
+              <Route path="/feed/share/:data" element={<SharedFeedItemViewer />} />
               <Route path="/billing" element={<BillingPage />} />
               <Route path="/settings" element={
                 <SettingsPage 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getCachedApiBase } from '../utils/api';
+import { requestGoogleAuth } from '../utils/googleDocs';
 
 interface FixResponseDialogProps {
   isOpen: boolean;
@@ -33,17 +34,20 @@ export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseD
     setError(null);
     
     try {
-      const accessToken = await getToken();
-      const apiBase = await getCachedApiBase();
-      
-      if (!accessToken) {
-        throw new Error('No access token available');
+      // Get ID token for user authentication
+      const idToken = await getToken();
+      if (!idToken) {
+        throw new Error('Not authenticated. Please log in.');
       }
       
-      console.log('🔑 Token type check:', {
-        isJWT: accessToken.split('.').length === 3,
-        prefix: accessToken.substring(0, 20),
-        length: accessToken.length
+      // Get Google OAuth access token for Sheets API
+      const googleAccessToken = await requestGoogleAuth();
+      const apiBase = await getCachedApiBase();
+      
+      console.log('🔑 Token check:', {
+        hasIdToken: !!idToken,
+        hasGoogleToken: !!googleAccessToken,
+        googleTokenPrefix: googleAccessToken.substring(0, 20)
       });
       
       // Call backend API to log report
@@ -51,8 +55,8 @@ export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseD
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-          'X-Google-Access-Token': accessToken  // Also send as Google access token for Sheets API
+          'Authorization': `Bearer ${idToken}`,
+          'X-Google-Access-Token': googleAccessToken  // Google OAuth token for Sheets API
         },
         body: JSON.stringify({
           explanation: explanation.trim(),
