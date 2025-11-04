@@ -835,9 +835,9 @@ const BillingPage: React.FC = () => {
         
         // Extract allocated memory from breakdownJson (only allocated memory matters for Lambda pricing)
         let memoryLimitMB = 0;
-        if (tx.breakdownJson) {
+        if ((tx as any).breakdownJson) {
           try {
-            const metadata = JSON.parse(tx.breakdownJson);
+            const metadata = JSON.parse((tx as any).breakdownJson);
             memoryLimitMB = metadata.memoryLimitMB || 0;
           } catch (e) {
             // If parsing fails, try direct field access (old schema)
