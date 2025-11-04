@@ -16,10 +16,11 @@ import { getCachedApiBase } from '../utils/api';
  * Event types from SSE stream
  */
 interface FeedGenerationEvent {
-  type: 'status' | 'search_complete' | 'item_generated' | 'complete' | 'error' | 'personalization' | 
+  type: 'status' | 'search_complete' | 'item_generated' | 'item_updated' | 'complete' | 'error' | 'personalization' | 
         'context_prepared' | 'search_starting' | 'search_term' | 'search_term_complete' | 'search_term_error';
   message?: string;
   item?: FeedItem;
+  field?: string; // For item_updated: which field was updated (e.g., 'image')
   searchResults?: number;
   resultsCount?: number;
   terms?: string[];

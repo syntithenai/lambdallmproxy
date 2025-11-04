@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { Share2 } from 'lucide-react';
 
 interface ChatHeaderProps {
   systemPrompt: string;
@@ -78,7 +79,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           aria-label="Share conversation"
           disabled={messageCount === 0}
         >
-          <span>🔗</span>
+          <Share2 className="h-4 w-4" />
           <span className="hidden md:inline">Share</span>
         </button>
         

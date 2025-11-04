@@ -17,6 +17,7 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { ragDB } from '../utils/ragDB';
+import { requestGoogleAuth } from '../utils/googleDocs';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
 import { PlanningDialog } from './PlanningDialog';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -951,12 +952,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const handlePositiveFeedback = async (messageIndex: number) => {
     try {
       const message = messages[messageIndex];
-      const token = await getToken();
-      
-      if (!token) {
-        showError('Please sign in to submit feedback');
-        return;
-      }
       
       if (!message) {
         console.warn('⚠️ Tried to submit feedback for missing message index:', messageIndex);
@@ -964,14 +959,23 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         return;
       }
       
+      // Get ID token for user authentication
+      const idToken = await getToken();
+      if (!idToken) {
+        showError('Please sign in to submit feedback');
+        return;
+      }
+      
+      // Get Google OAuth access token for Sheets API
+      const googleAccessToken = await requestGoogleAuth();
       const apiBase = await getCachedApiBase();
       
       const response = await fetch(`${apiBase}/report-error`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'X-Google-Access-Token': token
+          'Authorization': `Bearer ${idToken}`,
+          'X-Google-Access-Token': googleAccessToken
         },
         body: JSON.stringify({
           userEmail: user?.email,
@@ -4673,14 +4677,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               }`}
             >
               <div
-                className={`max-w-[80%] rounded-lg p-3 ${
+                className={`rounded-lg p-3 ${
                   msg.role === 'user'
-                    ? 'bg-blue-500 text-white'
+                    ? 'max-w-[80%] bg-blue-500 text-white'
                     : msg.role === 'tool'
-                    ? 'bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700'
+                    ? 'max-w-[80%] bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700'
                     : msg.content && getMessageText(msg.content).startsWith('❌ Error:')
-                    ? 'bg-pink-100 dark:bg-pink-900/30 border-2 border-pink-400 dark:border-pink-600 text-gray-900 dark:text-gray-100'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                    ? 'max-w-[80%] bg-pink-100 dark:bg-pink-900/30 border-2 border-pink-400 dark:border-pink-600 text-gray-900 dark:text-gray-100'
+                    : 'w-full bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-white dark:border-gray-600'
                 }`}
               >
                 {/* Tool Message */}

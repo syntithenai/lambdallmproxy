@@ -163,25 +163,42 @@ export function createShareData(
 }
 
 /**
- * Generate full share URL
+ * Generate full share URL using hash-based routing (GitHub Pages compatible)
  */
 export function generateShareUrl(compressed: string): string {
   const baseUrl = window.location.origin + window.location.pathname;
-  return `${baseUrl}?share=${compressed}`;
+  return `${baseUrl}#/chat/shared?data=${compressed}`;
 }
 
 /**
  * Check if current URL has share data
  */
 export function hasShareData(): boolean {
+  // Check hash-based routing first (new format)
+  if (window.location.hash.includes('/chat/shared')) {
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+    return hashParams.has('data');
+  }
+  
+  // Fallback to query params (old format) for backward compatibility
   const params = new URLSearchParams(window.location.search);
   return params.has('share');
 }
 
 /**
- * Extract share data from current URL
+ * Extract share data from current URL (supports hash-based routing)
  */
 export function getShareDataFromUrl(): ShareData | null {
+  // Check hash-based routing first (new format: #/chat/shared?data=...)
+  if (window.location.hash.includes('/chat/shared')) {
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+    const encoded = hashParams.get('data');
+    if (encoded) {
+      return decodeShareData(encoded);
+    }
+  }
+  
+  // Fallback to query params (old format: ?share=...) for backward compatibility
   const params = new URLSearchParams(window.location.search);
   const encoded = params.get('share');
   
@@ -194,7 +211,14 @@ export function getShareDataFromUrl(): ShareData | null {
  * Clear share data from URL (without page reload)
  */
 export function clearShareDataFromUrl(): void {
-  const url = new URL(window.location.href);
-  url.searchParams.delete('share');
-  window.history.replaceState({}, '', url.toString());
+  // Check if using hash-based routing
+  if (window.location.hash.includes('/chat/shared')) {
+    // Remove hash entirely, navigate to home
+    window.history.replaceState({}, '', window.location.origin + window.location.pathname);
+  } else {
+    // Fallback: clear query param for old format
+    const url = new URL(window.location.href);
+    url.searchParams.delete('share');
+    window.history.replaceState({}, '', url.toString());
+  }
 }

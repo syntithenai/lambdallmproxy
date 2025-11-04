@@ -28,11 +28,16 @@ const ShareDialog: React.FC<ShareDialogProps> = ({ messages, onClose, title, pla
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Generate share URL - always use production domain
+    // Generate share URL
     try {
       const compressed = createShareData(messages, { title, plan });
-      // Force production domain even in local development
-      const url = generateShareUrl(compressed).replace(window.location.origin, 'https://ai.syntithenai.com');
+      let url = generateShareUrl(compressed);
+      
+      // Only force production domain if NOT in local development
+      if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+        url = url.replace(window.location.origin, 'https://ai.syntithenai.com');
+      }
+      
       setShareUrl(url);
 
       // Check if truncated
@@ -76,7 +81,8 @@ const ShareDialog: React.FC<ShareDialogProps> = ({ messages, onClose, title, pla
   const handleEmailShare = () => {
     const subject = encodeURIComponent(`AI Conversation: ${title || 'Untitled Chat'}`);
     const body = encodeURIComponent(`Check out this AI conversation:\n\n${shareUrl}`);
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    // Use Gmail web interface for better UX
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`, '_blank');
   };
 
   const handleFacebookShare = () => {
@@ -87,6 +93,11 @@ const ShareDialog: React.FC<ShareDialogProps> = ({ messages, onClose, title, pla
   const handleBlueskyShare = () => {
     const text = encodeURIComponent(`Check out this AI conversation: ${title || 'Untitled Chat'}\n\n${shareUrl}`);
     window.open(`https://bsky.app/intent/compose?text=${text}`, '_blank');
+  };
+
+  const handleQuoraShare = () => {
+    const url = encodeURIComponent(shareUrl);
+    window.open(`https://www.quora.com/share?url=${url}`, '_blank');
   };
 
   if (loading) {
@@ -200,7 +211,7 @@ const ShareDialog: React.FC<ShareDialogProps> = ({ messages, onClose, title, pla
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               Share On
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-3">
               <button
                 onClick={handleTwitterShare}
                 className="flex items-center justify-center gap-2 px-4 py-3 bg-[#1DA1F2] text-white rounded-md hover:bg-[#1a8cd8] transition-colors"
@@ -242,13 +253,23 @@ const ShareDialog: React.FC<ShareDialogProps> = ({ messages, onClose, title, pla
               </button>
               
               <button
-                onClick={handleEmailShare}
-                className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+                onClick={handleQuoraShare}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-[#B92B27] text-white rounded-md hover:bg-[#a02522] transition-colors"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12.738 18.701c-.831-1.635-1.805-3.287-3.708-3.287-.362 0-.727.061-1.059.209l-.704-1.403c.498-.166 1.023-.25 1.561-.25 2.944 0 4.424 2.587 5.429 4.734l1.904-.003c.271-.928.406-1.895.406-2.888C16.567 8.283 14.284 6 11.754 6c-2.529 0-4.812 2.283-4.812 5.813s2.283 5.813 4.812 5.813c.367 0 .724-.043 1.076-.126.035-.009.068-.021.102-.031l.806 1.585c-.413.116-.843.177-1.284.177C8.704 19.231 6 16.529 6 12.779 6 9.03 8.704 6.328 12.454 6.328c3.75 0 6.451 2.702 6.451 6.451 0 1.488-.403 2.884-1.106 4.086l.03.062-1.599.003c.377-.641.661-1.334.842-2.054h-1.334c-.271.771-.659 1.479-1.137 2.102l-1.863.003c.377-.641.661-1.334.842-2.054z"/>
                 </svg>
-                Email
+                Quora
+              </button>
+              
+              <button
+                onClick={handleEmailShare}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-[#EA4335] text-white rounded-md hover:bg-[#d33426] transition-colors"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+                </svg>
+                Gmail
               </button>
             </div>
           </div>

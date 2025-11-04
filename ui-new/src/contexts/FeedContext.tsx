@@ -230,18 +230,23 @@ export function FeedProvider({ children }: FeedProviderProps) {
       // 1. User-provided interests (from prompt) - highest priority
       // 2. Snippet tags - second priority
       // 3. Saved preferences - fallback
+      console.log('🎯 SEARCH TERM PRIORITY CHECK:');
+      console.log('   1️⃣ userInterests parameter:', userInterests);
+      console.log('   2️⃣ snippetTags:', snippetTags);
+      console.log('   3️⃣ saved preferences:', preferencesRef.current.searchTerms);
+      
       let searchTermsForGeneration: string[];
       if (userInterests && userInterests.length > 0) {
         searchTermsForGeneration = userInterests;
-        console.log('✨ Using user-provided interests from prompt:', searchTermsForGeneration);
+        console.log('✨ DECISION: Using user-provided interests from prompt:', searchTermsForGeneration);
       } else if (snippetTags.length > 0) {
         searchTermsForGeneration = snippetTags;
-        console.log('🏷️ Using snippet tags as search terms:', searchTermsForGeneration);
+        console.log('🏷️ DECISION: Using snippet tags as search terms:', searchTermsForGeneration);
       } else {
         searchTermsForGeneration = preferencesRef.current.searchTerms;
-        console.log('💾 Using saved preferences as search terms:', searchTermsForGeneration);
+        console.log('💾 DECISION: Using saved preferences as search terms:', searchTermsForGeneration);
       }
-      console.log('🔍 Final search terms for generation:', searchTermsForGeneration);
+      console.log('🔍 FINAL search terms for generation:', searchTermsForGeneration);
 
       // Track generated items as they arrive
       const generatedItems: FeedItem[] = [];
@@ -281,7 +286,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
           // Search starting event
           else if (event.type === 'search_starting') {
             console.log('🔍 Starting search for:', event.terms);
-            setGenerationStatus(event.message);
+            if (event.message) setGenerationStatus(event.message);
           }
           
           // Individual search term event
@@ -362,6 +367,22 @@ export function FeedProvider({ children }: FeedProviderProps) {
               
               console.log('📊 Items in state after adding:', pruned.length, 'items (latest:', itemWithProject.title.substring(0, 50), '...)');
               return pruned;
+            });
+          }
+          
+          // Item updated event (e.g., when images load)
+          else if (event.type === 'item_updated' && event.item) {
+            console.log('🖼️ Item updated:', event.item.title, 'field:', event.field);
+            
+            // Update the existing item in state with new data (e.g., image)
+            setAllItems(prev => {
+              return prev.map(existing => {
+                if (existing.id === event.item.id) {
+                  console.log('✨ Updating item with new data:', existing.id, event.field);
+                  return { ...existing, ...event.item };
+                }
+                return existing;
+              });
             });
           }
           

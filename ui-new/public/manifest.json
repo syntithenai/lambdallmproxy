@@ -9,13 +9,13 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/agent-120.png",
       "sizes": "120x120",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/agent-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
@@ -30,21 +30,21 @@
       "short_name": "Chat",
       "description": "Start a new AI conversation",
       "url": "/",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/agent-120.png", "sizes": "120x120" }]
     },
     {
       "name": "Planning",
       "short_name": "Plan",
       "description": "Open planning assistant",
       "url": "/planning",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/agent-120.png", "sizes": "120x120" }]
     },
     {
       "name": "Snippets",
       "short_name": "Snippets",
       "description": "Manage code snippets",
       "url": "/swag",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/agent-120.png", "sizes": "120x120" }]
     }
   ],
   "share_target": {
