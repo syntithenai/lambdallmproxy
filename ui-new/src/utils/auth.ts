@@ -282,42 +282,29 @@ export const refreshGoogleToken = async (currentAccessToken: string): Promise<{a
   }
 };
 
-// Get valid token (refresh if needed)
+// Get valid token (no refresh - ID tokens cannot be refreshed)
 export const getValidToken = async (currentToken: string | null): Promise<string | null> => {
   if (!currentToken) {
     console.warn('No token available');
     return null;
   }
 
+  // Ensure we have an ID token (JWT), not an OAuth access token
+  if (!currentToken.startsWith('eyJ')) {
+    console.error('❌ Token is not a valid JWT ID token');
+    clearAuthState();
+    return null;
+  }
+
   // Check if token is still valid
   if (!isTokenExpiringSoon(currentToken)) {
-    console.log('Token is still valid');
+    console.log('ID token is still valid');
     return currentToken;
   }
 
-  console.warn('Token expiring soon or expired, attempting refresh...');
-  
-  // Try to refresh the token
-  const result = await refreshGoogleToken(currentToken);
-  
-  if (result) {
-    // Update stored token
-    const decoded = decodeJWT(result.accessToken);
-    if (decoded) {
-      const user: GoogleUser = {
-        email: decoded.email,
-        name: decoded.name,
-        picture: decoded.picture,
-        sub: decoded.sub
-      };
-      saveAuthState(user, result.accessToken, result.refreshToken);
-      console.log('Token refreshed and saved');
-    }
-    return result.accessToken;
-  }
-  
-  // If refresh failed, clear auth state and return null
-  console.error('Token refresh failed, clearing auth state');
+  // ⚠️ IMPORTANT: Google ID tokens cannot be refreshed
+  // User must re-authenticate when token expires (typically 1 hour)
+  console.warn('⚠️ ID token expired - user must re-authenticate');
   clearAuthState();
   return null;
 };

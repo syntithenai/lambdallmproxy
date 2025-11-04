@@ -89,49 +89,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const refreshToken = useCallback(async (): Promise<boolean> => {
-    try {
-      if (!authState.accessToken) {
-        console.log('No token to refresh');
-        return false;
-      }
-
-      console.log('🔄 Attempting token refresh...');
-      
-      // Use the refreshGoogleToken function from auth utils
-      const { refreshGoogleToken, decodeJWT, saveAuthState: saveAuthStateUtil } = await import('../utils/auth');
-      const result = await refreshGoogleToken(authState.accessToken);
-      
-      if (result) {
-        const decoded = decodeJWT(result.accessToken);
-        if (decoded) {
-          const user: GoogleUser = {
-            email: decoded.email,
-            name: decoded.name,
-            picture: decoded.picture,
-            sub: decoded.sub
-          };
-          
-          // Save with the new refresh token if provided
-          saveAuthStateUtil(user, result.accessToken, result.refreshToken);
-          setAuthState({
-            user,
-            accessToken: result.accessToken,
-            isAuthenticated: true
-          });
-          
-          console.log('✅ Token refreshed successfully');
-          return true;
-        }
-      }
-      
-      // Refresh failed - this is normal if refresh token expired or invalid
-      console.log('ℹ️ Token refresh not available (user may need to re-authenticate manually)');
-      return false;
-    } catch (error) {
-      console.log('ℹ️ Token refresh unavailable:', error instanceof Error ? error.message : 'Unknown error');
-      return false;
-    }
-  }, [authState.accessToken]);
+    // ⚠️ IMPORTANT: Google ID tokens (JWT) cannot be refreshed
+    // They expire after 1 hour and require user to re-authenticate
+    // The /oauth/refresh endpoint only refreshes OAuth access tokens (ya29.*)
+    // for Google APIs (YouTube, Sheets), NOT ID tokens for authentication
+    
+    console.log('ℹ️ ID token refresh not supported - user must re-authenticate when token expires');
+    return false;
+  }, []);
 
   const getToken = useCallback(async (): Promise<string | null> => {
     if (!authState.accessToken) {
@@ -140,7 +105,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Check if token is expired
     if (isTokenExpiringSoon(authState.accessToken)) {
-      console.log('Token expired, logging out');
+      console.log('⚠️ ID token expired - user must re-authenticate');
+      logout();
+      return null;
+    }
+
+    // Ensure we're returning an ID token (JWT), not an OAuth access token
+    // ID tokens start with "eyJ", OAuth tokens start with "ya29."
+    if (!authState.accessToken.startsWith('eyJ')) {
+      console.error('❌ Auth token is not a valid JWT ID token - forcing re-login');
       logout();
       return null;
     }
