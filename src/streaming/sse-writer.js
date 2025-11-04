@@ -43,6 +43,10 @@ function createSSEStreamAdapter(responseStream) {
             clearInterval(checkInterval);
         }
     }, 10000);
+    // Prevent keeping the event loop alive in tests/environments
+    if (typeof checkInterval.unref === 'function') {
+        checkInterval.unref();
+    }
     
     // Cleanup interval when stream ends
     const originalEnd = responseStream.end ? responseStream.end.bind(responseStream) : null;
@@ -100,7 +104,12 @@ function createSSEStreamAdapter(responseStream) {
             }
         },
         isConnected: () => isConnected,
-        getLastWriteTime: () => lastWriteTime
+        getLastWriteTime: () => lastWriteTime,
+        // Allow manual cleanup in tests
+        dispose: () => {
+            clearInterval(checkInterval);
+            isConnected = false;
+        }
     };
 }
 

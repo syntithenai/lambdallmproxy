@@ -42,10 +42,21 @@ jest.mock('../../src/utils/content-optimizer', () => ({
   getOptimalContentLength: jest.fn()
 }));
 
+const { DuckDuckGoSearcher } = require('../../src/search');
+
 describe('Tools System - Advanced Coverage', () => {
   
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset searcher mock
+    const mockSearch = jest.fn().mockResolvedValue({
+      results: [],
+      query: '',
+      totalResults: 0
+    });
+    DuckDuckGoSearcher.mockImplementation(() => ({
+      search: mockSearch
+    }));
   });
 
   describe('Tool Function Structure Validation', () => {
@@ -79,8 +90,8 @@ describe('Tools System - Advanced Coverage', () => {
       
       expect(toolNames).toContain('search_web');
       expect(toolNames).toContain('execute_javascript');
-      expect(toolNames).toContain('scrape_url');
-      expect(toolNames).toContain('transcribe_audio');
+      expect(toolNames).toContain('scrape_web_content');
+      expect(toolNames).toContain('transcribe_url');
       
       // Validate parameters for each tool type
       toolFunctions.forEach(tool => {
@@ -104,12 +115,24 @@ describe('Tools System - Advanced Coverage', () => {
         expect(params.properties).toBeDefined();
         
         // Each property should have type and other required fields
+        // Note: some params use oneOf instead of direct type
         Object.keys(params.properties).forEach(paramName => {
           const param = params.properties[paramName];
-          expect(param).toHaveProperty('type');
           
+          // Handle oneOf schema (used for flexible types)
+          if (param.oneOf) {
+            expect(Array.isArray(param.oneOf)).toBe(true);
+            param.oneOf.forEach(option => {
+              if (option.type === 'object') {
+                expect(option).toHaveProperty('properties');
+              }
+            });
+          } else {
+            // Standard schema with type
+          expect(param).toHaveProperty('type');
           if (param.type === 'object') {
             expect(param).toHaveProperty('properties');
+            }
           }
         });
       });

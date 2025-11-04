@@ -796,17 +796,3 @@ describe('Google Sheets Snippets Service', () => {
   });
 });
 });
-      await expect(
-        snippetsService.getOrCreateSnippetsSheet(testUserEmail + '_error3', null)
-      ).rejects.toThrow();
-    });
-
-    test('handles missing user email', async () => {
-      // Missing email should cause issues with cache key
-      await expect(
-        snippetsService.getOrCreateSnippetsSheet(null, testAccessToken)
-      ).rejects.toThrow();
-    });
-  });
-});
-});
