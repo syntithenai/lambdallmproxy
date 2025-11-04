@@ -372,12 +372,12 @@ export function FeedProvider({ children }: FeedProviderProps) {
           
           // Item updated event (e.g., when images load)
           else if (event.type === 'item_updated' && event.item) {
-            console.log('🖼️ Item updated:', event.item.title, 'field:', event.field);
+            console.log('🖼️ Item updated:', event.item?.title, 'field:', event.field);
             
             // Update the existing item in state with new data (e.g., image)
             setAllItems(prev => {
               return prev.map(existing => {
-                if (existing.id === event.item.id) {
+                if (event.item && existing.id === event.item.id) {
                   console.log('✨ Updating item with new data:', existing.id, event.field);
                   return { ...existing, ...event.item };
                 }

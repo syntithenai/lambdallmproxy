@@ -698,7 +698,7 @@ export const SwagPage: React.FC = () => {
       setShowQuizModal(true);
       
       // Generate quiz with streaming - questions will appear progressively
-      const cleanup = await generateQuizStreaming(
+      await generateQuizStreaming(
         content,
         enrichment,
         enabledProviders,
