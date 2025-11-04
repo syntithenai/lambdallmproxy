@@ -71,6 +71,13 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
         throw new Error('Query parameter is required and must be a non-empty string');
     }
+
+    // Backward-compatibility: allow a single API key string as providers input
+    // When a non-empty string is provided, treat it as GROQ provider API key
+    if (typeof providers === 'string') {
+        const apiKeyStr = providers.trim();
+        providers = apiKeyStr.length > 0 ? { groq: { apiKey: apiKeyStr } } : {};
+    }
     
     if (!providers || Object.keys(providers).length === 0) {
         throw new Error('At least one provider with API key is required');

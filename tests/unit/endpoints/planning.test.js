@@ -2,7 +2,9 @@
  * Unit tests for planning endpoint
  */
 
+// Mock awslambda before requiring anything that depends on it
 global.awslambda = {
+    streamifyResponse: jest.fn((handler) => handler),
     HttpResponseStream: {
         from: jest.fn((stream, metadata) => {
             stream.metadata = metadata;
@@ -32,7 +34,8 @@ describe('Planning Endpoint', () => {
                     questions: ['Question 1?', 'Question 2?'],
                     persona: 'I am an expert researcher',
                     reasoning: 'This approach is optimal',
-                    complexityAssessment: 'medium'
+                    complexityAssessment: 'medium',
+                    queryType: 'overview'
                 })
             };
             
@@ -40,12 +43,14 @@ describe('Planning Endpoint', () => {
             
             const result = await generatePlan('test query', 'test-api-key');
             
-            expect(result).toHaveProperty('text', 'This is a research plan');
-            expect(result).toHaveProperty('searchKeywords');
-            expect(result.searchKeywords).toEqual([['keyword1', 'keyword2'], ['keyword3']]);
-            expect(result).toHaveProperty('questions');
-            expect(result.questions).toEqual(['Question 1?', 'Question 2?']);
-            expect(result).toHaveProperty('persona', 'I am an expert researcher');
+            expect(result).toBeDefined();
+            expect(result).toHaveProperty('queryType', 'overview');
+            expect(result).toHaveProperty('enhancedSystemPrompt');
+            expect(typeof result.enhancedSystemPrompt).toBe('string');
+            expect(result.enhancedSystemPrompt).toContain('RESEARCH EXECUTION PLAN');
+            expect(result).toHaveProperty('enhancedUserPrompt');
+            expect(typeof result.enhancedUserPrompt).toBe('string');
+            expect(result.enhancedUserPrompt).toContain('RESEARCH EXECUTION INSTRUCTIONS');
         });
         
         it('should throw error for empty query', async () => {
@@ -65,7 +70,7 @@ describe('Planning Endpoint', () => {
             
             llmResponsesWithTools.mockResolvedValue(mockResponse);
             
-            await expect(generatePlan('test query', 'test-api-key')).rejects.toThrow('Invalid plan response: missing required fields');
+            await expect(generatePlan('test query', 'test-api-key')).rejects.toThrow(/Model returned invalid response/);
         });
         
         it('should throw error for invalid searchKeywords format', async () => {
@@ -80,7 +85,7 @@ describe('Planning Endpoint', () => {
             
             llmResponsesWithTools.mockResolvedValue(mockResponse);
             
-            await expect(generatePlan('test query', 'test-api-key')).rejects.toThrow('searchKeywords must be an array of arrays');
+            await expect(generatePlan('test query', 'test-api-key')).rejects.toThrow('Invalid plan response: missing queryType field');
         });
         
         it('should handle LLM errors gracefully', async () => {

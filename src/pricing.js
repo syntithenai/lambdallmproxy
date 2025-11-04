@@ -26,14 +26,23 @@ const GROQ_PRICING_URL = 'https://groq.com/pricing/';
 async function fetchUrl(url, timeout = 15000) {
     const https = require('https');
     const http = require('http');
-    
+    // In tests, avoid real network calls; return empty content
+    if (process.env.DISABLE_NETWORK === '1') {
+        return '';
+    }
+
     return new Promise((resolve, reject) => {
         const client = url.startsWith('https:') ? https : http;
         const timeoutId = setTimeout(() => {
             reject(new Error(`Request timeout after ${timeout}ms`));
         }, timeout);
+        if (typeof timeoutId.unref === 'function') timeoutId.unref();
         
+        const agent = url.startsWith('https:')
+            ? new (require('https').Agent)({ keepAlive: false })
+            : new (require('http').Agent)({ keepAlive: false });
         const req = client.get(url, { 
+            agent,
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (compatible; LambdaLLMProxy/1.0)' 
             } 
@@ -42,6 +51,10 @@ async function fetchUrl(url, timeout = 15000) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => resolve(data));
+        });
+        req.setTimeout?.(timeout, () => {
+            clearTimeout(timeoutId);
+            req.destroy(new Error(`Request timeout after ${timeout}ms`));
         });
         
         req.on('error', (err) => {

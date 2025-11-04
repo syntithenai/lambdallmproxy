@@ -22,6 +22,8 @@
     "<rootDir>/tests/setup.js"
   ],
   "testTimeout": 10000,
+  "detectOpenHandles": true,
+  "forceExit": true,
   "verbose": true,
   "clearMocks": true,
   "resetMocks": true,

@@ -2455,12 +2455,21 @@ Brief answer with URLs:`;
         // Handle Promise results (from async execution)
         if (scriptResult && typeof scriptResult.then === 'function') {
           // Wait for promise to resolve (with additional timeout protection)
-          result = await Promise.race([
-            scriptResult,
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error(`Async execution timeout after ${timeout}ms`)), timeout + 1000)
-            )
-          ]);
+          // Ensure timeout is cleared to avoid open handles
+          let timeoutId;
+          try {
+            result = await Promise.race([
+              scriptResult,
+              new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error(`Async execution timeout after ${timeout}ms`)), timeout + 1000);
+                if (typeof timeoutId?.unref === 'function') {
+                  timeoutId.unref();
+                }
+              })
+            ]);
+          } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+          }
         } else {
           result = scriptResult;
         }

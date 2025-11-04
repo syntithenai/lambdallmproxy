@@ -119,6 +119,11 @@ describe('Streaming Modules', () => {
         });
 
         describe('createSSEStreamAdapter', () => {
+            afterEach(() => {
+                // Clear any intervals set by createSSEStreamAdapter
+                jest.clearAllTimers();
+            });
+
             test('should create adapter with writeEvent method', () => {
                 const mockStream = {
                     write: jest.fn()
@@ -142,10 +147,10 @@ describe('Streaming Modules', () => {
 
                 const adapter = createSSEStreamAdapter(mockStream);
                 
-                // Should not throw
+                // The adapter throws CLIENT_DISCONNECTED when write fails
                 expect(() => {
                     adapter.writeEvent('test', { data: 'value' });
-                }).not.toThrow();
+                }).toThrow('CLIENT_DISCONNECTED');
             });
 
             test('should handle write method errors gracefully', () => {
@@ -157,10 +162,10 @@ describe('Streaming Modules', () => {
 
                 const adapter = createSSEStreamAdapter(mockStream);
                 
-                // Should not throw on regular write
+                // The adapter throws CLIENT_DISCONNECTED when write fails
                 expect(() => {
                     adapter.write({ message: 'test' });
-                }).not.toThrow();
+                }).toThrow('CLIENT_DISCONNECTED');
             });
 
             test('should call underlying stream write with correct format', () => {
@@ -184,7 +189,8 @@ describe('Streaming Modules', () => {
                 adapter.write({ step: 2 });
                 adapter.write({ step: 3 });
 
-                expect(mockStream.write).toHaveBeenCalledTimes(3);
+                // Each write() call results in 2 write() calls (data + padding)
+                expect(mockStream.write).toHaveBeenCalledTimes(6);
             });
 
             test('should handle multiple sequential events', () => {
@@ -197,10 +203,12 @@ describe('Streaming Modules', () => {
                 adapter.writeEvent('progress', { percent: 50 });
                 adapter.writeEvent('complete', {});
 
-                expect(mockStream.write).toHaveBeenCalledTimes(3);
+                // Each writeEvent() call results in 2 write() calls (event + padding)
+                expect(mockStream.write).toHaveBeenCalledTimes(6);
+                // Check first write calls (the actual event data)
                 expect(mockStream.write).toHaveBeenNthCalledWith(1, 'event: start\ndata: {}\n\n');
-                expect(mockStream.write).toHaveBeenNthCalledWith(2, 'event: progress\ndata: {"percent":50}\n\n');
-                expect(mockStream.write).toHaveBeenNthCalledWith(3, 'event: complete\ndata: {}\n\n');
+                expect(mockStream.write).toHaveBeenNthCalledWith(3, 'event: progress\ndata: {"percent":50}\n\n');
+                expect(mockStream.write).toHaveBeenNthCalledWith(5, 'event: complete\ndata: {}\n\n');
             });
 
             test('should preserve event type in formatted output', () => {

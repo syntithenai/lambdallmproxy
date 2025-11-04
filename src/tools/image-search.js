@@ -319,55 +319,6 @@ async function searchImage(query, options = {}) {
 
   return result;
 }
-async function searchImage(query, options = {}) {
-  const { count = 1, provider = 'auto' } = options;
-  
-  if (!query || typeof query !== 'string') {
-    console.warn('⚠️  Invalid image search query:', query);
-    return null;
-  }
-
-  // Check cache first
-  const cacheKey = `${query}-${provider}-${count}`;
-  const cached = cache.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-    console.log(`💾 Using cached image for: "${query}"`);
-    return cached.result;
-  }
-
-  let results = [];
-
-  // Try preferred provider or auto-select
-  if (provider === 'unsplash' || provider === 'auto') {
-    results = await searchUnsplash(query, count);
-  }
-
-  // Fallback to Pexels if no Unsplash results
-  if (results.length === 0 && (provider === 'pexels' || provider === 'auto')) {
-    results = await searchPexels(query, count);
-  }
-
-  // Return first result (or null if none found)
-  const result = results.length > 0 ? results[0] : null;
-
-  // Cache the result
-  cache.set(cacheKey, {
-    result,
-    timestamp: Date.now()
-  });
-
-  // Clean old cache entries periodically
-  if (cache.size > 100) {
-    const now = Date.now();
-    for (const [key, value] of cache.entries()) {
-      if (now - value.timestamp > CACHE_TTL) {
-        cache.delete(key);
-      }
-    }
-  }
-
-  return result;
-}
 
 /**
  * Search for multiple images with different queries

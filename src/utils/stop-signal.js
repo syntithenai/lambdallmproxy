@@ -64,6 +64,10 @@ function cleanupOldSignals() {
 
 // Cleanup every 15 minutes
 const cleanupInterval = setInterval(cleanupOldSignals, 15 * 60 * 1000);
+// Prevent interval from keeping the event loop alive in tests
+if (typeof cleanupInterval.unref === 'function') {
+    cleanupInterval.unref();
+}
 
 // Clear interval on module unload (for testing)
 if (typeof process !== 'undefined' && process.on) {

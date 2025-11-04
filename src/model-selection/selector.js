@@ -50,8 +50,13 @@ function filterByRateLimits(models, rateLimitTracker, tokens = 0) {
  * @returns {Array<Object>} Models within cost limit
  */
 function filterByCost(models, maxCostPerMillion) {
-  if (!maxCostPerMillion || maxCostPerMillion === Infinity) {
+  if (maxCostPerMillion === Infinity || maxCostPerMillion === null || maxCostPerMillion === undefined) {
     return models;
+  }
+
+  // If maxCostPerMillion is 0 or negative, return empty array (no models pass)
+  if (maxCostPerMillion <= 0) {
+    return [];
   }
 
   return models.filter(model => {

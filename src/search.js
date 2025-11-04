@@ -139,6 +139,22 @@ class DuckDuckGoSearcher {
      * @returns {Promise<Object>} Search results
      */
     async search(query, limit = 10, fetchContent = false, timeout = 10, progressCallback = null) {
+        // In test environments, avoid real network activity to prevent hangs/timeouts
+        if (process.env.DISABLE_NETWORK === '1') {
+            return {
+                success: true,
+                query,
+                totalFound: 0,
+                returned: 0,
+                limit,
+                fetchContent,
+                timeout,
+                processingTimeMs: 0,
+                timestamp: new Date().toISOString(),
+                results: []
+            };
+        }
+
         // Apply enhanced request spacing before any search attempt
         await this.ensureRequestSpacing();
         
