@@ -8,7 +8,8 @@
 const https = require('https');
 const crypto = require('crypto');
 
-const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+// Use first spreadsheet from GS_SHEET_IDS for error reporting
+const SPREADSHEET_ID = (process.env.GS_SHEET_IDS || '').split(',')[0].trim();
 const SHEET_NAME = 'Reported Errors';
 const MAX_CELL_LENGTH = 5000; // Google Sheets limit per cell
 
