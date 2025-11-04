@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feed Debug - Local Development Check</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .status-box {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #666;
+        }
+        .status-box.success {
+            border-left-color: #4caf50;
+        }
+        .status-box.error {
+            border-left-color: #f44336;
+        }
+        .status-box.warning {
+            border-left-color: #ff9800;
+        }
+        h1 {
+            color: #fff;
+        }
+        h2 {
+            color: #90caf9;
+            margin-top: 30px;
+        }
+        code {
+            background: #000;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        pre {
+            background: #000;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 10px 10px 0;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        .log-entry {
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .info { color: #90caf9; }
+        .success { color: #4caf50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Feed Debug Tool</h1>
+    <p>This tool helps diagnose why your feed isn't working correctly.</p>
+
+    <div id="backend-status" class="status-box">
+        <h3>🔄 Checking backend connection...</h3>
+    </div>
+
+    <div id="api-url-status" class="status-box">
+        <h3>📡 Detecting API URL...</h3>
+    </div>
+
+    <h2>🧪 Test Feed Generation</h2>
+    <p>Test generating feed items with your interests:</p>
+    
+    <label for="interests-input">Your Interests:</label><br>
+    <input type="text" id="interests-input" placeholder="e.g., quantum computing, artificial intelligence" 
+           style="width: 100%; padding: 10px; margin: 10px 0; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 5px;">
+    
+    <button onclick="testFeedGeneration()">🚀 Generate Test Feed</button>
+    <button onclick="clearLogs()">🧹 Clear Logs</button>
+
+    <div id="test-results" class="status-box" style="display: none;">
+        <h3>📊 Test Results</h3>
+        <div id="log-container"></div>
+    </div>
+
+    <h2>📋 Instructions</h2>
+    <div class="status-box warning">
+        <h3>⚠️ Important: Hard Refresh Required</h3>
+        <p>If you see that the API is using production instead of localhost, you need to <strong>hard refresh</strong>:</p>
+        <ul>
+            <li><strong>Windows/Linux:</strong> <code>Ctrl + Shift + R</code></li>
+            <li><strong>Mac:</strong> <code>Cmd + Shift + R</code></li>
+        </ul>
+        <p>Then reload this page and check if the backend status changes to "localhost:3000".</p>
+    </div>
+
+    <script>
+        let logContainer = document.getElementById('log-container');
+        
+        function addLog(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function clearLogs() {
+            logContainer.innerHTML = '';
+        }
+
+        async function checkBackend() {
+            const backendBox = document.getElementById('backend-status');
+            try {
+                const response = await fetch('http://localhost:3000/health', {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(2000)
+                });
+                
+                if (response.ok) {
+                    backendBox.className = 'status-box success';
+                    backendBox.innerHTML = `
+                        <h3>✅ Backend is running on localhost:3000</h3>
+                        <p>Your local Lambda server is active and responding.</p>
+                    `;
+                } else {
+                    backendBox.className = 'status-box error';
+                    backendBox.innerHTML = `
+                        <h3>❌ Backend responded with error: ${response.status}</h3>
+                        <p>The server is running but returned an error.</p>
+                    `;
+                }
+            } catch (error) {
+                backendBox.className = 'status-box error';
+                backendBox.innerHTML = `
+                    <h3>❌ Cannot reach backend at localhost:3000</h3>
+                    <p>Error: ${error.message}</p>
+                    <p>Make sure you ran: <code>make dev</code></p>
+                `;
+            }
+        }
+
+        async function detectApiUrl() {
+            const apiBox = document.getElementById('api-url-status');
+            
+            // Try to detect which API the page will use
+            const localAvailable = await checkLocalLambda();
+            
+            if (localAvailable) {
+                apiBox.className = 'status-box success';
+                apiBox.innerHTML = `
+                    <h3>🏠 UI will use: http://localhost:3000</h3>
+                    <p>Your UI is correctly configured to use the local backend.</p>
+                `;
+            } else {
+                apiBox.className = 'status-box error';
+                apiBox.innerHTML = `
+                    <h3>🌐 UI will use: Production Lambda (remote)</h3>
+                    <p><strong>This is your problem!</strong> The UI cannot reach localhost:3000.</p>
+                    <p>Solutions:</p>
+                    <ol>
+                        <li>Make sure <code>make dev</code> is running</li>
+                        <li>Hard refresh your browser (<code>Ctrl+Shift+R</code> or <code>Cmd+Shift+R</code>)</li>
+                        <li>Check that nothing is blocking port 3000</li>
+                    </ol>
+                `;
+            }
+        }
+
+        async function checkLocalLambda() {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 500);
+                
+                const response = await fetch('http://localhost:3000/', {
+                    method: 'OPTIONS',
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                return response.status !== undefined;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        async function testFeedGeneration() {
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.style.display = 'block';
+            clearLogs();
+            
+            const interests = document.getElementById('interests-input').value.trim();
+            if (!interests) {
+                addLog('❌ Please enter some interests', 'error');
+                return;
+            }
+            
+            addLog('🚀 Starting feed generation test...', 'info');
+            addLog(`📝 Interests: "${interests}"`, 'info');
+            
+            // Get token from localStorage (same as real app)
+            const tokenData = localStorage.getItem('token');
+            if (!tokenData) {
+                addLog('❌ No auth token found. Please log in to the main app first.', 'error');
+                return;
+            }
+            
+            const token = JSON.parse(tokenData).token;
+            addLog('✅ Auth token found', 'success');
+            
+            // Detect API URL
+            const localAvailable = await checkLocalLambda();
+            const apiUrl = localAvailable ? 'http://localhost:3000' : 'production-lambda-url';
+            
+            addLog(`📡 API URL: ${apiUrl}`, localAvailable ? 'success' : 'error');
+            
+            if (!localAvailable) {
+                addLog('⚠️ Using production Lambda! Your changes won\'t be reflected.', 'warning');
+                addLog('💡 Solution: Hard refresh the browser and try again.', 'warning');
+                return;
+            }
+            
+            // Build request
+            const requestBody = {
+                swagContent: [],
+                searchTerms: [interests],
+                count: 3,
+                preferences: {
+                    searchTerms: [],
+                    likedTopics: [],
+                    dislikedTopics: [],
+                    lastGenerated: new Date().toISOString()
+                }
+            };
+            
+            addLog('📦 Request body prepared', 'info');
+            addLog(`   searchTerms: ["${interests}"]`, 'info');
+            
+            try {
+                addLog('🌐 Sending request...', 'info');
+                const response = await fetch(`${apiUrl}/feed/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                addLog(`📡 Response: ${response.status} ${response.statusText}`, 
+                       response.ok ? 'success' : 'error');
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    addLog(`❌ Error: ${JSON.stringify(errorData)}`, 'error');
+                    return;
+                }
+                
+                // Parse SSE stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let itemCount = 0;
+                
+                addLog('📨 Reading SSE stream...', 'info');
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                
+                                if (data.type === 'context_prepared') {
+                                    addLog(`📦 Context: ${data.swagCount} items, ${data.searchTermsCount} search terms`, 'info');
+                                } else if (data.type === 'search_starting') {
+                                    addLog(`🔍 Searching for: ${data.terms?.join(', ')}`, 'info');
+                                } else if (data.type === 'item_generated') {
+                                    itemCount++;
+                                    addLog(`✨ Item ${itemCount}: ${data.item?.title || 'Unknown'}`, 'success');
+                                    if (data.item?.imageUrl) {
+                                        addLog(`   🖼️  Image: ${data.item.imageUrl}`, 'info');
+                                    }
+                                } else if (data.type === 'generation_complete') {
+                                    addLog(`🎉 Complete! Generated ${data.totalItems} items in ${data.duration}ms`, 'success');
+                                }
+                            } catch (e) {
+                                // Ignore parse errors for incomplete chunks
+                            }
+                        }
+                    }
+                }
+                
+                addLog('✅ Test completed successfully!', 'success');
+                
+            } catch (error) {
+                addLog(`❌ Request failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Run checks on page load
+        checkBackend();
+        detectApiUrl();
+    </script>
+</body>
+</html>
