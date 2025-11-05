@@ -16,7 +16,7 @@ export default function FeedPage() {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   const { snippets } = useSwag();
-  const { getCurrentProjectId } = useProject();
+  const { currentProject } = useProject();
   const [interestsInput, setInterestsInput] = useState('');
   const {
     items,
@@ -134,6 +134,7 @@ export default function FeedPage() {
    * Use ref to track if initial load has been attempted
    */
   const initialLoadAttempted = useRef(false);
+  const lastProjectId = useRef<string | null>(null);
   
   useEffect(() => {
     // Don't do anything if still loading initial data
@@ -142,12 +143,19 @@ export default function FeedPage() {
       return;
     }
     
-    // Don't do anything if already attempted
+    const currentProjectId = currentProject?.id || null;
+    
+    // Reset attempt flag when project changes
+    if (lastProjectId.current !== currentProjectId) {
+      console.log('🔄 Project changed, resetting initial load attempt');
+      initialLoadAttempted.current = false;
+      lastProjectId.current = currentProjectId;
+    }
+    
+    // Don't do anything if already attempted for this project
     if (initialLoadAttempted.current) {
       return;
     }
-    
-    const currentProjectId = getCurrentProjectId();
     
     console.log('🎬 Initial load effect triggered:', {
       isAuthenticated,
@@ -156,7 +164,8 @@ export default function FeedPage() {
       isLoading,
       isGenerating,
       snippetsCount: snippets.length,
-      currentProjectId: currentProjectId || 'All Projects'
+      currentProjectId: currentProjectId || 'All Projects',
+      currentProjectName: currentProject?.name || 'All Projects'
     });
     
     // Check if user has tags on their snippets (excluding admin: tags)
@@ -178,27 +187,36 @@ export default function FeedPage() {
     console.log('🏷️ Has snippet tags:', hasSnippetTags);
     
     // Auto-generation logic:
-    // ONLY auto-generate if user has tags on their VISIBLE snippets (filtered by current project)
-    // If no tags, show interests input and wait for manual generation
-    const shouldAutoGenerate = hasSnippetTags;
+    // 1. If user has tags on their VISIBLE snippets (filtered by current project), auto-generate
+    // 2. If a project is selected but has no snippets, generate based on project name
+    // 3. Otherwise, show interests input and wait for manual generation
+    const shouldAutoGenerate = hasSnippetTags || (currentProject && snippets.length === 0);
     
     if (isAuthenticated && items.length === 0 && shouldAutoGenerate) {
-      console.log('🎬 Initial load: starting feed generation (user has snippet tags in current project)');
-      initialLoadAttempted.current = true;
-      generateMore();
+      // Generate feed based on project name if no snippets in current project
+      if (currentProject && snippets.length === 0) {
+        console.log('🎬 Initial load: generating feed based on project name:', currentProject.name);
+        initialLoadAttempted.current = true;
+        generateMore([currentProject.name]); // Use project name as interest
+      } else {
+        console.log('🎬 Initial load: starting feed generation (user has snippet tags in current project)');
+        initialLoadAttempted.current = true;
+        generateMore();
+      }
     } else {
       console.log('⏸️ Initial load: skipping auto-generation', {
         isAuthenticated,
         hasItems: items.length > 0,
         hasSnippetTags,
         snippetCount: snippets.length,
-        reason: !hasSnippetTags ? 'No snippet tags in current project - show interests input' : 'Already has items or not authenticated'
+        hasProject: !!currentProject,
+        reason: !hasSnippetTags && !currentProject ? 'No snippet tags and no project - show interests input' : 'Already has items or not authenticated'
       });
       initialLoadAttempted.current = true; // Mark as attempted so we don't retry
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, items.length, isLoading, snippets, preferences.searchTerms.length]);
-  // Note: Added items.length, isLoading, snippets, and preferences.searchTerms.length so we wait for DB load and check both tags and interests
+  }, [isAuthenticated, items.length, isLoading, snippets, preferences.searchTerms.length, currentProject]);
+  // Note: Added currentProject to detect project changes and auto-generate based on project name if no snippets
 
   /**
    * Handle manual refresh
@@ -240,9 +258,10 @@ export default function FeedPage() {
   
   // Show interests input only when:
   // 1. No snippet tags exist
-  // 2. AND no feed items have been generated yet
-  // 3. AND not currently generating (hide form as soon as generation starts)
-  const showInterestsInput = !hasSnippetTags && items.length === 0 && !isGenerating;
+  // 2. AND no project is selected (if project is selected, use its name)
+  // 3. AND no feed items have been generated yet
+  // 4. AND not currently generating (hide form as soon as generation starts)
+  const showInterestsInput = !hasSnippetTags && !currentProject && items.length === 0 && !isGenerating;
 
   // Show authentication message
   if (!isAuthenticated) {
