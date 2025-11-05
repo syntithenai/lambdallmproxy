@@ -68,7 +68,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { showError, showWarning, showSuccess, showPersistentToast, removeToast, updateToast } = useToast();
   const { user, getToken } = useAuth();
   const { settings } = useSettings();
-  const { getCurrentProjectId } = useProject();
+  const { getCurrentProjectId, currentProject } = useProject();
   
   // Sync queue to batch multiple snippet operations
   const syncQueueRef = useRef<{ snippets: ContentSnippet[]; timeoutId?: NodeJS.Timeout }>({
@@ -121,14 +121,14 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Filter snippets by current project
   const snippets = useMemo(() => {
-    const currentProjectId = getCurrentProjectId();
+    const currentProjectId = currentProject?.id || null;
     if (!currentProjectId) {
       // No project selected - show all snippets
       return allSnippets;
     }
     // Filter by current project
     return allSnippets.filter(s => s.projectId === currentProjectId);
-  }, [allSnippets, getCurrentProjectId]);
+  }, [allSnippets, currentProject]);
 
   // Load from storage on mount and sync with Google Drive
   useEffect(() => {

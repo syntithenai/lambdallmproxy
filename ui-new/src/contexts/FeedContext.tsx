@@ -56,21 +56,21 @@ interface FeedProviderProps {
 export function FeedProvider({ children }: FeedProviderProps) {
   const { getToken } = useAuth();
   const { snippets } = useSwag();
-  const { getCurrentProjectId } = useProject();
+  const { getCurrentProjectId, currentProject } = useProject();
   const { showSuccess, showWarning, showError } = useToast();
   
   const [allItems, setAllItems] = useState<FeedItem[]>([]);
   
   // Filter items by current project
   const items = useMemo(() => {
-    const currentProjectId = getCurrentProjectId();
+    const currentProjectId = currentProject?.id || null;
     if (!currentProjectId) {
       // No project selected - show all items
       return allItems;
     }
     // Filter by current project
     return allItems.filter(item => item.projectId === currentProjectId);
-  }, [allItems, getCurrentProjectId]);
+  }, [allItems, currentProject]);
   const [preferences, setPreferences] = useState<FeedPreferences>({
     searchTerms: [],
     likedTopics: [],
