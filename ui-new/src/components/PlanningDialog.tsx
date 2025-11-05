@@ -14,7 +14,7 @@ import {
   getStorageEstimate
 } from '../utils/planningCache';
 import type { CachedPlan } from '../utils/planningCache';
-import { LlmInfoDialog } from './LlmInfoDialog';
+import { LlmInfoDialogNew } from './LlmInfoDialogNew';
 import { VoiceInputDialog } from './VoiceInputDialog';
 import { requestGoogleAuth } from '../utils/googleDocs';
 import { FixResponseDialog } from './FixResponseDialog';
@@ -1335,7 +1335,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
 
       {/* LLM Transparency Dialog */}
       {showLlmInfo && llmInfo && (
-        <LlmInfoDialog
+        <LlmInfoDialogNew
           apiCalls={[llmInfo]}
           onClose={() => setShowLlmInfo(false)}
         />
