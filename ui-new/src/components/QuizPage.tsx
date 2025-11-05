@@ -19,7 +19,7 @@ export default function QuizPage() {
   const { t } = useTranslation();
   const { showSuccess, showError, showWarning } = useToast();
   const { getToken } = useAuth();
-  const { getCurrentProjectId } = useProject();
+  const { getCurrentProjectId, currentProject } = useProject();
   const { snippets } = useSwag();
   const { settings } = useSettings();
   
@@ -27,14 +27,14 @@ export default function QuizPage() {
   
   // Filter statistics by current project
   const statistics = useMemo(() => {
-    const currentProjectId = getCurrentProjectId();
+    const currentProjectId = currentProject?.id || null;
     if (!currentProjectId) {
       // No project selected - show all quizzes
       return allStatistics;
     }
     // Filter by current project
     return allStatistics.filter(quiz => quiz.projectId === currentProjectId);
-  }, [allStatistics, getCurrentProjectId]);
+  }, [allStatistics, currentProject]);
   const [summary, setSummary] = useState<{
     totalQuizzes: number;
     averageScore: number;
@@ -581,6 +581,8 @@ export default function QuizPage() {
                       .then(synced => {
                         if (synced) {
                           console.log('✅ Quiz statistic synced to Google Sheets');
+                          // Reload statistics to reflect synced status
+                          loadStatistics();
                         }
                       })
                       .catch(error => {
