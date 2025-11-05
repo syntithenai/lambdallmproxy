@@ -406,25 +406,122 @@ export class GoogleSheetsAdapter implements SyncAdapter {
   }
 
   /**
+   * Ensure the Snippets sheet exists with proper headers
+   */
+  private async ensureSnippetsSheet(token: string): Promise<void> {
+    try {
+      // Try to read the sheet metadata to see if it exists
+      const metadataUrl = `${this.SHEETS_API_BASE}/spreadsheets/${this.spreadsheetId}`;
+      const metadataResponse = await fetch(metadataUrl, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!metadataResponse.ok) {
+        throw new Error(`Failed to get spreadsheet metadata: ${metadataResponse.statusText}`);
+      }
+
+      const metadata = await metadataResponse.json();
+      const hasSnippetsSheet = metadata.sheets?.some((sheet: any) => sheet.properties?.title === 'Snippets');
+
+      if (!hasSnippetsSheet) {
+        console.log('📝 Creating Snippets sheet...');
+        
+        // Create the Snippets sheet
+        const createSheetUrl = `${this.SHEETS_API_BASE}/spreadsheets/${this.spreadsheetId}:batchUpdate`;
+        const createResponse = await fetch(createSheetUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            requests: [{
+              addSheet: {
+                properties: {
+                  title: 'Snippets',
+                  gridProperties: {
+                    rowCount: 1000,
+                    columnCount: 10
+                  }
+                }
+              }
+            }]
+          })
+        });
+
+        if (!createResponse.ok) {
+          const errorBody = await createResponse.text();
+          throw new Error(`Failed to create Snippets sheet: ${createResponse.statusText} - ${errorBody}`);
+        }
+
+        // Add headers
+        const headersUrl = `${this.SHEETS_API_BASE}/spreadsheets/${this.spreadsheetId}/values/${encodeURIComponent('Snippets!A1:J1')}?valueInputOption=RAW`;
+        const headersResponse = await fetch(headersUrl, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            values: [[
+              'ID', 'User Email', 'Project ID', 'Created At', 'Updated At',
+              'Title', 'Content', 'Tags', 'Source', 'URL'
+            ]]
+          })
+        });
+
+        if (!headersResponse.ok) {
+          const errorBody = await headersResponse.text();
+          throw new Error(`Failed to add headers: ${headersResponse.statusText} - ${errorBody}`);
+        }
+
+        console.log('✅ Snippets sheet created with headers');
+      }
+    } catch (error) {
+      console.error('Error ensuring Snippets sheet:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Append snippets to Google Sheets
    */
   private async appendSnippets(token: string, snippets: any[]): Promise<void> {
+    if (!snippets || snippets.length === 0) {
+      console.log('⚠️ No snippets to append, skipping');
+      return;
+    }
+
+    // Ensure the sheet exists before appending
+    await this.ensureSnippetsSheet(token);
+
     const range = 'Snippets!A:J';
     // eslint-disable-next-line no-secrets/no-secrets
     const url = `${this.SHEETS_API_BASE}/spreadsheets/${this.spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`;
     
-    const rows = snippets.map(s => [
-      s.id,
-      s.user_email || '',
-      s.project_id || '',
-      s.created_at || new Date().toISOString(),
-      s.updated_at || new Date().toISOString(),
-      s.title || '',
-      s.content || '',
-      s.tags || '',
-      s.source || 'manual',
-      s.url || ''
-    ]);
+    // Validate and clean data before sending
+    const rows = snippets.map(s => {
+      // Ensure all values are strings or empty strings
+      const row = [
+        String(s.id || ''),
+        String(s.user_email || ''),
+        String(s.project_id || ''),
+        String(s.created_at || new Date().toISOString()),
+        String(s.updated_at || new Date().toISOString()),
+        String(s.title || ''),
+        String(s.content || ''),
+        String(s.tags || ''),
+        String(s.source || 'manual'),
+        String(s.url || '')
+      ];
+      
+      // Ensure exactly 10 columns (A-J)
+      while (row.length < 10) row.push('');
+      return row.slice(0, 10);
+    });
+
+    console.log(`📤 Appending ${rows.length} snippets to Google Sheets (${range})`);
+    console.log('First row sample:', rows[0]);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -436,7 +533,15 @@ export class GoogleSheetsAdapter implements SyncAdapter {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to append snippets: ${response.statusText}`);
+      const errorBody = await response.text();
+      console.error('Google Sheets append error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody,
+        url,
+        rowCount: rows.length
+      });
+      throw new Error(`Failed to append snippets: ${response.statusText} - ${errorBody}`);
     }
 
     console.log(`✓ Pushed ${snippets.length} new snippets to Google Sheets`);
