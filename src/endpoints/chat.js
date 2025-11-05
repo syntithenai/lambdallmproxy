@@ -2044,6 +2044,28 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
             const cleanMessages = filteredMessages.map(msg => {
                 const { isStreaming, errorData, llmApiCalls, extractedContent, rawResult, evaluations, ...cleanMsg } = msg;
                 
+                // CRITICAL: Ensure content is always a string (never array/object)
+                // Some messages (e.g., vision models) may have array content, but most APIs require strings
+                if (cleanMsg.content && typeof cleanMsg.content !== 'string') {
+                    if (Array.isArray(cleanMsg.content)) {
+                        // Extract text from content array (used in vision models)
+                        cleanMsg.content = cleanMsg.content
+                            .map(part => {
+                                if (typeof part === 'string') return part;
+                                if (part && typeof part === 'object' && part.text) return part.text;
+                                if (part && typeof part === 'object' && part.type === 'text') return part.text || '';
+                                return '';
+                            })
+                            .filter(text => text.length > 0)
+                            .join('\n');
+                        console.log('🔄 Converted array content to string');
+                    } else if (typeof cleanMsg.content === 'object') {
+                        // Convert object content to JSON string
+                        cleanMsg.content = JSON.stringify(cleanMsg.content);
+                        console.log('🔄 Converted object content to JSON string');
+                    }
+                }
+                
                 // CRITICAL: Clean malformed function calls from assistant messages
                 // Some LLMs generate text-based function calls in various formats:
                 // - <function=name> or <function=name>text</function>
@@ -3224,8 +3246,10 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                     } catch (e) {
                         // Not JSON, check if it's compressed markdown format with URL section
                         if (toolMsg.name === 'search_web' && toolMsg.content.includes('🚨 CRITICAL: YOU MUST COPY THESE URLS')) {
-                            // Extract URLs from compressed format
-                            const urlSectionMatch = toolMsg.content.match(/🚨 CRITICAL:[\s\S]*?((?:\d+\.\s*\[.+?\]\(.+?\)\s*)+)/);
+                            // Extract URLs from compressed format - use indexOf instead of greedy regex
+                            const criticalIndex = toolMsg.content.indexOf('🚨 CRITICAL:');
+                            const urlSection = criticalIndex >= 0 ? toolMsg.content.substring(criticalIndex) : '';
+                            const urlSectionMatch = urlSection.match(/((?:\d+\.\s*\[.+?\]\(.+?\)\s*)+)/);
                             if (urlSectionMatch) {
                                 const urlLines = urlSectionMatch[1].split('\n').filter(l => l.trim());
                                 for (const line of urlLines) {
