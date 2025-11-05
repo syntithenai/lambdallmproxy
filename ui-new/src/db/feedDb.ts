@@ -194,6 +194,7 @@ class FeedDatabase {
             if (skipped < offset) {
               skipped++;
             } else if (items.length < limit) {
+              console.log(`📦 DB: Loading item "${item.title.substring(0, 40)}..." - has image: ${!!item.image}`);
               items.push(item);
             }
           }

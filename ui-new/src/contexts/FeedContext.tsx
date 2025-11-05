@@ -379,7 +379,14 @@ export function FeedProvider({ children }: FeedProviderProps) {
               return prev.map(existing => {
                 if (event.item && existing.id === event.item.id) {
                   console.log('✨ Updating item with new data:', existing.id, event.field);
-                  return { ...existing, ...event.item };
+                  const updatedItem = { ...existing, ...event.item };
+                  
+                  // Save updated item to IndexedDB so images persist on reload
+                  feedDB.saveItems([updatedItem]).catch(err => {
+                    console.error('❌ Failed to save updated item to DB:', err);
+                  });
+                  
+                  return updatedItem;
                 }
                 return existing;
               });
