@@ -666,7 +666,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                                 provider: selectedModel.provider,
                                 model: selectedModel.model,
                                 modelKey: selectedModel.modelKey,
-                                size: '800x600', // 4:3 aspect ratio for news feed thumbnails
+                                size: '800x608', // 4:3 aspect ratio, dimensions must be multiples of 16 for FLUX
                                 quality: qualityTier,
                                 style: 'natural',
                                 context: {
