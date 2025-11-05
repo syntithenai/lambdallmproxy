@@ -10,13 +10,12 @@ import { useSwag } from '../contexts/SwagContext';
 import { useProject } from '../contexts/ProjectContext';
 import FeedItemCard from './FeedItem';
 import FeedQuizOverlay from './FeedQuiz';
-import TagSelector from './TagSelector';
 import { Loader2, AlertCircle, RefreshCw, Rss } from 'lucide-react';
 
 export default function FeedPage() {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
-  const { getAllTags, snippets } = useSwag();
+  const { snippets } = useSwag();
   const { getCurrentProjectId } = useProject();
   const [interestsInput, setInterestsInput] = useState('');
   const {
@@ -27,11 +26,9 @@ export default function FeedPage() {
     isGenerating,
     generationStatus,
     error,
-    selectedTags,
     generateMore,
     refresh,
     closeQuiz,
-    updateSelectedTags,
     updateSearchTerms
   } = useFeed();
 
@@ -296,31 +293,8 @@ export default function FeedPage() {
           </div>
 
           {(() => {
-            // Show tag filter only when interests input is NOT shown
-            const showTagFilter = !showInterestsInput;
-
             return (
               <>
-                {/* Tag filter - hidden when interests input is shown */}
-                {showTagFilter && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-                      Filter by Swag Tags
-                    </label>
-                    <TagSelector
-                      availableTags={getAllTags()}
-                      selectedTags={selectedTags}
-                      onChange={updateSelectedTags}
-                      placeholder="All tags (no filter)"
-                    />
-                    {selectedTags.length > 0 && (
-                      <p className="text-xs text-gray-500">
-                        Feed will use only Swag content tagged with: <span className="font-medium">{selectedTags.join(', ')}</span>
-                      </p>
-                    )}
-                  </div>
-                )}
-
                 {/* Interests input - shown only when no snippet tags exist AND no feed items */}
                 {showInterestsInput && (
                   <div className="space-y-2">
