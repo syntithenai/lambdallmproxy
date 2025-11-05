@@ -22,6 +22,9 @@ interface LlmApiCallCardProps {
 }
 
 export const LlmApiCallCard: React.FC<LlmApiCallCardProps> = ({ call }) => {
+  const [showRequest, setShowRequest] = React.useState(false);
+  const [showResponse, setShowResponse] = React.useState(false);
+  
   // Helper to get display label and color for call type
   function getCallTypeInfo(call: LlmApiCall) {
     switch (call.type) {
@@ -64,7 +67,56 @@ export const LlmApiCallCard: React.FC<LlmApiCallCardProps> = ({ call }) => {
           </span>
         )}
       </div>
-      {/* Add more details as needed */}
+      
+      {/* Expandable Request Data */}
+      {call.request && (
+        <div className="mt-3 border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
+          <button
+            onClick={() => setShowRequest(!showRequest)}
+            className="w-full px-3 py-2 flex items-center justify-between bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors"
+          >
+            <span className="font-mono text-sm text-gray-700 dark:text-gray-300">📤 Request Data</span>
+            <svg 
+              className={`w-4 h-4 transition-transform ${showRequest ? 'rotate-180' : ''}`} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showRequest && (
+            <pre className="p-3 text-xs overflow-auto max-h-96 bg-white dark:bg-gray-900 font-mono text-gray-800 dark:text-gray-200">
+              {JSON.stringify(call.request, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+      
+      {/* Expandable Response Data */}
+      {call.response && (
+        <div className="mt-3 border border-gray-200 dark:border-gray-700 rounded overflow-hidden">
+          <button
+            onClick={() => setShowResponse(!showResponse)}
+            className="w-full px-3 py-2 flex items-center justify-between bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors"
+          >
+            <span className="font-mono text-sm text-gray-700 dark:text-gray-300">📥 Response Data</span>
+            <svg 
+              className={`w-4 h-4 transition-transform ${showResponse ? 'rotate-180' : ''}`} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showResponse && (
+            <pre className="p-3 text-xs overflow-auto max-h-96 bg-white dark:bg-gray-900 font-mono text-gray-800 dark:text-gray-200">
+              {JSON.stringify(call.response, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 };

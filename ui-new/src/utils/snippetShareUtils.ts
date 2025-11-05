@@ -97,7 +97,11 @@ export function createSnippetShareData(
  * Generate full share URL for snippet
  */
 export function generateSnippetShareUrl(compressed: string): string {
-  const baseUrl = window.location.origin + window.location.pathname;
+  // Use VITE_SHARE_BASE_URL if defined, otherwise use current origin
+  const shareBaseUrl = import.meta.env.VITE_SHARE_BASE_URL;
+  const baseUrl = shareBaseUrl 
+    ? shareBaseUrl + window.location.pathname
+    : window.location.origin + window.location.pathname;
   return `${baseUrl}#/snippet/shared?data=${compressed}`;
 }
 

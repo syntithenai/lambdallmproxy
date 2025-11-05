@@ -16,6 +16,8 @@ import {
 import type { CachedPlan } from '../utils/planningCache';
 import { LlmInfoDialog } from './LlmInfoDialog';
 import { VoiceInputDialog } from './VoiceInputDialog';
+import { requestGoogleAuth } from '../utils/googleDocs';
+import { FixResponseDialog } from './FixResponseDialog';
 
 interface PlanningDialogProps {
   isOpen: boolean;
@@ -26,7 +28,7 @@ interface PlanningDialogProps {
 export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose, onTransferToChat }) => {
   const { t } = useTranslation();
   const dialogRef = useDialogClose(isOpen, onClose);
-  const { getToken, isAuthenticated, accessToken } = useAuth();
+  const { getToken, isAuthenticated, accessToken, user } = useAuth();
   const { settings } = useSettings();
   const { showError, showSuccess } = useToast();
   const [query, setQuery] = useLocalStorage<string>('planning_query', '');
@@ -397,6 +399,56 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
     console.log('Planning dialog cleared completely');
   };
 
+  // Plan feedback handlers
+  const handlePositivePlanFeedback = async () => {
+    try {
+      const idToken = await getToken();
+      if (!idToken) {
+        showError('Please sign in to submit feedback');
+        return;
+      }
+      
+      const googleAccessToken = await requestGoogleAuth();
+      const apiBase = await getCachedApiBase();
+      
+      const response = await fetch(`${apiBase}/report-error`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+          'X-Google-Access-Token': googleAccessToken
+        },
+        body: JSON.stringify({
+          userEmail: user?.email,
+          feedbackType: 'positive',
+          explanation: '',
+          planData: {
+            query: query,
+            generatedSystemPrompt: generatedSystemPrompt,
+            generatedUserQuery: generatedUserQuery,
+            llmInfo: llmInfo
+          },
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to submit feedback');
+      }
+
+      showSuccess('👍 Thank you for the feedback!');
+    } catch (error) {
+      console.error('Error submitting positive plan feedback:', error);
+      showError('Failed to submit feedback');
+    }
+  };
+
+  const [showFixDialog, setShowFixDialog] = useState(false);
+  
+  const handleNegativePlanFeedback = () => {
+    setShowFixDialog(true);
+  };
+
   // Handle voice input transcription - inject into last focused textarea
   const handleVoiceTranscription = (text: string) => {
     console.log('🎤 Voice transcription received for planning:', text);
@@ -504,47 +556,6 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                 </svg>
                 {t('planning.loadSaved')}
               </button>
-              
-              {/* Voice Input Button */}
-              <button
-                onClick={() => setShowVoiceInput(true)}
-                disabled={!isAuthenticated}
-                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
-                title={isAuthenticated ? "Voice input - transcribe speech into last selected field" : t('auth.signInRequired')}
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                </svg>
-                🎤
-              </button>
-              
-              {/* Copy Debug Info Button */}
-              <button
-                onClick={handleCopyDebugInfo}
-                disabled={!query && !result}
-                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
-                title={t('planning.debugTooltip')}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                {t('planning.debug')}
-              </button>
-              
-              {/* Transfer to Chat */}
-              {onTransferToChat && (
-                <button
-                  onClick={handleTransferToChat}
-                  disabled={!generatedUserQuery || !generatedUserQuery.trim()}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  {t('planning.transferToChat')}
-                </button>
-              )}
             </div>
           </div>
 
@@ -609,7 +620,7 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                   {t('planning.signInToUsePlanning')}
                 </div>
               ) : (
-                <>
+                <div className="relative">
                   <textarea
                     ref={queryTextareaRef}
                     value={query}
@@ -618,10 +629,22 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                     onClick={() => handleTextareaClick(queryTextareaRef.current)}
                     onKeyUp={() => handleTextareaClick(queryTextareaRef.current)}
                     placeholder={t('planning.enterQuery')}
-                    className="input-field resize-none overflow-hidden"
+                    className="input-field resize-none overflow-hidden pr-12"
                     style={{ minHeight: '120px' }}
                   />
-                </>
+                  {/* Voice Input Button - Overlays textarea at top right */}
+                  <button
+                    onClick={() => setShowVoiceInput(true)}
+                    disabled={!isAuthenticated}
+                    className="absolute top-2 right-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-colors shadow-lg"
+                    title={isAuthenticated ? "Voice input - transcribe speech" : t('auth.signInRequired')}
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                      <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                  </button>
+                </div>
               )}
             </div>
             )}
@@ -633,16 +656,62 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                   <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
                     {t('planning.generatedPrompts')}
                   </h3>
-                  {/* LLM Transparency Info Button */}
-                  {llmInfo && (
+                  <div className="flex items-center gap-2">
+                    {/* Feedback Buttons */}
+                    {llmInfo && (
+                      <>
+                        <button
+                          onClick={handlePositivePlanFeedback}
+                          className="text-xs px-2 py-1 rounded bg-green-50 dark:bg-green-900/30 hover:bg-green-100 dark:hover:bg-green-900/50 flex items-center gap-1 transition-colors"
+                          title="Good plan"
+                        >
+                          👍
+                        </button>
+                        <button
+                          onClick={handleNegativePlanFeedback}
+                          className="text-xs px-2 py-1 rounded bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 flex items-center gap-1 transition-colors"
+                          title="Bad plan - report issue"
+                        >
+                          👎
+                        </button>
+                      </>
+                    )}
+                    {/* LLM Transparency Info Button */}
+                    {llmInfo && (
+                      <button
+                        onClick={() => setShowLlmInfo(true)}
+                        className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1"
+                        title={t('planning.llmInfoTooltip')}
+                      >
+                        💰 ${(llmInfo.cost || 0).toFixed(4)} • {llmInfo.calls || 1} {llmInfo.calls > 1 ? t('planning.llmCallsPlural') : t('planning.llmCalls')} ℹ️
+                      </button>
+                    )}
+                    {/* Copy Debug Info Button */}
                     <button
-                      onClick={() => setShowLlmInfo(true)}
-                      className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1"
-                      title={t('planning.llmInfoTooltip')}
+                      onClick={handleCopyDebugInfo}
+                      disabled={!query && !result}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                      title={t('planning.debugTooltip')}
                     >
-                      💰 ${(llmInfo.cost || 0).toFixed(4)} • {llmInfo.calls || 1} {llmInfo.calls > 1 ? t('planning.llmCallsPlural') : t('planning.llmCalls')} ℹ️
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      {t('planning.debug')}
                     </button>
-                  )}
+                    {/* Transfer to Chat */}
+                    {onTransferToChat && (
+                      <button
+                        onClick={handleTransferToChat}
+                        disabled={!generatedUserQuery || !generatedUserQuery.trim()}
+                        className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        {t('planning.transferToChat')}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-4">
                   {/* Generated System Prompt */}
@@ -1280,6 +1349,22 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
         accessToken={accessToken}
         apiEndpoint={apiEndpoint}
       />
+
+      {/* Fix Response Dialog for negative feedback */}
+      {showFixDialog && (
+        <FixResponseDialog
+          isOpen={showFixDialog}
+          onClose={() => setShowFixDialog(false)}
+          planData={{
+            query: query,
+            generatedSystemPrompt: generatedSystemPrompt,
+            generatedUserQuery: generatedUserQuery,
+            llmInfo: llmInfo
+          }}
+          showSuccess={showSuccess}
+          showError={showError}
+        />
+      )}
 
       {/* Copy Debug Info Button */}
       <div className="flex justify-end mt-6">

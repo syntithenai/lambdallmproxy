@@ -5,27 +5,33 @@ services:
     image: bhimrazy/chatterbox-tts:v0.1.0
     container_name: chatterbox-tts
     ports:
-      - "8000:8000"
-    devices:
-      - "/dev/dri/card1:/dev/dri/card1"  # GPU access (card1 for your system)
-      - "/dev/dri/renderD128:/dev/dri/renderD128"  # GPU render node
-      - "/dev/kfd:/dev/kfd"  # GPU compute access
+      - "8001:8000"  # Map host port 8001 to container port 8000 (avoid conflict with Whisper on 8000)
+    # GPU disabled - using CPU for compatibility
+    # devices:
+    #   - "/dev/dri/card1:/dev/dri/card1"  # GPU access (card1 for your system)
+    #   - "/dev/dri/renderD128:/dev/dri/renderD128"  # GPU render node
+    #   - "/dev/kfd:/dev/kfd"  # GPU compute access
     environment:
-      # AMD ROCm GPU Configuration
+      # CPU Configuration (GPU disabled for compatibility)
+      # AMD ROCm GPU Configuration - DISABLED
       # CRITICAL: Set this to match your GPU architecture
       # Your GPU: AMD Strix Halo (Radeon 8050S/8060S) - gfx1150 (RDNA 3.5)
       # For gfx1150, use gfx1100 as fallback (RDNA 3 architecture)
-      - HSA_OVERRIDE_GFX_VERSION=11.0.0
-      - PYTORCH_ROCM_ARCH=gfx1100
-      - ROCm_HOME=/opt/rocm
-      - HIP_VISIBLE_DEVICES=0
+      # - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      # - PYTORCH_ROCM_ARCH=gfx1100
+      # - ROCm_HOME=/opt/rocm
+      # - HIP_VISIBLE_DEVICES=0
+      
+      # Force CPU usage
+      - CUDA_VISIBLE_DEVICES=-1
+      - PYTORCH_DEVICE=cpu
       
       # Server Configuration
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8000  # Internal container port (mapped to 8001 on host)
       
       # CORS Configuration (allow access from UI)
-      - CORS_ORIGINS=http://localhost:8081,http://localhost:5173,http://127.0.0.1:8081,http://127.0.0.1:5173
+      - CORS_ORIGINS=http://localhost:8081,http://localhost:5173,http://127.0.0.1:8081,http://127.0.0.1:5173,http://localhost:8001,http://127.0.0.1:8001
       - CORS_ALLOW_CREDENTIALS=true
       
       # Model Configuration (optional - defaults to good quality models)
@@ -43,7 +49,7 @@ services:
     restart: unless-stopped
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(5); s.connect((\"127.0.0.1\", 8000)); s.close()'"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -61,7 +67,7 @@ volumes:
 #    docker-compose -f docker-compose.chatterbox.yml logs -f
 #
 # 3. Test the endpoint:
-#    curl -X POST http://localhost:8000/api/tts \
+#    curl -X POST http://localhost:8001/api/tts \
 #      -H "Content-Type: application/json" \
 #      -d '{"text": "Hello world", "language": "en"}' \
 #      --output test.wav

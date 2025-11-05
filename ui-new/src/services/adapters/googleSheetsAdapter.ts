@@ -314,7 +314,7 @@ export class GoogleSheetsAdapter implements SyncAdapter {
       content: row[6] || '',
       url: row[7] || '',
       source: row[8] || 'ai_generated',
-      topics: row[9] || '',
+      topics: row[9] ? row[9].split(',').map((t: string) => t.trim()) : [],
       upvote_count: parseInt(row[10]) || 0,
       downvote_count: parseInt(row[11]) || 0,
       user_vote: row[12] || '',
@@ -410,8 +410,8 @@ export class GoogleSheetsAdapter implements SyncAdapter {
    */
   private async appendSnippets(token: string, snippets: any[]): Promise<void> {
     const range = 'Snippets!A:J';
-    const encodedRange = encodeURIComponent(range);
-    const url = `${this.SHEETS_API_BASE}/spreadsheets/${this.spreadsheetId}/values/${encodedRange}:append?valueInputOption=RAW`;
+    // eslint-disable-next-line no-secrets/no-secrets
+    const url = `${this.SHEETS_API_BASE}/spreadsheets/${this.spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`;
     
     const rows = snippets.map(s => [
       s.id,
@@ -460,7 +460,7 @@ export class GoogleSheetsAdapter implements SyncAdapter {
       f.content || '',
       f.url || '',
       f.source || 'ai_generated',
-      f.topics || '',
+      Array.isArray(f.topics) ? f.topics.join(',') : (f.topics || ''),
       f.upvote_count || 0,
       f.downvote_count || 0,
       f.user_vote || '',

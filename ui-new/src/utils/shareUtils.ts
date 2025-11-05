@@ -166,7 +166,11 @@ export function createShareData(
  * Generate full share URL using hash-based routing (GitHub Pages compatible)
  */
 export function generateShareUrl(compressed: string): string {
-  const baseUrl = window.location.origin + window.location.pathname;
+  // Use VITE_SHARE_BASE_URL if defined, otherwise use current origin
+  const shareBaseUrl = import.meta.env.VITE_SHARE_BASE_URL;
+  const baseUrl = shareBaseUrl 
+    ? shareBaseUrl + window.location.pathname
+    : window.location.origin + window.location.pathname;
   return `${baseUrl}#/chat/shared?data=${compressed}`;
 }
 

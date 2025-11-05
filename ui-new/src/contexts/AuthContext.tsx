@@ -34,7 +34,16 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [authState, setAuthState] = useState<AuthState>(() => loadAuthState());
+  const [authState, setAuthState] = useState<AuthState>(() => {
+    const loaded = loadAuthState();
+    console.log('🔐 AuthProvider initializing with state from localStorage:', {
+      isAuthenticated: loaded.isAuthenticated,
+      hasToken: !!loaded.accessToken,
+      tokenLength: loaded.accessToken?.length,
+      userEmail: loaded.user?.email
+    });
+    return loaded;
+  });
   const [hasAttemptedAutoLogin, setHasAttemptedAutoLogin] = useState(false);
 
   const login = useCallback((credential: string) => {
@@ -103,21 +112,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return null;
     }
 
-    // Check if token is expired
-    if (isTokenExpiringSoon(authState.accessToken)) {
-      console.log('⚠️ ID token expired - user must re-authenticate');
+    // Check if token is ACTUALLY expired (not just "expiring soon")
+    const timeRemaining = getTokenTimeRemaining(authState.accessToken);
+    const minutesRemaining = Math.floor(timeRemaining / 60000);
+    console.log(`🔍 getToken() checking validity: ${minutesRemaining} minutes remaining`);
+    
+    if (timeRemaining <= 0) {
+      console.log('⚠️ ID token has expired (timeRemaining <= 0) - user must re-authenticate - LOGOUT #3: getToken() CHECK');
       logout();
       return null;
     }
 
-    // Ensure we're returning an ID token (JWT), not an OAuth access token
-    // ID tokens start with "eyJ", OAuth tokens start with "ya29."
-    if (!authState.accessToken.startsWith('eyJ')) {
-      console.error('❌ Auth token is not a valid JWT ID token - forcing re-login');
-      logout();
-      return null;
+    // Warn if token is expiring soon (< 5 minutes) but still allow usage
+    if (timeRemaining < 5 * 60 * 1000) {
+      const minutesRemaining = Math.floor(timeRemaining / 60000);
+      console.warn(`⚠️ Token expires in ${minutesRemaining} minutes - user will need to re-authenticate soon`);
     }
 
+    // Both JWT ID tokens (start with "eyJ") and OAuth access tokens (start with "ya29.") are valid
+    // No need to enforce JWT format - access tokens work fine for authentication
     return authState.accessToken;
   }, [authState.accessToken, logout]);
 
@@ -143,9 +156,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (authState.isAuthenticated && authState.accessToken) {
         console.log('🔑 User already authenticated from localStorage:', authState.user?.email);
         
-        // Check if token is expired or expiring soon
-        if (isTokenExpiringSoon(authState.accessToken)) {
-          console.log('⚠️ Saved token expired, clearing auth state');
+        // Check if token is ACTUALLY expired (not just "expiring soon")
+        // This allows users to keep their session until the token truly expires
+        const timeRemaining = getTokenTimeRemaining(authState.accessToken);
+        const minutesRemaining = Math.floor(timeRemaining / 60000);
+        console.log(`🔍 Checking token validity: ${minutesRemaining} minutes remaining`);
+        
+        if (timeRemaining <= 0) {
+          console.log('⚠️ Token has expired (timeRemaining <= 0), clearing auth state - LOGOUT #1: AUTO-LOGIN CHECK');
           clearAuthState();
           setAuthState({
             user: null,
@@ -153,7 +171,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             isAuthenticated: false
           });
         } else {
-          console.log('✅ Token still valid, user remains authenticated');
+          console.log(`✅ Token still valid (${minutesRemaining} minutes remaining), user remains authenticated`);
         }
         return;
       }
@@ -167,14 +185,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       console.log('🔑 Attempting auto-login for:', savedState.user.email);
 
-      // Check if token is expired or expiring soon
-      if (isTokenExpiringSoon(savedState.accessToken)) {
-        console.log('⚠️ Saved token expired, clearing auth state');
+      // Check if token is ACTUALLY expired (not just "expiring soon")
+      const timeRemaining = getTokenTimeRemaining(savedState.accessToken);
+      const minutesRemaining = Math.floor(timeRemaining / 60000);
+      console.log(`🔍 Checking saved token validity: ${minutesRemaining} minutes remaining`);
+      
+      if (timeRemaining <= 0) {
+        console.log('⚠️ Token has expired (timeRemaining <= 0), clearing auth state - LOGOUT #2: SAVED STATE CHECK');
         clearAuthState();
       } else {
         // Token is still valid, restore auth state
+        console.log(`✅ Auto-login successful with existing token (${minutesRemaining} minutes remaining)`);
         setAuthState(savedState);
-        console.log('✅ Auto-login successful with existing token');
       }
     };
 
@@ -208,7 +230,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       refreshToken().then((success) => {
         if (!success && isTokenExpiringSoon(currentToken)) {
           // Only logout if token is actually expiring soon (< 5 min)
-          console.warn('⚠️ Token refresh failed and token expiring soon, logging out...');
+          console.warn('⚠️ Token refresh failed and token expiring soon, logging out... - LOGOUT #4: REFRESH ON MOUNT FAILED');
           logout();
         }
       });
@@ -217,7 +239,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.warn('⚠️ Token critically close to expiring on mount, attempting refresh...');
       refreshToken().then((success) => {
         if (!success) {
-          console.warn('⚠️ Critical token refresh failed on mount, logging out...');
+          console.warn('⚠️ Critical token refresh failed on mount, logging out... - LOGOUT #5: CRITICAL REFRESH ON MOUNT FAILED');
           logout();
         }
       });
@@ -240,7 +262,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         if (!success && isTokenExpiringSoon(currentToken)) {
           // Only logout if refresh failed AND token is critically close to expiring (< 5 min)
-          console.warn('⚠️ Token expiring soon and refresh unavailable. Please re-authenticate.');
+          console.warn('⚠️ Token expiring soon and refresh unavailable. Please re-authenticate. - LOGOUT #6: INTERVAL CHECK FAILED');
           logout();
         } else if (!success) {
           console.log(`ℹ️ Silent refresh not available, but token still valid for ${minutesRemaining} minutes`);

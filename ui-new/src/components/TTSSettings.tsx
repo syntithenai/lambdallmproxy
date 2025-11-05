@@ -53,11 +53,13 @@ export const TTSSettings: React.FC = () => {
   }, [state.voices]);
 
   const handleProviderChange = async (providerType: TTSProviderType) => {
+    console.log(`🔄 Changing TTS provider to: ${providerType}`);
     setIsLoadingVoices(true);
     try {
       await setProvider(providerType);
+      console.log(`✅ TTS provider changed to: ${providerType}`);
     } catch (error) {
-      console.error('Failed to change provider:', error);
+      console.error('❌ Failed to change provider:', error);
     } finally {
       setIsLoadingVoices(false);
     }
@@ -71,7 +73,6 @@ export const TTSSettings: React.FC = () => {
       'openai-tts': 'OpenAI TTS',
       'groq-tts': 'Groq TTS',
       'gemini-tts': 'Gemini TTS',
-      'together-tts': 'Together AI TTS (Not Available)',
       'elevenlabs': state.elevenlabsApiKey ? 'ElevenLabs (Specialized TTS)' : 'ElevenLabs (Needs API Key)',
       'browser': 'Browser (Web Speech API)',
       'speakjs': 'speak.js (Offline)'
@@ -81,19 +82,22 @@ export const TTSSettings: React.FC = () => {
 
   const getProviderDescription = (providerType: TTSProviderType): string => {
     const descriptions: Record<TTSProviderType, string> = {
-      'chatterbox': 'High-quality neural TTS with GPU acceleration (requires Docker container on localhost:8000)',
+      'chatterbox': 'High-quality neural TTS with GPU acceleration (requires Docker container on localhost:8001)',
       'speaches': 'Local TTS server (configure in LLM providers)',
       'llm': 'Automatically selects best available LLM provider (fallback option)',
       'openai-tts': 'OpenAI\'s text-to-speech model (high quality, fast)',
       'groq-tts': 'Groq\'s PlayAI TTS model (fast inference)',
       'gemini-tts': 'Google Gemini text-to-speech (natural voices)',
-      'together-tts': 'Together AI does not provide TTS API - please use another provider',
       'elevenlabs': state.elevenlabsApiKey ? 'Ultra-realistic AI voices' : 'Ultra-realistic AI voices (configure API key below)',
       'browser': 'Uses your browser\'s built-in voices',
       'speakjs': 'Offline synthesis, basic quality'
     };
     return descriptions[providerType];
   };
+
+  // Debug logging
+  console.log('🔍 [TTSSettings] Available providers:', availableProviders);
+  console.log('🔍 [TTSSettings] Current provider:', state.currentProvider);
 
   return (
     <div className="space-y-6">
@@ -123,33 +127,60 @@ export const TTSSettings: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Voice Provider</h3>
             <div className="space-y-3">
               {availableProviders.map(providerType => (
-                <label key={providerType} className={`flex items-start gap-3 cursor-pointer p-4 rounded-lg border-2 transition-all hover:border-blue-300 dark:hover:border-blue-700 ${
-                  state.currentProvider === providerType 
-                    ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                    : 'border-gray-200 dark:border-gray-700'
-                }`}>
-                  <input
-                    type="radio"
-                    name="tts-provider"
-                    value={providerType}
-                    checked={state.currentProvider === providerType}
-                    onChange={() => handleProviderChange(providerType)}
-                    className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900 dark:text-gray-100 mb-1 flex items-center gap-2">
-                      {getProviderDisplayName(providerType)}
-                      {providerType === 'elevenlabs' && !state.elevenlabsApiKey && (
-                        <span className="text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 px-2 py-1 rounded-full">
-                          Configure
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-300">
-                      {getProviderDescription(providerType)}
+                <div key={providerType}>
+                  <div 
+                    className={`flex items-start gap-3 cursor-pointer p-4 rounded-lg border-2 transition-all hover:border-blue-300 dark:hover:border-blue-700 ${
+                      state.currentProvider === providerType 
+                        ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}
+                    onClick={() => handleProviderChange(providerType)}
+                  >
+                    <input
+                      type="radio"
+                      name="tts-provider"
+                      value={providerType}
+                      checked={state.currentProvider === providerType}
+                      onChange={() => {}}
+                      className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900 dark:text-gray-100 mb-1 flex items-center gap-2">
+                        {getProviderDisplayName(providerType)}
+                        {providerType === 'elevenlabs' && !state.elevenlabsApiKey && (
+                          <span className="text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 px-2 py-1 rounded-full">
+                            Configure
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-300">
+                        {getProviderDescription(providerType)}
+                      </div>
                     </div>
                   </div>
-                </label>
+                  
+                  {/* ElevenLabs API Key inline configuration */}
+                  {providerType === 'elevenlabs' && state.currentProvider === 'elevenlabs' && (
+                    <div className="ml-7 mt-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ElevenLabs API Key:</label>
+                      <input
+                        type="password"
+                        placeholder="Enter ElevenLabs API key"
+                        value={state.elevenlabsApiKey}
+                        onChange={(e) => setElevenLabsApiKey(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                          Get your API key from <a href="https://elevenlabs.io/speech-synthesis" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">ElevenLabs Dashboard</a>
+                        </p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">• Free tier: 10,000 characters/month</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">• Starter: $1/month for 30,000 characters</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">• Creator: $22/month for 100,000 characters</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>
@@ -258,73 +289,15 @@ export const TTSSettings: React.FC = () => {
             </div>
           </div>
 
-          {/* ElevenLabs API Key Configuration */}
-          <div className="card bg-white dark:bg-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">ElevenLabs Authentication</h3>
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-                <div className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                  <div>
-                    <h4 className="font-medium text-blue-900 dark:text-blue-100">Specialized TTS Service</h4>
-                    <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                      ElevenLabs provides TTS-only services and requires separate authentication from your LLM providers.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">API Key:</label>
-              <input
-                type="password"
-                placeholder="Enter ElevenLabs API key"
-                value={state.elevenlabsApiKey}
-                onChange={(e) => setElevenLabsApiKey(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <div className="mt-3 space-y-2">
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Get your API key from <a href="https://elevenlabs.io/speech-synthesis" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">ElevenLabs Dashboard</a>
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  • Free tier: 10,000 characters/month
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  • Starter: $1/month for 30,000 characters
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  • Creator: $22/month for 100,000 characters
-                </p>
-              </div>
-            </div>
-
           {/* LLM Provider TTS Info */}
-          {(['llm', 'openai-tts', 'groq-tts', 'gemini-tts', 'together-tts'] as TTSProviderType[]).includes(state.currentProvider) && (
+          {(['llm', 'openai-tts', 'groq-tts', 'gemini-tts'] as TTSProviderType[]).includes(state.currentProvider) && (
             <div className="card bg-white dark:bg-gray-800 p-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                 {state.currentProvider === 'llm' ? 'LLM Provider TTS' : `${getProviderDisplayName(state.currentProvider)}`}
               </h3>
               
-              {/* Together AI Warning */}
-              {state.currentProvider === 'together-tts' && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
-                  <div className="flex items-start gap-3">
-                    <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    <div>
-                      <h4 className="font-medium text-red-900 dark:text-red-100">TTS Not Available</h4>
-                      <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                        Together AI does not provide a Text-to-Speech API. Please select a different TTS provider like OpenAI TTS, Groq TTS, or Gemini TTS.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Success message for working providers */}
-              {state.currentProvider !== 'together-tts' && (
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+              {/* Success message for LLM providers */}
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
                 <div className="flex items-start gap-3">
                   <svg className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -340,7 +313,6 @@ export const TTSSettings: React.FC = () => {
                   </div>
                 </div>
               </div>
-              )}
             </div>
           )}
     </div>

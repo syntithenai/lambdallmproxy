@@ -11,14 +11,19 @@ export interface FeedItem {
   content: string;               // Main text/summary (short)
   expandedContent?: string;      // Longer article with 4+ facts
   mnemonic?: string;             // Memory aid (acronym/rhyme/connection)
-  image?: string;                // Image URL (from Unsplash/Pexels)
+  image?: string;                // Image URL (from Unsplash/Pexels) or base64 data URI (from AI generation)
   imageBase64?: string;          // Base64-encoded image data URI (for offline/embedding)
   imageThumb?: string;           // Thumbnail URL
-  imageSource?: string;          // Image provider: 'unsplash' | 'pexels'
+  imageSource?: string;          // Image provider: 'unsplash' | 'pexels' | 'ai_generated' | 'web_search'
   imagePhotographer?: string;    // Photographer name
   imagePhotographerUrl?: string; // Photographer profile URL
   imageAttribution?: string;     // Plain text attribution
   imageAttributionHtml?: string; // HTML attribution (with links)
+  imageProvider?: string;        // AI image provider (openai, together, etc.) 
+  imageModel?: string;           // AI model used for generation
+  imageStyle?: string;           // Artistic style for AI-generated images
+  imageCost?: number;            // Cost to generate AI image
+  imageFallbackUsed?: boolean;   // Whether fallback model was used
   topics: string[];              // Extracted topics/tags
   searchTerms?: string[];        // Original search terms that generated this item
   sources: string[];             // Source URLs from search

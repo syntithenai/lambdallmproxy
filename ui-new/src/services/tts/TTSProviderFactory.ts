@@ -22,10 +22,16 @@ export class TTSProviderFactory {
     this.providers.clear();
 
     // Initialize Chatterbox (Local TTS with GPU - Priority #1)
-    const chatterbox = new ChatterboxTTSProvider('http://localhost:8000');
-    if (await chatterbox.isAvailable()) {
+    // Using port 8001 to avoid conflict with Whisper on port 8000
+    console.log('🔍 Checking Chatterbox TTS availability at http://localhost:8001...');
+    const chatterbox = new ChatterboxTTSProvider('http://localhost:8001');
+    const isChatterboxAvailable = await chatterbox.isAvailable();
+    console.log(`🔍 Chatterbox availability check result: ${isChatterboxAvailable}`);
+    if (isChatterboxAvailable) {
       this.providers.set('chatterbox', chatterbox);
-      console.log('🏠 Chatterbox TTS provider initialized (LOCAL GPU)');
+      console.log('✅ Chatterbox TTS provider initialized (LOCAL CPU on port 8001)');
+    } else {
+      console.log('❌ Chatterbox TTS not available (server not running or not responding)');
     }
 
     // Note: Speaches provider not implemented yet (SpeachesProvider.ts doesn't exist)
@@ -95,15 +101,6 @@ export class TTSProviderFactory {
         this.providers.set('gemini-tts', geminiTTS);
       }
     }
-
-    // Together AI TTS
-    const togetherProvider = this.llmProviders.find(p => p.type === 'together' && p.enabled !== false);
-    if (togetherProvider) {
-      const togetherTTS = new LLMProviderTTSProvider(togetherProvider);
-      if (await togetherTTS.isAvailable()) {
-        this.providers.set('together-tts', togetherTTS);
-      }
-    }
   }
 
   /**
@@ -115,7 +112,6 @@ export class TTSProviderFactory {
       'openai',      // Best TTS quality
       'gemini',      // Good TTS support
       'groq',        // Groq TTS via PlayAI
-      'together'     // Together AI TTS support
     ];
 
     for (const providerType of ttsProviderPriority) {
@@ -147,7 +143,7 @@ export class TTSProviderFactory {
     const sortOrder: TTSProviderType[] = [
       'llm', // LLM Provider (Auto) - first choice
       'speaches', // Local CPU TTS
-      'openai-tts', 'groq-tts', 'gemini-tts', 'together-tts', // Specific LLM providers
+      'openai-tts', 'groq-tts', 'gemini-tts', // Specific LLM providers
       'elevenlabs', // Specialized TTS service
       'chatterbox', // Local GPU TTS (after elevenlabs)
       'browser', 'speakjs' // Browser fallbacks
@@ -199,7 +195,7 @@ export class TTSProviderFactory {
     const priorities: TTSProviderType[] = [
       'llm', // LLM Provider (Auto) - first choice
       'speaches', // Local CPU TTS
-      'openai-tts', 'groq-tts', 'gemini-tts', 'together-tts', // Specific LLM providers
+      'openai-tts', 'groq-tts', 'gemini-tts', // Specific LLM providers
       'elevenlabs', // Specialized TTS service
       'chatterbox', // Local GPU TTS (after elevenlabs)
       'browser', 'speakjs' // Browser fallbacks
@@ -219,7 +215,7 @@ export class TTSProviderFactory {
     const priorities: TTSProviderType[] = [
       'llm', // LLM Provider (Auto) - first choice
       'speaches', // Local CPU TTS
-      'openai-tts', 'groq-tts', 'gemini-tts', 'together-tts', // Specific LLM providers
+      'openai-tts', 'groq-tts', 'gemini-tts', // Specific LLM providers
       'elevenlabs', // Specialized TTS service
       'chatterbox', // Local GPU TTS (after elevenlabs)
       'browser', 'speakjs' // Browser fallbacks

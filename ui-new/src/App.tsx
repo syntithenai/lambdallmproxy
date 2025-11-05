@@ -50,6 +50,7 @@ const PrivacyPolicy = lazy(() => import('./components/PrivacyPolicy').then(m => 
 const SharedSnippetViewer = lazy(() => import('./components/SharedSnippetViewer').then(m => ({ default: m.SharedSnippetViewer })));
 const SharedChatViewer = lazy(() => import('./components/SharedChatViewer').then(m => ({ default: m.SharedChatViewer })));
 const SharedFeedItemViewer = lazy(() => import('./components/SharedFeedItemViewer').then(m => ({ default: m.SharedFeedItemViewer })));
+const SharedQuizViewer = lazy(() => import('./components/SharedQuizViewer'));
 const ImageEditorPage = lazy(() => import('./components/ImageEditor/ImageEditorPage').then(m => ({ default: m.ImageEditorPage })));
 const AgentManager = lazy(() => import('./components/AgentManager').then(m => ({ default: m.AgentManager })));
 
@@ -351,17 +352,19 @@ function AppContent() {
     return () => window.removeEventListener('show-welcome-wizard', handleShowWelcomeWizard);
   }, []);
 
-  // Check if we're on a public route (shared snippet viewer, shared chat, shared feed, privacy policy, help page)
+  // Check if we're on a public route (shared snippet viewer, shared chat, shared feed, shared quiz, privacy policy, help page)
   const hasShareParam = new URLSearchParams(location.search).has('share'); // Legacy format
   const isChatShared = location.hash.includes('/chat/shared'); // New hash-based format
   const isFeedShared = location.pathname.startsWith('/feed/share/'); // Feed share format (path-based)
+  const isQuizShared = location.hash.includes('/quiz/shared'); // Quiz share format (hash-based)
   const isPublicRoute = location.pathname.startsWith('/snippet/shared') || 
                         location.hash.includes('/snippet/shared') ||
                         location.pathname === '/privacy' ||
                         location.pathname === '/help' ||
                         hasShareParam ||
                         isChatShared ||
-                        isFeedShared;
+                        isFeedShared ||
+                        isQuizShared;
   
   // Debug: Log public route detection
   useEffect(() => {
@@ -372,9 +375,10 @@ function AppContent() {
       hasShareParam,
       isChatShared,
       isFeedShared,
+      isQuizShared,
       isPublicRoute
     });
-  }, [location.pathname, location.search, location.hash, hasShareParam, isChatShared, isFeedShared, isPublicRoute]);
+  }, [location.pathname, location.search, location.hash, hasShareParam, isChatShared, isFeedShared, isQuizShared, isPublicRoute]);
   
   // Show public pages without authentication
   if (isPublicRoute) {
@@ -387,6 +391,8 @@ function AppContent() {
             <SharedChatViewer />
           ) : isFeedShared ? (
             <SharedFeedItemViewer />
+          ) : isQuizShared ? (
+            <SharedQuizViewer />
           ) : location.pathname === '/privacy' ? (
             <PrivacyPolicy />
           ) : location.pathname === '/help' ? (
@@ -738,6 +744,7 @@ function AppContent() {
               <Route path="/planning" element={<PlanningPage />} />
               <Route path="/swag" element={<SwagPage />} />
               <Route path="/quiz" element={<QuizPage />} />
+              <Route path="/quiz/shared" element={<SharedQuizViewer />} />
               <Route path="/image-editor" element={<ImageEditorPage />} />
               <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
               <Route path="/feed/share/:data" element={<SharedFeedItemViewer />} />

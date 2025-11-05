@@ -398,15 +398,41 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [providerFactory]);
 
   const setProvider = useCallback(async (providerType: TTSProviderType) => {
+    console.log(`🔍 [TTSContext] setProvider called with: ${providerType}`);
     const provider = providerFactory.getProvider(providerType);
-    if (!provider) return;
+    console.log(`🔍 [TTSContext] Provider found:`, provider ? '✅ Yes' : '❌ No');
+    
+    // Special case: Allow selecting ElevenLabs even without API key (for configuration)
+    if (!provider && providerType !== 'elevenlabs') {
+      console.error(`❌ [TTSContext] Provider "${providerType}" not found in factory`);
+      return;
+    }
 
     // Stop current speech
     stop();
 
-    // Load voices for new provider
+    // If no provider (ElevenLabs without API key), just update state without loading voices
+    if (!provider) {
+      console.log(`⚠️ [TTSContext] ${providerType} not initialized, updating state for configuration`);
+      setState(prev => ({ 
+        ...prev, 
+        currentProvider: providerType, 
+        voices: [],
+        currentVoice: null
+      }));
+      setTTSSettings(prev => ({ 
+        ...prev, 
+        currentProvider: providerType,
+        currentVoice: null
+      }));
+      return;
+    }
+
+    // Load voices for provider
     try {
+      console.log(`🔍 [TTSContext] Loading voices for: ${providerType}`);
       const voices = await provider.getVoices();
+      console.log(`✅ [TTSContext] Loaded ${voices.length} voices for: ${providerType}`);
       setState(prev => ({ 
         ...prev, 
         currentProvider: providerType, 
@@ -418,8 +444,9 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentProvider: providerType,
         currentVoice: null
       }));
+      console.log(`✅ [TTSContext] State updated to provider: ${providerType}`);
     } catch (error) {
-      console.error('Failed to switch provider:', error);
+      console.error(`❌ [TTSContext] Failed to switch provider to ${providerType}:`, error);
     }
   }, [providerFactory, stop, setTTSSettings]);
 

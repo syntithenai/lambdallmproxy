@@ -39,7 +39,7 @@ export interface TTSProvider {
   cleanup?(): void; // Optional cleanup method for resources
 }
 
-export type TTSProviderType = 'speaches' | 'llm' | 'openai-tts' | 'groq-tts' | 'gemini-tts' | 'together-tts' | 'elevenlabs' | 'chatterbox' | 'browser' | 'speakjs';
+export type TTSProviderType = 'speaches' | 'llm' | 'openai-tts' | 'groq-tts' | 'gemini-tts' | 'elevenlabs' | 'chatterbox' | 'browser' | 'speakjs';
 
 export interface TTSState {
   isEnabled: boolean;

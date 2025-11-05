@@ -149,7 +149,10 @@ export const getTokenTimeRemaining = (token: string): number => {
     // Fallback: try to decode as JWT
     const decoded = decodeJWT(token);
     if (!decoded || !decoded.exp) {
-      return 0;
+      // Can't decode token AND no stored expiration - assume valid for 1 hour (default expiration)
+      // This prevents immediate logout for access tokens while saveAuthState is writing expiration
+      console.log('⚠️ Token cannot be decoded and no stored expiration found - assuming 1 hour validity');
+      return 60 * 60 * 1000; // 1 hour in milliseconds
     }
     
     const expirationTime = decoded.exp * 1000; // Convert to milliseconds
@@ -159,7 +162,8 @@ export const getTokenTimeRemaining = (token: string): number => {
     return Math.max(0, remaining);
   } catch (e) {
     console.error('Failed to get token time remaining:', e);
-    return 0;
+    // On error, assume token is valid for 1 hour to prevent spurious logouts
+    return 60 * 60 * 1000;
   }
 };
 

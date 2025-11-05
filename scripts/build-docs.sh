@@ -29,6 +29,9 @@ GOOGLE_CLIENT_ID=$(grep '^GGL_CID=' .env 2>/dev/null | cut -d'=' -f2 || echo "")
 # Get PayPal Client ID from root .env (use PP_CID which is the actual variable name)
 PAYPAL_CLIENT_ID=$(grep '^PP_CID=' .env 2>/dev/null | cut -d'=' -f2 || echo "")
 
+# Get Share Base URL from root .env
+SHARE_BASE_URL=$(grep '^SHARE_BASE_URL=' .env 2>/dev/null | cut -d'=' -f2 || echo "http://ai.syntithenai.com")
+
 # Update or create .env.production
 if [ -f ui-new/.env.production ]; then
     # Update VITE_API (was VITE_API_BASE)
@@ -53,7 +56,16 @@ if [ -f ui-new/.env.production ]; then
         echo "VITE_PP_CID=$PAYPAL_CLIENT_ID" >> ui-new/.env.production
     fi
     
-    log_info "Updated ui-new/.env.production with Lambda URL, Google Client ID (VITE_GGL_CID), and PayPal Client ID (VITE_PP_CID)"
+    # Update or add VITE_SHARE_BASE_URL
+    if grep -q '^VITE_SHARE_BASE_URL=' ui-new/.env.production; then
+        sed -i "s|^VITE_SHARE_BASE_URL=.*|VITE_SHARE_BASE_URL=$SHARE_BASE_URL|" ui-new/.env.production
+    else
+        echo "" >> ui-new/.env.production
+        echo "# Base URL for share links" >> ui-new/.env.production
+        echo "VITE_SHARE_BASE_URL=$SHARE_BASE_URL" >> ui-new/.env.production
+    fi
+    
+    log_info "Updated ui-new/.env.production with Lambda URL, Google Client ID (VITE_GGL_CID), PayPal Client ID (VITE_PP_CID), and Share Base URL"
 else
     log_warn ".env.production not found, creating it..."
     cat > ui-new/.env.production << EOF
@@ -71,6 +83,9 @@ VITE_GGL_CID=$GGL_CID
 
 # PayPal Client ID for payment integration
 VITE_PP_CID=$PP_CID
+
+# Base URL for share links
+VITE_SHARE_BASE_URL=$SHARE_BASE_URL
 
 EOF
     log_info "Created ui-new/.env.production"

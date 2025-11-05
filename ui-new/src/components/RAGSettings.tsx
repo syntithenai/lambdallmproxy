@@ -16,7 +16,7 @@ interface RAGConfig {
 }
 
 const DEFAULT_RAG_CONFIG: RAGConfig = {
-  enabled: false,
+  enabled: true, // RAG enabled by default for better UX
   autoEmbed: true, // Auto-embed enabled by default for better UX
   embeddingModel: 'text-embedding-3-small',
   embeddingProvider: 'openai',

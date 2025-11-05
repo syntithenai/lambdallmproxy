@@ -3,16 +3,79 @@
  * 
  * Logs user-reported LLM response errors to Google Sheets with automatic data sharding
  * for large conversations (>50K characters per cell limit).
+ * 
+ * Uses service account authentication (same as google-sheets-logger.js)
  */
 
 const https = require('https');
 const crypto = require('crypto');
 
-// Use first spreadsheet from GOOGLE_SHEETS_LOG_SPREADSHEET_IDS for error reporting
-// Falls back to GS_SHEET_IDS if not set
-const SPREADSHEET_ID = (process.env.GOOGLE_SHEETS_LOG_SPREADSHEET_IDS || process.env.GS_SHEET_IDS || '').split(',')[0].trim();
+// Use first spreadsheet from GS_SHEET_IDS for error reporting
+const SPREADSHEET_ID = (process.env.GS_SHEET_IDS || process.env.GS_SHEET_ID || '').split(',')[0].trim();
 const SHEET_NAME = 'Reported Errors';
 const MAX_CELL_LENGTH = 5000; // Google Sheets limit per cell
+
+/**
+ * Get OAuth2 access token using Service Account JWT
+ * @param {string} serviceAccountEmail - Service account email
+ * @param {string} privateKey - Service account private key
+ * @returns {Promise<string>} Access token
+ */
+async function getAccessToken(serviceAccountEmail, privateKey) {
+  const jwt = require('jsonwebtoken');
+  
+  const now = Math.floor(Date.now() / 1000);
+  const claim = {
+    iss: serviceAccountEmail,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now
+  };
+  
+  const token = jwt.sign(claim, privateKey, { algorithm: 'RS256' });
+  
+  return new Promise((resolve, reject) => {
+    const postData = new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: token
+    }).toString();
+    
+    const options = {
+      hostname: 'oauth2.googleapis.com',
+      path: '/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData)
+      },
+      timeout: 60000,
+      family: 4
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          const response = JSON.parse(data);
+          resolve(response.access_token);
+        } else {
+          reject(new Error(`OAuth failed: ${res.statusCode} - ${data}`));
+        }
+      });
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('OAuth request timeout after 60 seconds'));
+    });
+    
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
 
 /**
  * Generate unique report ID (UUID v4)
@@ -162,6 +225,7 @@ async function appendToSheet(rows, accessToken) {
     
     const options = {
       hostname: 'sheets.googleapis.com',
+      // eslint-disable-next-line no-secrets/no-secrets
       path: `/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}:append?valueInputOption=USER_ENTERED`,
       method: 'POST',
       headers: {
@@ -211,10 +275,20 @@ function shardLargeData(data) {
 /**
  * Log error report to Google Sheets (with sharding support)
  * @param {object} report - Error report data
- * @param {string} accessToken - Google OAuth access token
  * @returns {Promise<string>} Report ID
  */
-async function logErrorReport(report, accessToken) {
+async function logErrorReport(report) {
+  // Get service account credentials
+  const serviceAccountEmail = process.env.GS_EMAIL;
+  const privateKey = (process.env.GS_KEY || '').replace(/\\n/g, '\n');
+  
+  if (!serviceAccountEmail || !privateKey) {
+    throw new Error('Missing service account credentials (GS_EMAIL or GS_KEY)');
+  }
+  
+  // Get access token using service account
+  const accessToken = await getAccessToken(serviceAccountEmail, privateKey);
+  
   // Ensure sheet exists
   await ensureErrorReportSheetExists(accessToken);
   

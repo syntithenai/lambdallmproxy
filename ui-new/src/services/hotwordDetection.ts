@@ -38,6 +38,7 @@ export class HotwordDetectionService {
   private isListening: boolean = false;
   private callback: HotwordCallback | null = null;
   private currentHotword: string = 'hey google';
+  private isRestarting: boolean = false; // Prevent multiple simultaneous restarts
 
   /**
    * Initialize browser-based hotword detection
@@ -56,6 +57,16 @@ export class HotwordDetectionService {
     try {
       this.currentHotword = hotword.toLowerCase();
       
+      // Clean up any existing recognition instance
+      if (this.recognition) {
+        try {
+          this.recognition.stop();
+        } catch (e) {
+          // Ignore errors when stopping old instance
+        }
+        this.recognition = null;
+      }
+      
       // Create recognition instance
       this.recognition = new SpeechRecognition();
       this.recognition.continuous = true;  // Keep listening
@@ -66,6 +77,8 @@ export class HotwordDetectionService {
       console.log(`✅ Browser Speech Recognition initialized with hotword: "${hotword}"`);
     } catch (error) {
       console.error('❌ Failed to initialize Speech Recognition:', error);
+      // Clean up on error
+      this.recognition = null;
       throw error;
     }
   }
@@ -83,6 +96,8 @@ export class HotwordDetectionService {
       return;
     }
 
+    // Clear any lingering restart flag from previous session
+    this.isRestarting = false;
     this.callback = callback;
 
     try {
@@ -102,26 +117,16 @@ export class HotwordDetectionService {
       this.recognition.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
         
-        // Auto-restart on some errors
-        if (event.error === 'no-speech' || event.error === 'aborted') {
-          console.log('Restarting speech recognition...');
-          setTimeout(() => {
-            if (this.isListening) {
-              this.recognition?.start();
-            }
-          }, 1000);
+        // Auto-restart on some errors (but avoid race conditions)
+        if ((event.error === 'no-speech' || event.error === 'aborted') && !this.isRestarting) {
+          this.scheduleRestart('error');
         }
       };
 
       this.recognition.onend = () => {
-        // Auto-restart if still supposed to be listening
-        if (this.isListening) {
-          console.log('Speech recognition ended, restarting...');
-          setTimeout(() => {
-            if (this.isListening) {
-              this.recognition?.start();
-            }
-          }, 100);
+        // Auto-restart if still supposed to be listening (but avoid race conditions)
+        if (this.isListening && !this.isRestarting) {
+          this.scheduleRestart('end');
         }
       };
 
@@ -131,8 +136,51 @@ export class HotwordDetectionService {
       console.log('👂 Listening for hotword:', this.currentHotword);
     } catch (error) {
       console.error('Failed to start hotword detection:', error);
+      this.isListening = false;
+      this.callback = null;
+      
+      // Provide helpful error message
+      if (error instanceof Error) {
+        if (error.message.includes('not-allowed') || error.message.includes('permission')) {
+          throw new Error('Microphone permission denied. Please allow microphone access in your browser settings.');
+        } else if (error.message.includes('already started')) {
+          throw new Error('Speech recognition already active. Please disable and try again.');
+        }
+      }
+      
       throw error;
     }
+  }
+
+  /**
+   * Schedule a restart with race condition protection
+   */
+  private scheduleRestart(source: 'error' | 'end'): void {
+    if (this.isRestarting || !this.isListening) {
+      return;
+    }
+
+    this.isRestarting = true;
+    console.log(`Speech recognition ${source}, restarting...`);
+
+    // Use longer delay for errors, shorter for normal end
+    const delay = source === 'error' ? 1000 : 200;
+
+    setTimeout(() => {
+      if (this.isListening && this.recognition) {
+        try {
+          this.recognition.start();
+          console.log('Speech recognition restarted successfully');
+        } catch (error) {
+          console.error('Failed to restart speech recognition:', error);
+          // If restart fails, reset the flag so we can try again later
+        } finally {
+          this.isRestarting = false;
+        }
+      } else {
+        this.isRestarting = false;
+      }
+    }, delay);
   }
 
   /**
@@ -145,6 +193,7 @@ export class HotwordDetectionService {
 
     try {
       this.isListening = false;
+      this.isRestarting = false; // Clear restart flag
       this.callback = null;
       
       if (this.recognition) {

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { quizDB, type QuizStatistic } from '../db/quizDb';
-import { Trophy, Brain, Clock, TrendingUp, Calendar, ArrowLeft, Trash2 } from 'lucide-react';
+import { Trophy, Brain, Clock, TrendingUp, Calendar, ArrowLeft, Trash2, Share2 } from 'lucide-react';
 import { useToast } from './ToastManager';
 import { useAuth } from '../contexts/AuthContext';
 import { useProject } from '../contexts/ProjectContext';
@@ -12,6 +12,7 @@ import { googleDriveSync } from '../services/googleDriveSync';
 import { useSwag } from '../contexts/SwagContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { generateQuizStreaming } from '../utils/api';
+import QuizShareDialog from './QuizShareDialog';
 
 export default function QuizPage() {
   const navigate = useNavigate();
@@ -56,6 +57,9 @@ export default function QuizPage() {
     enrichment: boolean;
     quizId?: string;
   } | null>(null);
+  
+  // Quiz sharing state
+  const [shareQuiz, setShareQuiz] = useState<{ quiz: any; enrichment: boolean } | null>(null);
 
   useEffect(() => {
     loadStatistics();
@@ -513,16 +517,30 @@ export default function QuizPage() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteQuiz(stat.id, stat.quizTitle);
-                      }}
-                      className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                      title={t('quiz.deleteQuiz')}
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {stat.quizData && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShareQuiz({ quiz: stat.quizData, enrichment: stat.enrichment || false });
+                          }}
+                          className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          title={t('quiz.shareQuiz') || 'Share Quiz'}
+                        >
+                          <Share2 className="w-5 h-5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteQuiz(stat.id, stat.quizTitle);
+                        }}
+                        className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        title={t('quiz.deleteQuiz')}
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Expandable answer details - could be added later */}
@@ -602,6 +620,15 @@ export default function QuizPage() {
             }}
           />
         </div>
+      )}
+
+      {/* Quiz Share Dialog */}
+      {shareQuiz && (
+        <QuizShareDialog
+          quiz={shareQuiz.quiz}
+          enrichment={shareQuiz.enrichment}
+          onClose={() => setShareQuiz(null)}
+        />
       )}
     </div>
   );

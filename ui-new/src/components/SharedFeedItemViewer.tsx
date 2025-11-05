@@ -110,31 +110,18 @@ export const SharedFeedItemViewer: React.FC = () => {
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={handleBackToFeed}
-              className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              title="Back to feed"
-            >
-              ← Back
-            </button>
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Shared Feed Item
-              </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Read-only preview
-              </p>
-            </div>
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Shared Feed Item</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Read-only preview</p>
           </div>
-          {!isAuthenticated && (
+          <div>
             <button
-              onClick={() => navigate('/login')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              onClick={() => navigate('/login?redirect=' + encodeURIComponent(window.location.href))}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
             >
-              Sign In
+              Login
             </button>
-          )}
+          </div>
         </div>
       </div>
 
@@ -231,17 +218,11 @@ export const SharedFeedItemViewer: React.FC = () => {
           </div>
         </div>
 
-        {/* Call to Action */}
+        {/* Call to Action (login via top-right button) */}
         <div className="mt-8 text-center">
           <p className="text-gray-600 dark:text-gray-400 mb-4">
-            Want to explore more AI-curated content?
+            Want to explore more AI-curated content? Login using the button at the top-right to continue.
           </p>
-          <button
-            onClick={handleBackToFeed}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            {isAuthenticated ? 'View Feed' : 'Sign In to View Feed'}
-          </button>
         </div>
       </div>
     </div>

@@ -103,7 +103,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
   const { addCost, usage } = useUsage();
-  const { state: ttsState, speak: ttsSpeak } = useTTS();
+  const { state: ttsState, speak: ttsSpeak, stop: ttsStop } = useTTS();
   const { isConnected: isCastConnected, sendMessages: sendCastMessages, sendScrollPosition } = useCast();
   const { location, isLoading: locationLoading, requestLocation, clearLocation } = useLocation();
   const { getCurrentProjectId } = useProject();
@@ -2664,7 +2664,41 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             case 'delta':
               // Streaming text chunk - collate all deltas into single block until tool call
               if (data.content) {
-                setStreamingContent(prev => prev + data.content);
+                // Parse JSON response format if present (for voice mode)
+                let contentToAdd = data.content;
+                let voiceResponseText: string | null = null;
+                
+                try {
+                  // Check if content looks like JSON with voiceResponse/fullResponse
+                  if (data.content.trim().startsWith('{') && data.content.includes('voiceResponse')) {
+                    const parsed = JSON.parse(data.content);
+                    if (parsed.voiceResponse && parsed.fullResponse) {
+                      console.log('🎙️ Parsed voice response JSON:', { 
+                        voiceLength: parsed.voiceResponse.length,
+                        fullLength: parsed.fullResponse.length 
+                      });
+                      contentToAdd = parsed.fullResponse; // Use full response for display
+                      voiceResponseText = parsed.voiceResponse; // Save for TTS
+                    }
+                  }
+                } catch (e) {
+                  // Not JSON or parsing failed, use content as-is
+                }
+                
+                setStreamingContent(prev => prev + contentToAdd);
+                
+                // Trigger TTS immediately if we got a voice response and continuous voice is enabled
+                if (voiceResponseText && continuousVoiceEnabled) {
+                  console.log('🎙️ Triggering immediate TTS with voice response');
+                  ttsSpeak(voiceResponseText, {
+                    shouldSummarize: false, // Already pre-summarized
+                    onEnd: () => {
+                      console.log('🎙️ TTS finished - ContinuousVoiceMode will auto-restart');
+                    }
+                  }).catch(error => {
+                    console.error('🎙️ Failed to start TTS:', error);
+                  });
+                }
                 
                 // Announce to screen readers when response starts (only on first delta)
                 if (!streamingContent) {
@@ -2689,7 +2723,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     const newMessages = [...prev];
                     newMessages[lastMessageIndex] = {
                       ...lastMessage,
-                      content: (lastMessage.content || '') + data.content,
+                      content: (lastMessage.content || '') + contentToAdd, // Use parsed content
                       isStreaming: true
                     };
                     console.log('🟦 Updating assistant at index:', lastMessageIndex, 
@@ -7819,6 +7853,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             evaluations: (messages[showFixDialog] as any).evaluations || [],
             conversationThread: messages
           }}
+          showSuccess={showSuccess}
+          showError={showError}
         />
       )}
 
@@ -7836,15 +7872,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         <div className="fixed bottom-20 right-4 z-30 max-w-sm">
           <ContinuousVoiceMode
             onVoiceRequest={(text) => {
-              // Set the input text and trigger submission
+              // Set the input text for display
               setInput(text);
-              // Simulate sending after a brief delay to allow state update
+              // Submit immediately with the text (pass directly to avoid stale closure)
               setTimeout(() => {
-                handleSend();
-              }, 100);
+                console.log('🎙️ Continuous mode: Auto-submitting transcribed text');
+                handleSend(text);
+              }, 150);
             }}
             onTranscriptionStart={() => {
               console.log('🎙️ Continuous mode: transcription started');
+            }}
+            onStopTTS={() => {
+              console.log('🛑 Stopping TTS from continuous voice mode');
+              ttsStop();
             }}
             accessToken={accessToken}
             apiEndpoint={apiEndpoint}

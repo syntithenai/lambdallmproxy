@@ -549,13 +549,13 @@ Generate exactly ${count} items. Return valid JSON.`;
     // Fetch images for feed items (in parallel) and emit each item as it completes
     eventCallback('status', { message: 'Fetching images...' });
     
-    // Determine which items should get AI-generated images (30% - 3 out of 10)
+    // Determine which items should get AI-generated images (10% - 1 out of 10)
     const aiImageIndices = new Set();
-    const aiImageCount = Math.max(1, Math.ceil(items.length * 0.3)); // 30% of items
+    const aiImageCount = Math.max(1, Math.ceil(items.length * 0.1)); // 10% of items
     
     if (items.length > 0) {
         // Distribute AI images evenly across the feed
-        // For 10 items: positions 0, 4, 8 (first, middle, near end)
+        // For 10 items: position 0 (first item only for 10%)
         const spacing = Math.floor(items.length / aiImageCount);
         for (let i = 0; i < aiImageCount && i * spacing < items.length; i++) {
             const index = i === 0 ? 0 : Math.min(i * spacing, items.length - 1);

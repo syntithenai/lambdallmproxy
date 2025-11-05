@@ -21,8 +21,12 @@ export const VoiceSettings: React.FC = () => {
     return parseFloat(localStorage.getItem('continuousVoice_sensitivity') || '0.5');
   });
 
-  const [timeoutDuration, setTimeoutDuration] = useState(() => {
-    return parseInt(localStorage.getItem('continuousVoice_timeout') || '10000');
+  const [speechTimeout, setSpeechTimeout] = useState(() => {
+    return parseFloat(localStorage.getItem('continuousVoice_speechTimeout') || '2');
+  });
+
+  const [conversationTimeout, setConversationTimeout] = useState(() => {
+    return parseInt(localStorage.getItem('continuousVoice_conversationTimeout') || '10000');
   });
 
   const [useLocalWhisper, setUseLocalWhisper] = useState(() => {
@@ -43,8 +47,12 @@ export const VoiceSettings: React.FC = () => {
   }, [sensitivity]);
 
   useEffect(() => {
-    localStorage.setItem('continuousVoice_timeout', timeoutDuration.toString());
-  }, [timeoutDuration]);
+    localStorage.setItem('continuousVoice_speechTimeout', speechTimeout.toString());
+  }, [speechTimeout]);
+
+  useEffect(() => {
+    localStorage.setItem('continuousVoice_conversationTimeout', conversationTimeout.toString());
+  }, [conversationTimeout]);
 
   useEffect(() => {
     localStorage.setItem('voice_useLocalWhisper', useLocalWhisper.toString());
@@ -58,8 +66,12 @@ export const VoiceSettings: React.FC = () => {
     setSensitivity(parseFloat(e.target.value));
   };
 
-  const handleTimeoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTimeoutDuration(parseInt(e.target.value));
+  const handleSpeechTimeoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSpeechTimeout(parseFloat(e.target.value));
+  };
+
+  const handleConversationTimeoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setConversationTimeout(parseInt(e.target.value));
   };
 
   return (
@@ -128,11 +140,41 @@ export const VoiceSettings: React.FC = () => {
           </p>
         </div>
 
-        {/* Silence Timeout */}
+        {/* Speech Timeout */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             <Clock className="w-4 h-4 inline mr-2" />
-            Silence Timeout
+            Speech Timeout
+          </label>
+          <div className="flex items-center gap-4">
+            <input
+              type="range"
+              min="0.2"
+              max="5"
+              step="0.1"
+              value={speechTimeout}
+              onChange={handleSpeechTimeoutChange}
+              className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+            />
+            <span className="text-sm font-medium text-gray-900 dark:text-white w-16 text-right">
+              {speechTimeout.toFixed(1)}s
+            </span>
+          </div>
+          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+            <span>0.2s (fast)</span>
+            <span>5s (patient)</span>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            How long to wait for silence before auto-submitting your speech. 
+            Lower values respond faster but may cut off mid-sentence. Higher values allow for thinking pauses.
+          </p>
+        </div>
+
+        {/* Conversation Timeout */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <Clock className="w-4 h-4 inline mr-2" />
+            Conversation Timeout
           </label>
           <div className="flex items-center gap-4">
             <input
@@ -140,12 +182,12 @@ export const VoiceSettings: React.FC = () => {
               min="3000"
               max="30000"
               step="1000"
-              value={timeoutDuration}
-              onChange={handleTimeoutChange}
+              value={conversationTimeout}
+              onChange={handleConversationTimeoutChange}
               className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
             />
             <span className="text-sm font-medium text-gray-900 dark:text-white w-16 text-right">
-              {(timeoutDuration / 1000).toFixed(0)}s
+              {(conversationTimeout / 1000).toFixed(0)}s
             </span>
           </div>
           <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
@@ -153,7 +195,7 @@ export const VoiceSettings: React.FC = () => {
             <span>30 seconds</span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            How long to wait for speech before automatically returning to hotword listening mode. 
+            How long to wait before returning to hotword listening mode. 
             After AI responds, this timeout determines how long you have to continue the conversation.
           </p>
         </div>

@@ -4,7 +4,7 @@
  * Provides TTS using a local Chatterbox TTS Server running in Docker.
  * Supports high-quality neural TTS with GPU acceleration.
  * 
- * Default endpoint: http://localhost:8000
+ * Default endpoint: http://localhost:8001 (port 8001 to avoid conflict with Whisper on 8000)
  * API: POST /api/tts with JSON body: { text, language, speaker_id }
  */
 
@@ -16,28 +16,33 @@ export class ChatterboxTTSProvider implements TTSProvider {
   private audioElement: HTMLAudioElement | null = null;
   private cachedVoices: Voice[] | null = null;
 
-  constructor(baseUrl: string = 'http://localhost:8000') {
+  constructor(baseUrl: string = 'http://localhost:8001') {
     this.baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
   }
 
   async isAvailable(): Promise<boolean> {
     try {
-      // Use 'no-cors' mode to prevent CORS errors in console
-      // Since this is just a health check for an optional service, we don't need to read the response
-      await fetch(`${this.baseUrl}/health`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(3000),
-        mode: 'no-cors' // Prevents CORS errors in console when service is unavailable
+      console.log(`🔍 [Chatterbox] Testing availability at ${this.baseUrl}/speech...`);
+      // Check if Chatterbox server is running by attempting a minimal test request
+      // The server may be slow to respond during model loading, so we use a generous timeout
+      const response = await fetch(`${this.baseUrl}/speech`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: 'test',
+          language: 'en',
+          speaker_id: 'en_default'
+        }),
+        signal: AbortSignal.timeout(10000) // 10 second timeout for model loading
       });
-      // With no-cors mode, we can't check response.ok, but we can check if the fetch succeeded
-      // If the fetch completes without throwing, the service is likely available
-      return true;
+      
+      console.log(`✅ [Chatterbox] Server responded with status: ${response.status}`);
+      // If we get any response (even an error), the server is available
+      return response.status !== 0;
     } catch (error) {
-      // Silently fail - Chatterbox TTS is optional and may not be running
-      // Only log in development mode if needed for debugging
-      if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_TTS) {
-        console.warn('Chatterbox TTS Server not available:', error);
-      }
+      console.error('❌ [Chatterbox] TTS Server not available:', error);
       return false;
     }
   }
@@ -85,8 +90,8 @@ export class ChatterboxTTSProvider implements TTSProvider {
       const language = options.voice?.split('_')[0] || 'en';
       const speakerId = options.voice || 'en_default';
 
-      // Call Chatterbox TTS API
-      const response = await fetch(`${this.baseUrl}/api/tts`, {
+      // Call Chatterbox TTS API (endpoint is /speech, not /api/tts)
+      const response = await fetch(`${this.baseUrl}/speech`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -33,9 +33,13 @@ const ShareDialog: React.FC<ShareDialogProps> = ({ messages, onClose, title, pla
       const compressed = createShareData(messages, { title, plan });
       let url = generateShareUrl(compressed);
       
-      // Only force production domain if NOT in local development
-      if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
-        url = url.replace(window.location.origin, 'https://ai.syntithenai.com');
+      // Use VITE_SHARE_BASE_URL if defined, otherwise use smart detection
+      const baseUrl = import.meta.env.VITE_SHARE_BASE_URL;
+      if (baseUrl) {
+        url = url.replace(window.location.origin, baseUrl);
+      } else if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+        // Fallback: Only force production domain if NOT in local development
+        url = url.replace(window.location.origin, 'http://ai.syntithenai.com');
       }
       
       setShareUrl(url);

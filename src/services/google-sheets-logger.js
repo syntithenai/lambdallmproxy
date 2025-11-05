@@ -144,7 +144,7 @@ function getShardSpreadsheetIds() {
         return [oldFormat];
     }
     
-    throw new Error('Missing GOOGLE_SHEETS_LOG_SPREADSHEET_IDS or GOOGLE_SHEETS_LOG_SPREADSHEET_ID');
+    throw new Error('Missing GS_SHEET_IDS or GS_SHEET_ID environment variable');
 }
 
 /**
@@ -500,6 +500,7 @@ async function ensureSheetHeaders(sheetName, spreadsheetId, accessToken) {
                                             const writeRange = `${sheetName}!A1:J1`;
                                             const writeOptions = {
                                                 hostname: 'sheets.googleapis.com',
+                                                // eslint-disable-next-line no-secrets/no-secrets
                                                 path: `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(writeRange)}?valueInputOption=RAW`,
                                                 method: 'PUT',
                                                 headers: {
@@ -737,6 +738,7 @@ async function writeSheetData(sheetName, rows, spreadsheetId, accessToken) {
         const range = `${sheetName}!A2:J`; // Start at row 2 (after headers)
         const options = {
             hostname: 'sheets.googleapis.com',
+            // eslint-disable-next-line no-secrets/no-secrets
             path: `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
             method: 'PUT',
             headers: {
@@ -1121,6 +1123,7 @@ async function addHeaderRow(spreadsheetId, sheetName, accessToken) {
         
         const options = {
             hostname: 'sheets.googleapis.com',
+            // eslint-disable-next-line no-secrets/no-secrets
             path: `/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?valueInputOption=USER_ENTERED`,
             method: 'PUT',
             headers: {
@@ -1203,6 +1206,7 @@ async function appendToSheet(spreadsheetId, range, values, accessToken) {
         
         const options = {
             hostname: 'sheets.googleapis.com',
+            // eslint-disable-next-line no-secrets/no-secrets
             path: `/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}:append?valueInputOption=USER_ENTERED`,
             method: 'POST',
             headers: {
@@ -2162,6 +2166,7 @@ async function appendSummaryToSheet(spreadsheetId, sheetName, summary, accessTok
     
     const range = `${sheetName}!A:N`;  // 14 columns (A-N)
     
+    // eslint-disable-next-line no-secrets/no-secrets
     const response = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW`,
         {

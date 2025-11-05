@@ -1,5 +1,21 @@
 /// <reference types="vite/client" />
 
+// Environment variables
+interface ImportMetaEnv {
+  readonly VITE_SHARE_BASE_URL?: string;
+  readonly VITE_API?: string;
+  readonly VITE_LAM?: string;
+  readonly VITE_LOCAL?: string;
+  readonly VITE_GGL_CID?: string;
+  readonly VITE_PP_CID?: string;
+  readonly BASE_URL?: string;
+  readonly DEV?: boolean;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 // Google OAuth types
 declare global {
   interface Window {

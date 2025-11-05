@@ -20,7 +20,7 @@ export const LoginScreen: React.FC = () => {
   useEffect(() => {
     if (buttonRef.current && !hasInitialized.current && !globalGoogleInitialized) {
       let retryCount = 0;
-      const maxRetries = 50; // Maximum 5 seconds of retries
+      const maxRetries = 100; // Maximum 10 seconds of retries (increased from 5s)
       
       const initializeGoogleButton = () => {
         if (typeof google !== 'undefined' && google.accounts) {
@@ -35,13 +35,13 @@ export const LoginScreen: React.FC = () => {
           hasInitialized.current = true;
           globalGoogleInitialized = true;
           
-          console.log('LoginScreen: Initializing Google Sign-In (ONCE GLOBALLY)');
+          console.log('✅ Google SDK loaded, initializing Sign-In button...');
           
           (google.accounts.id.initialize as any)({
             client_id: clientId,
             callback: (response: any) => {
               if (response.credential) {
-                console.log('LoginScreen: Login successful');
+                console.log('✅ Google Sign-In successful');
                 login(response.credential);
               }
             },
@@ -55,7 +55,6 @@ export const LoginScreen: React.FC = () => {
           // CRITICAL: Immediately cancel any auto-prompts after initialization
           try {
             (google.accounts.id as any).cancel();
-            console.log('LoginScreen: Cancelled any auto-prompts immediately after init');
           } catch (e) {
             // Ignore
           }
@@ -71,19 +70,23 @@ export const LoginScreen: React.FC = () => {
             }
           );
 
-          console.log('LoginScreen: Google Sign-In button rendered (One Tap permanently disabled)');
+          console.log('✅ Google Sign-In button ready');
         } else if (retryCount < maxRetries) {
           retryCount++;
-          console.log(`LoginScreen: Google SDK not loaded yet, retry ${retryCount}/${maxRetries}...`);
+          // Only log every 10 retries to reduce console spam
+          if (retryCount % 10 === 0 || retryCount === 1) {
+            console.log(`⏳ Waiting for Google SDK... (${retryCount}/${maxRetries})`);
+          }
           setTimeout(initializeGoogleButton, 100);
         } else {
-          console.error('LoginScreen: Failed to load Google SDK after maximum retries');
+          console.warn('⚠️ Google SDK not loaded after 10 seconds - check network connection or browser extensions');
+          // Don't give up - keep the button ref so it can be initialized later if SDK loads
         }
       };
 
       initializeGoogleButton();
     } else if (globalGoogleInitialized) {
-      console.log('LoginScreen: Google already initialized globally, skipping');
+      // Silent - no need to log this
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps - only run once on mount

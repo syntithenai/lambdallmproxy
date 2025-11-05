@@ -6,16 +6,24 @@ import { requestGoogleAuth } from '../utils/googleDocs';
 interface FixResponseDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  messageData: {
+  messageData?: {
     messageId: string;
     messageContent: string;
     llmApiCalls: any[];
     evaluations?: any[];
     conversationThread: any[];
   };
+  planData?: {
+    query: string;
+    generatedSystemPrompt: string;
+    generatedUserQuery: string;
+    llmInfo: any;
+  };
+  showSuccess: (message: string) => void;
+  showError: (message: string) => void;
 }
 
-export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseDialogProps) {
+export function FixResponseDialog({ isOpen, onClose, messageData, planData, showSuccess, showError }: FixResponseDialogProps) {
   const [explanation, setExplanation] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +59,26 @@ export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseD
       });
       
       // Call backend API to log report
+      const requestBody: any = {
+        explanation: explanation.trim(),
+        timestamp: new Date().toISOString()
+      };
+      
+      if (messageData) {
+        requestBody.messageData = {
+          messageId: messageData.messageId,
+          messageContent: messageData.messageContent,
+          llmApiCalls: messageData.llmApiCalls,
+          evaluations: messageData.evaluations || [],
+          conversationThread: messageData.conversationThread
+        };
+      }
+      
+      if (planData) {
+        requestBody.planData = planData;
+        requestBody.feedbackType = 'negative';
+      }
+      
       const response = await fetch(`${apiBase}/report-error`, {
         method: 'POST',
         headers: {
@@ -58,17 +86,7 @@ export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseD
           'Authorization': `Bearer ${idToken}`,
           'X-Google-Access-Token': googleAccessToken  // Google OAuth token for Sheets API
         },
-        body: JSON.stringify({
-          explanation: explanation.trim(),
-          messageData: {
-            messageId: messageData.messageId,
-            messageContent: messageData.messageContent,
-            llmApiCalls: messageData.llmApiCalls,
-            evaluations: messageData.evaluations || [],
-            conversationThread: messageData.conversationThread
-          },
-          timestamp: new Date().toISOString()
-        })
+        body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {
@@ -79,13 +97,13 @@ export function FixResponseDialog({ isOpen, onClose, messageData }: FixResponseD
       // Success!
       setExplanation('');
       onClose();
-      
-      // Show success toast (you may need to import toast library)
-      console.log('✅ Response reported successfully');
+      showSuccess('📝 Report submitted successfully! Thank you for your feedback.');
       
     } catch (err) {
       console.error('Failed to submit error report:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit report. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to submit report. Please try again.';
+      setError(errorMessage);
+      showError(`Failed to submit report: ${errorMessage}`);
     } finally {
       setIsSending(false);
     }

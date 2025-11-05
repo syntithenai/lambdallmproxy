@@ -551,10 +551,6 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                 console.log('📦 Has explanation:', !!body.explanation);
                 console.log('📦 Has messageData:', !!body.messageData);
                 
-                // Extract Google access token from custom header (for Sheets API)
-                const googleAccessToken = event.headers?.['x-google-access-token'] || event.headers?.['X-Google-Access-Token'];
-                console.log('🔑 Has Google access token:', !!googleAccessToken);
-                
                 // Extract user from auth token (for user identification)
                 const authHeader = event.headers?.authorization || event.headers?.Authorization;
                 let userEmail = 'unknown';
@@ -622,13 +618,14 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
                 }
                 
                 // Log to Google Sheets with user email from auth token
+                // Note: logErrorReport now uses service account credentials internally
                 await logErrorReport({
                     userEmail,
                     feedbackType: body.feedbackType || 'error', // positive or error
                     explanation: body.explanation || '(No explanation provided)',
                     messageData: body.messageData,
                     timestamp: body.timestamp || new Date().toISOString()
-                }, googleAccessToken);
+                });
                 
                 const successResponse = {
                     statusCode: 200,

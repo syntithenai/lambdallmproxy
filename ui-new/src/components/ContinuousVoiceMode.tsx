@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { hotwordService } from '../services/hotwordDetection';
 import { useToast } from './ToastManager';
 import './ContinuousVoiceMode.css';
@@ -15,6 +15,7 @@ interface ContinuousVoiceModeProps {
   isSpeaking?: boolean;
   enabled?: boolean; // External control for enabled state
   onEnabledChange?: (enabled: boolean) => void; // Callback when enabled state changes
+  onStopTTS?: () => void; // Callback to stop TTS playback
 }
 
 export function ContinuousVoiceMode({ 
@@ -25,21 +26,15 @@ export function ContinuousVoiceMode({
   isProcessing = false,
   isSpeaking = false,
   enabled = false,
-  onEnabledChange
+  onEnabledChange,
+  onStopTTS
 }: ContinuousVoiceModeProps) {
   // keep apiEndpoint referenced to avoid unused variable linting (we resolve base via getCachedApiBase)
   void apiEndpoint;
   
   // Toast notifications
-  const { showPersistentToast, removeToast, updateToast } = useToast();
+  const { showPersistentToast, removeToast } = useToast();
   const toastIdRef = useRef<string | null>(null);
-  
-  // Update toast message based on state
-  const updateToastMessage = (message: string) => {
-    if (toastIdRef.current) {
-      updateToast(toastIdRef.current, message);
-    }
-  };
   
   // Use external enabled state if provided, otherwise manage internally
   const [isEnabled, setIsEnabled] = useState(enabled);
@@ -56,7 +51,6 @@ export function ContinuousVoiceMode({
   };
   
   const [state, setState] = useState<ConversationState>('hotword');
-  const [transcript, setTranscript] = useState('');
   const [turnCount, setTurnCount] = useState(0);
   
   // Settings
@@ -66,8 +60,11 @@ export function ContinuousVoiceMode({
   const [sensitivity, setSensitivity] = useState(() => {
     return parseFloat(localStorage.getItem('continuousVoice_sensitivity') || '0.5');
   });
-  const [timeoutDuration, setTimeoutDuration] = useState(() => {
-    return parseInt(localStorage.getItem('continuousVoice_timeout') || '10000');
+  const [speechTimeout, setSpeechTimeout] = useState(() => {
+    return parseFloat(localStorage.getItem('continuousVoice_speechTimeout') || '2');
+  });
+  const [conversationTimeout, setConversationTimeout] = useState(() => {
+    return parseInt(localStorage.getItem('continuousVoice_conversationTimeout') || '10000');
   });
   
   const timeoutRef = useRef<number | null>(null);
@@ -85,8 +82,9 @@ export function ContinuousVoiceMode({
   useEffect(() => {
     localStorage.setItem('continuousVoice_hotword', hotword);
     localStorage.setItem('continuousVoice_sensitivity', sensitivity.toString());
-    localStorage.setItem('continuousVoice_timeout', timeoutDuration.toString());
-  }, [hotword, sensitivity, timeoutDuration]);
+    localStorage.setItem('continuousVoice_speechTimeout', speechTimeout.toString());
+    localStorage.setItem('continuousVoice_conversationTimeout', conversationTimeout.toString());
+  }, [hotword, sensitivity, speechTimeout, conversationTimeout]);
 
   // Sync state with external processing/speaking state
   useEffect(() => {
@@ -120,13 +118,13 @@ export function ContinuousVoiceMode({
   useEffect(() => {
     if (isEnabled) {
       initializeContinuousMode();
-      // Show persistent toast when enabled
+      // Show persistent toast when enabled - starts with recording message since we record immediately
       if (!toastIdRef.current) {
         toastIdRef.current = showPersistentToast(
-          '🎤 Listening for "' + hotword + '"...',
+          '�️ Recording... (speak now)',
           'info',
           {
-            label: 'Stop',
+            label: 'Stop Voice',
             onClick: () => handleSetEnabled(false)
           }
         );
@@ -139,7 +137,10 @@ export function ContinuousVoiceMode({
         toastIdRef.current = null;
       }
     }
+  }, [isEnabled]);
 
+  // Cleanup only on component unmount
+  useEffect(() => {
     return () => {
       cleanup();
       if (toastIdRef.current) {
@@ -147,14 +148,47 @@ export function ContinuousVoiceMode({
         toastIdRef.current = null;
       }
     };
-  }, [isEnabled]);
+  }, []); // Empty deps = only run on mount/unmount
+
+  // Define callbacks before useEffects
+  const handleHotwordDetected = useCallback(() => {
+    console.log('✅ Hotword detected, starting microphone...');
+    
+    // Stop hotword listening while user speaks
+    hotwordService.stopListening();
+    
+    // Start recording
+    setState('listening');
+    onTranscriptionStart?.();
+    startRecording();
+    
+    // Set timeout in case no speech detected
+    startTimeout();
+  }, [onTranscriptionStart]); // startRecording and startTimeout are defined below
+
+  const startHotwordListening = useCallback(async () => {
+    try {
+      // Reinitialize if needed (e.g., after release())
+      await hotwordService.initialize(hotword, sensitivity);
+      await hotwordService.startListening(handleHotwordDetected);
+      console.log('🎤 Hotword mode active');
+    } catch (error) {
+      console.error('❌ Failed to start hotword listening:', error);
+      // Disable continuous mode if hotword detection fails
+      handleSetEnabled(false);
+      alert(`Failed to start hotword detection: ${error instanceof Error ? error.message : 'Unknown error'}\n\nNote: Hotword detection requires Chrome/Edge browser and microphone permissions.`);
+    }
+  }, [hotword, sensitivity, handleHotwordDetected]);
 
   useEffect(() => {
     if (state === 'hotword' && isEnabled) {
       startHotwordListening();
     }
-  }, [state, isEnabled]);
+  }, [state, isEnabled, startHotwordListening]);
 
+  // Track previous isSpeaking state to only update when it changes
+  const prevIsSpeakingRef = useRef<boolean>(false);
+  
   // Update toast message when state changes
   useEffect(() => {
     if (!isEnabled || !toastIdRef.current) return;
@@ -166,8 +200,38 @@ export function ContinuousVoiceMode({
       speaking: '🔊 Speaking...'
     };
     
-    updateToastMessage(stateMessages[state]);
-  }, [state, isEnabled, hotword]);
+    // Only recreate toast if the button type needs to change (speaking state changed)
+    const wasSpeaking = prevIsSpeakingRef.current;
+    const isNowSpeaking = isSpeaking && !!onStopTTS;
+    
+    if (wasSpeaking !== isNowSpeaking) {
+      // Button type changed, recreate toast with new action
+      prevIsSpeakingRef.current = isNowSpeaking;
+      
+      const actionButton = isNowSpeaking ? {
+        label: 'Stop TTS',
+        onClick: () => {
+          console.log('🛑 Stop TTS clicked from toast');
+          onStopTTS!();
+        }
+      } : {
+        label: 'Stop Voice',
+        onClick: () => handleSetEnabled(false)
+      };
+      
+      removeToast(toastIdRef.current);
+      toastIdRef.current = showPersistentToast(
+        stateMessages[state],
+        'info',
+        actionButton
+      );
+    } else {
+      // Just update the message without recreating the toast
+      // Note: ToastManager's updateToast would be ideal here, but we removed it
+      // For now, only recreate when button changes to avoid infinite loop
+      // The message will update when the button changes anyway
+    }
+  }, [state, isEnabled, hotword, isSpeaking, onStopTTS]);
 
   async function initializeContinuousMode() {
     try {
@@ -187,36 +251,10 @@ export function ContinuousVoiceMode({
     }
   }
 
-  async function startHotwordListening() {
-    try {
-      // Reinitialize if needed (e.g., after release())
-      await hotwordService.initialize(hotword, sensitivity);
-      await hotwordService.startListening(handleHotwordDetected);
-      console.log('🎤 Hotword mode active');
-    } catch (error) {
-      console.error('❌ Failed to start hotword listening:', error);
-    }
-  }
-
-  function handleHotwordDetected() {
-    console.log('✅ Hotword detected, starting microphone...');
-    
-    // Stop hotword listening while user speaks
-    hotwordService.stopListening();
-    
-    // Start recording
-    setState('listening');
-    onTranscriptionStart?.();
-    startRecording();
-    
-    // Set timeout in case no speech detected
-    startTimeout();
-  }
-
   function startTimeout() {
     clearCurrentTimeout();
     
-    if (timeoutDuration <= 0) return; // No timeout if set to "never"
+    if (conversationTimeout <= 0) return; // No timeout if set to "never"
     
     timeoutRef.current = window.setTimeout(() => {
       console.log('⏱️ Timeout: No speech detected, returning to hotword mode');
@@ -226,7 +264,7 @@ export function ContinuousVoiceMode({
       }
       
       setState('hotword');
-    }, timeoutDuration);
+    }, conversationTimeout);
   }
 
   function clearCurrentTimeout() {
@@ -291,14 +329,14 @@ export function ContinuousVoiceMode({
     
     const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
     const SILENCE_THRESHOLD = 10;
-    const SILENCE_DURATION = 2000; // 2 seconds
+    const speechTimeoutMs = speechTimeout * 1000; // Convert seconds to milliseconds
     
     if (average < SILENCE_THRESHOLD) {
       if (!silenceCheckIntervalRef.current) {
         silenceCheckIntervalRef.current = window.setTimeout(() => {
-          console.log('🤫 Silence detected, stopping recording...');
+          console.log(`🤫 Silence detected after ${speechTimeout}s, stopping recording...`);
           stopRecording();
-        }, SILENCE_DURATION);
+        }, speechTimeoutMs);
       }
     } else {
       if (silenceCheckIntervalRef.current) {
@@ -349,7 +387,6 @@ export function ContinuousVoiceMode({
     try {
       // Transcribe using existing endpoint
       const transcript = await transcribeAudio(audioBlob);
-      setTranscript(transcript);
 
       if (!transcript.trim()) {
         // No speech detected, return to hotword mode
@@ -360,7 +397,7 @@ export function ContinuousVoiceMode({
 
       console.log('📝 Transcript:', transcript);
 
-      // Send to parent component (ChatTab) which will handle LLM request
+      // Send to parent component (ChatTab) which will handle LLM request and display
       onVoiceRequest?.(transcript);
       
       // State will transition to 'thinking' via isProcessing prop
@@ -370,8 +407,15 @@ export function ContinuousVoiceMode({
     } catch (error) {
       console.error('❌ Error processing speech:', error);
       
-      // Check if it's a connection error (backend not running)
+      // Check if it's an authentication error
       const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Authentication') || errorMessage.includes('Unauthorized')) {
+        console.log('🔴 Authentication failed - disabling voice mode');
+        handleSetEnabled(false); // Disable voice mode on auth failure
+        return;
+      }
+      
+      // Check if it's a connection error (backend not running)
       if (errorMessage.includes('Failed to fetch') || errorMessage.includes('ERR_CONNECTION_REFUSED')) {
         showPersistentToast('❌ Backend server not running. Start with: make dev', 'error');
       }
@@ -382,6 +426,8 @@ export function ContinuousVoiceMode({
 
   async function transcribeAudio(blob: Blob): Promise<string> {
     if (!accessToken) {
+      console.error('❌ No access token available for transcription');
+      showPersistentToast('❌ Authentication required. Please log in again.', 'error');
       throw new Error('Not authenticated');
     }
 
@@ -414,6 +460,13 @@ export function ContinuousVoiceMode({
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
+          // Handle 401 Unauthorized specially
+          if (response.status === 401) {
+            console.error('❌ Authentication failed - token may have expired');
+            showPersistentToast('❌ Authentication expired. Please log in again.', 'error');
+            throw new Error('Authentication required');
+          }
+          
           const errMsg = data?.error || response.statusText || `HTTP ${response.status}`;
           throw new Error(errMsg);
         }
@@ -423,7 +476,15 @@ export function ContinuousVoiceMode({
         lastErr = err;
         const isNetwork = err instanceof TypeError && err.message.includes('Failed to fetch');
         const isAbort = err.name === 'AbortError';
+        const isAuth = err.message?.includes('Authentication') || err.message?.includes('Unauthorized');
+        
         console.warn(`Transcription attempt ${attempt} failed:`, err?.message || err);
+        
+        // Don't retry auth errors
+        if (isAuth) {
+          throw err;
+        }
+        
         if (attempt < maxAttempts && (isNetwork || isAbort)) {
           const backoff = 400 * Math.pow(2, attempt - 1);
           await new Promise(r => setTimeout(r, backoff));
@@ -522,8 +583,21 @@ export function ContinuousVoiceMode({
           </div>
 
           <div className="setting">
-            <label>Silence Timeout:</label>
-            <select value={timeoutDuration} onChange={e => setTimeoutDuration(parseInt(e.target.value))}>
+            <label>Speech Timeout: {speechTimeout.toFixed(1)}s</label>
+            <input
+              type="range"
+              min="0.2"
+              max="5"
+              step="0.1"
+              value={speechTimeout}
+              onChange={e => setSpeechTimeout(parseFloat(e.target.value))}
+            />
+            <small>Auto-submit after this many seconds of silence</small>
+          </div>
+
+          <div className="setting">
+            <label>Conversation Timeout:</label>
+            <select value={conversationTimeout} onChange={e => setConversationTimeout(parseInt(e.target.value))}>
               <option value="5000">5 seconds</option>
               <option value="10000">10 seconds (default)</option>
               <option value="30000">30 seconds</option>
@@ -536,20 +610,13 @@ export function ContinuousVoiceMode({
             <p><strong>How it works:</strong></p>
             <ol>
               <li>Say "{hotword}" to activate</li>
-              <li>Speak your question</li>
+              <li>Speak your question ({speechTimeout}s silence auto-submits)</li>
               <li>Agent responds</li>
               <li>Microphone auto-restarts for next turn</li>
-              <li>After {timeoutDuration > 0 ? `${timeoutDuration/1000}s` : '∞'} silence, returns to hotword mode</li>
+              <li>After {conversationTimeout > 0 ? `${conversationTimeout/1000}s` : '∞'} silence, returns to hotword mode</li>
             </ol>
           </div>
         </details>
-      )}
-
-      {/* Transcript Display */}
-      {transcript && isEnabled && (
-        <div className="transcript-display">
-          <strong>You:</strong> {transcript}
-        </div>
       )}
     </div>
   );
