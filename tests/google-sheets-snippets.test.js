@@ -273,6 +273,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.insertSnippet(
         snippet,
         testUserEmail,
+        null, // projectId
         testAccessToken
       );
       
@@ -291,12 +292,14 @@ describe('Google Sheets Snippets Service', () => {
       expect(mockSheets.spreadsheets.values.append).toHaveBeenCalledWith(
         expect.objectContaining({
           spreadsheetId: expect.any(String),
-          range: 'Snippets!A:H',
+          range: 'Snippets!A:J',
           valueInputOption: 'RAW',
           requestBody: {
             values: [
               [
-                2,
+                2, // id
+                testUserEmail, // user_email
+                '', // project_id (empty string when null)
                 expect.any(String), // created_at
                 expect.any(String), // updated_at
                 'Test Snippet',
@@ -330,6 +333,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.insertSnippet(
         snippet,
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -355,6 +359,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.insertSnippet(
         snippet,
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -369,16 +374,16 @@ describe('Google Sheets Snippets Service', () => {
       };
       
       await expect(
-        snippetsService.insertSnippet(snippet, testUserEmail, testAccessToken)
+        snippetsService.insertSnippet(snippet, testUserEmail, null, testAccessToken)
       ).rejects.toThrow();
     });
   });
 
   describe('getSnippet', () => {
     const mockSnippetsData = [
-      ['ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
-      ['1', '2024-01-01T10:00:00Z', '2024-01-01T10:00:00Z', 'Snippet 1', 'Content 1', 'tag1, tag2', 'chat', ''],
-      ['2', '2024-01-02T10:00:00Z', '2024-01-02T10:00:00Z', 'Snippet 2', 'Content 2', 'tag3', 'manual', 'https://example.com']
+      ['ID', 'User Email', 'Project ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
+      ['1', testUserEmail, '', '2024-01-01T10:00:00Z', '2024-01-01T10:00:00Z', 'Snippet 1', 'Content 1', 'tag1, tag2', 'chat', ''],
+      ['2', testUserEmail, '', '2024-01-02T10:00:00Z', '2024-01-02T10:00:00Z', 'Snippet 2', 'Content 2', 'tag3', 'manual', 'https://example.com']
     ];
 
     beforeEach(() => {
@@ -395,6 +400,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.getSnippet(
         { id: 1 },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -411,6 +417,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.getSnippet(
         { title: 'Snippet 2' },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -428,6 +435,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.getSnippet(
         { id: 999 },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -438,6 +446,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.getSnippet(
         {},
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -447,10 +456,10 @@ describe('Google Sheets Snippets Service', () => {
 
   describe('searchSnippets', () => {
     const mockSnippetsData = [
-      ['ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
-      ['1', '2024-01-01', '2024-01-01', 'JavaScript Tips', 'Use const and let', 'javascript, tips', 'chat', ''],
-      ['2', '2024-01-02', '2024-01-02', 'Python Guide', 'Use virtual environments', 'python, guide', 'manual', ''],
-      ['3', '2024-01-03', '2024-01-03', 'Advanced JavaScript', 'Async/await patterns', 'advanced, javascript', 'url', 'https://example.com']
+      ['ID', 'User Email', 'Project ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
+      ['1', testUserEmail, '', '2024-01-01', '2024-01-01', 'JavaScript Tips', 'Use const and let', 'javascript, tips', 'chat', ''],
+      ['2', testUserEmail, '', '2024-01-02', '2024-01-02', 'Python Guide', 'Use virtual environments', 'python, guide', 'manual', ''],
+      ['3', testUserEmail, '', '2024-01-03', '2024-01-03', 'Advanced JavaScript', 'Async/await patterns', 'advanced, javascript', 'url', 'https://example.com']
     ];
 
     beforeEach(() => {
@@ -467,6 +476,7 @@ describe('Google Sheets Snippets Service', () => {
       const results = await snippetsService.searchSnippets(
         { query: 'javascript' },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -481,6 +491,7 @@ describe('Google Sheets Snippets Service', () => {
       const results = await snippetsService.searchSnippets(
         { query: 'virtual' },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -492,6 +503,7 @@ describe('Google Sheets Snippets Service', () => {
       const results = await snippetsService.searchSnippets(
         { tags: ['javascript', 'advanced'] },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -503,6 +515,7 @@ describe('Google Sheets Snippets Service', () => {
       const results = await snippetsService.searchSnippets(
         { query: 'async', tags: ['javascript'] },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -514,6 +527,7 @@ describe('Google Sheets Snippets Service', () => {
       const results = await snippetsService.searchSnippets(
         { query: 'nonexistent' },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -524,6 +538,7 @@ describe('Google Sheets Snippets Service', () => {
       const results = await snippetsService.searchSnippets(
         {},
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -534,6 +549,7 @@ describe('Google Sheets Snippets Service', () => {
       const results = await snippetsService.searchSnippets(
         { query: 'JAVASCRIPT' },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -543,10 +559,10 @@ describe('Google Sheets Snippets Service', () => {
 
   describe('removeSnippet', () => {
     const mockSnippetsData = [
-      ['ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
-      ['1', '2024-01-01', '2024-01-01', 'Snippet 1', 'Content 1', 'tag1', 'chat', ''],
-      ['2', '2024-01-02', '2024-01-02', 'Snippet 2', 'Content 2', 'tag2', 'manual', ''],
-      ['3', '2024-01-03', '2024-01-03', 'Snippet 3', 'Content 3', 'tag3', 'manual', '']
+      ['ID', 'User Email', 'Project ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
+      ['1', testUserEmail, '', '2024-01-01', '2024-01-01', 'Snippet 1', 'Content 1', 'tag1', 'chat', ''],
+      ['2', testUserEmail, '', '2024-01-02', '2024-01-02', 'Snippet 2', 'Content 2', 'tag2', 'manual', ''],
+      ['3', testUserEmail, '', '2024-01-03', '2024-01-03', 'Snippet 3', 'Content 3', 'tag3', 'manual', '']
     ];
 
     beforeEach(() => {
@@ -567,6 +583,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.removeSnippet(
         { id: 2 },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -582,8 +599,8 @@ describe('Google Sheets Snippets Service', () => {
           valueInputOption: 'RAW',
           requestBody: {
             values: expect.arrayContaining([
-              ['1', '2024-01-01', '2024-01-01', 'Snippet 1', 'Content 1', 'tag1', 'chat', ''],
-              ['3', '2024-01-03', '2024-01-03', 'Snippet 3', 'Content 3', 'tag3', 'manual', '']
+              ['1', testUserEmail, '', '2024-01-01', '2024-01-01', 'Snippet 1', 'Content 1', 'tag1', 'chat', ''],
+              ['3', testUserEmail, '', '2024-01-03', '2024-01-03', 'Snippet 3', 'Content 3', 'tag3', 'manual', '']
             ])
           }
         })
@@ -594,6 +611,7 @@ describe('Google Sheets Snippets Service', () => {
       const result = await snippetsService.removeSnippet(
         { title: 'Snippet 1' },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -605,6 +623,7 @@ describe('Google Sheets Snippets Service', () => {
         snippetsService.removeSnippet(
           { id: 999 },
           testUserEmail,
+          null,
           testAccessToken
         )
       ).rejects.toThrow('Failed to remove snippet: Snippet not found');
@@ -615,6 +634,7 @@ describe('Google Sheets Snippets Service', () => {
         snippetsService.removeSnippet(
           {},
           testUserEmail,
+          null,
           testAccessToken
         )
       ).rejects.toThrow();
@@ -623,8 +643,8 @@ describe('Google Sheets Snippets Service', () => {
 
   describe('updateSnippet', () => {
     const mockSnippetsData = [
-      ['ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
-      ['1', '2024-01-01T10:00:00Z', '2024-01-01T10:00:00Z', 'Original Title', 'Original Content', 'tag1', 'chat', '']
+      ['ID', 'User Email', 'Project ID', 'Created At', 'Updated At', 'Title', 'Content', 'Tags', 'Source', 'URL'],
+      ['1', testUserEmail, '', '2024-01-01T10:00:00Z', '2024-01-01T10:00:00Z', 'Original Title', 'Original Content', 'tag1', 'chat', '']
     ];
 
     beforeEach(() => {
@@ -651,6 +671,7 @@ describe('Google Sheets Snippets Service', () => {
         1,
         updates,
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -675,6 +696,7 @@ describe('Google Sheets Snippets Service', () => {
         1,
         updates,
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -688,6 +710,7 @@ describe('Google Sheets Snippets Service', () => {
         1,
         { title: 'New Title' },
         testUserEmail,
+        null,
         testAccessToken
       );
       
@@ -700,6 +723,7 @@ describe('Google Sheets Snippets Service', () => {
           999,
           { title: 'New' },
           testUserEmail,
+          null,
           testAccessToken
         )
       ).rejects.toThrow('Failed to update snippet:');
@@ -730,7 +754,7 @@ describe('Google Sheets Snippets Service', () => {
       );
       
       // searchSnippets returns empty array on error, not throws
-      const result = await snippetsService.searchSnippets({}, uniqueEmail, testAccessToken);
+      const result = await snippetsService.searchSnippets({}, uniqueEmail, null, testAccessToken);
       expect(result).toEqual([]);
     });
 
