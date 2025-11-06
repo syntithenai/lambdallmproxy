@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
-import { GitHubLink } from './GitHubLink';
 import { Link } from 'react-router-dom';
 
 // Global flag to prevent multiple Google Sign-In initializations across all instances
@@ -213,9 +212,6 @@ export const LoginScreen: React.FC = () => {
           </p>
         </div>
       </div>
-
-      {/* GitHub Link */}
-      <GitHubLink hideGitHub={true} />
     </div>
   );
 };
