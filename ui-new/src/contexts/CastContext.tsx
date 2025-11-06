@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import type { ChatMessage } from '../utils/api';
+import { useAuth } from './AuthContext';
 
 // Extend Window interface for Cast SDK
 declare global {
@@ -65,6 +66,7 @@ interface CastProviderProps {
 }
 
 export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
+  const { isAuthenticated } = useAuth();
   const [isAvailable, setIsAvailable] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [deviceName, setDeviceName] = useState<string | null>(null);
@@ -350,8 +352,14 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
     }
   }, [session, isConnected, isCastingSnippet]);
 
-  // Load Cast SDK when component mounts
+  // Load Cast SDK when component mounts - ONLY if authenticated
   useEffect(() => {
+    // ⚠️ CRITICAL: Don't load Cast SDK on login page to prevent interference with Google Sign-In
+    if (!isAuthenticated) {
+      console.log('Cast SDK: Waiting for authentication before loading');
+      return;
+    }
+
     // Check if script already exists
     if (document.getElementById('cast-sdk')) {
       if (window.chrome?.cast) {
@@ -384,7 +392,7 @@ export const CastProvider: React.FC<CastProviderProps> = ({ children }) => {
     return () => {
       // Cleanup if needed (don't remove script as it might be used elsewhere)
     };
-  }, [initializeCast]);
+  }, [initializeCast, isAuthenticated]); // Added isAuthenticated dependency
 
   const value: CastContextType = {
     isAvailable,
