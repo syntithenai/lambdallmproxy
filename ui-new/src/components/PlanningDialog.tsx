@@ -209,7 +209,11 @@ export const PlanningDialog: React.FC<PlanningDialogProps> = ({ isOpen, onClose,
               
             case 'llm_response':
               // Store LLM transparency information
-              setLlmInfo(data);
+              // Backend sends multiple llm_response events - merge them
+              setLlmInfo((prev: any) => ({
+                ...prev,
+                ...data
+              }));
               console.log('Captured LLM transparency info:', data);
               break;
               
@@ -1178,7 +1182,11 @@ ${JSON.stringify(debugInfo.llmInfo, null, 2)}
                                             }
                                             break;
                                           case 'llm_response':
-                                            setLlmInfo(data);
+                                            // Backend sends multiple llm_response events - merge them
+                                            setLlmInfo((prev: any) => ({
+                                              ...prev,
+                                              ...data
+                                            }));
                                             break;
                                           case 'error': {
                                             const errorMsg = data.error || 'Unknown error';
