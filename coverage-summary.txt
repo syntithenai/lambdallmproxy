@@ -1,0 +1,200 @@
+        ✓ should detect unsafe output (1 ms)
+        ✓ should fail safe on error (1 ms)
+    Multiple Provider Support
+      ✓ should work with OpenAI provider
+      ✓ should work with Anthropic provider (1 ms)
+      ✓ should work with Gemini provider
+    Context Priority
+      ✓ should prefer context key over indexed env var (1 ms)
+
+PASS tests/unit/guardrails-config.test.js
+  Guardrails Auto-Detection
+    Disabled State
+      ✓ should return null when ENABLE_GUARDRAILS is not set (1 ms)
+      ✓ should return null when ENABLE_GUARDRAILS is false
+      ✓ should return null when ENABLE_GUARDRAILS is true but no providers available (1 ms)
+    Provider Priority - Context Keys
+      ✓ should prefer groq-free when groqApiKey is provided in context (1 ms)
+      ✓ should use gemini-free when geminiApiKey is provided and groq is not available (1 ms)
+      ✓ should use together when togetherApiKey is provided and free tiers not available
+      ✓ should use openai when openaiApiKey is provided and higher priority providers not available (1 ms)
+      ✓ should prefer groq-free over other providers when multiple keys provided (1 ms)
+      ✓ should prefer gemini-free over paid providers when groq not available (3 ms)
+    Provider Priority - Indexed Env Vars
+      ✓ should use groq-free from indexed provider env vars (1 ms)
+      ✓ should use gemini-free from indexed provider env vars
+      ✓ should skip providers without API keys in indexed format (1 ms)
+    Context Overrides Env Vars
+      ✓ should prefer context keys over indexed env vars
+    Configuration Structure
+      ✓ should return complete config structure (1 ms)
+      ✓ should set enabled to true (1 ms)
+      ✓ should default strictness to moderate
+      ✓ should have same model for input and output by default (1 ms)
+    Edge Cases
+      ✓ should handle empty context object when indexed provider available
+      ✓ should handle undefined context when indexed provider available (1 ms)
+      ✓ should handle context with null values (1 ms)
+      ✓ should handle whitespace-only API keys in indexed providers
+    Groq Paid Tier
+      ✓ should use groq paid tier when groq-free not available (2 ms)
+    Model Selection
+      ✓ should select fast small model for groq-free (1 ms)
+      ✓ should select flash model for gemini-free
+      ✓ should select mini model for openai (1 ms)
+
+PASS tests/unit/evaluation-parsing.test.js
+  Evaluation Response Parsing
+    JSON Response Parsing
+      ✓ should parse valid JSON with comprehensive=true (1 ms)
+      ✓ should parse valid JSON with comprehensive=false
+      ✓ should extract JSON from markdown code blocks
+      ✓ should extract JSON from text with surrounding content
+      ✓ should handle JSON with extra whitespace
+    Text Response Parsing - Comprehensive Responses
+      ✓ should recognize "yes" as comprehensive (1 ms)
+      ✓ should recognize "comprehensive" as comprehensive (1 ms)
+      ✓ should recognize "complete" as comprehensive
+      ✓ should recognize "sufficient" as comprehensive
+      ✓ should recognize "adequate" as comprehensive (1 ms)
+      ✓ should recognize "thorough" as comprehensive
+      ✓ should recognize "true" as comprehensive
+    Text Response Parsing - NOT Comprehensive Responses
+      ✓ should recognize "not comprehensive" as NOT comprehensive (1 ms)
+      ✓ should recognize "isn't comprehensive" as NOT comprehensive
+      ✓ should recognize "is not comprehensive" as NOT comprehensive
+      ✓ should recognize "incomplete" as NOT comprehensive
+      ✓ should recognize "insufficient" as NOT comprehensive (1 ms)
+      ✓ should recognize "too brief" as NOT comprehensive
+      ✓ should recognize "too short" as NOT comprehensive
+      ✓ should recognize "lacks detail" as NOT comprehensive (1 ms)
+      ✓ should recognize "missing information" as NOT comprehensive
+      ✓ should recognize standalone "no" as NOT comprehensive
+      ✓ should recognize "false" as NOT comprehensive (1 ms)
+      ✓ should recognize "not enough" as NOT comprehensive
+      ✓ should recognize "not sufficient" as NOT comprehensive
+      ✓ should recognize "not complete" as NOT comprehensive
+    Edge Cases and Gemini-Specific Formats
+      ✓ should NOT match "no" in words like "know" (1 ms)
+      ✓ should handle case variations
+      ✓ should prioritize negative over positive when both present (1 ms)
+      ✓ should handle responses with extra punctuation
+      ✓ should handle multi-line responses
+      ✓ should assume comprehensive for ambiguous responses (1 ms)
+      ✓ should handle empty responses
+      ✓ should handle responses with only whitespace
+      ✓ should handle Gemini descriptive text format
+      ✓ should handle Gemini negative descriptive format (1 ms)
+    Invalid JSON Handling
+      ✓ should fall back to text parsing for malformed JSON
+      ✓ should handle partial JSON
+
+PASS tests/unit/html-extraction.test.js
+  HTML Content Extractor
+    htmlToMarkdown
+      ✓ should convert headings to Markdown (2 ms)
+      ✓ should convert lists to Markdown
+      ✓ should convert links to Markdown (1 ms)
+      ✓ should convert code blocks (2 ms)
+      ✓ should convert inline code (1 ms)
+      ✓ should convert emphasis
+      ✓ should remove script tags
+      ✓ should remove style tags (1 ms)
+      ✓ should remove navigation elements
+      ✓ should decode HTML entities
+      ✓ should resolve relative URLs to absolute URLs (1 ms)
+      ✓ should handle protocol-relative URLs
+      ✓ should preserve anchor and special links (1 ms)
+    htmlToText
+      ✓ should extract plain text from HTML
+      ✓ should remove scripts and styles (1 ms)
+      ✓ should preserve newlines between elements
+    extractMainContent
+      ✓ should extract content from main tag (1 ms)
+      ✓ should extract content from article tag
+      ✓ should extract content from common content classes
+      ✓ should return full HTML if no main content found
+    extractContent
+      ✓ should return markdown format for well-structured HTML (1 ms)
+      ✓ should include compression ratio
+      ✓ should handle empty HTML gracefully (3 ms)
+      ✓ should fallback to text when markdown extraction is poor
+      ✓ should handle malformed HTML
+      ✓ should extract content from complex real-world HTML (1 ms)
+      ✓ should preserve links in markdown format
+    Token efficiency
+      ✓ should significantly reduce token count (1 ms)
+
+PASS tests/unit/health-tracking.test.js
+  Health Tracking
+    ModelRateLimit - Health Score Calculation
+      ✓ should initialize with perfect health (1 ms)
+      ✓ should record successful requests (1 ms)
+      ✓ should record errors and reduce health score (2 ms)
+      ✓ should mark unhealthy after 3 consecutive errors (1 ms)
+      ✓ should reset consecutive errors on success
+      ✓ should mark unhealthy when health score < 30 (1 ms)
+      ✓ should handle zero requests gracefully
+      ✓ should cap error penalty at 30 points
+      ✓ should recover health score after errors clear (1 ms)
+    RateLimitTracker - Health Methods
+      ✓ should record success via tracker
+      ✓ should record error via tracker (1 ms)
+      ✓ should return 100 for unknown model
+      ✓ should track health across multiple models (1 ms)
+    Health-Based Filtering - filterByHealth
+      ✓ should filter out unhealthy models
+      ✓ should keep models with no history (assume healthy)
+      ✓ should return empty array if all models unhealthy (1 ms)
+      ✓ should handle empty input
+      ✓ should preserve model order after filtering (1 ms)
+    Header Parsing - updateFromHeaders
+      ✓ should parse standard x-ratelimit-* headers (2 ms)
+      ✓ should parse Google x-goog-quota-* headers
+      ✓ should store lastResponseHeaders for debugging (1 ms)
+      ✓ should handle missing headers gracefully
+    Real-World Health Scenarios
+      ✓ should handle transient errors (1 ms)
+      ✓ should detect persistent failures
+      ✓ should track recovery after outage
+      ✓ should handle rate limit 429 as error (1 ms)
+    Integration - Performance + Health
+      ✓ should track both performance and health independently
+
+PASS tests/unit/credential-pool.test.js
+  Credential Pool
+    loadEnvironmentProviders
+      ✓ should load provider from environment (2 ms)
+      ✓ should load multiple providers (1 ms)
+      ✓ should skip indices with missing type or key
+      ✓ should handle gaps in provider indices (1 ms)
+      ✓ should load optional endpoint (1 ms)
+      ✓ should load optional model name
+      ✓ should load priority settings (1 ms)
+      ✓ should use default priority 100 when not specified
+      ✓ should return empty array when no providers configured (1 ms)
+    buildProviderPool
+      ✓ should build pool with user providers only (unauthorized) (1 ms)
+      ✓ should build pool with user + environment providers (authorized) (5 ms)
+      ✓ should skip invalid user providers (1 ms)
+      ✓ should handle empty user providers
+    hasAvailableProviders
+      ✓ should return true when user has valid providers (1 ms)
+      ✓ should return false when user has no valid providers (unauthorized)
+      ✓ should return true when authorized with environment providers (1 ms)
+      ✓ should filter out invalid user providers
+    Security Tests
+      ✓ should not expose API keys in logs
+      ✓ should handle malformed priority values (1 ms)
+      ✓ should mark server-side keys correctly
+
+/home/stever/projects/lambdallmproxy-codeinsiders/lambdallmproxy/src/search.js:25857
+        reject(new Error(`Request timeout after ${timeoutMs}ms`));
+               ^
+
+Error: Request timeout after 10000ms
+    at Timeout._onTimeout (/home/stever/projects/lambdallmproxy-codeinsiders/lambdallmproxy/src/search.js:1555:24)
+    at listOnTimeout (node:internal/timers:581:17)
+    at processTimers (node:internal/timers:519:7)
+
+Node.js v20.19.5

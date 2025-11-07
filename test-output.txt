@@ -1,0 +1,565 @@
+
+> lambdallmproxy@1.0.0 test:coverage
+> jest --coverage
+
+PASS tests/unit/search.test.js (69.089 s)
+  DuckDuckGoSearcher
+    search
+      ✓ should return search results for valid query (10986 ms)
+      ✓ should handle search errors by throwing (33 ms)
+      ✓ should respect timeout parameter (6247 ms)
+      ✓ should limit results to specified count (10891 ms)
+    memory tracking
+      ✓ should track memory usage during search (11003 ms)
+    Anti-blocking Features
+      Request Spacing
+        ✓ should enforce minimum request interval (1084 ms)
+        ✓ should apply exponential backoff on failures (4938 ms)
+      Circuit Breaker
+        ✓ should open circuit breaker after max failures (964 ms)
+        ✓ should reject requests when circuit breaker is open (3 ms)
+        ✓ should close circuit breaker after timeout (10815 ms)
+      Request Tracking
+        ✓ should track successful requests (10992 ms)
+        ✓ should track failed requests (2 ms)
+        ✓ should limit request history size (1 ms)
+      Enhanced User Agent Rotation
+        ✓ should use different browser fingerprints (15 ms)
+      CAPTCHA Detection
+        ✓ should detect and track CAPTCHA responses (2 ms)
+      Session Management
+        ✓ should initialize session state correctly (2 ms)
+        ✓ should handle rapid consecutive requests with spacing (1088 ms)
+
+PASS tests/unit/tools.test.js
+  Tools System
+    Tool Registry (toolFunctions)
+      ✓ should export array of tool functions (1 ms)
+      ✓ all tools should have required structure (6 ms)
+      ✓ tool names should be unique (1 ms)
+      ✓ should include critical tools
+      ✓ search_web tool should have correct parameters (1 ms)
+      ✓ execute_javascript tool should have code parameter
+    getToolFunctions()
+      ✓ should return all tools when no filter (1 ms)
+      ✓ should return tools array with OpenAI-compatible format (1 ms)
+    Tool Execution - search_web
+      ✓ should execute search_web with single query (5 ms)
+      ✓ should handle array of queries
+      ✓ should return error for missing query (1 ms)
+      ✓ should emit progress events
+      ✓ should use Tavily when API key provided (1 ms)
+      ✓ should respect limit parameter (1 ms)
+      ✓ should clamp timeout values to valid range
+      ✓ should handle multiple queries in single call (1 ms)
+    Tool Execution - execute_javascript
+      ✓ should execute simple JavaScript code (1 ms)
+      ✓ should capture console.log output (1 ms)
+      ✓ should return execution result (1 ms)
+      ✓ should handle errors gracefully (1 ms)
+      ✓ should handle syntax errors (2 ms)
+      ✓ should respect timeout parameter (1002 ms)
+      ✓ should handle Math operations (1 ms)
+      ✓ should handle array operations (1 ms)
+      ✓ should not have access to require() (2 ms)
+      ✓ should not have access to global process
+    Tool Execution - scrape_web_content
+      ✓ should require URL parameter
+      ✓ should validate URL is not empty string
+      ✓ should return cached content when available (1 ms)
+      ✓ should handle timeout parameter validation (1150 ms)
+    Tool Execution - transcribe_url
+      ✓ should require URL parameter (1 ms)
+      ✓ should require API key for Whisper transcription (1 ms)
+      ✓ should reject Gemini API keys for transcription (1 ms)
+      ✓ should detect YouTube URLs and require OAuth when Whisper disabled
+    Parameter Validation
+      ✓ should clamp limit parameter to valid range (1 ms)
+      ✓ should handle missing required parameters (1 ms)
+      ✓ should handle invalid parameter types
+      ✓ should handle empty string parameters (3 ms)
+    compressSearchResultsForLLM()
+      ✓ should compress results into markdown format (2 ms)
+      ✓ should handle empty results
+      ✓ should handle null results (1 ms)
+      ✓ should format multiple results (1 ms)
+      ✓ should strip markdown formatting from content (1 ms)
+    Unknown Tool Handling
+      ✓ should return error for unknown tool (1 ms)
+      ✓ should handle empty string tool name
+    Context Propagation
+      ✓ should pass context to tool execution
+      ✓ should use optimization context for result count
+    Error Handling
+      ✓ should handle search errors gracefully (42 ms)
+      ✓ should handle invalid JavaScript execution (1 ms)
+      ✓ should require parameters for tools (1 ms)
+
+PASS tests/unit/retry-handler.test.js
+  RetryHandler
+    Successful Requests
+      ✓ should return result on first successful attempt (1 ms)
+      ✓ should not retry on success
+    Retry Logic
+      ✓ should retry on rate limit error (429) (1 ms)
+      ✓ should retry on server errors (5xx)
+      ✓ should retry on network errors
+      ✓ should not retry on client errors (4xx except 429) (5 ms)
+      ✓ should not retry on auth errors (401)
+    Retry Attempts
+      ✓ should respect max retry limit (1 ms)
+      ✓ should succeed on last retry attempt (2 ms)
+      ✓ should use custom max retries (1 ms)
+    Backoff Strategy
+      ✓ should apply exponential backoff between retries (1 ms)
+      ✓ should use retry-after header when available (1 ms)
+      ✓ should cap delay at maximum
+    Error Classification
+      ✓ should classify errors before retry decision
+      ✓ should respect classifier retryable decision (1 ms)
+    Error Context
+      ✓ should preserve error information (1 ms)
+      ✓ should include retry metadata in final error
+      ✓ should track all errors from retry attempts (1 ms)
+    Request Execution
+      ✓ should pass arguments to request executor
+      ✓ should support async request executors (10 ms)
+      ✓ should handle promise rejections
+    Retry Callbacks
+      ✓ should call onRetry callback before each retry (1 ms)
+      ✓ should call onSuccess callback after successful request (1 ms)
+      ✓ should call onFailure callback after all retries exhausted (2 ms)
+    Edge Cases
+      ✓ should handle executor returning null
+      ✓ should handle errors without code property (1 ms)
+      ✓ should handle synchronous executor functions
+      ✓ should handle zero max retries (992 ms)
+
+PASS tests/google-sheets-snippets.test.js
+  Google Sheets Snippets Service
+    getOrCreateSnippetsSheet
+      ✓ creates new folder and spreadsheet if none exist (2 ms)
+      ✓ uses existing folder and spreadsheet (1 ms)
+      ✓ caches spreadsheet ID for subsequent calls (1 ms)
+    insertSnippet
+      ✓ inserts snippet with all fields (1 ms)
+      ✓ normalizes tags to lowercase and sorts (1 ms)
+      ✓ handles empty tags (1 ms)
+      ✓ throws error if title is missing (13 ms)
+    getSnippet
+      ✓ gets snippet by ID (1 ms)
+      ✓ gets snippet by title
+      ✓ returns null if snippet not found (1 ms)
+      ✓ returns null if no identifier provided
+    searchSnippets
+      ✓ searches by query text in title
+      ✓ searches by query text in content (1 ms)
+      ✓ filters by tags (AND logic) (1 ms)
+      ✓ combines query and tags (1 ms)
+      ✓ returns empty array if no matches
+      ✓ returns all snippets if no query or tags (1 ms)
+      ✓ search is case-insensitive (1 ms)
+    removeSnippet
+      ✓ removes snippet by ID
+      ✓ removes snippet by title (2 ms)
+      ✓ throws error if snippet not found (1 ms)
+      ✓ throws error if no identifier provided (1 ms)
+    updateSnippet
+      ✓ updates snippet title and content (1 ms)
+      ✓ updates tags
+      ✓ preserves created_at timestamp (1 ms)
+      ✓ throws error if snippet not found
+    error handling
+      ✓ handles Drive API errors gracefully (1 ms)
+      ✓ handles Sheets API errors gracefully (1 ms)
+      ✓ handles missing access token
+      ✓ handles missing user email (1 ms)
+
+PASS tests/unit/providers/provider-errors.test.js
+  Provider Error Handling
+    Error Standardization
+      ✓ should standardize basic errors (1 ms)
+      ✓ should preserve error codes
+      ✓ should include context in errors (1 ms)
+      ✓ should handle errors without messages (2 ms)
+    Rate Limit Errors
+      ✓ should detect rate limit from status code (1 ms)
+      ✓ should detect rate limit from message
+      ✓ should preserve original rate limit error info (1 ms)
+    Authentication Errors
+      ✓ should detect 401 unauthorized errors
+      ✓ should detect 403 forbidden errors (1 ms)
+      ✓ should mark auth errors as non-retryable
+    Timeout Errors
+      ✓ should detect ETIMEDOUT errors (1 ms)
+      ✓ should detect timeout from message
+      ✓ should mark timeout errors as retryable (1 ms)
+    Network Errors
+      ✓ should detect ECONNREFUSED errors
+      ✓ should detect ENOTFOUND errors
+      ✓ should mark network errors as retryable (1 ms)
+    Provider-Specific Error Info
+      ✓ should include provider type in errors
+      ✓ should include provider ID in errors (1 ms)
+      ✓ should preserve original error for debugging
+    Error Context
+      ✓ should include request context in errors (1 ms)
+      ✓ should handle empty context
+      ✓ should handle missing context
+    Real Provider Error Handling
+      ✓ should handle OpenAI provider errors (553 ms)
+      ✓ should handle Groq provider errors (249 ms)
+    Error Recovery
+      ✓ should identify retryable errors (1 ms)
+      ✓ should not mark unknown errors as retryable
+
+PASS tests/unit/pricing.test.js
+  Pricing Module
+    Pricing Data Loading
+      ✓ should load pricing data for all providers (1 ms)
+      ✓ should have pricing for common OpenAI models (855 ms)
+      ✓ should have pricing for common Groq models (195 ms)
+    Cost Calculations
+      ✓ should calculate OpenAI GPT-4o cost correctly (1 ms)
+      ✓ should calculate Groq Llama cost correctly
+      ✓ should handle unknown provider (1 ms)
+      ✓ should handle unknown model
+      ✓ should handle case insensitive provider names (1 ms)
+
+PASS tests/unit/tools-comprehensive.test.js
+  Tools System - Comprehensive Coverage
+    Tool Parameter Validation
+      ✓ should handle all tool parameter combinations correctly (1 ms)
+      ✓ should validate tool parameter types (1 ms)
+    Tool Execution Edge Cases
+      ✓ should handle extremely long queries gracefully
+      ✓ should handle Unicode and special characters in queries (1 ms)
+      ✓ should handle empty arrays in query parameter
+      ✓ should handle very large limit values (1 ms)
+    Tool Execution Error Handling
+      ✓ should handle network timeouts gracefully (52 ms)
+      ✓ should handle invalid URLs gracefully (1 ms)
+      ✓ should handle cache errors gracefully (300 ms)
+      ✓ should handle tool-specific errors (2 ms)
+    Tool Execution Flow
+      ✓ should execute tools in correct sequence (1 ms)
+      ✓ should support multiple concurrent tool calls (2 ms)
+      ✓ should maintain consistent error message format (1 ms)
+    Tool Configuration Validation
+      ✓ should validate tool function structure consistently (6 ms)
+      ✓ should handle tool descriptions with special characters (1 ms)
+      ✓ should validate parameter schemas are complete (2 ms)
+    Integration with Other Modules
+      ✓ should integrate properly with caching system
+      ✓ should integrate with content optimization utilities (1 ms)
+    Performance and Resource Management
+      ✓ should not leak memory with many tool calls (2 ms)
+      ✓ should handle large result sets without crashing
+    Security and Sanitization
+      ✓ should handle malicious JavaScript input safely (1 ms)
+      ✓ should sanitize tool input parameters (1 ms)
+
+PASS tests/integration/image-search-feed.test.js
+  Image Search Feed Integration
+    extractImagesFromSearchResults
+      ✓ should extract images from search result metadata (1 ms)
+      ✓ should filter out junk images
+      ✓ should extract images from HTML content (1 ms)
+    Feed item image priority
+      ✓ should prioritize web search images over API images
+    Image source attribution
+      ✓ should properly attribute web search images (1 ms)
+      ✓ should properly attribute API images (2 ms)
+
+PASS tests/unit/rate-limit-tracker.test.js
+  ModelRateLimit
+    Constructor
+      ✓ should initialize with default limits (1 ms)
+      ✓ should initialize with custom limits
+      ✓ should initialize tracking fields
+    canMakeRequest
+      ✓ should allow request when under limits (1 ms)
+      ✓ should block when request limit reached
+      ✓ should block when token limit would be exceeded
+      ✓ should block when unavailable due to 429 (1 ms)
+      ✓ should allow request after unavailable period expires (153 ms)
+      ✓ should block when daily limit reached
+    trackRequest
+      ✓ should increment request counter (1 ms)
+      ✓ should increment token counter
+      ✓ should add to history
+      ✓ should handle zero tokens (1 ms)
+    updateFromHeaders
+      ✓ should update from x-ratelimit headers
+      ✓ should handle missing headers gracefully (1 ms)
+      ✓ should parse reset timestamp in seconds
+      ✓ should parse reset timestamp in milliseconds
+      ✓ should parse reset as seconds until reset
+      ✓ should handle invalid header values
+    updateFrom429
+      ✓ should set unavailableUntil with retry-after (1 ms)
+      ✓ should default to 60 seconds when no retry-after
+      ✓ should block requests until unavailable period expires
+    getCapacity
+      ✓ should return available capacity (1 ms)
+      ✓ should return zero capacity when unavailable
+      ✓ should return Infinity for unlimited resources
+    reset
+      ✓ should not reset counters before time expires (2 ms)
+      ✓ should reset minute counters after 60 seconds (1 ms)
+      ✓ should reset daily counters after 24 hours
+    cleanHistory
+      ✓ should remove old history entries
+      ✓ should recalculate usage from history (1 ms)
+    parseHeader
+      ✓ should parse valid numbers
+      ✓ should return null for invalid values
+  RateLimitTracker
+    Constructor
+      ✓ should initialize empty tracker (1 ms)
+      ✓ should disable auto-reset when configured
+      ✓ should accept persistence option
+    getModelLimit
+      ✓ should create new model limit if not exists
+      ✓ should return existing model limit
+      ✓ should create separate limits for different providers (1 ms)
+      ✓ should use custom limits when provided
+    trackRequest
+      ✓ should track request for model
+      ✓ should create model limit if not exists (1 ms)
+      ✓ should call reset when autoReset enabled
+      ✓ should not call reset when autoReset disabled
+      ✓ should persist state when persistence configured (1 ms)
+    updateFromHeaders
+      ✓ should update model limit from headers
+      ✓ should persist state after update
+    updateFrom429
+      ✓ should mark model as unavailable
+      ✓ should use default retry time when not specified
+      ✓ should persist state after 429 (1 ms)
+    isAvailable
+      ✓ should return true for untracked provider
+      ✓ should return true for untracked model (1 ms)
+      ✓ should return false when rate limited
+      ✓ should return false when unavailable due to 429 (1 ms)
+      ✓ should check token requirements
+    getCapacity
+      ✓ should return infinite capacity for untracked model (1 ms)
+      ✓ should return actual capacity for tracked model
+    resetLimits
+      ✓ should reset all providers when no arguments
+      ✓ should reset all models for provider (1 ms)
+      ✓ should reset specific model
+      ✓ should persist state after reset (1 ms)
+    getProviders
+      ✓ should return empty array for new tracker
+      ✓ should return all tracked providers
+    getModels
+      ✓ should return empty array for untracked provider (1 ms)
+      ✓ should return all tracked models for provider
+    Serialization
+      ✓ should serialize to JSON
+      ✓ should deserialize from JSON (1 ms)
+      ✓ should handle invalid JSON gracefully
+      ✓ should round-trip serialize/deserialize
+    Persistence
+      ✓ should persist after tracking
+      ✓ should load state on initialization
+      ✓ should handle persistence without save method (1 ms)
+      ✓ should handle persistence without load method
+
+PASS tests/integration/feed-recommendations.test.js
+  Feed Recommender - TF-IDF with Quiz Engagement
+    Keyword Extraction with Quiz Weighting
+      ✓ should extract keywords using TF-IDF (2 ms)
+      ✓ should weight quiz-generated items 2x higher
+      ✓ should weight high-scoring quizzes (>80%) 3x higher
+    Topic Extraction with Quiz Engagement
+      ✓ should extract topics with frequency and recency (1 ms)
+      ✓ should boost topics with quiz engagement (1 ms)
+      ✓ should track average quiz score per topic
+    Avoid Topics from Trash
+      ✓ should extract topics to avoid from trashed items (1 ms)
+      ✓ should require 3+ trashes to avoid topic
+    Search Term Generation
+      ✓ should generate 60% keywords, 20% topics, 20% trending (1 ms)
+      ✓ should filter out avoided topics (1 ms)
+      ✓ should provide default terms for new users
+    Preference Learning from Interactions
+      ✓ should analyze mixed interactions correctly (1 ms)
+      ✓ should handle empty interactions gracefully
+    Performance
+      ✓ should analyze preferences in < 200ms (4 ms)
+
+PASS tests/unit/load-balancer.test.js
+  LoadBalancer
+    Round-Robin Distribution
+      ✓ should distribute requests evenly across providers (1 ms)
+      ✓ should maintain separate round-robin state per provider type (1 ms)
+      ✓ should reset to start after reaching end (1 ms)
+    Rate Limit Aware Distribution
+      ✓ should skip rate-limited providers
+      ✓ should return null when all providers are rate-limited (1 ms)
+      ✓ should resume using provider after rate limit expires (152 ms)
+    Single Provider Scenarios
+      ✓ should return same provider when only one available
+      ✓ should handle empty provider list (1 ms)
+    Token Estimation
+      ✓ should pass token estimate to rate limit check
+    State Management
+      ✓ should maintain state across multiple calls (1 ms)
+      ✓ should allow resetting round-robin state
+    Error Handling
+      ✓ should handle invalid provider list (1 ms)
+      ✓ should handle missing model ID
+
+FAIL tests/unit/memory-tracker.test.js
+  MemoryTracker
+    getMemoryUsage
+      ✓ should return memory usage statistics (1 ms)
+      ✓ should track content size (1 ms)
+    checkMemoryLimit
+      ✕ should allow small content additions (1 ms)
+      ✓ should reject very large content additions
+      ✓ should provide detailed size information (1 ms)
+    addContentSize
+      ✓ should track accumulated content size
+    getMemorySummary
+      ✓ should return formatted summary string (1 ms)
+  TokenAwareMemoryTracker
+    estimateTokens
+      ✓ should estimate tokens from text (4 chars = 1 token)
+      ✓ should handle empty strings
+      ✓ should handle long text
+    canAddContent
+      ✓ should allow content within token limit
+      ✓ should reject content exceeding token limit (1 ms)
+      ✓ should track accumulated tokens
+    addContent
+      ✓ should add content and track tokens (1 ms)
+      ✓ should truncate content exceeding token limit (2 ms)
+      ✓ should handle content at exact token limit
+    cleanContent
+      ✓ should remove extra whitespace (1 ms)
+      ✓ should handle null content
+      ✓ should handle undefined content (1 ms)
+      ✓ should handle non-string content
+      ✓ should trim leading and trailing whitespace
+    Integration Tests
+      ✓ should manage content lifecycle (1 ms)
+      ✓ should prevent memory overflow
+
+  ● MemoryTracker › checkMemoryLimit › should allow small content additions
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      41 |             const result = tracker.checkMemoryLimit(1024); // 1KB
+      42 |             
+    > 43 |             expect(result.allowed).toBe(true);
+         |                                    ^
+      44 |             expect(result.reason).toBe('OK');
+      45 |         });
+      46 |
+
+      at Object.toBe (tests/unit/memory-tracker.test.js:43:36)
+
+PASS tests/unit/endpoints/planning.test.js
+  Planning Endpoint
+    generatePlan
+      ✓ should generate a valid plan from LLM response (279 ms)
+      ✓ should throw error for empty query (17 ms)
+      ✓ should throw error for missing API key
+      ✓ should throw error for invalid LLM response format (1 ms)
+      ✓ should throw error for invalid searchKeywords format (1 ms)
+      ✓ should handle LLM errors gracefully (3 ms)
+    handler
+      ○ skipped should return 401 for missing authentication
+      ○ skipped should return 401 for invalid token
+      ○ skipped should return plan for valid authenticated request
+      ○ skipped should return 400 for missing query
+      ○ skipped should use env API key when available
+      ○ skipped should return 500 for internal errors
+      ○ skipped should include CORS headers
+
+PASS tests/unit/model-selector.test.js
+  SelectionStrategy
+    ✓ should define all strategies (1 ms)
+  filterByRateLimits
+    ✓ should return all models when no tracker
+    ✓ should filter out rate-limited models (1 ms)
+    ✓ should check token requirements
+  filterByCost
+    ✓ should return all models when no constraint (1 ms)
+    ✓ should filter by cost constraint
+    ✓ should calculate average of input and output
+  prioritizeFreeTier
+    ✓ should put free models first (1 ms)
+    ✓ should maintain order within tiers
+    ✓ should handle all free models
+    ✓ should handle no free models (1 ms)
+  prioritizeQuality
+    ✓ should sort by context window descending
+    ✓ should not mutate original array
+  prioritizeCost
+    ✓ should sort by cost ascending (1 ms)
+    ✓ should put cheapest model first (3 ms)
+    ✓ should not mutate original array
+  RoundRobinSelector
+    ✓ should initialize with empty state
+    ✓ should select first model initially (1 ms)
+    ✓ should rotate through models
+    ✓ should handle single model
+    ✓ should return null for empty array (1 ms)
+    ✓ should track separate keys independently
+    ✓ should reset specific key
+    ✓ should reset all keys (1 ms)
+  selectModel
+    ✓ should throw when catalog is empty (10 ms)
+    ✓ should throw when messages are empty
+    ✓ should select model for simple request (1 ms)
+    ✓ should select model for complex request (1 ms)
+    ✓ should select model for reasoning request
+    ✓ should filter by context window (2 ms)
+    ✓ should throw when no models have sufficient context (16 ms)
+    ✓ should respect rate limits
+    ✓ should throw when all models are rate limited (3 ms)
+    ✓ should respect cost constraint
+    ✓ should throw when no models within cost constraint (1 ms)
+    ✓ should apply FREE_TIER strategy
+    ✓ should apply COST_OPTIMIZED strategy (1 ms)
+    ✓ should apply QUALITY_OPTIMIZED strategy
+    ✓ should apply BALANCED strategy (1 ms)
+    ✓ should throw for unknown strategy
+    ✓ should use round-robin when provided (1 ms)
+    ✓ should include metadata in result (1 ms)
+    ✓ should handle tools in request (1 ms)
+    ✓ should respect max_tokens parameter
+  getFallbackCategories
+    ✓ should provide fallbacks for REASONING
+    ✓ should provide fallbacks for LARGE
+    ✓ should provide fallbacks for SMALL
+    ✓ should handle unknown category
+  selectWithFallback
+    ✓ should return primary selection when available (1 ms)
+    ✓ should fallback when primary category rate limited
+    ✓ should throw when all fallbacks exhausted (1 ms)
+  batchSelect
+    ✓ should throw for non-array input (1 ms)
+    ✓ should select models for multiple requests
+    ✓ should use round-robin across requests (2 ms)
+    ✓ should handle errors gracefully (1 ms)
+    ✓ should handle empty array
+
+/home/stever/projects/lambdallmproxy-codeinsiders/lambdallmproxy/src/search.js:25857
+        reject(new Error(`Request timeout after ${timeoutMs}ms`));
+               ^
+
+Error: Request timeout after 10000ms
+    at Timeout._onTimeout (/home/stever/projects/lambdallmproxy-codeinsiders/lambdallmproxy/src/search.js:1555:24)
+    at listOnTimeout (node:internal/timers:581:17)
+    at processTimers (node:internal/timers:519:7)
+
+Node.js v20.19.5
