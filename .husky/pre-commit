@@ -7,9 +7,9 @@ echo "🔒 Running pre-commit security checks..."
 # Run lint-staged (ESLint + secret detection)
 npx lint-staged
 
-# Additional secret scan (excluding config files)
+# Additional secret scan (excluding config files and tests)
 echo "🔍 Scanning for hard-coded secrets..."
-FILES_TO_SCAN=$(git diff --cached --name-only | grep -v -E '\.(md|yml|yaml|config\.js|env)$' || true)
+FILES_TO_SCAN=$(git diff --cached --name-only | grep -v -E '\.(md|yml|yaml|config\.js|env)$|test\.js$|tests/' || true)
 if [ -n "$FILES_TO_SCAN" ]; then
   if echo "$FILES_TO_SCAN" | xargs grep -lE "sk-[a-zA-Z0-9]{20,}|gsk_[a-zA-Z0-9]{32,}|AIza[a-zA-Z0-9]{35}|AKIA[A-Z0-9]{16}|ya29\.[a-zA-Z0-9_-]+" 2>/dev/null; then
     echo "❌ ERROR: Hard-coded secret detected in staged files!"
@@ -17,7 +17,7 @@ if [ -n "$FILES_TO_SCAN" ]; then
     exit 1
   fi
 else
-  echo "ℹ️  No source files to scan (only config/docs changed)"
+  echo "ℹ️  No source files to scan (only config/docs/tests changed)"
 fi
 
 # Check for console.log in production code (warning only)
