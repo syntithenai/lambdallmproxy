@@ -5,6 +5,7 @@ interface SearchProgressData {
   query?: string;
   queries?: string[];
   service?: string;
+  searchResults?: number;
   result_count?: number;
   result_index?: number;
   result_total?: number;
@@ -43,6 +44,29 @@ export const SearchProgress: React.FC<SearchProgressProps> = ({ data }) => {
           </div>
           <span className="text-gray-700 dark:text-gray-300">
             Searching {serviceName}...
+          </span>
+        </div>
+      );
+      
+    case 'search_complete':
+      // Map service to display name
+      const completedServiceNames: Record<string, string> = {
+        brave: 'Brave Search',
+        tavily: 'Tavily API',
+        duckduckgo: 'DuckDuckGo',
+        wikipedia: 'Wikipedia',
+        cascade: 'intelligent search',
+        unknown: 'web search'
+      };
+      const completedServiceName = completedServiceNames[data.service || 'unknown'] || data.service || 'web search';
+      
+      return (
+        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded text-sm">
+          <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="text-gray-700 dark:text-gray-300">
+            Search complete using {completedServiceName} - {data.searchResults} results found
           </span>
         </div>
       );

@@ -922,6 +922,7 @@ async function callFunction(name, args = {}, context = {}) {
           tool: 'search_web',
           phase: 'search_complete',
           searchResults: allResults.length,
+          service: searchService, // Include actual provider used
           timestamp: new Date().toISOString()
         });
       }
