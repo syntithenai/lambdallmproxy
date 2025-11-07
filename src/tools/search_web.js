@@ -93,10 +93,11 @@ async function searchWikipedia(topic) {
 
 /**
  * Search the web using multi-tier fallback:
- * 1. Brave Search (Selenium) - FREE, on-demand WebDriver
- * 2. Tavily API (if key available) - PAID ($0.008/search, basic depth)
- * 3. DuckDuckGo - FREE
- * 4. Wikipedia - FREE fallback
+ * Priority 1: Tavily API (if UI key provided) - User is paying, use their preferred service
+ * Priority 2: Brave Search (Selenium) - FREE, on-demand WebDriver (localhost only)
+ * Priority 3: Tavily API (if env key available) - PAID ($0.008/search, basic depth)
+ * Priority 4: DuckDuckGo - FREE
+ * Priority 5: Wikipedia - FREE fallback
  * 
  * @param {string} query - Search query
  * @param {number} maxResults - Maximum number of results to return (default: 5)
@@ -112,34 +113,14 @@ async function searchWeb(query, maxResults = 5, userEmail = null, tavilyKey = nu
 
     console.log(`🔍 Starting web search for: "${query}" (max: ${maxResults} results)`);
 
-    // 1️⃣ First try: Brave Search via Selenium (FREE, automation-friendly)
-    try {
-        console.log(`🦁 [Search Priority 1] Trying Brave Search (Selenium)...`);
-        console.log(`🔍 [Search Priority 1] IS_LAMBDA: ${!!process.env.AWS_LAMBDA_FUNCTION_NAME}`);
-        const braveResults = await performBraveSearch(query, maxResults, userEmail);
-        console.log(`🔍 [Search Priority 1] Brave Search returned:`, braveResults ? `${braveResults.length} results` : 'null');
-        
-        if (braveResults && braveResults.length > 0) {
-            console.log(`✅ [Search Priority 1] Brave Search succeeded with ${braveResults.length} results`);
-            return { results: braveResults, provider: 'brave' };
-        }
-        
-        console.log(`⚠️ [Search Priority 1] Brave Search returned no results, falling back...`);
-    } catch (braveError) {
-        console.log(`⚠️ [Search Priority 1] Brave Search failed: ${braveError.message}`);
-        console.log(`⚠️ [Search Priority 1] Error stack:`, braveError.stack);
-        console.log(`🔄 Falling back to Tavily...`);
-    }
-
-    // 2️⃣ Second try: Tavily API (PAID: $0.008 per search)
-    const tavilyApiKey = tavilyKey || process.env.TV_K;
-    const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
-
-    if (useTavily) {
+    // 1️⃣ PRIORITY 1: Tavily API with UI-provided key (user is paying, honor their choice)
+    const hasUITavilyKey = tavilyKey && tavilyKey.trim().length > 0;
+    
+    if (hasUITavilyKey) {
         try {
-            console.log(`🔍 [Search Priority 2] Trying Tavily API...`);
+            console.log(`🔵 [Search Priority 1] User provided Tavily key - using Tavily API first...`);
             const tavilyResults = await tavilySearch(query, {
-                apiKey: tavilyApiKey,
+                apiKey: tavilyKey,
                 maxResults: maxResults,
                 includeAnswer: false,
                 includeRawContent: false,
@@ -153,9 +134,9 @@ async function searchWeb(query, maxResults = 5, userEmail = null, tavilyKey = nu
                     snippet: r.snippet || r.description || r.content || ''
                 }));
 
-                console.log(`✅ [Search Priority 2] Tavily succeeded with ${formattedResults.length} results`);
+                console.log(`✅ [Search Priority 1] Tavily (UI key) succeeded with ${formattedResults.length} results`);
 
-                // Log billing entry for Tavily search
+                // Log billing entry for Tavily search - NO COST (user-provided key)
                 try {
                     await logToGoogleSheets({
                         timestamp: new Date().toISOString(),
@@ -165,34 +146,116 @@ async function searchWeb(query, maxResults = 5, userEmail = null, tavilyKey = nu
                         inputTokens: 0,
                         outputTokens: 0,
                         totalTokens: 0,
-                        cost: 0.008,
+                        cost: 0.00, // User-provided key = $0 cost
                         type: 'search',
                         metadata: JSON.stringify({ 
                             query: query, 
                             results: formattedResults.length,
-                            service: 'tavily'
+                            service: 'tavily',
+                            keySource: 'ui'
                         })
                     });
-                    console.log(`💰 [Search Priority 2] Logged Tavily billing: $0.008`);
+                    console.log(`💰 [Search Priority 1] Logged Tavily billing: $0.00 (user-provided key)`);
                 } catch (logError) {
-                    console.error('❌ [Search Priority 2] Failed to log Tavily billing:', logError.message);
+                    console.error('❌ [Search Priority 1] Failed to log Tavily billing:', logError.message);
                 }
 
                 return { results: formattedResults, provider: 'tavily' };
             }
             
-            console.log('⚠️ [Search Priority 2] Tavily returned no results, falling back...');
+            console.log('⚠️ [Search Priority 1] Tavily (UI key) returned no results, falling back...');
         } catch (tavilyError) {
-            console.error('❌ [Search Priority 2] Tavily failed:', tavilyError.message);
-            console.log('🔄 Falling back to DuckDuckGo...');
+            console.error('❌ [Search Priority 1] Tavily (UI key) failed:', tavilyError.message);
+            console.log('🔄 Falling back to Brave Search...');
         }
-    } else {
-        console.log(`⚠️ [Search Priority 2] No Tavily API key available, skipping...`);
     }
 
-    // 3️⃣ Third try: DuckDuckGo (FREE)
+    // 2️⃣ PRIORITY 2: Brave Search via Selenium (FREE, localhost only)
     try {
-        console.log(`🦆 [Search Priority 3] Trying DuckDuckGo...`);
+        console.log(`🦁 [Search Priority 2] Trying Brave Search (Selenium)...`);
+        console.log(`🔍 [Search Priority 2] IS_LAMBDA: ${!!process.env.AWS_LAMBDA_FUNCTION_NAME}`);
+        const braveResults = await performBraveSearch(query, maxResults, userEmail);
+        console.log(`🔍 [Search Priority 2] Brave Search returned:`, braveResults ? `${braveResults.length} results` : 'null');
+        
+        if (braveResults && braveResults.length > 0) {
+            console.log(`✅ [Search Priority 2] Brave Search succeeded with ${braveResults.length} results`);
+            return { results: braveResults, provider: 'brave' };
+        }
+        
+        console.log(`⚠️ [Search Priority 2] Brave Search returned no results, falling back...`);
+    } catch (braveError) {
+        console.log(`⚠️ [Search Priority 2] Brave Search failed: ${braveError.message}`);
+        console.log(`⚠️ [Search Priority 2] Error stack:`, braveError.stack);
+        console.log(`🔄 Falling back to Tavily (env key)...`);
+    }
+
+    // 3️⃣ PRIORITY 3: Tavily API with environment key (server-side, billed)
+    const envTavilyKey = process.env.TV_K;
+    const hasEnvTavilyKey = envTavilyKey && envTavilyKey.trim().length > 0;
+
+    if (hasEnvTavilyKey && !hasUITavilyKey) { // Only use env key if no UI key was provided
+        try {
+            console.log(`🔍 [Search Priority 3] Trying Tavily API (env key)...`);
+            const tavilyResults = await tavilySearch(query, {
+                apiKey: envTavilyKey,
+                maxResults: maxResults,
+                includeAnswer: false,
+                includeRawContent: false,
+                searchDepth: 'basic'
+            });
+
+            if (tavilyResults && tavilyResults.length > 0) {
+                const formattedResults = tavilyResults.map(r => ({
+                    title: r.title || 'Untitled',
+                    url: r.url || '',
+                    snippet: r.snippet || r.description || r.content || ''
+                }));
+
+                console.log(`✅ [Search Priority 3] Tavily (env key) succeeded with ${formattedResults.length} results`);
+
+                // Log billing entry for Tavily search - BILLED (server-side key)
+                try {
+                    await logToGoogleSheets({
+                        timestamp: new Date().toISOString(),
+                        email: userEmail || 'system',
+                        provider: 'tavily',
+                        model: 'basic-search',
+                        inputTokens: 0,
+                        outputTokens: 0,
+                        totalTokens: 0,
+                        cost: 0.008, // Server-side key = charged
+                        type: 'search',
+                        metadata: JSON.stringify({ 
+                            query: query, 
+                            results: formattedResults.length,
+                            service: 'tavily',
+                            keySource: 'env'
+                        })
+                    });
+                    console.log(`💰 [Search Priority 3] Logged Tavily billing: $0.008 (env key)`);
+                } catch (logError) {
+                    console.error('❌ [Search Priority 3] Failed to log Tavily billing:', logError.message);
+                }
+
+                return { results: formattedResults, provider: 'tavily' };
+            }
+            
+            console.log('⚠️ [Search Priority 3] Tavily (env key) returned no results, falling back...');
+        } catch (tavilyError) {
+            console.error('❌ [Search Priority 3] Tavily (env key) failed:', tavilyError.message);
+            console.log('🔄 Falling back to DuckDuckGo...');
+        }
+    } else if (hasEnvTavilyKey) {
+        console.log(`⚠️ [Search Priority 3] Skipping env Tavily key (UI key already tried)`);
+    } else if (hasEnvTavilyKey) {
+        console.log(`⚠️ [Search Priority 3] Skipping env Tavily key (UI key already tried)`);
+    } else {
+        console.log(`⚠️ [Search Priority 3] No Tavily env key available, skipping...`);
+    }
+
+    // 4️⃣ PRIORITY 4: DuckDuckGo (FREE)
+    try {
+        console.log(`🦆 [Search Priority 4] Trying DuckDuckGo...`);
         const queryVariations = getSpellingVariations(query);
         
         for (const queryVariant of queryVariations) {
@@ -212,27 +275,27 @@ async function searchWeb(query, maxResults = 5, userEmail = null, tavilyKey = nu
                         snippet: r.description || r.snippet || ''
                     }));
 
-                console.log(`✅ [Search Priority 3] DuckDuckGo succeeded with ${formattedResults.length} results`);
+                console.log(`✅ [Search Priority 4] DuckDuckGo succeeded with ${formattedResults.length} results`);
                 return { results: formattedResults, provider: 'duckduckgo' };
             }
         }
         
-        console.log('⚠️ [Search Priority 3] DuckDuckGo returned no results for any spelling variation');
+        console.log('⚠️ [Search Priority 4] DuckDuckGo returned no results for any spelling variation');
     } catch (ddgError) {
-        console.error('❌ [Search Priority 3] DuckDuckGo failed:', ddgError.message);
+        console.error('❌ [Search Priority 4] DuckDuckGo failed:', ddgError.message);
     }
     
-    // 4️⃣ Final fallback: Wikipedia (FREE)
+    // 5️⃣ PRIORITY 5: Wikipedia (FREE - final fallback)
     try {
-        console.log(`📚 [Search Priority 4] Trying Wikipedia as final fallback...`);
+        console.log(`📚 [Search Priority 5] Trying Wikipedia as final fallback...`);
         const wikiResults = await searchWikipedia(query);
         if (wikiResults.length > 0) {
-            console.log('✅ [Search Priority 4] Wikipedia fallback succeeded');
+            console.log('✅ [Search Priority 5] Wikipedia fallback succeeded');
             return { results: wikiResults, provider: 'wikipedia' };
         }
-        console.log('⚠️ [Search Priority 4] Wikipedia returned no results');
+        console.log('⚠️ [Search Priority 5] Wikipedia returned no results');
     } catch (wikiError) {
-        console.error('❌ [Search Priority 4] Wikipedia failed:', wikiError.message);
+        console.error('❌ [Search Priority 5] Wikipedia failed:', wikiError.message);
     }
     
     console.log('❌ All search methods exhausted, returning empty results');
