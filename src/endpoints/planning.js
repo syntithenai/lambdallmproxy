@@ -1567,6 +1567,17 @@ async function handler(event, responseStream, context) {
         const providerInfo = providers[selectedModel.providerType];
         const isUserProvidedKey = providerInfo ? !providerInfo.isServerSideKey : false;
         const cost = calculateCost(selectedModel.name, tokenUsage.promptTokens, tokenUsage.completionTokens, null, isUserProvidedKey);
+        console.log(`💰 Planning cost calculated: $${cost} (model: ${selectedModel.name}, input: ${tokenUsage.promptTokens}, output: ${tokenUsage.completionTokens}, userKey: ${isUserProvidedKey})`);
+        
+        // Send cost update to UI for transparency
+        sseWriter.writeEvent('llm_response', {
+            phase: 'planning',
+            model: finalModelString,
+            cost: cost,
+            calculatedCost: cost,
+            timestamp: new Date().toISOString()
+        });
+        
         logToBothSheets(googleToken, {
             timestamp: new Date().toISOString(),
             userEmail: userEmail,

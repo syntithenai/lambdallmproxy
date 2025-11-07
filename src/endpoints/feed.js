@@ -127,6 +127,9 @@ async function generateFeedItems(
     const likedTopics = preferences.likedTopics.join(', ');
     const dislikedTopics = preferences.dislikedTopics.join(', ');
     
+    // Extract userEmail from generationContext for billing attribution
+    const userEmail = generationContext.userEmail || generationContext.email || 'system';
+    
     // Perform web searches if search terms provided
     let searchSummary = '';
     const searchResults = [];
@@ -145,7 +148,7 @@ async function generateFeedItems(
                     term: term
                 });
                 
-                const results = await performDuckDuckGoSearch(term, 5);
+                const results = await performDuckDuckGoSearch(term, 5, userEmail);
                 searchResults.push(...results);
                 
                 eventCallback('search_term_complete', { 

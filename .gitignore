@@ -92,3 +92,7 @@ aws/dist/aws
 
 # Whisper model files (large)
 whisper-models/
+.venv-selenium/lib64
+.venv-selenium/bin/python
+.venv-selenium/bin/python3
+.venv-selenium/bin/python3.12

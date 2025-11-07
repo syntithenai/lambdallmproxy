@@ -100,7 +100,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { addSearchResult, clearSearchResults } = useSearchResults();
   const { addTracksToStart } = usePlaylist();
   const { addSnippet, snippets: swagSnippets, syncSnippetFromGoogleSheets } = useSwag();
-  const { showError, showWarning, showSuccess, clearAllToasts } = useToast();
+  const { showToast, showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
   const { addCost, usage } = useUsage();
   const { state: ttsState, speak: ttsSpeak, stop: ttsStop } = useTTS();
@@ -1655,7 +1655,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         type: 'function',
         function: {
           name: 'search_web',
-          description: 'Search the web using DuckDuckGo to find current information, news, articles, and real-time data. USE THIS whenever users ask for current/latest information, news, or anything requiring up-to-date web content. Automatically fetches full page content including images and links from all search results. Returns comprehensive search results with titles, URLs, snippets, full content, images, and links. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL).**',
+          description: 'Search the web to find current information, news, articles, and real-time data. Uses intelligent multi-tier fallback: Brave Search (free, local) → Tavily API (paid) → DuckDuckGo (free) → Wikipedia (fallback). USE THIS whenever users ask for current/latest information, news, or anything requiring up-to-date web content. Automatically fetches full page content including images and links from all search results. Returns comprehensive search results with titles, URLs, snippets, full content, images, and links. **CRITICAL: You MUST include relevant URLs from search results in your response using markdown links [Title](URL).**',
           parameters: {
             type: 'object',
             properties: {
@@ -4075,7 +4075,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           // On error
           if (timeoutId) clearTimeout(timeoutId);
           console.error('Streaming error:', error);
-          showError(`Streaming error: ${error.message}`);
+          
+          // Check if this is an abort error (user cancelled)
+          if (error.name === 'AbortError' || error.message?.includes('aborted') || error.message?.includes('BodyStreamBuffer')) {
+            showToast('Request cancelled', 'info'); // Show as info toast, not error
+          } else {
+            showError(`Streaming error: ${error.message}`);
+          }
+          
           setIsLoading(false);
           setToolStatus([]);
           abortControllerRef.current = null;
@@ -4855,19 +4862,31 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                       }
                                       
                                       const resultData = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
-                                      const searchService = resultData?.searchService;
+                                      const searchService = resultData?.searchService as string | undefined;
                                       
-                                      if (searchService && typeof searchService === 'string') {
-                                        const isTavily = searchService === 'tavily';
+                                      if (searchService && typeof searchService === 'string' && searchService !== 'unknown' && searchService !== 'none') {
+                                        // Map provider to display info
+                                        const providerInfo: Record<string, { emoji: string; name: string; color: string }> = {
+                                          brave: { emoji: '🦁', name: 'Brave Search', color: 'orange' },
+                                          tavily: { emoji: '🔵', name: 'Tavily API', color: 'blue' },
+                                          duckduckgo: { emoji: '🦆', name: 'DuckDuckGo', color: 'green' },
+                                          wikipedia: { emoji: '📚', name: 'Wikipedia', color: 'gray' }
+                                        };
+                                        
+                                        const provider = providerInfo[searchService] || { emoji: '🔍', name: searchService, color: 'purple' };
+                                        const colorClasses: Record<string, string> = {
+                                          orange: 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-700',
+                                          blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700',
+                                          green: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700',
+                                          gray: 'bg-gray-100 dark:bg-gray-900/30 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-700',
+                                          purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-700'
+                                        };
+                                        
                                         return (
                                           <div className="mt-2 pt-2 border-t border-purple-200 dark:border-purple-700">
                                             <div className="font-semibold text-purple-700 dark:text-purple-300 mb-1">{t('chat.searchProvider')}</div>
-                                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${
-                                              isTavily 
-                                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
-                                                : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
-                                            }`}>
-                                              {isTavily ? '🔵 Tavily API' : '🦆 DuckDuckGo'}
+                                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${colorClasses[provider.color]}`}>
+                                              {provider.emoji} {provider.name}
                                             </div>
                                           </div>
                                         );

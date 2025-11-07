@@ -174,12 +174,12 @@ function autoDetectGuardrailProvider(context = {}) {
 
 /**
  * Load guardrail configuration from environment variables
- * Auto-detects provider and models if ENABLE_GUARDRAILS=true
+ * Auto-detects provider and models if EN_GUARD=true
  * @param {Object} context - Request context with API keys
  * @returns {Object|null} Configuration object or null if disabled
  */
 function loadGuardrailConfig(context = {}) {
-  const enabled = process.env.ENABLE_GUARDRAILS === 'true';
+  const enabled = process.env.EN_GUARD === 'true';
   
   if (!enabled) {
     console.log('🛡️ Content guardrails: DISABLED');

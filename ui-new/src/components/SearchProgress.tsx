@@ -24,6 +24,16 @@ export const SearchProgress: React.FC<SearchProgressProps> = ({ data }) => {
   // Render different UI based on phase
   switch (data.phase) {
     case 'searching':
+      // Map service to display name
+      const serviceNames: Record<string, string> = {
+        brave: 'Brave Search',
+        tavily: 'Tavily API',
+        duckduckgo: 'DuckDuckGo',
+        wikipedia: 'Wikipedia',
+        cascade: 'intelligent search'
+      };
+      const serviceName = serviceNames[data.service || ''] || data.service || 'the web';
+      
       return (
         <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
           <div className="flex gap-1">
@@ -32,7 +42,7 @@ export const SearchProgress: React.FC<SearchProgressProps> = ({ data }) => {
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
           </div>
           <span className="text-gray-700 dark:text-gray-300">
-            Searching {data.service === 'tavily' ? 'Tavily' : 'DuckDuckGo'}...
+            Searching {serviceName}...
           </span>
         </div>
       );

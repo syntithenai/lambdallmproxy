@@ -368,7 +368,7 @@ async function handleGetBilling(event, responseStream, context, requestStartTime
         features.webSearch = true;
         
         // Check if server has proxy configured (Webshare)
-        const hasProxy = !!(process.env.WEBSHARE_PROXY_USERNAME && process.env.WEBSHARE_PROXY_PASSWORD);
+        const hasProxy = !!(process.env.WS_U && process.env.WS_P);
         features.proxy = hasProxy;
         
         console.log('✨ Available features:', features);

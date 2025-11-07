@@ -22,7 +22,7 @@ const DEFAULT_LLM_MARKUP = parseFloat(process.env.LLM_MARKUP || '25'); // 25% ma
  * @param {number} options.completionTokens - Number of completion tokens
  * @param {Object} options.provider - Provider configuration object  
  * @param {boolean} options.isUIKey - Whether key is provided via UI (should be free)
- * @param {string} options.envType - Environment type ('dev', 'prod')
+ * @param {string} options.envType - Environment type ('dev', 'prod') - NOT USED for LLM costs
  * @returns {number} Calculated cost in USD
  */
 function calculateLLMCost({ model, promptTokens, completionTokens, provider, isUIKey = false, envType = 'prod' }) {
@@ -32,11 +32,8 @@ function calculateLLMCost({ model, promptTokens, completionTokens, provider, isU
     return 0;
   }
 
-  // For dev environment, costs are free for consistency
-  if (envType === 'dev') {
-    console.log(`💰 Cost calculation: $0.00 (development environment)`);  
-    return 0;
-  }
+  // NOTE: LLM costs are ALWAYS calculated, even in local dev
+  // Only Lambda infrastructure costs are set to $0 in development
 
   try {
     // Get pricing from the existing PRICING catalog used in google-sheets-logger

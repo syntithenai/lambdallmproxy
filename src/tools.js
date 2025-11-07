@@ -9,6 +9,7 @@ const { extractContent } = require('./html-content-extractor');
 const { llmResponsesWithTools } = require('./llm_tools_adapter');
 const { transcribeUrl } = require('./tools/transcribe');
 const { tavilySearch, tavilyExtract } = require('./tavily-search');
+const { searchWeb } = require('./tools/search_web'); // Import the unified search function
 const { scrapeWithTierFallback } = require('./scrapers/tier-orchestrator');
 console.log('🚀 [tools.js] Module loaded - scrapeWithTierFallback imported:', typeof scrapeWithTierFallback);
 const vm = require('vm');
@@ -856,11 +857,16 @@ async function callFunction(name, args = {}, context = {}) {
       
       console.log(`📊 Content optimization: ${limit} results, ${maxContentChars} chars per page (model: ${context.selectedModel?.name || 'unknown'}, optimization: ${context.optimization || 'cheap'})`);
       
-      // Check if Tavily API key is available
-      const tavilyApiKey = context.tavilyApiKey;
-      const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
+      // Get user email for billing
+      let userEmail = null;
+      if (context.driveAccessToken) {
+        const { verifyGoogleOAuthToken } = require('./auth');
+        const userInfo = await verifyGoogleOAuthToken(context.driveAccessToken);
+        userEmail = userInfo?.email || null;
+      }
       
-      console.log(`🔍 Search using: ${useTavily ? 'Tavily API' : 'DuckDuckGo'} (always loading page content)`);
+      // Get Tavily API key from context or environment
+      const tavilyApiKey = context.tavilyApiKey || null;
       
       // Emit search start event
       if (context?.writeEvent) {
@@ -868,205 +874,137 @@ async function callFunction(name, args = {}, context = {}) {
           tool: 'search_web',
           phase: 'searching',
           queries: queries,
-          service: useTavily ? 'tavily' : 'duckduckgo',
+          service: 'cascade', // Indicates multi-tier fallback search
           timestamp: new Date().toISOString()
         });
       }
       
       const allResults = [];
-      let searchService = 'duckduckgo'; // Track which service was actually used
       
-      if (useTavily) {
-        // Use Tavily API for search
+      // Track which search service was actually used (updated by searchWeb function)
+      let searchService = 'unknown';
+      
+      console.log(`🔍 [tools.js search_web] Starting search for ${queries.length} queries`);
+      console.log(`🔍 [tools.js search_web] userEmail: ${userEmail}, tavilyApiKey: ${tavilyApiKey ? 'present' : 'null'}`);
+      
+      // Process each query using the unified searchWeb function
+      for (const query of queries) {
         try {
-          const tavilyResults = await tavilySearch(queries, {
-            apiKey: tavilyApiKey,
-            maxResults: limit,
-            includeAnswer: false,
-            includeRawContent: true, // Always load content
-            searchDepth: 'basic'
-          });
+          console.log(`🔍 [tools.js] Searching for: "${query}"`);
+          const searchResult = await searchWeb(query, limit, userEmail, tavilyApiKey);
+          console.log(`🔍 [tools.js] searchWeb returned ${searchResult?.results?.length || 0} results from provider: ${searchResult?.provider || 'unknown'}`);
           
-          // Apply same compression to Tavily results as DuckDuckGo
-          const compressedResults = tavilyResults.map(r => {
-            if (r.content) {
-              const originalLength = r.content.length;
-              // Apply intelligent extraction
-              r.content = extractKeyContent(r.content, r.query);
-              r.originalLength = originalLength;
-              r.intelligentlyExtracted = true;
-              
-              // STEP 11: Dynamic content limit based on model capacity
-              if (r.content && r.content.length > maxContentChars) {
-                console.log(`✂️ Truncating Tavily result: ${r.content.length} → ${maxContentChars} chars`);
-                r.content = r.content.substring(0, maxContentChars) + '\n\n[Content truncated to fit model limits]';
-                r.truncated = true;
-              }
-            }
-            return r;
-          });
+          // Update searchService with the provider that succeeded (only update once with first successful provider)
+          if (searchService === 'unknown' && searchResult?.provider && searchResult.provider !== 'none') {
+            searchService = searchResult.provider;
+            console.log(`✅ [tools.js] Search provider set to: ${searchService}`);
+          }
           
-          allResults.push(...compressedResults);
-          searchService = 'tavily';
-          console.log(`✅ Tavily search completed: ${tavilyResults.length} results with compressed content`);
+          if (searchResult?.results && searchResult.results.length > 0) {
+            allResults.push(...searchResult.results.map(r => ({
+              query: query,
+              title: r.title,
+              url: r.url,
+              snippet: r.snippet,
+              content: r.content || r.snippet, // Use content if available, fallback to snippet
+            })));
+          }
         } catch (error) {
-          console.error('Tavily search failed, falling back to DuckDuckGo:', error.message);
-          // Fall back to DuckDuckGo on error (no proxy - direct connection)
-          const searcher = new DuckDuckGoSearcher(null, null); // No proxy credentials
-          for (const query of queries) {
-            const out = await searcher.search(query, limit, true, timeout);
-            const results = (out?.results || []).map(r => ({
-              query: query,
-              title: r.title,
-              url: r.url,
-              description: r.description,
-              score: r.score,
-              duckduckgoScore: r.duckduckgoScore,
-              state: r.state,
-              contentLength: r.contentLength || 0,
-              fetchTimeMs: r.fetchTimeMs || 0,
-              content: r.content ? extractKeyContent(r.content, query) : null
-            }));
-            allResults.push(...results);
-          }
-        }
-      } else {
-        // Use DuckDuckGo search - always load content
-        // NOTE: Proxy disabled to reduce costs - only YouTube transcripts use proxy
-        const searcher = new DuckDuckGoSearcher(null, null); // No proxy credentials
-        
-        // Execute searches for all queries
-        for (const query of queries) {
-          // Emit search results found event
-          if (context?.writeEvent) {
-            context.writeEvent('search_progress', {
-              tool: 'search_web',
-              phase: 'results_found',
-              query: query,
-              timestamp: new Date().toISOString()
-            });
-          }
-          
-          // Create progress callback to emit per-result progress
-          const progressCallback = (data) => {
-            console.log('🔍 SEARCH PROGRESS CALLBACK CALLED:', data.phase);
-            if (context?.writeEvent) {
-              console.log('🔍 Emitting search_progress event:', data.phase);
-              context.writeEvent('search_progress', {
-                tool: 'search_web',
-                query: query,
-                ...data,
-                timestamp: new Date().toISOString()
-              });
-            } else {
-              console.warn('⚠️ context.writeEvent is undefined, cannot emit progress');
-            }
-          };
-          
-          console.log('🔍 Creating progressCallback, context.writeEvent exists:', !!context?.writeEvent);
-          const out = await searcher.search(query, limit, true, timeout, progressCallback); // Always pass true for loadContent
-          
-          // Emit content loading event
-          if (context?.writeEvent && out?.results?.length > 0) {
-            context.writeEvent('search_progress', {
-              tool: 'search_web',
-              phase: 'loading_content',
-              query: query,
-              result_count: out.results.length,
-              timestamp: new Date().toISOString()
-            });
-          }
-          
-          // Include all fields from raw search response, extracting images and links
-          const results = (out?.results || []).map(r => {
-            const result = {
-              query: query, // Include which query this result is for
-              title: r.title,
-              url: r.url,
-              description: r.description,
-              score: r.score,
-              duckduckgoScore: r.duckduckgoScore,
-              state: r.state,
-              contentLength: r.contentLength || 0,
-              fetchTimeMs: r.fetchTimeMs || 0,
-              content: null,
-              // CRITICAL: Preserve page_content from search.js extraction
-              page_content: r.page_content,
-              // CRITICAL: Preserve content processing pipeline tracking fields
-              rawHtml: r.rawHtml,
-              rawText: r.rawText,
-              afterSmartExtraction: r.afterSmartExtraction,
-              beforeSummarization: r.beforeSummarization,
-              afterSummarization: r.afterSummarization,
-              beforeFinalTruncation: r.beforeFinalTruncation,
-              sentToLLM: r.sentToLLM,
-              // Preserve tier scraping metadata
-              tier: r.tier,
-              scrapeService: r.scrapeService,
-              scrapeMethod: r.scrapeMethod,
-              responseTime: r.responseTime
-            };
-            
-            // Process loaded content
-            if (r.content) {
-              result.content = extractKeyContent(r.content, query);
-              result.originalLength = r.content.length;
-              result.intelligentlyExtracted = true;
-              if (r.truncated) result.truncated = r.truncated;
-              
-              // STEP 11: Dynamic content limit based on model capacity
-              if (result.content && result.content.length > maxContentChars) {
-                console.log(`✂️ Truncating search result content: ${result.content.length} → ${maxContentChars} chars`);
-                result.content = result.content.substring(0, maxContentChars) + '\n\n[Content truncated to fit model limits]';
-                result.truncated = true;
-              }
-              
-              // Extract images and links from raw HTML if available with relevance scoring
-              if (r.rawHtml) {
-                try {
-                  const parser = new SimpleHTMLParser(r.rawHtml, query, r.url);
-                  
-                  // Extract top 20 most relevant images with captions
-                  const images = parser.extractImages(20);
-                  
-                  // Extract top 30 most relevant links (reduced from unlimited)
-                  const allLinks = parser.extractLinks(30);
-                  
-                  // Categorize links by media type
-                  const categorized = parser.categorizeLinks(allLinks);
-                  
-                  // Initialize page_content if it doesn't exist
-                  if (!result.page_content) {
-                    result.page_content = {};
-                  }
-                  
-                  // Add to page_content for frontend consumption (chat.js expects this structure)
-                  if (images.length > 0) result.page_content.images = images;
-                  if (categorized.youtube.length > 0) result.page_content.youtube = categorized.youtube;
-                  if (categorized.video.length > 0 || categorized.audio.length > 0 || categorized.media.length > 0) {
-                    result.page_content.media = [
-                      ...categorized.video,
-                      ...categorized.audio,
-                      ...categorized.media
-                    ];
-                  }
-                  if (categorized.regular.length > 0) result.page_content.links = categorized.regular;
-                  
-                  console.log(`🖼️ Extracted ${images.length} images, ${categorized.youtube.length} YouTube, ${result.page_content.media?.length || 0} media, ${categorized.regular.length} links from ${r.url}`);
-                } catch (parseError) {
-                  console.error(`Failed to parse HTML for ${r.url}:`, parseError.message);
-                }
-              }
-            }
-            
-            if (r.contentError) result.contentError = r.contentError;
-            
-            return result;
-          });
-        
-          allResults.push(...results);
+          console.error(`❌ Search failed for "${query}":`, error.message);
         }
       }
+      
+      console.log(`✅ Search completed: ${allResults.length} total results from ${queries.length} queries`);
+      
+      // Emit search complete event before starting page scraping
+      if (context?.writeEvent) {
+        context.writeEvent('search_progress', {
+          tool: 'search_web',
+          phase: 'search_complete',
+          searchResults: allResults.length,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // If no results found, return early
+      if (allResults.length === 0) {
+        return JSON.stringify({
+          success: true,
+          results: [],
+          message: `No search results found for: ${queries.join(', ')}`
+        });
+      }
+
+      // Scrape full page content for each result
+      const scrapedResults = [];
+      for (let i = 0; i < allResults.length; i++) {
+        const result = allResults[i];
+        
+        // Skip if result already has content (from Tavily)
+        if (result.content && result.content.length > 200) {
+          scrapedResults.push(result);
+          continue;
+        }
+        
+        // Emit progress event
+        if (context?.writeEvent) {
+          context.writeEvent('search_progress', {
+            tool: 'search_web',
+            phase: 'scraping',
+            current: i + 1,
+            total: allResults.length,
+            url: result.url,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        try {
+          console.log(`📄 Scraping [${i + 1}/${allResults.length}]: ${result.url}`);
+          const scraped = await scrapeWithTierFallback(result.url, timeout * 1000);
+          
+          if (scraped && scraped.content) {
+            const originalLength = scraped.content.length;
+            // Apply intelligent extraction
+            let extractedContent = extractKeyContent(scraped.content, result.query);
+            
+            // STEP 11: Dynamic content limit based on model capacity
+            if (extractedContent.length > maxContentChars) {
+              console.log(`✂️ Truncating scraped content: ${extractedContent.length} → ${maxContentChars} chars`);
+              extractedContent = extractedContent.substring(0, maxContentChars) + '\n\n[Content truncated to fit model limits]';
+            }
+            
+            scrapedResults.push({
+              ...result,
+              content: extractedContent,
+              originalLength: originalLength,
+              intelligentlyExtracted: true,
+              truncated: extractedContent.length < originalLength
+            });
+          } else {
+            // Keep result even if scraping failed, use snippet
+            scrapedResults.push(result);
+          }
+        } catch (scrapeError) {
+          console.warn(`⚠️ Failed to scrape ${result.url}:`, scrapeError.message);
+          // Keep result even if scraping failed
+          scrapedResults.push(result);
+        }
+      }
+      
+      // Emit scraping complete event
+      if (context?.writeEvent) {
+        context.writeEvent('search_progress', {
+          tool: 'search_web',
+          phase: 'complete',
+          totalResults: scrapedResults.length,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // Use scrapedResults as allResults for the rest of the function
+      // (allResults was declared earlier when we did the initial search)
+      allResults.length = 0; // Clear the array
+      allResults.push(...scrapedResults); // Add scraped results
       
       // Group results by query for better organization
       const resultsByQuery = {};
@@ -3402,11 +3340,11 @@ Summary:`;
         console.log(`🔧 YouTube API search - Proxy: DISABLED (direct connection)`);
         
         // Use YouTube Data API v3 with API key from environment
-        const apiKey = process.env.YOUTUBE_API_KEY;
+        const apiKey = process.env.YT_K;
         if (!apiKey) {
           return JSON.stringify({ 
-            error: 'YouTube API key not configured. Please set YOUTUBE_API_KEY environment variable.',
-            code: 'YOUTUBE_API_KEY_MISSING'
+            error: 'YouTube API key not configured. Please set YT_K environment variable.',
+            code: 'YT_K_MISSING'
           });
         }
         

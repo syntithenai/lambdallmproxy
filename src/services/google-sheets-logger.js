@@ -2483,5 +2483,6 @@ module.exports = {
     addHeaderRow,
     getUserSheetName,           // Export for testing/debugging
     sanitizeEmailForSheetName,  // Export for testing/debugging
-    getUserCreditBalance        // ✅ NEW: Credit balance calculation
+    getUserCreditBalance,       // ✅ NEW: Credit balance calculation
+    PRICING                     // Export pricing table for pricing-service.js
 };

@@ -1391,15 +1391,6 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         }
         console.log('🔑 Final googleToken exists:', !!googleToken);
 
-        // Authentication check
-        if (process.env.ACC_SEC) {
-            if (!accessSecret || accessSecret !== process.env.ACC_SEC) {
-                writeEvent('error', { error: 'Invalid or missing accessSecret', code: 'INVALID_ACCESS_SECRET' });
-                responseStream.end();
-                return;
-            }
-        }
-
         // Google token verification
         if (googleToken) {
             const verified = verifyGoogleToken(googleToken);

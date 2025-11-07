@@ -1,9 +1,12 @@
 /**
  * Web Search Tool
- * Wrapper around DuckDuckGo search with Wikipedia fallback for quiz and feed enrichment
+ * Priority: Brave Search (Selenium) → Tavily API → DuckDuckGo → Wikipedia
  */
 
 const { DuckDuckGoSearcher } = require('../search');
+const { logToGoogleSheets } = require('../services/google-sheets-logger');
+const { tavilySearch } = require('../tavily-search');
+const { performBraveSearch } = require('./brave-search');
 
 /**
  * Normalize British/American spelling for better search results
@@ -89,34 +92,118 @@ async function searchWikipedia(topic) {
 }
 
 /**
- * Search the web using DuckDuckGo with automatic fallbacks
+ * Search the web using multi-tier fallback:
+ * 1. Brave Search (Selenium) - FREE, on-demand WebDriver
+ * 2. Tavily API (if key available) - PAID ($0.008/search, basic depth)
+ * 3. DuckDuckGo - FREE
+ * 4. Wikipedia - FREE fallback
+ * 
  * @param {string} query - Search query
  * @param {number} maxResults - Maximum number of results to return (default: 5)
- * @returns {Promise<Array>} Array of search results with title, url, and snippet
+ * @param {string} userEmail - User email for billing (optional)
+ * @param {string} tavilyKey - Tavily API key from UI settings (takes priority over env var)
+ * @returns {Promise<Object>} Object with results array and provider name: { results: [...], provider: 'brave'|'tavily'|'duckduckgo'|'wikipedia' }
  */
-async function searchWeb(query, maxResults = 5) {
+async function searchWeb(query, maxResults = 5, userEmail = null, tavilyKey = null) {
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
         console.warn('⚠️ Invalid search query, returning empty results');
-        return [];
+        return { results: [], provider: 'none' };
     }
 
+    console.log(`🔍 Starting web search for: "${query}" (max: ${maxResults} results)`);
+
+    // 1️⃣ First try: Brave Search via Selenium (FREE, automation-friendly)
     try {
-        console.log(`🔍 Searching web for: "${query}" (max: ${maxResults} results)`);
+        console.log(`🦁 [Search Priority 1] Trying Brave Search (Selenium)...`);
+        console.log(`🔍 [Search Priority 1] IS_LAMBDA: ${!!process.env.AWS_LAMBDA_FUNCTION_NAME}`);
+        const braveResults = await performBraveSearch(query, maxResults, userEmail);
+        console.log(`🔍 [Search Priority 1] Brave Search returned:`, braveResults ? `${braveResults.length} results` : 'null');
         
-        // Get spelling variations to try
+        if (braveResults && braveResults.length > 0) {
+            console.log(`✅ [Search Priority 1] Brave Search succeeded with ${braveResults.length} results`);
+            return { results: braveResults, provider: 'brave' };
+        }
+        
+        console.log(`⚠️ [Search Priority 1] Brave Search returned no results, falling back...`);
+    } catch (braveError) {
+        console.log(`⚠️ [Search Priority 1] Brave Search failed: ${braveError.message}`);
+        console.log(`⚠️ [Search Priority 1] Error stack:`, braveError.stack);
+        console.log(`🔄 Falling back to Tavily...`);
+    }
+
+    // 2️⃣ Second try: Tavily API (PAID: $0.008 per search)
+    const tavilyApiKey = tavilyKey || process.env.TV_K;
+    const useTavily = tavilyApiKey && tavilyApiKey.trim().length > 0;
+
+    if (useTavily) {
+        try {
+            console.log(`🔍 [Search Priority 2] Trying Tavily API...`);
+            const tavilyResults = await tavilySearch(query, {
+                apiKey: tavilyApiKey,
+                maxResults: maxResults,
+                includeAnswer: false,
+                includeRawContent: false,
+                searchDepth: 'basic'
+            });
+
+            if (tavilyResults && tavilyResults.length > 0) {
+                const formattedResults = tavilyResults.map(r => ({
+                    title: r.title || 'Untitled',
+                    url: r.url || '',
+                    snippet: r.snippet || r.description || r.content || ''
+                }));
+
+                console.log(`✅ [Search Priority 2] Tavily succeeded with ${formattedResults.length} results`);
+
+                // Log billing entry for Tavily search
+                try {
+                    await logToGoogleSheets({
+                        timestamp: new Date().toISOString(),
+                        email: userEmail || 'system',
+                        provider: 'tavily',
+                        model: 'basic-search',
+                        inputTokens: 0,
+                        outputTokens: 0,
+                        totalTokens: 0,
+                        cost: 0.008,
+                        type: 'search',
+                        metadata: JSON.stringify({ 
+                            query: query, 
+                            results: formattedResults.length,
+                            service: 'tavily'
+                        })
+                    });
+                    console.log(`💰 [Search Priority 2] Logged Tavily billing: $0.008`);
+                } catch (logError) {
+                    console.error('❌ [Search Priority 2] Failed to log Tavily billing:', logError.message);
+                }
+
+                return { results: formattedResults, provider: 'tavily' };
+            }
+            
+            console.log('⚠️ [Search Priority 2] Tavily returned no results, falling back...');
+        } catch (tavilyError) {
+            console.error('❌ [Search Priority 2] Tavily failed:', tavilyError.message);
+            console.log('🔄 Falling back to DuckDuckGo...');
+        }
+    } else {
+        console.log(`⚠️ [Search Priority 2] No Tavily API key available, skipping...`);
+    }
+
+    // 3️⃣ Third try: DuckDuckGo (FREE)
+    try {
+        console.log(`🦆 [Search Priority 3] Trying DuckDuckGo...`);
         const queryVariations = getSpellingVariations(query);
         
-        // Try each spelling variation with DuckDuckGo
         for (const queryVariant of queryVariations) {
             if (queryVariant !== query) {
                 console.log(`🔄 Trying spelling variation: "${queryVariant}"`);
             }
             
-            const searcher = new DuckDuckGoSearcher(null, null); // No proxy
+            const searcher = new DuckDuckGoSearcher(null, null);
             const results = await searcher.search(queryVariant);
             
             if (results && results.length > 0) {
-                // Format results and limit to maxResults
                 const formattedResults = results
                     .slice(0, maxResults)
                     .map(r => ({
@@ -125,39 +212,31 @@ async function searchWeb(query, maxResults = 5) {
                         snippet: r.description || r.snippet || ''
                     }));
 
-                console.log(`✅ Found ${formattedResults.length} search results`);
-                return formattedResults;
+                console.log(`✅ [Search Priority 3] DuckDuckGo succeeded with ${formattedResults.length} results`);
+                return { results: formattedResults, provider: 'duckduckgo' };
             }
         }
         
-        console.log('⚠️ No DuckDuckGo results for any spelling variation');
-        
-        // Fallback: Try Wikipedia
+        console.log('⚠️ [Search Priority 3] DuckDuckGo returned no results for any spelling variation');
+    } catch (ddgError) {
+        console.error('❌ [Search Priority 3] DuckDuckGo failed:', ddgError.message);
+    }
+    
+    // 4️⃣ Final fallback: Wikipedia (FREE)
+    try {
+        console.log(`📚 [Search Priority 4] Trying Wikipedia as final fallback...`);
         const wikiResults = await searchWikipedia(query);
         if (wikiResults.length > 0) {
-            console.log('✅ Using Wikipedia fallback');
-            return wikiResults;
+            console.log('✅ [Search Priority 4] Wikipedia fallback succeeded');
+            return { results: wikiResults, provider: 'wikipedia' };
         }
-        
-        console.log('⚠️ No results from any source');
-        return [];
-
-    } catch (error) {
-        console.error('❌ Web search error:', error.message);
-        
-        // Last resort: Try Wikipedia on error
-        try {
-            const wikiResults = await searchWikipedia(query);
-            if (wikiResults.length > 0) {
-                console.log('✅ Using Wikipedia as error recovery');
-                return wikiResults;
-            }
-        } catch (wikiError) {
-            console.error('❌ Wikipedia fallback also failed:', wikiError.message);
-        }
-        
-        return [];
+        console.log('⚠️ [Search Priority 4] Wikipedia returned no results');
+    } catch (wikiError) {
+        console.error('❌ [Search Priority 4] Wikipedia failed:', wikiError.message);
     }
+    
+    console.log('❌ All search methods exhausted, returning empty results');
+    return { results: [], provider: 'none' };
 }
 
 module.exports = {

@@ -227,22 +227,12 @@ const MAX_JSON_TOOL_REMINDERS = 2;
 // Global singleton rate limit tracker (persists across Lambda warm starts)
 let globalRateLimitTracker = null;
 
-// Detect if running in local development mode
-const isLocalDevelopment = () => {
-    return process.env.LOCAL === 'true' || 
-           process.env.ENV === 'development' ||
-           process.env.AWS_EXEC === undefined;
-};
-
 // Import unified pricing service
 const { calculateLLMCost, isUIKey } = require('../utils/pricing-service');
 
-// Calculate cost, but return 0 if running locally or in development
+// Calculate LLM cost - ALWAYS calculates actual costs (even in local dev)
+// Note: Lambda infrastructure costs are handled separately and set to $0 in local dev
 const calculateCostSafe = (model, promptTokens, completionTokens, provider = null) => {
-    if (isLocalDevelopment()) {
-        return 0;
-    }
-    
     // Determine if this is a user-provided key (no surcharge) or server key (surcharge applies)
     const isUserProvidedKey = isUIKey(provider);
     return calculateLLMCost({ model, promptTokens, completionTokens, provider, isUIKey: isUserProvidedKey });

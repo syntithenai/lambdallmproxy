@@ -3,9 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 
-// Global flag to prevent multiple Google Sign-In initializations across all instances
-let globalGoogleInitialized = false;
-
 export const LoginScreen: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { login } = useAuth();
@@ -17,7 +14,9 @@ export const LoginScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    if (buttonRef.current && !hasInitialized.current && !globalGoogleInitialized) {
+    // IMPORTANT: Don't use global flag - allow re-initialization when user is logged out
+    // This ensures the Google button appears when user is logged out due to inactivity
+    if (buttonRef.current && !hasInitialized.current) {
       let retryCount = 0;
       const maxRetries = 100; // Maximum 10 seconds of retries (increased from 5s)
       
@@ -30,9 +29,8 @@ export const LoginScreen: React.FC = () => {
             return;
           }
           
-          // Mark as initialized globally to prevent any duplicate calls
+          // Mark as initialized for this component instance only
           hasInitialized.current = true;
-          globalGoogleInitialized = true;
           
           console.log('✅ Google SDK loaded, initializing Sign-In button...');
           
@@ -84,8 +82,6 @@ export const LoginScreen: React.FC = () => {
       };
 
       initializeGoogleButton();
-    } else if (globalGoogleInitialized) {
-      // Silent - no need to log this
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps - only run once on mount
