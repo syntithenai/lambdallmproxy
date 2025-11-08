@@ -156,46 +156,6 @@ export function FeedProvider({ children }: FeedProviderProps) {
         
         console.log('✅ Initial data load complete');
         
-        // Auto-generate feed on first load if no items exist
-        if (loadedItems.length === 0) {
-          console.log('📰 No feed items found, auto-generating initial feed...');
-          
-          // Get snippets with tags
-          const snippetsWithTags = snippetsRef.current.filter(s => s.tags && s.tags.length > 0);
-          
-          if (snippetsWithTags.length > 0) {
-            // Use top 5 most common tags
-            const tagCounts: Record<string, number> = {};
-            snippetsWithTags.forEach(snippet => {
-              snippet.tags?.forEach(tag => {
-                if (!tag.startsWith('admin:')) {
-                  tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-                }
-              });
-            });
-            
-            const top5Tags = Object.entries(tagCounts)
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 5)
-              .map(([tag]) => tag);
-            
-            console.log(`🏷️ Using top 5 snippet tags for initial feed: ${top5Tags.join(', ')}`);
-            
-            // Generate feed with top tags (don't await - let it run in background)
-            generateMore(top5Tags).catch(err => {
-              console.error('❌ Auto-generation failed:', err);
-            });
-          } else {
-            // No snippets with tags - use default "latest world news"
-            console.log('📰 No snippets with tags, using default: latest world news');
-            
-            // Generate feed with default search term (don't await)
-            generateMore(['latest world news']).catch(err => {
-              console.error('❌ Auto-generation failed:', err);
-            });
-          }
-        }
-        
       } catch (err) {
         console.error('❌ Failed to load feed data:', err);
         setError(err instanceof Error ? err.message : 'Failed to load feed');
@@ -206,7 +166,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     };
 
     loadData();
-  }, [generateMore]); // Add generateMore dependency
+  }, []); // No dependencies - runs once on mount
 
   /**
    * Generate more feed items
@@ -516,6 +476,55 @@ export function FeedProvider({ children }: FeedProviderProps) {
     }
   }, [getToken]);
   // Note: isGenerating, snippets, and preferences accessed via state/refs but NOT in deps to prevent infinite loops
+
+  /**
+   * Auto-generate feed on first load if no items exist
+   * Runs after initial data load completes
+   */
+  useEffect(() => {
+    // Only run if:
+    // 1. Not currently loading initial data
+    // 2. No items in feed
+    // 3. Not already generating
+    if (!isLoading && allItems.length === 0 && !isGenerating) {
+      console.log('📰 No feed items found, auto-generating initial feed...');
+      
+      // Get snippets with tags
+      const snippetsWithTags = snippets.filter(s => s.tags && s.tags.length > 0);
+      
+      if (snippetsWithTags.length > 0) {
+        // Use top 5 most common tags
+        const tagCounts: Record<string, number> = {};
+        snippetsWithTags.forEach(snippet => {
+          snippet.tags?.forEach(tag => {
+            if (!tag.startsWith('admin:')) {
+              tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+            }
+          });
+        });
+        
+        const top5Tags = Object.entries(tagCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([tag]) => tag);
+        
+        console.log(`🏷️ Using top 5 snippet tags for initial feed: ${top5Tags.join(', ')}`);
+        
+        // Generate feed with top tags (don't await - let it run in background)
+        generateMore(top5Tags).catch(err => {
+          console.error('❌ Auto-generation failed:', err);
+        });
+      } else {
+        // No snippets with tags - use default "latest world news"
+        console.log('📰 No snippets with tags, using default: latest world news');
+        
+        // Generate feed with default search term (don't await)
+        generateMore(['latest world news']).catch(err => {
+          console.error('❌ Auto-generation failed:', err);
+        });
+      }
+    }
+  }, [isLoading, allItems.length, isGenerating, snippets, generateMore]);
 
   /**
    * Stash item to Swag
