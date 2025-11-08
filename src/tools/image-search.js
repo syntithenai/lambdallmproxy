@@ -52,9 +52,10 @@ function makeRequest(url, headers = {}) {
  * 
  * @param {string} query - Search query
  * @param {number} count - Number of images to return (default: 1)
+ * @param {string} maturityLevel - Content maturity: 'child', 'youth', 'adult', 'academic' (default: 'adult')
  * @returns {Promise<Array>} Array of image objects
  */
-async function searchUnsplash(query, count = 1) {
+async function searchUnsplash(query, count = 1, maturityLevel = 'adult') {
   const accessKey = process.env.UNSPLASH_ACCESS_KEY;
   
   if (!accessKey) {
@@ -63,9 +64,13 @@ async function searchUnsplash(query, count = 1) {
   }
 
   try {
-    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape`;
+    // Map maturity levels to Unsplash content_filter
+    // Unsplash content_filter: low (default), high (safe for work)
+    const contentFilter = (maturityLevel === 'child' || maturityLevel === 'youth') ? 'high' : 'low';
     
-    console.log(`🔍 Searching Unsplash for: "${query}"`);
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape&content_filter=${contentFilter}`;
+    
+    console.log(`🔍 Searching Unsplash for: "${query}" (maturity: ${maturityLevel}, filter: ${contentFilter})`);
     
     const data = await makeRequest(url, {
       'Authorization': `Client-ID ${accessKey}`
@@ -126,9 +131,10 @@ async function trackUnsplashDownload(downloadUrl) {
  * 
  * @param {string} query - Search query
  * @param {number} count - Number of images to return (default: 1)
+ * @param {string} maturityLevel - Content maturity: 'child', 'youth', 'adult', 'academic' (default: 'adult')
  * @returns {Promise<Array>} Array of image objects
  */
-async function searchPexels(query, count = 1) {
+async function searchPexels(query, count = 1, maturityLevel = 'adult') {
   const apiKey = process.env.PEXELS_API_KEY;
   
   if (!apiKey) {
@@ -137,16 +143,22 @@ async function searchPexels(query, count = 1) {
   }
 
   try {
-    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape`;
+    // Pexels doesn't have explicit content filtering in API
+    // Modify query for child-safe content
+    const safeQuery = (maturityLevel === 'child' || maturityLevel === 'youth')
+      ? `${query} safe for kids family-friendly`
+      : query;
     
-    console.log(`🔍 Searching Pexels for: "${query}"`);
+    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(safeQuery)}&per_page=${count}&orientation=landscape`;
+    
+    console.log(`🔍 Searching Pexels for: "${safeQuery}" (maturity: ${maturityLevel})`);
     
     const data = await makeRequest(url, {
       'Authorization': apiKey
     });
 
     if (!data.photos || data.photos.length === 0) {
-      console.log(`ℹ️  No Pexels results for: "${query}"`);
+      console.log(`ℹ️  No Pexels results for: "${safeQuery}"`);
       return [];
     }
 
@@ -162,34 +174,26 @@ async function searchPexels(query, count = 1) {
       attributionHtml: `Photo by <a href="${img.photographer_url}" target="_blank" rel="noopener noreferrer">${img.photographer}</a> on <a href="${img.url}" target="_blank" rel="noopener noreferrer">Pexels</a>`
     }));
 
-    console.log(`✅ Found ${results.length} Pexels image(s) for: "${query}"`);
+    console.log(`✅ Found ${results.length} Pexels image(s) for: "${safeQuery}"`);
     return results;
 
   } catch (error) {
-    console.error(`❌ Pexels search error for "${query}":`, error.message);
+    console.error(`❌ Pexels search error for "${safeQuery}":`, error.message);
     return [];
   }
 }
 
 /**
- * Search for images using available providers
- * 
- * Strategy:
- * 1. Load balance between Unsplash and Pexels (round-robin rotation)
- * 2. Check rate limits before trying each provider
- * 3. Automatic failover if one provider is rate-limited
- * 4. Track rate limits for 1 hour after 403 errors
- * 
+ * Search for images using Unsplash or Pexels API
  * @param {string} query - Search query
  * @param {Object} options - Search options
  * @param {number} options.count - Number of images (default: 1)
  * @param {string} options.provider - Preferred provider: 'unsplash', 'pexels', 'auto' (default: 'auto')
+ * @param {string} options.maturityLevel - Content maturity: 'child', 'youth', 'adult', 'academic' (default: 'adult')
  * @returns {Promise<Object|null>} Image object or null if no results
  */
 async function searchImage(query, options = {}) {
-  const { count = 1, provider = 'auto' } = options;
-  
-  if (!query || typeof query !== 'string') {
+  const { count = 1, provider = 'auto', maturityLevel = 'adult' } = options;  if (!query || typeof query !== 'string') {
     console.warn('⚠️  Invalid image search query:', query);
     return null;
   }
@@ -212,7 +216,7 @@ async function searchImage(query, options = {}) {
       return null;
     }
     try {
-      results = await searchUnsplash(query, count);
+      results = await searchUnsplash(query, count, maturityLevel);
     } catch (error) {
       if (error.message?.includes('403') || error.message?.includes('rate limit')) {
         unsplashRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
@@ -225,7 +229,7 @@ async function searchImage(query, options = {}) {
       return null;
     }
     try {
-      results = await searchPexels(query, count);
+      results = await searchPexels(query, count, maturityLevel);
     } catch (error) {
       if (error.message?.includes('403') || error.message?.includes('rate limit')) {
         pexelsRateLimitUntil = now + RATE_LIMIT_COOLDOWN;
@@ -251,8 +255,8 @@ async function searchImage(query, options = {}) {
       try {
         console.log(`🔄 Load balancing: Trying ${primaryProvider} first (rotation: ${providerRotation})`);
         results = primaryProvider === 'unsplash' 
-          ? await searchUnsplash(query, count)
-          : await searchPexels(query, count);
+          ? await searchUnsplash(query, count, maturityLevel)
+          : await searchPexels(query, count, maturityLevel);
       } catch (error) {
         if (error.message?.includes('403') || error.message?.includes('rate limit')) {
           if (primaryProvider === 'unsplash') {
@@ -276,8 +280,8 @@ async function searchImage(query, options = {}) {
         try {
           console.log(`🔀 Failover to ${fallbackProvider}`);
           results = fallbackProvider === 'unsplash'
-            ? await searchUnsplash(query, count)
-            : await searchPexels(query, count);
+            ? await searchUnsplash(query, count, maturityLevel)
+            : await searchPexels(query, count, maturityLevel);
         } catch (error) {
           if (error.message?.includes('403') || error.message?.includes('rate limit')) {
             if (fallbackProvider === 'unsplash') {

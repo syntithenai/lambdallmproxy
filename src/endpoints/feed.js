@@ -102,6 +102,8 @@ function isJunkImage(url) {
  * @param {object} preferences - User preferences
  * @param {object} providers - Available LLM providers
  * @param {function} eventCallback - SSE event callback
+ * @param {object} generationContext - Generation context (userEmail, etc.)
+ * @param {string} maturityLevel - Content maturity level (child, youth, adult, academic)
  * @returns {Promise<object[]>} Generated feed items
  */
 async function generateFeedItems(
@@ -111,7 +113,8 @@ async function generateFeedItems(
     preferences,
     providers,
     eventCallback,
-    generationContext = {}
+    generationContext = {},
+    maturityLevel = 'adult'
 ) {
     // Emit event about context being used
     eventCallback('context_prepared', {
@@ -748,7 +751,10 @@ Generate exactly ${count} items. Return valid JSON.`;
     }
     
     try {
-        const imageData = await searchImage(item.imageSearchTerms, { provider: 'auto' });
+        const imageData = await searchImage(item.imageSearchTerms, { 
+            provider: 'auto',
+            maturityLevel: maturityLevel // Pass maturity level for filtering
+        });
         
         if (imageData) {
             // Track Unsplash download if from Unsplash
@@ -871,6 +877,7 @@ async function handler(event, responseStream, context) {
         const swagContent = body.swagContent || [];
         const searchTerms = body.searchTerms || [];
         const count = body.count || 5; // Reduced from 10 to 5 for higher quality with expanded content
+        const maturityLevel = body.maturityLevel || 'adult'; // Get maturity level from request
         const preferences = body.preferences || {
             searchTerms: [],
             likedTopics: [],
@@ -878,6 +885,8 @@ async function handler(event, responseStream, context) {
             lastGenerated: new Date().toISOString()
         };
         const userProviders = body.providers || {};
+        
+        console.log(`🎓 Feed maturity level: ${maturityLevel}`);
         
         // Personalization: Use feed recommender if interactions provided
         const interactions = body.interactions || [];
@@ -965,7 +974,8 @@ async function handler(event, responseStream, context) {
                 requestId,
                 awsRequestId: context?.awsRequestId,
                 memoryLimitInMB: context?.memoryLimitInMB
-            }
+            },
+            maturityLevel // Pass maturity level for content filtering
         );
         
         // Save generated feed items to Google Sheets (backend storage)
