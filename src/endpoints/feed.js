@@ -152,6 +152,18 @@ async function generateFeedItems(
                 });
                 
                 const results = await performDuckDuckGoSearch(term, 5, userEmail);
+                
+                // Defensive: Ensure results is an array before spreading
+                if (!Array.isArray(results)) {
+                    console.warn(`⚠️ Search results for "${term}" is not an array:`, typeof results, results);
+                    eventCallback('search_term_error', { 
+                        message: `Search failed for "${term}": Invalid results format (expected array, got ${typeof results})`,
+                        term: term,
+                        error: `Invalid results format: ${typeof results}`
+                    });
+                    continue; // Skip to next term
+                }
+                
                 searchResults.push(...results);
                 
                 eventCallback('search_term_complete', { 
