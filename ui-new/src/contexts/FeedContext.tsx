@@ -54,7 +54,7 @@ interface FeedProviderProps {
 }
 
 export function FeedProvider({ children }: FeedProviderProps) {
-  const { getToken } = useAuth();
+  const { getToken, isAuthenticated } = useAuth();
   const { snippets } = useSwag();
   const { getCurrentProjectId, currentProject } = useProject();
   const { showSuccess, showWarning, showError } = useToast();
@@ -483,10 +483,11 @@ export function FeedProvider({ children }: FeedProviderProps) {
    */
   useEffect(() => {
     // Only run if:
-    // 1. Not currently loading initial data
-    // 2. No items in feed
-    // 3. Not already generating
-    if (!isLoading && allItems.length === 0 && !isGenerating) {
+    // 1. User is authenticated
+    // 2. Not currently loading initial data
+    // 3. No items in feed
+    // 4. Not already generating
+    if (isAuthenticated && !isLoading && allItems.length === 0 && !isGenerating) {
       console.log('📰 No feed items found, auto-generating initial feed...');
       
       // Get snippets with tags
@@ -524,7 +525,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
         });
       }
     }
-  }, [isLoading, allItems.length, isGenerating, snippets, generateMore]);
+  }, [isAuthenticated, isLoading, allItems.length, isGenerating, snippets, generateMore]);
 
   /**
    * Stash item to Swag
