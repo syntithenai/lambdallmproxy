@@ -63,7 +63,24 @@ export class GoogleSheetsAdapter implements SyncAdapter {
       }
 
       // Ensure spreadsheet exists
-      await this.ensureSpreadsheetExists(token);
+      try {
+        await this.ensureSpreadsheetExists(token);
+      } catch (error: any) {
+        // Handle insufficient permissions gracefully
+        if (error.message === 'INSUFFICIENT_PERMISSIONS') {
+          console.warn('⚠️ Google Sheets sync: User has not authorized Drive API access. Returning local data.');
+          return {
+            quizzes: localQuizzes,
+            feedItems: localFeedItems,
+            snippets: localSnippets,
+            config: null,
+            embeddings: [],
+            lastModified: Date.now()
+          };
+        }
+        // Re-throw other errors
+        throw error;
+      }
 
       if (!this.spreadsheetId) {
         console.warn('⚠️ Google Sheets sync: Failed to find or create spreadsheet, returning local data');
@@ -153,6 +170,13 @@ export class GoogleSheetsAdapter implements SyncAdapter {
     });
 
     if (!searchResponse.ok) {
+      // Check if it's a permission error (401/403) or scope error (400) or server error (500)
+      // 500 errors often indicate the token doesn't have the required scopes
+      if (searchResponse.status === 401 || searchResponse.status === 403 || 
+          searchResponse.status === 400 || searchResponse.status === 500) {
+        console.warn('⚠️ Google Sheets sync: Insufficient permissions or invalid token. User needs to enable Google Sheets sync in Cloud Sync Settings.');
+        throw new Error('INSUFFICIENT_PERMISSIONS');
+      }
       throw new Error(`Failed to search for spreadsheet: ${searchResponse.statusText}`);
     }
 
