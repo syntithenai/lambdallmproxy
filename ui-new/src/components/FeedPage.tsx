@@ -202,12 +202,13 @@ export default function FeedPage() {
   }, []);
 
   /**
-   * Handle manual refresh
+   * Handle manual refresh - reuses last search criteria
    */
   const handleRefresh = useCallback(async () => {
+    // refresh() already clears all items and calls generateMore()
+    // which will use lastSearchCriteriaRef.current (same as infinite scroll)
     await refresh();
-    await generateMore();
-  }, [refresh, generateMore]);
+  }, [refresh]);
 
   // Debug: Log render state
   console.log('🎨 FeedPage render:', {

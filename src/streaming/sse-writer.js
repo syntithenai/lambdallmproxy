@@ -66,20 +66,36 @@ function createSSEStreamAdapter(responseStream) {
             
             try {
                 const eventText = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-                responseStream.write(eventText);
+                
+                // Try to write and check return value
+                const writeSucceeded = responseStream.write(eventText);
+                
+                if (!writeSucceeded) {
+                    console.log('⚠️ Write buffer full or stream closed for event:', type);
+                }
                 
                 // Add padding to force Lambda to flush the buffer
                 // Lambda buffers writes until ~8KB, so we add padding to trigger immediate flush
                 // This ensures progress events are sent immediately, not buffered
                 const padding = ': ' + ' '.repeat(8000) + '\n\n';
-                responseStream.write(padding);
+                const paddingSucceeded = responseStream.write(padding);
+                
+                if (!paddingSucceeded) {
+                    console.log('⚠️ Write buffer full or stream closed for padding');
+                }
+                
+                // Check if stream is actually writable
+                if (responseStream.writable === false || responseStream.destroyed) {
+                    console.log('🛑 Stream no longer writable - client disconnected');
+                    isConnected = false;
+                    throw new Error('CLIENT_DISCONNECTED');
+                }
                 
                 lastWriteTime = Date.now();
             } catch (error) {
                 console.error('❌ Error writing SSE event:', error);
                 isConnected = false;
-                clearInterval(checkInterval);
-                throw new Error('CLIENT_DISCONNECTED');
+                throw error; // Re-throw to propagate disconnect
             }
         },
         write: (data) => {

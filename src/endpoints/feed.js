@@ -7,6 +7,7 @@
 const { llmResponsesWithTools, getStructuredOutputCapabilities } = require('../llm_tools_adapter');
 const { performDuckDuckGoSearch } = require('../tools/search_web');
 const { searchImage, trackUnsplashDownload } = require('../tools/image-search');
+const { scrapeWithTierFallback } = require('../scrapers/tier-orchestrator');
 const { authenticateRequest } = require('../auth');
 const { buildProviderPool } = require('../credential-pool');
 const { logToGoogleSheets, calculateCost } = require('../services/google-sheets-logger');
@@ -15,6 +16,12 @@ const { buildModelRotationSequence, estimateTokenRequirements } = require('../mo
 const feedService = require('../services/google-sheets-feed');
 const { extractProjectId } = require('../services/user-isolation');
 const { robustJsonParse, tryParseJson } = require('../utils/json-parser');
+
+/**
+ * Request tracking for cancellation support
+ * Maps request IDs to their cancellation state
+ */
+const activeRequests = new Map();
 
 /**
  * Extract images from web search results
@@ -102,7 +109,7 @@ function isJunkImage(url) {
  * @param {object} preferences - User preferences
  * @param {object} providers - Available LLM providers
  * @param {function} eventCallback - SSE event callback
- * @param {object} generationContext - Generation context (userEmail, etc.)
+ * @param {object} generationContext - Generation context (userEmail, tavilyKey, responseStream, etc.)
  * @param {string} maturityLevel - Content maturity level (child, youth, adult, academic)
  * @returns {Promise<object[]>} Generated feed items
  */
@@ -116,8 +123,50 @@ async function generateFeedItems(
     generationContext = {},
     maturityLevel = 'adult'
 ) {
+    // Track if client has disconnected
+    let clientDisconnected = false;
+    
+    // Wrap eventCallback to detect disconnections
+    const safeEventCallback = (eventType, eventData) => {
+        if (clientDisconnected) {
+            throw new Error('Client disconnected'); // Stop execution immediately
+        }
+        try {
+            eventCallback(eventType, eventData); // Call original, not safe version!
+        } catch (error) {
+            console.log('🛑 Error writing event - client likely disconnected:', error.message);
+            clientDisconnected = true;
+            throw error; // Re-throw to stop generation
+        }
+    };
+    
+    // Helper to check if client is still connected
+    const isClientConnected = () => {
+        if (clientDisconnected) {
+            console.log('🛑 Client disconnected flag is set');
+            return false;
+        }
+        
+        // Check if handler set abort flag
+        if (generationContext.isCancelled && generationContext.isCancelled()) {
+            console.log('🛑 Generation cancelled by user');
+            clientDisconnected = true;
+            return false;
+        }
+        
+        const stream = generationContext.responseStream;
+        if (!stream) return true; // No stream means not streaming, continue
+        // Check if stream is writable (client still connected)
+        const connected = stream.writable !== false && !stream.destroyed;
+        if (!connected) {
+            console.log('🛑 Stream is no longer writable');
+            clientDisconnected = true;
+        }
+        return connected;
+    };
+    
     // Emit event about context being used
-    eventCallback('context_prepared', {
+    safeEventCallback('context_prepared', {
         message: `Using ${swagContent.length} Swag items and ${searchTerms.length} search terms`,
         swagCount: swagContent.length,
         searchTermsCount: searchTerms.length,
@@ -125,38 +174,61 @@ async function generateFeedItems(
         dislikedTopicsCount: preferences.dislikedTopics?.length || 0
     });
     
-    // Prepare context summaries
-    const swagSummary = swagContent.slice(0, 20).join('\n\n').substring(0, 2000);
-    const likedTopics = preferences.likedTopics.join(', ');
-    const dislikedTopics = preferences.dislikedTopics.join(', ');
+    // Prepare context summaries (only use if provided)
+    const swagSummary = swagContent && swagContent.length > 0 
+        ? swagContent.slice(0, 20).join('\n\n').substring(0, 2000) 
+        : '';
+    const likedTopics = preferences.likedTopics && preferences.likedTopics.length > 0
+        ? preferences.likedTopics.join(', ')
+        : '';
+    const dislikedTopics = preferences.dislikedTopics && preferences.dislikedTopics.length > 0
+        ? preferences.dislikedTopics.join(', ')
+        : '';
     
-    // Extract userEmail from generationContext for billing attribution
+    // Extract userEmail and tavilyKey from generationContext for billing attribution
     const userEmail = generationContext.userEmail || generationContext.email || 'system';
+    const tavilyKey = generationContext.tavilyKey || null; // UI-provided Tavily key
     
     // Perform web searches if search terms provided
     let searchSummary = '';
     const searchResults = [];
     
     if (searchTerms && searchTerms.length > 0) {
-        eventCallback('search_starting', { 
+        // Use search terms as-is without modification
+        
+        safeEventCallback('search_starting', { 
             message: `Searching for: ${searchTerms.join(', ')}`,
             terms: searchTerms,
             termsCount: searchTerms.length
         });
         
+        // Search same number of results as items to generate (1:1 ratio)
+        const searchResultsPerTerm = count; // e.g., 3 items → 3 results per search
+        
         for (const term of searchTerms.slice(0, 3)) { // Limit to 3 search terms
+            // Check if client disconnected
+            if (!isClientConnected()) {
+                console.log('🛑 Client disconnected during search, aborting generation');
+                throw new Error('Client disconnected');
+            }
+            
             try {
-                eventCallback('search_term', { 
+                safeEventCallback('search_term', { 
                     message: `Searching for "${term}"...`,
                     term: term
                 });
                 
-                const results = await performDuckDuckGoSearch(term, 5, userEmail);
+                // Use intelligent search with failover: Tavily (UI) → Brave → Tavily (env) → DuckDuckGo → Wikipedia
+                const searchResponse = await performDuckDuckGoSearch(term, searchResultsPerTerm, userEmail, tavilyKey);
+                
+                // searchWeb returns { results: [], provider: 'xxx' }
+                const results = searchResponse.results || searchResponse;
+                const provider = searchResponse.provider || 'unknown';
                 
                 // Defensive: Ensure results is an array before spreading
                 if (!Array.isArray(results)) {
                     console.warn(`⚠️ Search results for "${term}" is not an array:`, typeof results, results);
-                    eventCallback('search_term_error', { 
+                    safeEventCallback('search_term_error', { 
                         message: `Search failed for "${term}": Invalid results format (expected array, got ${typeof results})`,
                         term: term,
                         error: `Invalid results format: ${typeof results}`
@@ -164,17 +236,71 @@ async function generateFeedItems(
                     continue; // Skip to next term
                 }
                 
+                // Scrape full content from ALL search results (3 per term)
+                safeEventCallback('scraping_started', {
+                    message: `Scraping content from ${results.length} URLs...`,
+                    term: term,
+                    urlCount: results.length
+                });
+                
+                for (let i = 0; i < results.length; i++) {
+                    // Check if client disconnected
+                    if (!isClientConnected()) {
+                        console.log('🛑 Client disconnected during scraping, aborting generation');
+                        throw new Error('Client disconnected');
+                    }
+                    
+                    const result = results[i];
+                    
+                    // Skip if result already has substantial content (from Tavily)
+                    if (result.content && result.content.length > 500) {
+                        continue;
+                    }
+                    
+                    try {
+                        safeEventCallback('scraping_url', {
+                            message: `Scraping ${i + 1}/${results.length}: ${result.url}`,
+                            url: result.url,
+                            index: i + 1,
+                            total: results.length
+                        });
+                        
+                        const scraped = await scrapeWithTierFallback(result.url, 15000); // 15 second timeout for thorough scraping
+                        
+                        if (scraped && scraped.content) {
+                            // Use MORE content for better quality (4000 chars instead of 2000)
+                            const contentPreview = scraped.content.substring(0, 4000);
+                            result.content = contentPreview;
+                            result.scrapedContent = true;
+                            
+                            console.log(`✅ Scraped content from ${result.url} (${scraped.content.length} chars, using ${contentPreview.length} chars)`);
+                        } else {
+                            console.log(`⚠️ No content scraped from ${result.url}`);
+                        }
+                    } catch (scrapeError) {
+                        console.warn(`Failed to scrape ${result.url}:`, scrapeError.message);
+                        // Continue with snippet only
+                    }
+                }
+                
                 searchResults.push(...results);
                 
-                eventCallback('search_term_complete', { 
-                    message: `Found ${results.length} results for "${term}"`,
+                safeEventCallback('search_term_complete', { 
+                    message: `Found ${results.length} results for "${term}" using ${provider}`,
                     term: term,
                     resultsCount: results.length,
-                    results: results.slice(0, 3).map(r => ({ title: r.title, url: r.url }))
+                    provider: provider,
+                    scrapedCount: results.filter(r => r.scrapedContent).length,
+                    results: results.slice(0, 3).map(r => ({ 
+                        title: r.title, 
+                        url: r.url, 
+                        snippet: r.snippet?.substring(0, 100),
+                        hasContent: !!r.content 
+                    }))
                 });
             } catch (error) {
                 console.error(`Search failed for term "${term}":`, error);
-                eventCallback('search_term_error', { 
+                safeEventCallback('search_term_error', { 
                     message: `Search failed for "${term}": ${error.message}`,
                     term: term,
                     error: error.message
@@ -182,16 +308,33 @@ async function generateFeedItems(
             }
         }
         
+        // Build search summary with scraped content (prefer full content over snippet)
         searchSummary = searchResults
-            .slice(0, 10)
-            .map(r => `${r.title}: ${r.snippet}`)
-            .join('\n');
+            .slice(0, 9) // Use up to 9 results (3 per search term)
+            .map(r => {
+                const title = r.title;
+                const url = r.url;
+                // Use scraped content if available, otherwise fall back to snippet
+                const content = r.content 
+                    ? r.content.substring(0, 3000) // Increased to 3000 chars per result for richer context
+                    : r.snippet || 'No description available';
+                
+                return `Title: ${title}\nURL: ${url}\nContent: ${content}\n`;
+            })
+            .join('\n---\n');
         
-        eventCallback('search_complete', { 
-            message: `Found ${searchResults.length} total results from ${searchTerms.length} search terms`,
+        const scrapedCount = searchResults.filter(r => r.scrapedContent).length;
+        safeEventCallback('search_complete', { 
+            message: `Found ${searchResults.length} total results from ${searchTerms.length} search terms (${scrapedCount} with full content)`,
             resultsCount: searchResults.length,
+            scrapedCount: scrapedCount,
             terms: searchTerms,
-            topResults: searchResults.slice(0, 5).map(r => ({ title: r.title, url: r.url, snippet: r.snippet?.substring(0, 100) }))
+            topResults: searchResults.slice(0, 5).map(r => ({ 
+                title: r.title, 
+                url: r.url, 
+                snippet: r.snippet?.substring(0, 100),
+                hasFullContent: !!r.scrapedContent
+            }))
         });
     }
     
@@ -204,26 +347,34 @@ ${searchSummary ? `Recent news/searches:\n${searchSummary}\n\n` : ''}
 ${likedTopics ? `✨ USER'S FAVORITE TOPICS (prioritize these): ${likedTopics}\n` : ''}
 ${dislikedTopics ? `🚫 USER DISLIKES (completely AVOID these): ${dislikedTopics}\n` : ''}
 
+⚠️ MANDATORY: You MUST generate EXACTLY ${count} items. No more, no less. Responses with fewer than ${count} items will be rejected.
+
 TASK: Generate ${count} high-quality educational items${searchSummary ? ' based on the search results provided above' : ''} mixing:
 - "Did You Know" facts (70%) - surprising, educational facts${searchSummary ? ' drawn from the search results' : ''}
 - Question & Answer pairs (30%) - thought-provoking Q&A${searchSummary ? ' based on search findings' : ''}
 
 ${searchSummary ? '⚠️ CRITICAL: You MUST base your content on the "Recent news/searches" section above. Use the titles, snippets, and information from those search results as your primary source material. Do NOT generate generic facts - use the specific information provided in the search results.\n\n' : ''}${likedTopics ? '✨ PRIORITIZE USER INTERESTS: The user is particularly interested in: ' + likedTopics + '. Make sure to include content related to these topics whenever possible, even when working with search results.\n\n' : ''}CRITICAL REQUIREMENTS:
-1. Each item MUST have:
+1. Generate EXACTLY ${count} items (not fewer, not more)
+2. Each item MUST have:
+   - **UNIQUE, DESCRIPTIVE TITLE** (max 80 characters) - NEVER use generic titles like "Feed1", "Fact 1", or "Item 2". Each title must be specific and engaging.
    - Short summary (2-3 sentences) in "content"${searchSummary ? ' that references information from the search results' : ''}
-   - Expanded article (4-6 paragraphs) in "expandedContent" with AT LEAST 4 interesting facts${searchSummary ? ' drawn from the search results' : ''}
+   - COMPREHENSIVE deep-dive article (8-12 paragraphs, 800+ words) in "expandedContent" with AT LEAST 8 fascinating facts, details, and insights${searchSummary ? ' drawn from the search results' : ''}
    - Creative mnemonic in "mnemonic" - use acronyms, rhymes, or surprising connections
    
-2. Mnemonics should be MEMORABLE:
+3. Mnemonics should be MEMORABLE:
    - Acronyms: First letters spell a word (e.g., "HOMES" for Great Lakes)
    - Rhymes: Catchy phrases (e.g., "In 1492, Columbus sailed the ocean blue")
    - Connections: Link to pop culture, celebrities, or surprising parallels
    
-3. Expanded content should:
-   - Include specific numbers, dates, and measurements${searchSummary ? ' from the search results' : ''}
-   - Feature surprising comparisons or contrasts
-   - Cite historical context or modern relevance
-   - Use vivid, memorable details
+3. Expanded content should be COMPREHENSIVE (8-12 paragraphs):
+   - Include specific numbers, dates, measurements, and statistics${searchSummary ? ' from the search results' : ''}
+   - Feature surprising comparisons, contrasts, and analogies
+   - Cite historical context, modern relevance, and future implications
+   - Use vivid, memorable details and storytelling
+   - Explain technical concepts in accessible ways
+   - Include multiple perspectives and viewpoints
+   - Add practical applications and real-world examples
+   - Make connections across different domains
 
 4. Connect to user's interests when possible
 5. Avoid disliked topics completely
@@ -254,7 +405,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                                 },
                                 title: {
                                     type: 'string',
-                                    description: 'Brief headline (max 80 characters)'
+                                    description: 'UNIQUE, engaging headline (max 80 characters). Must be specific and descriptive. NEVER use generic titles like "Feed1", "Fact 1", "Item 2", etc. Make it compelling and specific to the content.'
                                 },
                                 content: {
                                     type: 'string',
@@ -262,7 +413,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                                 },
                                 expandedContent: {
                                     type: 'string',
-                                    description: '4-6 paragraphs with AT LEAST 4 fascinating facts. Include specific details, numbers, and memorable comparisons.'
+                                    description: 'COMPREHENSIVE deep-dive article with 8-12 paragraphs (minimum 800 words). Include AT LEAST 8 fascinating facts, specific details, numbers, memorable comparisons, historical context, modern relevance, and practical applications. Make it educational, engaging, and thorough.'
                                 },
                                 mnemonic: {
                                     type: 'string',
@@ -289,7 +440,13 @@ Generate exactly ${count} items. Return valid JSON.`;
         }
     };
 
-    eventCallback('status', { message: 'Generating feed items...' });
+    safeEventCallback('status', { message: 'Generating feed items...' });
+    
+    // Check if client disconnected before expensive LLM call
+    if (!isClientConnected()) {
+        console.log('🛑 Client disconnected before LLM generation, aborting');
+        throw new Error('Client disconnected');
+    }
     
     // Build model rotation sequence using intelligent selector
     const estimatedTokens = estimateTokenRequirements(
@@ -344,7 +501,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                     options: {
                         apiKey: selectedModel.apiKey,
                         temperature: 0.8,
-                        maxTokens: 4096,
+                        maxTokens: 8192, // Increased for comprehensive deep-dive content (8-12 paragraphs per item)
                         stream: false
                     }
                 });
@@ -363,7 +520,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                     options: {
                         apiKey: selectedModel.apiKey,
                         temperature: 0.8,
-                        maxTokens: 4096,
+                        maxTokens: 8192, // Increased for comprehensive deep-dive content (8-12 paragraphs per item)
                         stream: false,
                         response_format: { type: 'json_object' }
                     }
@@ -383,7 +540,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                     options: {
                         apiKey: selectedModel.apiKey,
                         temperature: 0.8,
-                        maxTokens: 4096,
+                        maxTokens: 8192, // Increased for comprehensive deep-dive content (8-12 paragraphs per item)
                         stream: false
                     }
                 });
@@ -409,7 +566,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                 } else {
                     console.log(`⏭️ Feed: Error occurred, trying next model...`);
                 }
-                eventCallback('status', { 
+                safeEventCallback('status', { 
                     message: `Model ${selectedModel.model.split(':')[1]} unavailable, trying alternative...` 
                 });
                 continue;
@@ -447,17 +604,36 @@ Generate exactly ${count} items. Return valid JSON.`;
                     // Extract items array from tool call arguments
                     const itemsArray = parsedArgs.items || [];
                     console.log(`✅ Extracted ${itemsArray.length} items from tool call`);
+                    console.log(`📋 First item preview:`, itemsArray[0] ? {
+                        type: itemsArray[0].type,
+                        title: itemsArray[0].title?.substring(0, 50),
+                        hasContent: !!itemsArray[0].content,
+                        hasExpandedContent: !!itemsArray[0].expandedContent
+                    } : 'No items');
                     
                     // Process and stream each item
                     for (let j = 0; j < itemsArray.length; j++) {
                         const itemData = itemsArray[j];
+                        
+                        // Validate item has required fields
+                        if (!itemData.title || itemData.title.trim().length === 0) {
+                            console.error(`❌ Item ${j + 1} missing title! ItemData:`, {
+                                type: itemData.type,
+                                title: itemData.title,
+                                hasContent: !!itemData.content,
+                                keys: Object.keys(itemData)
+                            });
+                        }
+                        
                         itemsData.push(itemData);
                         
                         // Stream this item immediately
                         const processedItem = {
                             id: `feed-${Date.now()}-${j}`,
                             type: itemData.type || 'did-you-know',
-                            title: itemData.title || `Fact ${j + 1}`,
+                            title: itemData.title && itemData.title.trim().length > 0 && !itemData.title.match(/^(Feed|Fact|Item)\s*\d+$/i)
+                                ? itemData.title 
+                                : `Untitled Item ${j + 1}`, // Better fallback that's obviously wrong
                             content: itemData.content || '',
                             expandedContent: itemData.expandedContent || '',
                             mnemonic: itemData.mnemonic || '',
@@ -471,7 +647,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                         items.push(processedItem);
                         
                         // ⚡ STREAM IMMEDIATELY: Emit item without images first for instant display
-                        eventCallback('item_generated', { 
+                        safeEventCallback('item_generated', { 
                             item: processedItem,
                             progress: { current: j + 1, total: itemsArray.length }
                         });
@@ -528,10 +704,23 @@ Generate exactly ${count} items. Return valid JSON.`;
             // Stream each parsed item
             for (let i = 0; i < itemsData.length; i++) {
                 const itemData = itemsData[i];
+                
+                // Validate item has required fields
+                if (!itemData.title || itemData.title.trim().length === 0) {
+                    console.error(`❌ Parsed item ${i + 1} missing title! ItemData:`, {
+                        type: itemData.type,
+                        title: itemData.title,
+                        hasContent: !!itemData.content,
+                        keys: Object.keys(itemData)
+                    });
+                }
+                
                 const processedItem = {
                     id: `feed-${Date.now()}-${i}`,
                     type: itemData.type || 'did-you-know',
-                    title: itemData.title || `Fact ${i + 1}`,
+                    title: itemData.title && itemData.title.trim().length > 0 && !itemData.title.match(/^(Feed|Fact|Item)\s*\d+$/i)
+                        ? itemData.title 
+                        : `Untitled Item ${i + 1}`, // Better fallback that's obviously wrong
                     content: itemData.content || '',
                     expandedContent: itemData.expandedContent || '',
                     mnemonic: itemData.mnemonic || '',
@@ -545,7 +734,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                 items.push(processedItem);
                 
                 // ⚡ STREAM IMMEDIATELY: Emit item without images first for instant display
-                eventCallback('item_generated', { 
+                safeEventCallback('item_generated', { 
                     item: processedItem,
                     progress: { current: i + 1, total: itemsData.length }
                 });
@@ -564,8 +753,15 @@ Generate exactly ${count} items. Return valid JSON.`;
         throw new Error('No items generated from LLM response');
     }
     
+    // ⚠️ CRITICAL: Enforce minimum item count
+    if (items.length < count) {
+        console.error(`❌ Feed: Insufficient items generated! Expected ${count}, got ${items.length}`);
+        console.error(`❌ LLM Model: ${response.model || 'unknown'}`);
+        throw new Error(`LLM generated only ${items.length} items, expected ${count}. The model may not support tool calling properly.`);
+    }
+    
     // Fetch images for feed items (in parallel) and emit each item as it completes
-    eventCallback('status', { message: 'Fetching images...' });
+    safeEventCallback('status', { message: 'Fetching images...' });
     
     // Determine which items should get AI-generated images (10% - 1 out of 10)
     const aiImageIndices = new Set();
@@ -623,7 +819,7 @@ Generate exactly ${count} items. Return valid JSON.`;
                     console.log(`🎨 Generating AI image ${Array.from(aiImageIndices).indexOf(idx) + 1}/${aiImageIndices.size} for: "${item.title.substring(0, 50)}..."`);
                     console.log(`🎨 Style: ${style.substring(0, 60)}...`);
                     
-                    eventCallback('status', { 
+                    safeEventCallback('status', { 
                         message: `Generating AI image ${Array.from(aiImageIndices).indexOf(idx) + 1}/${aiImageIndices.size}...` 
                     });
                     
@@ -805,25 +1001,25 @@ const completedItems = await Promise.all(
         
         // Only emit image update if image was added (avoid duplicate emissions)
         if (completedItem.image) {
-            eventCallback('item_updated', { 
+            safeEventCallback('item_updated', { 
                 item: completedItem,
                 field: 'image'
             });
         }
-        eventCallback('status', { message: `Completed ${completedCount} of ${items.length} items...` });
+        safeEventCallback('status', { message: `Completed ${completedCount} of ${items.length} items...` });
         
         return completedItem;
     })
 );
     
-eventCallback('status', { 
+safeEventCallback('status', { 
     message: `Generated ${items.length} items`
 });
 
 // Log AI image generation summary
 if (totalImageGenCost > 0) {
     console.log(`🎨 Total AI image generation cost: $${totalImageGenCost.toFixed(6)} for ${aiImageIndices.size} images`);
-    eventCallback('status', { 
+    safeEventCallback('status', { 
         message: `Generated ${aiImageIndices.size} AI images (cost: $${totalImageGenCost.toFixed(6)})`
     });
 }
@@ -867,6 +1063,23 @@ async function handler(event, responseStream, context) {
     const { createSSEStreamAdapter } = require('../streaming/sse-writer');
     const sseWriter = createSSEStreamAdapter(responseStream);
     
+    // Register this request for cancellation support
+    activeRequests.set(requestId, { 
+        cancelled: false,
+        startTime: Date.now()
+    });
+    
+    // Helper to check if request was cancelled
+    const isCancelled = () => {
+        const request = activeRequests.get(requestId);
+        return request ? request.cancelled : false;
+    };
+    
+    // Cleanup function
+    const cleanup = () => {
+        activeRequests.delete(requestId);
+    };
+    
     let userEmail = 'unknown';
     
     try {
@@ -884,11 +1097,17 @@ async function handler(event, responseStream, context) {
         
         userEmail = verifiedUser.email;
         
+        // Send request ID to frontend immediately so it can cancel if needed
+        sseWriter.writeEvent('started', {
+            requestId,
+            message: 'Feed generation started'
+        });
+        
         // Parse request body
         const body = JSON.parse(event.body || '{}');
         const swagContent = body.swagContent || [];
         const searchTerms = body.searchTerms || [];
-        const count = body.count || 5; // Reduced from 10 to 5 for higher quality with expanded content
+        const count = body.count || 3; // Generate 3 items at a time for deep, quality content with full web scraping
         const maturityLevel = body.maturityLevel || 'adult'; // Get maturity level from request
         const preferences = body.preferences || {
             searchTerms: [],
@@ -969,6 +1188,11 @@ async function handler(event, responseStream, context) {
             return;
         }
         
+        // Extract Tavily API key from user providers for search failover
+        const tavilyProvider = userProviders.providers?.find(p => p.type === 'tavily');
+        const tavilyKey = tavilyProvider?.apiKey || null;
+        console.log(`🔍 Search will use intelligent failover${tavilyKey ? ' with UI-provided Tavily key' : ' (no UI Tavily key)'}`);
+        
         // Generate feed items (pass providerPool directly as it's already in correct format)
         const result = await generateFeedItems(
             swagContent,
@@ -977,15 +1201,21 @@ async function handler(event, responseStream, context) {
             preferences,
             providerPool, // Pass provider array directly
             (eventType, eventData) => {
+                if (isCancelled()) {
+                    throw new Error('REQUEST_CANCELLED');
+                }
                 sseWriter.writeEvent(eventType, eventData);
             },
             {
                 userEmail,
+                tavilyKey, // Pass UI-provided Tavily key for search failover
                 accessToken: verifiedUser.accessToken,
                 providerPool,
                 requestId,
                 awsRequestId: context?.awsRequestId,
-                memoryLimitInMB: context?.memoryLimitInMB
+                memoryLimitInMB: context?.memoryLimitInMB,
+                responseStream, // Pass response stream to detect disconnections
+                isCancelled // Pass cancellation checker function
             },
             maturityLevel // Pass maturity level for content filtering
         );
@@ -1097,12 +1327,23 @@ async function handler(event, responseStream, context) {
         console.log(`✅ Feed generation complete: ${result.items.length} items in ${Date.now() - startTime}ms, cost: $${totalCost.toFixed(6)} (LLM: $${llmCost.toFixed(6)}, Images: $${imageGenCost.toFixed(6)})`);
         
     } catch (error) {
-        console.error('Feed generation error:', error);
-        sseWriter.writeEvent('error', {
-            error: error.message || 'Feed generation failed',
-            details: error.stack
-        });
+        // Check if this is a cancellation - don't log as error
+        if (error.message === 'REQUEST_CANCELLED' || isCancelled()) {
+            console.log('🛑 Request cancelled by user');
+            // Don't send error event - client may have disconnected
+        } else {
+            console.error('Feed generation error:', error);
+            try {
+                sseWriter.writeEvent('error', {
+                    error: error.message || 'Feed generation failed',
+                    details: error.stack
+                });
+            } catch (writeError) {
+                console.log('🛑 Could not write error event (client disconnected)');
+            }
+        }
     } finally {
+        cleanup(); // Remove from active requests
         responseStream.end();
     }
 }
@@ -1381,11 +1622,75 @@ async function deleteFeedItemHandler(event) {
     }
 }
 
+/**
+ * Cancel an active feed generation request
+ * Called when user clicks stop button
+ */
+async function cancelFeedGenerationHandler(event) {
+    try {
+        // Extract request ID from path (works in both Lambda and local dev)
+        let requestId = event.pathParameters?.requestId;
+        
+        // If pathParameters not set (local dev), extract from path manually
+        if (!requestId && event.path) {
+            const match = event.path.match(/\/feed\/cancel\/(.+)$/);
+            if (match) {
+                requestId = match[1];
+            }
+        }
+        
+        console.log('🛑 Cancel request for ID:', requestId);
+        
+        if (!requestId) {
+            return {
+                statusCode: 400,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ error: 'Request ID required' })
+            };
+        }
+        
+        const request = activeRequests.get(requestId);
+        
+        if (request) {
+            request.cancelled = true;
+            console.log(`🛑 Cancelled feed generation request: ${requestId}`);
+            
+            return {
+                statusCode: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    cancelled: true,
+                    requestId,
+                    message: 'Request cancelled successfully'
+                })
+            };
+        } else {
+            return {
+                statusCode: 404,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    cancelled: false,
+                    requestId,
+                    message: 'Request not found or already completed'
+                })
+            };
+        }
+    } catch (error) {
+        console.error('Error cancelling request:', error);
+        return {
+            statusCode: 500,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: error.message })
+        };
+    }
+}
+
 module.exports = {
     handler,
     generateFeedItems,
     getFeedItemsHandler,
     saveFeedItemHandler,
     voteFeedItemHandler,
-    deleteFeedItemHandler
+    deleteFeedItemHandler,
+    cancelFeedGenerationHandler
 };

@@ -352,6 +352,20 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             return;
         }
         
+        // Cancel feed generation
+        if (method === 'POST' && path.startsWith('/feed/cancel/')) {
+            console.log('Routing to cancel feed generation endpoint');
+            const response = await feedEndpoint.cancelFeedGenerationHandler(event);
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: response.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
+            return;
+        }
+        
         // Get stored feed items
         if (method === 'GET' && path === '/feed/items') {
             console.log('Routing to get feed items endpoint');

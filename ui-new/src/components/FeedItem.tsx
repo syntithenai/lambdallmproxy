@@ -12,6 +12,7 @@ import { useToast } from './ToastManager';
 import { ReadButton } from './ReadButton';
 import type { FeedItem } from '../types/feed';
 import { feedDB } from '../db/feedDb';
+import { compressToEncodedURIComponent } from 'lz-string';
 import { 
   Bookmark, 
   Trash2, 
@@ -218,24 +219,41 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
     // This ensures shared links work even when developing locally
     const baseUrl = import.meta.env.VITE_PUBLIC_URL || 'https://ai.syntithenai.com';
     
+    // Aggressively truncate expandedContent to just first 150 chars (preview only)
+    const truncateExpandedContent = (content: string | undefined) => {
+      if (!content) return undefined;
+      const maxLength = 150; // Only keep first ~2 sentences for preview
+      if (content.length <= maxLength) return content;
+      return content.slice(0, maxLength) + '...';
+    };
+    
+    // Also truncate sources to just URL and short title
+    const truncateSources = (sources: any) => {
+      if (!sources || !Array.isArray(sources)) return [];
+      return sources.slice(0, 3).map(s => ({
+        url: typeof s === 'string' ? s : s.url,
+        title: typeof s === 'string' ? s : (s.title?.slice(0, 60) || s.url)
+      }));
+    };
+    
     // Create a shareable URL with feed item data encoded
+    // We use aggressive compression and truncation to avoid 414 URI Too Long errors
     const shareData = {
       type: 'feed_item',
       title: item.title,
-      content: item.content,
-      topics: item.topics,
+      content: item.content?.slice(0, 200), // Truncate main content too
+      topics: item.topics?.slice(0, 5), // Limit to 5 topics
       image: item.image,
-      sources: item.sources,
-      expandedContent: item.expandedContent, // Include deep dive content
-      mnemonic: item.mnemonic // Include memory aid
+      sources: truncateSources(item.sources),
+      // Truncate expandedContent to just 150 chars (first couple sentences)
+      expandedContent: truncateExpandedContent(item.expandedContent),
+      // Exclude mnemonic entirely to save space
     };
-    // Use Unicode-safe base64 encoding
-    // First convert to UTF-8, then to base64
+    
+    // Use lz-string compression + URI encoding
     const jsonString = JSON.stringify(shareData);
-    const encoded = btoa(encodeURIComponent(jsonString).replace(/%([0-9A-F]{2})/g, (_match, p1) => {
-      return String.fromCharCode(parseInt(p1, 16));
-    }));
-    return `${baseUrl}/feed/share/${encoded}`;
+    const compressed = compressToEncodedURIComponent(jsonString);
+    return `${baseUrl}/feed/share/${compressed}`;
   };
 
   /**

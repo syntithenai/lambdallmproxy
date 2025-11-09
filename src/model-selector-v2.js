@@ -79,8 +79,9 @@ function buildModelRotationSequence(uiProviders, requirements) {
     const sequence = [];
     
     // Filter to enabled providers with API keys
+    // Note: Environment providers don't have 'enabled' property, treat them as enabled unless explicitly disabled
     const enabledProviders = uiProviders.filter(p => 
-        p.enabled === true && p.apiKey && p.type
+        (p.enabled !== false) && p.apiKey && p.type
     );
     
     if (enabledProviders.length === 0) {

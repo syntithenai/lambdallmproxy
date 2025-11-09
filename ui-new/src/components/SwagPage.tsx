@@ -18,6 +18,7 @@ import { ReadButton } from './ReadButton';
 import { FileUploadDialog } from './FileUploadDialog';
 import SnippetShareDialog from './SnippetShareDialog';
 import { QuizCard } from './QuizCard';
+import { Brain } from 'lucide-react';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
   createGoogleDocInFolder, 
@@ -1951,7 +1952,6 @@ export const SwagPage: React.FC = () => {
                         content={snippet.content} 
                         snippetId={snippet.id}
                         snippetTags={snippet.tags || []}
-                        onImageEdit={handleImageEdit}
                       />
                     </div>
                   </div>
@@ -2020,16 +2020,141 @@ export const SwagPage: React.FC = () => {
                         <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
                       </svg>
                     </button>
+                    
+                    {/* Quiz Button */}
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        console.log('🧠 Quiz button clicked for snippet:', snippet.title);
+                        // Generate quiz directly from this snippet's content
+                        try {
+                          setIsGeneratingQuiz(true);
+                          
+                          const token = await getToken();
+                          if (!token) {
+                            console.error('❌ No token available');
+                            showError('Authentication required. Please sign in.');
+                            setIsGeneratingQuiz(false);
+                            return;
+                          }
+                          
+                          console.log('✅ Token obtained');
+                          
+                          // Get enabled providers from settings (empty array if none configured)
+                          // Backend will use environment providers if frontend providers are empty
+                          const enabledProviders = settings?.providers?.filter(p => p.enabled !== false) || [];
+                          
+                          if (enabledProviders.length > 0) {
+                            console.log(`✅ Using ${enabledProviders.length} frontend provider(s):`, 
+                              enabledProviders.map(p => p.type));
+                          } else {
+                            console.log('ℹ️ No frontend providers - backend will use environment providers');
+                          }
+
+                          const content = `## ${snippet.title}\n\n${snippet.content}`;
+                          
+                          if (content.trim().length === 0) {
+                            showWarning('Snippet is empty. Please add content first.');
+                            setIsGeneratingQuiz(false);
+                            return;
+                          }
+
+                          console.log(`🎯 Generating quiz from snippet: ${snippet.title}`);
+                          
+                          // Show toast notification that quiz generation has started
+                          showSuccess('Generating quiz...');
+
+                          const enrichment = true;
+                          const startTime = Date.now();
+                          
+                          // Initialize quiz but DON'T open modal yet
+                          const quiz = {
+                            title: `Quiz: ${snippet.title}`,
+                            questions: []
+                          };
+                          
+                          // Set initial quiz state but keep modal closed
+                          setCurrentQuiz(quiz);
+                          
+                          // Generate quiz with streaming
+                          await generateQuizStreaming(
+                            content,
+                            enrichment,
+                            enabledProviders,
+                            token,
+                            (question) => {
+                              // Just update the UI state - don't save to DB yet
+                              setCurrentQuiz((prevQuiz: any) => {
+                                if (!prevQuiz) return prevQuiz;
+                                return {
+                                  ...prevQuiz,
+                                  questions: [...prevQuiz.questions, question]
+                                };
+                              });
+                            },
+                            async (questionsGenerated) => {
+                              console.log(`✅ Quiz complete: ${questionsGenerated} questions`);
+                              
+                              // Save the complete quiz to DB and set metadata
+                              await setCurrentQuiz((prevQuiz: any) => {
+                                if (prevQuiz && prevQuiz.questions.length > 0) {
+                                  quizDB.saveGeneratedQuiz(
+                                    prevQuiz.title,
+                                    [snippet.id],
+                                    prevQuiz.questions.length,
+                                    enrichment,
+                                    prevQuiz
+                                  ).then(id => {
+                                    console.log('✅ Quiz saved with ID:', id);
+                                    
+                                    // Set metadata so modal can open
+                                    setQuizMetadata({
+                                      snippetIds: [snippet.id],
+                                      startTime,
+                                      enrichment,
+                                      quizId: id
+                                    });
+                                  }).catch(err => console.error('Failed to save quiz to DB:', err));
+                                }
+                                return prevQuiz;
+                              });
+                              
+                              showSuccess(`Quiz ready with ${questionsGenerated} questions!`);
+                              setIsGeneratingQuiz(false);
+                              // Open the quiz modal now that generation is complete
+                              setShowQuizModal(true);
+                            },
+                            (error) => {
+                              console.error('Quiz generation error:', error);
+                              showError(error);
+                              setIsGeneratingQuiz(false);
+                              setShowQuizModal(false);
+                              setCurrentQuiz(null);
+                            }
+                          );
+                        } catch (error) {
+                          console.error('Failed to generate quiz:', error);
+                          showError('Failed to generate quiz');
+                          setIsGeneratingQuiz(false);
+                        }
+                      }}
+                      className="p-2 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors"
+                      title="Generate quiz from this snippet"
+                      aria-label="Generate Quiz"
+                    >
+                      <Brain className="w-5 h-5" />
+                    </button>
+                    
+                    {/* Edit Button */}
                     <button
                       onClick={() => handleEditSnippet(snippet)}
-                      className="flex-1 p-2 md:px-3 md:py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1.5"
+                      className="p-2 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                       title="Edit snippet"
                       aria-label="Edit"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
-                      <span className="hidden md:inline">Edit</span>
                     </button>
                   </div>
                 </div>
@@ -2565,9 +2690,7 @@ export const SwagPage: React.FC = () => {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
+              <Brain className="w-4 h-4" />
             )}
             <span className="hidden md:inline">{isGeneratingQuiz ? 'Generating...' : 'Quiz'}</span>
           </button>

@@ -347,13 +347,19 @@ Generate a quiz with exactly 10 questions. Each question must test understanding
         console.warn(`⚠️ Quiz has ${quiz.questions.length} questions, expected 10`);
     }
     
-    // Validate each question
+    // Validate each question and map correctChoiceId to answerId if needed
     quiz.questions.forEach((q, index) => {
         if (!q.id) q.id = `q${index + 1}`;
         if (!q.prompt) throw new Error(`Question ${index + 1} missing prompt`);
         if (!Array.isArray(q.choices) || q.choices.length !== 4) {
             throw new Error(`Question ${index + 1} must have exactly 4 choices`);
         }
+        
+        // Map correctChoiceId to answerId (for backward compatibility with LLM prompts)
+        if (q.correctChoiceId && !q.answerId) {
+            q.answerId = q.correctChoiceId;
+        }
+        
         if (!q.answerId) throw new Error(`Question ${index + 1} missing answerId`);
         
         // Validate choices
@@ -886,14 +892,16 @@ async function handleGetQuiz(event) {
  * Questions are emitted as they're parsed from the streaming LLM response
  */
 async function handleQuizGenerateStream(event, eventCallback) {
-    const { IncrementalJSONParser } = require('../utils/incremental-json-parser');
     const { llmResponsesWithTools } = require('../llm_tools_adapter');
     
     const startTime = Date.now();
     
     try {
+        // Extract auth header
+        const authHeader = event.headers?.authorization || event.headers?.Authorization;
+        
         // Authenticate user
-        const authResult = await authenticateRequest(event);
+        const authResult = await authenticateRequest(authHeader);
         
         if (!authResult.authenticated) {
             eventCallback('error', { error: 'Authentication required' });
@@ -920,14 +928,16 @@ async function handleQuizGenerateStream(event, eventCallback) {
             return;
         }
         
-        // Build provider pool
+        // Build provider pool - use backend providers if no frontend providers sent
         const userProviders = Array.isArray(providers) ? providers : [];
+        
+        // If no user providers, use backend environment providers (all authenticated users allowed)
         if (userProviders.length === 0) {
-            eventCallback('error', { error: 'No providers configured' });
-            return;
+            console.log('⚠️ No frontend providers sent - will use backend environment providers');
         }
         
-        const providerPool = buildProviderPool(userProviders, authResult.authorized);
+        // Pass true for isAuthorized to allow backend providers for all authenticated users
+        const providerPool = buildProviderPool(userProviders, true);
         
         if (providerPool.length === 0) {
             eventCallback('error', { error: 'No valid providers available' });
@@ -937,10 +947,20 @@ async function handleQuizGenerateStream(event, eventCallback) {
         // Send status update
         eventCallback('status', { message: 'Generating quiz questions...' });
         
-        // Build quiz generation prompt
-        const quizPrompt = `You are a quiz generator. Create a 10-question multiple-choice quiz based on the provided content.
+        // Build quiz generation prompt - adapted from non-streaming version
+        // Content structure: title + short (snippet) + detailed information (long)
+        const contentText = title 
+            ? `TITLE: ${title}\n\n${content}`
+            : content;
+        
+        const quizPrompt = `Create an educational multiple-choice quiz based on the following content.
 
-CRITICAL: Output ONLY valid JSON in this exact format (no markdown, no extra text):
+Content:
+${contentText}
+
+Generate a quiz with exactly 10 questions. Each question must test understanding (not just recall), have exactly 4 answer choices, one correct answer, and a brief explanation. Vary difficulty levels and make distractors plausible but incorrect.
+
+Output ONLY valid JSON in this exact format:
 {
   "questions": [
     {
@@ -956,43 +976,26 @@ CRITICAL: Output ONLY valid JSON in this exact format (no markdown, no extra tex
       "explanation": "Brief explanation"
     }
   ]
-}
+}`;
 
-Rules:
-- NO trailing commas
-- NO markdown code fences
-- EXACTLY 10 questions
-- Each question has EXACTLY 4 choices
-- Brief explanations (1-2 sentences)
 
-Generate a 10-question quiz for this content:
-
-TITLE: ${title || 'Untitled'}
-
-CONTENT:
-${content}
-
-${topics ? `TOPICS: ${topics}` : ''}
-`;
-
-        // Build model sequence
-        const uiProviders = userProviders.map(p => ({
-            type: p.type,
-            apiKey: p.apiKey,
-            enabled: true
-        })).filter(p => p.type && p.apiKey);
-        
+        // Use the provider pool for model selection (includes backend providers)
         const estimatedTokens = estimateTokenRequirements(
             [{ role: 'user', content: quizPrompt }],
             false
         );
         
-        const modelSequence = buildModelRotationSequence(uiProviders, {
+        const modelSequence = buildModelRotationSequence(providerPool, {
             needsTools: false,
             needsVision: false,
             estimatedTokens,
             optimization: 'cheap' // Use cheaper models for quiz generation
         });
+        
+        console.log(`📊 Model sequence length: ${modelSequence.length}`);
+        if (modelSequence.length > 0) {
+            console.log(`📊 Available models: ${modelSequence.map(m => m.model).join(', ')}`);
+        }
         
         if (modelSequence.length === 0) {
             eventCallback('error', { error: 'No available models for quiz generation' });
@@ -1000,72 +1003,73 @@ ${topics ? `TOPICS: ${topics}` : ''}
         }
         
         const selectedModel = modelSequence[0];
-        console.log(`🎯 Using model for streaming quiz: ${selectedModel.model}`);
+        console.log(`🎯 Using model for streaming quiz: ${selectedModel.model} (provider: ${selectedModel.provider || 'unknown'})`);
         
-        // Initialize incremental JSON parser
-        const parser = new IncrementalJSONParser();
         let questionsSent = 0;
         
-        // Call LLM with streaming enabled
+        // Call LLM (non-streaming for now - llmResponsesWithTools doesn't support onChunk callback)
         try {
             const response = await llmResponsesWithTools({
                 model: selectedModel.model,
                 input: [
                     {
-                        role: 'system',
-                        content: 'You are a quiz generator. Create a 10-question multiple-choice quiz based on the provided content.\n\nCRITICAL: Output ONLY valid JSON in this exact format (no markdown, no extra text):\n{\n  "questions": [\n    {\n      "id": "q1",\n      "prompt": "Question text?",\n      "choices": [\n        {"id": "a", "text": "Choice A"},\n        {"id": "b", "text": "Choice B"},\n        {"id": "c", "text": "Choice C"},\n        {"id": "d", "text": "Choice D"}\n      ],\n      "correctChoiceId": "a",\n      "explanation": "Brief explanation"\n    }\n  ]\n}\n\nRules:\n- NO trailing commas\n- NO markdown code fences\n- EXACTLY 10 questions\n- Each question has EXACTLY 4 choices\n- Brief explanations (1-2 sentences)'
-                    },
-                    {
                         role: 'user',
-                        content: `Generate a 10-question quiz for this content:\n\nTITLE: ${title || 'Untitled'}\n\nCONTENT:\n${content}\n\n${topics ? `TOPICS: ${topics}\n\n` : ''}`
+                        content: quizPrompt
                     }
                 ],
                 options: {
                     apiKey: selectedModel.apiKey,
                     temperature: 0.7,
                     maxTokens: 5000,
-                    stream: true, // Enable streaming!
-                    onChunk: (chunk) => {
-                        // Process each streaming chunk
-                        const newQuestions = parser.addChunk(chunk);
-                        
-                        // Emit each new complete question immediately
-                        newQuestions.forEach(question => {
-                            questionsSent++;
-                            console.log(`✅ Question ${questionsSent} complete, emitting...`);
-                            eventCallback('question_generated', {
-                                question,
-                                index: questionsSent - 1,
-                                total: 10
-                            });
-                        });
-                    }
+                    stream: false  // Disabled - llmResponsesWithTools doesn't support streaming callbacks
                 }
             });
             
-            // Finalize parsing - extract any remaining questions
-            const finalQuestions = parser.finalize();
-            finalQuestions.forEach(question => {
-                if (questionsSent < 10) {
-                    questionsSent++;
-                    console.log(`✅ Final question ${questionsSent} complete, emitting...`);
-                    eventCallback('question_generated', {
-                        question,
-                        index: questionsSent - 1,
-                        total: 10
-                    });
+            console.log(`📥 Response received from LLM`);
+            
+            // Extract response text
+            const responseText = response.content || response.text || '';
+            console.log(`📊 Response length: ${responseText.length} characters`);
+            
+            // Parse JSON directly (non-streaming mode)
+            let questions = [];
+            try {
+                // Remove markdown code fences if present
+                let jsonText = responseText.trim();
+                if (jsonText.startsWith('```json')) {
+                    jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+                } else if (jsonText.startsWith('```')) {
+                    jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
                 }
-            });
+                
+                const parsed = JSON.parse(jsonText);
+                questions = parsed.questions || [];
+                console.log(`✅ Parsed ${questions.length} questions from JSON`);
+            } catch (parseError) {
+                console.error('❌ JSON parse error:', parseError.message);
+                console.log('📄 Response text preview:', responseText.substring(0, 500));
+            }
             
-            // Get all questions
-            const allQuestions = parser.getAllItems();
+            console.log(`📊 Total questions parsed: ${questions.length}`);
             
-            if (allQuestions.length === 0) {
+            if (questions.length === 0) {
+                console.log(`❌ No questions generated - LLM response may have been invalid JSON`);
+                console.log(`📄 Response text preview: ${responseText.substring(0, 500)}`);
                 eventCallback('error', { error: 'Failed to generate any valid questions' });
                 return;
             }
             
-            console.log(`✅ Generated ${allQuestions.length} questions total`);
+            console.log(`✅ Generated ${questions.length} questions total`);
+            
+            // Emit all questions at once
+            questions.forEach((question, index) => {
+                console.log(`✅ Emitting question ${index + 1}: ${question.prompt.substring(0, 50)}...`);
+                eventCallback('question_generated', {
+                    question,
+                    index,
+                    total: questions.length
+                });
+            });
             
             // Calculate cost
             const usage = response.usage || {};
@@ -1097,12 +1101,12 @@ ${topics ? `TOPICS: ${topics}` : ''}
             
             // Send completion event
             eventCallback('complete', {
-                questionsGenerated: allQuestions.length,
+                questionsGenerated: questions.length,
                 duration: Date.now() - startTime
             });
             
         } catch (error) {
-            console.error('❌ Streaming quiz generation error:', error);
+            console.error('❌ Quiz generation error:', error);
             eventCallback('error', {
                 error: error.message || 'Quiz generation failed',
                 details: process.env.NODE_ENV === 'development' ? error.stack : undefined

@@ -181,34 +181,52 @@ class RAGDatabase {
       return { hasEmbedding: false, chunkCount: 0, chunks: [] };
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([CHUNKS_STORE, METADATA_STORE], 'readonly');
-      
-      // Get chunks
-      const chunksStore = transaction.objectStore(CHUNKS_STORE);
-      const chunksIndex = chunksStore.index('snippet_id');
-      const chunksRequest = chunksIndex.getAll(IDBKeyRange.only(snippetId));
+    return new Promise((resolve) => {
+      try {
+        // Check if database connection is still valid before creating transaction
+        if (!this.db || this.db.name === undefined) {
+          resolve({ hasEmbedding: false, chunkCount: 0, chunks: [] });
+          return;
+        }
 
-      // Get metadata
-      const metadataStore = transaction.objectStore(METADATA_STORE);
-      const metadataRequest = metadataStore.get(snippetId);
+        const transaction = this.db!.transaction([CHUNKS_STORE, METADATA_STORE], 'readonly');
+        
+        // Handle transaction errors
+        transaction.onerror = () => {
+          console.warn('Transaction error in getEmbeddingDetails:', transaction.error);
+          resolve({ hasEmbedding: false, chunkCount: 0, chunks: [] });
+        };
+        
+        transaction.onabort = () => {
+          console.warn('Transaction aborted in getEmbeddingDetails');
+          resolve({ hasEmbedding: false, chunkCount: 0, chunks: [] });
+        };
+        
+        // Get chunks
+        const chunksStore = transaction.objectStore(CHUNKS_STORE);
+        const chunksIndex = chunksStore.index('snippet_id');
+        const chunksRequest = chunksIndex.getAll(IDBKeyRange.only(snippetId));
 
-      transaction.oncomplete = () => {
-        const chunks = chunksRequest.result as EmbeddingChunk[];
-        const metadata = metadataRequest.result as ChunkMetadata | undefined;
+        // Get metadata
+        const metadataStore = transaction.objectStore(METADATA_STORE);
+        const metadataRequest = metadataStore.get(snippetId);
 
-        resolve({
-          hasEmbedding: chunks.length > 0,
-          chunkCount: chunks.length,
-          chunks: chunks.sort((a, b) => a.chunk_index - b.chunk_index),
-          metadata
-        });
-      };
+        transaction.oncomplete = () => {
+          const chunks = chunksRequest.result as EmbeddingChunk[];
+          const metadata = metadataRequest.result as ChunkMetadata | undefined;
 
-      transaction.onerror = () => {
-        console.error('Error getting embedding details:', transaction.error);
-        reject(transaction.error);
-      };
+          resolve({
+            hasEmbedding: chunks.length > 0,
+            chunkCount: chunks.length,
+            chunks: chunks.sort((a, b) => a.chunk_index - b.chunk_index),
+            metadata
+          });
+        };
+      } catch (error) {
+        // Catch any synchronous errors (like InvalidStateError when DB is closing)
+        console.warn('Error in getEmbeddingDetails:', error);
+        resolve({ hasEmbedding: false, chunkCount: 0, chunks: [] });
+      }
     });
   }
 

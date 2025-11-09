@@ -9,6 +9,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { useAuth } from '../contexts/AuthContext';
+import { decompressFromEncodedURIComponent } from 'lz-string';
 
 interface SharedFeedItem {
   type: 'feed_item';
@@ -16,25 +17,25 @@ interface SharedFeedItem {
   content: string;
   topics: string[];
   image?: string;
-  sources?: string[];
-  expandedContent?: string; // Deep dive content
-  mnemonic?: string; // Memory aid
+  sources?: Array<string | { url: string; title: string }>; // Support both formats
+  expandedContent?: string; // Deep dive content (truncated preview in shared URLs)
+  mnemonic?: string; // Memory aid (may be excluded from shared URLs)
 }
 
 const getFeedItemDataFromUrl = (): SharedFeedItem | null => {
   try {
-    // Check path-based format: /feed/share/base64data
+    // Check path-based format: /feed/share/compressed_data
     const path = window.location.pathname;
     const match = path.match(/\/feed\/share\/(.+)/);
     if (match && match[1]) {
-      // Use Unicode-safe base64 decoding
-      const base64 = match[1];
-      const decoded = decodeURIComponent(
-        atob(base64).split('').map(c => {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join('')
-      );
-      return JSON.parse(decoded) as SharedFeedItem;
+      // Use lz-string decompression
+      const compressed = match[1];
+      const decompressed = decompressFromEncodedURIComponent(compressed);
+      if (!decompressed) {
+        console.error('Failed to decompress feed item data');
+        return null;
+      }
+      return JSON.parse(decompressed) as SharedFeedItem;
     }
     return null;
   } catch (error) {
@@ -206,18 +207,22 @@ export const SharedFeedItemViewer: React.FC = () => {
                   📚 Sources
                 </h3>
                 <ul className="space-y-2">
-                  {feedItem.sources.map((source, index) => (
-                    <li key={index}>
-                      <a
-                        href={source}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 dark:text-blue-400 hover:underline break-all text-sm"
-                      >
-                        {source}
-                      </a>
-                    </li>
-                  ))}
+                  {feedItem.sources.map((source, index) => {
+                    const url = typeof source === 'string' ? source : source.url;
+                    const title = typeof source === 'string' ? source : (source.title || source.url);
+                    return (
+                      <li key={index}>
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 dark:text-blue-400 hover:underline break-all text-sm"
+                        >
+                          {title}
+                        </a>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}

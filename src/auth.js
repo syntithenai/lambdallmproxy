@@ -188,10 +188,13 @@ async function authenticateRequest(authHeader) {
         };
     }
     
+    // Ensure authHeader is a string (AWS Lambda can pass headers as arrays)
+    const authHeaderStr = Array.isArray(authHeader) ? authHeader[0] : String(authHeader);
+    
     // Extract token from Bearer scheme and trim whitespace/newlines
-    const token = (authHeader.startsWith('Bearer ') 
-        ? authHeader.substring(7) 
-        : authHeader).trim().replace(/[\r\n]/g, '');
+    const token = (authHeaderStr.startsWith('Bearer ') 
+        ? authHeaderStr.substring(7) 
+        : authHeaderStr).trim().replace(/[\r\n]/g, '');
     
     // Try to verify as JWT ID token first
     let user = await verifyGoogleToken(token);

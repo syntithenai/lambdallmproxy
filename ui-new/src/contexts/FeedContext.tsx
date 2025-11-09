@@ -89,6 +89,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]); // Filter Swag by these tags
   const [lastSearchCriteria, setLastSearchCriteria] = useState<string[] | null>(null); // Track last search for infinite scroll
   const [abortController, setAbortController] = useState<AbortController | null>(null); // For cancelling generation
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null); // Track current generation request ID
 
   // Use refs to access latest values without causing re-renders
   const snippetsRef = useRef(snippets);
@@ -217,21 +218,6 @@ export function FeedProvider({ children }: FeedProviderProps) {
       setError(null);
       setGenerationStatus('Preparing to generate feed...');
 
-      // Get Swag content - filter by selected tags if any
-      let filteredSnippets = snippetsRef.current;
-      
-      // Apply tag filter if tags are selected
-      if (selectedTags.length > 0) {
-        filteredSnippets = filteredSnippets.filter(snippet => 
-          snippet.tags && snippet.tags.some(tag => selectedTags.includes(tag))
-        );
-        console.log(`🏷️ Filtered by tags [${selectedTags.join(', ')}]: ${filteredSnippets.length} snippets`);
-      }
-      
-      // Get last 20 snippets from filtered set
-      const swagContent = filteredSnippets.slice(-20).map(s => s.content || '');
-      console.log('📚 Swag items:', swagContent.length);
-
       // Priority order for search terms:
       // 1. User-provided interests (from prompt/tag click) - highest priority
       // 2. Last search criteria (for infinite scroll continuation) - second priority
@@ -270,25 +256,32 @@ export function FeedProvider({ children }: FeedProviderProps) {
       const maturityLevel = preferencesRef.current.maturityLevel || 'adult';
       console.log('🎓 Using maturity level:', maturityLevel);
 
-      // Generate new items via backend - use ref to avoid dependency
-      // Use snippet tags instead of preferences.searchTerms
-      const preferencesWithTags = {
-        ...preferencesRef.current,
-        searchTerms: searchTermsForGeneration
-      };
-      console.log('🔍 Calling generateFeedItems with preferences:', preferencesWithTags);
+      // Generate new items via backend - ONLY send search terms, no swag/preferences/topics
+      console.log('🔍 Calling generateFeedItems with search terms only:', searchTermsForGeneration);
       const newItems = await generateFeedItems(
         token,
-        swagContent,
-        preferencesWithTags,
+        [], // No swag content
+        { 
+          searchTerms: searchTermsForGeneration,
+          likedTopics: [], // Don't send liked topics
+          dislikedTopics: [], // Don't send disliked topics
+          lastGenerated: '' // Don't send last generated timestamp
+        }, // Only search terms, no other preferences
         3, // Generate 3 items per batch
         maturityLevel,
         // Progress callback - update UI as items arrive
         (event) => {
           console.log('📨 Feed event:', event.type, event);
           
+          // Started event - capture request ID for cancellation
+          if (event.type === 'started') {
+            console.log('🆔 Request ID:', event.requestId);
+            setCurrentRequestId(event.requestId || null);
+            if (event.message) setGenerationStatus(event.message);
+          }
+          
           // Context preparation event
-          if (event.type === 'context_prepared') {
+          else if (event.type === 'context_prepared') {
             console.log('📦 Context:', {
               swagItems: event.swagCount,
               searchTerms: event.searchTermsCount,
@@ -425,6 +418,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
             if (event.cost !== undefined) {
               setGenerationStatus(`Complete! Cost: $${event.cost.toFixed(6)}`);
             }
+            setCurrentRequestId(null); // Clear request ID on completion
           }
           
           // Error event
@@ -432,6 +426,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
             console.error('❌ Generation error:', event.error);
             setError(event.error || 'Generation failed');
             setGenerationStatus('Generation failed');
+            setCurrentRequestId(null); // Clear request ID on error
           }
         },
         controller.signal // Pass abort signal for cancellation
@@ -775,11 +770,43 @@ export function FeedProvider({ children }: FeedProviderProps) {
   /**
    * Stop ongoing feed generation
    */
-  const stopGeneration = useCallback(() => {
+  const stopGeneration = useCallback(async () => {
     console.log('🛑 stopGeneration called');
+    console.log('🛑 currentRequestId:', currentRequestId);
     console.log('🛑 abortController exists:', !!abortController);
     console.log('🛑 isGenerating:', isGenerating);
     
+    // Call cancel endpoint if we have a request ID
+    if (currentRequestId) {
+      try {
+        const token = getToken();
+        if (token) {
+          const apiUrl = await import('../utils/api').then(m => m.getCachedApiBase());
+          console.log('🛑 Calling cancel endpoint for request:', currentRequestId);
+          
+          const response = await fetch(`${apiUrl}/feed/cancel/${currentRequestId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log('✅ Cancel response:', result);
+          } else {
+            console.warn('⚠️ Cancel request failed:', response.status);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error calling cancel endpoint:', error);
+      }
+      
+      setCurrentRequestId(null);
+    }
+    
+    // Also abort the fetch request
     if (abortController) {
       console.log('🛑 Calling abort()...');
       abortController.abort();
@@ -793,7 +820,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
       setIsGenerating(false);
       setGenerationStatus('');
     }
-  }, [abortController, isGenerating, showWarning]);
+  }, [currentRequestId, abortController, isGenerating, showWarning, getToken]);
 
   /**
    * Clear all feed items (without regenerating)

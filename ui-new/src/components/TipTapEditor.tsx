@@ -4,8 +4,16 @@ import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
+import { marked } from 'marked';
+import TurndownService from 'turndown';
 import { imageStorage } from '../utils/imageStorage';
 import '../styles/tiptap-editor.css';
+
+// Initialize turndown for HTML to Markdown conversion
+const turndownService = new TurndownService({
+  headingStyle: 'atx',
+  codeBlockStyle: 'fenced'
+});
 
 interface TipTapEditorProps {
   value: string;
@@ -39,23 +47,58 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
 }) => {
   const [displayValue, setDisplayValue] = useState(value);
 
-  // Load images from IndexedDB when value changes
-  useEffect(() => {
-    const loadImages = async () => {
-      if (!value.includes('swag-image://')) {
-        setDisplayValue(value);
-        return;
-      }
+  // Helper function to detect if content is markdown (not HTML)
+  const isMarkdown = (content: string): boolean => {
+    // If it starts with < it's probably HTML
+    if (content.trim().startsWith('<')) return false;
+    
+    // Check for common markdown patterns
+    const markdownPatterns = [
+      /^#{1,6}\s/m,        // Headers
+      /^\*\*.*\*\*/m,      // Bold
+      /^\*.*\*/m,          // Italic
+      /^\[.*\]\(.*\)/m,    // Links
+      /^```/m,             // Code blocks
+      /^[-*+]\s/m,         // Lists
+      /^>\s/m,             // Blockquotes
+    ];
+    
+    return markdownPatterns.some(pattern => pattern.test(content));
+  };
 
+  // Convert markdown to HTML if needed
+  const processContent = async (content: string): Promise<string> => {
+    if (!content) return '';
+    
+    // First, load images from IndexedDB if present
+    let processedContent = content;
+    if (content.includes('swag-image://')) {
       try {
-        const loadedContent = await imageStorage.processContentForDisplay(value);
-        setDisplayValue(loadedContent);
+        processedContent = await imageStorage.processContentForDisplay(content);
       } catch (error) {
         console.error('Failed to load images:', error);
-        setDisplayValue(value);
       }
+    }
+    
+    // Then convert markdown to HTML if it's markdown
+    if (isMarkdown(processedContent)) {
+      try {
+        processedContent = await marked.parse(processedContent);
+      } catch (error) {
+        console.error('Failed to convert markdown:', error);
+      }
+    }
+    
+    return processedContent;
+  };
+
+  // Load images from IndexedDB when value changes
+  useEffect(() => {
+    const loadContent = async () => {
+      const processed = await processContent(value);
+      setDisplayValue(processed);
     };
-    loadImages();
+    loadContent();
   }, [value]);
 
   const editor = useEditor({
@@ -83,9 +126,11 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
     editable,
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
+      // Convert HTML back to markdown for storage
+      const markdown = turndownService.turndown(html);
       // Note: We don't process images on every update (too expensive)
       // Images are processed when the snippet is saved in SwagContext
-      onChange(html);
+      onChange(markdown);
     },
     editorProps: {
       attributes: {
