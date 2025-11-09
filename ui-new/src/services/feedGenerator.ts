@@ -53,7 +53,8 @@ export async function generateFeedItems(
   preferences: FeedPreferences,
   count: number = 5, // Reduced from 10 to 5 for higher quality with expanded content
   maturityLevel?: 'child' | 'youth' | 'adult' | 'academic',
-  onProgress?: (event: FeedGenerationEvent) => void
+  onProgress?: (event: FeedGenerationEvent) => void,
+  signal?: AbortSignal // Optional abort signal for cancellation
 ): Promise<FeedItem[]> {
   const apiUrl = await getCachedApiBase();
   
@@ -80,7 +81,8 @@ export async function generateFeedItems(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestBody),
+    signal // Pass abort signal to fetch
   });
 
   console.log('📡 Response status:', response.status, response.statusText);

@@ -453,11 +453,18 @@ function AppContent() {
         <div className="flex justify-between items-center px-0 md:px-4 py-3 w-full md:max-w-screen-2xl md:mx-auto">
           {/* Left side: Logo and Project Selector */}
           <div className="flex items-center gap-3">
-            <img 
-              src={`${import.meta.env.BASE_URL}agent.png`}
-              alt="Research Agent" 
-              className="h-10 sm:h-12 w-auto object-contain"
-            />
+            <button
+              onClick={() => handleNavigate('/chat')}
+              className="hover:opacity-80 transition-opacity"
+              title="Go to Chat"
+              aria-label="Go to Chat"
+            >
+              <img 
+                src={`${import.meta.env.BASE_URL}agent.png`}
+                alt="Research Agent" 
+                className="h-10 sm:h-12 w-auto object-contain"
+              />
+            </button>
             <ProjectSelectorButton />
           </div>
           
@@ -488,13 +495,13 @@ function AppContent() {
               </button>
             )}
             
-            {/* Back button - Show on ALL pages except feed (/) */}
-            {location.pathname !== '/' && (
+            {/* Back button - Show ONLY on help and privacy pages */}
+            {(location.pathname === '/help' || location.pathname === '/privacy') && (
               <button
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/chat')}
                 className="flex items-center gap-2 p-2 md:px-3 md:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm font-medium min-h-11 touch-target"
-                title="Back to Feed"
-                aria-label="Back to Feed"
+                title="Back to Chat"
+                aria-label="Back to Chat"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -521,13 +528,13 @@ function AppContent() {
               </div>
             )}
             
-            {/* Back button - Show on ALL pages except feed (/) */}
-            {location.pathname !== '/' && (
+            {/* Back button - Show ONLY on help and privacy pages */}
+            {(location.pathname === '/help' || location.pathname === '/privacy') && (
               <button
-                onClick={() => handleNavigate('/')}
+                onClick={() => handleNavigate('/chat')}
                 className="px-3 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2"
-                title="Back to Feed"
-                aria-label="Back to Feed"
+                title="Back to Chat"
+                aria-label="Back to Chat"
               >
                 <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -724,11 +731,24 @@ function AppContent() {
         <div className="min-h-full w-full md:max-w-screen-2xl md:mx-auto">
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
-              {/* Feed is now the default landing page */}
-              <Route path="/" element={<FeedPage />} />
+              {/* Chat is now the default landing page */}
+              <Route 
+                path="/" 
+                element={
+                  <ChatTab 
+                    enabledTools={enabledTools}
+                    setEnabledTools={setEnabledTools}
+                    showMCPDialog={showMCPDialog}
+                    setShowMCPDialog={setShowMCPDialog}
+                    onLoadingChange={setIsChatLoading}
+                  />
+                } 
+              />
+              
+              {/* Feed is accessible at /feed */}
               <Route path="/feed" element={<FeedPage />} />
               
-              {/* Chat is accessible at /chat */}
+              {/* Chat is also accessible at /chat */}
               <Route 
                 path="/chat" 
                 element={

@@ -214,12 +214,9 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
    * Generate share URL for this feed item
    */
   const generateShareUrl = () => {
-    let baseUrl = window.location.origin;
-    
-    // Use production domain for social sharing unless on localhost
-    if (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
-      baseUrl = 'https://ai.syntithenai.com';
-    }
+    // ALWAYS use production URL for share links (from environment variable)
+    // This ensures shared links work even when developing locally
+    const baseUrl = import.meta.env.VITE_PUBLIC_URL || 'https://ai.syntithenai.com';
     
     // Create a shareable URL with feed item data encoded
     const shareData = {
@@ -232,7 +229,12 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
       expandedContent: item.expandedContent, // Include deep dive content
       mnemonic: item.mnemonic // Include memory aid
     };
-    const encoded = btoa(JSON.stringify(shareData));
+    // Use Unicode-safe base64 encoding
+    // First convert to UTF-8, then to base64
+    const jsonString = JSON.stringify(shareData);
+    const encoded = btoa(encodeURIComponent(jsonString).replace(/%([0-9A-F]{2})/g, (_match, p1) => {
+      return String.fromCharCode(parseInt(p1, 16));
+    }));
     return `${baseUrl}/feed/share/${encoded}`;
   };
 

@@ -26,9 +26,11 @@ interface FeedContextValue {
   generationStatus: string; // Current status message during generation
   error: string | null;
   selectedTags: string[]; // Tags to filter Swag content for feed generation
+  lastSearchCriteria: string[] | null; // Track last search criteria for infinite scroll
   
   // Actions
   generateMore: (userInterests?: string[]) => Promise<void>;
+  stopGeneration: () => void; // Stop ongoing generation
   stashItem: (itemId: string) => Promise<void>;
   trashItem: (itemId: string) => Promise<void>;
   markViewed: (itemId: string) => Promise<void>;
@@ -37,6 +39,7 @@ interface FeedContextValue {
   updateSearchTerms: (terms: string[]) => Promise<void>;
   updateSelectedTags: (tags: string[]) => void;
   refresh: () => Promise<void>;
+  clearAllItems: () => Promise<void>;
 }
 
 const FeedContext = createContext<FeedContextValue | null>(null);
@@ -54,7 +57,7 @@ interface FeedProviderProps {
 }
 
 export function FeedProvider({ children }: FeedProviderProps) {
-  const { getToken, isAuthenticated } = useAuth();
+  const { getToken } = useAuth();
   const { snippets } = useSwag();
   const { getCurrentProjectId, currentProject } = useProject();
   const { showSuccess, showWarning, showError } = useToast();
@@ -84,10 +87,13 @@ export function FeedProvider({ children }: FeedProviderProps) {
   const [generationStatus, setGenerationStatus] = useState<string>(''); // Status message during generation
   const [error, setError] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]); // Filter Swag by these tags
+  const [lastSearchCriteria, setLastSearchCriteria] = useState<string[] | null>(null); // Track last search for infinite scroll
+  const [abortController, setAbortController] = useState<AbortController | null>(null); // For cancelling generation
 
   // Use refs to access latest values without causing re-renders
   const snippetsRef = useRef(snippets);
   const preferencesRef = useRef(preferences);
+  const lastSearchCriteriaRef = useRef(lastSearchCriteria); // Ref to avoid stale closure in generateMore
   const isGeneratingRef = useRef(isGenerating);
   
   // Keep refs in sync with state
@@ -102,6 +108,13 @@ export function FeedProvider({ children }: FeedProviderProps) {
   useEffect(() => {
     isGeneratingRef.current = isGenerating;
   }, [isGenerating]);
+
+  // Debug: Log when lastSearchCriteria changes
+  useEffect(() => {
+    console.log('📊 lastSearchCriteria state changed:', lastSearchCriteria);
+    lastSearchCriteriaRef.current = lastSearchCriteria; // Sync ref with state
+  }, [lastSearchCriteria]);
+
 
   /**
    * Load initial data from IndexedDB and sync with Google Sheets
@@ -180,8 +193,9 @@ export function FeedProvider({ children }: FeedProviderProps) {
     
     if (!token) {
       console.log('❌ No token, aborting');
-      setError('Please sign in to generate feed items');
-      showError('Please sign in to generate feed items');
+      const errorMessage = 'Your session has expired. Please sign in again to continue.';
+      setError(errorMessage);
+      showError(errorMessage);
       return;
     }
     
@@ -193,6 +207,12 @@ export function FeedProvider({ children }: FeedProviderProps) {
 
     try {
       console.log('🚀 Starting feed generation...');
+      
+      // Create abort controller for this generation
+      const controller = new AbortController();
+      console.log('🎮 Created new AbortController:', controller);
+      setAbortController(controller);
+      
       setIsGenerating(true);
       setError(null);
       setGenerationStatus('Preparing to generate feed...');
@@ -212,40 +232,34 @@ export function FeedProvider({ children }: FeedProviderProps) {
       const swagContent = filteredSnippets.slice(-20).map(s => s.content || '');
       console.log('📚 Swag items:', swagContent.length);
 
-      // Extract all tags from snippets (excluding admin: and blocked tags)
-      const allTags = new Set<string>();
-      filteredSnippets.forEach(snippet => {
-        if (snippet.tags) {
-          snippet.tags.forEach(tag => {
-            // Exclude admin tags and blocked tags
-            if (!tag.startsWith('admin:') && !preferencesRef.current.dislikedTopics.includes(tag)) {
-              allTags.add(tag);
-            }
-          });
-        }
-      });
-      const snippetTags = Array.from(allTags);
-      console.log('🏷️ Extracted tags from snippets:', snippetTags);
-
       // Priority order for search terms:
-      // 1. User-provided interests (from prompt) - highest priority
-      // 2. Snippet tags - second priority
-      // 3. Saved preferences - fallback
+      // 1. User-provided interests (from prompt/tag click) - highest priority
+      // 2. Last search criteria (for infinite scroll continuation) - second priority
+      // NO saved preferences - user must explicitly provide search criteria
       console.log('🎯 SEARCH TERM PRIORITY CHECK:');
       console.log('   1️⃣ userInterests parameter:', userInterests);
-      console.log('   2️⃣ snippetTags:', snippetTags);
-      console.log('   3️⃣ saved preferences:', preferencesRef.current.searchTerms);
+      console.log('   2️⃣ lastSearchCriteria (for scroll):', lastSearchCriteriaRef.current); // Read from ref!
       
       let searchTermsForGeneration: string[];
       if (userInterests && userInterests.length > 0) {
         searchTermsForGeneration = userInterests;
-        console.log('✨ DECISION: Using user-provided interests from prompt:', searchTermsForGeneration);
-      } else if (snippetTags.length > 0) {
-        searchTermsForGeneration = snippetTags;
-        console.log('🏷️ DECISION: Using snippet tags as search terms:', searchTermsForGeneration);
+        console.log('✨ DECISION: Using user-provided interests from prompt/tag click:', searchTermsForGeneration);
+        // Save as last search criteria for infinite scroll
+        console.log('💾 About to save lastSearchCriteria:', userInterests);
+        setLastSearchCriteria(userInterests);
+        console.log('💾 setLastSearchCriteria called with:', userInterests);
+      } else if (lastSearchCriteriaRef.current && lastSearchCriteriaRef.current.length > 0) {
+        searchTermsForGeneration = lastSearchCriteriaRef.current; // Read from ref!
+        console.log('♾️ DECISION: Using last search criteria for infinite scroll:', searchTermsForGeneration);
       } else {
-        searchTermsForGeneration = preferencesRef.current.searchTerms;
-        console.log('💾 DECISION: Using saved preferences as search terms:', searchTermsForGeneration);
+        // No search criteria - don't generate
+        console.log('🚫 DECISION: No search criteria provided - skipping generation');
+        console.log('   ❌ userInterests is:', JSON.stringify(userInterests));
+        console.log('   ❌ lastSearchCriteria is:', JSON.stringify(lastSearchCriteriaRef.current)); // Read from ref!
+        setIsGenerating(false);
+        setGenerationStatus('');
+        console.log('⏹️ Generation cancelled - no search criteria');
+        return;
       }
       console.log('🔍 FINAL search terms for generation:', searchTermsForGeneration);
 
@@ -267,7 +281,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
         token,
         swagContent,
         preferencesWithTags,
-        10,
+        3, // Generate 3 items per batch
         maturityLevel,
         // Progress callback - update UI as items arrive
         (event) => {
@@ -419,7 +433,8 @@ export function FeedProvider({ children }: FeedProviderProps) {
             setError(event.error || 'Generation failed');
             setGenerationStatus('Generation failed');
           }
-        }
+        },
+        controller.signal // Pass abort signal for cancellation
       );
       
       console.log('✅ Generated items:', newItems.length);
@@ -468,64 +483,72 @@ export function FeedProvider({ children }: FeedProviderProps) {
       if (err instanceof Error) {
         console.error('Error message:', err.message);
         console.error('Error stack:', err.stack);
+        
+        // Handle abort gracefully
+        if (err.name === 'AbortError') {
+          console.log('⏸️ Feed generation aborted by user');
+          setError(null); // Don't show error for user-initiated abort
+          return;
+        }
       }
       setError(err instanceof Error ? err.message : 'Failed to generate feed');
     } finally {
       setIsGenerating(false);
       setGenerationStatus(''); // Clear status message
+      setAbortController(null); // Clear abort controller
     }
   }, [getToken]);
   // Note: isGenerating, snippets, and preferences accessed via state/refs but NOT in deps to prevent infinite loops
 
   /**
    * Auto-generate feed on first load if no items exist
-   * Runs after initial data load completes
+   * DISABLED: User requested manual generation only
    */
-  useEffect(() => {
-    // Only run if:
-    // 1. User is authenticated
-    // 2. Not currently loading initial data
-    // 3. No items in feed
-    // 4. Not already generating
-    if (isAuthenticated && !isLoading && allItems.length === 0 && !isGenerating) {
-      console.log('📰 No feed items found, auto-generating initial feed...');
-      
-      // Get snippets with tags
-      const snippetsWithTags = snippets.filter(s => s.tags && s.tags.length > 0);
-      
-      if (snippetsWithTags.length > 0) {
-        // Use top 5 most common tags
-        const tagCounts: Record<string, number> = {};
-        snippetsWithTags.forEach(snippet => {
-          snippet.tags?.forEach(tag => {
-            if (!tag.startsWith('admin:')) {
-              tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-            }
-          });
-        });
-        
-        const top5Tags = Object.entries(tagCounts)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5)
-          .map(([tag]) => tag);
-        
-        console.log(`🏷️ Using top 5 snippet tags for initial feed: ${top5Tags.join(', ')}`);
-        
-        // Generate feed with top tags (don't await - let it run in background)
-        generateMore(top5Tags).catch(err => {
-          console.error('❌ Auto-generation failed:', err);
-        });
-      } else {
-        // No snippets with tags - use default "latest world news"
-        console.log('📰 No snippets with tags, using default: latest world news');
-        
-        // Generate feed with default search term (don't await)
-        generateMore(['latest world news']).catch(err => {
-          console.error('❌ Auto-generation failed:', err);
-        });
-      }
-    }
-  }, [isAuthenticated, isLoading, allItems.length, isGenerating, snippets, generateMore]);
+  // useEffect(() => {
+  //   // Only run if:
+  //   // 1. User is authenticated
+  //   // 2. Not currently loading initial data
+  //   // 3. No items in feed
+  //   // 4. Not already generating
+  //   if (isAuthenticated && !isLoading && allItems.length === 0 && !isGenerating) {
+  //     console.log('📰 No feed items found, auto-generating initial feed...');
+  //     
+  //     // Get snippets with tags
+  //     const snippetsWithTags = snippets.filter(s => s.tags && s.tags.length > 0);
+  //     
+  //     if (snippetsWithTags.length > 0) {
+  //       // Use top 5 most common tags
+  //       const tagCounts: Record<string, number> = {};
+  //       snippetsWithTags.forEach(snippet => {
+  //         snippet.tags?.forEach(tag => {
+  //           if (!tag.startsWith('admin:')) {
+  //             tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+  //           }
+  //         });
+  //       });
+  //       
+  //       const top5Tags = Object.entries(tagCounts)
+  //         .sort((a, b) => b[1] - a[1])
+  //         .slice(0, 5)
+  //         .map(([tag]) => tag);
+  //       
+  //       console.log(`🏷️ Using top 5 snippet tags for initial feed: ${top5Tags.join(', ')}`);
+  //       
+  //       // Generate feed with top tags (don't await - let it run in background)
+  //       generateMore(top5Tags).catch(err => {
+  //         console.error('❌ Auto-generation failed:', err);
+  //       });
+  //     } else {
+  //       // No snippets with tags - use default "latest science and technology news"
+  //       console.log('📰 No snippets with tags, using default: latest science and technology news');
+  //       
+  //       // Generate feed with default search term (don't await)
+  //       generateMore(['latest science and technology news']).catch(err => {
+  //         console.error('❌ Auto-generation failed:', err);
+  //       });
+  //     }
+  //   }
+  // }, [isAuthenticated, isLoading, allItems.length, isGenerating, snippets, generateMore]);
 
   /**
    * Stash item to Swag
@@ -749,6 +772,48 @@ export function FeedProvider({ children }: FeedProviderProps) {
     }
   }, [generateMore]);
 
+  /**
+   * Stop ongoing feed generation
+   */
+  const stopGeneration = useCallback(() => {
+    console.log('🛑 stopGeneration called');
+    console.log('🛑 abortController exists:', !!abortController);
+    console.log('🛑 isGenerating:', isGenerating);
+    
+    if (abortController) {
+      console.log('🛑 Calling abort()...');
+      abortController.abort();
+      setAbortController(null);
+      setIsGenerating(false);
+      setGenerationStatus('');
+      showWarning('Feed generation stopped');
+      console.log('✅ Abort completed');
+    } else {
+      console.warn('⚠️ No abort controller found - generation may not be active');
+      setIsGenerating(false);
+      setGenerationStatus('');
+    }
+  }, [abortController, isGenerating, showWarning]);
+
+  /**
+   * Clear all feed items (without regenerating)
+   */
+  const clearAllItems = useCallback(async () => {
+    console.log('🗑️ Clearing all feed items');
+    try {
+      // Clear all existing items from DB
+      await feedDB.clearAll();
+      
+      // Clear items in state
+      setAllItems([]);
+      
+      console.log('✅ All items cleared');
+    } catch (err) {
+      console.error('Failed to clear items:', err);
+      setError(err instanceof Error ? err.message : 'Failed to clear items');
+    }
+  }, []);
+
   const value: FeedContextValue = {
     items,
     preferences,
@@ -759,7 +824,9 @@ export function FeedProvider({ children }: FeedProviderProps) {
     generationStatus,
     error,
     selectedTags,
+    lastSearchCriteria,
     generateMore,
+    stopGeneration,
     stashItem,
     trashItem,
     markViewed,
@@ -767,7 +834,8 @@ export function FeedProvider({ children }: FeedProviderProps) {
     closeQuiz,
     updateSearchTerms,
     updateSelectedTags,
-    refresh
+    refresh,
+    clearAllItems
   };
 
   return (

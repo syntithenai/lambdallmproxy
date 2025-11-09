@@ -2,25 +2,23 @@
  * Feed Page - Main Feed Feature Component
  */
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFeed } from '../contexts/FeedContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSwag } from '../contexts/SwagContext';
-import { useProject } from '../contexts/ProjectContext';
 import FeedItemCard from './FeedItem';
 import FeedQuizOverlay from './FeedQuiz';
-import { Loader2, AlertCircle, RefreshCw, Rss } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, Rss, Search, X, ArrowUp } from 'lucide-react';
 
 export default function FeedPage() {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   const { snippets } = useSwag();
-  const { currentProject } = useProject();
   const [interestsInput, setInterestsInput] = useState('');
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const {
     items,
-    preferences,
     currentQuiz,
     isLoading,
     isGenerating,
@@ -29,7 +27,9 @@ export default function FeedPage() {
     generateMore,
     refresh,
     closeQuiz,
-    updateSearchTerms
+    clearAllItems,
+    stopGeneration,
+    lastSearchCriteria
   } = useFeed();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,13 +40,59 @@ export default function FeedPage() {
   const isGeneratingRef = useRef(isGenerating);
   const isLoadingRef = useRef(isLoading);
   const generateMoreRef = useRef(generateMore);
+  const lastSearchCriteriaRef = useRef(lastSearchCriteria);
   
   // Keep refs in sync with latest values
   useEffect(() => {
+    console.log('🔄 FeedPage: isGenerating changed:', isGenerating);
+    console.log('🔄 FeedPage: generationStatus:', generationStatus);
     isGeneratingRef.current = isGenerating;
     isLoadingRef.current = isLoading;
     generateMoreRef.current = generateMore;
-  }, [isGenerating, isLoading, generateMore]);
+    lastSearchCriteriaRef.current = lastSearchCriteria;
+  }, [isGenerating, isLoading, generateMore, generationStatus, lastSearchCriteria]);
+
+  /**
+   * Calculate top 10 tags from snippets
+   */
+  const top10Tags = useMemo(() => {
+    const tagCounts: Record<string, number> = {};
+    
+    snippets.forEach(snippet => {
+      snippet.tags?.forEach(tag => {
+        if (!tag.startsWith('admin:')) {
+          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        }
+      });
+    });
+    
+    return Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([tag]) => tag);
+  }, [snippets]);
+
+  /**
+   * Handle interests search - clear all items and regenerate
+   */
+  const handleSearchInterests = useCallback(async () => {
+    const trimmed = interestsInput.trim();
+    if (!trimmed) return;
+    
+    console.log('🔍 Searching interests:', trimmed);
+    await clearAllItems();
+    await generateMore([trimmed]);
+    setInterestsInput(''); // Clear input after search
+  }, [interestsInput, clearAllItems, generateMore]);
+
+  /**
+   * Handle tag click - clear all items and regenerate
+   */
+  const handleTagClick = useCallback(async (tag: string) => {
+    console.log('🏷️ Searching tag:', tag);
+    await clearAllItems();
+    await generateMore([tag]);
+  }, [clearAllItems, generateMore]);
 
   /**
    * Debug: Log items whenever they change
@@ -73,18 +119,21 @@ export default function FeedPage() {
       (entries) => {
         const [entry] = entries;
         
+        // ⚡ Read current value from ref to avoid stale closure
+        const currentLastSearchCriteria = lastSearchCriteriaRef.current;
+        
         console.log('👁️ IntersectionObserver fired:', {
           isIntersecting: entry.isIntersecting,
           itemsLength: items.length,
-          snippetsLength: snippets.length
+          lastSearchCriteria: currentLastSearchCriteria
         });
         
-        // Only trigger if we have items OR have tags on snippets
-        // This prevents infinite scroll from auto-generating when user has no content
-        const hasSnippetTags = snippets.some(s => 
-          s.tags && s.tags.some(tag => !tag.startsWith('admin:'))
-        );
-        const shouldAllowInfiniteScroll = items.length > 0 || hasSnippetTags;
+        // Allow infinite scroll if:
+        // 1. We have existing items (they were generated with search criteria), OR
+        // 2. We have active search criteria (from user input or tag click)
+        const hasActiveSearchCriteria = currentLastSearchCriteria && currentLastSearchCriteria.length > 0;
+        const hasExistingItems = items.length > 0;
+        const shouldAllowInfiniteScroll = hasExistingItems || hasActiveSearchCriteria;
         
         // ⚡ Use refs to avoid stale closure - always read current state
         const currentIsLoading = isLoadingRef.current;
@@ -96,16 +145,19 @@ export default function FeedPage() {
           currentIsLoading,
           currentIsGenerating,
           shouldAllowInfiniteScroll,
-          hasSnippetTags,
+          hasActiveSearchCriteria,
+          hasExistingItems,
           itemsLength: items.length
         });
         
         // Load more when sentinel is visible and not already loading
         if (entry.isIntersecting && !currentIsLoading && !currentIsGenerating && shouldAllowInfiniteScroll) {
           console.log('📜 Infinite scroll triggered - generating more items...');
+          console.log('📜 Reason: hasExistingItems=' + hasExistingItems + ', hasActiveSearchCriteria=' + hasActiveSearchCriteria);
           currentGenerateMore();
         } else if (entry.isIntersecting && !shouldAllowInfiniteScroll) {
-          console.log('📜 Infinite scroll blocked: no items and no snippet tags');
+          console.log('📜 Infinite scroll blocked: no items and no active search criteria (need user interests input or clicked tag)');
+          console.log('📜 Debug: itemsLength=' + items.length + ', lastSearchCriteria=' + (currentLastSearchCriteria ? currentLastSearchCriteria.join(', ') : 'null'));
         } else if (entry.isIntersecting && (currentIsLoading || currentIsGenerating)) {
           console.log('📜 Infinite scroll blocked: already generating/loading');
         }
@@ -130,93 +182,24 @@ export default function FeedPage() {
   // Note: generateMore, isLoading, isGenerating intentionally omitted to prevent re-creating observer
 
   /**
-   * Initial load - generate items if feed is empty AND user has tags on snippets OR has submitted interests
-   * Use ref to track if initial load has been attempted
+   * Scroll to top button visibility
    */
-  const initialLoadAttempted = useRef(false);
-  const lastProjectId = useRef<string | null>(null);
-  
   useEffect(() => {
-    // Don't do anything if still loading initial data
-    if (isLoading) {
-      console.log('🎬 Initial load effect: still loading, skipping...');
-      return;
-    }
-    
-    const currentProjectId = currentProject?.id || null;
-    
-    // Reset attempt flag when project changes
-    if (lastProjectId.current !== currentProjectId) {
-      console.log('🔄 Project changed, resetting initial load attempt');
-      initialLoadAttempted.current = false;
-      lastProjectId.current = currentProjectId;
-    }
-    
-    // Don't do anything if already attempted for this project
-    if (initialLoadAttempted.current) {
-      return;
-    }
-    
-    console.log('🎬 Initial load effect triggered:', {
-      isAuthenticated,
-      itemsLength: items.length,
-      initialLoadAttempted: initialLoadAttempted.current,
-      isLoading,
-      isGenerating,
-      snippetsCount: snippets.length,
-      currentProjectId: currentProjectId || 'All Projects',
-      currentProjectName: currentProject?.name || 'All Projects'
-    });
-    
-    // Check if user has tags on their snippets (excluding admin: tags)
-    const snippetsWithTags = snippets.filter(s => 
-      s.tags && s.tags.some(tag => !tag.startsWith('admin:'))
-    );
-    const hasSnippetTags = snippetsWithTags.length > 0;
-    
-    console.log('🏷️ Total snippets:', snippets.length);
-    console.log('🏷️ Snippets with non-admin tags:', snippetsWithTags.length);
-    if (snippetsWithTags.length > 0 && snippetsWithTags.length <= 5) {
-      console.log('🏷️ Sample snippets with tags:', snippetsWithTags.slice(0, 5).map(s => ({
-        id: s.id,
-        title: s.title,
-        tags: s.tags?.filter(t => !t.startsWith('admin:')),
-        projectId: s.projectId || 'none'
-      })));
-    }
-    console.log('🏷️ Has snippet tags:', hasSnippetTags);
-    
-    // Auto-generation logic:
-    // 1. If user has tags on their VISIBLE snippets (filtered by current project), auto-generate
-    // 2. If a project is selected but has no snippets, generate based on project name
-    // 3. Otherwise, show interests input and wait for manual generation
-    const shouldAutoGenerate = hasSnippetTags || (currentProject && snippets.length === 0);
-    
-    if (isAuthenticated && items.length === 0 && shouldAutoGenerate) {
-      // Generate feed based on project name if no snippets in current project
-      if (currentProject && snippets.length === 0) {
-        console.log('🎬 Initial load: generating feed based on project name:', currentProject.name);
-        initialLoadAttempted.current = true;
-        generateMore([currentProject.name]); // Use project name as interest
-      } else {
-        console.log('🎬 Initial load: starting feed generation (user has snippet tags in current project)');
-        initialLoadAttempted.current = true;
-        generateMore();
-      }
-    } else {
-      console.log('⏸️ Initial load: skipping auto-generation', {
-        isAuthenticated,
-        hasItems: items.length > 0,
-        hasSnippetTags,
-        snippetCount: snippets.length,
-        hasProject: !!currentProject,
-        reason: !hasSnippetTags && !currentProject ? 'No snippet tags and no project - show interests input' : 'Already has items or not authenticated'
-      });
-      initialLoadAttempted.current = true; // Mark as attempted so we don't retry
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, items.length, isLoading, snippets, preferences.searchTerms.length, currentProject]);
-  // Note: Added currentProject to detect project changes and auto-generate based on project name if no snippets
+    const handleScroll = () => {
+      // Show button when scrolled down more than 300px
+      setShowScrollTop(window.scrollY > 300);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  /**
+   * Scroll to top handler
+   */
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   /**
    * Handle manual refresh
@@ -225,22 +208,6 @@ export default function FeedPage() {
     await refresh();
     await generateMore();
   }, [refresh, generateMore]);
-  
-  /**
-   * Handle generate button click
-   */
-  const handleGenerateClick = useCallback(async () => {
-    console.log('📱 Generate Feed button clicked');
-    console.log('🔍 generateMore function exists:', !!generateMore);
-    console.log('🔍 generateMore type:', typeof generateMore);
-    try {
-      console.log('🚀 About to call generateMore()...');
-      await generateMore();
-      console.log('✅ generateMore() completed');
-    } catch (err) {
-      console.error('❌ Generate failed:', err);
-    }
-  }, [generateMore]);
 
   // Debug: Log render state
   console.log('🎨 FeedPage render:', {
@@ -250,18 +217,6 @@ export default function FeedPage() {
     itemsCount: items.length,
     hasError: !!error
   });
-
-  // Check if any snippets have tags (excluding admin: tags)
-  const hasSnippetTags = snippets.some(s => 
-    s.tags && s.tags.some(tag => !tag.startsWith('admin:'))
-  );
-  
-  // Show interests input only when:
-  // 1. No snippet tags exist
-  // 2. AND no project is selected (if project is selected, use its name)
-  // 3. AND no feed items have been generated yet
-  // 4. AND not currently generating (hide form as soon as generation starts)
-  const showInterestsInput = !hasSnippetTags && !currentProject && items.length === 0 && !isGenerating;
 
   // Show authentication message
   if (!isAuthenticated) {
@@ -291,6 +246,31 @@ export default function FeedPage() {
     >
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        {/* Generation progress banner - shows at very top */}
+        {isGenerating && (
+          <div className="bg-blue-50 border-b border-blue-200 px-2 sm:px-4 py-2">
+            <div className="max-w-2xl mx-auto flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                <span className="text-sm text-blue-800 font-medium">
+                  {generationStatus || 'Generating feed items...'}
+                </span>
+              </div>
+              <button
+                onClick={(e) => {
+                  console.log('🔴 Stop button clicked!', e);
+                  stopGeneration();
+                }}
+                className="px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center gap-1.5 text-sm font-medium shadow-md hover:shadow-lg"
+                title="Stop feed generation"
+              >
+                <X className="h-4 w-4" />
+                Stop
+              </button>
+            </div>
+          </div>
+        )}
+        
         <div className="max-w-2xl mx-auto px-2 sm:px-4 py-4">
           {/* Title and refresh button */}
           <div className="flex items-center justify-between mb-4">
@@ -299,70 +279,79 @@ export default function FeedPage() {
               <h1 className="text-2xl font-bold text-gray-900">{t('feed.title')}</h1>
             </div>
             
-            <button
-              onClick={handleRefresh}
-              disabled={isLoading || isGenerating}
-              className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title={t('feed.refresh')}
-            >
-              <RefreshCw 
-                className={`h-5 w-5 text-gray-600 ${isLoading || isGenerating ? 'animate-spin' : ''}`}
-              />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRefresh}
+                disabled={isLoading || isGenerating}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={t('feed.refresh')}
+              >
+                <RefreshCw 
+                  className={`h-5 w-5 text-gray-600 ${isLoading || isGenerating ? 'animate-spin' : ''}`}
+                />
+              </button>
+            </div>
           </div>
 
-          {(() => {
-            return (
-              <>
-                {/* Interests input - shown only when no snippet tags exist AND no feed items */}
-                {showInterestsInput && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      What are your interests?
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={interestsInput}
-                        onChange={(e) => setInterestsInput(e.target.value)}
-                        onKeyDown={async (e) => {
-                          if (e.key === 'Enter' && interestsInput.trim() && !isGenerating) {
-                            const userInterests = [interestsInput.trim()];
-                            // Update search terms with user input (save for future use)
-                            await updateSearchTerms(userInterests);
-                            setInterestsInput('');
-                            // Trigger generation with user interests immediately (don't wait for state update)
-                            await generateMore(userInterests);
-                          }
-                        }}
-                        placeholder="e.g., artificial intelligence, space exploration, history..."
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <button
-                        onClick={async () => {
-                          if (interestsInput.trim() && !isGenerating) {
-                            const userInterests = [interestsInput.trim()];
-                            // Update search terms with user input (save for future use)
-                            await updateSearchTerms(userInterests);
-                            setInterestsInput('');
-                            // Trigger generation with user interests immediately (don't wait for state update)
-                            await generateMore(userInterests);
-                          }
-                        }}
-                        disabled={!interestsInput.trim() || isGenerating}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Generate
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Add some interests to start generating your personalized feed. You can also add Swag content with tags to automatically generate based on your saved knowledge.
-                    </p>
-                  </div>
-                )}
-              </>
-            );
-          })()}
+          {/* Always-visible Manual Feed Controls */}
+          <div className="space-y-4">
+            {/* Interests Search */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">
+                What are your interests?
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={interestsInput}
+                  onChange={(e) => setInterestsInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && interestsInput.trim() && !isGenerating) {
+                      handleSearchInterests();
+                    }
+                  }}
+                  placeholder="e.g., artificial intelligence, space exploration, history..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={isGenerating}
+                />
+                <button
+                  onClick={handleSearchInterests}
+                  disabled={!interestsInput.trim() || isGenerating}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                >
+                  <Search className="h-4 w-4" />
+                  Search
+                </button>
+              </div>
+            </div>
+
+            {/* Top 10 Tag Buttons */}
+            {top10Tags.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Or browse by your saved tags:
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {top10Tags.map(tag => (
+                    <button
+                      key={tag}
+                      onClick={() => handleTagClick(tag)}
+                      disabled={isGenerating}
+                      className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {top10Tags.length === 0 && (
+              <p className="text-xs text-gray-500">
+                Add some interests above or save content with tags in Swag to see tag suggestions here.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -383,64 +372,78 @@ export default function FeedPage() {
         </div>
       )}
 
-      {/* Feed items - hide when showing interests input (unless actively generating) */}
-      {(!showInterestsInput || isGenerating) && (
-        <div className="max-w-2xl mx-auto px-2 sm:px-4 py-4 space-y-4">
-          {items.map((item, index) => {
-            console.log(`🎴 Rendering FeedItemCard ${index + 1}/${items.length}:`, item.id, item.title);
-            return <FeedItemCard key={item.id} item={item} />;
-          })}
+      {/* Feed items - always show */}
+      <div className="max-w-2xl mx-auto px-2 sm:px-4 py-4 space-y-4">
+        {items.map((item, index) => {
+          console.log(`🎴 Rendering FeedItemCard ${index + 1}/${items.length}:`, item.id, item.title);
+          return <FeedItemCard key={item.id} item={item} />;
+        })}
 
-          {/* Empty state */}
-          {items.length === 0 && !isLoading && !isGenerating && (
-            <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-              <Rss className="mx-auto h-16 w-16 text-gray-300 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {t('feed.noItems')}
-              </h3>
-              <p className="text-gray-600 mb-6">
-                {t('feed.emptyMessage')}
-                <br />
-                {t('feed.emptySubMessage')}
-              </p>
-              <button
-                onClick={handleGenerateClick}
-                disabled={isGenerating}
-                className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-              >
-                {isGenerating ? t('feed.generating') : t('feed.generateFeed')}
-              </button>
-            </div>
-          )}
-
-          {/* Loading indicator with live status */}
-          {(isLoading || isGenerating) && (
-            <div className="flex flex-col items-center justify-center py-8 gap-3">
-              <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
-              <div className="text-center">
-                <p className="text-gray-900 font-medium">
-                  {isGenerating ? t('feed.generating') : t('common.loading')}
-                </p>
-                {generationStatus && (
-                  <p className="text-sm text-gray-600 mt-1 animate-pulse">
-                    {generationStatus}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-        {/* Scroll indicator for first-time users */}
-        {items.length > 2 && (
-          <div className="text-center py-4 text-gray-500 text-sm">
-            ↓ Scroll down to see more items ({items.length} total) ↓
+        {/* Empty state */}
+        {items.length === 0 && !isLoading && !isGenerating && (
+          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+            <Rss className="mx-auto h-16 w-16 text-gray-300 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {t('feed.noItems')}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Use the search or tag buttons above to generate your personalized feed
+            </p>
           </div>
         )}
 
-        {/* Infinite scroll sentinel */}
-        <div ref={sentinelRef} className="h-4" />
+        {/* Loading indicator with live status */}
+        {(isLoading || isGenerating) && (
+          <div className="flex flex-col items-center justify-center py-8 gap-3">
+            <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+            <div className="text-center">
+              <p className="text-gray-900 font-medium">
+                {isGenerating ? t('feed.generating') : t('common.loading')}
+              </p>
+              {generationStatus && (
+                <p className="text-sm text-gray-600 mt-1 animate-pulse">
+                  {generationStatus}
+                </p>
+              )}
+            </div>
+            {isGenerating && (
+              <button
+                onClick={(e) => {
+                  console.log('🔴 Bottom stop button clicked!', e);
+                  stopGeneration();
+                }}
+                className="mt-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center gap-2 text-sm font-medium shadow-md hover:shadow-lg"
+                title="Stop feed generation"
+              >
+                <X className="h-4 w-4" />
+                Stop Generation
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Scroll indicator for first-time users */}
+      {items.length > 2 && (
+        <div className="text-center py-4 text-gray-500 text-sm">
+          ↓ Scroll down to see more items ({items.length} total) ↓
+        </div>
+      )}
+
+      {/* Infinite scroll sentinel */}
+      <div ref={sentinelRef} className="h-4" />
+
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-6 right-6 bg-blue-600 text-white rounded-full p-3 shadow-lg hover:bg-blue-700 transition-all duration-300 hover:scale-110 z-50"
+          title="Scroll to top"
+          aria-label="Scroll to top"
+        >
+          <ArrowUp className="h-6 w-6" />
+        </button>
+      )}
 
       {/* Quiz overlay */}
       {currentQuiz && (

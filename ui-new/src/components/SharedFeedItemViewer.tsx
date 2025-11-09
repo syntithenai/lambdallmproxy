@@ -27,7 +27,13 @@ const getFeedItemDataFromUrl = (): SharedFeedItem | null => {
     const path = window.location.pathname;
     const match = path.match(/\/feed\/share\/(.+)/);
     if (match && match[1]) {
-      const decoded = atob(match[1]);
+      // Use Unicode-safe base64 decoding
+      const base64 = match[1];
+      const decoded = decodeURIComponent(
+        atob(base64).split('').map(c => {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join('')
+      );
       return JSON.parse(decoded) as SharedFeedItem;
     }
     return null;

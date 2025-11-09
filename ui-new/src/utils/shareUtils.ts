@@ -166,12 +166,10 @@ export function createShareData(
  * Generate full share URL using hash-based routing (GitHub Pages compatible)
  */
 export function generateShareUrl(compressed: string): string {
-  // Use VITE_SHARE_BASE_URL if defined, otherwise use current origin
-  const shareBaseUrl = import.meta.env.VITE_SHARE_BASE_URL;
-  const baseUrl = shareBaseUrl 
-    ? shareBaseUrl + window.location.pathname
-    : window.location.origin + window.location.pathname;
-  return `${baseUrl}#/chat/shared?data=${compressed}`;
+  // ALWAYS use production URL for share links (from environment variable)
+  // This ensures shared links work even when developing locally
+  const publicUrl = import.meta.env.VITE_PUBLIC_URL || 'https://ai.syntithenai.com';
+  return `${publicUrl}#/chat/shared?data=${compressed}`;
 }
 
 /**
