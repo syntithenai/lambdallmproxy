@@ -59,6 +59,31 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
     questionStartTime.current = Date.now();
   }, [currentQuestionIndex]);
 
+  // Handle case when quiz is still loading/generating (no questions yet)
+  if (!currentQuestion || !quiz.questions || quiz.questions.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto">
+        <div className="flex justify-between items-start mb-6">
+          <div className="flex items-center gap-2">
+            <Brain className="w-6 h-6 text-blue-600 animate-pulse" />
+            <h2 className="text-xl font-bold text-gray-800">{quiz.title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            aria-label="Close quiz"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Generating quiz questions...</p>
+        </div>
+      </div>
+    );
+  }
+
   const handleAnswerSelect = (choiceId: string) => {
     if (state !== 'question') return;
 

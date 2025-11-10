@@ -10,6 +10,7 @@ import { useSwag } from '../contexts/SwagContext';
 import FeedItemCard from './FeedItem';
 import FeedQuizOverlay from './FeedQuiz';
 import { Loader2, AlertCircle, RefreshCw, Rss, Search, X, ArrowUp } from 'lucide-react';
+import { feedDB } from '../db/feedDb';
 
 export default function FeedPage() {
   const { t } = useTranslation();
@@ -17,6 +18,7 @@ export default function FeedPage() {
   const { snippets } = useSwag();
   const [interestsInput, setInterestsInput] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [maturityLevel, setMaturityLevel] = useState<'child' | 'youth' | 'adult' | 'academic'>('adult');
   const {
     items,
     currentQuiz,
@@ -102,6 +104,17 @@ export default function FeedPage() {
     console.log('🎯 Item titles:', items.map(i => i.title));
     console.log('🎯 Item IDs:', items.map(i => i.id));
   }, [items]);
+
+  /**
+   * Load maturity level on mount
+   */
+  useEffect(() => {
+    const loadMaturityLevel = async () => {
+      const level = await feedDB.getMaturityLevel();
+      setMaturityLevel(level);
+    };
+    loadMaturityLevel();
+  }, []);
 
   /**
    * Infinite scroll - load more when sentinel becomes visible
@@ -296,6 +309,28 @@ export default function FeedPage() {
 
           {/* Always-visible Manual Feed Controls */}
           <div className="space-y-4">
+            {/* Content Maturity Level */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">
+                🎓 Content Maturity Level
+              </label>
+              <select
+                value={maturityLevel}
+                onChange={async (e) => {
+                  const level = e.target.value as 'child' | 'youth' | 'adult' | 'academic';
+                  setMaturityLevel(level);
+                  await feedDB.setMaturityLevel(level);
+                  window.dispatchEvent(new Event('feed-maturity-changed'));
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="child">Child (Ages 6-12) - Simple language, educational content</option>
+                <option value="youth">Youth (Ages 13-17) - Age-appropriate topics, moderate complexity</option>
+                <option value="adult">Adult (18+) - General audience, varied complexity</option>
+                <option value="academic">Academic - Advanced topics, research-focused, technical</option>
+              </select>
+            </div>
+
             {/* Interests Search */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">

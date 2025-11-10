@@ -265,8 +265,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const chatHistory = useMemo(() => {
     const currentProjectId = getCurrentProjectId();
     if (!currentProjectId) {
-      // No project selected - show all chats
-      return allChatHistory;
+      // No project selected - show only chats without a project (default project)
+      return allChatHistory.filter(chat => !(chat as any).projectId);
     }
     // Filter by current project
     return allChatHistory.filter(chat => (chat as any).projectId === currentProjectId);
@@ -482,6 +482,12 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       if (routerLocation.state?.clearChat) {
         console.log('🧹 Clearing chat thread as requested from feed item');
         setMessages([]);
+      }
+      
+      // Set system message if provided (from feed items)
+      if (routerLocation.state?.systemMessage) {
+        console.log('📝 Setting system prompt from navigation state');
+        setSystemPrompt(routerLocation.state.systemMessage);
       }
       
       setInput(query);
@@ -7266,7 +7272,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   }
                 }}
                 disabled={!isLoading && !accessToken}
-                className="btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5"
+                className={`btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5 ${
+                  isLoading ? 'animate-pulse' : ''
+                }`}
                 title={!accessToken ? t('chat.signInToSend') : (!input.trim() ? t('chat.typeMessageFirst') : t('chat.sendMessage'))}
                 aria-label={isLoading ? t('chat.stopGenerating') : t('chat.sendMessage')}
               >

@@ -433,14 +433,8 @@ async function handleQuizGenerate(event) {
         
         // Build provider pool from user providers (array) + environment if authorized
         const userProviders = Array.isArray(providers) ? providers : [];
-        if (userProviders.length === 0) {
-            return {
-                statusCode: 400,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ error: 'No providers configured. Please add providers in Settings.' })
-            };
-        }
         
+        // buildProviderPool will add backend providers if user is authorized
         const providerPool = buildProviderPool(userProviders, authResult.authorized);
         console.log(`🎯 Provider pool for quiz: ${providerPool.length} provider(s) available`);
         
@@ -448,7 +442,7 @@ async function handleQuizGenerate(event) {
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ error: 'No valid providers available' })
+                body: JSON.stringify({ error: 'No valid providers available. Please add providers in Settings or sign in.' })
             };
         }
         
@@ -1002,116 +996,148 @@ Output ONLY valid JSON in this exact format:
             return;
         }
         
-        const selectedModel = modelSequence[0];
-        console.log(`🎯 Using model for streaming quiz: ${selectedModel.model} (provider: ${selectedModel.provider || 'unknown'})`);
-        
         let questionsSent = 0;
+        let result = null;
+        let lastError = null;
         
-        // Call LLM (non-streaming for now - llmResponsesWithTools doesn't support onChunk callback)
-        try {
-            const response = await llmResponsesWithTools({
-                model: selectedModel.model,
-                input: [
-                    {
-                        role: 'user',
-                        content: quizPrompt
-                    }
-                ],
-                options: {
-                    apiKey: selectedModel.apiKey,
-                    temperature: 0.7,
-                    maxTokens: 5000,
-                    stream: false  // Disabled - llmResponsesWithTools doesn't support streaming callbacks
-                }
-            });
+        // Try models in sequence until one succeeds (rate limit handling)
+        for (let i = 0; i < modelSequence.length; i++) {
+            const selectedModel = modelSequence[i];
+            console.log(`🎯 Quiz: Trying model ${i + 1}/${modelSequence.length}: ${selectedModel.model}`);
             
-            console.log(`📥 Response received from LLM`);
-            
-            // Extract response text
-            const responseText = response.content || response.text || '';
-            console.log(`📊 Response length: ${responseText.length} characters`);
-            
-            // Parse JSON directly (non-streaming mode)
-            let questions = [];
             try {
-                // Remove markdown code fences if present
-                let jsonText = responseText.trim();
-                if (jsonText.startsWith('```json')) {
-                    jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-                } else if (jsonText.startsWith('```')) {
-                    jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+                // Call LLM (non-streaming for now - llmResponsesWithTools doesn't support onChunk callback)
+                result = await llmResponsesWithTools({
+                    model: selectedModel.model,
+                    input: [
+                        {
+                            role: 'user',
+                            content: quizPrompt
+                        }
+                    ],
+                    options: {
+                        apiKey: selectedModel.apiKey,
+                        temperature: 0.7,
+                        maxTokens: 5000,
+                        stream: false  // Disabled - llmResponsesWithTools doesn't support streaming callbacks
+                    }
+                });
+                
+                console.log(`✅ Quiz: Successfully generated with ${selectedModel.model}`);
+                
+                // Extract response text
+                const responseText = result.content || result.text || '';
+                console.log(`📊 Response length: ${responseText.length} characters`);
+                
+                // Parse JSON directly (non-streaming mode)
+                let questions = [];
+                try {
+                    // Remove markdown code fences if present
+                    let jsonText = responseText.trim();
+                    if (jsonText.startsWith('```json')) {
+                        jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+                    } else if (jsonText.startsWith('```')) {
+                        jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+                    }
+                    
+                    const parsed = JSON.parse(jsonText);
+                    questions = parsed.questions || [];
+                    console.log(`✅ Parsed ${questions.length} questions from JSON`);
+                } catch (parseError) {
+                    console.error('❌ JSON parse error:', parseError.message);
+                    console.log('📄 Response text preview:', responseText.substring(0, 500));
                 }
                 
-                const parsed = JSON.parse(jsonText);
-                questions = parsed.questions || [];
-                console.log(`✅ Parsed ${questions.length} questions from JSON`);
-            } catch (parseError) {
-                console.error('❌ JSON parse error:', parseError.message);
-                console.log('📄 Response text preview:', responseText.substring(0, 500));
-            }
-            
-            console.log(`📊 Total questions parsed: ${questions.length}`);
-            
-            if (questions.length === 0) {
-                console.log(`❌ No questions generated - LLM response may have been invalid JSON`);
-                console.log(`📄 Response text preview: ${responseText.substring(0, 500)}`);
-                eventCallback('error', { error: 'Failed to generate any valid questions' });
-                return;
-            }
-            
-            console.log(`✅ Generated ${questions.length} questions total`);
-            
-            // Emit all questions at once
-            questions.forEach((question, index) => {
-                console.log(`✅ Emitting question ${index + 1}: ${question.prompt.substring(0, 50)}...`);
-                eventCallback('question_generated', {
-                    question,
-                    index,
-                    total: questions.length
+                console.log(`📊 Total questions parsed: ${questions.length}`);
+                
+                if (questions.length === 0) {
+                    console.log(`❌ No questions generated - LLM response may have been invalid JSON`);
+                    console.log(`📄 Response text preview: ${responseText.substring(0, 500)}`);
+                    eventCallback('error', { error: 'Failed to generate any valid questions' });
+                    return;
+                }
+                
+                console.log(`✅ Generated ${questions.length} questions total`);
+                
+                // Emit all questions at once
+                questions.forEach((question, index) => {
+                    console.log(`✅ Emitting question ${index + 1}: ${question.prompt.substring(0, 50)}...`);
+                    eventCallback('question_generated', {
+                        question,
+                        index,
+                        total: questions.length
+                    });
                 });
-            });
-            
-            // Calculate cost
-            const usage = response.usage || {};
-            const cost = calculateCost(
-                selectedModel.model,
-                usage.prompt_tokens || 0,
-                usage.completion_tokens || 0,
-                null,
-                false // Assume server-side key for now
-            );
-            
-            // Log to Google Sheets
-            try {
-                await logToGoogleSheets({
-                    timestamp: new Date().toISOString(),
-                    userEmail: email,
-                    type: 'quiz_generation',
-                    model: selectedModel.model,
-                    provider: selectedModel.provider,
-                    promptTokens: usage.prompt_tokens || 0,
-                    completionTokens: usage.completion_tokens || 0,
-                    totalTokens: (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
-                    cost,
+                
+                // Calculate cost
+                const usage = result.usage || {};
+                const cost = calculateCost(
+                    selectedModel.model,
+                    usage.prompt_tokens || 0,
+                    usage.completion_tokens || 0,
+                    null,
+                    false // Assume server-side key for now
+                );
+                
+                // Log to Google Sheets
+                try {
+                    await logToGoogleSheets({
+                        timestamp: new Date().toISOString(),
+                        userEmail: email,
+                        type: 'quiz_generation',
+                        model: selectedModel.model,
+                        provider: selectedModel.provider,
+                        promptTokens: usage.prompt_tokens || 0,
+                        completionTokens: usage.completion_tokens || 0,
+                        totalTokens: (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+                        cost,
+                        duration: Date.now() - startTime
+                    });
+                } catch (logError) {
+                    console.error('⚠️ Failed to log to Google Sheets:', logError);
+                }
+                
+                // Send completion event
+                eventCallback('complete', {
+                    questionsGenerated: questions.length,
                     duration: Date.now() - startTime
                 });
-            } catch (logError) {
-                console.error('⚠️ Failed to log to Google Sheets:', logError);
+                
+                // Success - exit the retry loop
+                return;
+                
+            } catch (error) {
+                lastError = error;
+                
+                // Check if it's a rate limit error
+                const isRateLimitError = 
+                    error.status === 429 ||
+                    error.message?.includes('429') ||
+                    error.message?.includes('rate limit') ||
+                    error.message?.includes('quota exceeded');
+                
+                if (isRateLimitError) {
+                    console.error(`❌ Quiz: Rate limit hit with ${selectedModel.model}:`, error.message?.substring(0, 200));
+                } else {
+                    console.error(`❌ Quiz: Model ${selectedModel.model} failed:`, error.message?.substring(0, 200));
+                }
+                
+                if (i < modelSequence.length - 1) {
+                    if (isRateLimitError) {
+                        console.log(`⏭️ Quiz: Rate limit detected, trying fallback model...`);
+                    } else {
+                        console.log(`⏭️ Quiz: Trying next model...`);
+                    }
+                    continue;
+                }
             }
-            
-            // Send completion event
-            eventCallback('complete', {
-                questionsGenerated: questions.length,
-                duration: Date.now() - startTime
-            });
-            
-        } catch (error) {
-            console.error('❌ Quiz generation error:', error);
-            eventCallback('error', {
-                error: error.message || 'Quiz generation failed',
-                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-            });
         }
+        
+        // All models failed
+        console.error(`❌ Quiz: All ${modelSequence.length} models failed. Last error:`, lastError?.message);
+        eventCallback('error', {
+            error: lastError?.message || 'All models failed to generate quiz'
+        });
         
     } catch (error) {
         console.error('❌ Quiz handler error:', error);

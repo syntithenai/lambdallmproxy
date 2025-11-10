@@ -72,6 +72,7 @@ export default function ProjectSelectorDialog({ isOpen, onClose }: ProjectSelect
       await createProject(trimmedName);
       setNewProjectName('');
       setError(null);
+      onClose(); // Close dialog after successful creation
     } catch (err) {
       setError(err instanceof Error ? err.message : t('projects.errors.createFailed', 'Failed to create project'));
     } finally {

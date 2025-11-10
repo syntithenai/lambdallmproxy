@@ -10,7 +10,7 @@ import { QuizCard } from './QuizCard';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
 import { googleDriveSync } from '../services/googleDriveSync';
 import { useSwag } from '../contexts/SwagContext';
-import { useSettings } from '../contexts/SettingsContext';
+// import { useSettings } from '../contexts/SettingsContext';
 import { generateQuizStreaming } from '../utils/api';
 import QuizShareDialog from './QuizShareDialog';
 
@@ -18,10 +18,10 @@ export default function QuizPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSuccess, showError, showWarning } = useToast();
-  const { getToken } = useAuth();
+  const { getToken, user } = useAuth();
   const { getCurrentProjectId, currentProject } = useProject();
   const { snippets } = useSwag();
-  const { settings } = useSettings();
+  // const { settings } = useSettings();
   
   const [allStatistics, setAllStatistics] = useState<QuizStatistic[]>([]);
   
@@ -29,8 +29,8 @@ export default function QuizPage() {
   const statistics = useMemo(() => {
     const currentProjectId = currentProject?.id || null;
     if (!currentProjectId) {
-      // No project selected - show all quizzes
-      return allStatistics;
+      // No project selected - show only quizzes without a project (default project)
+      return allStatistics.filter(quiz => !quiz.projectId);
     }
     // Filter by current project
     return allStatistics.filter(quiz => quiz.projectId === currentProjectId);
@@ -203,12 +203,9 @@ export default function QuizPage() {
         return;
       }
       
-      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
-      
-      if (enabledProviders.length === 0) {
-        showError('No LLM providers enabled. Please enable at least one provider in Settings.');
-        return;
-      }
+      // Backend will use its own providers from PROVIDER_CATALOG.json
+      // We send empty array and let backend handle provider selection
+      const enabledProviders: any[] = [];
 
       // Combine all snippet content
       const content = snippets
@@ -231,16 +228,22 @@ export default function QuizPage() {
         questions: []
       };
       
-      // Save placeholder quiz immediately
+      // Get current project ID to associate with quiz
+      const currentProjectId = getCurrentProjectId();
+      const userId = user?.email;
+      
+      // Save placeholder quiz immediately with project ID and user ID
       const quizId = await quizDB.saveGeneratedQuiz(
         quiz.title,
         snippets.map(s => s.id),
         0,
         enrichment,
-        quiz
+        quiz,
+        currentProjectId || undefined,
+        userId
       );
       
-      console.log('💾 Placeholder quiz saved to database:', quizId);
+      console.log('💾 Placeholder quiz saved to database:', quizId, 'projectId:', currentProjectId, 'userId:', userId);
       
       // Store metadata for updating on completion
       setQuizMetadata({
@@ -250,9 +253,8 @@ export default function QuizPage() {
         quizId
       });
       
-      // Set initial quiz state
+      // Set initial quiz state (but don't show modal yet)
       setCurrentQuiz(quiz);
-      setShowQuizModal(true);
       
       // Generate quiz with streaming - questions will appear progressively
       await generateQuizStreaming(
@@ -273,23 +275,26 @@ export default function QuizPage() {
               questions: [...prevQuiz.questions, question]
             };
             
-            // Update database with new question
-            quizDB.saveGeneratedQuiz(
-              updatedQuiz.title,
-              snippets.map(s => s.id),
-              updatedQuiz.questions.length,
-              enrichment,
-              updatedQuiz
-            ).catch(err => console.error('Failed to update quiz in DB:', err));
+            // Update database with new question using updateQuizData
+            if (quizId) {
+              quizDB.updateQuizData(quizId, updatedQuiz)
+                .catch(err => console.error('Failed to update quiz in DB:', err));
+            }
             
             return updatedQuiz;
           });
         },
         // onComplete callback
-        (questionsGenerated, duration) => {
+        async (questionsGenerated, duration) => {
           console.log(`✅ Quiz complete: ${questionsGenerated} questions in ${duration}ms`);
           showSuccess(`Quiz ready with ${questionsGenerated} questions!`);
           setIsGeneratingQuiz(false);
+          
+          // Reload statistics to show the new quiz in the list
+          await loadStatistics();
+          
+          // NOW open the quiz modal
+          setShowQuizModal(true);
         },
         // onError callback
         (error) => {
@@ -555,7 +560,16 @@ export default function QuizPage() {
       {showQuizModal && currentQuiz && quizMetadata && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <QuizCard
-            quiz={currentQuiz}
+            quiz={{
+              title: currentQuiz.title,
+              questions: currentQuiz.questions.map((q: any) => ({
+                id: q.id,
+                prompt: q.prompt,
+                choices: q.choices,
+                answerId: q.correctChoiceId || q.answerId,
+                explanation: q.explanation
+              }))
+            }}
             onClose={() => {
               console.log('❌ Quiz modal closed without completion');
               console.log('📝 Quiz should remain in database as incomplete');

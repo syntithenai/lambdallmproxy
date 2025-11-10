@@ -123,8 +123,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const snippets = useMemo(() => {
     const currentProjectId = currentProject?.id || null;
     if (!currentProjectId) {
-      // No project selected - show all snippets
-      return allSnippets;
+      // No project selected - show only snippets without a project (default project)
+      return allSnippets.filter(s => !s.projectId);
     }
     // Filter by current project
     return allSnippets.filter(s => s.projectId === currentProjectId);
@@ -596,11 +596,19 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string, tags?: string[]): Promise<ContentSnippet | undefined> => {
     // Process content: Extract base64 images and replace with references
+    // NOTE: FeedItem now pre-processes images before calling addSnippet,
+    // but we keep this as a fallback for other sources (clipboard, manual entry, etc.)
+    console.log(`📝 addSnippet called with content length: ${content.length}`);
+    console.log(`📝 Content preview:`, content.substring(0, 200));
+    console.log(`📝 Has swag-image:// refs?`, content.includes('swag-image://'));
+    console.log(`📝 Has data: URIs?`, content.includes('data:image'));
+    
     let processedContent = content;
     try {
       processedContent = await imageStorage.processContentForSave(content);
       if (processedContent !== content) {
         console.log('📦 Extracted images to IndexedDB');
+        console.log('📦 Processed content preview:', processedContent.substring(0, 200));
       }
     } catch (error) {
       console.error('Failed to process images, using original content:', error);
@@ -633,6 +641,15 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       tags: tags && tags.length > 0 ? tags : undefined,
       projectId: currentProjectId || undefined  // Auto-tag with current project
     };
+    
+    console.log(`💾 Saving snippet:`, {
+      id: newSnippet.id,
+      title: newSnippet.title,
+      contentLength: newSnippet.content.length,
+      hasSwagImageRefs: newSnippet.content.includes('swag-image://'),
+      contentPreview: newSnippet.content.substring(0, 200)
+    });
+    
     setAllSnippets(prev => [newSnippet, ...prev]);
 
     // Queue snippet for batched sync if enabled

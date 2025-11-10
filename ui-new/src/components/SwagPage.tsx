@@ -2960,7 +2960,16 @@ export const SwagPage: React.FC = () => {
             }}
           >
             <QuizCard
-              quiz={currentQuiz}
+              quiz={{
+                title: currentQuiz.title,
+                questions: currentQuiz.questions.map((q: any) => ({
+                  id: q.id,
+                  prompt: q.prompt,
+                  choices: q.choices,
+                  answerId: q.correctChoiceId || q.answerId,
+                  explanation: q.explanation
+                }))
+              }}
               onClose={() => {
                 setShowQuizModal(false);
                 setCurrentQuiz(null);

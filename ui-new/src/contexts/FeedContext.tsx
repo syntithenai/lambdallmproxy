@@ -13,6 +13,7 @@ import { useAuth } from './AuthContext';
 import { useSwag } from './SwagContext';
 import { useProject } from './ProjectContext';
 import { useToast } from '../components/ToastManager';
+import { getItem, setItem } from '../utils/userStorage';
 import { feedSyncService } from '../services/feedSyncService';
 
 interface FeedContextValue {
@@ -57,7 +58,7 @@ interface FeedProviderProps {
 }
 
 export function FeedProvider({ children }: FeedProviderProps) {
-  const { getToken } = useAuth();
+  const { getToken, user } = useAuth();
   const { snippets } = useSwag();
   const { getCurrentProjectId, currentProject } = useProject();
   const { showSuccess, showWarning, showError } = useToast();
@@ -68,8 +69,8 @@ export function FeedProvider({ children }: FeedProviderProps) {
   const items = useMemo(() => {
     const currentProjectId = currentProject?.id || null;
     if (!currentProjectId) {
-      // No project selected - show all items
-      return allItems;
+      // No project selected - show only items without a project (default project)
+      return allItems.filter(item => !item.projectId);
     }
     // Filter by current project
     return allItems.filter(item => item.projectId === currentProjectId);
@@ -115,6 +116,51 @@ export function FeedProvider({ children }: FeedProviderProps) {
     console.log('📊 lastSearchCriteria state changed:', lastSearchCriteria);
     lastSearchCriteriaRef.current = lastSearchCriteria; // Sync ref with state
   }, [lastSearchCriteria]);
+
+  // Persist lastSearchCriteria to user-scoped localStorage
+  useEffect(() => {
+    if (lastSearchCriteria && user?.email) {
+      try {
+        setItem('feed_last_search', JSON.stringify(lastSearchCriteria));
+        console.log('💾 Saved lastSearchCriteria to localStorage:', lastSearchCriteria);
+      } catch (error) {
+        console.error('❌ Failed to save lastSearchCriteria to localStorage:', error);
+      }
+    }
+  }, [lastSearchCriteria, user?.email]);
+
+  // Restore lastSearchCriteria from user-scoped localStorage on mount
+  // Run ONCE on mount to restore immediately (before user scrolls)
+  useEffect(() => {
+    try {
+      const saved = getItem('feed_last_search');
+      if (saved) {
+        const criteria = JSON.parse(saved);
+        setLastSearchCriteria(criteria);
+        console.log('📂 Restored lastSearchCriteria from localStorage (early mount):', criteria);
+      }
+    } catch (error) {
+      console.error('❌ Failed to restore lastSearchCriteria from localStorage:', error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run ONCE on mount - ignore user?.email dependency to restore immediately
+
+  // Listen for maturity level changes from FeedPage
+  useEffect(() => {
+    const handleMaturityChange = async () => {
+      console.log('🎓 Maturity level changed, reloading preferences...');
+      try {
+        const prefs = await feedDB.getPreferences();
+        console.log('✅ Reloaded preferences, new maturity level:', prefs.maturityLevel);
+        setPreferences(prefs);
+      } catch (error) {
+        console.error('❌ Failed to reload preferences:', error);
+      }
+    };
+
+    window.addEventListener('feed-maturity-changed', handleMaturityChange);
+    return () => window.removeEventListener('feed-maturity-changed', handleMaturityChange);
+  }, []);
 
 
   /**

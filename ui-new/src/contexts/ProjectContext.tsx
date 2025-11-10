@@ -75,6 +75,11 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     try {
       const newProject = await projectDB.createProject(name);
       await loadProjects(); // Reload to get updated list
+      
+      // Auto-select the newly created project
+      projectDB.setCurrentProject(newProject.id);
+      setCurrentProject(newProject);
+      
       return newProject;
     } catch (error) {
       console.error('❌ Failed to create project:', error);

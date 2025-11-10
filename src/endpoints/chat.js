@@ -28,6 +28,12 @@ delete require.cache[require.resolve(catalogPath)];
 // Load provider catalog using centralized loader
 let providerCatalog = loadProviderCatalog();
 
+// Blocklist for models with known issues (temporary service problems, persistent errors, etc.)
+// These models will be skipped during fallback selection
+const BLOCKED_MODELS = new Set([
+    'meta-llama/llama-4-scout-17b-16e-instruct', // Groq 500 errors as of Nov 2025
+]);
+
 // Enrich catalog with rate limit information from provider-specific modules
 const { GROQ_RATE_LIMITS } = require('../groq-rate-limits');
 const { GEMINI_RATE_LIMITS } = require('../gemini-rate-limits');
@@ -839,9 +845,16 @@ async function makeStreamingRequest(targetUrl, apiKey, requestBody) {
                                 (error.details ? JSON.stringify(error.details) : null) ||
                                 `API request failed (${res.statusCode})`;
                             
-                            reject(new Error(errorMessage));
+                            const errorObj = new Error(errorMessage);
+                            errorObj.statusCode = res.statusCode;
+                            errorObj.code = res.statusCode;
+                            errorObj.response = error;
+                            reject(errorObj);
                         } catch (e) {
-                            reject(new Error(`API returned ${res.statusCode}: ${errorData}`));
+                            const errorObj = new Error(`API returned ${res.statusCode}: ${errorData}`);
+                            errorObj.statusCode = res.statusCode;
+                            errorObj.code = res.statusCode;
+                            reject(errorObj);
                         }
                     });
                     return;
@@ -2363,8 +2376,8 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                         // For capacity errors (TPM/context), we need to switch to HIGH-CAPACITY models
                         // These models have much higher TPM limits (100K-1M instead of 6K)
                         const highCapacityModels = {
-                            'groq': ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.3-70b-versatile'], // 30K, 12K TPM
-                            'groq-free': ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.3-70b-versatile'], // 30K, 12K TPM
+                            'groq': ['llama-3.3-70b-versatile', 'llama-3.1-70b-specdec', 'llama-3.2-90b-vision-preview'].filter(m => !BLOCKED_MODELS.has(m)), // 12K, 8K TPM
+                            'groq-free': ['llama-3.3-70b-versatile', 'llama-3.1-70b-specdec', 'llama-3.2-90b-vision-preview'].filter(m => !BLOCKED_MODELS.has(m)), // 12K, 8K TPM
                             'gemini': ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'], // 1M TPM, 2M context
                             'gemini-free': ['gemini-2.0-flash-exp', 'gemini-1.5-flash'], // 1M TPM
                             'openai': ['gpt-4o', 'gpt-4o-mini'], // High TPM
@@ -2377,8 +2390,8 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                         const standardFallbackModels = {
                             'openai': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
                             'openai-compatible': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'gpt-4-turbo'],
-                            'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
-                            'groq-free': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
+                            'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'].filter(m => !BLOCKED_MODELS.has(m)),
+                            'groq-free': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'].filter(m => !BLOCKED_MODELS.has(m))
                         };
                         
                         // Choose appropriate fallback list based on error type
@@ -2388,9 +2401,9 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                         
                         console.log(`🔍 ${isCapacityError ? '⚡ CAPACITY ERROR' : '⏱️  Rate limit'} - using ${isCapacityError ? 'high-capacity' : 'standard'} fallback models`);
                         
-                        // First, try other models on the same provider
+                        // First, try other models on the same provider (skip blocked models)
                         const fallbackModels = providerModelFallbacks;
-                        const nextModel = fallbackModels.find(m => !attemptedModels.has(m));
+                        const nextModel = fallbackModels.find(m => !attemptedModels.has(m) && !BLOCKED_MODELS.has(m));
                         
                         if (nextModel) {
                             // Try different model on same provider

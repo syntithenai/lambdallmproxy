@@ -10,7 +10,6 @@ import { TTSSettings } from './TTSSettings';
 import { VoiceSettings } from './VoiceSettings';
 import { RAGSettings } from './RAGSettings';
 import CloudSyncSettings from './CloudSyncSettings';
-import FeedSettings from './FeedSettings';
 
 interface EnabledTools {
   web_search: boolean;
@@ -44,7 +43,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
   const { features } = useFeatures();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'voice' | 'rag' | 'cloud' | 'feed'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'voice' | 'rag' | 'cloud'>('general');
   
   // Track if a provider is being edited
   const [isEditingProvider, setIsEditingProvider] = useState(false);
@@ -113,16 +112,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             }`}
           >
             🔌 <span className="hidden sm:inline">{t('settings.tabs.provider')}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('feed')}
-            className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === 'feed'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-            }`}
-          >
-            🎯 <span className="hidden sm:inline">Feed</span>
           </button>
           <button
             onClick={() => setActiveTab('cloud')}
@@ -977,11 +966,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </div>
           </div>
         </div>
-        )}
-
-        {/* Feed Tab */}
-        {activeTab === 'feed' && (
-          <FeedSettings />
         )}
 
         {/* TTS Tab */}

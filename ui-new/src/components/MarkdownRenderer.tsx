@@ -7,34 +7,12 @@ import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+// import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { MermaidChart } from './MermaidChart';
 import { usePlaylist } from '../contexts/PlaylistContext';
 import { imageStorage } from '../utils/imageStorage';
-
-// Custom sanitization schema that allows safe HTML elements
-const sanitizeSchema = {
-  ...defaultSchema,
-  attributes: {
-    ...defaultSchema.attributes,
-    // Allow common safe attributes
-    '*': ['className', 'style', 'id'],
-    a: ['href', 'title', 'target', 'rel'],
-    img: ['src', 'alt', 'title', 'width', 'height'],
-    table: ['className'],
-    td: ['align', 'colspan', 'rowspan'],
-    th: ['align', 'colspan', 'rowspan'],
-  },
-  tagNames: [
-    ...(defaultSchema.tagNames || []),
-    // Ensure table elements are allowed
-    'table', 'thead', 'tbody', 'tr', 'th', 'td', 'tfoot',
-    // Allow other common HTML elements
-    'div', 'span', 'br', 'hr',
-  ],
-};
 
 interface MarkdownRendererProps {
   content: string;
@@ -207,12 +185,17 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
         return;
       }
       
+      console.log(`🖼️ MarkdownRenderer: Found swag-image:// references, loading from IndexedDB...`);
+      console.log(`🖼️ Content preview:`, content.substring(0, 200));
+      
       setIsLoadingImages(true);
       try {
         const loadedContent = await imageStorage.processContentForDisplay(content);
+        console.log(`✅ MarkdownRenderer: Loaded images successfully`);
+        console.log(`✅ Loaded content preview:`, loadedContent.substring(0, 200));
         setDisplayContent(loadedContent);
       } catch (error) {
-        console.error('Failed to load images:', error);
+        console.error('❌ MarkdownRenderer: Failed to load images:', error);
         setDisplayContent(content); // Fallback to original
       } finally {
         setIsLoadingImages(false);
@@ -261,6 +244,18 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
     // If it's not a table, keep it as a code block
     return match;
   });
+
+  // CRITICAL FIX: ReactMarkdown AND rehypeRaw both strip data: URIs from img src
+  // Extract images with data URIs, render them separately, replace with placeholders
+  const dataUriImages: Array<{ placeholder: string; src: string; alt: string }> = [];
+  let imageCounter = 0;
+  
+  processedContent = processedContent.replace(/!\[([^\]]*)\]\((data:image\/[^)]+)\)/g, (_match, alt, src) => {
+    const placeholder = `DATA_URI_IMAGE_PLACEHOLDER_${imageCounter++}`;
+    dataUriImages.push({ placeholder, src, alt });
+    console.log('🔧 Extracted data URI image:', { placeholder, alt, srcLength: src.length });
+    return placeholder;
+  });
   
   // Detect and extract image gallery
   const galleryRegex = /<!-- GALLERY_START -->([\s\S]*?)<!-- GALLERY_END -->/g;
@@ -286,13 +281,22 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
     mainContent = displayContent.replace(galleryRegex, '').trim();
   }
   
+  console.log('🎨 MarkdownRenderer: Rendering with content length:', displayContent.length);
+  console.log('🎨 Content preview:', displayContent.substring(0, 200));
+  console.log('🎨 Has data: URIs?', displayContent.includes('data:image'));
+  console.log('🎨 Extracted data URI images:', dataUriImages.length);
+  console.log('🎨 onImageEdit prop:', onImageEdit ? 'PROVIDED' : 'NOT PROVIDED');
+  console.log('🎨 snippetId:', snippetId);
+  
+  // Render the markdown content
   return (
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[
-          rehypeRaw, // Allow HTML in markdown
-          [rehypeSanitize, sanitizeSchema], // Sanitize to prevent XSS attacks
+          rehypeRaw, // Allow HTML in markdown (needed for data: URI workaround)
+          // TEMPORARILY DISABLED: rehypeSanitize is stripping data: URIs from img src
+          // [rehypeSanitize, sanitizeSchema], // Sanitize with data: URIs allowed
           rehypeHighlight // Syntax highlighting for code blocks
         ]}
         components={{
@@ -318,12 +322,32 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
             </h4>
           ),
           
-          // Paragraphs
-          p: ({ children }) => (
-            <p className="mb-4 leading-relaxed text-gray-800 dark:text-gray-200">
-              {children}
-            </p>
-          ),
+          // Paragraphs - check for data URI image placeholders
+          p: ({ children }) => {
+            // Check if this paragraph contains a data URI image placeholder
+            const childText = typeof children === 'string' ? children : '';
+            const placeholderMatch = childText.match(/DATA_URI_IMAGE_PLACEHOLDER_(\d+)/);
+            
+            if (placeholderMatch) {
+              const imageIndex = parseInt(placeholderMatch[1]);
+              const imageData = dataUriImages[imageIndex];
+              
+              if (imageData) {
+                console.log('✅ Rendering data URI image:', { placeholder: imageData.placeholder, alt: imageData.alt });
+                return (
+                  <div className="my-4">
+                    <img src={imageData.src} alt={imageData.alt} className="max-w-full h-auto rounded-lg" />
+                  </div>
+                );
+              }
+            }
+            
+            return (
+              <p className="mb-4 leading-relaxed text-gray-800 dark:text-gray-200">
+                {children}
+              </p>
+            );
+          },
           
           // Lists
           ul: ({ children }) => (
@@ -477,14 +501,46 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
           ),
           
           // Images - render with proper styling, handle data URLs explicitly
-          img: ({ src, alt }) => {
+          img: (props) => {
+            console.log('🖼️ img component called with ALL props:', props);
+            
+            const { src, alt, node, ...rest } = props;
+            
+            // Check if src is in node.properties
+            const nodeSrc = node?.properties?.src;
+            console.log('� Checking node.properties.src:', nodeSrc);
+            
+            console.log('�🖼️ Destructured:', { 
+              srcType: typeof src,
+              srcValue: src,
+              srcFromNode: nodeSrc,
+              srcLength: typeof src === 'string' ? src.length : 'N/A',
+              srcPreview: typeof src === 'string' ? src.substring(0, 100) : src,
+              alt, 
+              hasOnImageEdit: !!onImageEdit,
+              restKeys: Object.keys(rest),
+              nodeKeys: node ? Object.keys(node) : []
+            });
+            
+            // Try to get src from node.properties if not in props
+            const actualSrc = src || nodeSrc;
+            console.log('🎯 Actual src to use:', typeof actualSrc === 'string' ? actualSrc.substring(0, 100) : actualSrc);
+            
             // Ensure src is a string and not empty
-            const imgSrc = typeof src === 'string' && src.trim() !== '' ? src : null;
+            const imgSrc = typeof actualSrc === 'string' && actualSrc.trim() !== '' ? actualSrc : null;
+            
+            console.log('🔍 After validation:', {
+              imgSrc: imgSrc ? 'VALID' : 'NULL',
+              imgSrcPreview: imgSrc ? imgSrc.substring(0, 100) : 'N/A'
+            });
             
             // Don't render if no valid src
             if (!imgSrc) {
+              console.log('❌ img component: No valid src, returning null');
               return null;
             }
+            
+            console.log('✅ img component: Valid src, rendering image');
             
             // Use ref to track counter without causing re-renders
             const currentCounter = imageCounterRef.current++;

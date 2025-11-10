@@ -21,9 +21,8 @@ import {
   Tag,
   Calendar,
   X,
-  Hand,
+  Save,
   MessageSquare,
-  ThumbsDown,
   Share2
 } from 'lucide-react';
 
@@ -34,7 +33,7 @@ interface FeedItemCardProps {
 export default function FeedItemCard({ item }: FeedItemCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { stashItem, trashItem, markViewed, startQuiz, generatingQuizForItem } = useFeed();
+  const { stashItem, markViewed, startQuiz, generatingQuizForItem, generateMore } = useFeed();
   const { addSnippet } = useSwag();
   const { showSuccess } = useToast();
   
@@ -55,9 +54,8 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
     onSwipeEnd: (direction) => {
       if (direction === 'right') {
         handleStash();
-      } else if (direction === 'left') {
-        handleTrash();
       }
+      // Left swipe removed - block button removed
     }
   });
 
@@ -125,7 +123,32 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
     
     // Include image with attribution if available
     if (item.image) {
-      content += `![${item.title}](${item.image})\n\n`;
+      // Check if image is a data URI (base64)
+      const isDataUri = item.image.startsWith('data:');
+      const imageSize = item.image.length;
+      
+      console.log(`📸 Stashing item with image:`, {
+        isDataUri,
+        imageSize,
+        imageSource: item.imageSource,
+        imageProvider: item.imageProvider,
+        imageUrl: isDataUri ? `data:... (${(imageSize / 1024).toFixed(1)} KB)` : item.image
+      });
+      
+      // If it's a data URI, save to IndexedDB immediately to avoid clogging up the editor
+      let imageRef = item.image;
+      if (isDataUri) {
+        try {
+          const { imageStorage } = await import('../utils/imageStorage');
+          imageRef = await imageStorage.saveImage(item.image);
+          console.log(`✅ Saved image to IndexedDB: ${imageRef} (${(imageSize / 1024).toFixed(1)} KB)`);
+        } catch (error) {
+          console.error('❌ Failed to save image to IndexedDB, using data URI:', error);
+          // Fall back to data URI if save fails
+        }
+      }
+      
+      content += `![${item.title}](${imageRef})\n\n`;
       if (item.imageAttribution) {
         content += `*Image: ${item.imageAttribution}*\n\n`;
       }
@@ -167,13 +190,6 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
   /**
    * Handle trash action
    */
-  const handleTrash = async () => {
-    // Track interaction
-    await trackInteraction('trash');
-
-    await trashItem(item.id);
-  };
-
   /**
    * Handle quiz action
    */
@@ -194,10 +210,23 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
     // Generate a chat query that expands on the article
     const query = `Can you explain more about ${item.title}? ${item.topics.length > 0 ? `I'm particularly interested in ${item.topics.slice(0, 2).join(' and ')}.` : ''} Please provide detailed information and examples.`;
 
-    // Navigate to chat with query in state
+    // Create system message with feed item context
+    const systemMessage = `You are a helpful AI assistant. The user is asking questions about the following article:
+
+Title: ${item.title}
+
+Content:
+${item.expandedContent}
+
+${item.topics.length > 0 ? `Topics: ${item.topics.join(', ')}` : ''}
+
+Please use this article as context to answer the user's questions. You can provide additional information beyond what's in the article, but reference the article content when relevant.`;
+
+    // Navigate to chat with query and system message in state
     navigate('/chat', { 
       state: { 
         initialQuery: query,
+        systemMessage: systemMessage,
         autoSubmit: true,
         clearChat: true // Clear existing chat before starting new conversation
       } 
@@ -209,6 +238,27 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
    */
   const handleShare = () => {
     setShowShareDialog(true);
+  };
+
+  /**
+   * Handle tag click - regenerate feed with this tag as search term
+   */
+  const handleTagClick = async (e: React.MouseEvent, topic: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('🏷️ Tag clicked, regenerating feed with topic:', topic);
+    
+    // Scroll to top of page
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    // Show toast notification
+    showSuccess(`🔍 Generating feed items about "${topic}"`);
+    
+    // Close dialog if open
+    setShowDialog(false);
+    
+    // Generate feed with this topic
+    await generateMore([topic]);
   };
 
   /**
@@ -409,7 +459,10 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
         </div>
 
         {/* Title */}
-        <h3 className="text-lg font-bold text-gray-900 mb-2">
+        <h3 
+          onClick={() => setShowDialog(true)}
+          className="text-lg font-bold text-gray-900 mb-2 cursor-pointer hover:text-blue-600 transition-colors"
+        >
           {item.title}
         </h3>
 
@@ -419,7 +472,8 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
             <img 
               src={item.image} 
               alt={item.title}
-              className="w-full h-48 object-cover"
+              onClick={() => setShowDialog(true)}
+              className="w-full h-48 object-cover cursor-pointer hover:opacity-90 transition-opacity"
             />
             {item.imageAttribution && (
               <div 
@@ -478,15 +532,13 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
               <Tag className="h-4 w-4" />
               {item.topics.slice(0, 3).map((topic, idx) => (
                 <span key={idx}>
-                  <a
-                    href={`https://www.google.com/search?q=${encodeURIComponent(topic)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-700 hover:text-blue-600 hover:underline"
-                    title={`Search Google for "${topic}"`}
+                  <button
+                    onClick={(e) => handleTagClick(e, topic)}
+                    className="text-gray-700 hover:text-blue-600 hover:underline cursor-pointer bg-transparent border-0 p-0"
+                    title={`Generate feed items about "${topic}"`}
                   >
                     {topic}
-                  </a>
+                  </button>
                   {idx < Math.min(item.topics.length, 3) - 1 && <span className="text-gray-500">, </span>}
                 </span>
               ))}
@@ -518,24 +570,15 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
 
 
         {/* Large Action Buttons Row */}
-        <div className="border-t border-gray-200 pt-3 grid grid-cols-5 gap-2">
-          <button
-            onClick={handleTrash}
-            className="flex flex-col items-center justify-center gap-2 p-4 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition-colors"
-            title="Downvote - Hide similar content"
-          >
-            <ThumbsDown className="h-6 w-6" />
-            <span className="text-xs font-medium">Block</span>
-          </button>
-
+        <div className="border-t border-gray-200 pt-3 grid grid-cols-4 gap-2">
           <button
             onClick={handleStash}
             disabled={item.stashed}
             className="flex flex-col items-center justify-center gap-2 p-4 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             title="Save to Swag"
           >
-            <Hand className="h-6 w-6" />
-            <span className="text-xs font-medium">{item.stashed ? 'Saved' : 'Save'}</span>
+            <Save className="h-6 w-6" />
+            <span className="text-xs font-medium">Save</span>
           </button>
 
           <button
@@ -582,7 +625,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
           onClick={() => setShowDialog(false)}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-lg shadow-xl w-[90%] max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -644,15 +687,13 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                   {item.topics.length > 0 && (
                     <div className="flex items-center gap-1 flex-wrap text-xs">
                       <span className="text-gray-600">Topics:</span>
-                      <a
-                        href={`https://www.google.com/search?q=${encodeURIComponent(item.topics.join(' '))}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-700 hover:underline"
-                        title={`Search Google for "${item.topics.join(', ')}"`}
+                      <button
+                        onClick={(e) => handleTagClick(e, item.topics.join(' '))}
+                        className="text-blue-600 hover:text-blue-700 hover:underline cursor-pointer bg-transparent border-0 p-0"
+                        title={`Generate feed items about "${item.topics.join(', ')}"`}
                       >
                         {item.topics.join(', ')}
-                      </a>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -696,15 +737,13 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                     <Tag className="h-4 w-4" />
                     {item.topics.slice(0, 3).map((topic, idx) => (
                       <span key={idx}>
-                        <a
-                          href={`https://www.google.com/search?q=${encodeURIComponent(topic)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-gray-700 hover:text-blue-600 hover:underline"
-                          title={`Search Google for "${topic}"`}
+                        <button
+                          onClick={(e) => handleTagClick(e, topic)}
+                          className="text-gray-700 hover:text-blue-600 hover:underline cursor-pointer bg-transparent border-0 p-0"
+                          title={`Generate feed items about "${topic}"`}
                         >
                           {topic}
-                        </a>
+                        </button>
                         {idx < Math.min(item.topics.length, 3) - 1 && <span className="text-gray-500">, </span>}
                       </span>
                     ))}
@@ -743,14 +782,11 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                   await handleStash();
                   setShowDialog(false);
                 }}
-                className={`flex-1 px-4 py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
-                  item.stashed
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
+                disabled={item.stashed}
+                className="flex-1 px-4 py-3 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Bookmark className="h-5 w-5" />
-                {item.stashed ? t('feed.stashed') : t('feed.stash')}
+                <Save className="h-5 w-5" />
+                Save
               </button>
 
               <button
@@ -759,9 +795,7 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
                   setShowDialog(false);
                 }}
                 disabled={isGeneratingQuiz}
-                className={`flex-1 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 ${
-                  isGeneratingQuiz ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
+                className="flex-1 px-4 py-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isGeneratingQuiz ? (
                   <>
@@ -781,12 +815,24 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
 
               <button
                 onClick={async () => {
-                  await handleTrash();
+                  await handleChat();
                   setShowDialog(false);
                 }}
-                className="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
               >
-                <Trash2 className="h-5 w-5" />
+                <MessageSquare className="h-5 w-5" />
+                Chat
+              </button>
+
+              <button
+                onClick={() => {
+                  handleShare();
+                  setShowDialog(false);
+                }}
+                className="flex-1 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+              >
+                <Share2 className="h-5 w-5" />
+                Share
               </button>
             </div>
           </div>

@@ -31,6 +31,7 @@ export interface QuizStatistic {
   completed: boolean; // Whether the quiz was actually completed (vs just generated)
   quizData?: any; // Store the actual quiz questions for restarting incomplete quizzes
   projectId?: string; // Associated project for filtering
+  userId?: string; // User who created the quiz for filtering
 }
 
 class QuizDatabase {
@@ -137,7 +138,7 @@ class QuizDatabase {
   /**
    * Save a generated quiz (not yet completed)
    */
-  async saveGeneratedQuiz(quizTitle: string, snippetIds: string[], totalQuestions: number, enrichment: boolean, quizData?: any): Promise<string> {
+  async saveGeneratedQuiz(quizTitle: string, snippetIds: string[], totalQuestions: number, enrichment: boolean, quizData?: any, projectId?: string, userId?: string): Promise<string> {
     await this.init();
 
     if (!this.db) {
@@ -158,7 +159,9 @@ class QuizDatabase {
       enrichment,
       synced: false,
       completed: false,
-      quizData
+      quizData,
+      projectId,
+      userId
     };
 
     return new Promise((resolve, reject) => {

@@ -363,6 +363,10 @@ class ImageStorageService {
     }
 
     console.log(`📦 Processing ${matches.length} images for storage...`);
+    const firstMatch = matches[0];
+    if (firstMatch) {
+      console.log(`📦 First image preview:`, firstMatch.substring(0, 100) + '...');
+    }
 
     let processedContent = content;
     const uniqueMatches = [...new Set(matches)]; // Deduplicate
@@ -370,7 +374,9 @@ class ImageStorageService {
     // Process images sequentially to avoid race conditions
     for (const base64 of uniqueMatches) {
       try {
+        console.log(`📦 Saving image (${(base64.length / 1024).toFixed(1)} KB)...`);
         const imageRef = await this.saveImage(base64);
+        console.log(`✅ Saved as: ${imageRef}`);
         // Replace all occurrences of this base64 string
         processedContent = processedContent.split(base64).join(imageRef);
       } catch (error) {
@@ -396,16 +402,21 @@ class ImageStorageService {
       return content; // No references to process
     }
 
+    console.log(`🔄 processContentForDisplay: Found ${matches.length} image references to load`);
+    console.log(`🔄 References:`, matches);
+
     let processedContent = content;
     const uniqueMatches = [...new Set(matches)]; // Deduplicate
 
     // Load images in parallel for better performance
     const loadPromises = uniqueMatches.map(async (ref) => {
       try {
+        console.log(`📥 Loading image from IndexedDB: ${ref}`);
         const base64 = await this.getImage(ref);
+        console.log(`✅ Loaded image ${ref}: ${(base64.length / 1024).toFixed(1)} KB`);
         return { ref, base64 };
       } catch (error) {
-        console.error(`Failed to load image ${ref}:`, error);
+        console.error(`❌ Failed to load image ${ref}:`, error);
         // Return placeholder for broken images
         return { ref, base64: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzk5OSI+SW1hZ2UgTm90IEZvdW5kPC90ZXh0Pjwvc3ZnPg==' };
       }
@@ -417,6 +428,9 @@ class ImageStorageService {
     for (const { ref, base64 } of loadedImages) {
       processedContent = processedContent.split(ref).join(base64);
     }
+
+
+    console.log(`✅ processContentForDisplay: Replaced ${uniqueMatches.length} references with base64 data`);
 
     return processedContent;
   }

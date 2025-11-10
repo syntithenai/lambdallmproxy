@@ -30,8 +30,10 @@ export class GoogleSheetsAdapter implements SyncAdapter {
   
   private spreadsheetId: string | null = null;
   private readonly SPREADSHEET_NAME = 'Research Agent Swag';
+  private readonly FOLDER_NAME = 'Research Agent';
   private readonly SHEETS_API_BASE = 'https://sheets.googleapis.com/v4';
   private readonly DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
+  private folderIdCache: string | null = null;
 
   /**
    * Pull data from Google Sheets using direct API calls
@@ -150,6 +152,58 @@ export class GoogleSheetsAdapter implements SyncAdapter {
   }
 
   /**
+   * Get or create the "Research Agent" folder
+   */
+  private async ensureResearchAgentFolder(token: string): Promise<string> {
+    if (this.folderIdCache) {
+      return this.folderIdCache;
+    }
+
+    // Search for existing folder
+    const searchUrl = `${this.DRIVE_API_BASE}/files?q=name='${this.FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id,name)`;
+    
+    const searchResponse = await fetch(searchUrl, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!searchResponse.ok) {
+      throw new Error(`Failed to search for Research Agent folder: ${searchResponse.statusText}`);
+    }
+
+    const searchData = await searchResponse.json();
+    
+    if (searchData.files && searchData.files.length > 0) {
+      this.folderIdCache = searchData.files[0].id;
+      console.log('✓ Found Research Agent folder:', this.folderIdCache);
+      return this.folderIdCache!;
+    }
+
+    // Create folder if not found
+    console.log('📁 Creating Research Agent folder...');
+    const createResponse = await fetch(`${this.DRIVE_API_BASE}/files`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: this.FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder',
+        description: 'Storage for Research Agent settings and data'
+      })
+    });
+
+    if (!createResponse.ok) {
+      throw new Error(`Failed to create Research Agent folder: ${createResponse.statusText}`);
+    }
+
+    const createData = await createResponse.json();
+    this.folderIdCache = createData.id;
+    console.log('✓ Created Research Agent folder:', this.folderIdCache);
+    return this.folderIdCache!;
+  }
+
+  /**
    * Ensure the "Research Agent Swag" spreadsheet exists in user's Drive
    */
   private async ensureSpreadsheetExists(token: string): Promise<void> {
@@ -162,8 +216,11 @@ export class GoogleSheetsAdapter implements SyncAdapter {
       return;
     }
 
-    // Search for existing spreadsheet
-    const searchUrl = `${this.DRIVE_API_BASE}/files?q=name='${this.SPREADSHEET_NAME}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id,name)`;
+    // Ensure Research Agent folder exists first
+    const folderId = await this.ensureResearchAgentFolder(token);
+
+    // Search for existing spreadsheet IN THE RESEARCH AGENT FOLDER
+    const searchUrl = `${this.DRIVE_API_BASE}/files?q=name='${this.SPREADSHEET_NAME}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id,name)`;
     
     const searchResponse = await fetch(searchUrl, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -198,8 +255,12 @@ export class GoogleSheetsAdapter implements SyncAdapter {
 
   /**
    * Create new "Research Agent Swag" spreadsheet with proper schema
+   * Places it in the "Research Agent" folder
    */
   private async createSpreadsheet(token: string): Promise<void> {
+    // Ensure Research Agent folder exists
+    const folderId = await this.ensureResearchAgentFolder(token);
+    
     const createUrl = `${this.SHEETS_API_BASE}/spreadsheets`;
     
     const createResponse = await fetch(createUrl, {
@@ -268,7 +329,28 @@ export class GoogleSheetsAdapter implements SyncAdapter {
 
     const createData = await createResponse.json();
     this.spreadsheetId = createData.spreadsheetId;
+    
+    // Move spreadsheet to Research Agent folder
     if (this.spreadsheetId) {
+      try {
+        console.log('📁 Moving spreadsheet to Research Agent folder...');
+        const moveResponse = await fetch(
+          `${this.DRIVE_API_BASE}/files/${this.spreadsheetId}?addParents=${folderId}&fields=id,parents`,
+          {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}` }
+          }
+        );
+        
+        if (moveResponse.ok) {
+          console.log('✓ Spreadsheet moved to Research Agent folder');
+        } else {
+          console.warn('⚠️ Could not move spreadsheet to folder (spreadsheet still created)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not move spreadsheet to folder:', error);
+      }
+      
       localStorage.setItem('google_sheets_spreadsheet_id', this.spreadsheetId);
     }
     console.log('✓ Created new spreadsheet:', this.spreadsheetId);

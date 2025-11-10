@@ -9,7 +9,8 @@ import type { CachedPlan } from '../../utils/planningCache';
 import { planningDB } from '../../utils/planningDB';
 import { requestGoogleAuth } from '../../utils/googleDocs';
 
-const APP_FOLDER_NAME = 'LLM Proxy App Data';
+// UPDATED: Use same folder as Google Sheets sync for consistency
+const APP_FOLDER_NAME = 'Research Agent';
 const PLANS_FILENAME = 'saved_plans.json';
 
 // Cache folder ID to avoid repeated lookups

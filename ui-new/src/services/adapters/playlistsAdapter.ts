@@ -17,7 +17,8 @@ interface SavedPlaylist {
   updatedAt: number;
 }
 
-const APP_FOLDER_NAME = 'LLM Proxy App Data';
+// UPDATED: Use same folder as Google Sheets sync for consistency
+const APP_FOLDER_NAME = 'Research Agent';
 const PLAYLISTS_FILENAME = 'saved_playlists.json';
 
 // Cache folder ID to avoid repeated lookups

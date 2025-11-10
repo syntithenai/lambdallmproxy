@@ -68,7 +68,7 @@ export interface SavedPlaylist {
   updatedAt: number;
 }
 
-const APP_FOLDER_NAME = 'LLM Proxy App Data';
+const APP_FOLDER_NAME = 'Research Agent'; // UPDATED: Unified with Google Sheets sync
 const PLANS_FILENAME = 'saved_plans.json';
 const PLAYLISTS_FILENAME = 'saved_playlists.json';
 const SNIPPETS_FILENAME = 'saved_snippets.json';

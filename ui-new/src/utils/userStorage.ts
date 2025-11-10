@@ -150,6 +150,7 @@ export const USER_SCOPED_KEYS = [
   'app_settings',
   'proxy_settings',
   'feed_maturity_level',
+  'feed_last_search',
   'auto_sync_enabled',
   'google_drive_access_token',
   'user_email',

@@ -780,14 +780,65 @@ Generate exactly ${count} items. Return valid JSON.`;
     
     // Artistic styles for AI-generated images (variety to stand out from photos)
     const artisticStyles = [
-        'watercolor painting style, soft edges, artistic',
-        'digital illustration, vibrant colors, modern art style',
-        'oil painting style, impressionist, rich textures',
-        'minimalist geometric art, bold shapes, abstract',
-        'vintage poster art, retro aesthetic, stylized',
-        'paper cut art style, layered, dimensional',
-        'ink wash painting, monochromatic, flowing lines',
-        'pop art style, bright colors, bold outlines'
+        // Painting Styles
+        'watercolor painting style, soft edges, artistic, flowing colors',
+        'oil painting style, impressionist, rich textures, painterly brushstrokes',
+        'acrylic painting style, bold colors, textured layers',
+        'ink wash painting, monochromatic, flowing lines, traditional Asian art',
+        'gouache painting style, matte finish, vibrant colors',
+        
+        // Digital Art Styles
+        'digital illustration, vibrant colors, modern art style, clean lines',
+        'vector art style, flat design, geometric shapes, bold colors',
+        'pixel art style, retro gaming aesthetic, 8-bit inspired',
+        'low poly 3D art, geometric facets, minimalist 3D',
+        'isometric digital art, clean geometric perspective',
+        
+        // Artistic Movements
+        'art nouveau style, flowing organic lines, decorative elements',
+        'art deco style, geometric patterns, luxury aesthetic, golden age',
+        'pop art style, bright colors, bold outlines, comic book inspired',
+        'cubist style, abstract geometric shapes, multiple perspectives',
+        'surrealist style, dreamlike imagery, unexpected combinations',
+        'expressionist style, bold colors, emotional intensity',
+        
+        // Contemporary & Modern
+        'minimalist geometric art, bold shapes, abstract, limited palette',
+        'paper cut art style, layered paper, dimensional, shadow depth',
+        'collage art style, mixed media, textured layers',
+        'graffiti street art style, urban aesthetic, spray paint textures',
+        'stencil art style, high contrast, urban contemporary',
+        
+        // Traditional & Cultural
+        'Japanese woodblock print style, flat colors, bold outlines, ukiyo-e',
+        'medieval illuminated manuscript style, gold leaf, ornate borders',
+        'Persian miniature painting style, intricate details, rich patterns',
+        'Aboriginal dot painting style, symbolic patterns, earthy tones',
+        
+        // Illustration Styles
+        'vintage poster art, retro aesthetic, stylized, mid-century modern',
+        'children\'s book illustration, whimsical, colorful, friendly',
+        'editorial illustration style, sophisticated, conceptual',
+        'scientific illustration style, detailed, educational, precise',
+        'botanical illustration style, detailed plant anatomy, naturalistic',
+        
+        // Specialty Techniques
+        'linocut print style, high contrast, carved appearance',
+        'screen print style, bold colors, graphic shapes, Warhol-inspired',
+        'stained glass window style, luminous colors, lead lines',
+        'mosaic tile art style, small colored fragments, ancient technique',
+        'chalk pastel style, soft blended colors, textured appearance',
+        
+        // Fantasy & Sci-Fi
+        'fantasy art style, magical elements, ethereal lighting',
+        'cyberpunk style, neon colors, futuristic urban, tech noir',
+        'steampunk style, Victorian era tech, brass and copper tones',
+        'vaporwave aesthetic, pastel colors, retro futuristic, glitch art',
+        
+        // Nature-Inspired
+        'photorealistic nature art, hyperdetailed, natural lighting',
+        'impressionist landscape style, soft focus, dappled light',
+        'tropical art style, lush vegetation, vibrant exotic colors'
     ];
     
     const itemsWithImages = [];
@@ -809,9 +860,9 @@ Generate exactly ${count} items. Return valid JSON.`;
                 if (catalog.image && catalog.image.providers) {
                     const { generateImageDirect } = require('./generate-image');
                     
-                    // Build creative prompt from feed item
-                    const styleIndex = idx % artisticStyles.length;
-                    const style = artisticStyles[styleIndex];
+                    // Build creative prompt from feed item - RANDOM style for variety
+                    const randomIndex = Math.floor(Math.random() * artisticStyles.length);
+                    const style = artisticStyles[randomIndex];
                     const basePrompt = item.title.substring(0, 100);
                     const topics = item.topics.slice(0, 3).join(', ');
                     const aiPrompt = `${basePrompt}. ${topics}. ${style}`;
