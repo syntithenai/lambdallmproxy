@@ -11,7 +11,6 @@ import { PROVIDER_INFO } from '../types/provider';
 import { maskApiKey } from '../utils/providerValidation';
 import { useProviders } from '../hooks/useProviders';
 import { ProviderForm } from './ProviderForm';
-import { useSettings } from '../contexts/SettingsContext';
 import { useEffect } from 'react';
 import { isAuthenticated } from '../utils/googleDocs';
 
@@ -24,7 +23,6 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
   // DEBUG: Log providers and enabled state
   // This must be placed after providers is defined, just before return
   const { providers, addProvider, updateProvider, deleteProvider } = useProviders();
-  const { loadFromGoogleDrive, saveToGoogleDrive } = useSettings();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -36,7 +34,6 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
   }, [isAdding, editingId, onEditingChange]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
 
   // DEBUG: Log providers and enabled state
   // Place this after all hooks and state, before return
@@ -96,39 +93,11 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
     setError(null);
   };
 
-  const handleLoadFromDrive = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await loadFromGoogleDrive();
-      setSuccess('Settings loaded successfully from Google Drive!');
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load settings from Google Drive');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveToDrive = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await saveToGoogleDrive();
-      setSuccess('Settings saved successfully to Google Drive!');
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to save settings to Google Drive');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const editingProvider = editingId ? providers.find((p) => p.id === editingId) : undefined;
 
   return (
     <div className="space-y-4">
-      {/* Cloud Sync Notice with Load/Save Buttons */}
+      {/* Cloud Sync Notice */}
       <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
         <div className="flex items-start gap-3">
           <span className="text-2xl">☁️</span>
@@ -136,56 +105,16 @@ export function ProviderList({ onEditingChange }: ProviderListProps = {}) {
             <div className="font-medium text-blue-900 dark:text-blue-100 mb-2">
               Cloud Sync for Provider Credentials
             </div>
-            <div className="text-sm text-blue-700 dark:text-blue-300 mb-3">
+            <div className="text-sm text-blue-700 dark:text-blue-300">
               {isAuthenticated() ? (
                 <span className="block text-green-700 dark:text-green-400 font-medium">
-                  ✓ Cloud sync is active - changes are saved automatically
+                  ✓ Cloud sync is active - provider settings are automatically synced to Google Drive
                 </span>
               ) : (
                 <>
                   Connect to Google Drive in the <strong>Cloud Sync</strong> tab to enable automatic synchronization of your provider settings.
                 </>
               )}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleLoadFromDrive}
-                disabled={isLoading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm flex items-center gap-2"
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Loading...
-                  </>
-                ) : (
-                  <>
-                    📥 Load from Drive
-                  </>
-                )}
-              </button>
-              <button
-                onClick={handleSaveToDrive}
-                disabled={isLoading}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm flex items-center gap-2"
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    💾 Save to Drive
-                  </>
-                )}
-              </button>
             </div>
           </div>
         </div>

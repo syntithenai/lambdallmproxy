@@ -19,6 +19,8 @@ import { FeaturesProvider, useFeatures } from './contexts/FeaturesContext';
 import { ToastProvider } from './components/ToastManager';
 import { chatHistoryDB } from './utils/chatHistoryDB';
 import { getCachedApiBase } from './utils/api';
+import { initGoogleApi } from './services/googleApi';
+import { googleAuth } from './services/googleAuth';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleLoginButton } from './components/GoogleLoginButton';
 import { PlaylistButton } from './components/PlaylistButton';
@@ -32,7 +34,9 @@ import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { OfflineStatus } from './components/OfflineStatus';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { unifiedSync } from './services/unifiedSync';
-import { plansAdapter, playlistsAdapter, googleSheetsAdapter } from './services/adapters';
+import { plansAdapter, playlistsAdapter } from './services/adapters';
+// DISABLED: Google Sheets sync replaced by Google Drive sync
+// import { googleSheetsAdapter } from './services/adapters';
 import { SyncStatusProvider } from './contexts/SyncStatusContext';
 import { AgentProvider, useAgents } from './contexts/AgentContext';
 import { GlobalAgentIndicator } from './components/GlobalAgentIndicator';
@@ -53,7 +57,7 @@ const SharedFeedItemViewer = lazy(() => import('./components/SharedFeedItemViewe
 const SharedQuizViewer = lazy(() => import('./components/SharedQuizViewer'));
 const ImageEditorPage = lazy(() => import('./components/ImageEditor/ImageEditorPage').then(m => ({ default: m.ImageEditorPage })));
 const AgentManager = lazy(() => import('./components/AgentManager').then(m => ({ default: m.AgentManager })));
-
+const MusicPage = lazy(() => import('./components/MusicPage'));
 // Loading fallback component
 const LoadingFallback = () => (
   <div className="flex items-center justify-center h-full">
@@ -66,7 +70,7 @@ const LoadingFallback = () => (
 
 // Create a wrapper component that can access auth context
 function AppContent() {
-  const { isAuthenticated, getToken } = useAuth();
+  const { isAuthenticated, getToken, user } = useAuth();
   const { settings } = useSettings();
   const { usage, loading: usageLoading } = useUsage();
   const { showAgentManager, setShowAgentManager } = useAgents();
@@ -84,6 +88,13 @@ function AppContent() {
   const [showWelcomeWizard, setShowWelcomeWizard] = useState(false);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   
+  // Initialize unified Google Auth on app startup
+  useEffect(() => {
+    googleAuth.init().catch(err => {
+      console.warn('⚠️ Failed to initialize Google Auth:', err);
+    });
+  }, []);
+  
   // Debug: Log route changes
   useEffect(() => {
     console.log('🧭 Route changed to:', location.pathname);
@@ -99,7 +110,8 @@ function AppContent() {
     // Register sync adapters (always register, even if not starting)
     unifiedSync.registerAdapter(plansAdapter);
     unifiedSync.registerAdapter(playlistsAdapter);
-    unifiedSync.registerAdapter(googleSheetsAdapter);
+    // DISABLED: Google Sheets sync replaced by Google Drive sync (googleDriveSync.ts)
+    // unifiedSync.registerAdapter(googleSheetsAdapter);
     
     // ⚠️ CRITICAL: Only start sync if user is authenticated
     // This prevents Google Sheets sync errors on login page
@@ -114,7 +126,7 @@ function AppContent() {
     if (autoSyncEnabled) {
       // Start automatic periodic sync (every 5 minutes)
       unifiedSync.start(5 * 60 * 1000);
-      console.log('✅ Unified sync started (plans, playlists, google-sheets)');
+      console.log('✅ Unified sync started (plans, playlists) - Google Drive sync handled separately');
     } else {
       console.log('⚠️ Auto-sync disabled by user');
     }
@@ -125,9 +137,24 @@ function AppContent() {
     };
   }, [isAuthenticated]); // Dependency on isAuthenticated to restart sync after login
   
+  // Initialize Google API (for Drive/Sheets sync)
+  useEffect(() => {
+    const initGapi = async () => {
+      try {
+        await initGoogleApi();
+        console.log('✅ Google API initialized');
+      } catch (error) {
+        console.warn('⚠️ Google API initialization failed:', error);
+        // Non-fatal - user can still use app without Drive/Sheets sync
+      }
+    };
+    
+    initGapi();
+  }, []);
+  
   // Handle language changes and document direction
   useEffect(() => {
-    if (settings.language && i18n.language !== settings.language) {
+    if (settings?.language && i18n.language !== settings.language) {
       i18n.changeLanguage(settings.language);
     }
     
@@ -135,7 +162,7 @@ function AppContent() {
     const direction = ['ar', 'he', 'fa'].includes(i18n.language) ? 'rtl' : 'ltr';
     document.documentElement.dir = direction;
     document.documentElement.lang = i18n.language;
-  }, [settings.language, i18n]);
+  }, [settings?.language, i18n]);
   
   // Global keyboard shortcut listener
   useEffect(() => {
@@ -259,6 +286,29 @@ function AppContent() {
     migrateData();
   }, []);
 
+  // Migrate settings and UI state from localStorage to IndexedDB after authentication
+  useEffect(() => {
+    const migrateUserData = async () => {
+      if (!isAuthenticated || !user?.email) {
+        return; // Wait for authentication
+      }
+
+      try {
+        // Dynamic import to avoid loading migration code until needed
+        const { migrateFromLocalStorage } = await import('./services/migrateFromLocalStorage');
+        
+        console.log('🔄 Starting unified settings migration for user:', user.email);
+        await migrateFromLocalStorage(user.email);
+        console.log('✅ Settings migration complete');
+      } catch (error) {
+        console.error('❌ Error during settings migration:', error);
+        // Don't throw - migration failure shouldn't break the app
+      }
+    };
+    
+    migrateUserData();
+  }, [isAuthenticated, user?.email]);
+
   // Initialize Google Identity Services for client-side Sheets API
   useEffect(() => {
     const clientId = import.meta.env.VITE_GGL_CID;
@@ -305,7 +355,7 @@ function AppContent() {
           },
           body: JSON.stringify({
             messages: [{ role: 'user', content: 'test' }],
-            providers: settings.providers || []
+            providers: settings?.providers || []
           })
         });
 
@@ -326,7 +376,7 @@ function AppContent() {
     if (isAuthenticated && !hasCheckedAuth) {
       checkAuthAndProviders();
     }
-  }, [isAuthenticated, getToken, settings.providers, hasCheckedAuth]);
+  }, [isAuthenticated, getToken, settings?.providers, hasCheckedAuth]);
 
   // Check if we should show the welcome wizard
   useEffect(() => {
@@ -656,6 +706,22 @@ function AppContent() {
                 </button>
               )}
               
+              {/* Music Link */}
+              {location.pathname !== '/music' && (
+                <button
+                  onClick={() => {
+                    handleNavigate('/music');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg transition-colors text-left touch-target hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                  </svg>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Music</span>
+                </button>
+              )}
+              
               <button
                 onClick={() => {
                   handleNavigate('/settings');
@@ -766,6 +832,7 @@ function AppContent() {
               <Route path="/quiz" element={<QuizPage />} />
               <Route path="/quiz/shared" element={<SharedQuizViewer />} />
               <Route path="/image-editor" element={<ImageEditorPage />} />
+              <Route path="/music" element={<MusicPage />} />
               <Route path="/snippet/shared" element={<SharedSnippetViewer />} />
               <Route path="/feed/share/:data" element={<SharedFeedItemViewer />} />
               <Route path="/billing" element={<BillingPage />} />

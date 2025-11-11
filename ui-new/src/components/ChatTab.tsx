@@ -433,8 +433,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [promptHistory, setPromptHistory] = useLocalStorage<string[]>('chat_prompt_history', []);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   
-  // RAG context integration
-  const [useRagContext] = useLocalStorage<boolean>('chat_use_rag', false);
+  // RAG context integration - read from unified settings
+  const useRagContext = settings?.rag?.enabled ?? false;
   // TODO: ragSearching state is set but never used - could be used for loading indicator
   // const [ragSearching, setRagSearching] = useState(false);
   const [, setRagSearching] = useState(false); // Keep setter to avoid breaking code that calls it
@@ -457,20 +457,12 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   // These snippets will be included in full as context when sending messages
   const [selectedSnippetIds, setSelectedSnippetIds] = useState<Set<string>>(new Set());
   
-  // Load RAG threshold from settings
+  // Load RAG threshold from unified settings
   useEffect(() => {
-    const savedConfig = localStorage.getItem('rag_config');
-    if (savedConfig) {
-      try {
-        const config = JSON.parse(savedConfig);
-        if (config.similarityThreshold !== undefined) {
-          setRagThreshold(config.similarityThreshold);
-        }
-      } catch (error) {
-        console.error('Failed to parse RAG config:', error);
-      }
+    if (settings?.rag?.scoreThreshold !== undefined) {
+      setRagThreshold(settings.rag.scoreThreshold);
     }
-  }, []);
+  }, [settings?.rag?.scoreThreshold]);
   
   // Handle navigation state from feed items or other sources
   const routerLocation = useRouterLocation();
@@ -482,6 +474,11 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       if (routerLocation.state?.clearChat) {
         console.log('🧹 Clearing chat thread as requested from feed item');
         setMessages([]);
+        // Generate new chat ID for the new conversation
+        const newChatId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        setCurrentChatId(newChatId);
+        localStorage.setItem('last_active_chat_id', newChatId);
+        console.log('🆕 Created new chat session:', newChatId);
       }
       
       // Set system message if provided (from feed items)
@@ -548,6 +545,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       replicateApiKey?: string;
     } = {};
     
+    if (!settings) return keys;
+    
     settings.providers.forEach(provider => {
       if (provider.enabled && provider.apiKey) {
         switch (provider.type) {
@@ -568,7 +567,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     });
     
     return keys;
-  }, [settings.providers]);
+  }, [settings]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1374,9 +1373,17 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     }
   }, []); // Run once on mount
 
-  // Load last active chat on mount
+  // Load last active chat on mount (but skip if coming from feed with clearChat flag)
   useEffect(() => {
     if (!messagesLoaded) {
+      // Check if we're navigating from feed with clearChat=true
+      // If so, skip loading previous chat
+      if (routerLocation.state?.clearChat) {
+        console.log('🧹 Skipping chat restore due to clearChat flag from navigation');
+        setMessagesLoaded(true);
+        return;
+      }
+      
       (async () => {
         try {
           const lastChatId = localStorage.getItem('last_active_chat_id');
@@ -1434,7 +1441,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
         setMessagesLoaded(true);
       })();
     }
-  }, [messagesLoaded]);
+  }, [messagesLoaded, routerLocation.state?.clearChat]);
 
   // Auto-save chat history whenever messages change
   useEffect(() => {
@@ -2232,8 +2239,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
             },
             body: JSON.stringify({ 
               query: textToSend,
-              embeddingModel: settings.embeddingModel,
-              providers: settings.providers
+              embeddingModel: settings?.embeddingModel,
+              providers: settings?.providers || []
             })
           });
           
@@ -2566,23 +2573,15 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       // Send providers array instead of model field - filter out disabled providers
       // IMPORTANT: Only send providers that are explicitly enabled (enabled === true)
       // Providers without 'enabled' field or with enabled=false are excluded
-      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
+      const enabledProviders = settings?.providers?.filter(p => p.enabled !== false) || [];
       
-      // Load proxy settings from localStorage
-      const proxySettings = localStorage.getItem('proxy_settings');
+      // Load proxy settings from unified settings
       let proxyUsername: string | undefined;
       let proxyPassword: string | undefined;
-      if (proxySettings) {
-        try {
-          const parsed = JSON.parse(proxySettings);
-          if (parsed.enabled && parsed.username && parsed.password) {
-            proxyUsername = parsed.username;
-            proxyPassword = parsed.password;
-            console.log('🌐 Proxy settings loaded from localStorage:', parsed.username);
-          }
-        } catch (e) {
-          console.error('Failed to parse proxy settings:', e);
-        }
+      if (settings?.proxy?.enabled && settings.proxy.username && settings.proxy.password) {
+        proxyUsername = settings.proxy.username;
+        proxyPassword = settings.proxy.password;
+        console.log('🌐 Proxy settings loaded from unified settings:', settings.proxy.username);
       }
       
       const requestPayload: any = {
@@ -2590,10 +2589,10 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         messages: cleanedMessages,
         temperature: 0.7,
         stream: true,  // Always use streaming
-        optimization: settings.optimization || 'cheap',  // Model selection strategy
-        language: settings.language || 'en',  // User's preferred language for responses
+        optimization: settings?.optimization || 'cheap',  // Model selection strategy
+        language: settings?.language || 'en',  // User's preferred language for responses
         voiceMode: continuousVoiceEnabled,  // Enable dual response format for voice mode
-        imageQuality: settings.imageQuality || 'low'  // Default image generation quality
+        imageQuality: settings?.imageQuality || 'low'  // Default image generation quality
       };
       
       console.log(`🎯 Model selection optimization: ${requestPayload.optimization}`);
@@ -2624,7 +2623,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       }
       
       // Add Tavily API key if available
-      if (settings.tavilyApiKey && settings.tavilyApiKey.trim()) {
+      if (settings?.tavilyApiKey && settings.tavilyApiKey.trim()) {
         requestPayload.tavilyApiKey = settings.tavilyApiKey;
         console.log('Including Tavily API key in request');
       }
@@ -4378,7 +4377,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     
     // Build request payload with continuation flag
     // IMPORTANT: Only send providers that are explicitly enabled (enabled === true)
-    const enabledProviders = settings.providers.filter(p => p.enabled === true);
+    const enabledProviders = settings?.providers.filter(p => p.enabled === true) || [];
     
     const requestPayload: any = {
       providers: enabledProviders,
@@ -4386,9 +4385,9 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       temperature: 0.7,
       stream: true,
       isContinuation: true,  // Critical: Flag to bypass message filtering
-      optimization: settings.optimization || 'cheap',  // Model selection strategy
-      language: settings.language || 'en',  // User's preferred language for responses
-      imageQuality: settings.imageQuality || 'low'  // Default image generation quality
+      optimization: settings?.optimization || 'cheap',  // Model selection strategy
+      language: settings?.language || 'en',  // User's preferred language for responses
+      imageQuality: settings?.imageQuality || 'low'  // Default image generation quality
     };
     
     console.log(`🎯 Continuation request with optimization: ${requestPayload.optimization}`);

@@ -16,7 +16,7 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
   disabled,
 }) => {
   const { features } = useFeatures();
-  const { settings, setSettings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const hasAIProvider = features?.imageEditingAI ?? false;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -305,8 +305,8 @@ export const BulkOperationsBar: React.FC<BulkOperationsBarProps> = ({
           </label>
           <select
             id="image-quality"
-            value={settings.imageQuality || 'low'}
-            onChange={(e) => setSettings({ ...settings, imageQuality: e.target.value as ImageQuality })}
+            value={settings?.imageQuality || 'low'}
+            onChange={(e) => updateSettings({ imageQuality: e.target.value as ImageQuality })}
             className="px-2 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
             title="Default quality for AI image generation (affects cost)"
           >

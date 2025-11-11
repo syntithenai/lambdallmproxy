@@ -1,16 +1,14 @@
 /**
  * Phase 2: Settings UI Type Definitions
  * 
- * This file defines the new v2.0.0 settings schema with multi-provider support.
- * Key changes from v1:
- * - Single provider → Multiple providers array
- * - Model selection removed (backend decides)
- * - Provider type encoding
- * - OpenAI-compatible support with modelName
- * 
- * Note: All pricing uses paid tier rates regardless of API key source
+ * This file re-exports types from persistence.ts for backwards compatibility
+ * MIGRATION NOTE: Code should gradually migrate to import from persistence.ts directly
  */
 
+// Re-export unified types from persistence.ts
+export type { ProviderConfig, Settings } from './persistence';
+
+// Legacy Provider type definition - kept for backward compatibility
 export type ProviderType =
   | 'groq'                // Groq - https://api.groq.com/openai/v1
   | 'openai'              // OpenAI - https://api.openai.com/v1
@@ -20,47 +18,15 @@ export type ProviderType =
   | 'atlascloud'          // Atlas Cloud - https://api.atlascloud.ai/v1
   | 'speaches'            // Speaches - Local Whisper server (http://localhost:8000)
   | 'anthropic'           // Anthropic - https://api.anthropic.com/v1
+  | 'google'              // Google (alias for gemini)
+  | 'cohere'              // Cohere
+  | 'deepseek'            // DeepSeek
   | 'openai-compatible';  // Custom endpoint - user specifies endpoint AND modelName
-
-export interface ProviderConfig {
-  id: string;              // Unique ID for this provider instance (UUID)
-  type: ProviderType;      // Provider type - determines endpoint and behavior
-  apiEndpoint: string;     // Auto-filled and NOT EDITABLE except for openai-compatible
-  apiKey: string;          // User's API key for this provider
-  modelName?: string;      // ONLY for openai-compatible - preserved through to upstream
-  rateLimitTPM?: number;   // ONLY for openai-compatible - explicit rate limit or undefined
-  enabled?: boolean;       // Whether this provider should be used (defaults to true if undefined)
-  // Model restrictions - applies to ALL LLM calls (chat, image, etc.)
-  // null or undefined = allow all models
-  // empty array = allow all models
-  // non-empty array = only allow exact model name matches
-  allowedModels?: string[] | null;
-  // Image generation quality cap
-  maxImageQuality?: 'fast' | 'standard' | 'high' | 'ultra';
-  // Capability flags - control which services this provider can be used for
-  capabilities?: {
-    chat?: boolean;        // Enable for chat/text completion (default: true)
-    image?: boolean;       // Enable for image generation (default: true)
-    embedding?: boolean;   // Enable for embeddings (default: true)
-    voice?: boolean;       // Enable for voice/transcription (default: true)
-    tts?: boolean;         // Enable for text-to-speech (default: true)
-  };
-}
 
 export type OptimizationPreference = 'cheap' | 'balanced' | 'powerful' | 'fastest';
 export type ImageQuality = 'low' | 'medium' | 'high';
 
-export interface Settings {
-  version: '2.0.0';
-  providers: ProviderConfig[]; // Array of configured providers (unlimited)
-  tavilyApiKey: string;        // Unchanged - for search functionality
-  syncToGoogleDrive?: boolean; // Enable automatic sync to Google Drive (default: false)
-  optimization?: OptimizationPreference; // Model selection strategy (default: 'cheap')
-  language?: string;           // User's preferred UI language (ISO 639-1 code: en, es, fr, de, zh, ja, ar, nl, pt, ru)
-  embeddingSource?: 'api' | 'local'; // Embedding source: 'api' = backend API, 'local' = browser-based (default: 'api')
-  embeddingModel?: string;     // Selected embedding model ID (e.g., 'text-embedding-3-small' or 'Xenova/all-MiniLM-L6-v2')
-  imageQuality?: ImageQuality; // Image generation quality: 'low' (256x256), 'medium' (512x512), 'high' (1024x1024+) - default: 'low'
-}
+// Settings interface is now in persistence.ts - imported above
 
 /**
  * Legacy v1.0.0 settings schema (for migration)
@@ -87,6 +53,9 @@ export const PROVIDER_ENDPOINTS: Record<Exclude<ProviderType, 'openai-compatible
   'atlascloud': 'https://api.atlascloud.ai/v1',
   'speaches': 'http://localhost:8000',
   'anthropic': 'https://api.anthropic.com/v1',
+  'google': 'https://generativelanguage.googleapis.com/v1beta',
+  'cohere': 'https://api.cohere.ai/v1',
+  'deepseek': 'https://api.deepseek.com/v1',
 };
 
 /**
@@ -129,14 +98,29 @@ export const PROVIDER_INFO: Record<ProviderType, { name: string; icon: string; d
     icon: '🏠',
     description: 'Local Whisper server for STT and TTS (OpenAI compatible)'
   },
-  'anthropic': {
+    'anthropic': {
     name: 'Anthropic',
     icon: '🧠',
-    description: 'Claude models - Advanced reasoning and analysis'
+    description: 'Claude models from Anthropic'
+  },
+  'google': {
+    name: 'Google',
+    icon: '✨',
+    description: 'Google AI models (alias for Gemini)'
+  },
+  'cohere': {
+    name: 'Cohere',
+    icon: '🔮',
+    description: 'Cohere language models'
+  },
+  'deepseek': {
+    name: 'DeepSeek',
+    icon: '🔍',
+    description: 'DeepSeek AI models'
   },
   'openai-compatible': {
-    name: 'OpenAI Compatible (Custom)',
-    icon: '⚙️',
-    description: 'Custom endpoint with OpenAI-compatible API'
-  },
+    name: 'Custom Endpoint',
+    icon: '🔗',
+    description: 'Any OpenAI-compatible API endpoint'
+  }
 };

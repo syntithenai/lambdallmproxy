@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePlaylist } from '../contexts/PlaylistContext';
 import { usePlayer } from '../contexts/PlayerContext';
-import { MediaPlayerDialog } from './MediaPlayerDialog';
 
 // Format seconds to MM:SS
 function formatTime(seconds: number): string {
@@ -19,7 +19,7 @@ function formatTime(seconds: number): string {
 export const MediaPlayerButton: React.FC = () => {
   const { playlist, isPlaying, currentTrack, togglePlayPause, nextTrack, previousTrack } = usePlaylist();
   const { isLoading, currentTime, duration } = usePlayer();
-  const [showDialog, setShowDialog] = useState(false);
+  const navigate = useNavigate();
 
   if (playlist.length === 0) {
     return null; // Don't show button if playlist is empty
@@ -111,15 +111,15 @@ export const MediaPlayerButton: React.FC = () => {
           )}
         </div>
 
-        {/* Open Playlist Dialog Button */}
+        {/* Open Music Page Button */}
         <button
           onClick={(e) => {
             e.stopPropagation();
-            console.log('[PlaylistButton] Opening dialog, playlist size:', playlist.length);
-            setShowDialog(true);
+            console.log('[PlaylistButton] Opening music page, playlist size:', playlist.length);
+            navigate('/music');
           }}
           className="p-1.5 sm:p-2 bg-purple-500 hover:bg-purple-600 text-white transition-colors flex items-center gap-1"
-          title="View playlist"
+          title="View full music page"
         >
           <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
             <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
@@ -129,9 +129,6 @@ export const MediaPlayerButton: React.FC = () => {
           </span>
         </button>
       </div>
-
-      {/* Media Player Dialog */}
-      <MediaPlayerDialog isOpen={showDialog} onClose={() => setShowDialog(false)} />
     </>
   );
 };

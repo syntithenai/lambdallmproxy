@@ -19,6 +19,9 @@ const API_KEY_PATTERNS: Record<ProviderType, RegExp> = {
   'replicate': /^r8_[a-zA-Z0-9]{40}$/, // Replicate API key format
   'speaches': /.+/, // Any non-empty string (local server)
   'anthropic': /^sk-ant-[a-zA-Z0-9_-]{20,}$/, // Anthropic API key format
+  'google': /^AIza[a-zA-Z0-9_-]{35}$/, // Google API key format (similar to Gemini)
+  'cohere': /^[a-zA-Z0-9_-]{40,}$/, // Cohere API key format
+  'deepseek': /^sk-[a-zA-Z0-9_-]{20,}$/, // DeepSeek API key format (similar to OpenAI)
 };
 
 /**
@@ -41,6 +44,9 @@ export function validateApiKey(apiKey: string, providerType: ProviderType): { va
       'replicate': 'Replicate API key must start with "r8_" followed by 40 characters',
       'speaches': 'API key cannot be empty',
       'anthropic': 'Anthropic API key must start with "sk-ant-" followed by at least 20 characters',
+      'google': 'Google API key must start with "AIza" followed by 35 characters',
+      'cohere': 'Cohere API key must be at least 40 characters',
+      'deepseek': 'DeepSeek API key must start with "sk-" followed by at least 20 characters',
     };
     return { valid: false, error: errorMessages[providerType] };
   }

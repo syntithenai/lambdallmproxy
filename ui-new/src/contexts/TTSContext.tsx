@@ -66,7 +66,7 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         providerFactory.cleanup();
         
         // Merge frontend settings with backend capabilities
-        const allProviders: ProviderConfig[] = [...settings.providers];
+        const allProviders: ProviderConfig[] = [...(settings?.providers || [])];
         
         // Add backend providers if available
         if (ttsCapabilities?.groq && !allProviders.some(p => p.type === 'groq')) {
@@ -151,7 +151,7 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => {
       providerFactory.cleanup();
     };
-  }, [settings.providers, ttsSettings.elevenlabsApiKey, ttsCapabilities]); // Added ttsCapabilities
+  }, [settings, ttsSettings.elevenlabsApiKey, ttsCapabilities]); // Added ttsCapabilities
 
   // Update voices when provider changes
   useEffect(() => {
@@ -192,7 +192,7 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Generate summary if needed
     if (options.shouldSummarize || shouldSummarizeForSpeech(speakableText, state.autoSummarize)) {
       try {
-        const bestProvider = settings.providers.find(p => p.enabled !== false && p.apiKey);
+        const bestProvider = settings?.providers.find(p => p.enabled !== false && p.apiKey);
         if (bestProvider) {
           speakableText = await summaryService.generateSpeakableSummary(speakableText, bestProvider);
         }
@@ -316,7 +316,7 @@ export const TTSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setState(prev => ({ ...prev, isPlaying: false, currentText: null }));
       throw lastError || new Error('All TTS providers failed');
     }
-  }, [state, settings.providers, providerFactory, summaryService]);
+  }, [state, settings, providerFactory, summaryService]);
 
   const stop = useCallback(() => {
     console.log('TTSContext.stop() called - INTENTIONAL STOP');

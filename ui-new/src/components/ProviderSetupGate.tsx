@@ -22,20 +22,20 @@ const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnbl
 
   useEffect(() => {
     if (isBlocked) {
-      const hasUIProviders = settings.providers && settings.providers.length > 0;
+      const hasUIProviders = settings?.providers && settings.providers.length > 0;
       if (hasUIProviders) {
         console.log('User has UI providers configured, unblocking UI');
         onUnblock();
         return;
       }
     }
-  }, [isBlocked, settings.providers, onUnblock]);
+  }, [isBlocked, settings, onUnblock]);
 
   useEffect(() => {
     const handleProviderAdded = (event: CustomEvent<ProviderConfig>) => {
       console.log('Provider added:', event.detail);
       setTimeout(() => {
-        if (settings.providers && settings.providers.length > 0) {
+        if (settings?.providers && settings.providers.length > 0) {
           onUnblock();
         }
       }, 100);
@@ -45,7 +45,7 @@ const ProviderSetupGate: React.FC<ProviderSetupGateProps> = ({ isBlocked, onUnbl
     return () => {
       window.removeEventListener('provider-added', handleProviderAdded as EventListener);
     };
-  }, [settings.providers, onUnblock]);
+  }, [settings, onUnblock]);
 
   if (!isBlocked) {
     return null;

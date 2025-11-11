@@ -133,8 +133,8 @@ export class ElevenLabsProvider implements TTSProvider {
     // Get API base URL (local or remote)
     const apiBase = await this.getApiBase();
     
-    // Get auth token from localStorage
-    const authToken = localStorage.getItem('google_id_token');
+    // Get auth token from localStorage (OAuth2 access token)
+    const authToken = localStorage.getItem('google_access_token');
     if (!authToken) {
       throw new Error('Authentication required. Please sign in.');
     }

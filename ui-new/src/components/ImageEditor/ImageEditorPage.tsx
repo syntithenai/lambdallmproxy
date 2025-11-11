@@ -634,11 +634,11 @@ export const ImageEditorPage: React.FC = () => {
       
       // Combine UI providers (from settings) with backend environment providers
       // Priority: UI configured providers > Environment providers
-      console.log('🔍 UI providers:', settings.providers);
+      console.log('🔍 UI providers:', settings?.providers);
       console.log('🔍 Environment providers:', providerCapabilities);
       
       // Filter UI providers for image generation
-      const uiImageProviders = (settings.providers || []).filter(p => {
+      const uiImageProviders = (settings?.providers || []).filter(p => {
         // enabled defaults to true if undefined
         const isEnabled = p.enabled !== false;
         const hasApiKey = !!p.apiKey;
@@ -699,9 +699,9 @@ export const ImageEditorPage: React.FC = () => {
         medium: 'standard', 
         high: 'hd'
       };
-      const quality = qualityMap[settings.imageQuality || 'low'];
+      const quality = qualityMap[settings?.imageQuality || 'low'];
       
-      console.log(`🎨 Using image quality: ${settings.imageQuality || 'low'} (mapped to: ${quality})`);
+      console.log(`🎨 Using image quality: ${settings?.imageQuality || 'low'} (mapped to: ${quality})`);
       
       // Call the generate-image endpoint
       const response = await fetch(`${apiBase}/generate-image`, {
@@ -718,7 +718,7 @@ export const ImageEditorPage: React.FC = () => {
           quality: quality,
           style: 'natural',
           accessToken: authToken, // Backend expects accessToken in body, not header
-          imageQuality: settings.imageQuality || 'low', // Pass user preference to backend
+          imageQuality: settings?.imageQuality || 'low', // Pass user preference to backend
           // Pass API keys from settings
           openaiApiKey: selectedProvider.type === 'openai' ? selectedProvider.apiKey : undefined,
           togetherApiKey: selectedProvider.type === 'together' ? selectedProvider.apiKey : undefined,
@@ -814,11 +814,11 @@ export const ImageEditorPage: React.FC = () => {
         const { generateImage } = await import('../../utils/api');
         
         // Find image-capable providers
-        const imageProviders = settings.providers.filter(p => 
+        const imageProviders = settings?.providers.filter(p => 
           p.enabled !== false && 
           (p.capabilities?.image !== false) &&
           (p.type === 'openai' || p.type === 'replicate' || p.type === 'together')
-        );
+        ) || [];
         
         if (imageProviders.length === 0) {
           alert('No image generation provider configured. Please configure one in Settings.');
@@ -837,7 +837,7 @@ export const ImageEditorPage: React.FC = () => {
           replicateApiKey?: string;
         } = {};
         
-        settings.providers.forEach(p => {
+        settings?.providers.forEach(p => {
           if (p.type === 'openai' && p.apiKey) providerApiKeys.openaiApiKey = p.apiKey;
           if (p.type === 'replicate' && p.apiKey) providerApiKeys.replicateApiKey = p.apiKey;
           if (p.type === 'together' && p.apiKey) providerApiKeys.togetherApiKey = p.apiKey;
@@ -869,6 +869,25 @@ export const ImageEditorPage: React.FC = () => {
           imageUrl = `data:image/png;base64,${result.base64}`;
         } else if (result.base64) {
           imageUrl = result.base64;
+        } else if (result.imageUrl && result.imageUrl.startsWith('http')) {
+          // If we got an HTTP URL (e.g., from Replicate), fetch and convert to base64
+          // This ensures the image is stored locally and will survive sync/restore
+          try {
+            console.log('🔄 Converting HTTP image to base64 for persistent storage...');
+            const response = await fetch(result.imageUrl);
+            const blob = await response.blob();
+            const reader = new FileReader();
+            imageUrl = await new Promise<string>((resolve, reject) => {
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+            console.log('✅ Converted to base64 for storage');
+          } catch (error) {
+            console.error('Failed to convert image to base64:', error);
+            // Fallback to original URL
+            imageUrl = result.imageUrl;
+          }
         }
         
         // Add the generated image to the images array
@@ -914,7 +933,7 @@ export const ImageEditorPage: React.FC = () => {
       // EXISTING FEATURE: If images are selected, parse and execute editing commands
       console.log('Parsing command:', command);
       const authToken = await getToken();
-      const parseResult = await parseImageCommand(command, settings.providers, authToken);
+      const parseResult = await parseImageCommand(command, settings?.providers || [], authToken);
       
       if (!parseResult.success || parseResult.operations.length === 0) {
         showWarning(parseResult.explanation || 'Could not understand command. Try: "make smaller", "rotate right", "convert to jpg", "remove glasses"');

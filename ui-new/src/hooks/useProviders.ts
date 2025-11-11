@@ -7,7 +7,7 @@
 
 import { useCallback } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
-import type { ProviderConfig } from '../types/provider';
+import type { ProviderConfig } from '../types/persistence';
 import { validateProvider, isDuplicateProvider } from '../utils/providerValidation';
 
 export interface UseProvidersResult {
@@ -19,13 +19,15 @@ export interface UseProvidersResult {
 }
 
 export function useProviders(): UseProvidersResult {
-  const { settings, setSettings } = useSettings();
+  const { settings, updateSettings } = useSettings();
 
   /**
    * Add a new provider configuration
    */
   const addProvider = useCallback(
     (provider: Omit<ProviderConfig, 'id'>): { success: boolean; error?: string } => {
+      if (!settings) return { success: false, error: 'Settings not loaded' };
+
       // Validate provider
       const validation = validateProvider(provider);
       if (!validation.valid) {
@@ -49,14 +51,13 @@ export function useProviders(): UseProvidersResult {
       }
 
       // Add provider
-      setSettings({
-        ...settings,
+      updateSettings({
         providers: [...settings.providers, newProvider],
       });
 
       return { success: true };
     },
-    [settings, setSettings]
+    [settings, updateSettings]
   );
 
   /**
@@ -64,6 +65,8 @@ export function useProviders(): UseProvidersResult {
    */
   const updateProvider = useCallback(
     (id: string, updates: Partial<ProviderConfig>): { success: boolean; error?: string } => {
+      if (!settings) return { success: false, error: 'Settings not loaded' };
+
       const existingProvider = settings.providers.find((p) => p.id === id);
       if (!existingProvider) {
         return { success: false, error: 'Provider not found' };
@@ -94,14 +97,13 @@ export function useProviders(): UseProvidersResult {
       // Update provider
       const newProviders = settings.providers.map((p) => (p.id === id ? updatedProvider : p));
       
-      setSettings({
-        ...settings,
+      updateSettings({
         providers: newProviders,
       });
 
       return { success: true };
     },
-    [settings, setSettings]
+    [settings, updateSettings]
   );
 
   /**
@@ -109,12 +111,13 @@ export function useProviders(): UseProvidersResult {
    */
   const deleteProvider = useCallback(
     (id: string): void => {
-      setSettings({
-        ...settings,
+      if (!settings) return;
+
+      updateSettings({
         providers: settings.providers.filter((p) => p.id !== id),
       });
     },
-    [settings, setSettings]
+    [settings, updateSettings]
   );
 
   /**
@@ -122,13 +125,13 @@ export function useProviders(): UseProvidersResult {
    */
   const getProvider = useCallback(
     (id: string): ProviderConfig | undefined => {
-      return settings.providers.find((p) => p.id === id);
+      return settings?.providers.find((p) => p.id === id);
     },
-    [settings.providers]
+    [settings]
   );
 
   return {
-    providers: settings.providers,
+    providers: settings?.providers || [],
     addProvider,
     updateProvider,
     deleteProvider,

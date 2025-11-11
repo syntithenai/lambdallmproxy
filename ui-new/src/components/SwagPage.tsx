@@ -220,6 +220,19 @@ export const SwagPage: React.FC = () => {
       window.removeEventListener('rag_config_updated', handleConfigChange);
     };
   }, []);
+  
+  // Handle escape key to close drag overlay
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isDragging) {
+        setIsDragging(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isDragging]);
+  
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [snippetToEdit, setSnippetToEdit] = useState<string | null>(null);
 
@@ -647,7 +660,7 @@ export const SwagPage: React.FC = () => {
         return;
       }
       
-      const enabledProviders = settings.providers.filter(p => p.enabled !== false);
+      const enabledProviders = settings?.providers.filter(p => p.enabled !== false) || [];
       
       if (enabledProviders.length === 0) {
         showError('No LLM providers enabled. Please enable at least one provider in Settings.');
@@ -1083,8 +1096,8 @@ export const SwagPage: React.FC = () => {
         embedding = cached.embedding;
       } else {
         // Check if using local embeddings
-        const useLocalEmbeddings = settings.embeddingSource === 'local';
-        console.log(`� Query embedding source: ${settings.embeddingSource}, useLocal=${useLocalEmbeddings}`);
+        const useLocalEmbeddings = settings?.embeddingSource === 'local';
+        console.log(`Query embedding source: ${settings?.embeddingSource}, useLocal=${useLocalEmbeddings}`);
         
         if (useLocalEmbeddings) {
           // ============ LOCAL BROWSER-BASED EMBEDDINGS ============
@@ -1095,7 +1108,7 @@ export const SwagPage: React.FC = () => {
           const embeddingService = getLocalEmbeddingService();
           
           // Get selected model (default to recommended)
-          const modelId = settings.embeddingModel || 'Xenova/all-MiniLM-L6-v2';
+          const modelId = settings?.embeddingModel || 'Xenova/all-MiniLM-L6-v2';
           console.log(`📦 Using model: ${modelId}`);
           
           // Load model if needed (service caches loaded models)
@@ -1118,8 +1131,8 @@ export const SwagPage: React.FC = () => {
             },
             body: JSON.stringify({ 
               query: vectorSearchQuery,
-              embeddingModel: settings.embeddingModel,
-              providers: settings.providers
+              embeddingModel: settings?.embeddingModel,
+              providers: settings?.providers || []
             })
           });
           
@@ -1133,7 +1146,7 @@ export const SwagPage: React.FC = () => {
         
         // Cache the embedding
         const ragConfig = JSON.parse(localStorage.getItem('rag_config') || '{}');
-        const embeddingModel = ragConfig.embeddingModel || settings.embeddingModel || 'text-embedding-3-small';
+        const embeddingModel = ragConfig.embeddingModel || settings?.embeddingModel || 'text-embedding-3-small';
         await ragDB.cacheQueryEmbedding(vectorSearchQuery.trim(), embedding, embeddingModel);
         console.log('💾 Cached query embedding for future use');
       }
@@ -1319,8 +1332,23 @@ export const SwagPage: React.FC = () => {
     >
       {/* Drag and Drop Overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-blue-500/20 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 border-4 border-dashed border-blue-500 dark:border-blue-400">
+        <div 
+          className="absolute inset-0 bg-blue-500/20 backdrop-blur-sm z-40 flex items-center justify-center"
+          onClick={() => setIsDragging(false)}
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 border-4 border-dashed border-blue-500 dark:border-blue-400 relative">
+            {/* Close Button */}
+            <button
+              onClick={() => setIsDragging(false)}
+              className="absolute top-2 right-2 p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+              title="Close (Esc)"
+              aria-label="Close"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
             <div className="flex flex-col items-center gap-4">
               <svg className="w-16 h-16 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -1329,6 +1357,9 @@ export const SwagPage: React.FC = () => {
                 <p className="text-xl font-bold text-gray-900 dark:text-white">Drop Documents Here</p>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                   Upload files to add them as snippets
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                  Press Esc or click to cancel
                 </p>
               </div>
             </div>

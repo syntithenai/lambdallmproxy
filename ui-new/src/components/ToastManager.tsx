@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 interface Toast {
   id: string;
@@ -75,6 +75,43 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const showSuccess = useCallback((message: string) => showToast(message, 'success', 3000), [showToast]);
   const showWarning = useCallback((message: string) => showToast(message, 'warning', 5000), [showToast]);
   const showInfo = useCallback((message: string) => showToast(message, 'info', 4000), [showToast]);
+
+  // Listen for global toast events from non-React code (e.g., googleDriveSync)
+  useEffect(() => {
+    const handleShowToast = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { message, type = 'info', duration = 5000, persistent = false, id } = customEvent.detail;
+      
+      if (persistent && id) {
+        // For persistent toasts with specific ID, check if already exists
+        setToasts((prev) => {
+          const exists = prev.find(t => t.id === id);
+          if (exists) return prev; // Don't add duplicate
+          
+          const toast: Toast = { id, message, type, duration: 0 };
+          return [...prev, toast];
+        });
+      } else {
+        showToast(message, type, duration);
+      }
+    };
+
+    const handleRemoveToast = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { id } = customEvent.detail;
+      if (id) {
+        removeToast(id);
+      }
+    };
+
+    window.addEventListener('show-toast', handleShowToast);
+    window.addEventListener('remove-toast', handleRemoveToast);
+
+    return () => {
+      window.removeEventListener('show-toast', handleShowToast);
+      window.removeEventListener('remove-toast', handleRemoveToast);
+    };
+  }, [showToast, removeToast]);
 
   const getToastStyles = (type: Toast['type']) => {
     const baseStyles = 'flex items-start gap-3 p-4 rounded-lg shadow-lg border backdrop-blur-sm transition-all duration-300 animate-slide-in';

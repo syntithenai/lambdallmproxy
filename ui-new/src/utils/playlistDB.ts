@@ -2,6 +2,7 @@ import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 import type { PlaylistTrack } from '../contexts/PlaylistContext';
 import { unifiedSync } from '../services/unifiedSync';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 /**
  * IndexedDB schema for playlist storage
@@ -152,20 +153,23 @@ class PlaylistDatabase {
       throw new Error('Playlist name cannot be empty');
     }
     
+    // Don't include 'id' field - let IndexedDB auto-generate it
     const id = await this.db!.add('savedPlaylists', {
-      id: 0, // Will be auto-incremented
       name: name.trim(),
       tracks,
       createdAt: Date.now(),
       updatedAt: Date.now()
-    });
+    } as any); // Cast to any because TypeScript expects id field
     
     // Trigger immediate sync if unified sync is enabled
     if (unifiedSync.isEnabled()) {
       unifiedSync.queueSync('playlists', 'high');
     }
     
-    return id;
+    // Trigger auto-sync for Google Drive (debounced)
+    googleDriveSync.triggerAutoSync();
+    
+    return id as number;
   }
 
   /**
@@ -190,6 +194,9 @@ class PlaylistDatabase {
     if (unifiedSync.isEnabled()) {
       unifiedSync.queueSync('playlists', 'high');
     }
+    
+    // Trigger auto-sync for Google Drive (debounced)
+    googleDriveSync.triggerAutoSync();
   }
 
   /**
@@ -238,6 +245,9 @@ class PlaylistDatabase {
     if (unifiedSync.isEnabled()) {
       unifiedSync.queueSync('playlists', 'high');
     }
+    
+    // Trigger auto-sync for Google Drive (debounced)
+    googleDriveSync.triggerAutoSync();
   }
 
   /**

@@ -1,194 +1,192 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import type { Settings, SettingsV1, ProviderConfig } from '../types/provider';
-import { PROVIDER_ENDPOINTS } from '../types/provider';
-import { loadSettingsFromDrive, saveSettingsToDrive, isAuthenticated } from '../utils/googleDocs';
+/**
+ * SettingsContext
+ * 
+ * Provides unified settings throughout the React app
+ * Replaces localStorage-based settings with IndexedDB persistence
+ */
+
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { loadSettings, saveSettings, updateSettings as updateSettingsUtil, getEnabledProviders } from '../services/settings';
+import { uploadSettingsToDrive, loadSettingsFromDrive } from '../services/googleDrive';
+import type { Settings, ProviderConfig } from '../types/persistence';
+import { useAuth } from './AuthContext';
 
 interface SettingsContextValue {
-  settings: Settings;
-  setSettings: (settings: Settings) => void;
-  loadFromGoogleDrive: () => Promise<void>;
-  saveToGoogleDrive: () => Promise<void>;
-  clearSettings: () => void;
+  settings: Settings | null;
+  loading: boolean;
+  error: Error | null;
+  
+  // Core settings operations
+  updateSettings: (updates: Partial<Settings>) => Promise<void>;
+  reloadSettings: () => Promise<void>;
+  
+  // Provider management
+  getEnabledProviders: () => ProviderConfig[];
+  saveProvider: (provider: ProviderConfig) => Promise<void>;
+  removeProvider: (providerId: string) => Promise<void>;
+  
+  // Google Drive sync
+  syncToDrive: () => Promise<void>;
+  loadFromDrive: () => Promise<void>;
+  lastSyncTime: Date | null;
 }
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
 
-/**
- * Migrate settings from v1.0.0 to v2.0.0
- * Converts single provider to multi-provider array
- * Also ensures embedding settings have default values
- */
-function migrateSettings(oldSettings: any): Settings {
-  let settings = oldSettings;
-
-  // If already v2, clean up legacy fields
-  if (settings.version === '2.0.0') {
-    // Check if legacy fields exist
-    if ('provider' in settings || 'llmApiKey' in settings) {
-      // Remove legacy v1 fields if they exist (prevents re-migration)
-      const { provider, llmApiKey, ...cleanSettings } = settings;
-      settings = cleanSettings;
-    }
-  } else {
-    // Migrate from v1 single provider to v2 multi-provider
-    const migratedProviders: ProviderConfig[] = [];
-
-    if (settings.provider && settings.llmApiKey) {
-      // Determine provider type - map old groq to new groq type
-      const providerType = settings.provider === 'groq' ? 'groq' : 'openai';
-      
-      migratedProviders.push({
-        id: crypto.randomUUID(),
-        type: providerType,
-        apiEndpoint: PROVIDER_ENDPOINTS[providerType],
-        apiKey: settings.llmApiKey
-      });
-    }
-
-    settings = {
-      version: '2.0.0',
-      providers: migratedProviders,
-      tavilyApiKey: settings.tavilyApiKey || ''
-    };
-  }
-
-  // IMPORTANT: Fix missing or undefined embedding settings
-  // This ensures local embeddings work out of the box
-  if (!settings.embeddingSource || settings.embeddingSource === 'undefined') {
-    console.log('🔧 Migrating: Setting default embeddingSource to "local"');
-    settings.embeddingSource = 'local';
-  }
-  
-  if (!settings.embeddingModel || settings.embeddingModel === 'undefined') {
-    console.log('🔧 Migrating: Setting default embeddingModel to "Xenova/all-MiniLM-L6-v2"');
-    settings.embeddingModel = 'Xenova/all-MiniLM-L6-v2';
-  }
-
-  return settings as Settings;
+interface SettingsProviderProps {
+  children: React.ReactNode;
 }
 
-export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [rawSettings, setRawSettings] = useLocalStorage<Settings | SettingsV1>('app_settings', {
-    version: '2.0.0',
-    providers: [],
-    tavilyApiKey: '',
-    syncToGoogleDrive: true, // Default to enabled for better user experience
-    language: 'en', // Default to English
-    embeddingSource: 'local', // Default to local embeddings (browser-based, no API needed)
-    embeddingModel: 'Xenova/all-MiniLM-L6-v2', // Default to recommended local model
-    imageQuality: 'low' // Default to lowest quality/cost for image generation
-  });
-
-  const [isLoadingFromDrive, setIsLoadingFromDrive] = useState(false);
-
-  // Migrate settings on mount if needed
-  const settings = migrateSettings(rawSettings);
-
-  // Save migrated settings if migration occurred
+export function SettingsProvider({ children }: SettingsProviderProps) {
+  const { user } = useAuth();
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  
+  // Load settings on mount or when user changes
   useEffect(() => {
-    if (rawSettings !== settings) {
-      setRawSettings(settings);
-      
-      // Also save to Google Drive to overwrite old format
-      if (isAuthenticated()) {
-        saveSettingsToDrive(JSON.stringify(settings, null, 2)).catch((error) => {
-          console.error('❌ Failed to save migrated settings to Google Drive:', error);
-        });
-      }
+    if (!user) {
+      setSettings(null);
+      setLoading(false);
+      return;
     }
-  }, [rawSettings, settings, setRawSettings]);
-
-  // Auto-load from Google Drive on mount if user is authenticated
-  useEffect(() => {
-    const autoLoadFromDrive = async () => {
-      if (isAuthenticated() && !isLoadingFromDrive) {
-        try {
-          setIsLoadingFromDrive(true);
-          console.log('🔄 Auto-loading settings from Google Drive...');
-          const settingsJson = await loadSettingsFromDrive();
-          if (settingsJson) {
-            const loadedSettings = JSON.parse(settingsJson);
-            setRawSettings(loadedSettings);
-            console.log('✅ Settings auto-loaded from Google Drive');
-          }
-        } catch (error) {
-          console.error('❌ Failed to auto-load settings from Google Drive:', error);
-          // Don't throw - just log and continue with local settings
-        } finally {
-          setIsLoadingFromDrive(false);
-        }
-      }
-    };
-
-    autoLoadFromDrive();
-  }, []); // Run once on mount
-
-  const setSettings = (newSettings: Settings) => {
-    setRawSettings(newSettings);
     
-    // Auto-save to Google Drive if user is authenticated
-    if (isAuthenticated()) {
-      saveSettingsToDrive(JSON.stringify(newSettings, null, 2)).catch((error) => {
-        console.error('❌ Failed to auto-save settings to Google Drive:', error);
-        // Don't throw - settings are still saved locally
-      });
+    loadSettingsFromDB();
+  }, [user]);
+  
+  const loadSettingsFromDB = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const loaded = await loadSettings(user.email);
+      setSettings(loaded);
+    } catch (err) {
+      console.error('[SettingsContext] Failed to load settings:', err);
+      setError(err instanceof Error ? err : new Error('Failed to load settings'));
+    } finally {
+      setLoading(false);
     }
   };
-
-  const loadFromGoogleDrive = async () => {
+  
+  const handleUpdateSettings = useCallback(async (updates: Partial<Settings>) => {
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    
     try {
-      console.log('📥 Manually loading settings from Google Drive...');
-      const settingsJson = await loadSettingsFromDrive();
-      if (settingsJson) {
-        const loadedSettings = JSON.parse(settingsJson);
-        setRawSettings(loadedSettings);
-        console.log('✅ Settings loaded from Google Drive');
-      } else {
-        throw new Error('No settings found in Google Drive');
+      await updateSettingsUtil(user.email, updates);
+      await loadSettingsFromDB();
+    } catch (err) {
+      console.error('[SettingsContext] Failed to update settings:', err);
+      throw err;
+    }
+  }, [user]);
+  
+  const reloadSettings = useCallback(async () => {
+    await loadSettingsFromDB();
+  }, [user]);
+  
+  const handleGetEnabledProviders = useCallback((): ProviderConfig[] => {
+    if (!settings) return [];
+    return getEnabledProviders(settings);
+  }, [settings]);
+  
+  const handleSaveProvider = useCallback(async (provider: ProviderConfig) => {
+    if (!user || !settings) {
+      throw new Error('User not authenticated or settings not loaded');
+    }
+    
+    const existingIndex = settings.providers.findIndex(p => p.id === provider.id);
+    const newProviders = [...settings.providers];
+    
+    if (existingIndex >= 0) {
+      newProviders[existingIndex] = provider;
+    } else {
+      newProviders.push(provider);
+    }
+    
+    await handleUpdateSettings({ providers: newProviders });
+  }, [user, settings, handleUpdateSettings]);
+  
+  const handleRemoveProvider = useCallback(async (providerId: string) => {
+    if (!user || !settings) {
+      throw new Error('User not authenticated or settings not loaded');
+    }
+    
+    const newProviders = settings.providers.filter(p => p.id !== providerId);
+    const updates: Partial<Settings> = { providers: newProviders };
+    
+    // Clear defaultProvider if it was the removed provider
+    if (settings.defaultProvider === providerId) {
+      updates.defaultProvider = undefined;
+    }
+    
+    await handleUpdateSettings(updates);
+  }, [user, settings, handleUpdateSettings]);
+  
+  const syncToDrive = useCallback(async () => {
+    if (!user || !settings) {
+      throw new Error('User not authenticated or settings not loaded');
+    }
+    
+    try {
+      await uploadSettingsToDrive(settings);
+      setLastSyncTime(new Date());
+      console.log('[SettingsContext] Settings synced to Drive');
+    } catch (err) {
+      console.error('[SettingsContext] Failed to sync to Drive:', err);
+      throw err;
+    }
+  }, [user, settings]);
+  
+  const loadFromDrive = useCallback(async () => {
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    
+    try {
+      const driveSettings = await loadSettingsFromDrive(user.email);
+      if (driveSettings) {
+        await saveSettings(driveSettings);
+        setSettings(driveSettings);
+        setLastSyncTime(new Date());
+        console.log('[SettingsContext] Settings loaded from Drive');
       }
-    } catch (error) {
-      console.error('❌ Failed to load settings from Google Drive:', error);
-      throw error;
+    } catch (err) {
+      console.error('[SettingsContext] Failed to load from Drive:', err);
+      throw err;
     }
+  }, [user]);
+  
+  const value: SettingsContextValue = {
+    settings,
+    loading,
+    error,
+    updateSettings: handleUpdateSettings,
+    reloadSettings,
+    getEnabledProviders: handleGetEnabledProviders,
+    saveProvider: handleSaveProvider,
+    removeProvider: handleRemoveProvider,
+    syncToDrive,
+    loadFromDrive,
+    lastSyncTime,
   };
-
-  const saveToGoogleDrive = async () => {
-    try {
-      console.log('💾 Manually saving settings to Google Drive...');
-      await saveSettingsToDrive(JSON.stringify(settings, null, 2));
-      console.log('✅ Settings saved to Google Drive');
-    } catch (error) {
-      console.error('❌ Failed to save settings to Google Drive:', error);
-      throw error;
-    }
-  };
-
-  const clearSettings = () => {
-    const clearedSettings: Settings = {
-      version: '2.0.0',
-      providers: [],
-      tavilyApiKey: '',
-      syncToGoogleDrive: false,
-      embeddingSource: 'local',
-      embeddingModel: 'Xenova/all-MiniLM-L6-v2'
-    };
-    setRawSettings(clearedSettings);
-    console.log('🗑️  Settings cleared');
-  };
-
+  
   return (
-    <SettingsContext.Provider value={{ settings, setSettings, loadFromGoogleDrive, saveToGoogleDrive, clearSettings }}>
+    <SettingsContext.Provider value={value}>
       {children}
     </SettingsContext.Provider>
   );
-};
+}
 
-export const useSettings = () => {
+export function useSettings(): SettingsContextValue {
   const context = useContext(SettingsContext);
   if (!context) {
     throw new Error('useSettings must be used within a SettingsProvider');
   }
   return context;
-};
+}

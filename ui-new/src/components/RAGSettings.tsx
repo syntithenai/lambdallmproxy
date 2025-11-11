@@ -35,7 +35,7 @@ const LOCAL_EMBEDDING_MODELS = [
 
 export const RAGSettings: React.FC = () => {
   const { showSuccess, showError, showPersistentToast, removeToast, updateToast } = useToast();
-  const { settings, setSettings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const { availableEmbeddings, loading: loadingEmbeddings } = useUsage();
   const [config, setConfig] = useState<RAGConfig>(DEFAULT_RAG_CONFIG);
   const [modelLoadProgress, setModelLoadProgress] = useState<{ loading: boolean; progress: number; model: string } | null>(null);
@@ -46,6 +46,8 @@ export const RAGSettings: React.FC = () => {
   
   // Check if currently selected model is available
   const isSelectedModelAvailable = () => {
+    if (!settings) return false;
+    
     if (settings.embeddingSource === 'local') {
       // Local models are always "available" (will download on demand)
       return true;
@@ -194,7 +196,7 @@ export const RAGSettings: React.FC = () => {
               </div>
               <div className="text-sm text-red-800 dark:text-red-300 space-y-2">
                 <p>
-                  Your selected embedding model "{settings.embeddingModel || 'none'}" is not available from your configured providers.
+                  Your selected embedding model "{settings?.embeddingModel || 'none'}" is not available from your configured providers.
                 </p>
                 <p className="font-medium">
                   To fix this:
@@ -248,7 +250,7 @@ export const RAGSettings: React.FC = () => {
         ) : (
           <>
             <select
-              value={settings.embeddingModel || 'text-embedding-3-small'}
+              value={settings?.embeddingModel || 'text-embedding-3-small'}
               onChange={async (e) => {
                 const newModel = e.target.value;
                 
@@ -257,8 +259,7 @@ export const RAGSettings: React.FC = () => {
                 const newSource = isLocalModel ? 'local' : 'api';
                 
                 // Update settings
-                setSettings({ 
-                  ...settings, 
+                updateSettings({ 
                   embeddingModel: newModel,
                   embeddingSource: newSource
                 });
@@ -297,11 +298,11 @@ export const RAGSettings: React.FC = () => {
             {/* Model Description */}
             <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
               {(() => {
-                const localModel = LOCAL_EMBEDDING_MODELS.find(m => m.id === settings.embeddingModel);
+                const localModel = LOCAL_EMBEDDING_MODELS.find(m => m.id === settings?.embeddingModel);
                 if (localModel) {
                   return `🏠 Local: ${localModel.description}. Model downloads on first use (~${localModel.size}).`;
                 }
-                const apiModel = availableEmbeddings.find(m => m.id === settings.embeddingModel);
+                const apiModel = availableEmbeddings.find(m => m.id === settings?.embeddingModel);
                 if (apiModel) {
                   return `☁️ API: ${apiModel.description}`;
                 }

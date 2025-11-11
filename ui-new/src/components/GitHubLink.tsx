@@ -75,10 +75,21 @@ export const GitHubLink: React.FC<GitHubLinkProps> = ({ hideGitHub = false }) =>
       {/* Image Editor Button */}
       <ImageEditorNavButton className="p-3 bg-orange-600 hover:bg-orange-500 dark:bg-orange-700 dark:hover:bg-orange-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center" />
       
+      {/* Music Button */}
+      <button
+        onClick={() => navigate('/music')}
+        className="p-3 bg-purple-600 hover:bg-purple-500 dark:bg-purple-700 dark:hover:bg-purple-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center"
+        title="Music - Manage playlists"
+      >
+        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+        </svg>
+      </button>
+      
       {/* Settings Button */}
       <button
         onClick={() => navigate('/settings')}
-        className="p-3 bg-purple-600 hover:bg-purple-500 dark:bg-purple-700 dark:hover:bg-purple-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center"
+        className="p-3 bg-gray-600 hover:bg-gray-500 dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110 flex items-center justify-center"
         title="Settings"
       >
         <svg

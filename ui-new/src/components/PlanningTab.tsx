@@ -12,7 +12,6 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { usePlanningGeneration } from '../hooks/usePlanningGeneration';
-import { isTokenExpiringSoon, decodeJWT } from '../utils/auth';
 import { 
   getAllCachedPlans, 
   deleteCachedPlan 
@@ -32,7 +31,7 @@ interface PlanningTabProps {
 }
 
 export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defaultQuery }) => {
-  const { getToken, isAuthenticated, accessToken } = useAuth();
+  const { getToken, isAuthenticated } = useAuth();
   const { settings } = useSettings();
   const { showError, showSuccess } = useToast();
   
@@ -61,24 +60,8 @@ export const PlanningTab: React.FC<PlanningTabProps> = ({ onTransferToChat, defa
   const [generatedSystemPrompt, setGeneratedSystemPrompt] = useLocalStorage('planning_generated_system_prompt', '');
   const [generatedUserQuery, setGeneratedUserQuery] = useLocalStorage('planning_generated_user_query', '');
 
-  // Debug: Check token on mount
-  useEffect(() => {
-    if (isAuthenticated && accessToken) {
-      console.log('PlanningTab: User is authenticated');
-      console.log('PlanningTab: Token length:', accessToken.length);
-      console.log('PlanningTab: Token expiring soon?', isTokenExpiringSoon(accessToken));
-      const decoded = decodeJWT(accessToken);
-      if (decoded && decoded.exp) {
-        const expiresAt = new Date(decoded.exp * 1000);
-        console.log('PlanningTab: Token expires at:', expiresAt.toLocaleString());
-      }
-    } else {
-      console.log('PlanningTab: User is not authenticated');
-    }
-  }, [isAuthenticated, accessToken]);
-
   // Get enabled providers
-  const enabledProviders = settings.providers.filter((p: any) => p.enabled !== false);
+  const enabledProviders = settings?.providers.filter((p: any) => p.enabled !== false) || [];
 
   // Planning generation hook
   const { isLoading, generateResearchPlan, stopGeneration } = usePlanningGeneration({

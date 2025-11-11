@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDialogClose } from '../hooks/useDialogClose';
 import { useProviders } from '../hooks/useProviders';
 import { getCachedApiBase } from '../utils/api';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface VoiceInputDialogProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
   void apiEndpoint;
   const dialogRef = useDialogClose(isOpen, onClose, false); // Don't close on click outside while recording
   const { providers } = useProviders(); // Get user providers for API keys
+  const { settings } = useSettings();
   
   const [isRecording, setIsRecording] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -225,10 +227,10 @@ export const VoiceInputDialog: React.FC<VoiceInputDialogProps> = ({
       console.log('🎤 Transcription provider:', whisperProvider, 'hasKey:', !!whisperApiKey);
     }
 
-    // Read local Whisper settings from localStorage
-    const useLocalWhisper = localStorage.getItem('voice_useLocalWhisper') === 'true';
-    const localWhisperUrl = localStorage.getItem('voice_localWhisperUrl') || 'http://localhost:8000';
-    
+    // Read Whisper settings from unified SettingsContext (IndexedDB-backed)
+    // Fallback to sensible defaults when settings are not loaded yet
+    const useLocalWhisper = !!(settings?.voice?.useLocalWhisper);
+    const localWhisperUrl = settings?.voice?.localWhisperUrl || 'http://localhost:8000';
     console.log(`🎤 VoiceInputDialog: useLocalWhisper=${useLocalWhisper}, url=${localWhisperUrl}`);
     
     // Build form data once

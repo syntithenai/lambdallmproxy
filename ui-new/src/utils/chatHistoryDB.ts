@@ -3,6 +3,8 @@
  * Migrates from localStorage to eliminate quota issues
  */
 
+import { googleDriveSync } from '../services/googleDriveSync';
+
 const DB_NAME = 'ChatHistoryDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'chats';
@@ -105,6 +107,9 @@ class ChatHistoryDB {
       });
 
       console.log(`Saved chat ${id} to IndexedDB with planning/todos metadata`);
+      
+      // Trigger auto-sync (debounced)
+      googleDriveSync.triggerAutoSync();
     } catch (error) {
       console.error('Error saving chat to IndexedDB:', error);
       throw error;
@@ -181,6 +186,9 @@ class ChatHistoryDB {
       });
 
       console.log(`Deleted chat ${id} from IndexedDB`);
+      
+      // Trigger auto-sync (debounced)
+      googleDriveSync.triggerAutoSync();
     } catch (error) {
       console.error('Error deleting chat from IndexedDB:', error);
       throw error;

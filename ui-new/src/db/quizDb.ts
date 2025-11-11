@@ -3,6 +3,8 @@
  * Syncs to Google Sheets for backup and cross-device access
  */
 
+import { googleDriveSync } from '../services/googleDriveSync';
+
 const QUIZ_DB_NAME = 'quiz_statistics';
 const QUIZ_DB_VERSION = 1;
 const STATISTICS_STORE = 'statistics';
@@ -125,6 +127,10 @@ class QuizDatabase {
 
       request.onsuccess = () => {
         console.log('✅ Quiz statistic saved:', id);
+        
+        // Trigger auto-sync (debounced)
+        googleDriveSync.triggerAutoSync();
+        
         resolve(id);
       };
 

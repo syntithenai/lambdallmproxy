@@ -145,7 +145,13 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             console.log('🔄 Checking Google Drive for newer snippets and embeddings...');
             
-            // Sync snippets
+            // IMPORTANT: Sync images FIRST (snippets reference them via swag-image:// URLs)
+            const imagesResult = await googleDriveSync.syncImages();
+            if (imagesResult.success && imagesResult.action === 'downloaded') {
+              console.log(`📥 Downloaded ${imagesResult.itemCount} images from Google Drive`);
+            }
+            
+            // Then sync snippets
             const snippetsResult = await googleDriveSync.syncSnippets();
             if (snippetsResult.success && snippetsResult.action === 'downloaded') {
               console.log(`📥 Downloaded ${snippetsResult.itemCount} snippets from Google Drive`);
@@ -174,6 +180,30 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     loadSnippets();
   }, [showError]);
+
+  // Listen for cloud sync completion events from CloudSyncSettings
+  useEffect(() => {
+    const handleSyncComplete = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { snippetsDownloaded, imagesDownloaded } = customEvent.detail;
+      
+      if (snippetsDownloaded || imagesDownloaded) {
+        console.log('🔄 Cloud sync completed, reloading snippets from storage...');
+        try {
+          const updated = await storage.getItem<ContentSnippet[]>('swag-snippets');
+          if (updated) {
+            setAllSnippets(updated);
+            console.log(`✅ Reloaded ${updated.length} snippets after cloud sync`);
+          }
+        } catch (error) {
+          console.error('Failed to reload snippets after cloud sync:', error);
+        }
+      }
+    };
+
+    window.addEventListener('cloud_sync_completed', handleSyncComplete);
+    return () => window.removeEventListener('cloud_sync_completed', handleSyncComplete);
+  }, []);
 
   // Helper function to format bytes
   const formatBytes = (bytes: number): string => {
@@ -674,6 +704,9 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Auto-embed if enabled (use original content for embedding, not refs)
     await autoEmbedSnippet(newSnippet.id, content, title);
     
+    // Trigger auto-sync (debounced)
+    googleDriveSync.triggerAutoSync();
+    
     return newSnippet;
   };
 
@@ -730,6 +763,9 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('⏭️  Skipping embedding for image snippet:', id);
       }
     }
+    
+    // Trigger auto-sync (debounced)
+    googleDriveSync.triggerAutoSync();
   };
 
   const deleteSnippets = async (ids: string[]) => {
@@ -770,6 +806,9 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
     }
+    
+    // Trigger auto-sync (debounced)
+    googleDriveSync.triggerAutoSync();
   };
 
   const mergeSnippets = (ids: string[]) => {
@@ -946,8 +985,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       // Check if local embeddings are selected
-      const useLocalEmbeddings = settings.embeddingSource === 'local';
-      console.log(`🔍 Embedding source check: embeddingSource="${settings.embeddingSource}", useLocalEmbeddings=${useLocalEmbeddings}, embeddingModel="${settings.embeddingModel}"`);
+      const useLocalEmbeddings = settings?.embeddingSource === 'local';
+      console.log(`🔍 Embedding source check: embeddingSource="${settings?.embeddingSource}", useLocalEmbeddings=${useLocalEmbeddings}, embeddingModel="${settings?.embeddingModel}"`);
       let results: any[] = [];
       
       if (useLocalEmbeddings) {
@@ -959,7 +998,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const embeddingService = getLocalEmbeddingService();
         
         // Get selected model (default to recommended)
-        const modelId = settings.embeddingModel || 'Xenova/all-MiniLM-L6-v2';
+        const modelId = settings?.embeddingModel || 'Xenova/all-MiniLM-L6-v2';
         const modelName = modelId.replace('Xenova/', '');
         console.log(`📦 Loading model: ${modelId}`);
         
@@ -1064,7 +1103,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             
             // Format providers for backend (only enabled providers with embedding capability)
-            const providers = settings.providers
+            const providers = (settings?.providers || [])
               .filter(p => p.enabled !== false && p.capabilities?.embedding !== false)
               .map(p => ({
                 type: p.type,
@@ -1076,7 +1115,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }));
             
             // Include selected embedding model from settings
-            const embeddingModel = settings.embeddingModel || undefined;
+            const embeddingModel = settings?.embeddingModel || undefined;
             
             response = await fetch(`${apiUrl}/rag/embed-snippets`, {
               method: 'POST',

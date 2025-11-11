@@ -273,7 +273,7 @@ export const MermaidChart: React.FC<MermaidChartProps> = ({ chart, description, 
         body: JSON.stringify({
           chart: currentChart,
           error: errorMessage,
-          providers: settings.providers
+          providers: settings?.providers || []
         })
       });
 

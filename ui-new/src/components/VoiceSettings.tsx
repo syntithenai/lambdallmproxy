@@ -1,77 +1,90 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Mic, Volume2, Clock, Settings as SettingsIcon } from 'lucide-react';
+import { useSettings } from '../contexts/SettingsContext';
 
 export const VoiceSettings: React.FC = () => {
+  const { settings, updateSettings } = useSettings();
+  
   // Available hotwords for continuous voice mode
   const availableHotwords = [
-    { value: 'hey google', label: 'Hey Google' },
-    { value: 'ok google', label: 'OK Google' },
-    { value: 'alexa', label: 'Alexa' },
-    { value: 'hey siri', label: 'Hey Siri' },
-    { value: 'computer', label: 'Computer' },
-    { value: 'jarvis', label: 'Jarvis' },
+    { value: 'Hey Google', label: 'Hey Google' },
+    { value: 'OK Google', label: 'OK Google' },
+    { value: 'Alexa', label: 'Alexa' },
+    { value: 'Hey Siri', label: 'Hey Siri' },
+    { value: 'Computer', label: 'Computer' },
+    { value: 'Jarvis', label: 'Jarvis' },
   ];
 
-  // Load settings from localStorage
-  const [hotword, setHotword] = useState(() => {
-    return localStorage.getItem('continuousVoice_hotword') || 'hey google';
-  });
+  // Get values from settings or use defaults
+  const hotword = settings?.voice.hotword || 'Hey Google';
+  const sensitivity = settings?.voice.sensitivity ?? 0.5;
+  const speechTimeout = settings?.voice.speechTimeout ?? 2.0;
+  const conversationTimeout = settings?.voice.conversationTimeout ?? 10000;
+  const useLocalWhisper = settings?.voice.useLocalWhisper ?? false;
+  const localWhisperUrl = settings?.voice.localWhisperUrl || 'http://localhost:8000';
 
-  const [sensitivity, setSensitivity] = useState(() => {
-    return parseFloat(localStorage.getItem('continuousVoice_sensitivity') || '0.5');
-  });
-
-  const [speechTimeout, setSpeechTimeout] = useState(() => {
-    return parseFloat(localStorage.getItem('continuousVoice_speechTimeout') || '2');
-  });
-
-  const [conversationTimeout, setConversationTimeout] = useState(() => {
-    return parseInt(localStorage.getItem('continuousVoice_conversationTimeout') || '10000');
-  });
-
-  const [useLocalWhisper, setUseLocalWhisper] = useState(() => {
-    return localStorage.getItem('voice_useLocalWhisper') === 'true';
-  });
-
-  const [localWhisperUrl, setLocalWhisperUrl] = useState(() => {
-    return localStorage.getItem('voice_localWhisperUrl') || 'http://localhost:8000';
-  });
-
-  // Save settings to localStorage when they change
-  useEffect(() => {
-    localStorage.setItem('continuousVoice_hotword', hotword);
-  }, [hotword]);
-
-  useEffect(() => {
-    localStorage.setItem('continuousVoice_sensitivity', sensitivity.toString());
-  }, [sensitivity]);
-
-  useEffect(() => {
-    localStorage.setItem('continuousVoice_speechTimeout', speechTimeout.toString());
-  }, [speechTimeout]);
-
-  useEffect(() => {
-    localStorage.setItem('continuousVoice_conversationTimeout', conversationTimeout.toString());
-  }, [conversationTimeout]);
-
-  useEffect(() => {
-    localStorage.setItem('voice_useLocalWhisper', useLocalWhisper.toString());
-  }, [useLocalWhisper]);
-
-  useEffect(() => {
-    localStorage.setItem('voice_localWhisperUrl', localWhisperUrl);
-  }, [localWhisperUrl]);
+  // Update handlers
+  const handleHotwordChange = (value: string) => {
+    if (!settings) return;
+    updateSettings({
+      voice: {
+        ...settings.voice,
+        hotword: value,
+      },
+    });
+  };
 
   const handleSensitivityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSensitivity(parseFloat(e.target.value));
+    if (!settings) return;
+    const value = parseFloat(e.target.value);
+    updateSettings({
+      voice: {
+        ...settings.voice,
+        sensitivity: value,
+      },
+    });
   };
 
   const handleSpeechTimeoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSpeechTimeout(parseFloat(e.target.value));
+    if (!settings) return;
+    const value = parseFloat(e.target.value);
+    updateSettings({
+      voice: {
+        ...settings.voice,
+        speechTimeout: value,
+      },
+    });
   };
 
   const handleConversationTimeoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setConversationTimeout(parseInt(e.target.value));
+    if (!settings) return;
+    const value = parseInt(e.target.value);
+    updateSettings({
+      voice: {
+        ...settings.voice,
+        conversationTimeout: value,
+      },
+    });
+  };
+
+  const handleLocalWhisperChange = (checked: boolean) => {
+    if (!settings) return;
+    updateSettings({
+      voice: {
+        ...settings.voice,
+        useLocalWhisper: checked,
+      },
+    });
+  };
+
+  const handleLocalWhisperUrlChange = (value: string) => {
+    if (!settings) return;
+    updateSettings({
+      voice: {
+        ...settings.voice,
+        localWhisperUrl: value,
+      },
+    });
   };
 
   return (
@@ -97,7 +110,7 @@ export const VoiceSettings: React.FC = () => {
           </label>
           <select
             value={hotword}
-            onChange={(e) => setHotword(e.target.value)}
+            onChange={(e) => handleHotwordChange(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             {availableHotwords.map(({ value, label }) => (
@@ -220,7 +233,7 @@ export const VoiceSettings: React.FC = () => {
             <input
               type="checkbox"
               checked={useLocalWhisper}
-              onChange={(e) => setUseLocalWhisper(e.target.checked)}
+              onChange={(e) => handleLocalWhisperChange(e.target.checked)}
               className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
             />
             <div>
@@ -243,7 +256,7 @@ export const VoiceSettings: React.FC = () => {
             <input
               type="text"
               value={localWhisperUrl}
-              onChange={(e) => setLocalWhisperUrl(e.target.value)}
+              onChange={(e) => handleLocalWhisperUrlChange(e.target.value)}
               placeholder="http://localhost:8000"
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />

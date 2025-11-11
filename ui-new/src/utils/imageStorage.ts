@@ -201,7 +201,8 @@ class ImageStorageService {
         if (metadata) {
           resolve(metadata.data);
         } else {
-          console.warn(`⚠️ Image not found: ${id}`);
+          // Use console.debug instead of console.warn - this is expected when images are deleted
+          console.debug(`ℹ️ Image not found in IndexedDB: ${id} (may have been deleted or not synced yet)`);
           reject(new Error(`Image not found: ${id}`));
         }
       };
@@ -416,7 +417,8 @@ class ImageStorageService {
         console.log(`✅ Loaded image ${ref}: ${(base64.length / 1024).toFixed(1)} KB`);
         return { ref, base64 };
       } catch (error) {
-        console.error(`❌ Failed to load image ${ref}:`, error);
+        // Use console.debug instead of console.error - missing images are expected when deleted or not synced
+        console.debug(`ℹ️ Image not found, using placeholder for ${ref}`);
         // Return placeholder for broken images
         return { ref, base64: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzk5OSI+SW1hZ2UgTm90IEZvdW5kPC90ZXh0Pjwvc3ZnPg==' };
       }

@@ -42,7 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenMCPDialog 
 }) => {
   const dialogRef = useDialogClose(isOpen, onClose);
-  const { settings, setSettings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const { t, i18n } = useTranslation();
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
@@ -84,7 +84,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Handle language change
   const handleLanguageChange = (lang: string) => {
     i18n.changeLanguage(lang);
-    setSettings({ ...settings, language: lang });
+    updateSettings({ language: lang });
   };
 
   if (!isOpen) return null;
@@ -210,7 +210,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               🌍 {t('settings.language')}
             </label>
             <select 
-              value={settings.language || 'en'}
+              value={settings?.language || 'en'}
               onChange={(e) => handleLanguageChange(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
@@ -263,8 +263,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="cheap"
-                  checked={(settings.optimization || 'cheap') === 'cheap'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={(settings?.optimization || 'cheap') === 'cheap'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -282,8 +282,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="balanced"
-                  checked={settings.optimization === 'balanced'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={settings?.optimization === 'balanced'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -301,8 +301,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="powerful"
-                  checked={settings.optimization === 'powerful'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={settings?.optimization === 'powerful'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -320,8 +320,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="radio"
                   name="optimization"
                   value="fastest"
-                  checked={settings.optimization === 'fastest'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={settings?.optimization === 'fastest'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -349,8 +349,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </label>
             <input
               type="password"
-              value={settings.tavilyApiKey}
-              onChange={(e) => setSettings({ ...settings, tavilyApiKey: e.target.value })}
+              value={settings?.tavilyApiKey || ''}
+              onChange={(e) => updateSettings({ tavilyApiKey: e.target.value })}
               className="input-field"
               placeholder={t('settings.tavilyPlaceholder')}
             />

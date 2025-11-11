@@ -6,6 +6,7 @@
 
 import { planningDB, generatePlanId as dbGeneratePlanId } from './planningDB';
 import { unifiedSync } from '../services/unifiedSync';
+import { googleDriveSync } from '../services/googleDriveSync';
 
 export interface CachedPlan {
   id: string;
@@ -67,6 +68,9 @@ export async function saveCachedPlan(query: string, plan: any, systemPrompt?: st
       unifiedSync.queueSync('plans', 'high');
     }
     
+    // Trigger auto-sync for Google Drive (debounced)
+    googleDriveSync.triggerAutoSync();
+    
   } catch (error) {
     console.error('Error saving plan to cache:', error);
     
@@ -94,6 +98,9 @@ export async function deleteCachedPlan(planId: string): Promise<void> {
     if (unifiedSync.isEnabled()) {
       unifiedSync.queueSync('plans', 'high');
     }
+    
+    // Trigger auto-sync for Google Drive (debounced)
+    googleDriveSync.triggerAutoSync();
   } catch (error) {
     console.error('Error deleting cached plan:', error);
     throw error;

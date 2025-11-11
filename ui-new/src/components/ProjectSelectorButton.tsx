@@ -28,8 +28,8 @@ export default function ProjectSelectorButton() {
     setIsDialogOpen(false);
   };
 
-  // Display text: project name or "All Projects"
-  const displayText = currentProject?.name || t('projects.allProjects', 'All Projects');
+  // Display text: project name or "Default"
+  const displayText = currentProject?.name || t('projects.default', 'Default');
 
   return (
     <>

@@ -573,8 +573,7 @@ Please use this article as context to answer the user's questions. You can provi
         <div className="border-t border-gray-200 pt-3 grid grid-cols-4 gap-2">
           <button
             onClick={handleStash}
-            disabled={item.stashed}
-            className="flex flex-col items-center justify-center gap-2 p-4 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex flex-col items-center justify-center gap-2 p-4 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors"
             title="Save to Swag"
           >
             <Save className="h-6 w-6" />
@@ -782,8 +781,7 @@ Please use this article as context to answer the user's questions. You can provi
                   await handleStash();
                   setShowDialog(false);
                 }}
-                disabled={item.stashed}
-                className="flex-1 px-4 py-3 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-4 py-3 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
               >
                 <Save className="h-5 w-5" />
                 Save

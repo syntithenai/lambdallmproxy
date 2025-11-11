@@ -1,5 +1,7 @@
 // Google Docs API integration for Swag feature with comprehensive debugging
 
+import { googleDriveSync } from '../services/googleDriveSync';
+
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GGL_CID;
 
 // Minimal scopes for privacy:
@@ -67,6 +69,12 @@ export const initGoogleAuth = () => {
               }
               
               console.log('✅ Access token received and stored:', sanitizedToken.substring(0, 20) + '...');
+              
+              // Trigger immediate sync after successful login (if cloud sync is enabled)
+              googleDriveSync.triggerImmediateSync().catch(err => {
+                console.warn('⚠️ Post-login sync failed:', err);
+              });
+              
               resolve(sanitizedToken);
             } else {
               console.error('❌ No access token in response:', response);
@@ -108,6 +116,12 @@ export const initGoogleAuth = () => {
             }
             
             console.log('✅ Access token received and stored:', sanitizedToken.substring(0, 20) + '...');
+            
+            // Trigger immediate sync after successful login (if cloud sync is enabled)
+            googleDriveSync.triggerImmediateSync().catch(err => {
+              console.warn('⚠️ Post-login sync failed:', err);
+            });
+            
             resolve(sanitizedToken);
           } else {
             console.error('❌ No access token in response:', response);
@@ -176,6 +190,12 @@ export const requestGoogleAuth = async (): Promise<string> => {
           accessToken = response.access_token;
           localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
           console.log('✅ New access token received and stored:', response.access_token.substring(0, 20) + '...');
+          
+          // Trigger immediate sync after successful login (if cloud sync is enabled)
+          googleDriveSync.triggerImmediateSync().catch(err => {
+            console.warn('⚠️ Post-login sync failed:', err);
+          });
+          
           resolve(response.access_token);
         } else {
           console.error('❌ No access token in response');

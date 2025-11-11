@@ -175,8 +175,8 @@ export const SnippetSelector: React.FC<SnippetSelectorProps> = ({
         },
         body: JSON.stringify({ 
           query: vectorQuery,
-          embeddingModel: settings.embeddingModel,
-          providers: settings.providers
+          embeddingModel: settings?.embeddingModel,
+          providers: settings?.providers || []
         })
       });
       

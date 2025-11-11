@@ -19,6 +19,7 @@ export default function FeedPage() {
   const [interestsInput, setInterestsInput] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [maturityLevel, setMaturityLevel] = useState<'child' | 'youth' | 'adult' | 'academic'>('adult');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]); // Track selected tags
   const {
     items,
     currentQuiz,
@@ -75,26 +76,56 @@ export default function FeedPage() {
   }, [snippets]);
 
   /**
-   * Handle interests search - clear all items and regenerate
+   * Handle interests search - combine user input with selected tags and regenerate
    */
   const handleSearchInterests = useCallback(async () => {
     const trimmed = interestsInput.trim();
-    if (!trimmed) return;
     
-    console.log('🔍 Searching interests:', trimmed);
+    // Combine user interests input with selected tags
+    const searchCriteria = [...selectedTags];
+    if (trimmed) {
+      searchCriteria.push(trimmed);
+    }
+    
+    if (searchCriteria.length === 0) return;
+    
+    console.log('🔍 Searching with criteria:', searchCriteria);
     await clearAllItems();
-    await generateMore([trimmed]);
+    await generateMore(searchCriteria);
     setInterestsInput(''); // Clear input after search
-  }, [interestsInput, clearAllItems, generateMore]);
+  }, [interestsInput, selectedTags, clearAllItems, generateMore]);
 
   /**
-   * Handle tag click - clear all items and regenerate
+   * Handle tag click - toggle selection instead of immediate search
    */
-  const handleTagClick = useCallback(async (tag: string) => {
-    console.log('🏷️ Searching tag:', tag);
-    await clearAllItems();
-    await generateMore([tag]);
-  }, [clearAllItems, generateMore]);
+  const handleTagClick = useCallback((tag: string) => {
+    setSelectedTags(prev => {
+      const isSelected = prev.includes(tag);
+      if (isSelected) {
+        console.log('🏷️ Deselecting tag:', tag);
+        return prev.filter(t => t !== tag);
+      } else {
+        console.log('🏷️ Selecting tag:', tag);
+        return [...prev, tag];
+      }
+    });
+  }, []);
+
+  /**
+   * Select all tags
+   */
+  const handleSelectAllTags = useCallback(() => {
+    console.log('🏷️ Selecting all tags');
+    setSelectedTags(top10Tags);
+  }, [top10Tags]);
+
+  /**
+   * Deselect all tags
+   */
+  const handleSelectNoneTags = useCallback(() => {
+    console.log('🏷️ Deselecting all tags');
+    setSelectedTags([]);
+  }, []);
 
   /**
    * Debug: Log items whenever they change
@@ -342,7 +373,7 @@ export default function FeedPage() {
                   value={interestsInput}
                   onChange={(e) => setInterestsInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && interestsInput.trim() && !isGenerating) {
+                    if (e.key === 'Enter' && (interestsInput.trim() || selectedTags.length > 0) && !isGenerating) {
                       handleSearchInterests();
                     }
                   }}
@@ -352,7 +383,7 @@ export default function FeedPage() {
                 />
                 <button
                   onClick={handleSearchInterests}
-                  disabled={!interestsInput.trim() || isGenerating}
+                  disabled={(!interestsInput.trim() && selectedTags.length === 0) || isGenerating}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
                   <Search className="h-4 w-4" />
@@ -364,21 +395,49 @@ export default function FeedPage() {
             {/* Top 10 Tag Buttons */}
             {top10Tags.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Or browse by your saved tags:
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {top10Tags.map(tag => (
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">
+                    Select tags to include in search:
+                  </label>
+                  <div className="flex gap-2">
                     <button
-                      key={tag}
-                      onClick={() => handleTagClick(tag)}
-                      disabled={isGenerating}
-                      className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                      onClick={handleSelectAllTags}
+                      className="text-xs px-2 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
                     >
-                      {tag}
+                      Select All
                     </button>
-                  ))}
+                    <button
+                      onClick={handleSelectNoneTags}
+                      className="text-xs px-2 py-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+                    >
+                      Select None
+                    </button>
+                  </div>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  {top10Tags.map(tag => {
+                    const isSelected = selectedTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => handleTagClick(tag)}
+                        disabled={isGenerating}
+                        className={`px-3 py-1.5 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium ${
+                          isSelected
+                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedTags.length > 0 && (
+                  <p className="text-xs text-blue-600">
+                    {selectedTags.length} tag{selectedTags.length !== 1 ? 's' : ''} selected
+                  </p>
+                )}
               </div>
             )}
 

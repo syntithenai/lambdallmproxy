@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './CloudSyncSettings.css';
 import { googleDriveSync } from '../services/googleDriveSync';
+import { googleAuth } from '../services/googleAuth';
 
 interface CloudSyncSettingsProps {
   onClose?: () => void;
@@ -16,6 +17,11 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const [syncProgress, setSyncProgress] = useState<{
+    operation: string | null;
+    progress: number;
+    total: number;
+  }>({ operation: null, progress: 0, total: 0 });
   const [syncMetadata, setSyncMetadata] = useState<{
     plansCount: number;
     playlistsCount: number;
@@ -23,7 +29,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
     embeddingsCount: number;
     chatHistoryCount: number;
     quizProgressCount: number;
-    feedItemsCount: number;
+    settingsCount: number;
+    imagesCount: number;
   }>({ 
     plansCount: 0, 
     playlistsCount: 0, 
@@ -31,7 +38,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
     embeddingsCount: 0,
     chatHistoryCount: 0,
     quizProgressCount: 0,
-    feedItemsCount: 0
+    settingsCount: 0,
+    imagesCount: 0
   });
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(
     localStorage.getItem('auto_sync_enabled') === 'true'
@@ -43,40 +51,64 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
       const metadata = await googleDriveSync.getSyncMetadata();
       setLastSyncTime(metadata.lastSyncTime);
       
-      // Get actual local counts from localStorage and IndexedDB
-      const localPlans = JSON.parse(localStorage.getItem('saved_plans') || '[]');
-      const localPlaylists = JSON.parse(localStorage.getItem('playlists') || '[]');
-      const localSnippets = JSON.parse(localStorage.getItem('swag-snippets') || '[]');
-      const localChatHistory = JSON.parse(localStorage.getItem('chat_history') || '[]');
-      
+      // Get actual local counts from IndexedDB and localStorage
       // Import IndexedDB modules dynamically to get counts
-      const { feedDB } = await import('../db/feedDb');
+      const { planningDB } = await import('../utils/planningDB');
+      const { playlistDB } = await import('../utils/playlistDB');
       const { quizDB } = await import('../db/quizDb');
       const { ragDB } = await import('../utils/ragDB');
+      const { chatHistoryDB } = await import('../utils/chatHistoryDB');
       
-      // Get counts from IndexedDB using proper count methods
-      const feedItemsCount = await feedDB.getCount(); // Use new getCount method
-      const quizStats = await quizDB.getQuizStatistics(); // Get all statistics
+      // Get counts from IndexedDB
+      const plans = await planningDB.getAllPlans();
+      const playlists = await playlistDB.listPlaylists();
+      const quizStats = await quizDB.getQuizStatistics();
       const embeddingChunks = await ragDB.getAllChunks();
+      const chatHistory = await chatHistoryDB.getAllChats();
+      
+      // Get snippets from storage utility (could be IndexedDB or localStorage)
+      const { storage } = await import('../utils/storage');
+      const snippets = await storage.getItem<any[]>('swag-snippets') || [];
+      
+      // Get images from IndexedDB
+      const { imageStorage } = await import('../utils/imageStorage');
+      const images = await imageStorage.getAllImages();
+      
+      // Check if settings exist in localStorage
+      // Look for common settings keys (exclude auth tokens and sync-related keys)
+      const settingsKeys = [
+        'auto_sync_enabled', 'proxy_settings', 'rag_config', 
+        'playbackRate', 'volume', 'repeatMode', 'shuffleMode', 'videoQuality',
+        'user_location', 'has_completed_welcome_wizard'
+      ];
+      
+      let settingsCount = 0;
+      for (const key of settingsKeys) {
+        if (localStorage.getItem(key) !== null) {
+          settingsCount++;
+        }
+      }
       
       console.log('📊 Loaded sync metadata counts:', {
-        plans: localPlans.length,
-        playlists: localPlaylists.length,
-        snippets: localSnippets.length,
+        plans: plans.length,
+        playlists: playlists.length,
+        snippets: snippets.length,
         embeddings: embeddingChunks.length,
-        chatHistory: localChatHistory.length,
+        chatHistory: chatHistory.length,
         quizProgress: quizStats.length,
-        feedItems: feedItemsCount
+        settings: settingsCount,
+        images: images.length
       });
       
       setSyncMetadata({
-        plansCount: localPlans.length,
-        playlistsCount: localPlaylists.length,
-        snippetsCount: localSnippets.length,
+        plansCount: plans.length,
+        playlistsCount: playlists.length,
+        snippetsCount: snippets.length,
         embeddingsCount: embeddingChunks.length,
-        chatHistoryCount: localChatHistory.length,
+        chatHistoryCount: chatHistory.length,
         quizProgressCount: quizStats.length,
-        feedItemsCount: feedItemsCount
+        settingsCount: settingsCount,
+        imagesCount: images.length
       });
     } catch (error) {
       console.error('Failed to load sync metadata:', error);
@@ -85,6 +117,13 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
 
   // Handle manual sync
   const handleSync = async () => {
+    // Check if sync is already in progress
+    if (googleDriveSync.isSyncInProgress()) {
+      setError('Sync already in progress. Please wait for it to complete.');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
     setIsSyncing(true);
     setSyncStatus(null);
     setError(null);
@@ -130,10 +169,16 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
         messages.push(`Downloaded ${result.quizProgress.itemCount} quiz stat(s)`);
       }
       
-      if (result.feedItems.action === 'uploaded') {
-        messages.push(`Uploaded ${result.feedItems.itemCount} feed item(s)`);
-      } else if (result.feedItems.action === 'downloaded') {
-        messages.push(`Downloaded ${result.feedItems.itemCount} feed item(s)`);
+      if (result.settings.action === 'uploaded') {
+        messages.push(`Uploaded settings`);
+      } else if (result.settings.action === 'downloaded') {
+        messages.push(`Downloaded settings`);
+      }
+      
+      if (result.images.action === 'uploaded') {
+        messages.push(`Uploaded ${result.images.itemCount} image(s)`);
+      } else if (result.images.action === 'downloaded') {
+        messages.push(`Downloaded ${result.images.itemCount} image(s)`);
       }
       
       if (messages.length === 0) {
@@ -145,6 +190,17 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
       // Reload metadata
       await loadSyncMetadata();
       
+      // Dispatch event to notify other components (like SwagContext) that sync completed
+      // This allows them to reload their data from storage
+      window.dispatchEvent(new CustomEvent('cloud_sync_completed', { 
+        detail: { 
+          snippetsDownloaded: result.snippets.action === 'downloaded',
+          imagesDownloaded: result.images.action === 'downloaded',
+          snippetsCount: result.snippets.itemCount,
+          imagesCount: result.images.itemCount
+        } 
+      }));
+      
       console.log('✅ Sync completed:', result);
     } catch (err: any) {
       setError(err.message || 'Sync failed');
@@ -155,10 +211,20 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
   };
 
   // Toggle auto-sync
-  const handleAutoSyncToggle = () => {
+  const handleAutoSyncToggle = async () => {
     const newValue = !autoSyncEnabled;
     setAutoSyncEnabled(newValue);
     localStorage.setItem('auto_sync_enabled', String(newValue));
+    
+    // If enabling auto-sync, trigger immediate sync
+    if (newValue && isAuthenticated) {
+      try {
+        console.log('🔄 Auto-sync enabled, triggering immediate sync...');
+        await googleDriveSync.triggerImmediateSync();
+      } catch (err) {
+        console.warn('⚠️ Initial sync after enabling auto-sync failed:', err);
+      }
+    }
   };
 
   // Format last sync time
@@ -176,14 +242,111 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
 
   // Check authentication status on mount
   useEffect(() => {
-    const accessToken = localStorage.getItem('google_drive_access_token');
-    const storedEmail = localStorage.getItem('user_email');
+    // Use unified auth service
+    const isAuth = googleAuth.isAuthenticated();
+    const userProfile = googleAuth.getUserProfile();
     
-    if (accessToken && accessToken.length > 0) {
-      setIsAuthenticated(true);
-      setUserEmail(storedEmail);
+    setIsAuthenticated(isAuth);
+    setUserEmail(userProfile?.email || null);
+    
+    if (isAuth) {
       loadSyncMetadata();
     }
+    
+    // Listen for auth changes
+    const handleAuthSuccess = () => {
+      const profile = googleAuth.getUserProfile();
+      setIsAuthenticated(true);
+      setUserEmail(profile?.email || null);
+      loadSyncMetadata();
+      
+      // Trigger immediate sync after successful login (if cloud sync is enabled)
+      googleDriveSync.triggerImmediateSync().catch(err => {
+        console.warn('⚠️ Post-login sync failed:', err);
+      });
+    };
+    
+    const handleAuthSignout = () => {
+      setIsAuthenticated(false);
+      setUserEmail(null);
+    };
+    
+    window.addEventListener('google-auth-success', handleAuthSuccess);
+    window.addEventListener('google-auth-signout', handleAuthSignout);
+    
+    // Check if sync is already in progress when component mounts
+    const currentSyncStatus = googleDriveSync.getSyncStatus();
+    if (currentSyncStatus.inProgress) {
+      setIsSyncing(true);
+      setSyncProgress({
+        operation: currentSyncStatus.operation,
+        progress: currentSyncStatus.progress,
+        total: currentSyncStatus.total
+      });
+      console.log('🔔 [CloudSyncSettings] Sync already in progress on mount:', currentSyncStatus.operation);
+    }
+    
+    return () => {
+      window.removeEventListener('google-auth-success', handleAuthSuccess);
+      window.removeEventListener('google-auth-signout', handleAuthSignout);
+    };
+  }, []);
+
+  // Poll for sync status updates every second when mounted
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      const currentSyncStatus = googleDriveSync.getSyncStatus();
+      
+      // Update sync state based on polling
+      if (currentSyncStatus.inProgress) {
+        setIsSyncing(true);
+        setSyncProgress({
+          operation: currentSyncStatus.operation,
+          progress: currentSyncStatus.progress,
+          total: currentSyncStatus.total
+        });
+      } else if (isSyncing) {
+        // Sync just completed
+        console.log('🔔 [CloudSyncSettings] Sync completed (detected via polling)');
+        setTimeout(() => {
+          setIsSyncing(false);
+          setSyncProgress({ operation: null, progress: 0, total: 0 });
+          loadSyncMetadata();
+        }, 1000);
+      }
+    }, 1000); // Poll every second
+
+    return () => clearInterval(pollInterval);
+  }, [isSyncing]);
+
+  // Listen for sync progress events
+  useEffect(() => {
+    const handleSyncProgress = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { operation, progress, total } = customEvent.detail;
+      setSyncProgress({ operation, progress, total });
+      setIsSyncing(true);
+      console.log('🔔 [CloudSyncSettings] Sync progress:', operation, `(${progress}/${total})`);
+    };
+
+    const handleSyncComplete = () => {
+      console.log('🔔 [CloudSyncSettings] Sync complete');
+      // Keep the progress visible for a moment before clearing
+      setTimeout(() => {
+        setSyncProgress({ operation: null, progress: 0, total: 0 });
+        setIsSyncing(false);
+        // Reload metadata to show updated counts
+        loadSyncMetadata();
+      }, 1000);
+    };
+
+    window.addEventListener('sync-progress', handleSyncProgress);
+    window.addEventListener('sync-complete', handleSyncComplete);
+
+    return () => {
+      window.removeEventListener('sync-progress', handleSyncProgress);
+      window.removeEventListener('sync-complete', handleSyncComplete);
+    };
   }, []);
 
   // Handle Google Drive authentication
@@ -192,72 +355,10 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
     setError(null);
 
     try {
-      // Check if Google Identity Services is loaded
-      if (!window.google?.accounts?.oauth2) {
-        throw new Error('Google Identity Services not loaded. Please refresh the page.');
-      }
-
-      const clientId = import.meta.env.VITE_GGL_CID;
-      
-      if (!clientId) {
-        throw new Error('Google Client ID not configured. Please set VITE_GGL_CID in ui-new/.env');
-      }
-      
-      // Initialize the token client
-      const tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/drive.file', // Only files created by this app
-        callback: (response: any) => {
-          if (response.error) {
-            setError(`Authentication failed: ${response.error}`);
-            setIsLoading(false);
-            return;
-          }
-
-          if (response.access_token) {
-            // Sanitize token: remove whitespace and newlines before storing
-            const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
-            
-            // Store the access token
-            localStorage.setItem('google_drive_access_token', sanitizedToken);
-            
-            // Decode the ID token if present to get user email
-            if (response.id_token) {
-              try {
-                const base64Url = response.id_token.split('.')[1];
-                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-                const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => 
-                  '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-                ).join(''));
-                const payload = JSON.parse(jsonPayload);
-                if (payload.email) {
-                  localStorage.setItem('user_email', payload.email);
-                  setUserEmail(payload.email);
-                }
-              } catch (e) {
-                console.error('Failed to decode ID token:', e);
-              }
-            }
-
-            setIsAuthenticated(true);
-            setIsLoading(false);
-            
-            // Show success message
-            console.log('✅ Successfully authenticated with Google Drive');
-            
-            // Notify billing page that authentication changed
-            window.dispatchEvent(new CustomEvent('billing-settings-changed'));
-          }
-        },
-        error_callback: (error: any) => {
-          setError(`Authentication error: ${error.message || 'Unknown error'}`);
-          setIsLoading(false);
-        }
-      });
-
-      // Request access token
-      tokenClient.requestAccessToken({ prompt: 'consent' });
-      
+      // Use unified auth service
+      await googleAuth.init();
+      await googleAuth.signIn();
+      setIsLoading(false);
     } catch (err: any) {
       setError(err.message || 'Failed to authenticate with Google');
       setIsLoading(false);
@@ -265,10 +366,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
   };
 
   const handleDisconnect = () => {
-    // Clear all Google-related data
-    localStorage.removeItem('google_drive_access_token');
-    localStorage.removeItem('user_email');
-    
+    // Use unified auth service
+    googleAuth.signOut();
     setIsAuthenticated(false);
     setUserEmail(null);
     setError(null);
@@ -277,6 +376,43 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
   return (
     <div className="cloud-sync-settings">
       <h2>Cloud Sync Settings</h2>
+      
+      {/* Global Sync Status Banner - Shows for both manual and auto sync */}
+      {isSyncing && (
+        <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-500 rounded-lg">
+          <div className="flex items-center gap-3">
+            <div className="animate-spin">
+              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-blue-900 dark:text-blue-100">
+                {syncProgress.operation || 'Syncing...'}
+              </div>
+              {syncProgress.total > 0 && (
+                <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  Step {syncProgress.progress} of {syncProgress.total}
+                </div>
+              )}
+            </div>
+            {syncProgress.total > 0 && (
+              <div className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                {Math.round((syncProgress.progress / syncProgress.total) * 100)}%
+              </div>
+            )}
+          </div>
+          {syncProgress.total > 0 && (
+            <div className="mt-3 w-full bg-blue-200 dark:bg-blue-900 rounded-full h-2">
+              <div
+                className="bg-blue-600 dark:bg-blue-400 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${(syncProgress.progress / syncProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
       
       <div className="auth-section">
         <h3>Google Drive Authentication</h3>
@@ -379,13 +515,38 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
                   </div>
                   
                   <div className="flex justify-between items-center">
-                    <span>Feed items:</span>
-                    <strong>{syncMetadata.feedItemsCount} items</strong>
+                    <span>Settings:</span>
+                    <strong>{syncMetadata.settingsCount} setting{syncMetadata.settingsCount !== 1 ? 's' : ''}</strong>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span>Saved images:</span>
+                    <strong>{syncMetadata.imagesCount} image{syncMetadata.imagesCount !== 1 ? 's' : ''}</strong>
                   </div>
                   
                   {syncStatus && (
                     <div className="p-2 bg-green-100 dark:bg-green-800 rounded text-green-800 dark:text-green-100">
                       ✓ {syncStatus}
+                    </div>
+                  )}
+                  
+                  {/* Sync Progress Display */}
+                  {isSyncing && syncProgress.operation && (
+                    <div className="p-3 bg-blue-100 dark:bg-blue-800 rounded">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                          {syncProgress.operation}
+                        </span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300">
+                          {syncProgress.progress} / {syncProgress.total}
+                        </span>
+                      </div>
+                      <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 dark:bg-blue-400 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${(syncProgress.progress / syncProgress.total) * 100}%` }}
+                        />
+                      </div>
                     </div>
                   )}
                   
@@ -437,9 +598,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
                     <li><strong>API Keys (SWAG):</strong> Securely backed up to your Google Drive</li>
                     <li><strong>RAG Content:</strong> Snippets and embeddings synced to Google Drive</li>
                     <li><strong>Chat History:</strong> All conversations backed up with metadata</li>
-                    <li><strong>Quiz Progress:</strong> Quiz statistics and scores synced</li>
-                    <li><strong>Feed Items:</strong> Generated content and recommendations backed up</li>
-                    <li><strong>Usage Logs:</strong> Billing and transaction history backed up</li>
+                    <li><strong>Quizzes:</strong> Quiz content, progress, and statistics synced</li>
+                    <li><strong>Images:</strong> All saved images from snippets backed up to Google Drive</li>
                   </ul>
                 </div>
               </div>

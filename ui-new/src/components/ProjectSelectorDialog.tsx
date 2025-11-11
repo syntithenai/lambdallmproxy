@@ -164,7 +164,7 @@ export default function ProjectSelectorDialog({ isOpen, onClose }: ProjectSelect
                 className="w-4 h-4 text-blue-600 focus:ring-blue-500"
               />
               <span className="flex-1 font-medium text-gray-900 dark:text-white">
-                {t('projects.allProjects', 'All Projects')}
+                {t('projects.default', 'Default')}
               </span>
             </label>
 

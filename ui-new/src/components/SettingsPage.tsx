@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../contexts/SettingsContext';
 import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
@@ -37,7 +37,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   setEnabledTools,
   onOpenMCPDialog 
 }) => {
-  const { settings, setSettings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const { t, i18n } = useTranslation();
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
@@ -48,42 +48,29 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   // Track if a provider is being edited
   const [isEditingProvider, setIsEditingProvider] = useState(false);
   
-  // Proxy settings state
-  const [useServerProxy, setUseServerProxy] = useState(false);
-  const [proxyUsername, setProxyUsername] = useState('');
-  const [proxyPassword, setProxyPassword] = useState('');
-  const [proxyEnabled, setProxyEnabled] = useState(false);
+  // Get proxy settings from unified settings
+  const useServerProxy = settings?.proxy.useServerProxy ?? false;
+  const proxyUsername = settings?.proxy.username ?? '';
+  const proxyPassword = settings?.proxy.password ?? '';
+  const proxyEnabled = settings?.proxy.enabled ?? false;
 
-  useEffect(() => {
-    // Load proxy settings from localStorage
-    const savedProxySettings = localStorage.getItem('proxy_settings');
-    if (savedProxySettings) {
-      try {
-        const parsed = JSON.parse(savedProxySettings);
-        setUseServerProxy(parsed.useServerProxy || false);
-        setProxyUsername(parsed.username || '');
-        setProxyPassword(parsed.password || '');
-        setProxyEnabled(parsed.enabled !== false); // Default to true
-      } catch (e) {
-        console.error('Failed to parse proxy settings:', e);
-      }
-    }
-  }, []);
-
-  // Auto-save proxy settings whenever they change
-  const saveProxySettings = (serverProxy: boolean, username: string, password: string, enabled: boolean) => {
-    localStorage.setItem('proxy_settings', JSON.stringify({
-      useServerProxy: serverProxy,
-      username,
-      password,
-      enabled
-    }));
+  // Update proxy settings
+  const updateProxySettings = (updates: Partial<NonNullable<typeof settings>['proxy']>) => {
+    if (!settings) return;
+    updateSettings({
+      proxy: {
+        ...settings.proxy,
+        ...updates,
+      },
+    });
   };
   
   // Handle language change
   const handleLanguageChange = (lang: string) => {
     i18n.changeLanguage(lang);
-    setSettings({ ...settings, language: lang });
+    if (settings) {
+      updateSettings({ language: lang });
+    }
   };
 
   return (
@@ -203,7 +190,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               🌍 {t('settings.language')}
             </label>
             <select 
-              value={settings.language || 'en'}
+              value={settings?.language || 'en'}
               onChange={(e) => handleLanguageChange(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
@@ -269,8 +256,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   type="radio"
                   name="optimization"
                   value="cheap"
-                  checked={(settings.optimization || 'cheap') === 'cheap'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={(settings?.optimization || 'cheap') === 'cheap'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -288,8 +275,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   type="radio"
                   name="optimization"
                   value="balanced"
-                  checked={settings.optimization === 'balanced'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={settings?.optimization === 'balanced'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -307,8 +294,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   type="radio"
                   name="optimization"
                   value="powerful"
-                  checked={settings.optimization === 'powerful'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={settings?.optimization === 'powerful'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -326,8 +313,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   type="radio"
                   name="optimization"
                   value="fastest"
-                  checked={settings.optimization === 'fastest'}
-                  onChange={(e) => setSettings({ ...settings, optimization: e.target.value as any })}
+                  checked={settings?.optimization === 'fastest'}
+                  onChange={(e) => updateSettings({ optimization: e.target.value as any })}
                   className="mt-1 w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex-1">
@@ -355,8 +342,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </label>
             <input
               type="password"
-              value={settings.tavilyApiKey}
-              onChange={(e) => setSettings({ ...settings, tavilyApiKey: e.target.value })}
+              value={settings?.tavilyApiKey || ''}
+              onChange={(e) => updateSettings({ tavilyApiKey: e.target.value })}
               className="input-field"
               placeholder={t('settings.tavilyPlaceholder')}
             />
@@ -723,9 +710,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       id="useServerProxy"
                       checked={useServerProxy}
                       onChange={(e) => {
-                        const newServerProxy = e.target.checked;
-                        setUseServerProxy(newServerProxy);
-                        saveProxySettings(newServerProxy, proxyUsername, proxyPassword, proxyEnabled);
+                        updateProxySettings({ useServerProxy: e.target.checked });
                       }}
                       className="w-4 h-4"
                     />
@@ -749,9 +734,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     type="text"
                     value={proxyUsername}
                     onChange={(e) => {
-                      const newUsername = e.target.value;
-                      setProxyUsername(newUsername);
-                      saveProxySettings(useServerProxy, newUsername, proxyPassword, proxyEnabled);
+                      updateProxySettings({ username: e.target.value });
                     }}
                     placeholder="exrihquq"
                     disabled={useServerProxy}
@@ -767,9 +750,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     type="password"
                     value={proxyPassword}
                     onChange={(e) => {
-                      const newPassword = e.target.value;
-                      setProxyPassword(newPassword);
-                      saveProxySettings(useServerProxy, proxyUsername, newPassword, proxyEnabled);
+                      updateProxySettings({ password: e.target.value });
                     }}
                     placeholder="Enter password"
                     disabled={useServerProxy}
@@ -783,9 +764,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     id="proxyEnabled"
                     checked={proxyEnabled}
                     onChange={(e) => {
-                      const newEnabled = e.target.checked;
-                      setProxyEnabled(newEnabled);
-                      saveProxySettings(useServerProxy, proxyUsername, proxyPassword, newEnabled);
+                      updateProxySettings({ enabled: e.target.checked });
                     }}
                     disabled={useServerProxy}
                     className="w-4 h-4 disabled:opacity-50 disabled:cursor-not-allowed"

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { hotwordService } from '../services/hotwordDetection';
 import { useToast } from './ToastManager';
+import { useSettings } from '../contexts/SettingsContext';
 import './ContinuousVoiceMode.css';
 import { getCachedApiBase } from '../utils/api';
 
@@ -36,6 +37,9 @@ export function ContinuousVoiceMode({
   const { showPersistentToast, removeToast } = useToast();
   const toastIdRef = useRef<string | null>(null);
   
+  // Get settings from unified SettingsContext
+  const { settings, updateSettings } = useSettings();
+  
   // Use external enabled state if provided, otherwise manage internally
   const [isEnabled, setIsEnabled] = useState(enabled);
   
@@ -53,19 +57,11 @@ export function ContinuousVoiceMode({
   const [state, setState] = useState<ConversationState>('hotword');
   const [turnCount, setTurnCount] = useState(0);
   
-  // Settings
-  const [hotword, setHotword] = useState(() => {
-    return localStorage.getItem('continuousVoice_hotword') || 'hey google';
-  });
-  const [sensitivity, setSensitivity] = useState(() => {
-    return parseFloat(localStorage.getItem('continuousVoice_sensitivity') || '0.5');
-  });
-  const [speechTimeout, setSpeechTimeout] = useState(() => {
-    return parseFloat(localStorage.getItem('continuousVoice_speechTimeout') || '2');
-  });
-  const [conversationTimeout, setConversationTimeout] = useState(() => {
-    return parseInt(localStorage.getItem('continuousVoice_conversationTimeout') || '10000');
-  });
+  // Voice settings from unified settings (with fallback defaults)
+  const hotword = settings?.voice?.hotword || 'hey google';
+  const sensitivity = settings?.voice?.sensitivity ?? 0.5;
+  const speechTimeout = settings?.voice?.speechTimeout ?? 2;
+  const conversationTimeout = settings?.voice?.conversationTimeout ?? 10000;
   
   const timeoutRef = useRef<number | null>(null);
   const maxTurns = 100; // Prevent infinite loops
@@ -78,13 +74,26 @@ export function ContinuousVoiceMode({
   const streamRef = useRef<MediaStream | null>(null);
   const silenceCheckIntervalRef = useRef<number | null>(null);
 
-  // Save settings to localStorage
-  useEffect(() => {
-    localStorage.setItem('continuousVoice_hotword', hotword);
-    localStorage.setItem('continuousVoice_sensitivity', sensitivity.toString());
-    localStorage.setItem('continuousVoice_speechTimeout', speechTimeout.toString());
-    localStorage.setItem('continuousVoice_conversationTimeout', conversationTimeout.toString());
-  }, [hotword, sensitivity, speechTimeout, conversationTimeout]);
+  // Handlers to update voice settings
+  const handleSetHotword = async (value: string) => {
+    if (!settings?.voice) return;
+    await updateSettings({ voice: { ...settings.voice, hotword: value } });
+  };
+
+  const handleSetSensitivity = async (value: number) => {
+    if (!settings?.voice) return;
+    await updateSettings({ voice: { ...settings.voice, sensitivity: value } });
+  };
+
+  const handleSetSpeechTimeout = async (value: number) => {
+    if (!settings?.voice) return;
+    await updateSettings({ voice: { ...settings.voice, speechTimeout: value } });
+  };
+
+  const handleSetConversationTimeout = async (value: number) => {
+    if (!settings?.voice) return;
+    await updateSettings({ voice: { ...settings.voice, conversationTimeout: value } });
+  };
 
   // Sync state with external processing/speaking state
   useEffect(() => {
@@ -557,7 +566,7 @@ export function ContinuousVoiceMode({
           
           <div className="setting">
             <label>Hotword:</label>
-            <select value={hotword} onChange={e => setHotword(e.target.value)}>
+            <select value={hotword} onChange={e => handleSetHotword(e.target.value)}>
               <option value="hey google">Hey Google</option>
               <option value="ok google">OK Google</option>
               <option value="hey siri">Hey Siri</option>
@@ -577,7 +586,7 @@ export function ContinuousVoiceMode({
               max="1"
               step="0.1"
               value={sensitivity}
-              onChange={e => setSensitivity(parseFloat(e.target.value))}
+              onChange={e => handleSetSensitivity(parseFloat(e.target.value))}
             />
             <small>Low = fewer false triggers | High = more sensitive</small>
           </div>
@@ -590,14 +599,14 @@ export function ContinuousVoiceMode({
               max="5"
               step="0.1"
               value={speechTimeout}
-              onChange={e => setSpeechTimeout(parseFloat(e.target.value))}
+              onChange={e => handleSetSpeechTimeout(parseFloat(e.target.value))}
             />
             <small>Auto-submit after this many seconds of silence</small>
           </div>
 
           <div className="setting">
             <label>Conversation Timeout:</label>
-            <select value={conversationTimeout} onChange={e => setConversationTimeout(parseInt(e.target.value))}>
+            <select value={conversationTimeout} onChange={e => handleSetConversationTimeout(parseInt(e.target.value))}>
               <option value="5000">5 seconds</option>
               <option value="10000">10 seconds (default)</option>
               <option value="30000">30 seconds</option>
