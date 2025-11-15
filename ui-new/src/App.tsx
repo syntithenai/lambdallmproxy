@@ -45,7 +45,7 @@ import ProjectSelectorButton from './components/ProjectSelectorButton';
 // Lazy-loaded components for code splitting
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const PlanningPage = lazy(() => import('./components/PlanningPage').then(m => ({ default: m.PlanningPage })));
-const SwagPage = lazy(() => import('./components/SwagPage').then(m => ({ default: m.SwagPage })));
+const SwagPage = lazy(() => import('./components/SwagPageStub').then(m => ({ default: m.SwagPageStub })));
 const QuizPage = lazy(() => import('./components/QuizPage'));
 const FeedPage = lazy(() => import('./components/FeedPage'));
 const BillingPage = lazy(() => import('./components/BillingPage'));

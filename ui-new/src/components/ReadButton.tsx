@@ -92,7 +92,7 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
             setIsTransitioning(false);
             onEnd?.();
           },
-          onError: (error) => {
+          onError: (error: any) => {
             console.error('TTS error in callback:', error);
             setLocalIsReading(false); // Reset local state on error
             setIsTransitioning(false);
@@ -101,7 +101,7 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
         });
         console.log('ReadButton: speak() promise resolved');
         setIsTransitioning(false); // Reset after speak completes
-      } catch (error) {
+      } catch (error: any) {
         console.error('TTS error:', error);
         setLocalIsReading(false); // Reset local state on error
         setIsTransitioning(false);
