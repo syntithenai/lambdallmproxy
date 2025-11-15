@@ -259,7 +259,15 @@ export const SwagPage: React.FC = () => {
   // View mode and sorting (NEW)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'date-new' | 'date-old' | 'title-az' | 'title-za' | 'size'>('date-new');
-  const [compactMode, setCompactMode] = useState<boolean>(false);
+  const [compactMode, setCompactMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('swag-compact-mode');
+    return saved === 'true';
+  });
+  
+  // Persist compact mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('swag-compact-mode', String(compactMode));
+  }, [compactMode]);
   
   // Undo state for tag deletion (NEW)
   const [undoTagDeletion, setUndoTagDeletion] = useState<{
