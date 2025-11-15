@@ -257,14 +257,29 @@ export const SwagPage: React.FC = () => {
   const [checkingEmbeddingSet, setCheckingEmbeddingSet] = useState<Set<string>>(new Set());
   
   // View mode and sorting (NEW)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [sortBy, setSortBy] = useState<'date-new' | 'date-old' | 'title-az' | 'title-za' | 'size'>('date-new');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    const saved = localStorage.getItem('swag-view-mode');
+    return (saved === 'grid' || saved === 'list') ? saved : 'grid';
+  });
+  const [sortBy, setSortBy] = useState<'date-new' | 'date-old' | 'title-az' | 'title-za' | 'size'>(() => {
+    const saved = localStorage.getItem('swag-sort-by');
+    const validValues = ['date-new', 'date-old', 'title-az', 'title-za', 'size'];
+    return (validValues.includes(saved || '')) ? (saved as any) : 'date-new';
+  });
   const [compactMode, setCompactMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('swag-compact-mode');
     return saved === 'true';
   });
   
-  // Persist compact mode to localStorage
+  // Persist view mode, sort order, and compact mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('swag-view-mode', viewMode);
+  }, [viewMode]);
+  
+  useEffect(() => {
+    localStorage.setItem('swag-sort-by', sortBy);
+  }, [sortBy]);
+  
   useEffect(() => {
     localStorage.setItem('swag-compact-mode', String(compactMode));
   }, [compactMode]);
