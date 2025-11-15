@@ -266,12 +266,8 @@ export const SwagPage: React.FC = () => {
     const validValues = ['date-new', 'date-old', 'title-az', 'title-za', 'size'];
     return (validValues.includes(saved || '')) ? (saved as any) : 'date-new';
   });
-  const [compactMode, setCompactMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('swag-compact-mode');
-    return saved === 'true';
-  });
   
-  // Persist view mode, sort order, and compact mode to localStorage
+  // Persist view mode and sort order to localStorage
   useEffect(() => {
     localStorage.setItem('swag-view-mode', viewMode);
   }, [viewMode]);
@@ -279,10 +275,6 @@ export const SwagPage: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('swag-sort-by', sortBy);
   }, [sortBy]);
-  
-  useEffect(() => {
-    localStorage.setItem('swag-compact-mode', String(compactMode));
-  }, [compactMode]);
   
   // Undo state for tag deletion (NEW)
   const [undoTagDeletion, setUndoTagDeletion] = useState<{
@@ -1462,21 +1454,6 @@ export const SwagPage: React.FC = () => {
               </div>
             )}
 
-            {/* Compact Mode Toggle - Only show in list view */}
-            {snippets.length > 0 && viewMode === 'list' && (
-              <button
-                onClick={() => setCompactMode(!compactMode)}
-                className={`px-3 py-1.5 text-xs rounded transition-colors border ${
-                  compactMode
-                    ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
-                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-                }`}
-                title={compactMode ? "Show detailed view" : "Show compact view"}
-              >
-                {compactMode ? '📋 Detailed' : '📝 Compact'}
-              </button>
-            )}
-
             {/* Sort Dropdown (NEW) */}
             {snippets.length > 0 && (
               <select
@@ -2280,7 +2257,7 @@ export const SwagPage: React.FC = () => {
             {sortedSnippets.map(snippet => (
               <div
                 key={snippet.id}
-                className={`flex items-center gap-4 ${compactMode ? 'p-2' : 'p-3'} bg-white dark:bg-gray-800 rounded-lg border-2 transition-all hover:shadow-md ${
+                className={`flex items-center gap-4 p-3 bg-white dark:bg-gray-800 rounded-lg border-2 transition-all hover:shadow-md ${
                   snippet.selected
                     ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
                     : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -2294,43 +2271,33 @@ export const SwagPage: React.FC = () => {
                   className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
                 />
 
-                {compactMode ? (
-                  /* Compact Mode: Only title and checkbox */
-                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingSnippet(snippet)}>
-                    <h3 className="font-medium text-gray-900 dark:text-white truncate">
+                {/* Content - Flexible Column */}
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingSnippet(snippet)}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">
                       {snippet.title || 'Untitled'}
                     </h3>
+                    <span className={`px-2 py-0.5 text-xs rounded-full text-white flex-shrink-0 ${getSourceBadgeColor(snippet.sourceType)}`}>
+                      {snippet.sourceType}
+                    </span>
+                    {('_searchScore' in snippet) && (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 font-medium flex-shrink-0">
+                        🎯 {(snippet as any)._searchScore.toFixed(3)}
+                      </span>
+                    )}
                   </div>
-                ) : (
-                  /* Detailed Mode: Full content */
-                  <>
-                    {/* Content - Flexible Column */}
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingSnippet(snippet)}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-gray-900 dark:text-white truncate">
-                          {snippet.title || 'Untitled'}
-                        </h3>
-                        <span className={`px-2 py-0.5 text-xs rounded-full text-white flex-shrink-0 ${getSourceBadgeColor(snippet.sourceType)}`}>
-                          {snippet.sourceType}
-                        </span>
-                        {('_searchScore' in snippet) && (
-                          <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 font-medium flex-shrink-0">
-                            🎯 {(snippet as any)._searchScore.toFixed(3)}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                        {snippet.content}
-                      </p>
-                    </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                    {snippet.content}
+                  </p>
+                </div>
 
-                    {/* Tags - Compact Pills */}
-                    <div className="flex gap-1 flex-wrap max-w-xs flex-shrink-0">
-                      {(snippet.tags || []).slice(0, 3).map((tag, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800"
-                          onClick={(e) => {
+                {/* Tags - Compact Pills */}
+                <div className="flex gap-1 flex-wrap max-w-xs flex-shrink-0">
+                  {(snippet.tags || []).slice(0, 3).map((tag, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800"
+                      onClick={(e) => {
                             e.stopPropagation();
                             if (!searchTags.includes(tag)) {
                               setSearchTags([...searchTags, tag]);
@@ -2468,8 +2435,6 @@ export const SwagPage: React.FC = () => {
                         </svg>
                       </button>
                     </div>
-                  </>
-                )}
               </div>
             ))}
           </div>
