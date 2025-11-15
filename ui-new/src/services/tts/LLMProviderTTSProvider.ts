@@ -5,8 +5,13 @@
  * Supports OpenAI TTS API and Google Cloud TTS API
  */
 
+/* eslint-disable no-console */
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import type { TTSProvider, Voice, SpeakOptions } from '../../types/tts';
 import type { ProviderConfig } from '../../types/provider';
+import { googleAuth } from '../googleAuth';
 
 export class LLMProviderTTSProvider implements TTSProvider {
   public name = 'llm';
@@ -30,7 +35,7 @@ export class LLMProviderTTSProvider implements TTSProvider {
     return supportedTypes.includes(this.provider.type);
   }
 
-  async getVoices(): Promise<Voice[]> {
+  async getVoices(_languageCode?: string): Promise<Voice[]> {
     if (!this.provider) return [];
 
     switch (this.provider.type) {
@@ -141,35 +146,71 @@ export class LLMProviderTTSProvider implements TTSProvider {
       providerName = 'groq';
     }
     
-    // Get auth token from localStorage
-    const authToken = localStorage.getItem('google_access_token');
-    if (!authToken) {
-      throw new Error('Authentication required. Please sign in.');
+    // Option 1 + 2: Retry on 401 with fresh token
+    let retries = 1;
+    let lastError: Error | null = null;
+
+    while (retries >= 0) {
+      try {
+        // Option 2: Use googleAuth.getAccessToken() instead of direct localStorage
+        const authToken = googleAuth.getAccessToken();
+        if (!authToken) {
+          throw new Error('Authentication required. Please sign in.');
+        }
+
+        const response = await fetch(`${apiBase}/tts`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            provider: providerName,
+            text,
+            voice: options.voice,
+            rate: options.rate || 1.0,
+            model: providerName === 'openai' ? 'tts-1' : undefined,
+            apiKey: this.provider!.apiKey // Pass API key for backend to use
+          }),
+        });
+
+        // Check for rate limit - don't retry, let fallback handle it
+        if (response.status === 429) {
+          const errorText = await response.text();
+          console.warn(`⚠️ LLM Provider TTS: Rate limit hit (429), falling back to Browser Speech`);
+          throw new Error(`Rate limit exceeded: ${errorText}`);
+        }
+
+        // Option 1: Retry on 401 (token refresh race condition)
+        if (response.status === 401 && retries > 0) {
+          console.log('🔄 LLM Provider TTS: Got 401, retrying with refreshed token...');
+          retries--;
+          await new Promise(resolve => setTimeout(resolve, 100));
+          continue;
+        }
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`TTS Proxy API error: ${response.status} - ${errorText}`);
+        }
+
+        return await response.blob();
+
+      } catch (error) {
+        lastError = error as Error;
+        if (retries > 0) {
+          console.log(`⚠️ LLM Provider TTS: Request failed, retrying... (${retries} retries left)`);
+          retries--;
+          await new Promise(resolve => setTimeout(resolve, 100));
+          continue;
+        }
+        throw lastError;
+      }
     }
 
-    const response = await fetch(`${apiBase}/tts`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        provider: providerName,
-        text,
-        voice: options.voice,
-        rate: options.rate || 1.0,
-        pitch: options.pitch || 1.0,
-        model: providerName === 'openai' ? 'tts-1' : undefined,
-        apiKey: this.provider!.apiKey // Pass API key for backend to use
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`TTS Proxy API error: ${response.status} - ${errorText}`);
-    }
-
-    return await response.blob();
+    // Should never reach here, but TypeScript needs it
+    if (lastError) throw lastError;
+    throw new Error('Unexpected error in retry loop');
   }
 
   /**

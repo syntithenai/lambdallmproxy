@@ -35,8 +35,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     console.log('🔐 AuthProvider initializing with state from googleAuth:', {
       isAuthenticated: isAuth,
       hasToken: !!token,
-      userEmail: profile?.email
+      userEmail: profile?.email,
+      tokenLength: token?.length
     });
+
+    // If we have a token but not authenticated, it might be expired
+    if (token && !isAuth) {
+      console.warn('⚠️ Token exists but isAuthenticated returned false - token may be expired, will attempt refresh');
+    }
 
     return {
       user: profile ? {
@@ -49,6 +55,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       isAuthenticated: isAuth
     };
   });
+  
+  // Check authentication state after token refresh completes
+  useEffect(() => {
+    const handleInitComplete = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { hasToken, refreshed } = customEvent.detail;
+      
+      console.log('🔄 GoogleAuth init complete:', { hasToken, refreshed });
+      
+      if (hasToken) {
+        const isAuth = googleAuth.isAuthenticated();
+        const profile = googleAuth.getUserProfile();
+        const token = googleAuth.getAccessToken();
+        
+        console.log('🔄 Checking auth state after init:', {
+          isAuthenticated: isAuth,
+          hasToken: !!token,
+          userEmail: profile?.email
+        });
+        
+        if (isAuth && profile && token) {
+          const user: GoogleUser = {
+            email: profile.email,
+            name: profile.name || '',
+            picture: profile.picture || '',
+            sub: profile.sub || ''
+          };
+
+          setAuthState({
+            user,
+            accessToken: token,
+            isAuthenticated: true
+          });
+
+          // SECURITY: Set current user for scoped storage
+          setCurrentUser(user.email);
+
+          // Migrate existing non-scoped localStorage keys to user-scoped
+          migrateToUserScoped(user.email, [...USER_SCOPED_KEYS]);
+
+          console.log('✅ AuthContext restored session for:', user.email);
+        }
+      }
+    };
+    
+    window.addEventListener('google-auth-init-complete', handleInitComplete);
+    
+    return () => window.removeEventListener('google-auth-init-complete', handleInitComplete);
+  }, []);
 
   // Listen for authentication changes from googleAuth service
   useEffect(() => {

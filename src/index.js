@@ -60,6 +60,7 @@ process.on('uncaughtException', (error) => {
 
 const planningEndpoint = require('./endpoints/planning');
 const searchEndpoint = require('./endpoints/search');
+const youtubeSearchEndpoint = require('./endpoints/youtube-search');
 const proxyEndpoint = require('./endpoints/proxy');
 const chatEndpoint = require('./endpoints/chat');
 const quizEndpoint = require('./endpoints/quiz');
@@ -201,6 +202,12 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
         if (method === 'POST' && path === '/search') {
             console.log('Routing to search endpoint');
             await searchEndpoint.handler(event, responseStream, context);
+            return;
+        }
+        
+        if (method === 'POST' && path === '/youtube-search') {
+            console.log('Routing to YouTube search endpoint');
+            await youtubeSearchEndpoint.handler(event, responseStream, context);
             return;
         }
         

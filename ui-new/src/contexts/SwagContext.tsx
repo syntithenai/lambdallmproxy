@@ -181,28 +181,23 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadSnippets();
   }, [showError]);
 
-  // Listen for cloud sync completion events from CloudSyncSettings
+  // Listen for sync-complete events to reload snippets after cloud sync
   useEffect(() => {
-    const handleSyncComplete = async (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { snippetsDownloaded, imagesDownloaded } = customEvent.detail;
-      
-      if (snippetsDownloaded || imagesDownloaded) {
-        console.log('🔄 Cloud sync completed, reloading snippets from storage...');
-        try {
-          const updated = await storage.getItem<ContentSnippet[]>('swag-snippets');
-          if (updated) {
-            setAllSnippets(updated);
-            console.log(`✅ Reloaded ${updated.length} snippets after cloud sync`);
-          }
-        } catch (error) {
-          console.error('Failed to reload snippets after cloud sync:', error);
+    const handleSyncComplete = async () => {
+      console.log('🔄 [SwagContext] Sync complete, reloading snippets from storage...');
+      try {
+        const updated = await storage.getItem<ContentSnippet[]>('swag-snippets');
+        if (updated) {
+          setAllSnippets(updated);
+          console.log(`✅ Reloaded ${updated.length} snippets after cloud sync`);
         }
+      } catch (error) {
+        console.error('Failed to reload snippets after cloud sync:', error);
       }
     };
 
-    window.addEventListener('cloud_sync_completed', handleSyncComplete);
-    return () => window.removeEventListener('cloud_sync_completed', handleSyncComplete);
+    window.addEventListener('sync-complete', handleSyncComplete);
+    return () => window.removeEventListener('sync-complete', handleSyncComplete);
   }, []);
 
   // Helper function to format bytes

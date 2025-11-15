@@ -453,6 +453,20 @@ export const PlaylistProvider: React.FC<PlaylistProviderProps> = ({ children }) 
     }
   }, [refreshSavedPlaylists]);
 
+  // Listen for sync-complete events to refresh playlists after cloud sync
+  useEffect(() => {
+    const handleSyncComplete = () => {
+      console.log('🔄 [PlaylistContext] Sync complete, refreshing playlists...');
+      refreshSavedPlaylists();
+    };
+
+    window.addEventListener('sync-complete', handleSyncComplete);
+    
+    return () => {
+      window.removeEventListener('sync-complete', handleSyncComplete);
+    };
+  }, [refreshSavedPlaylists]);
+
   // Playback control methods
   const toggleShuffle = useCallback(() => {
     const newShuffleMode = !shuffleMode;

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { useYouTubeAuth } from '../contexts/YouTubeAuthContext';
 import { useLocation } from '../contexts/LocationContext';
@@ -42,8 +43,26 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const { isConnected, isLoading, error, initiateOAuthFlow, disconnect } = useYouTubeAuth();
   const { location, isLoading: locationLoading, error: locationError, permissionState, requestLocation, clearLocation } = useLocation();
   const { features } = useFeatures();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<'general' | 'provider' | 'tools' | 'proxy' | 'location' | 'tts' | 'voice' | 'rag' | 'cloud'>('general');
+  
+  // Handle tab parameter from URL
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['general', 'provider', 'tools', 'proxy', 'location', 'tts', 'voice', 'rag', 'cloud'].includes(tabParam)) {
+      setActiveTab(tabParam as typeof activeTab);
+      // Clear the URL parameter after reading it
+      setSearchParams({});
+      
+      // Scroll to bottom if it's the TTS tab
+      if (tabParam === 'tts') {
+        setTimeout(() => {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  }, [searchParams, setSearchParams]);
   
   // Track if a provider is being edited
   const [isEditingProvider, setIsEditingProvider] = useState(false);

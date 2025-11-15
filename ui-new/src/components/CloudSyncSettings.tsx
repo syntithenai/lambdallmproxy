@@ -244,26 +244,32 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
   useEffect(() => {
     // Use unified auth service
     const isAuth = googleAuth.isAuthenticated();
+    const hasDrive = googleAuth.hasDriveAccess();
     const userProfile = googleAuth.getUserProfile();
     
-    setIsAuthenticated(isAuth);
+    // Only set authenticated if user has Drive access
+    setIsAuthenticated(isAuth && hasDrive);
     setUserEmail(userProfile?.email || null);
     
-    if (isAuth) {
+    if (isAuth && hasDrive) {
       loadSyncMetadata();
     }
     
     // Listen for auth changes
     const handleAuthSuccess = () => {
       const profile = googleAuth.getUserProfile();
-      setIsAuthenticated(true);
+      const hasDriveAccess = googleAuth.hasDriveAccess();
+      setIsAuthenticated(hasDriveAccess);
       setUserEmail(profile?.email || null);
-      loadSyncMetadata();
       
-      // Trigger immediate sync after successful login (if cloud sync is enabled)
-      googleDriveSync.triggerImmediateSync().catch(err => {
-        console.warn('⚠️ Post-login sync failed:', err);
-      });
+      if (hasDriveAccess) {
+        loadSyncMetadata();
+        
+        // Trigger immediate sync after successful login (if cloud sync is enabled)
+        googleDriveSync.triggerImmediateSync().catch(err => {
+          console.warn('⚠️ Post-login sync failed:', err);
+        });
+      }
     };
     
     const handleAuthSignout = () => {
@@ -271,8 +277,14 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
       setUserEmail(null);
     };
     
+    const handleDriveDisconnected = () => {
+      setIsAuthenticated(false);
+      // Keep userEmail since they're still logged in to the main app
+    };
+    
     window.addEventListener('google-auth-success', handleAuthSuccess);
     window.addEventListener('google-auth-signout', handleAuthSignout);
+    window.addEventListener('google-drive-disconnected', handleDriveDisconnected);
     
     // Check if sync is already in progress when component mounts
     const currentSyncStatus = googleDriveSync.getSyncStatus();
@@ -289,6 +301,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
     return () => {
       window.removeEventListener('google-auth-success', handleAuthSuccess);
       window.removeEventListener('google-auth-signout', handleAuthSignout);
+      window.removeEventListener('google-drive-disconnected', handleDriveDisconnected);
     };
   }, []);
 
@@ -355,9 +368,16 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
     setError(null);
 
     try {
-      // Use unified auth service
+      // Use unified auth service - request Drive permissions
       await googleAuth.init();
-      await googleAuth.signIn();
+      const granted = await googleAuth.requestDriveAccess();
+      
+      if (!granted) {
+        setError('Drive permissions not granted. Please allow access to use cloud sync features.');
+        setIsLoading(false);
+        return;
+      }
+      
       setIsLoading(false);
     } catch (err: any) {
       setError(err.message || 'Failed to authenticate with Google');
@@ -365,12 +385,24 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = () => {
     }
   };
 
-  const handleDisconnect = () => {
-    // Use unified auth service
-    googleAuth.signOut();
-    setIsAuthenticated(false);
-    setUserEmail(null);
+  const handleDisconnect = async () => {
+    setIsLoading(true);
     setError(null);
+
+    try {
+      // Revoke Drive permissions with Google
+      await googleAuth.revokeDriveAccess();
+      setIsAuthenticated(false);
+      setUserEmail(null);
+      setIsLoading(false);
+    } catch (err: any) {
+      // Even if revocation fails, clear local state
+      googleAuth.signOut();
+      setIsAuthenticated(false);
+      setUserEmail(null);
+      setError(err.message || 'Failed to revoke Drive permissions');
+      setIsLoading(false);
+    }
   };
 
   return (

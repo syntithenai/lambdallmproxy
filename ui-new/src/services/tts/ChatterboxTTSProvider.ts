@@ -8,6 +8,8 @@
  * API: POST /api/tts with JSON body: { text, language, speaker_id }
  */
 
+/* eslint-disable no-console */
+ 
 import type { TTSProvider, Voice, SpeakOptions } from '../../types/tts';
 
 export class ChatterboxTTSProvider implements TTSProvider {
@@ -47,7 +49,14 @@ export class ChatterboxTTSProvider implements TTSProvider {
     }
   }
 
-  async getVoices(): Promise<Voice[]> {
+  /**
+   * Chatterbox doesn't support boundary events (audio stream)
+   */
+  isBoundarySupported(): boolean {
+    return false;
+  }
+
+  async getVoices(_languageCode?: string): Promise<Voice[]> {
     // Return cached voices if available
     if (this.cachedVoices) {
       return this.cachedVoices;

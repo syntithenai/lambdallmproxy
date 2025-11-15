@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test eSpeak Voice</title>
+</head>
+<body>
+    <h1>Test eSpeak Voice Selection</h1>
+    <button onclick="testSpeak()">Test Speak with eSpeak</button>
+    <button onclick="listVoices()">List All Voices</button>
+    <div id="output"></div>
+    
+    <script>
+        function log(msg) {
+            const output = document.getElementById('output');
+            output.innerHTML += '<div>' + msg + '</div>';
+            console.log(msg);
+        }
+        
+        function listVoices() {
+            const synth = window.speechSynthesis;
+            const voices = synth.getVoices();
+            log('=== Available Voices ===');
+            voices.forEach((voice, idx) => {
+                log(`${idx}: ${voice.name} (${voice.lang}) - Local: ${voice.localService}, URI: ${voice.voiceURI}`);
+            });
+        }
+        
+        function testSpeak() {
+            const synth = window.speechSynthesis;
+            synth.cancel(); // Clear any pending
+            
+            const voices = synth.getVoices();
+            log('=== Testing Speech ===');
+            log(`Total voices: ${voices.length}`);
+            
+            // Find an eSpeak voice
+            const espeakVoice = voices.find(v => v.name.toLowerCase().includes('espeak'));
+            if (!espeakVoice) {
+                log('ERROR: No eSpeak voice found!');
+                listVoices();
+                return;
+            }
+            
+            log(`Selected voice: ${espeakVoice.name} (${espeakVoice.lang})`);
+            log(`Voice URI: ${espeakVoice.voiceURI}`);
+            log(`Local service: ${espeakVoice.localService}`);
+            
+            const utterance = new SpeechSynthesisUtterance('Testing eSpeak voice');
+            utterance.voice = espeakVoice;
+            utterance.rate = 1.0;
+            utterance.volume = 1.0;
+            
+            utterance.onstart = () => log('✓ Speech started');
+            utterance.onend = () => log('✓ Speech ended');
+            utterance.onerror = (e) => log('✗ Speech error: ' + e.error);
+            utterance.onboundary = (e) => log(`✓ Boundary event: charIndex=${e.charIndex}, name=${e.name}`);
+            
+            log('Calling synth.speak()...');
+            synth.speak(utterance);
+        }
+        
+        // Load voices on page load
+        window.speechSynthesis.onvoiceschanged = () => {
+            log('Voices loaded');
+            listVoices();
+        };
+        
+        // Trigger initial load
+        if (window.speechSynthesis.getVoices().length > 0) {
+            listVoices();
+        }
+    </script>
+</body>
+</html>

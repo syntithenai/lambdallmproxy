@@ -30,6 +30,8 @@
   },
   "auth": {
     "signIn": "使用 Google 登录",
+    "signInWithGoogle": "使用 Google 登录",
+    "initializing": "初始化中...",
     "signOut": "退出登录",
     "authRequired": "使用此应用程序需要身份验证",
     "tokenExpired": "您的会话已过期。请重新登录。",

@@ -1,12 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
+import { googleAuth } from '../services/googleAuth';
 
 export const LoginScreen: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { login } = useAuth();
-  const buttonRef = useRef<HTMLDivElement>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
   const hasInitialized = useRef(false);
 
   const handleLanguageChange = (lang: string) => {
@@ -14,77 +13,30 @@ export const LoginScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    // IMPORTANT: Don't use global flag - allow re-initialization when user is logged out
-    // This ensures the Google button appears when user is logged out due to inactivity
-    if (buttonRef.current && !hasInitialized.current) {
-      let retryCount = 0;
-      const maxRetries = 100; // Maximum 10 seconds of retries (increased from 5s)
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
       
-      const initializeGoogleButton = () => {
-        if (typeof google !== 'undefined' && google.accounts) {
-          const clientId = import.meta.env.VITE_GGL_CID;
-          
-          if (!clientId) {
-            console.error('❌ VITE_GGL_CID not configured in ui-new/.env');
-            return;
-          }
-          
-          // Mark as initialized for this component instance only
-          hasInitialized.current = true;
-          
-          console.log('✅ Google SDK loaded, initializing Sign-In button...');
-          
-          (google.accounts.id.initialize as any)({
-            client_id: clientId,
-            callback: (response: any) => {
-              if (response.credential) {
-                console.log('✅ Google Sign-In successful');
-                login(response.credential);
-              }
-            },
-            // CRITICAL: Disable ALL automatic behaviors
-            auto_select: false,
-            cancel_on_tap_outside: true,
-            itp_support: false,
-            use_fedcm_for_prompt: false // Disable FedCM prompts
-          });
-          
-          // CRITICAL: Immediately cancel any auto-prompts after initialization
-          try {
-            (google.accounts.id as any).cancel();
-          } catch (e) {
-            // Ignore
-          }
-
-          (google.accounts.id.renderButton as any)(
-            buttonRef.current!,
-            {
-              theme: 'filled_blue',
-              size: 'large',
-              text: 'signin_with',
-              shape: 'rectangular',
-              width: 300
-            }
-          );
-
-          console.log('✅ Google Sign-In button ready');
-        } else if (retryCount < maxRetries) {
-          retryCount++;
-          // Only log every 10 retries to reduce console spam
-          if (retryCount % 10 === 0 || retryCount === 1) {
-            console.log(`⏳ Waiting for Google SDK... (${retryCount}/${maxRetries})`);
-          }
-          setTimeout(initializeGoogleButton, 100);
-        } else {
-          console.warn('⚠️ Google SDK not loaded after 10 seconds - check network connection or browser extensions');
-          // Don't give up - keep the button ref so it can be initialized later if SDK loads
-        }
-      };
-
-      initializeGoogleButton();
+      // Initialize Google Auth service
+      googleAuth.init()
+        .then(() => {
+          console.log('✅ Google Auth service initialized');
+          setIsInitializing(false);
+        })
+        .catch((error) => {
+          console.error('❌ Failed to initialize Google Auth:', error);
+          setIsInitializing(false);
+        });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty deps - only run once on mount
+  }, []);
+
+  const handleSignIn = async () => {
+    try {
+      await googleAuth.signIn();
+      // The googleAuth service will handle the rest via events
+    } catch (error) {
+      console.error('❌ Sign-in failed:', error);
+    }
+  };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
@@ -126,14 +78,21 @@ export const LoginScreen: React.FC = () => {
             {t('auth.tagline')}
           </p>
 
-          {/* Google Sign-In Button - Moved to top */}
+          {/* Google Sign-In Button - Custom OAuth2 button */}
           <div className="flex justify-center mb-4">
-            <div 
-              ref={buttonRef} 
-              id="login-screen-google-signin"
-              className="min-w-[300px] min-h-[44px]"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            ></div>
+            <button
+              onClick={handleSignIn}
+              disabled={isInitializing}
+              className="flex items-center gap-3 px-6 py-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow hover:shadow-md transition-all text-gray-700 dark:text-gray-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              {isInitializing ? t('auth.initializing') || 'Initializing...' : t('auth.signInWithGoogle') || 'Sign in with Google'}
+            </button>
           </div>
 
           <div className="text-xs text-gray-500 dark:text-gray-400">

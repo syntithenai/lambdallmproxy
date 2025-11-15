@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boundary Event Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px 5px;
+            font-size: 16px;
+        }
+        #log {
+            background: #f5f5f5;
+            padding: 20px;
+            margin-top: 20px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Web Speech API - Boundary Event Test</h1>
+    <p>This test verifies if your browser properly fires boundary events during speech synthesis.</p>
+    
+    <div>
+        <button onclick="testBoundaryEvents()">Test Boundary Events</button>
+        <button onclick="stopSpeech()">Stop</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <div id="log">Ready to test...</div>
+    
+    <script>
+        const log = document.getElementById('log');
+        let utterance = null;
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
+            log.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function clearLog() {
+            log.innerHTML = 'Ready to test...\n';
+        }
+        
+        function stopSpeech() {
+            window.speechSynthesis.cancel();
+            addLog('Speech cancelled', 'error');
+        }
+        
+        function testBoundaryEvents() {
+            clearLog();
+            addLog('Starting boundary event test...', 'info');
+            
+            // Check if API exists
+            if (!('speechSynthesis' in window)) {
+                addLog('ERROR: speechSynthesis not supported in this browser!', 'error');
+                return;
+            }
+            
+            addLog('✓ speechSynthesis API found', 'success');
+            
+            // Create utterance
+            const text = "Testing boundary events with the Web Speech API. This sentence should trigger multiple word boundary events if the browser supports them properly.";
+            utterance = new SpeechSynthesisUtterance(text);
+            
+            addLog(`Text length: ${text.length} characters`, 'info');
+            addLog(`Text: "${text.substring(0, 50)}..."`, 'info');
+            
+            // Check if onboundary property exists
+            const hasProperty = 'onboundary' in utterance;
+            addLog(`'onboundary' property exists: ${hasProperty}`, hasProperty ? 'success' : 'error');
+            addLog(`typeof onboundary: ${typeof utterance.onboundary}`, 'info');
+            
+            // Set speech parameters
+            utterance.rate = 1.0;
+            utterance.volume = 1.0;
+            
+            // Get available voices
+            const voices = window.speechSynthesis.getVoices();
+            addLog(`Available voices: ${voices.length}`, 'info');
+            if (voices.length > 0) {
+                utterance.voice = voices[0];
+                addLog(`Using voice: ${voices[0].name} (${voices[0].lang})`, 'info');
+            }
+            
+            let boundaryCount = 0;
+            let wordBoundaryCount = 0;
+            let sentenceBoundaryCount = 0;
+            
+            // Test 1: Using onboundary property
+            utterance.onboundary = (event) => {
+                boundaryCount++;
+                if (event.name === 'word') {
+                    wordBoundaryCount++;
+                    const word = text.substring(event.charIndex, event.charIndex + 20);
+                    addLog(`🎯 WORD boundary #${wordBoundaryCount} at char ${event.charIndex}: "${word}..."`, 'success');
+                } else if (event.name === 'sentence') {
+                    sentenceBoundaryCount++;
+                    addLog(`🎯 SENTENCE boundary #${sentenceBoundaryCount} at char ${event.charIndex}`, 'success');
+                } else {
+                    addLog(`🎯 BOUNDARY event: name="${event.name}", charIndex=${event.charIndex}`, 'success');
+                }
+            };
+            
+            // Test 2: Also use addEventListener
+            utterance.addEventListener('boundary', (event) => {
+                addLog(`📡 addEventListener caught boundary: ${event.name} at ${event.charIndex}`, 'info');
+            });
+            
+            utterance.onstart = () => {
+                addLog('🎤 Speech STARTED', 'success');
+                addLog('Waiting for boundary events... (should start appearing immediately)', 'info');
+                
+                // Set a timeout to check if boundaries fired
+                setTimeout(() => {
+                    if (boundaryCount === 0) {
+                        addLog('⚠️ WARNING: No boundary events fired after 2 seconds!', 'error');
+                        addLog('This voice/browser may not support boundary events.', 'error');
+                    } else {
+                        addLog(`✓ Received ${boundaryCount} boundary events so far (${wordBoundaryCount} words, ${sentenceBoundaryCount} sentences)`, 'success');
+                    }
+                }, 2000);
+            };
+            
+            utterance.onend = () => {
+                addLog('🏁 Speech ENDED', 'success');
+                addLog(`SUMMARY: ${boundaryCount} total boundary events (${wordBoundaryCount} words, ${sentenceBoundaryCount} sentences)`, boundaryCount > 0 ? 'success' : 'error');
+                
+                if (boundaryCount === 0) {
+                    addLog('', 'error');
+                    addLog('RESULT: Boundary events NOT SUPPORTED with this voice/browser combination', 'error');
+                    addLog('Try selecting a different voice in your system settings.', 'error');
+                } else {
+                    addLog('', 'success');
+                    addLog('RESULT: Boundary events ARE WORKING! ✓', 'success');
+                }
+            };
+            
+            utterance.onerror = (event) => {
+                addLog(`ERROR: ${event.error}`, 'error');
+            };
+            
+            addLog('Calling speechSynthesis.speak()...', 'info');
+            window.speechSynthesis.speak(utterance);
+        }
+        
+        // Load voices on page load
+        window.addEventListener('load', () => {
+            if ('speechSynthesis' in window) {
+                // Voices may load asynchronously
+                window.speechSynthesis.addEventListener('voiceschanged', () => {
+                    const voices = window.speechSynthesis.getVoices();
+                    addLog(`Voices loaded: ${voices.length} available`, 'info');
+                });
+                
+                // Also try to get them immediately
+                const voices = window.speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    addLog(`Voices already available: ${voices.length}`, 'info');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

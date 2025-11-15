@@ -30,6 +30,8 @@
   },
   "auth": {
     "signIn": "Inloggen met Google",
+    "signInWithGoogle": "Inloggen met Google",
+    "initializing": "Initialiseren...",
     "signOut": "Uitloggen",
     "authRequired": "Authenticatie is vereist om deze applicatie te gebruiken",
     "tokenExpired": "Uw sessie is verlopen. Log opnieuw in.",

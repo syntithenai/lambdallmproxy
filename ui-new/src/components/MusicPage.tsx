@@ -6,12 +6,10 @@
 import { useState, useEffect } from 'react';
 import { usePlaylist } from '../contexts/PlaylistContext';
 import { usePlayer } from '../contexts/PlayerContext';
-import { useAuth } from '../contexts/AuthContext';
 import { Music, Plus, Trash2, Play, Pause, SkipForward, SkipBack, Loader2 } from 'lucide-react';
 import { useToast } from './ToastManager';
-import { getCurrentApiBase } from '../utils/api';
 import { playlistDB } from '../utils/playlistDB';
-import type { PlaylistTrack } from '../contexts/PlaylistContext';
+import { searchYouTube, youtubeResultsToTracks } from '../utils/youtube';
 
 // Format seconds to MM:SS
 function formatTime(seconds: number): string {
@@ -32,16 +30,19 @@ export default function MusicPage() {
     previousTrack,
     loadPlaylist,
     deletePlaylist,
-    refreshSavedPlaylists
+    refreshSavedPlaylists,
+    savePlaylistAs,
+    clearPlaylist
   } = usePlaylist();
   
   const { currentTime, duration, isLoading } = usePlayer();
-  const { getToken } = useAuth();
   const { showSuccess, showError, showWarning } = useToast();
   
   const [playlistInput, setPlaylistInput] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [creatingStatus, setCreatingStatus] = useState('');
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [playlistName, setPlaylistName] = useState('');
 
   // Load playlists on mount
   useEffect(() => {
@@ -49,7 +50,7 @@ export default function MusicPage() {
   }, [refreshSavedPlaylists]);
 
   /**
-   * Create a new playlist using YouTube search via LLM
+   * Create a new playlist using YouTube Data API
    */
   const handleCreatePlaylist = async () => {
     const query = playlistInput.trim();
@@ -59,128 +60,33 @@ export default function MusicPage() {
     }
 
     setIsCreating(true);
-    setCreatingStatus('Searching for videos...');
+    setCreatingStatus('Searching YouTube...');
+    
     try {
-      const token = await getToken();
-      if (!token) {
-        showError('Please sign in to create playlists');
-        setIsCreating(false);
-        setCreatingStatus('');
-        return;
-      }
-
       console.log('🎵 Creating playlist from query:', query);
       
-      // Get API base URL
-      const apiUrl = await getCurrentApiBase();
+      // Search YouTube directly using the YouTube Data API
+      const searchResults = await searchYouTube(query, 10, 'relevance');
       
-      // Call LLM with YouTube search tool to find videos
-      const messages = [
-        {
-          role: 'system' as const,
-          content: 'You are a helpful assistant that finds YouTube videos based on user requests. Use the search_youtube tool to find videos. Return a brief response acknowledging the search.'
-        },
-        {
-          role: 'user' as const,
-          content: `Find YouTube videos for a playlist about: ${query}. Please search for around 10 relevant videos.`
-        }
-      ];
-
-      setCreatingStatus('Contacting API...');
-
-      const response = await fetch(`${apiUrl}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          messages,
-          stream: true,
-          tools: ['search_youtube'], // Enable YouTube search tool
-          temperature: 0.7,
-          max_tokens: 2000
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API request failed: ${response.statusText} - ${errorText}`);
-      }
-
-      // Process streaming response
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let foundVideos: PlaylistTrack[] = [];
-      let buffer = '';
-
-      if (!reader) {
-        throw new Error('No response body reader available');
-      }
-
-      setCreatingStatus('Processing results...');
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.trim() || !line.startsWith('data: ')) continue;
-          
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-
-          try {
-            const parsed = JSON.parse(data);
-
-            // Look for tool call results with YouTube videos
-            if (parsed.type === 'tool_result' && parsed.tool === 'search_youtube' && parsed.result) {
-              console.log('🎬 Received YouTube search results');
-              
-              const resultData = typeof parsed.result === 'string' 
-                ? JSON.parse(parsed.result) 
-                : parsed.result;
-
-              if (resultData.videos && Array.isArray(resultData.videos)) {
-                foundVideos = resultData.videos.map((video: any) => ({
-                  id: Date.now() + Math.random(),
-                  videoId: video.videoId,
-                  url: video.url,
-                  title: video.title || 'Untitled',
-                  description: video.description || '',
-                  channel: video.channel || 'Unknown',
-                  thumbnail: video.thumbnail || '',
-                  addedAt: Date.now()
-                }));
-                
-                console.log(`✅ Found ${foundVideos.length} videos for playlist`);
-              }
-            }
-          } catch (parseError) {
-            console.error('Failed to parse SSE data:', parseError);
-          }
-        }
-      }
-
-      // Check if we found any videos
-      if (foundVideos.length === 0) {
+      if (!searchResults.videos || searchResults.videos.length === 0) {
         showWarning('No videos found for that search. Try a different query.');
         setIsCreating(false);
         setCreatingStatus('');
         return;
       }
 
+      console.log(`✅ Found ${searchResults.videos.length} videos`);
+
+      // Convert results to playlist tracks
+      const tracks = youtubeResultsToTracks(searchResults.videos);
+
       // Save the playlist
-      setCreatingStatus(`Saving ${foundVideos.length} videos...`);
+      setCreatingStatus(`Saving ${tracks.length} videos...`);
       const playlistName = query.length > 50 ? query.substring(0, 50) + '...' : query;
       
-      await playlistDB.savePlaylist(playlistName, foundVideos);
+      await playlistDB.savePlaylist(playlistName, tracks);
 
-      showSuccess(`Created playlist with ${foundVideos.length} videos!`);
+      showSuccess(`Created playlist "${playlistName}" with ${tracks.length} videos!`);
       setPlaylistInput('');
       setCreatingStatus('');
       
@@ -224,8 +130,50 @@ export default function MusicPage() {
     }
   };
 
+  /**
+   * Save current playlist with a name
+   */
+  const handleSavePlaylist = async () => {
+    if (!playlistName.trim()) {
+      showWarning('Please enter a playlist name');
+      return;
+    }
+
+    if (playlist.length === 0) {
+      showWarning('Playlist is empty');
+      return;
+    }
+
+    try {
+      await savePlaylistAs(playlistName.trim());
+      showSuccess(`Playlist "${playlistName}" saved!`);
+      setShowSaveDialog(false);
+      setPlaylistName('');
+      await refreshSavedPlaylists();
+    } catch (error) {
+      console.error('Failed to save playlist:', error);
+      showError('Failed to save playlist');
+    }
+  };
+
+  /**
+   * Clear all tracks from current playlist
+   */
+  const handleClearPlaylist = () => {
+    if (playlist.length === 0) {
+      showWarning('Playlist is already empty');
+      return;
+    }
+
+    if (window.confirm(`Clear all ${playlist.length} tracks from current playlist?`)) {
+      clearPlaylist();
+      showSuccess('Playlist cleared');
+    }
+  };
+
   return (
-    <div className="flex h-full flex-col md:flex-row gap-4 p-4 bg-gray-50 dark:bg-gray-900">
+    <>
+      <div className="flex h-full flex-col md:flex-row gap-4 p-4 bg-gray-50 dark:bg-gray-900">
       {/* Left Column - Saved Playlists */}
       <div className="w-full md:w-1/3 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 overflow-auto">
         <div className="flex items-center gap-2 mb-4">
@@ -284,7 +232,10 @@ export default function MusicPage() {
               No saved playlists yet. Create one above!
             </p>
           ) : (
-            savedPlaylists.map((pl) => (
+            savedPlaylists
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((pl) => (
               <div
                 key={pl.id}
                 className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
@@ -315,9 +266,36 @@ export default function MusicPage() {
 
       {/* Right Column - Current Playlist */}
       <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 overflow-auto">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
-          Current Playlist
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+            Current Playlist
+          </h2>
+          
+          {/* Save and Clear Buttons */}
+          {playlist.length > 0 && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSaveDialog(true)}
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-1.5 transition-colors text-sm font-medium"
+                title="Save current playlist"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+                <span className="hidden sm:inline">Save</span>
+              </button>
+              
+              <button
+                onClick={handleClearPlaylist}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-1.5 transition-colors text-sm font-medium"
+                title="Clear all tracks"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Clear</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Playback Controls */}
         {playlist.length > 0 && (
@@ -445,5 +423,55 @@ export default function MusicPage() {
         )}
       </div>
     </div>
+
+    {/* Save Playlist Dialog */}
+    {showSaveDialog && (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            Save Playlist
+          </h3>
+          
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Enter a name for your playlist with {playlist.length} tracks:
+          </p>
+          
+          <input
+            type="text"
+            value={playlistName}
+            onChange={(e) => setPlaylistName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSavePlaylist();
+              if (e.key === 'Escape') {
+                setShowSaveDialog(false);
+                setPlaylistName('');
+              }
+            }}
+            placeholder="My Awesome Playlist"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-gray-700 dark:text-gray-100 mb-4"
+            autoFocus
+          />
+          
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                setShowSaveDialog(false);
+                setPlaylistName('');
+              }}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSavePlaylist}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium"
+            >
+              Save Playlist
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

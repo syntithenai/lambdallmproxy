@@ -42,6 +42,7 @@ import { ToolResultJsonViewer } from './JsonTreeViewer';
 import { SnippetSelector } from './SnippetSelector';
 import { ReadButton } from './ReadButton';
 import ToolTransparency from './ToolTransparency';
+import { TTSHighlightedText } from './TTSHighlightedText';
 import { GenerateChartDisplay } from './GenerateChartDisplay';
 import { YouTubeVideoResults } from './YouTubeVideoResults';
 import { SearchWebResults } from './SearchWebResults';
@@ -399,6 +400,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   
   // Voice input dialog
   const [showVoiceInput, setShowVoiceInput] = useState(false);
+  const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
   const [continuousVoiceEnabled, setContinuousVoiceEnabled] = useState(false);
   
   // API endpoint for voice input (auto-detected)
@@ -2696,7 +2698,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 if (voiceResponseText && continuousVoiceEnabled) {
                   console.log('🎙️ Triggering immediate TTS with voice response');
                   ttsSpeak(voiceResponseText, {
-                    shouldSummarize: false, // Already pre-summarized
                     onEnd: () => {
                       console.log('🎙️ TTS finished - ContinuousVoiceMode will auto-restart');
                     }
@@ -3713,7 +3714,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 // The ContinuousVoiceMode component will restart recording when TTS finishes
                 // because it monitors ttsState.isPlaying via the isSpeaking prop
                 ttsSpeak(data.shortResponse, {
-                  shouldSummarize: false, // Already pre-summarized
                   onStart: () => {
                     console.log('🎙️ TTS started speaking short response');
                   },
@@ -5493,7 +5493,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                                   }
                                 }
                               }
-                              return <MarkdownRenderer content={getMessageText(msg.content)} chartDescription={chartDescription} />;
+                              return <TTSHighlightedText 
+                                text={getMessageText(msg.content)} 
+                                renderAsMarkdown={true}
+                                chartDescription={chartDescription} 
+                              />;
                             })()}
                           </div>
                           {/* Read button for completed assistant messages */}
@@ -5501,7 +5505,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                             <ReadButton 
                               text={getMessageText(msg.content)}
                               variant="icon"
-                              shouldSummarize={getMessageText(msg.content).length > 500}
                             />
                           )}
                         </div>
@@ -6696,7 +6699,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       </div>
                     ) : (
                       <div className="whitespace-pre-wrap">
-                        {getMessageText(msg.content)}
+                        <TTSHighlightedText text={getMessageText(msg.content)} />
                         
                         {/* Display attached files for user messages */}
                         {msg._attachments && msg._attachments.length > 0 && (
@@ -7241,21 +7244,88 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   </svg>
                 </button>
 
-                {/* Voice Input Button - Activates Continuous Voice Mode */}
-                <button
-                  onClick={() => setContinuousVoiceEnabled(!continuousVoiceEnabled)}
-                  disabled={isLoading || !accessToken}
-                  className={`btn-secondary px-3 h-10 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
-                    continuousVoiceEnabled ? 'bg-blue-100 dark:bg-blue-900 border-blue-500' : ''
-                  }`}
-                  title={!accessToken ? 'Please sign in to use voice input' : continuousVoiceEnabled ? 'Stop continuous voice mode' : 'Start continuous voice mode (hands-free)'}
-                  aria-label={!accessToken ? 'Sign in to use voice input' : continuousVoiceEnabled ? 'Stop continuous voice mode' : 'Start continuous voice mode'}
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                  </svg>
-                </button>
+                {/* Voice Input Split Button */}
+                <div className="relative">
+                  {/* Main microphone button - Single recording */}
+                  <div className="flex">
+                    <button
+                      onClick={() => setShowVoiceInput(true)}
+                      disabled={isLoading || !accessToken}
+                      className="btn-secondary px-3 h-10 rounded-r-none flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!accessToken ? 'Please sign in to use voice input' : 'Record voice message'}
+                      aria-label={!accessToken ? 'Sign in to use voice input' : 'Record voice message'}
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                      </svg>
+                    </button>
+                    
+                    {/* Dropdown toggle button */}
+                    <button
+                      onClick={() => setShowVoiceDropdown(!showVoiceDropdown)}
+                      disabled={isLoading || !accessToken}
+                      className={`btn-secondary px-2 h-10 rounded-l-none border-l border-gray-300 dark:border-gray-600 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        continuousVoiceEnabled ? 'bg-blue-100 dark:bg-blue-900 border-blue-500' : ''
+                      }`}
+                      title="Voice input options"
+                      aria-label="Voice input options"
+                      aria-expanded={showVoiceDropdown}
+                      aria-haspopup="true"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  {/* Dropdown menu */}
+                  {showVoiceDropdown && (
+                    <>
+                      {/* Backdrop to close dropdown */}
+                      <div 
+                        className="fixed inset-0 z-10" 
+                        onClick={() => setShowVoiceDropdown(false)}
+                      />
+                      
+                      {/* Menu */}
+                      <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20">
+                        <div className="py-1">
+                          <button
+                            onClick={() => {
+                              setContinuousVoiceEnabled(!continuousVoiceEnabled);
+                              setShowVoiceDropdown(false);
+                            }}
+                            disabled={!accessToken}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                              continuousVoiceEnabled 
+                                ? 'bg-blue-600 border-blue-600' 
+                                : 'border-gray-300 dark:border-gray-600'
+                            }`}>
+                              {continuousVoiceEnabled && (
+                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">
+                                {continuousVoiceEnabled ? 'Stop Continuous Mode' : 'Start Continuous Mode'}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {continuousVoiceEnabled 
+                                  ? 'Currently active - listening and responding automatically' 
+                                  : 'Auto-listen after each response (hands-free)'}
+                              </div>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               
               {/* Right side - Send Button */}

@@ -7,12 +7,19 @@
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GGL_CID;
 
-// Comprehensive OAuth2 scopes
+// Basic OAuth2 scopes - only what we need for login
 // - openid: Required for OpenID Connect
 // - email: User's email address
 // - profile: Basic profile information (name, picture)
+const BASIC_SCOPES = [
+  'openid',
+  'email',
+  'profile'
+].join(' ');
+
+// Extended scopes for Google Drive integration (only requested when needed)
 // - drive.file: Access to files created/opened by this app (not all Drive files)
-const SCOPES = [
+const DRIVE_SCOPES = [
   'openid',
   'email',
   'profile',
@@ -24,6 +31,7 @@ const TOKEN_KEYS = {
   ACCESS_TOKEN: 'google_access_token',
   REFRESH_TOKEN: 'google_refresh_token',
   TOKEN_EXPIRATION: 'google_token_expiration',
+  GRANTED_SCOPES: 'google_granted_scopes', // Track which scopes were granted
   USER_EMAIL: 'user_email',
   USER_NAME: 'user_name',
   USER_PICTURE: 'user_picture',
@@ -56,10 +64,60 @@ class GoogleAuthService {
   private tokenClient: any = null;
   private accessToken: string | null = null;
   private authCallbacks: ((authenticated: boolean) => void)[] = [];
+  private currentScopes: string = BASIC_SCOPES; // Start with basic scopes
 
   constructor() {
+    // MIGRATION: Move tokens from user-scoped storage back to global storage
+    // This fixes the issue where tokens were incorrectly migrated to user-scoped storage
+    this.migrateTokensToGlobal();
+    
     // Load token from localStorage on initialization
     this.accessToken = localStorage.getItem(TOKEN_KEYS.ACCESS_TOKEN);
+    this.currentScopes = localStorage.getItem(TOKEN_KEYS.GRANTED_SCOPES) || BASIC_SCOPES;
+    
+    console.log('🔐 [GoogleAuth Constructor] Initialized:', {
+      hasToken: !!this.accessToken,
+      tokenLength: this.accessToken?.length,
+      currentScopes: this.currentScopes
+    });
+  }
+  
+  /**
+   * One-time migration: Move tokens from user-scoped storage back to global
+   * This fixes the bug where auth tokens were incorrectly scoped per-user
+   */
+  private migrateTokensToGlobal() {
+    const userEmail = localStorage.getItem('user_email');
+    if (!userEmail) return; // No user logged in, nothing to migrate
+    
+    const scopedPrefix = `user:${userEmail}:`;
+    const tokenKeys = [
+      TOKEN_KEYS.ACCESS_TOKEN,
+      TOKEN_KEYS.REFRESH_TOKEN,
+      TOKEN_KEYS.TOKEN_EXPIRATION,
+      TOKEN_KEYS.GRANTED_SCOPES,
+      TOKEN_KEYS.USER_NAME,
+      TOKEN_KEYS.USER_PICTURE,
+      TOKEN_KEYS.USER_SUB
+    ];
+    
+    let migrated = false;
+    tokenKeys.forEach(key => {
+      const scopedKey = `${scopedPrefix}${key}`;
+      const scopedValue = localStorage.getItem(scopedKey);
+      const globalValue = localStorage.getItem(key);
+      
+      // If value exists in scoped storage but not in global, migrate it
+      if (scopedValue && !globalValue) {
+        localStorage.setItem(key, scopedValue);
+        localStorage.removeItem(scopedKey); // Clean up scoped version
+        migrated = true;
+      }
+    });
+    
+    if (migrated) {
+      console.log('✅ Migrated auth tokens from user-scoped to global storage');
+    }
   }
 
   /**
@@ -103,6 +161,7 @@ class GoogleAuthService {
       if (typeof google !== 'undefined' && google.accounts) {
         console.log('✅ Google Identity Services already loaded');
         this.initializeTokenClient();
+        this.checkAndRefreshToken(); // Check if token needs refresh on init
         resolve();
         return;
       }
@@ -114,6 +173,7 @@ class GoogleAuthService {
       script.onload = () => {
         console.log('✅ Google Identity Services library loaded');
         this.initializeTokenClient();
+        this.checkAndRefreshToken(); // Check if token needs refresh on init
         resolve();
       };
       script.onerror = () => {
@@ -124,6 +184,51 @@ class GoogleAuthService {
       document.head.appendChild(script);
     });
   }
+  
+  /**
+   * Check if token exists and needs refresh on initialization
+   */
+  private checkAndRefreshToken() {
+    const token = this.getAccessToken();
+    if (!token) {
+      console.log('🔍 No existing token found');
+      // Dispatch init complete event even if no token
+      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+        detail: { hasToken: false }
+      }));
+      return;
+    }
+    
+    const expirationStr = localStorage.getItem(TOKEN_KEYS.TOKEN_EXPIRATION);
+    if (!expirationStr) {
+      console.log('⚠️ Token exists but no expiration - keeping as-is');
+      // Dispatch init complete - token exists and is assumed valid
+      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+        detail: { hasToken: true, refreshed: false }
+      }));
+      return;
+    }
+    
+    const expiration = parseInt(expirationStr, 10);
+    const now = Date.now();
+    const timeUntilExpiry = expiration - now;
+    const minutesUntilExpiry = Math.floor(timeUntilExpiry / 60000);
+    
+    console.log(`🔍 Found existing token, expires in ${minutesUntilExpiry} minutes`);
+    
+    if (timeUntilExpiry < 5 * 60 * 1000) {
+      // Token expired or expiring soon - refresh silently
+      console.log('🔄 Token expired or expiring soon, refreshing silently...');
+      this.attemptSilentRefresh();
+      // Note: google-auth-init-complete will be dispatched by handleTokenResponse
+    } else {
+      console.log('✅ Token still valid, no refresh needed');
+      // Dispatch init complete - token is valid
+      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+        detail: { hasToken: true, refreshed: false }
+      }));
+    }
+  }
 
   /**
    * Initialize the token client
@@ -132,17 +237,25 @@ class GoogleAuthService {
     // @ts-ignore
     this.tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: SCOPES,
+      scope: this.currentScopes, // Use current scopes (basic by default)
       callback: (response: TokenResponse) => {
         // Call async handler without awaiting (fire and forget)
         this.handleTokenResponse(response).catch(error => {
           console.error('❌ Token response handler error:', error);
           this.notifyAuthChange(false);
+          // Dispatch init complete on error
+          window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+            detail: { hasToken: false, refreshed: false, error: true }
+          }));
         });
       },
       error_callback: (error: any) => {
         console.error('❌ OAuth2 error:', error);
         this.notifyAuthChange(false);
+        // Dispatch init complete on error
+        window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+          detail: { hasToken: false, refreshed: false, error: true }
+        }));
       }
     });
   }
@@ -164,6 +277,13 @@ class GoogleAuthService {
       const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
       this.accessToken = sanitizedToken;
       localStorage.setItem(TOKEN_KEYS.ACCESS_TOKEN, sanitizedToken);
+
+      // Store granted scopes
+      if (response.scope) {
+        this.currentScopes = response.scope;
+        localStorage.setItem(TOKEN_KEYS.GRANTED_SCOPES, response.scope);
+        console.log('✅ Granted scopes:', response.scope);
+      }
 
       // Store expiration time
       if (response.expires_in) {
@@ -198,6 +318,11 @@ class GoogleAuthService {
       // Dispatch event for other parts of the app
       window.dispatchEvent(new CustomEvent('google-auth-success', {
         detail: { accessToken: sanitizedToken }
+      }));
+      
+      // Dispatch init complete event if this was a silent refresh during initialization
+      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+        detail: { hasToken: true, refreshed: true }
       }));
     }
   }
@@ -288,9 +413,17 @@ class GoogleAuthService {
       await this.init();
     }
 
-    console.log('🔐 Requesting Google sign-in...');
+    console.log('🔐 Requesting Google sign-in with scopes:', this.currentScopes);
+    
+    // Use prompt: '' (empty string) for existing users to silently refresh
+    // Use prompt: 'consent' only if no existing token
+    const hasExistingToken = !!localStorage.getItem(TOKEN_KEYS.ACCESS_TOKEN);
+    const prompt = hasExistingToken ? '' : 'consent';
+    
+    console.log(`🔐 Sign-in mode: ${prompt || 'silent'} (hasExistingToken: ${hasExistingToken})`);
+    
     this.tokenClient.requestAccessToken({ 
-      prompt: 'consent' // Always show consent screen to get refresh token
+      prompt // Use silent refresh if user already logged in before
     });
   }
 
@@ -299,6 +432,14 @@ class GoogleAuthService {
    */
   signOut() {
     console.log('👋 Signing out...');
+    
+    // Revoke token with Google
+    const token = this.getAccessToken();
+    if (token) {
+      this.revokeToken(token).catch(err => 
+        console.warn('Failed to revoke token with Google:', err)
+      );
+    }
     
     // Clear all stored tokens
     Object.values(TOKEN_KEYS).forEach(key => {
@@ -310,6 +451,7 @@ class GoogleAuthService {
     localStorage.removeItem('google_drive_token_expiration');
 
     this.accessToken = null;
+    this.currentScopes = BASIC_SCOPES;
     this.notifyAuthChange(false);
 
     // Dispatch event
@@ -317,23 +459,179 @@ class GoogleAuthService {
   }
 
   /**
+   * Request Google Drive permissions (only when user needs it)
+   */
+  async requestDriveAccess(): Promise<boolean> {
+    try {
+      console.log('📁 Requesting Google Drive permissions...');
+      
+      // Update scopes to include Drive
+      this.currentScopes = DRIVE_SCOPES;
+      
+      // Re-initialize token client with new scopes
+      if (!this.tokenClient) {
+        await this.init();
+      } else {
+        this.initializeTokenClient();
+      }
+      
+      // Request new token with Drive permissions
+      return new Promise((resolve) => {
+        const originalCallback = this.tokenClient.callback;
+        
+        this.tokenClient.callback = async (response: TokenResponse) => {
+          // Call original handler
+          await this.handleTokenResponse(response);
+          
+          // Restore original callback
+          this.tokenClient.callback = originalCallback;
+          
+          // Check if we got Drive scope
+          const hasDriveScope = response.scope?.includes('drive.file');
+          resolve(hasDriveScope || false);
+        };
+        
+        this.tokenClient.requestAccessToken({ 
+          prompt: 'consent' // Show consent screen for new permissions
+        });
+      });
+    } catch (error) {
+      console.error('❌ Failed to request Drive access:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Revoke Google Drive permissions (remove Drive scope only, keep basic auth)
+   * Used when user clicks "Disconnect" in Cloud Sync settings
+   */
+  async revokeDriveAccess(): Promise<boolean> {
+    try {
+      console.log('📁 Removing Google Drive permissions (keeping basic auth)...');
+      
+      // Update stored scopes to basic only
+      this.currentScopes = BASIC_SCOPES;
+      localStorage.setItem(TOKEN_KEYS.GRANTED_SCOPES, BASIC_SCOPES);
+      
+      // Clear legacy Drive keys
+      localStorage.removeItem('google_drive_access_token');
+      localStorage.removeItem('google_drive_token_expiration');
+      
+      // Reinitialize token client with basic scopes
+      this.initializeTokenClient();
+      
+      // Dispatch a custom event for Drive disconnect (not full sign-out)
+      window.dispatchEvent(new CustomEvent('google-drive-disconnected'));
+      
+      console.log('✅ Drive permissions removed, basic auth retained');
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to revoke Drive access:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Revoke token with Google
+   */
+  private async revokeToken(token: string): Promise<void> {
+    try {
+      const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+      
+      if (response.ok) {
+        console.log('✅ Token revoked with Google');
+      } else {
+        console.warn('⚠️ Token revocation returned:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Failed to revoke token:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if user has granted Drive permissions
+   */
+  hasDriveAccess(): boolean {
+    const grantedScopes = localStorage.getItem(TOKEN_KEYS.GRANTED_SCOPES) || '';
+    return grantedScopes.includes('drive.file');
+  }
+
+  /**
    * Check if user is authenticated
    */
   isAuthenticated(): boolean {
     const token = this.getAccessToken();
-    if (!token) return false;
+    if (!token) {
+      console.log('🔴 [isAuthenticated] No token found');
+      return false;
+    }
 
     // Check if token is expired
     const expirationStr = localStorage.getItem(TOKEN_KEYS.TOKEN_EXPIRATION);
     if (expirationStr) {
       const expiration = parseInt(expirationStr, 10);
-      if (Date.now() >= expiration) {
-        console.log('🔴 Token expired');
+      const now = Date.now();
+      const isExpired = now >= expiration;
+      const timeUntilExpiry = expiration - now;
+      const minutesUntilExpiry = Math.floor(timeUntilExpiry / 60000);
+      
+      console.log('🔐 [isAuthenticated] Token check:', {
+        hasToken: true,
+        expirationStr,
+        expiration: new Date(expiration).toISOString(),
+        now: new Date(now).toISOString(),
+        minutesUntilExpiry,
+        isExpired
+      });
+      
+      if (isExpired) {
+        console.log('🔴 Token expired - user needs to re-authenticate or wait for automatic refresh');
         return false;
       }
+      
+      // Note: Proactive refresh happens in checkAndRefreshToken(), not here
+      // to avoid confusing synchronous checks with asynchronous refresh attempts
+    } else {
+      console.log('⚠️ [isAuthenticated] No expiration found, assuming valid');
     }
 
+    console.log('✅ [isAuthenticated] Token is valid');
     return true;
+  }
+  
+  /**
+   * Attempt to silently refresh the token
+   */
+  private attemptSilentRefresh() {
+    if (!this.tokenClient) {
+      console.warn('⚠️ Cannot refresh: token client not initialized');
+      // Dispatch init complete even if refresh fails
+      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+        detail: { hasToken: false, refreshed: false }
+      }));
+      return;
+    }
+    
+    console.log('🔄 Attempting silent token refresh...');
+    try {
+      // Try silent refresh first (no consent screen)
+      this.tokenClient.requestAccessToken({ 
+        prompt: '' // Silent refresh - no consent screen
+      });
+    } catch (error) {
+      console.error('❌ Silent refresh failed:', error);
+      // Dispatch init complete on failure
+      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+        detail: { hasToken: false, refreshed: false }
+      }));
+    }
   }
 
   /**
@@ -342,6 +640,14 @@ class GoogleAuthService {
   reloadToken(): void {
     this.accessToken = localStorage.getItem(TOKEN_KEYS.ACCESS_TOKEN);
     console.log('🔄 Token reloaded from localStorage:', this.accessToken ? 'present' : 'missing');
+  }
+
+  /**
+   * Clear cached access token (forces re-read from localStorage on next getAccessToken call)
+   */
+  clearAccessToken(): void {
+    this.accessToken = null;
+    console.log('🧹 Cleared cached access token');
   }
 
   /**

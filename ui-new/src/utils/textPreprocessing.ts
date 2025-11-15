@@ -10,13 +10,35 @@
 export function prepareTextForSpeech(text: string): string {
   let cleaned = text;
   
+  // Remove markdown images first (before links to avoid fragments)
+  // Matches: ![alt](url) or ![](url)
+  cleaned = cleaned.replace(/!\[([^\]]*)\]\([^)]+\)/g, '');
+  
+  // Remove swag-image:// custom links
+  // Matches: [text](swag-image://...)
+  cleaned = cleaned.replace(/\[([^\]]*)\]\(swag-image:\/\/[^)]+\)/g, '');
+  
+  // Remove markdown links and keep only the text
+  // Matches: [text](url)
+  cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  
+  // Remove any remaining markdown link fragments like ](url) or (url)
+  cleaned = cleaned.replace(/\]\([^)]+\)/g, '');
+  
+  // Remove bare URLs (http, https, ftp)
+  cleaned = cleaned.replace(/https?:\/\/[^\s]+/g, '');
+  cleaned = cleaned.replace(/ftp:\/\/[^\s]+/g, '');
+  
+  // Remove URL fragments like gov/books/NBK561514/
+  // This removes paths that look like URL segments
+  cleaned = cleaned.replace(/\b[\w-]+\/[\w/-]+\//g, '');
+  
   // Remove markdown formatting
   cleaned = cleaned.replace(/#{1,6}\s/g, ''); // Headers
   cleaned = cleaned.replace(/\*\*\*(.*?)\*\*\*/g, '$1'); // Bold+Italic
   cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '$1'); // Bold
   cleaned = cleaned.replace(/\*(.*?)\*/g, '$1'); // Italic
   cleaned = cleaned.replace(/`{1,3}[^`]*`{1,3}/g, 'code'); // Code blocks
-  cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // Links
   
   // Remove HTML tags
   cleaned = cleaned.replace(/<[^>]+>/g, '');

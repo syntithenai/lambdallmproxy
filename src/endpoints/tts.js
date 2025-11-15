@@ -7,7 +7,7 @@
 const { authenticateRequest } = require('../auth');
 const https = require('https');
 const http = require('http');
-const { getEnvProviders } = require('../credential-pool');
+const { loadEnvironmentProviders } = require('../credential-pool');
 
 /**
  * Get CORS headers for TTS endpoint
@@ -39,13 +39,22 @@ function calculateTTSCost(provider, text, voice, model) {
             'Standard': 4.00      // $4 per 1M characters
         },
         'groq': {
-            'playai': 0.00        // Free tier
+            'playai': 50.00        // $50 per 1M characters (PlayAI Dialog v1.0)
         },
         'elevenlabs': {
             'default': 0.30       // $0.30 per 1K characters = $300 per 1M
         },
         'speaches': {
             'tts-1': 0.00         // Local - FREE
+        },
+        'openrouter': {
+            'resemble-ai/chatterbox': 25.00,              // $0.025 per 1K = $25 per 1M
+            'resemble-ai/chatterbox-pro': 40.00,          // $0.04 per 1K = $40 per 1M
+            'resemble-ai/chatterbox-multilingual': 35.00, // $0.035 per 1K = $35 per 1M
+            'minimax/speech-02-turbo': 6.00,              // Estimate from per-second pricing
+            'minimax/speech-02-hd': 12.00,                // Estimate from per-second pricing
+            'jaaari/kokoro-82m': 3.00,                    // Estimate from per-second pricing
+            'x-lance/f5-tts': 6.00                        // Estimate from per-second pricing
         }
     };
 
@@ -74,6 +83,9 @@ function calculateTTSCost(provider, text, voice, model) {
             break;
         case 'elevenlabs':
             costPerMillion = pricing.elevenlabs.default;
+            break;
+        case 'openrouter':
+            costPerMillion = pricing.openrouter[model] || 25.00; // Default to chatterbox pricing
             break;
         default:
             costPerMillion = 0;
@@ -230,13 +242,14 @@ async function callGroqTTS(text, voice, rate, apiKey) {
 /**
  * Call ElevenLabs TTS API
  */
-async function callElevenLabsTTS(text, voice, apiKey, stability = 0.5, similarityBoost = 0.75) {
-    const voiceId = voice || '21m00Tcm4TlvDq8ikWAM'; // Default voice: Rachel
+async function callElevenLabsTTS(text, voiceId, apiKey) {
+    voiceId = voiceId || '21m00Tcm4TlvDq8ikWAM'; // Default voice
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
     
     const response = await makeHttpsRequest(url, {
         method: 'POST',
         headers: {
+            'Accept': 'audio/mpeg',
             'xi-api-key': apiKey,
             'Content-Type': 'application/json'
         }
@@ -244,13 +257,43 @@ async function callElevenLabsTTS(text, voice, apiKey, stability = 0.5, similarit
         text,
         model_id: 'eleven_monolingual_v1',
         voice_settings: {
-            stability,
-            similarity_boost: similarityBoost
+            stability: 0.5,
+            similarity_boost: 0.5
         }
     });
 
     return response.body;
 }
+
+/**
+ * Call OpenRouter TTS API
+ */
+async function callOpenRouterTTS(text, voice, rate, apiKey, model) {
+    // OpenRouter uses the chat/completions endpoint with TTS models
+    const url = 'https://openrouter.ai/api/v1/audio/speech';
+    
+    console.log(`🔊 Calling OpenRouter TTS: model=${model}, voice=${voice}`);
+    
+    const response = await makeHttpsRequest(url, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': process.env.OPENROUTER_REFERER || 'https://lambda-llm-proxy.local',
+            'X-Title': process.env.OPENROUTER_TITLE || 'Lambda LLM Proxy'
+        }
+    }, {
+        model: model || 'minimax/speech-02-turbo',
+        input: text,
+        voice: voice || 'female-en',
+        speed: rate || 1.0
+    });
+
+    return response.body;
+}
+
+/**
+ * Main TTS handler
 
 /**
  * Handle POST /tts - Generate speech from text
@@ -320,7 +363,7 @@ async function handleTTS(event, responseStream, context) {
         console.log(`🎙️ TTS request from ${userEmail}: provider=${provider}, voice=${voice}, textLength=${text.length}`);
         
         // Get environment-configured providers (for Speaches local TTS)
-        const envProviders = getEnvProviders();
+        const envProviders = loadEnvironmentProviders();
         
         // Priority-based TTS provider selection:
         // 1. Speaches (LOCAL, FREE) - if available
@@ -357,40 +400,63 @@ async function handleTTS(event, responseStream, context) {
         
         console.log(`💳 Credit check passed for ${userEmail}: balance=$${creditCheck.balance.toFixed(4)}, estimated=$${estimatedCost.toFixed(4)}`);
 
-        // Get API key from environment or client
+        // Get API key from client, provider pool (LP_TYPE_N/LP_KEY_N), or legacy process.env
         let apiKey = actualApiKey;
         if (!apiKey) {
-            switch (actualProvider) {
-                case 'speaches':
-                    apiKey = 'dummy-key'; // Local TTS doesn't need real key
-                    break;
-                case 'openai':
-                    apiKey = process.env.OPENAI_KEY;
-                    break;
-                case 'google':
-                case 'gemini':
-                    apiKey = process.env.GEMINI_KEY;
-                    break;
-                case 'groq':
-                    apiKey = process.env.GROQ_KEY;
-                    break;
-                case 'elevenlabs':
-                    apiKey = process.env.ELEVENLABS_KEY;
-                    break;
-                default: {
-                    const metadata = {
-                        statusCode: 400,
-                        headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
-                    };
-                    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-                    responseStream.write(JSON.stringify({
-                        error: `Unsupported provider: ${actualProvider}`,
-                        code: 'UNSUPPORTED_PROVIDER'
-                    }));
-                    responseStream.end();
-                    return;
+            // Priority: client apiKey → provider pool → legacy process.env
+            
+            // Try provider pool first (LP_TYPE_N/LP_KEY_N from environment)
+            const providerPoolEntry = envProviders.find(p => 
+                p.type === actualProvider || 
+                (actualProvider === 'gemini' && p.type === 'gemini') ||
+                (actualProvider === 'google' && p.type === 'gemini')
+            );
+            
+            if (providerPoolEntry?.apiKey) {
+                apiKey = providerPoolEntry.apiKey;
+                console.log(`🔑 Using API key from provider pool for ${actualProvider} (source: ${providerPoolEntry.source || 'environment'})`);
+            } else {
+                // Fallback to legacy process.env provider keys
+                switch (actualProvider) {
+                    case 'speaches':
+                        apiKey = 'dummy-key'; // Local TTS doesn't need real key
+                        break;
+                    case 'openai':
+                        apiKey = process.env.OPENAI_KEY;
+                        break;
+                    case 'google':
+                    case 'gemini':
+                        apiKey = process.env.GEMINI_KEY;
+                        break;
+                    case 'groq':
+                        apiKey = process.env.GROQ_KEY;
+                        break;
+                    case 'elevenlabs':
+                        apiKey = process.env.ELEVENLABS_KEY;
+                        break;
+                    case 'openrouter':
+                        apiKey = process.env.OPENROUTER_KEY;
+                        break;
+                    default: {
+                        const metadata = {
+                            statusCode: 400,
+                            headers: { ...getCorsHeaders(), 'Content-Type': 'application/json' }
+                        };
+                        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                        responseStream.write(JSON.stringify({
+                            error: `Unsupported provider: ${actualProvider}`,
+                            code: 'UNSUPPORTED_PROVIDER'
+                        }));
+                        responseStream.end();
+                        return;
+                    }
+                }
+                if (apiKey) {
+                    console.log(`🔑 Using API key from legacy process.env for ${actualProvider}`);
                 }
             }
+        } else {
+            console.log(`🔑 Using client-supplied API key for ${actualProvider}`);
         }
 
         if (!apiKey) {
@@ -426,6 +492,9 @@ async function handleTTS(event, responseStream, context) {
                 break;
             case 'elevenlabs':
                 audioBuffer = await callElevenLabsTTS(text, voice, apiKey);
+                break;
+            case 'openrouter':
+                audioBuffer = await callOpenRouterTTS(text, voice, rate, apiKey, modelName);
                 break;
         }
 

@@ -143,9 +143,6 @@ export const TTSTroubleshooting: React.FC<TTSTroubleshootingProps> = ({
                 <strong>For Best Quality:</strong> Use LLM providers (OpenAI, Groq) or ElevenLabs - requires API keys but much better voices
               </div>
               <div>
-                <strong>For Offline Use:</strong> Use "speak.js" - basic quality but always works
-              </div>
-              <div>
                 <strong>System Fallbacks:</strong> The app automatically tries multiple providers if one fails
               </div>
             </div>

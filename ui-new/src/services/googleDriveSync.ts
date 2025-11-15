@@ -1801,6 +1801,8 @@ class GoogleDriveSync {
   /**
    * Trigger immediate sync (no debounce)
    * Used for login events and enabling cloud sync
+   * NOTE: This always syncs when called, regardless of auto-sync setting.
+   * The auto-sync setting only controls automatic background syncs.
    */
   async triggerImmediateSync(): Promise<void> {
     try {
@@ -1811,12 +1813,8 @@ class GoogleDriveSync {
         return;
       }
       
-      const autoSyncEnabled = localStorage.getItem('auto_sync_enabled');
-      if (autoSyncEnabled !== 'true') {
-        console.log('⏭️ Immediate sync skipped: Auto-sync not enabled');
-        return;
-      }
-      
+      // Always sync when explicitly triggered (e.g., after login, manual button click)
+      // Auto-sync setting only controls automatic background syncs
       await this.syncAll();
       console.log('✅ Immediate sync completed');
     } catch (error) {

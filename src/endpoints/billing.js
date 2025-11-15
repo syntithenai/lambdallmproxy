@@ -231,8 +231,7 @@ async function handleGetBilling(event, responseStream, context, requestStartTime
         // and exposes their status to the frontend for UI display.
         // Detects from new provider format (LP_TYPE_N/LP_KEY_N) only
         const ttsCapabilities = {
-            browser: true, // Always available client-side
-            speakjs: true  // Always available client-side
+            browser: true  // Always available client-side
         };
         
         // Detect TTS-capable providers from environment

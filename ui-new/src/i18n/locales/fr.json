@@ -30,6 +30,8 @@
   },
   "auth": {
     "signIn": "Se connecter avec Google",
+    "signInWithGoogle": "Se connecter avec Google",
+    "initializing": "Initialisation...",
     "signOut": "Se déconnecter",
     "authRequired": "L'authentification est requise pour utiliser cette application",
     "tokenExpired": "Votre session a expiré. Veuillez vous reconnecter.",

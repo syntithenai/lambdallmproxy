@@ -30,6 +30,8 @@
   },
   "auth": {
     "signIn": "Googleでサインイン",
+    "signInWithGoogle": "Googleでサインイン",
+    "initializing": "初期化中...",
     "signOut": "サインアウト",
     "authRequired": "このアプリケーションを使用するには認証が必要です",
     "tokenExpired": "セッションの有効期限が切れました。再度サインインしてください。",

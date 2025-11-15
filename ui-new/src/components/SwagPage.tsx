@@ -3,12 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
 import { useCast } from '../contexts/CastContext';
-import { useTTS } from '../contexts/TTSContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useProject } from '../contexts/ProjectContext';
 import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { TTSHighlightedText } from './TTSHighlightedText';
 import { TipTapEditor } from './TipTapEditor';
 // import { StorageStats } from './StorageStats';
 import { TagAutocomplete } from './TagAutocomplete';
@@ -23,8 +23,7 @@ import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
   createGoogleDocInFolder, 
   listGoogleDocs, 
-  appendToGoogleDoc, 
-  initGoogleAuth 
+  appendToGoogleDoc
 } from '../utils/googleDocs';
 import type { GoogleDoc } from '../utils/googleDocs';
 import { ragDB } from '../utils/ragDB';
@@ -92,7 +91,7 @@ export const SwagPage: React.FC = () => {
     sendSnippetScrollPosition,
     isCastingSnippet
   } = useCast();
-  const { state: ttsState, stop: stopTTS } = useTTS();
+  // TTS is managed by TTSStopButton component
 
   const [googleDocs, setGoogleDocs] = useState<GoogleDoc[]>(() => {
     // Initialize from localStorage cache
@@ -255,7 +254,7 @@ export const SwagPage: React.FC = () => {
   
   // Embedding status tracking
   const [embeddingStatusMap, setEmbeddingStatusMap] = useState<Record<string, boolean>>({});
-  const [checkingEmbedding, setCheckingEmbedding] = useState(false);
+  const [checkingEmbeddingSet, setCheckingEmbeddingSet] = useState<Set<string>>(new Set());
   
   // View mode and sorting (NEW)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -273,11 +272,13 @@ export const SwagPage: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    initGoogleAuth().catch(console.error);
-    // Only load Google Docs from API if we don't have cached data
-    if (googleDocs.length === 0 && !docsLoaded) {
-      loadGoogleDocs();
-    }
+    // Note: We don't automatically initialize Google Auth here anymore
+    // It will be initialized on-demand when user tries to use cloud features
+    // This prevents the login popup when cloud sync is not needed
+    
+    // Swag/snippets work with local storage by default
+    // Google Docs integration is optional and requires authentication
+    // Don't auto-load Google Docs to avoid triggering auth popup
   }, []);
 
   // Populate embedding status map on load by checking IndexedDB
@@ -1989,9 +1990,6 @@ export const SwagPage: React.FC = () => {
 
                   {/* Action Buttons */}
                   <div className="flex gap-2 items-center">
-                    {/* TTS Play Button */}
-                    <ReadButton text={snippet.content} variant="icon" className="p-1" />
-                    
                     {/* Share Button */}
                     <button
                       onClick={(e) => {
@@ -2009,43 +2007,88 @@ export const SwagPage: React.FC = () => {
                     
                     {/* Embedding Status Button */}
                     <button
-                      onClick={async () => {
-                        setCheckingEmbedding(true);
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        console.log('🔘 Embedding button clicked for snippet:', snippet.id);
+                        
+                        // Add to checking set
+                        setCheckingEmbeddingSet(prev => new Set(prev).add(snippet.id));
+                        
                         try {
+                          console.log('📊 Checking embedding status...');
                           const details = await getEmbeddingDetails(snippet.id);
+                          const isIndexed = details.hasEmbedding;
+                          console.log(`📊 Embedding status: ${isIndexed ? 'INDEXED' : 'NOT INDEXED'}`, details);
+                          
                           setEmbeddingStatusMap(prev => ({
                             ...prev,
-                            [snippet.id]: details.hasEmbedding
+                            [snippet.id]: isIndexed
                           }));
                           
-                          if (details.hasEmbedding) {
+                          if (isIndexed) {
                             const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
                             showSuccess(message);
                           } else {
-                            showWarning('No embeddings found. Use "Add to Search Index" to create them.');
+                            // Not indexed - index it now
+                            console.log('🔄 Starting indexing process for snippet:', snippet.id);
+                            showSuccess('🔄 Indexing snippet...');
+                            try {
+                              const result = await generateEmbeddings([snippet.id]);
+                              console.log('📊 Indexing result:', result);
+                              
+                              // Check status again after indexing
+                              const updatedDetails = await getEmbeddingDetails(snippet.id);
+                              console.log('📊 Updated embedding status:', updatedDetails);
+                              setEmbeddingStatusMap(prev => ({
+                                ...prev,
+                                [snippet.id]: updatedDetails.hasEmbedding
+                              }));
+                              
+                              if (result.embedded > 0) {
+                                showSuccess(`✅ Snippet indexed: ${updatedDetails.chunkCount} chunk${updatedDetails.chunkCount !== 1 ? 's' : ''}`);
+                              } else if (result.failed > 0) {
+                                showError('Failed to index snippet');
+                              } else {
+                                console.warn('⚠️ Indexing completed but no embeddings created or failed');
+                                showWarning('Indexing completed but status unclear');
+                              }
+                            } catch (indexError) {
+                              console.error('❌ Failed to index snippet:', indexError);
+                              showError('Failed to index snippet');
+                            }
                           }
                         } catch (error) {
-                          console.error('Failed to check embedding status:', error);
+                          console.error('❌ Failed to check embedding status:', error);
                           showError('Failed to check embedding status');
                         } finally {
-                          setCheckingEmbedding(false);
+                          console.log('✅ Embedding check/index operation complete');
+                          // Remove from checking set
+                          setCheckingEmbeddingSet(prev => {
+                            const next = new Set(prev);
+                            next.delete(snippet.id);
+                            return next;
+                          });
                         }
                       }}
                       className={`p-2 text-sm rounded transition-colors ${
-                        embeddingStatusMap[snippet.id] === true
+                        checkingEmbeddingSet.has(snippet.id)
+                          ? 'bg-yellow-500 text-white cursor-wait'
+                          : embeddingStatusMap[snippet.id] === true
                           ? 'bg-green-600 text-white hover:bg-green-700' 
                           : embeddingStatusMap[snippet.id] === false
                           ? 'bg-gray-400 text-white hover:bg-gray-500'
                           : 'bg-blue-500 text-white hover:bg-blue-600'
                       }`}
                       title={
-                        embeddingStatusMap[snippet.id] === true
+                        checkingEmbeddingSet.has(snippet.id)
+                          ? 'Processing...'
+                          : embeddingStatusMap[snippet.id] === true
                           ? 'Has embeddings (click for details)'
                           : embeddingStatusMap[snippet.id] === false
-                          ? 'No embeddings (click to check)'
-                          : 'Check embedding status'
+                          ? 'No embeddings (click to index)'
+                          : 'Check embedding status (auto-index if needed)'
                       }
-                      disabled={checkingEmbedding}
+                      disabled={checkingEmbeddingSet.has(snippet.id)}
                     >
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
@@ -2266,42 +2309,85 @@ export const SwagPage: React.FC = () => {
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
-                      setCheckingEmbedding(true);
+                      console.log('🔘 Embedding button clicked (grid) for snippet:', snippet.id);
+                      
+                      // Add to checking set
+                      setCheckingEmbeddingSet(prev => new Set(prev).add(snippet.id));
+                      
                       try {
                         const details = await getEmbeddingDetails(snippet.id);
+                        const isIndexed = details.hasEmbedding;
+                        console.log(`📊 Embedding status: ${isIndexed ? 'INDEXED' : 'NOT INDEXED'}`, details);
+                        
                         setEmbeddingStatusMap(prev => ({
                           ...prev,
-                          [snippet.id]: details.hasEmbedding
+                          [snippet.id]: isIndexed
                         }));
                         
-                        if (details.hasEmbedding) {
+                        if (isIndexed) {
                           const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
                           showSuccess(message);
                         } else {
-                          showWarning('No embeddings found. Use "Add to Search Index" to create them.');
+                          // Not indexed - index it now
+                          console.log('🔄 Starting indexing process for snippet:', snippet.id);
+                          showSuccess('🔄 Indexing snippet...');
+                          try {
+                            const result = await generateEmbeddings([snippet.id]);
+                            console.log('📊 Indexing result:', result);
+                            
+                            // Check status again after indexing
+                            const updatedDetails = await getEmbeddingDetails(snippet.id);
+                            console.log('📊 Updated embedding status:', updatedDetails);
+                            setEmbeddingStatusMap(prev => ({
+                              ...prev,
+                              [snippet.id]: updatedDetails.hasEmbedding
+                            }));
+                            
+                            if (result.embedded > 0) {
+                              showSuccess(`✅ Snippet indexed: ${updatedDetails.chunkCount} chunk${updatedDetails.chunkCount !== 1 ? 's' : ''}`);
+                            } else if (result.failed > 0) {
+                              showError('Failed to index snippet');
+                            } else {
+                              console.warn('⚠️ Indexing completed but no embeddings created or failed');
+                              showWarning('Indexing completed but status unclear');
+                            }
+                          } catch (indexError) {
+                            console.error('❌ Failed to index snippet:', indexError);
+                            showError('Failed to index snippet');
+                          }
                         }
                       } catch (error) {
                         console.error('Failed to check embedding status:', error);
                         showError('Failed to check embedding status');
                       } finally {
-                        setCheckingEmbedding(false);
+                        console.log('✅ Embedding check/index operation complete');
+                        // Remove from checking set
+                        setCheckingEmbeddingSet(prev => {
+                          const next = new Set(prev);
+                          next.delete(snippet.id);
+                          return next;
+                        });
                       }
                     }}
                     className={`p-1.5 text-sm rounded transition-colors ${
-                      embeddingStatusMap[snippet.id] === true
+                      checkingEmbeddingSet.has(snippet.id)
+                        ? 'bg-yellow-500 text-white cursor-wait'
+                        : embeddingStatusMap[snippet.id] === true
                         ? 'bg-green-500 text-white hover:bg-green-600' 
                         : embeddingStatusMap[snippet.id] === false
                         ? 'bg-gray-400 text-white hover:bg-gray-500'
                         : 'bg-blue-500 text-white hover:bg-blue-600'
                     }`}
                     title={
-                      embeddingStatusMap[snippet.id] === true
+                      checkingEmbeddingSet.has(snippet.id)
+                        ? 'Processing...'
+                        : embeddingStatusMap[snippet.id] === true
                         ? 'Has embeddings (click for details)'
                         : embeddingStatusMap[snippet.id] === false
-                        ? 'No embeddings (click to check)'
-                        : 'Check embedding status'
+                        ? 'No embeddings (click to index)'
+                        : 'Check embedding status (auto-index if needed)'
                     }
-                    disabled={checkingEmbedding}
+                    disabled={checkingEmbeddingSet.has(snippet.id)}
                   >
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
@@ -2558,20 +2644,6 @@ export const SwagPage: React.FC = () => {
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     {new Date(viewingSnippet.timestamp).toLocaleString()}
                   </span>
-                  {/* TTS Stop Button - Flashing when playing */}
-                  {ttsState.isPlaying && (
-                    <button
-                      onClick={stopTTS}
-                      className="p-2 md:px-3 md:py-1.5 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors flex items-center gap-2 animate-pulse"
-                      title="Stop reading aloud"
-                      aria-label="Stop Reading"
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                        <rect x="6" y="6" width="12" height="12" />
-                      </svg>
-                      <span className="hidden md:inline">Stop Reading</span>
-                    </button>
-                  )}
                 </div>
               </div>
               <button
@@ -2597,7 +2669,7 @@ export const SwagPage: React.FC = () => {
               }}
             >
               <div className="text-gray-800 dark:text-gray-200">
-                {/* Render as JSON tree if valid JSON, otherwise always use markdown */}
+                {/* Render as JSON tree if valid JSON, otherwise use TTSHighlightedText with markdown */}
                 {(() => {
                   const content = viewingSnippet.content;
                   
@@ -2606,14 +2678,12 @@ export const SwagPage: React.FC = () => {
                     return <JsonOrText content={content} />;
                   }
                   
-                  // Otherwise, always render as markdown
-                  // Markdown handles plain text gracefully, so this is safe
-                  return <MarkdownRenderer 
+                  // Otherwise, render with TTS highlighting support
+                  // This allows sentence-level highlighting and click-to-seek during playback
+                  return <TTSHighlightedText 
                     key={`${viewingSnippet.id}-${viewingSnippet.updateDate || viewingSnippet.timestamp}`}
-                    content={content} 
-                    snippetId={viewingSnippet.id}
-                    snippetTags={viewingSnippet.tags || []}
-                    onImageEdit={handleImageEdit}
+                    text={content}
+                    renderAsMarkdown={true}
                   />;
                 })()}
               </div>

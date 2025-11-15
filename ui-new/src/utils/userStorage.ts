@@ -145,6 +145,10 @@ export function migrateToUserScoped(email: string, keysToMigrate: string[]): voi
 /**
  * List of all keys that should be user-scoped
  * Used for migration and clearing
+ * 
+ * NOTE: Authentication tokens (google_access_token, google_token_expiration, etc.) 
+ * are intentionally NOT in this list because auth is per-browser, not per-user.
+ * The auth state determines which user's data is scoped.
  */
 export const USER_SCOPED_KEYS = [
   'app_settings',
@@ -152,8 +156,8 @@ export const USER_SCOPED_KEYS = [
   'feed_maturity_level',
   'feed_last_search',
   'auto_sync_enabled',
-  'google_drive_access_token',
-  'user_email',
+  'google_drive_access_token', // Legacy Drive token - keep scoped
+  'user_email', // Legacy - keep for backwards compat
   'rag_config',
   'rag_spreadsheet_id',
   'rag_google_linked',
@@ -167,8 +171,8 @@ export const USER_SCOPED_KEYS = [
   'swag-snippets',
   'saved_plans',
   'playlists',
-  'chat_history',
-  'google_access_token',
-  'google_oauth_token',
-  'access_token'
+  'chat_history'
+  // REMOVED: google_access_token, google_oauth_token, access_token
+  // Auth tokens should remain global (browser-level, not user-level)
 ] as const;
+

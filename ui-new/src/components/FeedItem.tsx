@@ -706,7 +706,6 @@ Please use this article as context to answer the user's questions. You can provi
                     <ReadButton 
                       text={typeof item.expandedContent === 'string' ? item.expandedContent : JSON.stringify(item.expandedContent, null, 2)}
                       variant="icon"
-                      shouldSummarize={false}
                     />
                   </div>
                   <div className="text-gray-700 leading-relaxed space-y-3 whitespace-pre-line">

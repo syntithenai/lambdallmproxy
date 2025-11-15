@@ -15,7 +15,6 @@ interface ReadButtonProps {
   size?: 'sm' | 'md' | 'lg';
   onStart?: () => void;
   onEnd?: () => void;
-  shouldSummarize?: boolean;
   className?: string;
 }
 
@@ -25,7 +24,6 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
   size = 'md',
   onStart,
   onEnd,
-  shouldSummarize = false,
   className = ''
 }) => {
   // Don't render if TTS is disabled
@@ -40,9 +38,10 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
   
   // Use global TTS state but with local override capability
   const isReading = state.isPlaying || localIsReading;
+  const [isTransitioning, setIsTransitioning] = React.useState(false);
   
   // Debug logging
-  console.log('ReadButton render - isReading:', isReading, 'state.isPlaying:', state.isPlaying, 'localIsReading:', localIsReading);
+  console.log('ReadButton render - isReading:', isReading, 'state.isPlaying:', state.isPlaying, 'localIsReading:', localIsReading, 'isTransitioning:', isTransitioning);
 
   // Watch for state changes and sync local state
   useEffect(() => {
@@ -59,40 +58,57 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
   }, [localIsReading, state.isPlaying]);
 
   const handleClick = useCallback(async () => {
+    // Prevent double-clicks during state transition
+    if (isTransitioning) {
+      console.log('ReadButton: Ignoring click during transition');
+      return;
+    }
+    
     if (isReading) {
       console.log('ReadButton: Stop clicked');
+      setIsTransitioning(true);
       setLocalIsReading(false); // Immediately update local state
       stop();
-      onEnd?.();
+      // Reset transition flag after a short delay
+      setTimeout(() => setIsTransitioning(false), 500);
+      // DO NOT call onEnd - that's only for natural completion, not manual stop
     } else {
-      console.log('ReadButton: Start clicked');
+      console.log('ReadButton: Start clicked, text length:', text.length);
+      setIsTransitioning(true);
       setLocalIsReading(true); // Immediately update local state
       onStart?.();
       
       try {
+        console.log('ReadButton: Calling speak()...');
         await speak(text, { 
-          shouldSummarize,
           onStart: () => {
-            console.log('TTS started');
+            console.log('TTS started - setting localIsReading to true');
             setLocalIsReading(true);
+            setIsTransitioning(false); // Clear transition flag once speech starts
           },
           onEnd: () => {
-            console.log('TTS ended');
+            console.log('TTS ended - setting localIsReading to false');
             setLocalIsReading(false); // Reset local state
+            setIsTransitioning(false);
             onEnd?.();
           },
           onError: (error) => {
             console.error('TTS error in callback:', error);
             setLocalIsReading(false); // Reset local state on error
+            setIsTransitioning(false);
+            // DO NOT call onEnd on error - errors include intentional stops
           }
         });
+        console.log('ReadButton: speak() promise resolved');
+        setIsTransitioning(false); // Reset after speak completes
       } catch (error) {
         console.error('TTS error:', error);
         setLocalIsReading(false); // Reset local state on error
-        onEnd?.();
+        setIsTransitioning(false);
+        // DO NOT call onEnd on error - errors include intentional stops
       }
     }
-  }, [isReading, text, shouldSummarize, speak, stop, onStart, onEnd]);
+  }, [isReading, isTransitioning, text, speak, stop, onStart, onEnd]);
 
   // Don't render if TTS is disabled
   if (!state.isEnabled) return null;
@@ -138,7 +154,7 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
         onClick={handleClick}
         className={`p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${className}`}
         title={isReading ? 'Stop reading (If stuck, wait 30s or refresh page)' : 'Read aloud'}
-        disabled={state.isPlaying && !isReading}
+        disabled={isTransitioning || (state.isPlaying && !isReading)}
       >
         {isReading ? (
           <StopIcon />
@@ -160,7 +176,7 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
             : 'bg-blue-600 text-white hover:bg-blue-700'
         } ${className}`}
         title={isReading ? 'Stop reading (If stuck, wait 30s or refresh page)' : 'Read aloud'}
-        disabled={state.isPlaying && !isReading}
+        disabled={isTransitioning || (state.isPlaying && !isReading)}
       >
         {isReading ? (
           <>
@@ -188,7 +204,7 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
             : 'bg-blue-600 hover:bg-blue-700'
         } text-white ${className}`}
         title={isReading ? 'Stop reading' : 'Read aloud'}
-        disabled={state.isPlaying && !isReading}
+        disabled={isTransitioning || (state.isPlaying && !isReading)}
       >
         {isReading ? <StopIcon /> : <PlayIcon />}
       </button>
@@ -203,20 +219,4 @@ export const ReadButton: React.FC<ReadButtonProps> = ({
  * 
  * Shows in the header when any TTS is playing
  */
-export const GlobalTTSStopButton: React.FC = () => {
-  const { state, stop } = useTTS();
-
-  if (!state.isPlaying) return null;
-
-  return (
-    <button
-      onClick={stop}
-      className="fixed top-4 right-20 z-[60] px-4 py-2 bg-red-600 text-white rounded-lg shadow-lg hover:bg-red-700 transition-colors flex items-center gap-2 animate-pulse"
-    >
-      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-        <rect x="6" y="6" width="12" height="12" />
-      </svg>
-      Stop Reading
-    </button>
-  );
-};
+export { GlobalTTSStopButton } from './TTSStopButton';
