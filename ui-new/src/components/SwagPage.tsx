@@ -259,6 +259,7 @@ export const SwagPage: React.FC = () => {
   // View mode and sorting (NEW)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'date-new' | 'date-old' | 'title-az' | 'title-za' | 'size'>('date-new');
+  const [compactMode, setCompactMode] = useState<boolean>(false);
   
   // Undo state for tag deletion (NEW)
   const [undoTagDeletion, setUndoTagDeletion] = useState<{
@@ -1438,6 +1439,21 @@ export const SwagPage: React.FC = () => {
               </div>
             )}
 
+            {/* Compact Mode Toggle - Only show in list view */}
+            {snippets.length > 0 && viewMode === 'list' && (
+              <button
+                onClick={() => setCompactMode(!compactMode)}
+                className={`px-3 py-1.5 text-xs rounded transition-colors border ${
+                  compactMode
+                    ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                }`}
+                title={compactMode ? "Show detailed view" : "Show compact view"}
+              >
+                {compactMode ? '📋 Detailed' : '📝 Compact'}
+              </button>
+            )}
+
             {/* Sort Dropdown (NEW) */}
             {snippets.length > 0 && (
               <select
@@ -2241,7 +2257,7 @@ export const SwagPage: React.FC = () => {
             {sortedSnippets.map(snippet => (
               <div
                 key={snippet.id}
-                className={`flex items-center gap-4 p-3 bg-white dark:bg-gray-800 rounded-lg border-2 transition-all hover:shadow-md ${
+                className={`flex items-center gap-4 ${compactMode ? 'p-2' : 'p-3'} bg-white dark:bg-gray-800 rounded-lg border-2 transition-all hover:shadow-md ${
                   snippet.selected
                     ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
                     : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -2255,170 +2271,182 @@ export const SwagPage: React.FC = () => {
                   className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
                 />
 
-                {/* Content - Flexible Column */}
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingSnippet(snippet)}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                {compactMode ? (
+                  /* Compact Mode: Only title and checkbox */
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingSnippet(snippet)}>
+                    <h3 className="font-medium text-gray-900 dark:text-white truncate">
                       {snippet.title || 'Untitled'}
                     </h3>
-                    <span className={`px-2 py-0.5 text-xs rounded-full text-white flex-shrink-0 ${getSourceBadgeColor(snippet.sourceType)}`}>
-                      {snippet.sourceType}
-                    </span>
-                    {('_searchScore' in snippet) && (
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 font-medium flex-shrink-0">
-                        🎯 {(snippet as any)._searchScore.toFixed(3)}
-                      </span>
-                    )}
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                    {snippet.content}
-                  </p>
-                </div>
+                ) : (
+                  /* Detailed Mode: Full content */
+                  <>
+                    {/* Content - Flexible Column */}
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingSnippet(snippet)}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                          {snippet.title || 'Untitled'}
+                        </h3>
+                        <span className={`px-2 py-0.5 text-xs rounded-full text-white flex-shrink-0 ${getSourceBadgeColor(snippet.sourceType)}`}>
+                          {snippet.sourceType}
+                        </span>
+                        {('_searchScore' in snippet) && (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 font-medium flex-shrink-0">
+                            🎯 {(snippet as any)._searchScore.toFixed(3)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                        {snippet.content}
+                      </p>
+                    </div>
 
-                {/* Tags - Compact Pills */}
-                <div className="flex gap-1 flex-wrap max-w-xs flex-shrink-0">
-                  {(snippet.tags || []).slice(0, 3).map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!searchTags.includes(tag)) {
-                          setSearchTags([...searchTags, tag]);
-                        }
-                      }}
-                      title="Filter by this tag"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {(snippet.tags || []).length > 3 && (
-                    <span className="px-2 py-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      +{(snippet.tags || []).length - 3}
-                    </span>
-                  )}
-                </div>
+                    {/* Tags - Compact Pills */}
+                    <div className="flex gap-1 flex-wrap max-w-xs flex-shrink-0">
+                      {(snippet.tags || []).slice(0, 3).map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!searchTags.includes(tag)) {
+                              setSearchTags([...searchTags, tag]);
+                            }
+                          }}
+                          title="Filter by this tag"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {(snippet.tags || []).length > 3 && (
+                        <span className="px-2 py-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          +{(snippet.tags || []).length - 3}
+                        </span>
+                      )}
+                    </div>
 
-                {/* Date and Status */}
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                    {new Date(snippet.timestamp).toLocaleDateString()}
-                  </span>
-                  
-                  {/* Embedding Status Button */}
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      console.log('🔘 Embedding button clicked (grid) for snippet:', snippet.id);
+                    {/* Date and Status */}
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        {new Date(snippet.timestamp).toLocaleDateString()}
+                      </span>
                       
-                      // Add to checking set
-                      setCheckingEmbeddingSet(prev => new Set(prev).add(snippet.id));
-                      
-                      try {
-                        const details = await getEmbeddingDetails(snippet.id);
-                        const isIndexed = details.hasEmbedding;
-                        console.log(`📊 Embedding status: ${isIndexed ? 'INDEXED' : 'NOT INDEXED'}`, details);
-                        
-                        setEmbeddingStatusMap(prev => ({
-                          ...prev,
-                          [snippet.id]: isIndexed
-                        }));
-                        
-                        if (isIndexed) {
-                          const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
-                          showSuccess(message);
-                        } else {
-                          // Not indexed - index it now
-                          console.log('🔄 Starting indexing process for snippet:', snippet.id);
-                          showSuccess('🔄 Indexing snippet...');
+                      {/* Embedding Status Button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          console.log('🔘 Embedding button clicked (grid) for snippet:', snippet.id);
+                          
+                          // Add to checking set
+                          setCheckingEmbeddingSet(prev => new Set(prev).add(snippet.id));
+                          
                           try {
-                            const result = await generateEmbeddings([snippet.id]);
-                            console.log('📊 Indexing result:', result);
+                            const details = await getEmbeddingDetails(snippet.id);
+                            const isIndexed = details.hasEmbedding;
+                            console.log(`📊 Embedding status: ${isIndexed ? 'INDEXED' : 'NOT INDEXED'}`, details);
                             
-                            // Check status again after indexing
-                            const updatedDetails = await getEmbeddingDetails(snippet.id);
-                            console.log('📊 Updated embedding status:', updatedDetails);
                             setEmbeddingStatusMap(prev => ({
                               ...prev,
-                              [snippet.id]: updatedDetails.hasEmbedding
+                              [snippet.id]: isIndexed
                             }));
                             
-                            if (result.embedded > 0) {
-                              showSuccess(`✅ Snippet indexed: ${updatedDetails.chunkCount} chunk${updatedDetails.chunkCount !== 1 ? 's' : ''}`);
-                            } else if (result.failed > 0) {
-                              showError('Failed to index snippet');
+                            if (isIndexed) {
+                              const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
+                              showSuccess(message);
                             } else {
-                              console.warn('⚠️ Indexing completed but no embeddings created or failed');
-                              showWarning('Indexing completed but status unclear');
+                              // Not indexed - index it now
+                              console.log('🔄 Starting indexing process for snippet:', snippet.id);
+                              showSuccess('🔄 Indexing snippet...');
+                              try {
+                                const result = await generateEmbeddings([snippet.id]);
+                                console.log('📊 Indexing result:', result);
+                                
+                                // Check status again after indexing
+                                const updatedDetails = await getEmbeddingDetails(snippet.id);
+                                console.log('📊 Updated embedding status:', updatedDetails);
+                                setEmbeddingStatusMap(prev => ({
+                                  ...prev,
+                                  [snippet.id]: updatedDetails.hasEmbedding
+                                }));
+                                
+                                if (result.embedded > 0) {
+                                  showSuccess(`✅ Snippet indexed: ${updatedDetails.chunkCount} chunk${updatedDetails.chunkCount !== 1 ? 's' : ''}`);
+                                } else if (result.failed > 0) {
+                                  showError('Failed to index snippet');
+                                } else {
+                                  console.warn('⚠️ Indexing completed but no embeddings created or failed');
+                                  showWarning('Indexing completed but status unclear');
+                                }
+                              } catch (indexError) {
+                                console.error('❌ Failed to index snippet:', indexError);
+                                showError('Failed to index snippet');
+                              }
                             }
-                          } catch (indexError) {
-                            console.error('❌ Failed to index snippet:', indexError);
-                            showError('Failed to index snippet');
+                          } catch (error) {
+                            console.error('Failed to check embedding status:', error);
+                            showError('Failed to check embedding status');
+                          } finally {
+                            console.log('✅ Embedding check/index operation complete');
+                            // Remove from checking set
+                            setCheckingEmbeddingSet(prev => {
+                              const next = new Set(prev);
+                              next.delete(snippet.id);
+                              return next;
+                            });
                           }
+                        }}
+                        className={`p-1.5 text-sm rounded transition-colors ${
+                          checkingEmbeddingSet.has(snippet.id)
+                            ? 'bg-yellow-500 text-white cursor-wait'
+                            : embeddingStatusMap[snippet.id] === true
+                            ? 'bg-green-500 text-white hover:bg-green-600' 
+                            : embeddingStatusMap[snippet.id] === false
+                            ? 'bg-gray-400 text-white hover:bg-gray-500'
+                            : 'bg-blue-500 text-white hover:bg-blue-600'
+                        }`}
+                        title={
+                          checkingEmbeddingSet.has(snippet.id)
+                            ? 'Processing...'
+                            : embeddingStatusMap[snippet.id] === true
+                            ? 'Has embeddings (click for details)'
+                            : embeddingStatusMap[snippet.id] === false
+                            ? 'No embeddings (click to index)'
+                            : 'Check embedding status (auto-index if needed)'
                         }
-                      } catch (error) {
-                        console.error('Failed to check embedding status:', error);
-                        showError('Failed to check embedding status');
-                      } finally {
-                        console.log('✅ Embedding check/index operation complete');
-                        // Remove from checking set
-                        setCheckingEmbeddingSet(prev => {
-                          const next = new Set(prev);
-                          next.delete(snippet.id);
-                          return next;
-                        });
-                      }
-                    }}
-                    className={`p-1.5 text-sm rounded transition-colors ${
-                      checkingEmbeddingSet.has(snippet.id)
-                        ? 'bg-yellow-500 text-white cursor-wait'
-                        : embeddingStatusMap[snippet.id] === true
-                        ? 'bg-green-500 text-white hover:bg-green-600' 
-                        : embeddingStatusMap[snippet.id] === false
-                        ? 'bg-gray-400 text-white hover:bg-gray-500'
-                        : 'bg-blue-500 text-white hover:bg-blue-600'
-                    }`}
-                    title={
-                      checkingEmbeddingSet.has(snippet.id)
-                        ? 'Processing...'
-                        : embeddingStatusMap[snippet.id] === true
-                        ? 'Has embeddings (click for details)'
-                        : embeddingStatusMap[snippet.id] === false
-                        ? 'No embeddings (click to index)'
-                        : 'Check embedding status (auto-index if needed)'
-                    }
-                    disabled={checkingEmbeddingSet.has(snippet.id)}
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
-                    </svg>
-                  </button>
+                        disabled={checkingEmbeddingSet.has(snippet.id)}
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
+                        </svg>
+                      </button>
 
-                  {/* Share Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSharingSnippet(snippet);
-                    }}
-                    className="p-1.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-                    title="Share snippet"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                    </svg>
-                  </button>
+                      {/* Share Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSharingSnippet(snippet);
+                        }}
+                        className="p-1.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                        title="Share snippet"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                      </button>
 
-                  {/* Actions Menu */}
-                  <button
-                    onClick={() => handleEditSnippet(snippet)}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                    title="Edit snippet"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                    </svg>
-                  </button>
-                </div>
+                      {/* Actions Menu */}
+                      <button
+                        onClick={() => handleEditSnippet(snippet)}
+                        className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        title="Edit snippet"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
