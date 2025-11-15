@@ -1,0 +1,1 @@
+import{j as e}from"./index-BnI9vT9b.js";const r=()=>e.jsxs("div",{children:[e.jsx("h2",{children:"Snippets (temporarily unavailable)"}),e.jsx("p",{children:"The Swag page is being refactored. Please check back later."})]});export{r as SwagPageStub,r as default};
