@@ -6,7 +6,7 @@
 
 import type { SyncAdapter } from '../unifiedSync';
 import { playlistDB } from '../../utils/playlistDB';
-import { requestGoogleAuth } from '../../utils/googleDocs';
+import { googleAuth } from '../googleAuth';
 
 // Define SavedPlaylist type based on playlistDB schema
 interface SavedPlaylist {
@@ -40,7 +40,10 @@ export class PlaylistsAdapter implements SyncAdapter {
       return appFolderIdCache!;
     }
 
-    const token = await requestGoogleAuth();
+    const token = await googleAuth.ensureValidToken();
+    if (!token) {
+      throw new Error('Failed to get Google auth token for playlists sync');
+    }
 
     // Search for existing folder
     const searchResponse = await fetch(
@@ -93,7 +96,10 @@ export class PlaylistsAdapter implements SyncAdapter {
    * Get file ID for playlists file in Google Drive
    */
   private async getFileId(filename: string): Promise<string | null> {
-    const token = await requestGoogleAuth();
+    const token = await googleAuth.ensureValidToken();
+    if (!token) {
+      throw new Error('Failed to get Google auth token for playlists sync');
+    }
     const folderId = await this.getAppFolder();
 
     const response = await fetch(
@@ -125,7 +131,10 @@ export class PlaylistsAdapter implements SyncAdapter {
         return null;
       }
 
-      const token = await requestGoogleAuth();
+      const token = await googleAuth.ensureValidToken();
+      if (!token) {
+        throw new Error('Failed to get Google auth token for playlists sync');
+      }
       const response = await fetch(
         `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
         {
@@ -155,7 +164,10 @@ export class PlaylistsAdapter implements SyncAdapter {
    */
   async push(data: SavedPlaylist[]): Promise<void> {
     try {
-      const token = await requestGoogleAuth();
+      const token = await googleAuth.ensureValidToken();
+      if (!token) {
+        throw new Error('Failed to get Google auth token for playlists sync');
+      }
       const folderId = await this.getAppFolder();
       const fileId = await this.getFileId(PLAYLISTS_FILENAME);
 

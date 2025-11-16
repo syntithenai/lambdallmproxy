@@ -5,6 +5,8 @@
  * Replaces the dual JWT + OAuth2 system with a simpler, more secure approach
  */
 
+import { getItem as getScopedItem } from '../utils/storage';
+
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GGL_CID;
 
 // Basic OAuth2 scopes - only what we need for login
@@ -428,6 +430,29 @@ class GoogleAuthService {
   }
 
   /**
+   * Sign in with Google Drive access (for Google Docs shares)
+   * This requests Drive permissions immediately during sign-in
+   */
+  async signInWithDriveAccess(): Promise<void> {
+    if (!this.tokenClient) {
+      await this.init();
+    }
+
+    console.log('🔐 Requesting Google sign-in WITH Drive access...');
+    
+    // Update scopes to include Drive
+    this.currentScopes = DRIVE_SCOPES;
+    
+    // Re-initialize token client with Drive scopes
+    this.initializeTokenClient();
+    
+    // Request access token with Drive permissions
+    this.tokenClient.requestAccessToken({ 
+      prompt: 'consent' // Always show consent for Drive access
+    });
+  }
+
+  /**
    * Sign out
    */
   signOut() {
@@ -560,7 +585,12 @@ class GoogleAuthService {
    */
   hasDriveAccess(): boolean {
     const grantedScopes = localStorage.getItem(TOKEN_KEYS.GRANTED_SCOPES) || '';
-    return grantedScopes.includes('drive.file');
+    const hasDrive = grantedScopes.includes('drive.file');
+    console.log('🔍 Checking Drive access:', { 
+      grantedScopes: grantedScopes.substring(0, 100) + '...', 
+      hasDrive 
+    });
+    return hasDrive;
   }
 
   /**
@@ -664,7 +694,19 @@ class GoogleAuthService {
    * Get user profile
    */
   getUserProfile(): UserProfile | null {
-    const email = localStorage.getItem(TOKEN_KEYS.USER_EMAIL);
+    // Try scoped storage first (new system), then fall back to non-scoped (legacy)
+    let email = localStorage.getItem(TOKEN_KEYS.USER_EMAIL);
+    
+    // If not found in non-scoped, try to get from scoped storage synchronously
+    // The scoped storage uses format: "user:{email}:user_email"
+    if (!email) {
+      // Find any scoped user_email key
+      const scopedKey = Object.keys(localStorage).find(k => k.endsWith(':user_email'));
+      if (scopedKey) {
+        email = localStorage.getItem(scopedKey);
+      }
+    }
+    
     if (!email) return null;
 
     return {

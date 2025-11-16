@@ -142,7 +142,7 @@ export function FeedProvider({ children }: FeedProviderProps) {
     } catch (error) {
       console.error('❌ Failed to restore lastSearchCriteria from localStorage:', error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []); // Run ONCE on mount - ignore user?.email dependency to restore immediately
 
   // Listen for maturity level changes from FeedPage

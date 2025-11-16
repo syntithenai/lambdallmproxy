@@ -5,7 +5,7 @@
  * Supports OpenAI TTS API and Google Cloud TTS API
  */
 
-/* eslint-disable no-console */
+ 
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 

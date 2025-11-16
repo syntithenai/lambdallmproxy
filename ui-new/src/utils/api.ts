@@ -1113,3 +1113,39 @@ export const fetchImagesBase64 = async (
   }
 };
 
+/**
+ * Summarize text for voice output
+ * Uses a small model from the provider pool with rate limiting and failover
+ */
+export const summarizeForVoice = async (
+  text: string,
+  token: string
+): Promise<string> => {
+  const apiBase = await getCachedApiBase();
+  
+  try {
+    const response = await fetch(`${apiBase}/summarize`, {
+      method: 'POST',
+      headers: buildApiHeaders(token),
+      body: JSON.stringify({ 
+        text,
+        maxWords: 100,
+        purpose: 'voice'
+      }),
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return data.summary || text; // Fallback to original if no summary
+  } catch (error) {
+    console.error('Failed to summarize text:', error);
+    // Return original text as fallback
+    return text;
+  }
+};
+

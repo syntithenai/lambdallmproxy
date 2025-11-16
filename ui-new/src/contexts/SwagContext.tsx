@@ -24,11 +24,13 @@ export interface ContentSnippet {
   tags?: string[];
   hasEmbedding?: boolean;
   projectId?: string;  // Associated project for filtering
+  sharedGoogleDocId?: string;  // Google Drive file ID if snippet has been shared
+  sharedGoogleDocUrl?: string; // Web view link to the shared Google Doc
 }
 
 interface SwagContextType {
   snippets: ContentSnippet[];
-  addSnippet: (content: string, sourceType: ContentSnippet['sourceType'], title?: string, tags?: string[]) => Promise<ContentSnippet | undefined>;
+  addSnippet: (content: string, sourceType: ContentSnippet['sourceType'], title?: string, tags?: string[], sharedGoogleDocId?: string) => Promise<ContentSnippet | undefined>;
   updateSnippet: (id: string, updates: Partial<ContentSnippet>) => Promise<void>;
   deleteSnippets: (ids: string[]) => void;
   mergeSnippets: (ids: string[]) => void;
@@ -254,6 +256,12 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Run garbage collection every 5 minutes
     const gcInterval = setInterval(async () => {
       try {
+        console.log(`🗑️ [GC Interval] Running with ${allSnippets.length} snippets`);
+        allSnippets.forEach((s, idx) => {
+          const hasSwagImages = s.content.includes('swag-image://');
+          const title = s.title || 'Untitled';
+          console.log(`🗑️ [GC] Snippet ${idx + 1}: "${title.substring(0, 50)}" - hasImages: ${hasSwagImages}`);
+        });
         const allContents = allSnippets.map(s => s.content);
         const deletedCount = await imageStorage.garbageCollect(allContents);
         if (deletedCount > 0) {
@@ -267,6 +275,12 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Also run on mount after a short delay
     const initialGC = setTimeout(async () => {
       try {
+        console.log(`🗑️ [Initial GC] Running with ${allSnippets.length} snippets`);
+        allSnippets.forEach((s, idx) => {
+          const hasSwagImages = s.content.includes('swag-image://');
+          const title = s.title || 'Untitled';
+          console.log(`🗑️ [GC] Snippet ${idx + 1}: "${title.substring(0, 50)}" - hasImages: ${hasSwagImages}`);
+        });
         const allContents = allSnippets.map(s => s.content);
         const deletedCount = await imageStorage.garbageCollect(allContents);
         if (deletedCount > 0) {
@@ -619,7 +633,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string, tags?: string[]): Promise<ContentSnippet | undefined> => {
+  const addSnippet = async (content: string, sourceType: ContentSnippet['sourceType'], title?: string, tags?: string[], sharedGoogleDocId?: string): Promise<ContentSnippet | undefined> => {
     // Process content: Extract base64 images and replace with references
     // NOTE: FeedItem now pre-processes images before calling addSnippet,
     // but we keep this as a fallback for other sources (clipboard, manual entry, etc.)
@@ -637,6 +651,15 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('Failed to process images, using original content:', error);
+    }
+    
+    // Check if Google Doc ID already exists (prevent duplicate saves)
+    if (sharedGoogleDocId) {
+      const existingByDocId = allSnippets.find(s => s.sharedGoogleDocId === sharedGoogleDocId);
+      if (existingByDocId) {
+        console.log('✅ Snippet already saved from this Google Doc, returning existing:', existingByDocId.id);
+        return existingByDocId;
+      }
     }
     
     // Check if content already exists (prevent duplicates)
@@ -664,7 +687,8 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateDate: now,
       selected: false,
       tags: tags && tags.length > 0 ? tags : undefined,
-      projectId: currentProjectId || undefined  // Auto-tag with current project
+      projectId: currentProjectId || undefined,  // Auto-tag with current project
+      sharedGoogleDocId: sharedGoogleDocId || undefined  // Track Google Doc ID if provided
     };
     
     console.log(`💾 Saving snippet:`, {
@@ -709,7 +733,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const oldSnippet = snippets.find(s => s.id === id);
     
     // Process content if it's being updated
-    let processedUpdates = { ...updates };
+    const processedUpdates = { ...updates };
     if (updates.content) {
       try {
         const processedContent = await imageStorage.processContentForSave(updates.content);

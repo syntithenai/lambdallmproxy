@@ -179,7 +179,7 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose })
       if (updatePosition() || attemptCount >= maxAttempts) {
         clearInterval(retryInterval);
         if (attemptCount >= maxAttempts) {
-          // eslint-disable-next-line no-console
+           
           console.warn(`Spotlight target not found after ${maxAttempts} attempts: ${step.targetSelector}`);
           setIsSearching(false);
           

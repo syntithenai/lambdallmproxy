@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { googleAuth } from '../services/googleAuth';
 
 export const LoginScreen: React.FC = () => {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [isInitializing, setIsInitializing] = useState(true);
   const hasInitialized = useRef(false);
 
@@ -31,8 +32,29 @@ export const LoginScreen: React.FC = () => {
 
   const handleSignIn = async () => {
     try {
-      await googleAuth.signIn();
-      // The googleAuth service will handle the rest via events
+      // Check if Drive access is requested (from Google Docs share links)
+      const requestDriveAccess = sessionStorage.getItem('request_drive_access') === 'true';
+      
+      if (requestDriveAccess) {
+        // Request Drive permissions immediately during sign-in
+        console.log('🔐 Requesting Google Drive access during sign-in...');
+        await googleAuth.signInWithDriveAccess();
+        sessionStorage.removeItem('request_drive_access');
+      } else {
+        // Normal sign-in with basic scopes
+        await googleAuth.signIn();
+      }
+      
+      // Check if there's a redirect stored in sessionStorage
+      const redirectPath = sessionStorage.getItem('auth_redirect');
+      if (redirectPath) {
+        sessionStorage.removeItem('auth_redirect');
+        // Navigate to the stored hash path
+        window.location.hash = redirectPath.startsWith('#') ? redirectPath.slice(1) : redirectPath;
+      } else {
+        // Default redirect to home
+        navigate('/');
+      }
     } catch (error) {
       console.error('❌ Sign-in failed:', error);
     }

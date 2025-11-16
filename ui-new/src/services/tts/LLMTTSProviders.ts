@@ -5,7 +5,7 @@
  * Calls the backend /tts endpoint with appropriate provider parameter
  */
 
-/* eslint-disable no-console */
+ 
 
 import type { TTSProvider, Voice, SpeakOptions } from '../../types/tts';
 import { getCachedApiBase } from '../../utils/api';
@@ -326,15 +326,29 @@ abstract class LLMTTSProvider implements TTSProvider {
    * Play from a pre-generated audio blob
    * Used with pregenerate() for buffered playback
    */
-  async playBlob(audioBlob: Blob, options: SpeakOptions): Promise<void> {
+  async playBlob(audioBlob: Blob, options: SpeakOptions, providedObjectUrl?: string): Promise<void> {
     // Stop any currently playing audio
     if (this.audio) {
       this.audio.pause();
       this.audio = null;
     }
 
-    // Create and play audio element
-    this.audio = new Audio(URL.createObjectURL(audioBlob));
+    // Create and play audio element. If an object URL was provided by the
+    // caller (pregeneration path), reuse it instead of creating a new one so
+    // ownership/revocation remains with the caller's buffer manager.
+    let createdObjectUrl: string | undefined;
+    const audioSrc = providedObjectUrl ?? (() => {
+      try {
+        const url = URL.createObjectURL(audioBlob);
+        createdObjectUrl = url;
+        return url;
+      } catch (e) {
+        // Fall back to empty string; audio playback will likely fail and be handled
+        return '';
+      }
+    })();
+
+    this.audio = new Audio(audioSrc);
     this.audio.playbackRate = options.rate || 1.0;
     this.audio.volume = options.volume ?? 1.0;
 
@@ -343,17 +357,26 @@ abstract class LLMTTSProvider implements TTSProvider {
     }
 
     this.audio.onended = () => {
-      if (options.onEnd) {
-        options.onEnd();
-      }
+      try {
+        options.onEnd?.();
+      } catch (_e) { void _e; }
+      // If we created the object URL here, revoke it now. If an object URL
+      // was provided by the caller (pregeneration), the caller is responsible
+      // for revocation and we must NOT revoke it here.
+      try {
+        if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
+      } catch (_e) { void _e; }
       this.audio = null;
     };
 
     this.audio.onerror = (error) => {
       console.error(`${this.name} playback error:`, error);
-      if (options.onError) {
-        options.onError(new Error('Audio playback failed'));
-      }
+      try {
+        options.onError?.(new Error('Audio playback failed'));
+      } catch (_e) { void _e; }
+      try {
+        if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
+      } catch (_e) { void _e; }
       this.audio = null;
     };
 
@@ -382,7 +405,7 @@ abstract class LLMTTSProvider implements TTSProvider {
     this.audio.onended = () => {
       try {
         this._playbackRateTimers.forEach(t => clearTimeout(t));
-  } catch (_e) { void _e; }
+      } catch (_e) { void _e; }
       this._playbackRateTimers = [];
       try {
         if (originalOnEnded) originalOnEnded.call(this.audio as any, new Event('ended'));
@@ -401,8 +424,17 @@ abstract class LLMTTSProvider implements TTSProvider {
       this.audio.onended = null;
       this.audio.onerror = null;
 
+      // Stop playback
       this.audio.pause();
       this.audio.currentTime = 0;
+
+      // Revoke any blob: URL created by this provider to avoid leaks
+      try {
+        if (this.audio.src && this.audio.src.startsWith('blob:')) {
+          URL.revokeObjectURL(this.audio.src);
+        }
+      } catch (_e) { void _e; }
+
       this.audio = null;
     }
   }

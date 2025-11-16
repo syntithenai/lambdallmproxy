@@ -15,7 +15,7 @@ import { feedDB } from '../db/feedDb';
 export default function FeedPage() {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
-  const { snippets } = useSwag();
+  const { snippets = [] } = useSwag() || { snippets: [] }; // Add fallback for safety
   const [interestsInput, setInterestsInput] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [maturityLevel, setMaturityLevel] = useState<'child' | 'youth' | 'adult' | 'academic'>('adult');

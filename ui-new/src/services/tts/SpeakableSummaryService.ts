@@ -5,7 +5,7 @@
  * Uses existing LLM providers for summary generation
  */
 
-/* eslint-disable no-console */
+ 
 
 import type { ProviderConfig } from '../../types/provider';
 import { prepareTextForSpeech, truncateForSpeech } from '../../utils/textPreprocessing';

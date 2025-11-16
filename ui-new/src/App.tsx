@@ -46,6 +46,7 @@ import ProjectSelectorButton from './components/ProjectSelectorButton';
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const PlanningPage = lazy(() => import('./components/PlanningPage').then(m => ({ default: m.PlanningPage })));
 const SwagPage = lazy(() => import('./components/SwagPage').then(m => ({ default: m.SwagPage })));
+const SnippetViewPage = lazy(() => import('./components/SnippetViewPage'));
 const QuizPage = lazy(() => import('./components/QuizPage'));
 const FeedPage = lazy(() => import('./components/FeedPage'));
 const BillingPage = lazy(() => import('./components/BillingPage'));
@@ -829,6 +830,7 @@ function AppContent() {
               />
               <Route path="/planning" element={<PlanningPage />} />
               <Route path="/swag" element={<SwagPage />} />
+              <Route path="/snippet/:id" element={<SnippetViewPage />} />
               <Route path="/quiz" element={<QuizPage />} />
               <Route path="/quiz/shared" element={<SharedQuizViewer />} />
               <Route path="/image-editor" element={<ImageEditorPage />} />

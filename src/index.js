@@ -67,6 +67,7 @@ const quizEndpoint = require('./endpoints/quiz');
 const feedEndpoint = require('./endpoints/feed');
 const syncEndpoint = require('./endpoints/sync');
 const staticEndpoint = require('./endpoints/static');
+const driveProxyEndpoint = require('./endpoints/drive-proxy');
 const stopTranscriptionEndpoint = require('./endpoints/stop-transcription');
 const transcribeEndpoint = require('./endpoints/transcribe');
 const proxyImageEndpoint = require('./endpoints/proxy-image');
@@ -90,6 +91,7 @@ const { resetMemoryTracker } = require('./utils/memory-tracker');
 const { handleGenerateImage } = require('./endpoints/generate-image');
 const { handleCreateOrder, handleCaptureOrder } = require('./endpoints/paypal');
 const fixMermaidChartEndpoint = require('./endpoints/fix-mermaid-chart');
+const summarizeEndpoint = require('./endpoints/summarize');
 const { getProviderHealthStatus } = require('./utils/provider-health');
 const { initializeCache, getFullStats } = require('./utils/cache');
 const { logCSPWarnings } = require('./utils/security-headers');
@@ -470,6 +472,23 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             // Lazy-load image proxy endpoint
             const imageProxyEndpoint = require('./endpoints/image-proxy');
             await imageProxyEndpoint.handler(event, responseStream);
+            return;
+        }
+        
+        if (method === 'GET' && path === '/drive-proxy') {
+            console.log('Routing to Google Drive proxy endpoint');
+            const response = await driveProxyEndpoint.handleDriveProxy(event);
+            const origin = event.headers?.origin || event.headers?.Origin || '*';
+            const metadata = {
+                statusCode: response.statusCode,
+                headers: {
+                    ...response.headers,
+                    'Access-Control-Allow-Origin': origin
+                }
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(response.body);
+            responseStream.end();
             return;
         }
         
@@ -923,6 +942,20 @@ exports.handler = awslambda.streamifyResponse(async (event, responseStream, cont
             };
             responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
             responseStream.write(fixResponse.body);
+            responseStream.end();
+            return;
+        }
+        
+        // Summarize text endpoint (buffered response)
+        if (method === 'POST' && path === '/summarize') {
+            console.log('Routing to summarize endpoint');
+            const summarizeResponse = await summarizeEndpoint(event, context);
+            const metadata = {
+                statusCode: summarizeResponse.statusCode,
+                headers: summarizeResponse.headers
+            };
+            responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+            responseStream.write(summarizeResponse.body);
             responseStream.end();
             return;
         }

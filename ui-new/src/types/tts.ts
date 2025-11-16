@@ -37,6 +37,14 @@ export interface TTSProvider {
   resume?(): void;
   cleanup?(): void; // Optional cleanup method for resources
   isBoundarySupported?(): boolean; // Check if browser supports boundary events (for settings restart)
+  
+  // Optional pregeneration methods for buffered playback (LLM/cloud TTS providers)
+  pregenerate?(text: string, options: SpeakOptions): Promise<Blob>;
+  playBlob?(audioBlob: Blob, options: SpeakOptions, providedObjectUrl?: string): Promise<void>;
+  
+  // Optional real-time control methods (for mid-playback rate/volume changes)
+  setPlaybackRate?(rate: number): void;
+  setVolume?(volume: number): void;
 }
 
 export type TTSProviderType = 

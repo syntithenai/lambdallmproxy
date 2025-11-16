@@ -5,7 +5,7 @@
  * Integrates with existing settings system
  */
 
-/* eslint-disable no-console */
+ 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { ReactNode, FC } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -802,7 +802,7 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
           if (bufferedBlob && 'playBlob' in provider && typeof (provider as any).playBlob === 'function') {
             const genRate = generationRatesRef.current?.get(chunkIndex);
             console.log(`▶️ TTS: Playing buffered sentence ${chunkIndex + 1}/${sentenceChunks.length} (generated at rate=${genRate ?? 'n/a'}, playback rate=${currentRateRef.current})`);
-            (provider as any).playBlob(bufferedBlob, chunkOptions).catch((error: Error) => {
+            (provider as any).playBlob(bufferedBlob, chunkOptions, entry?.objectUrl).catch((error: Error) => {
               if (isStoppingIntentionally.current) {
                 console.log('TTS: Buffered playback error during intentional stop, resolving instead of rejecting');
                 resolve();
@@ -812,7 +812,7 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
             });
           } else {
             console.log(`▶️ TTS: Playing sentence ${chunkIndex + 1}/${sentenceChunks.length} (not buffered) (playback rate=${currentRateRef.current})`);
-            provider.speak(chunk, chunkOptions).catch((error) => {
+            provider.speak(chunk, chunkOptions).catch((error: any) => {
               if (isStoppingIntentionally.current) {
                 console.log('TTS: Chunk speak error during intentional stop, resolving instead of rejecting');
                 resolve();
@@ -922,7 +922,7 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
             }
           };
           
-          provider.speak(chunk, chunkOptions).catch((error) => {
+          provider.speak(chunk, chunkOptions).catch((error: any) => {
             // If stop was called intentionally, don't reject
             if (isStoppingIntentionally.current) {
               console.log('TTS: Chunk speak error during intentional stop, resolving instead of rejecting');
@@ -1222,7 +1222,7 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
               }
             };
             
-            provider.speak(chunk, chunkOptions).catch((error) => {
+            provider.speak(chunk, chunkOptions).catch((error: any) => {
               if (isStoppingIntentionally.current) {
                 resolve();
               } else {

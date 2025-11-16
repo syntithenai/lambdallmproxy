@@ -5,7 +5,7 @@
  * Requires separate API key authentication
  */
 
-/* eslint-disable no-console */
+ 
 
 /*
   NOTE: The following list contains ElevenLabs public voice IDs (not secrets).

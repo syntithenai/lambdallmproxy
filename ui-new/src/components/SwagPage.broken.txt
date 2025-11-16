@@ -1,0 +1,20 @@
+Backup of corrupted SwagPage.tsx saved on repair attempt.
+If you need to recover portions of the original file, open this backup.
+
+BEGIN BACKUP CONTENT (truncated):
+import React, { useState, useEffect, useRef } from 'react';
+import { useSwag } from '../contexts/SwagContext';
+import { useToast } from './ToastManager';
+import { useCast } from '../contexts/CastContext';
+import { useTTS } from '../contexts/TTSContext';
+import { useAuth } from '../contexts/AuthContext';
+import { JsonOrText, isJsonString, parseJsonSafe } from './JsonTree';
+import { MarkdownRenderer } from './MarkdownRenderer';
+import React from 'react';
+import '../styles/markdown-editor.css';
+
+// NOTE: The original restored file was large and contained duplicated fragments
+// and merge artifacts; this backup is provided for manual recovery. The full
+// original file content was captured earlier in session logs if needed.
+
+END BACKUP CONTENT

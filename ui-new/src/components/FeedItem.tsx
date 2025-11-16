@@ -10,9 +10,9 @@ import { useSwag } from '../contexts/SwagContext';
 import { useSwipeGesture } from '../hooks/useSwipeGesture';
 import { useToast } from './ToastManager';
 import { ReadButton } from './ReadButton';
+import FeedShareDialog from './FeedShareDialog';
 import type { FeedItem } from '../types/feed';
 import { feedDB } from '../db/feedDb';
-import { compressToEncodedURIComponent } from 'lz-string';
 import { 
   Bookmark, 
   Trash2, 
@@ -123,28 +123,56 @@ export default function FeedItemCard({ item }: FeedItemCardProps) {
     
     // Include image with attribution if available
     if (item.image) {
-      // Check if image is a data URI (base64)
+      // Check if image is a data URI (base64) or HTTP URL
       const isDataUri = item.image.startsWith('data:');
+      const isHttpUrl = item.image.startsWith('http://') || item.image.startsWith('https://');
       const imageSize = item.image.length;
       
       console.log(`📸 Stashing item with image:`, {
         isDataUri,
+        isHttpUrl,
         imageSize,
         imageSource: item.imageSource,
         imageProvider: item.imageProvider,
         imageUrl: isDataUri ? `data:... (${(imageSize / 1024).toFixed(1)} KB)` : item.image
       });
       
-      // If it's a data URI, save to IndexedDB immediately to avoid clogging up the editor
+      // Convert all images to base64 and save to IndexedDB
       let imageRef = item.image;
       if (isDataUri) {
+        // Data URI - save directly to IndexedDB
         try {
           const { imageStorage } = await import('../utils/imageStorage');
           imageRef = await imageStorage.saveImage(item.image);
-          console.log(`✅ Saved image to IndexedDB: ${imageRef} (${(imageSize / 1024).toFixed(1)} KB)`);
+          console.log(`✅ Saved data URI image to IndexedDB: ${imageRef} (${(imageSize / 1024).toFixed(1)} KB)`);
         } catch (error) {
           console.error('❌ Failed to save image to IndexedDB, using data URI:', error);
           // Fall back to data URI if save fails
+        }
+      } else if (isHttpUrl) {
+        // HTTP URL - fetch, convert to base64, then save to IndexedDB
+        try {
+          console.log(`🌐 Fetching HTTP image from: ${item.image}`);
+          const response = await fetch(item.image);
+          const blob = await response.blob();
+          
+          // Convert blob to base64
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          
+          console.log(`✅ Converted HTTP image to base64 (${(base64.length / 1024).toFixed(1)} KB)`);
+          
+          // Save to IndexedDB
+          const { imageStorage } = await import('../utils/imageStorage');
+          imageRef = await imageStorage.saveImage(base64);
+          console.log(`✅ Saved HTTP image to IndexedDB: ${imageRef}`);
+        } catch (error) {
+          console.error('❌ Failed to fetch/convert HTTP image, using original URL:', error);
+          // Fall back to original URL if conversion fails
         }
       }
       
@@ -259,122 +287,6 @@ Please use this article as context to answer the user's questions. You can provi
     
     // Generate feed with this topic
     await generateMore([topic]);
-  };
-
-  /**
-   * Generate share URL for this feed item
-   */
-  const generateShareUrl = () => {
-    // ALWAYS use production URL for share links (from environment variable)
-    // This ensures shared links work even when developing locally
-    const baseUrl = import.meta.env.VITE_PUBLIC_URL || 'https://ai.syntithenai.com';
-    
-    // Aggressively truncate expandedContent to just first 150 chars (preview only)
-    const truncateExpandedContent = (content: string | undefined) => {
-      if (!content) return undefined;
-      const maxLength = 150; // Only keep first ~2 sentences for preview
-      if (content.length <= maxLength) return content;
-      return content.slice(0, maxLength) + '...';
-    };
-    
-    // Also truncate sources to just URL and short title
-    const truncateSources = (sources: any) => {
-      if (!sources || !Array.isArray(sources)) return [];
-      return sources.slice(0, 3).map(s => ({
-        url: typeof s === 'string' ? s : s.url,
-        title: typeof s === 'string' ? s : (s.title?.slice(0, 60) || s.url)
-      }));
-    };
-    
-    // Create a shareable URL with feed item data encoded
-    // We use aggressive compression and truncation to avoid 414 URI Too Long errors
-    const shareData = {
-      type: 'feed_item',
-      title: item.title,
-      content: item.content?.slice(0, 200), // Truncate main content too
-      topics: item.topics?.slice(0, 5), // Limit to 5 topics
-      image: item.image,
-      sources: truncateSources(item.sources),
-      // Truncate expandedContent to just 150 chars (first couple sentences)
-      expandedContent: truncateExpandedContent(item.expandedContent),
-      // Exclude mnemonic entirely to save space
-    };
-    
-    // Use lz-string compression + URI encoding
-    const jsonString = JSON.stringify(shareData);
-    const compressed = compressToEncodedURIComponent(jsonString);
-    return `${baseUrl}/feed/share/${compressed}`;
-  };
-
-  /**
-   * Share to Facebook
-   */
-  const handleFacebookShare = () => {
-    const shareUrl = generateShareUrl();
-    const url = encodeURIComponent(shareUrl);
-    // Facebook requires the full URL with protocol
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, '_blank');
-  };
-
-  /**
-   * Share to Bluesky
-   */
-  const handleBlueskyShare = () => {
-    const shareUrl = generateShareUrl();
-    // Bluesky expects text with URL embedded - don't double encode the URL
-    const text = encodeURIComponent(`Check out this interesting article: ${item.title}\n\n${shareUrl}`);
-    window.open(`https://bsky.app/intent/compose?text=${text}`, '_blank');
-  };
-
-  /**
-   * Share to Twitter
-   */
-  const handleTwitterShare = () => {
-    const shareUrl = generateShareUrl();
-    const text = encodeURIComponent(`Check out this interesting article: ${item.title}`);
-    const url = encodeURIComponent(shareUrl);
-    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
-  };
-
-  /**
-   * Share to Reddit
-   */
-  const handleRedditShare = () => {
-    const shareUrl = generateShareUrl();
-    const url = encodeURIComponent(shareUrl);
-    const title = encodeURIComponent(item.title);
-    window.open(`https://reddit.com/submit?url=${url}&title=${title}`, '_blank');
-  };
-
-  /**
-   * Share to Quora
-   */
-  const handleQuoraShare = () => {
-    const shareUrl = generateShareUrl();
-    const url = encodeURIComponent(shareUrl);
-    // Quora's share endpoint - may need to be a public URL to work
-    window.open(`https://www.quora.com/share?url=${url}`, '_blank');
-  };
-
-  /**
-   * Share via Gmail
-   */
-  const handleEmailShare = () => {
-    const subject = encodeURIComponent(`Check out: ${item.title}`);
-    const body = encodeURIComponent(`I thought you might find this interesting:\n\n${item.title}\n\n${generateShareUrl()}`);
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`, '_blank');
-  };
-
-  /**
-   * Copy share link
-   */
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(generateShareUrl());
-      showSuccess('Link copied to clipboard!');
-    } catch (error) {
-      console.error('Failed to copy link:', error);
-    }
   };
 
   /**
@@ -837,101 +749,11 @@ Please use this article as context to answer the user's questions. You can provi
       )}
 
       {/* Share Dialog */}
-      {showShareDialog && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowShareDialog(false)}
-        >
-          <div 
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Share Article</h3>
-                <button
-                  onClick={() => setShowShareDialog(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{item.title}</p>
-
-              <div className="space-y-2">
-                <button
-                  onClick={handleCopyLink}
-                  className="w-full px-4 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                >
-                  <Share2 className="h-5 w-5" />
-                  Copy Link
-                </button>
-
-                <button
-                  onClick={handleTwitterShare}
-                  className="w-full px-4 py-3 bg-[#1DA1F2] hover:bg-[#1a8cd8] text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                >
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                  </svg>
-                  X (Twitter)
-                </button>
-
-                <button
-                  onClick={handleRedditShare}
-                  className="w-full px-4 py-3 bg-[#FF4500] hover:bg-[#e03d00] text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                >
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/>
-                  </svg>
-                  Reddit
-                </button>
-
-                <button
-                  onClick={handleFacebookShare}
-                  className="w-full px-4 py-3 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                >
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                  </svg>
-                  Facebook
-                </button>
-
-                <button
-                  onClick={handleBlueskyShare}
-                  className="w-full px-4 py-3 bg-[#0085ff] hover:bg-[#0073e6] text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                >
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364.136-.02.275-.039.415-.056-.138.022-.276.04-.415.056-3.912.58-7.387 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078a8.741 8.741 0 0 1-.415-.056c.14.017.279.036.415.056 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z"/>
-                  </svg>
-                  Bluesky
-                </button>
-
-                <button
-                  onClick={handleQuoraShare}
-                  className="w-full px-4 py-3 bg-[#B92B27] hover:bg-[#a02522] text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                >
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12.738 18.701c-.831-1.635-1.805-3.287-3.708-3.287-.362 0-.727.061-1.059.209l-.704-1.403c.498-.166 1.023-.25 1.561-.25 2.944 0 4.424 2.587 5.429 4.734l1.904-.003c.271-.928.406-1.895.406-2.888C16.567 8.283 14.284 6 11.754 6c-2.529 0-4.812 2.283-4.812 5.813s2.283 5.813 4.812 5.813c.367 0 .724-.043 1.076-.126.035-.009.068-.021.102-.031l.806 1.585c-.413.116-.843.177-1.284.177C8.704 19.231 6 16.529 6 12.779 6 9.03 8.704 6.328 12.454 6.328c3.75 0 6.451 2.702 6.451 6.451 0 1.488-.403 2.884-1.106 4.086l.03.062-1.599.003c.377-.641.661-1.334.842-2.054h-1.334c-.271.771-.659 1.479-1.137 2.102l-1.863.003c.377-.641.661-1.334.842-2.054z"/>
-                  </svg>
-                  Quora
-                </button>
-
-                <button
-                  onClick={handleEmailShare}
-                  className="w-full px-4 py-3 bg-[#EA4335] hover:bg-[#d33426] text-white rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
-                >
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
-                  </svg>
-                  Gmail
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <FeedShareDialog
+        isOpen={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+        item={item}
+      />
     </div>
   );
 }

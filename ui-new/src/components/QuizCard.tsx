@@ -54,6 +54,22 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
   const progress = currentQuestionIndex + 1;
   const total = quiz.questions.length;
 
+  // Debug: Log current question data
+  useEffect(() => {
+    if (currentQuestion) {
+      console.log('🎯 QuizCard - Current Question:', {
+        index: currentQuestionIndex,
+        questionId: currentQuestion.id,
+        answerId: currentQuestion.answerId,
+        choices: currentQuestion.choices.map(c => ({
+          id: c.id,
+          text: c.text.substring(0, 30),
+          isCorrect: c.id === currentQuestion.answerId
+        }))
+      });
+    }
+  }, [currentQuestionIndex, currentQuestion]);
+
   // Reset question start time when question changes
   useEffect(() => {
     questionStartTime.current = Date.now();
@@ -89,6 +105,13 @@ export const QuizCard: React.FC<QuizCardProps> = ({ quiz, onClose, onComplete })
 
     setSelectedAnswer(choiceId);
     const isCorrect = choiceId === currentQuestion.answerId;
+    
+    console.log('📊 Answer selected:', {
+      questionId: currentQuestion.id,
+      selectedChoiceId: choiceId,
+      correctAnswerId: currentQuestion.answerId,
+      isCorrect
+    });
     
     if (isCorrect) {
       setScore(score + 1);

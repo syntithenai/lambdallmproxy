@@ -4,7 +4,7 @@
  * Uses the browser's built-in Speech Synthesis API
  */
 
-/* eslint-disable no-console */
+ 
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 

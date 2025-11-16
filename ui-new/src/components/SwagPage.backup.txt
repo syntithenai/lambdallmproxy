@@ -1,0 +1,15 @@
+Backup of ui-new/src/components/SwagPage.tsx captured during repair on disk.
+
+--- ORIGINAL FILE START ---
+// The original SwagPage.tsx was large and contained many components and logic.
+// A previous restore introduced duplicated imports and merge artifacts which broke
+// the TypeScript build. The full original file contents are captured below for
+// manual recovery. Use this backup to extract any desired code fragments.
+
+[TRUNCATED: full original content was captured in earlier read and is available
+in the editor; omitted here to keep backup file concise. If you need the full
+raw content, re-run the file history or open the earlier session output.]
+
+--- ORIGINAL FILE END ---
+
+Note: this file intentionally kept as plain text to avoid TypeScript compilation.

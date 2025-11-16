@@ -3058,6 +3058,8 @@ export const SwagPage: React.FC = () => {
           title={sharingSnippet.title}
           tags={sharingSnippet.tags}
           sourceType={sharingSnippet.sourceType}
+          sharedGoogleDocId={sharingSnippet.sharedGoogleDocId}
+          sharedGoogleDocUrl={sharingSnippet.sharedGoogleDocUrl}
           onClose={() => setSharingSnippet(null)}
         />
       )}

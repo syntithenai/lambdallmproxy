@@ -80,7 +80,7 @@ export function handleLargeShare(data: ShareData): string {
   const lastMessage = messages[messages.length - 1];
   
   // Start with first + last
-  let truncatedMessages = [firstMessage, lastMessage];
+  const truncatedMessages = [firstMessage, lastMessage];
   let currentData = {
     ...data,
     messages: truncatedMessages,
@@ -224,3 +224,69 @@ export function clearShareDataFromUrl(): void {
     window.history.replaceState({}, '', url.toString());
   }
 }
+
+/**
+ * Warning threshold (80% of Chrome URL limit)
+ */
+export const URL_WARNING_THRESHOLD = 0.8;
+
+/**
+ * Estimate compressed size of content when shared via URL
+ * Returns object with size info and recommendations
+ */
+export const estimateCompressedSize = (content: string): {
+  originalSize: number;
+  compressedSize: number;
+  percentOfLimit: number;
+  shouldWarn: boolean;
+  shouldForceGoogleDocs: boolean;
+  recommendation: 'url' | 'both' | 'google-docs';
+} => {
+  const originalSize = content.length;
+  
+  // Estimate compressed size (actual compression happens in LZ-String)
+  const compressed = LZString.compressToEncodedURIComponent(content);
+  const compressedSize = compressed.length;
+  
+  // Calculate percentage of URL limit
+  const percentOfLimit = compressedSize / CHROME_URL_LIMIT;
+  
+  // Determine recommendations
+  const shouldWarn = percentOfLimit >= URL_WARNING_THRESHOLD;
+  const shouldForceGoogleDocs = percentOfLimit >= 1.0;
+  
+  let recommendation: 'url' | 'both' | 'google-docs';
+  if (shouldForceGoogleDocs) {
+    recommendation = 'google-docs';
+  } else if (shouldWarn) {
+    recommendation = 'both';
+  } else {
+    recommendation = 'url';
+  }
+  
+  return {
+    originalSize,
+    compressedSize,
+    percentOfLimit,
+    shouldWarn,
+    shouldForceGoogleDocs,
+    recommendation,
+  };
+};
+
+/**
+ * Format bytes to human-readable string
+ */
+export const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/**
+ * Format percentage for display
+ */
+export const formatPercent = (decimal: number): string => {
+  return `${(decimal * 100).toFixed(0)}%`;
+};
+

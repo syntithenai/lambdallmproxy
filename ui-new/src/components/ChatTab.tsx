@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation as useRouterLocation } from 'react-router-dom';
@@ -15,7 +15,7 @@ import { useTTS } from '../contexts/TTSContext';
 import { useProject } from '../contexts/ProjectContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
+import { sendChatMessageStreaming, getCachedApiBase, summarizeForVoice } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
 import { ragDB } from '../utils/ragDB';
 import { requestGoogleAuth } from '../utils/googleDocs';
@@ -451,6 +451,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     items: Array<{ id: string | number; description: string; status: string }>;
   } | null>(null);
   const [todosExpanded, setTodosExpanded] = useState(false);
+  const [todosCompactMode, setTodosCompactMode] = useState(false);
   const [todosResubmitting, setTodosResubmitting] = useState<string | null>(null);
   
   // Snippets panel state
@@ -757,7 +758,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       const imageHtml = `<img src="${base64Image}" alt="${title}" style="max-width: 100%; height: auto;" />`;
       await addSnippet(imageHtml, 'assistant', title);
       showSuccess(t('chat.imageAddedToSwag'));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to grab image:', error);
       // Fallback to original URL if conversion fails
       const title = description || 'Image';
@@ -815,7 +816,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       
       await addSnippet(contentWithBase64Images, sourceType, title);
       showSuccess(t('chat.contentCapturedToSwag'));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to capture content with base64 conversion:', error);
       // Fallback to original behavior
       const fullContent = formatContentWithMedia(content, extractedContent);
@@ -2594,7 +2595,6 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         stream: true,  // Always use streaming
         optimization: settings?.optimization || 'cheap',  // Model selection strategy
         language: settings?.language || 'en',  // User's preferred language for responses
-        voiceMode: continuousVoiceEnabled,  // Enable dual response format for voice mode
         imageQuality: settings?.imageQuality || 'low'  // Default image generation quality
       };
       
@@ -2602,7 +2602,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
       console.log(`🌐 Response language: ${requestPayload.language}`);
       console.log(`🎨 Image quality: ${requestPayload.imageQuality}`);
       if (continuousVoiceEnabled) {
-        console.log(`🎙️ Voice mode enabled - dual response format requested`);
+        console.log(`🎙️ Voice mode enabled - will check word count for summarization`);
       }
       
       // Add location data if available
@@ -2672,40 +2672,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             case 'delta':
               // Streaming text chunk - collate all deltas into single block until tool call
               if (data.content) {
-                // Parse JSON response format if present (for voice mode)
-                let contentToAdd = data.content;
-                let voiceResponseText: string | null = null;
-                
-                try {
-                  // Check if content looks like JSON with voiceResponse/fullResponse
-                  if (data.content.trim().startsWith('{') && data.content.includes('voiceResponse')) {
-                    const parsed = JSON.parse(data.content);
-                    if (parsed.voiceResponse && parsed.fullResponse) {
-                      console.log('🎙️ Parsed voice response JSON:', { 
-                        voiceLength: parsed.voiceResponse.length,
-                        fullLength: parsed.fullResponse.length 
-                      });
-                      contentToAdd = parsed.fullResponse; // Use full response for display
-                      voiceResponseText = parsed.voiceResponse; // Save for TTS
-                    }
-                  }
-                } catch (e) {
-                  // Not JSON or parsing failed, use content as-is
-                }
-                
-                setStreamingContent(prev => prev + contentToAdd);
-                
-                // Trigger TTS immediately if we got a voice response and continuous voice is enabled
-                if (voiceResponseText && continuousVoiceEnabled) {
-                  console.log('🎙️ Triggering immediate TTS with voice response');
-                  ttsSpeak(voiceResponseText, {
-                    onEnd: () => {
-                      console.log('🎙️ TTS finished - ContinuousVoiceMode will auto-restart');
-                    }
-                  }).catch((error: any) => {
-                    console.error('🎙️ Failed to start TTS:', error);
-                  });
-                }
+                setStreamingContent(prev => prev + data.content);
                 
                 // Announce to screen readers when response starts (only on first delta)
                 if (!streamingContent) {
@@ -2730,7 +2697,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     const newMessages = [...prev];
                     newMessages[lastMessageIndex] = {
                       ...lastMessage,
-                      content: (lastMessage.content || '') + contentToAdd, // Use parsed content
+                      content: (lastMessage.content || '') + data.content,
                       isStreaming: true
                     };
                     console.log('🟦 Updating assistant at index:', lastMessageIndex, 
@@ -2883,6 +2850,26 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 }
                 return newMessages;
               });
+
+              // Also update the global image generation progress map used by UI overlays
+              try {
+                const imgProgressKey = `img_${data.phase}`;
+                setImageGenerationProgress(prev => {
+                  const newMap = new Map(prev);
+                  newMap.set(imgProgressKey, data);
+                  return newMap;
+                });
+
+                if (data.phase === 'completed' || data.phase === 'error') {
+                  setTimeout(() => {
+                    setImageGenerationProgress(new Map());
+                  }, 2000);
+                }
+              } catch (e) {
+                // Defensive: ignore progress map failures
+                console.debug('Image progress map update failed:', e);
+              }
+
               break;
               
             case 'image_complete':
@@ -3337,26 +3324,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               }
               break;
             
-            case 'image_generation_progress':
-              // Image generation progress events
-              console.log('🎨 Image generation progress:', data);
-              
-              // Create a unique key based on phase
-              const imgProgressKey = `img_${data.phase}`;
-              
-              setImageGenerationProgress(prev => {
-                const newMap = new Map(prev);
-                newMap.set(imgProgressKey, data);
-                return newMap;
-              });
-              
-              // Clear progress when complete or error
-              if (data.phase === 'completed' || data.phase === 'error') {
-                setTimeout(() => {
-                  setImageGenerationProgress(new Map());
-                }, 2000);
-              }
-              break;
+            
             
             case 'chart_generation_progress':
               // Chart generation progress events
@@ -3707,28 +3675,54 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // All processing complete
               console.log('Stream complete:', data);
               
-              // Handle dual response format from voice mode
-              if (data.shortResponse && continuousVoiceEnabled) {
-                console.log(`🎙️ Received short response for TTS (${data.shortResponse.length} chars)`);
+              // Handle voice mode with word count check
+              if (continuousVoiceEnabled && streamingContent) {
+                // Count words in the response
+                const wordCount = streamingContent.trim().split(/\s+/).length;
+                console.log(`🎙️ Response word count: ${wordCount}`);
                 
-                // Speak the short response via TTS
-                // The ContinuousVoiceMode component will restart recording when TTS finishes
-                // because it monitors ttsState.isPlaying via the isSpeaking prop
-                ttsSpeak(data.shortResponse, {
-                  onStart: () => {
-                    console.log('🎙️ TTS started speaking short response');
-                  },
-                  onEnd: () => {
-                    console.log('🎙️ TTS finished speaking - ContinuousVoiceMode will auto-restart recording');
-                  },
-                  onError: (error) => {
-                    console.error('🎙️ TTS error:', error);
-                    showError('TTS playback failed');
-                  }
-                }).catch((error: any) => {
-                  console.error('🎙️ Failed to start TTS:', error);
-                  showError('Failed to speak response');
-                });
+                if (wordCount < 100) {
+                  // Short response - read it in full
+                  console.log('🎙️ Short response (<100 words) - reading in full');
+                  ttsSpeak(streamingContent, {
+                    onStart: () => {
+                      console.log('🎙️ TTS started speaking full response');
+                    },
+                    onEnd: () => {
+                      console.log('🎙️ TTS finished - ContinuousVoiceMode will auto-restart');
+                    },
+                    onError: (error: any) => {
+                      console.error('🎙️ TTS error:', error);
+                      showError('TTS playback failed');
+                    }
+                  }).catch((error: any) => {
+                    console.error('🎙️ Failed to start TTS:', error);
+                    showError('Failed to speak response');
+                  });
+                } else {
+                  // Long response - get summary from dedicated endpoint
+                  console.log('🎙️ Long response (≥100 words) - requesting summary');
+                  summarizeForVoice(streamingContent, accessToken)
+                    .then(summary => {
+                      console.log(`🎙️ Received summary (${summary.split(/\s+/).length} words)`);
+                      return ttsSpeak(summary, {
+                        onStart: () => {
+                          console.log('🎙️ TTS started speaking summary');
+                        },
+                        onEnd: () => {
+                          console.log('🎙️ TTS finished - ContinuousVoiceMode will auto-restart');
+                        },
+                        onError: (error: any) => {
+                          console.error('🎙️ TTS error:', error);
+                          showError('TTS playback failed');
+                        }
+                      });
+                    })
+                    .catch((error: any) => {
+                      console.error('🎙️ Failed to get summary or speak:', error);
+                      showError('Failed to summarize or speak response');
+                    });
+                }
               }
               
               // Attach extractedContent to the last assistant message
@@ -4479,19 +4473,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               }
               break;
               
-            case 'error':
+            case 'error': {
               const errorMsg = data.error;
               showError(errorMsg);
-              
+
               // Announce error to screen readers
               setSrAnnouncement(`Error: ${errorMsg.substring(0, 100)}`);
-              
+
               // Check for continue context again
               if (data.showContinueButton && data.continueContext) {
                 setShowContinueButton(true);
                 setContinueContext(data.continueContext);
               }
-              
+
               const errorMessage: ChatMessage = {
                 role: 'assistant',
                 content: `❌ Error: ${errorMsg}`,
@@ -4502,6 +4496,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               };
               setMessages(prev => [...prev, errorMessage]);
               break;
+            }
               
             case 'complete':
               console.log('Continuation complete:', data);
@@ -7054,12 +7049,21 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     </span>
                   )}
                 </div>
-                <button 
-                  className="text-xs text-yellow-800 dark:text-yellow-300 hover:underline focus:outline-none"
-                  onClick={() => setTodosExpanded(v => !v)}
-                >
-                  {todosExpanded ? '▾ Collapse' : '▸ Expand'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    className="text-xs text-yellow-800 dark:text-yellow-300 hover:underline focus:outline-none"
+                    onClick={() => setTodosCompactMode(v => !v)}
+                    title={todosCompactMode ? 'Switch to detailed view' : 'Switch to compact view'}
+                  >
+                    {todosCompactMode ? '📋 Detailed' : '📝 Compact'}
+                  </button>
+                  <button 
+                    className="text-xs text-yellow-800 dark:text-yellow-300 hover:underline focus:outline-none"
+                    onClick={() => setTodosExpanded(v => !v)}
+                  >
+                    {todosExpanded ? '▾ Collapse' : '▸ Expand'}
+                  </button>
+                </div>
               </div>
               <div className="mt-1 text-sm text-gray-900 dark:text-gray-100">
                 <span className="font-medium">Current:</span> {todosState.current?.description || '—'}
@@ -7069,14 +7073,20 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                   {todosState.items.map((item, idx) => (
                     <li 
                       key={String(item.id) || idx} 
-                      className="py-1.5 flex items-start gap-2 text-gray-900 dark:text-gray-100"
+                      className={`py-1.5 flex items-start gap-2 text-gray-900 dark:text-gray-100 ${todosCompactMode ? 'items-center' : ''}`}
                     >
-                      <span className="mt-0.5 text-xs flex-shrink-0">
+                      <span className={`${todosCompactMode ? '' : 'mt-0.5'} text-xs flex-shrink-0`}>
                         {item.status === 'done' ? '✔️' : item.status === 'current' ? '🟡' : '⏳'}
                       </span>
-                      <span className={`flex-1 ${item.status === 'done' ? 'line-through opacity-60' : ''}`}>
-                        {item.description}
-                      </span>
+                      {todosCompactMode ? (
+                        <span className={`flex-1 truncate ${item.status === 'done' ? 'line-through opacity-60' : ''}`}>
+                          {item.description}
+                        </span>
+                      ) : (
+                        <span className={`flex-1 ${item.status === 'done' ? 'line-through opacity-60' : ''}`}>
+                          {item.description}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>

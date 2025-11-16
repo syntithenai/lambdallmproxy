@@ -4,7 +4,7 @@
  * Manages initialization and selection of TTS providers with fallback chain
  */
 
-/* eslint-disable no-console */
+ 
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
@@ -460,13 +460,13 @@ class FallbackTTSProvider implements TTSProvider {
   /**
    * Proxy method for playing pre-generated audio blobs
    */
-  async playBlob(blob: Blob, options: SpeakOptions): Promise<void> {
+  async playBlob(blob: Blob, options: SpeakOptions, providedObjectUrl?: string): Promise<void> {
     // Attempt to determine which provider produced this blob so we can mark the correct active provider
     const providerForBlob = pregeneratedBlobMap.get(blob) || this.primaryProvider;
     console.log(`▶️ FallbackTTSProvider.playBlob() - playing blob with provider: ${providerForBlob.name}`);
 
     // Prefer to call playBlob on the provider that produced it if supported
-    if ('playBlob' in providerForBlob && typeof (providerForBlob as any).playBlob === 'function') {
+  if ('playBlob' in providerForBlob && typeof (providerForBlob as any).playBlob === 'function') {
       // Apply rate/volume to the provider that will play the blob to keep playback consistent
       try {
         if (options.rate && 'setPlaybackRate' in providerForBlob && typeof (providerForBlob as any).setPlaybackRate === 'function') {
@@ -481,7 +481,7 @@ class FallbackTTSProvider implements TTSProvider {
 
       this.activeProvider = providerForBlob; // Track as active
       try {
-        return await (providerForBlob as any).playBlob(blob, options);
+        return await (providerForBlob as any).playBlob(blob, options, providedObjectUrl);
       } catch (err) {
         console.warn(`⚠️ FallbackTTSProvider.playBlob(): provider ${providerForBlob.name} failed to play blob:`, err);
         // fall through to try primary
@@ -489,7 +489,7 @@ class FallbackTTSProvider implements TTSProvider {
     }
 
     // Fallback: try primary provider's playBlob
-    if ('playBlob' in this.primaryProvider && typeof (this.primaryProvider as any).playBlob === 'function') {
+  if ('playBlob' in this.primaryProvider && typeof (this.primaryProvider as any).playBlob === 'function') {
       // Apply rate/volume to primary provider as a fallback
       try {
         if (options.rate && 'setPlaybackRate' in this.primaryProvider && typeof (this.primaryProvider as any).setPlaybackRate === 'function') {
@@ -503,7 +503,7 @@ class FallbackTTSProvider implements TTSProvider {
       }
 
       this.activeProvider = this.primaryProvider;
-      return await (this.primaryProvider as any).playBlob(blob, options);
+      return await (this.primaryProvider as any).playBlob(blob, options, providedObjectUrl);
     }
 
     throw new Error(`Blob playback not supported by any provider in chain starting with ${this.primaryProvider.name}`);
@@ -590,7 +590,7 @@ export class TTSProviderFactory {
       this.providers.set('gemini-tts', wrapper);
     }
 
-    const openrouterConfig = _llmProviders?.find(p => p.type === 'openrouter');
+  const openrouterConfig = _llmProviders?.find(p => (p as any).type === 'openrouter');
     const openrouterApiKey = openrouterConfig && openrouterConfig.apiKey && openrouterConfig.apiKey !== '[BACKEND]' ? openrouterConfig.apiKey : undefined;
     const openrouterTTS = new OpenRouterTTSProvider(openrouterApiKey);
     if (await openrouterTTS.isAvailable()) {

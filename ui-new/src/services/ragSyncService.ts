@@ -481,7 +481,7 @@ class RAGSyncService {
       }
 
       // Get auth token (try several storage locations for compatibility)
-      let authToken = localStorage.getItem('authToken') || localStorage.getItem('google_access_token');
+      const authToken = localStorage.getItem('authToken') || localStorage.getItem('google_access_token');
       if (!authToken) {
         throw new Error('Not authenticated');
       }
@@ -543,7 +543,7 @@ class RAGSyncService {
       }
 
       // Get auth token (try several storage locations for compatibility)
-      let authToken = localStorage.getItem('authToken') || localStorage.getItem('google_access_token');
+      const authToken = localStorage.getItem('authToken') || localStorage.getItem('google_access_token');
       if (!authToken) {
         throw new Error('Not authenticated');
       }

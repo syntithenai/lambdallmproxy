@@ -1,4 +1,4 @@
-/* eslint-disable no-unused-vars */
+ 
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 
@@ -26,7 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
   // Required lifecycle method for error boundaries
   componentDidCatch(_error: Error, _errorInfo: ErrorInfo) {
     // Log error for debugging (allowed in error boundaries)
-    // eslint-disable-next-line no-console
+     
     console.error('ErrorBoundary caught an error:', _error, _errorInfo);
     this.props.onError?.(_error, _errorInfo);
   }

@@ -247,7 +247,7 @@ class QuizAnalyticsDatabase {
       const getRequest = store.get(1);
 
       getRequest.onsuccess = () => {
-        let streak: StudyStreak = getRequest.result || {
+        const streak: StudyStreak = getRequest.result || {
           id: 1,
           currentStreak: 0,
           longestStreak: 0,

@@ -142,6 +142,37 @@ class QuizDatabase {
   }
 
   /**
+   * Check if a quiz with the given title already exists
+   */
+  async quizExistsByTitle(quizTitle: string, projectId?: string): Promise<boolean> {
+    await this.init();
+
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([STATISTICS_STORE], 'readonly');
+      const store = transaction.objectStore(STATISTICS_STORE);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const quizzes = request.result as QuizStatistic[];
+        const exists = quizzes.some(quiz => 
+          quiz.quizTitle === quizTitle && 
+          (!projectId || quiz.projectId === projectId)
+        );
+        resolve(exists);
+      };
+
+      request.onerror = () => {
+        console.error('Failed to check quiz existence:', request.error);
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
    * Save a generated quiz (not yet completed)
    */
   async saveGeneratedQuiz(quizTitle: string, snippetIds: string[], totalQuestions: number, enrichment: boolean, quizData?: any, projectId?: string, userId?: string): Promise<string> {
@@ -149,6 +180,14 @@ class QuizDatabase {
 
     if (!this.db) {
       throw new Error('Database not initialized');
+    }
+
+    // Check for duplicate before saving
+    const exists = await this.quizExistsByTitle(quizTitle, projectId);
+    if (exists) {
+      console.log(`⚠️ Quiz "${quizTitle}" already exists, skipping duplicate save`);
+      // Return empty string to indicate duplicate
+      return '';
     }
 
     const id = this.generateUUID();
@@ -209,6 +248,20 @@ class QuizDatabase {
           return;
         }
 
+        console.log('📝 Updating quiz data:', {
+          id,
+          oldQuizData: {
+            title: quiz.quizData?.title,
+            questionCount: quiz.quizData?.questions?.length,
+            firstQuestionAnswerId: quiz.quizData?.questions?.[0]?.answerId
+          },
+          newQuizData: {
+            title: quizData?.title,
+            questionCount: quizData?.questions?.length,
+            firstQuestionAnswerId: quizData?.questions?.[0]?.answerId
+          }
+        });
+
         const updatedQuiz: QuizStatistic = {
           ...quiz,
           quizData
@@ -217,7 +270,7 @@ class QuizDatabase {
         const putRequest = store.put(updatedQuiz);
 
         putRequest.onsuccess = () => {
-          console.log('✅ Quiz data updated:', id);
+          console.log('✅ Quiz data updated in IndexedDB:', id);
           resolve();
         };
 
@@ -356,7 +409,16 @@ class QuizDatabase {
       const request = store.get(id);
 
       request.onsuccess = () => {
-        resolve(request.result || null);
+        const result = request.result || null;
+        if (result) {
+          console.log('📖 Retrieved quiz from DB:', {
+            id: id.substring(0, 8),
+            title: result.quizTitle,
+            hasQuizData: !!result.quizData,
+            firstQuestionAnswerId: result.quizData?.questions?.[0]?.answerId
+          });
+        }
+        resolve(result);
       };
 
       request.onerror = () => {

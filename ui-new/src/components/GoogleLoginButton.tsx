@@ -6,12 +6,15 @@ export const GoogleLoginButton: React.FC = () => {
   const { user, logout } = useAuth();
   const { isAvailable, isConnected, deviceName, requestSession, endSession } = useCast();
 
-  // This component only renders when authenticated (protected by App-level auth gate)
-  // So we don't need to handle the not-authenticated case
-
-  if (!user) {
-    return null; // Should never happen due to app-level auth gate
-  }
+  // Debug: Log user state and localStorage
+  React.useEffect(() => {
+    console.log('GoogleLoginButton - user state:', user);
+    console.log('GoogleLoginButton - localStorage keys:', {
+      user_email: localStorage.getItem('user_email'),
+      user_name: localStorage.getItem('user_name'),
+      user_picture: localStorage.getItem('user_picture')
+    });
+  }, [user]);
 
   const handleCastClick = () => {
     if (isConnected) {
@@ -26,16 +29,22 @@ export const GoogleLoginButton: React.FC = () => {
       <button
         onClick={logout}
         className="btn-secondary px-3 py-2 flex items-center gap-2"
-        title={`Sign out ${user.email}`}
+        title={user?.email ? `Sign out ${user.email}` : 'Sign out'}
         aria-label="Logout"
       >
-        {user.picture && (
+        {user?.picture ? (
           <img 
             src={user.picture} 
-            alt={user.name || user.email}
+            alt={user.name || user.email || 'User'}
             className="w-6 h-6 rounded-full"
             referrerPolicy="no-referrer"
           />
+        ) : (
+          <div className="w-6 h-6 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+            <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+            </svg>
+          </div>
         )}
         <span>Logout</span>
       </button>

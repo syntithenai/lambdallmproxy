@@ -415,16 +415,22 @@ class ImageStorageService {
         console.log(`📥 Loading image from IndexedDB: ${ref}`);
         const base64 = await this.getImage(ref);
         console.log(`✅ Loaded image ${ref}: ${(base64.length / 1024).toFixed(1)} KB`);
-        return { ref, base64 };
+        return { ref, base64, success: true };
       } catch (error) {
-        // Use console.debug instead of console.error - missing images are expected when deleted or not synced
-        console.debug(`ℹ️ Image not found, using placeholder for ${ref}`);
+        // Use console.error to make it visible - this is the issue we're debugging
+        console.error(`❌ Image not found in IndexedDB: ${ref}`, error);
+        console.error(`❌ This will show as "Image Not Found" grey box`);
         // Return placeholder for broken images
-        return { ref, base64: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzk5OSI+SW1hZ2UgTm90IEZvdW5kPC90ZXh0Pjwvc3ZnPg==' };
+        return { ref, base64: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzk5OSI+SW1hZ2UgTm90IEZvdW5kPC90ZXh0Pjwvc3ZnPg==', success: false };
       }
     });
 
     const loadedImages = await Promise.all(loadPromises);
+    
+    // Log summary
+    const successCount = loadedImages.filter(img => img.success).length;
+    const failureCount = loadedImages.filter(img => !img.success).length;
+    console.log(`📊 Image loading summary: ${successCount} succeeded, ${failureCount} failed`);
 
     // Replace all references with loaded data
     for (const { ref, base64 } of loadedImages) {
@@ -442,25 +448,53 @@ class ImageStorageService {
    * @param allSnippetContents - Array of all snippet contents
    */
   async garbageCollect(allSnippetContents: string[]): Promise<number> {
+    console.log(`🗑️ Starting garbage collection...`);
+    console.log(`🗑️ Checking ${allSnippetContents.length} snippets`);
+    
     const allImages = await this.getAllImages();
+    console.log(`🗑️ Found ${allImages.length} images in IndexedDB`);
+    
     const allContent = allSnippetContents.join('\n');
+    console.log(`🗑️ Total content length: ${allContent.length} characters`);
+    
+    // Log all swag-image references found in content
+    const contentRefs = allContent.match(/swag-image:\/\/img_[^"\s<>]+/g) || [];
+    console.log(`🗑️ Found ${contentRefs.length} swag-image references in content:`, contentRefs);
     
     let deletedCount = 0;
     
     for (const image of allImages) {
       const ref = `swag-image://${image.id}`;
-      if (!allContent.includes(ref)) {
+      const isReferenced = allContent.includes(ref);
+      // Protect images created very recently to avoid race conditions where
+      // the snippet hasn't persisted or synced yet. This prevents immediate
+      // deletion when navigating quickly between pages.
+      const retentionMs = 2 * 60 * 1000; // 2 minutes
+      const ageMs = Date.now() - (image.createdAt || 0);
+
+      if (!isReferenced) {
+        if (ageMs < retentionMs) {
+          console.log(`🗑️ ⛔ Skipping deletion for recent image: ${image.id} (age ${(ageMs / 1000).toFixed(1)}s) - protected by retention policy`);
+          continue; // don't delete yet
+        }
+
+        console.log(`🗑️ ❌ DELETING orphaned image: ${image.id} (${(image.size / 1024).toFixed(2)} KB)`);
+        console.log(`🗑️ ❌ This image reference was NOT found in any snippet content`);
         try {
           await this.deleteImage(ref);
           deletedCount++;
         } catch (error) {
           console.error(`Failed to delete orphaned image ${image.id}:`, error);
         }
+      } else {
+        console.log(`✅ Keeping referenced image: ${image.id} (found in content)`);
       }
     }
 
     if (deletedCount > 0) {
-      console.log(`🗑️ Garbage collected ${deletedCount} orphaned images`);
+      console.log(`🗑️ ⚠️ GARBAGE COLLECTED ${deletedCount} ORPHANED IMAGES`);
+    } else {
+      console.log(`🗑️ ✅ No orphaned images found - all images are referenced`);
     }
 
     return deletedCount;

@@ -2,26 +2,23 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { quizDB, type QuizStatistic } from '../db/quizDb';
-import { Trophy, Brain, Clock, TrendingUp, Calendar, ArrowLeft, Trash2, Share2 } from 'lucide-react';
+import { Trophy, Brain, Clock, TrendingUp, Calendar, ArrowLeft, Trash2, Share2, Edit } from 'lucide-react';
 import { useToast } from './ToastManager';
 import { useAuth } from '../contexts/AuthContext';
 import { useProject } from '../contexts/ProjectContext';
 import { QuizCard } from './QuizCard';
 import { syncSingleQuizStatistic } from '../utils/quizSync';
 import { googleDriveSync } from '../services/googleDriveSync';
-import { useSwag } from '../contexts/SwagContext';
-// import { useSettings } from '../contexts/SettingsContext';
-import { generateQuizStreaming } from '../utils/api';
 import QuizShareDialog from './QuizShareDialog';
+import QuizEditorDialog from './QuizEditorDialog';
+import type { Quiz } from './QuizCard';
 
 export default function QuizPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSuccess, showError, showWarning } = useToast();
-  const { getToken, user } = useAuth();
+  const { getToken } = useAuth();
   const { getCurrentProjectId, currentProject } = useProject();
-  const { snippets } = useSwag();
-  // const { settings } = useSettings();
   
   const [allStatistics, setAllStatistics] = useState<QuizStatistic[]>([]);
   
@@ -46,7 +43,6 @@ export default function QuizPage() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastQuizSave, setLastQuizSave] = useState<number>(0);
-  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   
   // Quiz modal state
   const [showQuizModal, setShowQuizModal] = useState(false);
@@ -60,6 +56,9 @@ export default function QuizPage() {
   
   // Quiz sharing state
   const [shareQuiz, setShareQuiz] = useState<{ quiz: any; enrichment: boolean } | null>(null);
+  
+  // Quiz editing state
+  const [editingQuiz, setEditingQuiz] = useState<{ quiz: Quiz; statId: string } | null>(null);
 
   useEffect(() => {
     loadStatistics();
@@ -137,7 +136,8 @@ export default function QuizPage() {
           id: s.id.substring(0, 8),
           title: s.quizTitle,
           completed: s.completed,
-          hasQuizData: !!s.quizData
+          hasQuizData: !!s.quizData,
+          firstQuestionAnswerId: s.quizData?.questions?.[0]?.answerId
         }))
       });
       
@@ -166,152 +166,83 @@ export default function QuizPage() {
     }
   };
 
-  const handleRestartQuiz = async (stat: QuizStatistic) => {
-    // If quiz data exists, start immediately
-    if (stat.quizData) {
-      console.log('✅ Using stored quiz data:', stat.quizTitle);
-      
-      setQuizMetadata({
-        snippetIds: stat.snippetIds,
-        startTime: Date.now(),
-        enrichment: stat.enrichment,
-        quizId: stat.id
-      });
-      
-      setCurrentQuiz(stat.quizData);
-      setShowQuizModal(true);
+  const handleEditQuiz = (stat: QuizStatistic) => {
+    if (!stat.quizData) {
+      showError('Quiz data not available for editing');
       return;
     }
-    
-    // Quiz data not available - show error instead of regenerating
-    // This prevents repeated API calls when providers are rate-limited
-    console.log('⚠️ Quiz data not available for:', stat.quizTitle);
-    showError('Quiz data not available. Please generate a new quiz instead.');
+    setEditingQuiz({ quiz: stat.quizData, statId: stat.id });
   };
 
-  const handleCreateNewQuiz = async () => {
-    if (snippets.length === 0) {
-      showWarning('No snippets available. Please add some snippets first.');
-      return;
-    }
-
+  const handleSaveEditedQuiz = async (updatedQuiz: Quiz) => {
+    if (!editingQuiz) return;
     try {
-      setIsGeneratingQuiz(true);
-      const token = await getToken();
-      if (!token) {
-        showError('Authentication required. Please sign in.');
-        return;
-      }
-      
-      // Backend will use its own providers from PROVIDER_CATALOG.json
-      // We send empty array and let backend handle provider selection
-      const enabledProviders: any[] = [];
-
-      // Combine all snippet content
-      const content = snippets
-        .map(s => `## ${s.title || 'Untitled'}\n\n${s.content}`)
-        .join('\n\n');
-      
-      if (content.trim().length === 0) {
-        showWarning('All snippets are empty. Please add content to your snippets.');
-        return;
-      }
-
-      console.log(`🎯 Generating quiz from ${snippets.length} snippet(s), ${content.length} characters`);
-
-      const enrichment = true;
-      const startTime = Date.now();
-      
-      // Initialize quiz with empty questions array
-      const quiz = {
-        title: `Quiz: ${snippets[0]?.title || 'Untitled'}${snippets.length > 1 ? ` +${snippets.length - 1}` : ''}`,
-        questions: []
-      };
-      
-      // Get current project ID to associate with quiz
-      const currentProjectId = getCurrentProjectId();
-      const userId = user?.email;
-      
-      // Save placeholder quiz immediately with project ID and user ID
-      const quizId = await quizDB.saveGeneratedQuiz(
-        quiz.title,
-        snippets.map(s => s.id),
-        0,
-        enrichment,
-        quiz,
-        currentProjectId || undefined,
-        userId
-      );
-      
-      console.log('💾 Placeholder quiz saved to database:', quizId, 'projectId:', currentProjectId, 'userId:', userId);
-      
-      // Store metadata for updating on completion
-      setQuizMetadata({
-        snippetIds: snippets.map(s => s.id),
-        startTime,
-        enrichment,
-        quizId
+      console.log('💾 Saving edited quiz:', {
+        statId: editingQuiz.statId,
+        title: updatedQuiz.title,
+        questionCount: updatedQuiz.questions.length,
+        firstQuestionAnswerId: updatedQuiz.questions[0]?.answerId
       });
       
-      // Set initial quiz state (but don't show modal yet)
-      setCurrentQuiz(quiz);
+      await quizDB.updateQuizData(editingQuiz.statId, updatedQuiz);
+      showSuccess('Quiz updated successfully');
+      setEditingQuiz(null);
       
-      // Generate quiz with streaming - questions will appear progressively
-      await generateQuizStreaming(
-        content,
-        enrichment,
-        enabledProviders,
-        token,
-        // onQuestion callback
-        (question, index, total) => {
-          console.log(`✅ Question ${index + 1}/${total} received:`, question.prompt);
-          
-          // Add question to quiz
-          setCurrentQuiz((prevQuiz: any) => {
-            if (!prevQuiz) return prevQuiz;
-            
-            const updatedQuiz = {
-              ...prevQuiz,
-              questions: [...prevQuiz.questions, question]
-            };
-            
-            // Update database with new question using updateQuizData
-            if (quizId) {
-              quizDB.updateQuizData(quizId, updatedQuiz)
-                .catch(err => console.error('Failed to update quiz in DB:', err));
-            }
-            
-            return updatedQuiz;
-          });
-        },
-        // onComplete callback
-        async (questionsGenerated, duration) => {
-          console.log(`✅ Quiz complete: ${questionsGenerated} questions in ${duration}ms`);
-          showSuccess(`Quiz ready with ${questionsGenerated} questions!`);
-          setIsGeneratingQuiz(false);
-          
-          // Reload statistics to show the new quiz in the list
-          await loadStatistics();
-          
-          // NOW open the quiz modal
-          setShowQuizModal(true);
-        },
-        // onError callback
-        (error) => {
-          console.error('Quiz generation error:', error);
-          showError(error);
-          setIsGeneratingQuiz(false);
-          setShowQuizModal(false);
-          setCurrentQuiz(null);
-        }
-      );
+      // Reload statistics to get the updated quiz data
+      await loadStatistics();
       
-      console.log('🎯 Streaming quiz generation started');
-      
+      console.log('✅ Quiz saved and statistics reloaded');
     } catch (error) {
-      console.error('Failed to generate quiz:', error);
-      showError(error instanceof Error ? error.message : 'Failed to generate quiz. Please try again.');
-      setIsGeneratingQuiz(false);
+      showError('Failed to update quiz');
+      console.error('Quiz update error:', error);
+    }
+  };
+
+  const handleRestartQuiz = async (stat: QuizStatistic) => {
+    // Always fetch fresh data from database to ensure we have latest edits
+    try {
+      const freshStat = await quizDB.getQuizStatistic(stat.id);
+      
+      if (!freshStat) {
+        showError('Quiz not found');
+        return;
+      }
+      
+      if (!freshStat.quizData) {
+        console.log('⚠️ Quiz data not available for:', freshStat.quizTitle);
+        showError('Quiz data not available. Please generate a new quiz instead.');
+        return;
+      }
+      
+      console.log('🎮 Starting quiz (fresh from DB):', {
+        title: freshStat.quizTitle,
+        statId: freshStat.id,
+        questionCount: freshStat.quizData?.questions?.length,
+        firstQuestionAnswerId: freshStat.quizData?.questions?.[0]?.answerId
+      });
+      
+      setQuizMetadata({
+        snippetIds: freshStat.snippetIds,
+        startTime: Date.now(),
+        enrichment: freshStat.enrichment,
+        quizId: freshStat.id
+      });
+      
+      console.log('📦 Setting currentQuiz state:', {
+        title: freshStat.quizData.title,
+        questionCount: freshStat.quizData.questions.length,
+        firstQuestion: {
+          id: freshStat.quizData.questions[0].id,
+          answerId: freshStat.quizData.questions[0].answerId,
+          correctChoiceId: freshStat.quizData.questions[0].correctChoiceId
+        }
+      });
+      
+      setCurrentQuiz(freshStat.quizData);
+      setShowQuizModal(true);
+    } catch (error) {
+      console.error('Failed to load quiz:', error);
+      showError('Failed to load quiz');
     }
   };
 
@@ -379,15 +310,6 @@ export default function QuizPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleCreateNewQuiz}
-            disabled={isGeneratingQuiz || snippets.length === 0}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
-            title={snippets.length === 0 ? 'No snippets available' : 'Generate quiz from all snippets'}
-          >
-            <Brain className="w-5 h-5" />
-            {isGeneratingQuiz ? 'Generating...' : t('quiz.createNewQuiz')}
-          </button>
         </div>
 
         {/* Summary Cards */}
@@ -524,16 +446,28 @@ export default function QuizPage() {
 
                     <div className="flex items-center gap-2">
                       {stat.quizData && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShareQuiz({ quiz: stat.quizData, enrichment: stat.enrichment || false });
-                          }}
-                          className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                          title={t('quiz.shareQuiz') || 'Share Quiz'}
-                        >
-                          <Share2 className="w-5 h-5" />
-                        </button>
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditQuiz(stat);
+                            }}
+                            className="p-2 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                            title="Edit Quiz"
+                          >
+                            <Edit className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShareQuiz({ quiz: stat.quizData, enrichment: stat.enrichment || false });
+                            }}
+                            className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            title={t('quiz.shareQuiz') || 'Share Quiz'}
+                          >
+                            <Share2 className="w-5 h-5" />
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={(e) => {
@@ -560,16 +494,30 @@ export default function QuizPage() {
       {showQuizModal && currentQuiz && quizMetadata && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <QuizCard
-            quiz={{
-              title: currentQuiz.title,
-              questions: currentQuiz.questions.map((q: any) => ({
-                id: q.id,
-                prompt: q.prompt,
-                choices: q.choices,
-                answerId: q.correctChoiceId || q.answerId,
-                explanation: q.explanation
-              }))
-            }}
+            key={quizMetadata.quizId || Date.now()} // Force re-render when quiz changes
+            quiz={(() => {
+              const mappedQuiz = {
+                title: currentQuiz.title,
+                questions: currentQuiz.questions.map((q: any) => ({
+                  id: q.id,
+                  prompt: q.prompt,
+                  choices: q.choices,
+                  answerId: q.answerId || q.correctChoiceId, // Prefer answerId (from editor) over correctChoiceId (from backend)
+                  explanation: q.explanation
+                }))
+              };
+              console.log('🎯 Passing quiz to QuizCard:', {
+                title: mappedQuiz.title,
+                questionCount: mappedQuiz.questions.length,
+                firstQuestion: {
+                  id: mappedQuiz.questions[0].id,
+                  answerId: mappedQuiz.questions[0].answerId,
+                  originalAnswerId: currentQuiz.questions[0].answerId,
+                  originalCorrectChoiceId: currentQuiz.questions[0].correctChoiceId
+                }
+              });
+              return mappedQuiz;
+            })()}
             onClose={() => {
               console.log('❌ Quiz modal closed without completion');
               console.log('📝 Quiz should remain in database as incomplete');
@@ -644,6 +592,15 @@ export default function QuizPage() {
           quiz={shareQuiz.quiz}
           enrichment={shareQuiz.enrichment}
           onClose={() => setShareQuiz(null)}
+        />
+      )}
+
+      {/* Quiz Editor Dialog */}
+      {editingQuiz && (
+        <QuizEditorDialog
+          quiz={editingQuiz.quiz}
+          onSave={handleSaveEditedQuiz}
+          onClose={() => setEditingQuiz(null)}
         />
       )}
     </div>

@@ -1,0 +1,339 @@
+IMPLEMENTATION PLAN: Google Docs Sharing for Long Content
+Executive Summary
+Implement intelligent content sharing that uses URL compression for short content and creates publicly-shared Google Docs for long content. This applies to Feed, Quiz, and Swag (Snippets) sharing dialogs.
+
+1. CURRENT STATE ANALYSIS
+1.1 Existing Share Infrastructure
+Share Dialogs: ShareDialog.tsx (Chat), SnippetShareDialog.tsx (Swag), QuizShareDialog.tsx (Quiz), Feed (inline in FeedItem.tsx)
+Compression Utilities:
+shareUtils.ts - Chat conversation sharing with LZ-String compression
+snippetShareUtils.ts - Snippet sharing
+quizShareUtils.ts - Quiz sharing
+URL Length Limit: 32,000 characters (Chrome conservative estimate) - defined as CHROME_URL_LIMIT
+Compression: Uses lz-string library with compressToEncodedURIComponent()
+Current Behavior: Aggressive truncation when content exceeds URL limit
+1.2 Existing Google Integration
+OAuth Service: googleDocs.ts - Already implements Google OAuth with drive.file scope
+Existing Functions:
+initGoogleAuth() - Initialize Google Identity Services
+requestGoogleAuth() - Request OAuth token with permissions
+createGoogleDocInFolder(title) - Create doc in "Research Agent" folder
+findOrCreateResearchAgentFolder() - Find/create app folder
+appendToGoogleDoc(docId, content) - Add content to document
+Current Scope: https://www.googleapis.com/auth/drive.file (files created by app only)
+Missing Functionality:
+❌ Public sharing permissions (requires Drive API permissions endpoint)
+❌ Subfolder creation ("Research Agent/shares")
+❌ Link generation for publicly shared docs
+2. TECHNICAL REQUIREMENTS
+2.1 URL Length Detection
+Location: Each share utility file
+
+Threshold: 32,000 characters (existing CHROME_URL_LIMIT)
+Detection Points:
+After compression in createShareData() functions
+Before generating final URL
+Warning Logic:
+
+const compressed = compressToEncodedURIComponent(data);const isTooLong = compressed.length > CHROME_URL_LIMIT;const warningThreshold = CHROME_URL_LIMIT * 0.8; // 80% threshold for warning
+2.2 Google Docs Sharing Permissions
+New Required Scope: None! Current drive.file scope is sufficient for:
+
+Creating documents
+Setting permissions on created documents
+Sharing documents publicly
+API Endpoints Needed:
+
+
+// Set document to public (anyone with link can view)POST https://www.googleapis.com/drive/v3/files/{fileId}/permissionsBody: {  "role": "reader",  "type": "anyone"}// Get shareable linkGET https://www.googleapis.com/drive/v3/files/{fileId}?fields=webViewLink
+2.3 Folder Structure
+Target Structure:
+
+
+Google Drive└── Research Agent/          (existing)    └── shares/              (new subfolder)        ├── Feed - {title} - {timestamp}.gdoc        ├── Quiz - {title} - {timestamp}.gdoc        └── Snippet - {title} - {timestamp}.gdoc
+3. IMPLEMENTATION COMPONENTS
+3.1 New Utility Functions (googleDocs.ts)
+Function 1: Create/Find Shares Subfolder
+
+
+/** * Find or create "shares" subfolder inside "Research Agent" folder * @returns Folder ID */async function findOrCreateSharesFolder(): Promise<string>
+Logic:
+Call findOrCreateResearchAgentFolder() to get parent folder ID
+Search for folder named "shares" inside parent
+If not found, create it
+Return folder ID
+Function 2: Make Document Public
+
+
+/** * Set document permissions to public (anyone with link can view) * @param documentId - Google Doc ID * @returns Shareable web view link */async function makeDocumentPublic(documentId: string): Promise<string>
+Steps:
+POST to permissions API with role: "reader", type: "anyone"
+GET file metadata with fields=webViewLink
+Return webViewLink for sharing
+Function 3: Create Shared Document
+
+
+/** * Create a publicly-shared Google Doc in "Research Agent/shares" folder * @param title - Document title * @param content - Markdown content to insert * @param contentType - 'feed' | 'quiz' | 'snippet' * @returns Object with documentId and shareableLink */async function createPublicShareDocument(  title: string,  content: string,  contentType: 'feed' | 'quiz' | 'snippet'): Promise<{ documentId: string; shareableLink: string }>
+Steps:
+Get shares folder ID
+Create document with formatted title: ${contentType} - ${title} - ${timestamp}
+Move document to shares folder
+Insert content (convert markdown to Google Docs format if possible)
+Make document public
+Return document ID and shareable link
+3.2 Enhanced Share Dialog Components
+Common Pattern for All Dialogs:
+
+State Management:
+
+
+const [shareMode, setShareMode] = useState<'url' | 'gdoc' | null>(null);const [googleDocLink, setGoogleDocLink] = useState<string>('');const [isCreatingDoc, setIsCreatingDoc] = useState(false);const [contentTooLong, setContentTooLong] = useState(false);const [showLengthWarning, setShowLengthWarning] = useState(false);
+Length Detection (in useEffect):
+
+
+useEffect(() => {  const compressed = createShareData(...);  const isTooLong = compressed.length > CHROME_URL_LIMIT;  const nearLimit = compressed.length > CHROME_URL_LIMIT * 0.8;    setContentTooLong(isTooLong);  setShowLengthWarning(nearLimit || isTooLong);    if (!isTooLong) {    setShareUrl(generateShareUrl(compressed));    setShareMode('url');  } else {    setShareMode(null); // User must choose Google Docs  }}, [dependencies]);
+UI Components:
+
+Length Warning Banner (when showLengthWarning === true):
+
+{showLengthWarning && (  <div className={`p-3 rounded-lg mb-4 ${    contentTooLong       ? 'bg-red-100 border-red-300 text-red-800 dark:bg-red-900 dark:text-red-200'      : 'bg-yellow-100 border-yellow-300 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'  }`}>    <div className="flex items-start gap-2">      <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />      <div>        <p className="font-semibold">          {contentTooLong             ? '⚠️ Content Too Long for URL Sharing'            : '⚠️ Content Near URL Size Limit'          }        </p>        <p className="text-sm mt-1">          {contentTooLong            ? 'This content exceeds browser URL limits. Use Google Docs sharing instead.'            : 'This content is large and may not work in all browsers. Consider Google Docs sharing for better compatibility.'          }        </p>        <p className="text-xs mt-1 opacity-80">          Note: Google Docs sharing requires login but ensures content accessibility.        </p>      </div>    </div>  </div>)}
+Share Mode Selection (when contentTooLong === true):
+
+{contentTooLong && (  <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">    <button      onClick={handleCreateGoogleDoc}      disabled={isCreatingDoc}      className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"    >      {isCreatingDoc ? (        <>          <Loader2 className="h-5 w-5 animate-spin" />          Creating shareable Google Doc...        </>      ) : (        <>          <FileText className="h-5 w-5" />          Share via Google Docs (Login Required)        </>      )}    </button>    <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">      Recipients will need a Google account to view the shared document.    </p>  </div>)}
+Dual Mode UI (when !contentTooLong):
+
+{!contentTooLong && (  <div className="space-y-3">    {/* Tab selector */}    <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">      <button        onClick={() => setShareMode('url')}        className={`px-4 py-2 font-medium ${          shareMode === 'url'            ? 'border-b-2 border-blue-600 text-blue-600'            : 'text-gray-600 dark:text-gray-400'        }`}      >        <Link className="h-4 w-4 inline mr-1" />        Quick Link      </button>      <button        onClick={() => setShareMode('gdoc')}        className={`px-4 py-2 font-medium ${          shareMode === 'gdoc'            ? 'border-b-2 border-blue-600 text-blue-600'            : 'text-gray-600 dark:text-gray-400'        }`}      >        <FileText className="h-4 w-4 inline mr-1" />        Google Docs      </button>    </div>    {/* URL Mode */}    {shareMode === 'url' && (      <div>        {/* Existing URL copy/share buttons */}      </div>    )}    {/* Google Docs Mode */}    {shareMode === 'gdoc' && (      <div>        {/* Google Docs creation UI */}      </div>    )}  </div>)}
+3.3 Modified Files
+File 1: googleDocs.ts
+
+Add: findOrCreateSharesFolder()
+Add: makeDocumentPublic(documentId)
+Add: createPublicShareDocument(title, content, contentType)
+Estimated Lines: +150 lines
+File 2: SnippetShareDialog.tsx
+
+Modify: Add length detection logic
+Add: Warning banner component
+Add: Google Docs creation handler
+Add: Dual-mode UI (URL/Google Docs tabs)
+Estimated Changes: +200 lines
+File 3: QuizShareDialog.tsx
+
+Same pattern as SnippetShareDialog
+Estimated Changes: +200 lines
+File 4: FeedItem.tsx
+
+Extract inline share dialog to new component FeedShareDialog.tsx
+Apply same pattern as other share dialogs
+Estimated Changes: -80 lines, +250 lines in new component
+File 5 (New): ui-new/src/components/FeedShareDialog.tsx
+
+Purpose: Dedicated share dialog for Feed items
+Estimated Lines: 350 lines
+File 6: shareUtils.ts
+
+Add: Helper function estimateCompressedSize(data) for preview
+Add: Constant export SHARE_URL_LIMIT
+Estimated Changes: +30 lines
+4. USER EXPERIENCE FLOW
+4.1 Short Content (< 80% of limit)
+User clicks "Share" button
+Dialog shows with Quick Link tab active (default)
+URL is ready to copy/share
+Optional: User can switch to "Google Docs" tab for permanent sharing
+No warnings shown
+4.2 Medium Content (80-100% of limit)
+User clicks "Share" button
+Dialog shows yellow warning banner:
+"Content Near URL Size Limit"
+Recommends Google Docs for better compatibility
+Quick Link tab active by default (still works)
+Google Docs tab available as alternative
+User chooses preferred method
+4.3 Long Content (> 100% of limit)
+User clicks "Share" button
+Dialog shows red error banner:
+"Content Too Long for URL Sharing"
+"Use Google Docs sharing instead"
+Only Google Docs option shown (no Quick Link tab)
+User clicks "Share via Google Docs" button
+OAuth Flow (if not already authenticated):
+Google login popup appears
+User grants drive.file permission
+Returns to dialog
+Document Creation:
+Button shows loading spinner
+Progress: "Creating shareable Google Doc..."
+Document created in "Research Agent/shares" folder
+Permissions set to public
+Success State:
+Shareable Google Docs link displayed
+Copy button available
+Social share buttons use Google Docs link
+User shares link with recipients
+4.4 Recipient Experience
+URL Share:
+
+Click link → Opens in app → Content loads immediately
+No login required
+Google Docs Share:
+
+Click link → Google Docs login screen (if not logged in)
+After login → Document opens in Google Docs viewer
+Full content visible with Google Docs formatting
+Can download, print, or make a copy
+5. IMPLEMENTATION PHASES
+Phase 1: Core Google Docs Utilities (2-3 hours)
+ Implement findOrCreateSharesFolder()
+ Implement makeDocumentPublic(documentId)
+ Implement createPublicShareDocument()
+ Add error handling and logging
+ Test folder creation and permissions
+Phase 2: Length Detection & Warning System (1-2 hours)
+ Add estimateCompressedSize() utility
+ Create reusable warning banner component
+ Test with various content sizes
+ Verify threshold calculations
+Phase 3: Update SnippetShareDialog (2-3 hours)
+ Add length detection logic
+ Implement warning banner
+ Add Google Docs creation handler
+ Build dual-mode UI (tabs)
+ Test both share modes
+ Handle OAuth errors gracefully
+Phase 4: Update QuizShareDialog (2 hours)
+ Apply same pattern as SnippetShareDialog
+ Handle quiz-specific formatting
+ Test with large quizzes
+Phase 5: Create FeedShareDialog (3 hours)
+ Extract inline dialog from FeedItem.tsx
+ Create new FeedShareDialog component
+ Apply share pattern
+ Handle feed item specific data
+ Update FeedItem to use new component
+Phase 6: Integration Testing (2-3 hours)
+ Test all three share dialogs
+ Verify OAuth flow
+ Test folder structure creation
+ Confirm public sharing works
+ Test recipient experience
+ Cross-browser testing
+Phase 7: Documentation & Deployment (1 hour)
+ Update user documentation
+ Add developer log entry
+ Deploy to production
+ Monitor for errors
+Total Estimated Time: 13-17 hours
+
+6. TECHNICAL CONSIDERATIONS
+6.1 OAuth Permission Flow
+Existing Scope: https://www.googleapis.com/auth/drive.file ✅ Sufficient
+No Additional Permissions Needed: Current scope allows:
+Creating files
+Modifying files created by the app
+Setting permissions on created files
+User Experience: Seamless (no new permission prompts)
+6.2 Content Formatting
+Markdown → Google Docs Conversion:
+
+Simple Approach (Phase 1): Insert as plain text
+Enhanced Approach (Future): Use Google Docs API batch update to:
+Convert bold, italic
+Preserve headers (#, ##, ###)
+Maintain lists (-, *, numbered)
+Quiz Formatting:
+
+
+Title: {quiz.title}Questions: {quiz.questions.length}Question 1: {question.text}A) {option1}B) {option2}C) {option3}D) {option4}[Correct Answer: {correctAnswer}]
+Feed Item Formatting:
+
+
+Title: {title}Topics: {topics.join(', ')}{content}Detailed Information:{expandedContent}Sources:1. {source1}2. {source2}
+6.3 Error Handling
+Scenario 1: OAuth Failure
+
+
+try {  await createPublicShareDocument(...)} catch (error) {  if (error.message.includes('Authentication')) {    showError('Please login to Google to share long content');    // Offer retry button  } else {    showError('Failed to create shareable document. Try URL sharing instead.');  }}
+Scenario 2: Document Creation Failure
+
+Fallback: Truncate content and use URL sharing
+User warning: "Content was truncated to fit URL limits"
+Scenario 3: Permission Setting Failure
+
+Document created but not public
+Show error: "Document created but sharing failed. Please share manually."
+Provide document link for manual sharing
+6.4 Performance Optimization
+Lazy Load: Import Google Docs utilities only when needed
+Caching: Cache shares folder ID in localStorage (clear on logout)
+Compression First: Always try compression before triggering Google Docs flow
+Progress Feedback: Show loading states for all async operations
+7. TESTING CHECKLIST
+Unit Tests
+ Length detection accuracy
+ Compression threshold calculation
+ Folder creation logic
+ Permission setting
+Integration Tests
+ End-to-end OAuth flow
+ Document creation and sharing
+ Folder structure verification
+ Public access validation
+User Acceptance Tests
+ Small content → URL sharing works
+ Medium content → Both options available
+ Large content → Only Google Docs available
+ Warning messages are clear
+ Recipients can access shared docs
+ Social sharing buttons work with both modes
+Edge Cases
+ User cancels OAuth
+ Network timeout during doc creation
+ Document creation succeeds but permission fails
+ Shares folder deleted by user
+ Multiple rapid share attempts
+8. DEPLOYMENT STRATEGY
+Pre-Deployment:
+
+Create feature branch: feature/google-docs-sharing
+Implement all phases sequentially
+Test locally with make dev
+Create developer log: developer_log/FEATURE_GOOGLE_DOCS_LONG_CONTENT_SHARING.md
+Deployment:
+
+Run make build-ui to verify build succeeds
+Commit changes with detailed message
+Push to GitHub
+Deploy UI: make deploy-ui
+Monitor for errors in browser console
+Test share functionality in production
+Post-Deployment:
+
+Test all three share dialogs in production
+Share test documents and verify recipient access
+Monitor Google API quota usage
+Document any issues in developer log
+9. FUTURE ENHANCEMENTS
+Phase 2 Improvements:
+
+ Rich text formatting (markdown → Google Docs API)
+ Collaborative editing invitations
+ Share analytics (view count)
+ Automatic cleanup of old shared documents
+ Embedded preview in share dialog
+ PDF export option for non-Google users
+ Custom domain for shared links (using URL shortener)
+ Share expiration dates
+10. ROLLBACK PLAN
+If critical issues occur:
+
+Identify affected component (specific share dialog)
+Revert to URL-only sharing for that component
+Add console warnings for debugging
+Deploy hotfix
+Document issue for future fix
+Rollback Complexity: Low
+
+Each share dialog is independent
+Can selectively disable Google Docs mode
+Existing URL sharing remains functional

@@ -175,12 +175,20 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
   const imageCounterRef = useRef(0);
   const [displayContent, setDisplayContent] = useState(content);
   const [isLoadingImages, setIsLoadingImages] = useState(false);
+  const renderCountRef = useRef(0);
   
   // Load images from IndexedDB when content changes
   useEffect(() => {
+    renderCountRef.current += 1;
+    console.log(`🔄 MarkdownRenderer useEffect triggered (render #${renderCountRef.current})`);
+    console.log(`🔄 Content length: ${content.length}`);
+    console.log(`🔄 Has swag-image refs: ${content.includes('swag-image://')}`);
+    console.log(`🔄 Has data:image refs: ${content.includes('data:image')}`);
+    
     const loadImages = async () => {
       // Check if content has any image references
       if (!content.includes('swag-image://')) {
+        console.log(`🔄 No swag-image:// refs, setting content as-is`);
         setDisplayContent(content);
         return;
       }
@@ -262,7 +270,7 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
   const galleryMatch = galleryRegex.exec(processedContent);
   
   let mainContent = processedContent;
-  let galleryImages: Array<{ src: string; alt: string }> = [];
+  const galleryImages: Array<{ src: string; alt: string }> = [];
   
   if (galleryMatch) {
     // Extract images from gallery section
@@ -287,6 +295,29 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
   console.log('🎨 Extracted data URI images:', dataUriImages.length);
   console.log('🎨 onImageEdit prop:', onImageEdit ? 'PROVIDED' : 'NOT PROVIDED');
   console.log('🎨 snippetId:', snippetId);
+  
+  // WORKAROUND: If content has data URIs or swag-image refs and looks like HTML (not markdown),
+  // use dangerouslySetInnerHTML instead of ReactMarkdown to preserve long base64 strings
+  // ReactMarkdown/rehype strips very long attribute values
+  const hasImages = displayContent.includes('data:image') || displayContent.includes('swag-image://');
+  const looksLikeHtml = displayContent.includes('<img') || displayContent.includes('<br') || displayContent.includes('<strong>');
+  const useRawHtml = hasImages && looksLikeHtml;
+  
+  console.log('🎨 Rendering strategy:', useRawHtml ? 'RAW HTML (preserves long data URIs)' : 'MARKDOWN (ReactMarkdown)');
+  console.log('🎨 hasImages:', hasImages, '| looksLikeHtml:', looksLikeHtml);
+  console.log('🎨 displayContent length:', displayContent.length);
+  console.log('🎨 displayContent preview:', displayContent.substring(0, 500));
+  
+  if (useRawHtml) {
+    // Render raw HTML to preserve image data URIs
+    console.log('🎨 Using dangerouslySetInnerHTML for raw HTML rendering');
+    return (
+      <div 
+        className={`markdown-content ${className}`}
+        dangerouslySetInnerHTML={{ __html: displayContent }}
+      />
+    );
+  }
   
   // Render the markdown content
   return (
@@ -508,9 +539,20 @@ export function MarkdownRenderer({ content, className = '', chartDescription, on
             
             // Check if src is in node.properties
             const nodeSrc = node?.properties?.src;
-            console.log('� Checking node.properties.src:', nodeSrc);
+            console.log('📍 Checking node.properties.src:', nodeSrc);
             
-            console.log('�🖼️ Destructured:', { 
+            // Deep inspect the node object
+            if (node) {
+              console.log('📍 Full node structure:', {
+                type: node.type,
+                tagName: node.tagName,
+                properties: node.properties,
+                children: node.children,
+                position: node.position
+              });
+            }
+            
+            console.log('🖼️ Destructured:', { 
               srcType: typeof src,
               srcValue: src,
               srcFromNode: nodeSrc,

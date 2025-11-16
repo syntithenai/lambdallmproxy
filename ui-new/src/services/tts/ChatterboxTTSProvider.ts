@@ -8,7 +8,7 @@
  * API: POST /api/tts with JSON body: { text, language, speaker_id }
  */
 
-/* eslint-disable no-console */
+ 
  
 import type { TTSProvider, Voice, SpeakOptions } from '../../types/tts';
 
