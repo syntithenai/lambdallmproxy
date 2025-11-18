@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation as useRouterLocation } from 'react-router-dom';
+import { useLocation as useRouterLocation, useNavigate } from 'react-router-dom';
+import { Save, Share2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchResults } from '../contexts/SearchResultsContext';
 import { usePlaylist } from '../contexts/PlaylistContext';
@@ -15,8 +16,9 @@ import { useTTS } from '../contexts/TTSContext';
 import { useProject } from '../contexts/ProjectContext';
 import { useToast } from './ToastManager';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { sendChatMessageStreaming, getCachedApiBase, summarizeForVoice } from '../utils/api';
+import { sendChatMessageStreaming, getCachedApiBase } from '../utils/api';
 import type { ChatMessage } from '../utils/api';
+import { extractFirstSentences } from '../utils/textPreprocessing';
 import { ragDB } from '../utils/ragDB';
 import { requestGoogleAuth } from '../utils/googleDocs';
 import { extractAndSaveSearchResult } from '../utils/searchCache';
@@ -38,6 +40,7 @@ import { ContinuousVoiceMode } from './ContinuousVoiceMode';
 import { GeneratedImageBlock } from './GeneratedImageBlock';
 import { JsonTree } from './JsonTree';
 import { ImageGallery } from './ImageGallery';
+import SnippetShareDialog from './SnippetShareDialog';
 
 import { ToolResultJsonViewer } from './JsonTreeViewer';
 import { SnippetSelector } from './SnippetSelector';
@@ -53,6 +56,7 @@ import { ChatHeader } from './chat/ChatHeader';
 import { FileAttachmentsDisplay } from './chat/FileAttachmentsDisplay';
 import { DragDropOverlay } from './chat/DragDropOverlay';
 import ShareDialog from './ShareDialog';
+import FeedQuizOverlay from './FeedQuiz';
 import { hasShareData, getShareDataFromUrl, clearShareDataFromUrl } from '../utils/shareUtils';
 import { 
   saveChatToHistory, 
@@ -109,6 +113,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { isConnected: isCastConnected, sendMessages: sendCastMessages, sendScrollPosition } = useCast();
   const { location, isLoading: locationLoading, requestLocation, clearLocation } = useLocation();
   const { getCurrentProjectId } = useProject();
+  const navigate = useNavigate();
   
   // Use regular state for messages - async storage causes race conditions
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -258,6 +263,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [currentStreamingBlockIndex, setCurrentStreamingBlockIndex] = useState<number | null>(null);
   const [showExamplesModal, setShowExamplesModal] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [sharingMessageIndex, setSharingMessageIndex] = useState<number | null>(null); // Track which assistant message is being shared
+  const [chatQuiz, setChatQuiz] = useState<any>(null); // Quiz overlay state
   
   // Chat history tracking
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -431,6 +438,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const examplesDropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastAssistantContentRef = useRef<string>(''); // Track last assistant message for TTS
   
   // Prompt history for up/down arrow navigation
   const [promptHistory, setPromptHistory] = useLocalStorage<string[]>('chat_prompt_history', []);
@@ -473,6 +481,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   useEffect(() => {
     if (routerLocation.state?.initialQuery) {
       const query = routerLocation.state.initialQuery;
+      const newSystemMessage = routerLocation.state?.systemMessage;
       
       // Clear chat if requested (from feed items)
       if (routerLocation.state?.clearChat) {
@@ -486,18 +495,23 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       }
       
       // Set system message if provided (from feed items)
-      if (routerLocation.state?.systemMessage) {
-        console.log('📝 Setting system prompt from navigation state');
-        setSystemPrompt(routerLocation.state.systemMessage);
+      if (newSystemMessage) {
+        console.log('📝 Setting system prompt from navigation state:', newSystemMessage);
+        setSystemPrompt(newSystemMessage);
       }
       
       setInput(query);
       
       // Auto-submit if requested and not currently loading
       if (routerLocation.state?.autoSubmit && !isLoading) {
-        // Small delay to ensure input is set and UI is ready
+        // Small delay to ensure state updates are applied
         setTimeout(() => {
-          handleSend(query);
+          // Use the new system message directly if provided
+          if (newSystemMessage) {
+            handleSend(query, newSystemMessage);
+          } else {
+            handleSend(query);
+          }
         }, 100);
       }
       
@@ -1610,6 +1624,17 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   }, [messages, showSuccess]); // Only depend on messages and showSuccess
 
   const handleStop = () => {
+    console.log('🛑 handleStop called - stopping everything');
+    
+    // Stop TTS playback if active
+    ttsStop();
+    
+    // Disable continuous voice mode when stopping
+    if (continuousVoiceEnabled) {
+      console.log('🛑 Stopping continuous voice mode');
+      setContinuousVoiceEnabled(false);
+    }
+    
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -1664,6 +1689,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   };
 
   const buildToolsArray = () => {
+    console.log('🔧 buildToolsArray called with enabledTools:', enabledTools);
     const tools = [];
     
     // Add enabled built-in tools
@@ -1982,6 +2008,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       console.log('MCP Server enabled:', server.name, server.url);
     });
     
+    console.log(`🔧 buildToolsArray returning ${tools.length} tools:`, tools.map(t => t.function.name));
     return tools;
   };
 
@@ -2125,7 +2152,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSend = async (messageText?: string) => {
+  const handleSend = async (messageText?: string, overrideSystemPrompt?: string) => {
     const textToSend = messageText !== undefined ? messageText : input;
     if (!textToSend.trim() && attachedFiles.length === 0) return;
     if (isLoading) return;
@@ -2351,7 +2378,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       const currentDateTime = `${dateStr}, ${timeStr} (ISO: ${isoStr})`;
       
       // Build system prompt with default and tool suggestions
-      let finalSystemPrompt = systemPrompt.trim() || 'You are a helpful assistant';
+      // Use override if provided (e.g., from navigation state), otherwise use the stored systemPrompt
+      const baseSystemPrompt = overrideSystemPrompt !== undefined ? overrideSystemPrompt : systemPrompt;
+      let finalSystemPrompt = baseSystemPrompt.trim() || 'You are a helpful assistant';
       
       // CRITICAL: If this is a planning-generated system prompt, use it as-is with minimal modifications
       // Planning prompts already contain specific execution instructions and shouldn't have standard tool usage rules appended
@@ -3380,6 +3409,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               console.log('🖼️ message_complete imageGenerations:', data.imageGenerations?.length || 0, 
                 'imageGenerations:', data.imageGenerations);
               
+              // Store the final content in ref for TTS (state update may not be ready when 'complete' fires)
+              // Use data.content if available, otherwise use accumulated streamingContent
+              const contentForTTS = data.content || streamingContent;
+              if (contentForTTS) {
+                lastAssistantContentRef.current = contentForTTS;
+                console.log('🎙️ Stored last assistant content for TTS:', contentForTTS.length, 'chars', 
+                  `(source: ${data.content ? 'message_complete.content' : 'streamingContent'})`);
+              } else {
+                console.warn('🎙️ No content available in message_complete event (data.content and streamingContent both empty)');
+              }
+              
               if (currentStreamingBlockIndex !== null) {
                 // Finalize the existing streaming block
                 setMessages(prev => {
@@ -3675,21 +3715,22 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // All processing complete
               console.log('Stream complete:', data);
               
-              // Handle voice mode with word count check
-              if (continuousVoiceEnabled && streamingContent) {
-                // Count words in the response
-                const wordCount = streamingContent.trim().split(/\s+/).length;
-                console.log(`🎙️ Response word count: ${wordCount}`);
+              // Handle voice mode - speak first 3 sentences only
+              if (continuousVoiceEnabled) {
+                // Use the ref content stored in message_complete (state may not be updated yet)
+                const responseText = lastAssistantContentRef.current;
                 
-                if (wordCount < 100) {
-                  // Short response - read it in full
-                  console.log('🎙️ Short response (<100 words) - reading in full');
-                  ttsSpeak(streamingContent, {
+                if (responseText && responseText.trim()) {
+                  // Phase 5: Extract first 3 sentences for TTS
+                  const firstThreeSentences = extractFirstSentences(responseText, 3);
+                  console.log(`🎙️ Speaking first 3 sentences (${firstThreeSentences.length} chars of ${responseText.length} total)`);
+                  
+                  ttsSpeak(firstThreeSentences, {
                     onStart: () => {
-                      console.log('🎙️ TTS started speaking full response');
+                      console.log('🎙️ TTS started speaking first 3 sentences');
                     },
                     onEnd: () => {
-                      console.log('🎙️ TTS finished - ContinuousVoiceMode will auto-restart');
+                      console.log('🎙️ TTS finished - ContinuousVoiceMode should auto-restart microphone');
                     },
                     onError: (error: any) => {
                       console.error('🎙️ TTS error:', error);
@@ -3700,28 +3741,7 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     showError('Failed to speak response');
                   });
                 } else {
-                  // Long response - get summary from dedicated endpoint
-                  console.log('🎙️ Long response (≥100 words) - requesting summary');
-                  summarizeForVoice(streamingContent, accessToken)
-                    .then(summary => {
-                      console.log(`🎙️ Received summary (${summary.split(/\s+/).length} words)`);
-                      return ttsSpeak(summary, {
-                        onStart: () => {
-                          console.log('🎙️ TTS started speaking summary');
-                        },
-                        onEnd: () => {
-                          console.log('🎙️ TTS finished - ContinuousVoiceMode will auto-restart');
-                        },
-                        onError: (error: any) => {
-                          console.error('🎙️ TTS error:', error);
-                          showError('TTS playback failed');
-                        }
-                      });
-                    })
-                    .catch((error: any) => {
-                      console.error('🎙️ Failed to get summary or speak:', error);
-                      showError('Failed to summarize or speak response');
-                    });
+                  console.warn('🎙️ No response text available for TTS (ref content empty)');
                 }
               }
               
@@ -3757,6 +3777,11 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 setLastRequestCost(data.cost);
                 console.log(`💰 Request cost: $${data.cost.toFixed(4)}`);
               }
+              
+              // CRITICAL: Clear loading state to signal completion to ContinuousVoiceMode
+              setIsLoading(false);
+              console.log('✅ Stream complete - cleared loading state');
+              
               break;
               
             case 'error':
@@ -4591,6 +4616,114 @@ Remember: Use the function calling mechanism, not text output. The API will hand
     console.log('Started new chat - all prompts cleared');
   };
 
+  const handleGenerateQuizFromChat = async () => {
+    if (messages.length === 0) return;
+    
+    try {
+      showSuccess('Generating quiz from conversation...');
+      
+      // Extract all assistant messages as context for quiz
+      const assistantMessages = messages
+        .filter(msg => msg.role === 'assistant' && msg.content)
+        .map(msg => getMessageText(msg.content))
+        .join('\n\n---\n\n');
+      
+      if (!assistantMessages.trim()) {
+        showError('No assistant responses to generate quiz from');
+        return;
+      }
+      
+      // Use the chat history as quiz content
+      // We'll need to create a temporary feed item structure for generateFeedQuiz
+      const token = await getToken();
+      if (!token) {
+        showError('Authentication required');
+        return;
+      }
+      
+      // Import generateFeedQuiz
+      const { generateFeedQuiz } = await import('../services/feedGenerator');
+      
+      // Create a temporary item with chat content
+      const tempItem = {
+        id: `chat-quiz-${Date.now()}`,
+        title: 'Chat Conversation',
+        content: assistantMessages,
+        expandedContent: assistantMessages,
+        topics: ['chat'],
+        sources: [], // Add empty sources array
+        timestamp: Date.now()
+      };
+      
+      const quiz = await generateFeedQuiz(token, tempItem as any);
+      
+      // Save quiz to database
+      const { quizDB } = await import('../db/quizDb');
+      const quizId = await quizDB.saveGeneratedQuiz(
+        quiz.title,
+        [tempItem.id], // snippet IDs (use our temp item ID)
+        quiz.questions.length,
+        false, // no enrichment
+        quiz, // store the full quiz data
+        undefined, // no project ID
+        undefined  // no user ID
+      );
+      
+      if (!quizId) {
+        showWarning('Quiz already exists');
+        return;
+      }
+      
+      console.log('✅ Quiz generated and saved with ID:', quizId);
+      showSuccess('Quiz generated! Opening...');
+      
+      // Show quiz in overlay dialog instead of navigating
+      setChatQuiz(quiz);
+      
+    } catch (error) {
+      console.error('Failed to generate quiz:', error);
+      showError('Failed to generate quiz from conversation');
+    }
+  };
+
+  const handleGenerateFeedFromChat = () => {
+    if (messages.length === 0) return;
+    
+    try {
+      // Extract meaningful content from assistant messages
+      const assistantMessages = messages
+        .filter(msg => msg.role === 'assistant' && msg.content)
+        .map(msg => getMessageText(msg.content))
+        .join(' ');
+      
+      if (!assistantMessages.trim()) {
+        showError('No assistant responses to generate feed from');
+        return;
+      }
+      
+      // Take first 300 chars as search criteria
+      const searchText = assistantMessages.substring(0, 300).trim();
+      
+      // Store request in localStorage for FeedPage to pick up
+      const feedRequest = {
+        searchTerms: [searchText],
+        clearExisting: true,
+        fromChat: currentChatId || 'current'
+      };
+      
+      localStorage.setItem('feed_generation_request', JSON.stringify(feedRequest));
+      
+      // Navigate to feed page
+      navigate('/feed');
+      
+      showSuccess('Generating feed from conversation...');
+      
+    } catch (error) {
+      console.error('Failed to generate feed from chat:', error);
+      showError('Failed to generate feed from conversation');
+    }
+  };
+
   const handleAddMCPServer = () => {
     if (!newMCPServer.name.trim() || !newMCPServer.url.trim()) return;
     
@@ -4640,6 +4773,8 @@ Remember: Use the function calling mechanism, not text output. The API will hand
         onToggleSnippetsPanel={() => setShowSnippetsPanel(!showSnippetsPanel)}
         onShowExamplesModal={() => setShowExamplesModal(true)}
         onShowShareDialog={() => setShowShareDialog(true)}
+        onGenerateQuiz={handleGenerateQuizFromChat}
+        onGenerateFeed={handleGenerateFeedFromChat}
       />
 
       {/* Messages Area */}
@@ -6809,50 +6944,24 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                       </div>
                     )}
                     
-                    {/* Copy/Share/Capture/Info buttons for assistant messages */}
+                    {/* Save/Share buttons for assistant messages */}
                     {msg.role === 'assistant' && (msg.content || msg.llmApiCalls) && (
                       <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                         <button
-                          onClick={() => {
-                            const textContent = getMessageText(msg.content);
-                            navigator.clipboard.writeText(textContent).then(() => {
-                              showSuccess(t('chat.copiedToClipboard'));
-                            }).catch(() => {
-                              showError('Failed to copy');
-                            });
-                          }}
-                          className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 flex items-center gap-1"
-                          title="Copy to clipboard"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                          Copy
-                        </button>
-                        <button
-                          onClick={() => {
-                            const textContent = getMessageText(msg.content);
-                            const subject = 'Shared from LLM Proxy';
-                            const body = encodeURIComponent(textContent);
-                            window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${body}`, '_blank');
-                          }}
-                          className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 flex items-center gap-1"
-                          title="Share via Gmail"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
-                          Gmail
-                        </button>
-                        <button
                           onClick={() => handleCaptureContent(getMessageText(msg.content), 'assistant', undefined, msg.extractedContent, msg.toolResults)}
-                          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-100 flex items-center gap-1"
-                          title="Capture to Swag"
+                          className="flex items-center gap-1.5 px-3 py-2 text-sm bg-green-50 hover:bg-green-100 text-green-700 dark:bg-green-900/30 dark:hover:bg-green-900/50 dark:text-green-400 rounded transition-colors"
+                          title="Save to Swag"
                         >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
-                          </svg>
-                          Grab
+                          <Save className="h-4 w-4" />
+                          <span className="hidden sm:inline">Save</span>
+                        </button>
+                        <button
+                          onClick={() => setSharingMessageIndex(idx)}
+                          className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-400 rounded transition-colors"
+                          title="Share this response"
+                        >
+                          <Share2 className="h-4 w-4" />
+                          <span className="hidden sm:inline">Share</span>
                         </button>
                         {/* Info button with cost prominently displayed */}
                         {msg.llmApiCalls && msg.llmApiCalls.length > 0 && (() => {
@@ -7304,28 +7413,41 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                         <div className="py-1">
                           <button
                             onClick={() => {
-                              setContinuousVoiceEnabled(!continuousVoiceEnabled);
+                              const newState = !continuousVoiceEnabled;
+                              setContinuousVoiceEnabled(newState);
                               setShowVoiceDropdown(false);
+                              // Continuous mode has its own recording mechanism via toasts
+                              // Don't open the voice overlay dialog
                             }}
                             disabled={!accessToken}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            className={`w-full px-4 py-3 text-left flex items-center gap-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                              continuousVoiceEnabled
+                                ? 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                            }`}
                           >
-                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                            <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
                               continuousVoiceEnabled 
-                                ? 'bg-blue-600 border-blue-600' 
-                                : 'border-gray-300 dark:border-gray-600'
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                             }`}>
-                              {continuousVoiceEnabled && (
-                                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              {continuousVoiceEnabled ? (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                               )}
                             </div>
-                            <div>
-                              <div className="font-medium text-gray-900 dark:text-gray-100">
+                            <div className="flex-1">
+                              <div className={`font-medium ${continuousVoiceEnabled ? 'text-blue-700 dark:text-blue-300' : 'text-gray-900 dark:text-gray-100'}`}>
                                 {continuousVoiceEnabled ? 'Stop Continuous Mode' : 'Start Continuous Mode'}
                               </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                                 {continuousVoiceEnabled 
                                   ? 'Currently active - listening and responding automatically' 
                                   : 'Auto-listen after each response (hands-free)'}
@@ -7342,7 +7464,12 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               {/* Right side - Send Button */}
               <button
                 onClick={() => {
-                  if (isLoading) {
+                  if (continuousVoiceEnabled) {
+                    // Stop continuous voice mode, TTS, and any ongoing generation
+                    console.log('🛑 Stopping continuous voice mode from send button');
+                    handleStop(); // Stop LLM generation and TTS
+                    setContinuousVoiceEnabled(false); // Disable continuous mode
+                  } else if (isLoading) {
                     handleStop();
                   } else if (!input.trim()) {
                     // Focus textarea when empty submit is clicked
@@ -7351,17 +7478,25 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                     handleSend();
                   }
                 }}
-                disabled={!isLoading && !accessToken}
+                disabled={!continuousVoiceEnabled && !isLoading && !accessToken}
                 className={`btn-primary p-2 md:px-4 md:py-2 h-10 flex-shrink-0 flex items-center gap-1.5 ${
-                  isLoading ? 'animate-pulse' : ''
+                  (isLoading || continuousVoiceEnabled) ? 'animate-pulse' : ''
                 }`}
-                title={!accessToken ? t('chat.signInToSend') : (!input.trim() ? t('chat.typeMessageFirst') : t('chat.sendMessage'))}
-                aria-label={isLoading ? t('chat.stopGenerating') : t('chat.sendMessage')}
+                title={
+                  continuousVoiceEnabled 
+                    ? 'Stop Continuous Voice Mode' 
+                    : (!accessToken ? t('chat.signInToSend') : (!input.trim() ? t('chat.typeMessageFirst') : t('chat.sendMessage')))
+                }
+                aria-label={
+                  continuousVoiceEnabled 
+                    ? 'Stop Continuous Voice Mode' 
+                    : (isLoading ? t('chat.stopGenerating') : t('chat.sendMessage'))
+                }
               >
-                {isLoading ? (
+                {continuousVoiceEnabled || isLoading ? (
                   <>
                     <span>⏹</span>
-                    <span className="hidden md:inline">{t('chat.stop')}</span>
+                    <span className="hidden md:inline">{continuousVoiceEnabled ? 'Stop Voice Mode' : t('chat.stop')}</span>
                   </>
                 ) : !input.trim() ? (
                   <>
@@ -7987,12 +8122,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
                 handleSend(text);
               }, 150);
             }}
-            onTranscriptionStart={() => {
-              console.log('🎙️ Continuous mode: transcription started');
-            }}
             onStopTTS={() => {
-              console.log('🛑 Stopping TTS from continuous voice mode');
+              console.log('🛑 Comprehensive stop triggered from continuous voice mode');
+              // Stop TTS playback
               ttsStop();
+              // If LLM is generating, abort it
+              if (isLoading) {
+                console.log('🛑 Aborting LLM generation');
+                handleStop();
+              } else {
+                // If only TTS is playing but no LLM generation, just disable voice mode
+                console.log('🛑 Disabling continuous voice mode');
+                setContinuousVoiceEnabled(false);
+              }
             }}
             accessToken={accessToken}
             apiEndpoint={apiEndpoint}
@@ -8025,6 +8167,19 @@ Remember: Use the function calling mechanism, not text output. The API will hand
           }))}
           onClose={() => setShowShareDialog(false)}
           title={systemPrompt || undefined}
+        />
+      )}
+
+      {/* Snippet Share Dialog for Assistant Messages */}
+      {sharingMessageIndex !== null && messages[sharingMessageIndex] && (
+        <SnippetShareDialog
+          snippetId={`chat-msg-${sharingMessageIndex}`}
+          content={getMessageText(messages[sharingMessageIndex].content)}
+          title={`Chat Response ${sharingMessageIndex + 1}`}
+          tags={['chat-response']}
+          sourceType="assistant"
+          timestamp={Date.now()}
+          onClose={() => setSharingMessageIndex(null)}
         />
       )}
 
@@ -8114,6 +8269,14 @@ Remember: Use the function calling mechanism, not text output. The API will hand
             </div>
           </div>
         </div>
+      )}
+
+      {/* Quiz Overlay */}
+      {chatQuiz && (
+        <FeedQuizOverlay 
+          quiz={chatQuiz} 
+          onClose={() => setChatQuiz(null)} 
+        />
       )}
     </div>
   );

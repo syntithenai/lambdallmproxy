@@ -41,10 +41,10 @@ function getOptimalMaxTokens(options = {}) {
 
   // Base multiplier by optimization preference
   const optimizationMultipliers = {
-    'cheap': 0.5,      // Shorter responses to save costs/rate limits
+    'cheap': 0.75,     // Slightly shorter responses (was 0.5 - too restrictive)
     'balanced': 1.0,   // Standard responses
     'powerful': 1.5,   // Longer, more detailed responses
-    'fastest': 0.7     // Shorter for speed
+    'fastest': 0.85    // Slightly shorter for speed (was 0.7)
   };
 
   const multiplier = optimizationMultipliers[optimization] || 1.0;
@@ -54,7 +54,7 @@ function getOptimalMaxTokens(options = {}) {
   
   switch (requestType) {
     case 'SIMPLE':
-      baseMaxTokens = 2048;  // Short answers
+      baseMaxTokens = 4096;  // Increased from 2048 for fuller responses
       break;
     case 'COMPLEX':
       baseMaxTokens = 8192;  // Detailed analysis
@@ -66,7 +66,7 @@ function getOptimalMaxTokens(options = {}) {
       baseMaxTokens = 8192;  // Creative content generation
       break;
     case 'TOOL_HEAVY':
-      baseMaxTokens = 4096;  // Tool results need processing
+      baseMaxTokens = 6144;  // Increased from 4096 for better tool synthesis
       break;
   }
 

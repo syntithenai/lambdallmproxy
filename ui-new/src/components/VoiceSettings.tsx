@@ -18,8 +18,8 @@ export const VoiceSettings: React.FC = () => {
   // Get values from settings or use defaults
   const hotword = settings?.voice.hotword || 'Hey Google';
   const sensitivity = settings?.voice.sensitivity ?? 0.5;
-  const speechTimeout = settings?.voice.speechTimeout ?? 2.0;
-  const conversationTimeout = settings?.voice.conversationTimeout ?? 10000;
+  const speechTimeout = settings?.voice.speechTimeout ?? 3.5; // Increased from 2.0 to 3.5 for natural pauses
+  const silenceThreshold = settings?.voice.silenceThreshold ?? 25;
   const useLocalWhisper = settings?.voice.useLocalWhisper ?? false;
   const localWhisperUrl = settings?.voice.localWhisperUrl || 'http://localhost:8000';
 
@@ -56,13 +56,13 @@ export const VoiceSettings: React.FC = () => {
     });
   };
 
-  const handleConversationTimeoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSilenceThresholdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!settings) return;
-    const value = parseInt(e.target.value);
+    const value = parseFloat(e.target.value);
     updateSettings({
       voice: {
         ...settings.voice,
-        conversationTimeout: value,
+        silenceThreshold: value,
       },
     });
   };
@@ -183,33 +183,33 @@ export const VoiceSettings: React.FC = () => {
           </p>
         </div>
 
-        {/* Conversation Timeout */}
+        {/* Silence Threshold */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            <Clock className="w-4 h-4 inline mr-2" />
-            Conversation Timeout
+            <Volume2 className="w-4 h-4 inline mr-2" />
+            Silence Sensitivity
           </label>
           <div className="flex items-center gap-4">
             <input
               type="range"
-              min="3000"
-              max="30000"
-              step="1000"
-              value={conversationTimeout}
-              onChange={handleConversationTimeoutChange}
+              min="1"
+              max="50"
+              step="0.2"
+              value={silenceThreshold}
+              onChange={handleSilenceThresholdChange}
               className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
             />
             <span className="text-sm font-medium text-gray-900 dark:text-white w-16 text-right">
-              {(conversationTimeout / 1000).toFixed(0)}s
+              {silenceThreshold.toFixed(1)}
             </span>
           </div>
           <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
-            <span>3 seconds</span>
-            <span>30 seconds</span>
+            <span>1.0 (very sensitive)</span>
+            <span>50.0 (less sensitive)</span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            How long to wait before returning to hotword listening mode. 
-            After AI responds, this timeout determines how long you have to continue the conversation.
+            Audio volume threshold for detecting silence. Lower values (1-5) work with quiet microphones. 
+            Higher values (20-50) tolerate background noise. Adjust based on your microphone sensitivity.
           </p>
         </div>
       </section>

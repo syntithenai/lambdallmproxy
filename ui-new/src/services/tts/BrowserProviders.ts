@@ -375,22 +375,55 @@ export class BrowserSpeechProvider implements TTSProvider {
 
         if (options.voice) {
           const voices = this.synth.getVoices();
+          console.log(`🔍 BrowserSpeechProvider: Looking for voice with URI: "${options.voice}"`);
+          console.log(`   Total available voices: ${voices.length}`);
+          
           const matchedVoice = voices.find(v => v.voiceURI === options.voice);
           
           if (!matchedVoice) {
-            console.error(`🎤 BrowserSpeechProvider: Could not find voice with URI: "${options.voice}"`);
-            console.log(`   Available voice URIs:`, voices.map(v => v.voiceURI));
-            // Don't set voice - use default instead
-            utter.voice = null;
-            console.warn(`⚠️ BrowserSpeechProvider: Falling back to default voice`);
+            console.error(`❌ BrowserSpeechProvider: Could not find voice with URI: "${options.voice}"`);
+            console.log(`   Available voice URIs:`, voices.map(v => `${v.voiceURI} (${v.name})`));
+            console.log(`   First 5 voices:`, voices.slice(0, 5).map(v => ({ uri: v.voiceURI, name: v.name, lang: v.lang })));
+            
+            // Try to find an English voice as fallback instead of using first voice
+            const englishVoice = voices.find(v => 
+              v.lang.toLowerCase().startsWith('en-') || 
+              v.name.toLowerCase().includes('english') ||
+              v.name.toLowerCase().includes('us') ||
+              v.name.toLowerCase().includes('uk')
+            );
+            
+            if (englishVoice) {
+              utter.voice = englishVoice;
+              console.warn(`⚠️ BrowserSpeechProvider: Falling back to English voice: ${englishVoice.name} (${englishVoice.voiceURI}, lang: ${englishVoice.lang})`);
+            } else {
+              // Last resort: use first voice
+              utter.voice = null;
+              const defaultVoice = this.synth.getVoices()[0];
+              console.warn(`⚠️ BrowserSpeechProvider: No English voice found, using default: ${defaultVoice?.name || 'unknown'} (${defaultVoice?.voiceURI || 'unknown'})`);
+            }
           } else {
             utter.voice = matchedVoice;
-            console.log(`🎤 BrowserSpeechProvider: Using voice: ${utter.voice.name} (${utter.voice.lang})`);
+            console.log(`✅ BrowserSpeechProvider: Matched voice: ${utter.voice.name} (${utter.voice.lang})`);
             console.log(`   Voice URI: ${utter.voice.voiceURI}, Local: ${utter.voice.localService}`);
           }
         } else {
-          utter.voice = null;
-          console.log(`🎤 BrowserSpeechProvider: Using default voice`);
+          // No voice specified - try to find an English voice
+          const englishVoice = voices.find(v => 
+            v.lang.toLowerCase().startsWith('en-') || 
+            v.name.toLowerCase().includes('english') ||
+            v.name.toLowerCase().includes('us') ||
+            v.name.toLowerCase().includes('uk')
+          );
+          
+          if (englishVoice) {
+            utter.voice = englishVoice;
+            console.log(`🎤 BrowserSpeechProvider: No voice specified, using English voice: ${englishVoice.name} (${englishVoice.voiceURI}, lang: ${englishVoice.lang})`);
+          } else {
+            utter.voice = null;
+            const defaultVoice = this.synth.getVoices()[0];
+            console.log(`🎤 BrowserSpeechProvider: No voice specified, using default: ${defaultVoice?.name || 'unknown'} (${defaultVoice?.voiceURI || 'unknown'})`);
+          }
         }
 
         // Set a timeout to detect if onstart never fires (common browser bug)
@@ -404,23 +437,16 @@ export class BrowserSpeechProvider implements TTSProvider {
           
           console.error('❌ BrowserSpeechProvider: onstart event never fired after 3000ms!');
           console.error('   Browser likely blocked speech or synthesis queue is stuck');
-          console.error('   Attempting to clear queue and retry...');
+          console.error('   Clearing queue and rejecting...');
           
           // Clear the queue
           this.synth.cancel();
-          
-          // Wait a bit then retry
-          setTimeout(() => {
-            // Check again before retrying
-            if (this.isStoppedIntentionally) {
-              console.log('🛑 BrowserSpeechProvider: Stop was called, NOT retrying after queue clear');
-              return;
-            }
-            console.log('🔄 BrowserSpeechProvider: Retrying speak after queue clear...');
-            this.synth.speak(utter);
-          }, 100);
-          
           this.startTimeout = null;
+          
+          // Reject the promise instead of retrying infinitely
+          const error = new Error('Browser Speech synthesis failed to start (onstart timeout)');
+          options.onError?.(error);
+          reject(error);
         }, 3000);
         
         this.utterance.onstart = () => {
@@ -450,11 +476,18 @@ export class BrowserSpeechProvider implements TTSProvider {
         };
         this.currentOnEndCallback = options.onEnd || null;
         this.utterance.onend = () => {
+          console.log('🎤 BrowserSpeechProvider: onend event fired', {
+            isStoppedIntentionally: this.isStoppedIntentionally,
+            hasOnEndCallback: !!options.onEnd
+          });
           this.stopPolling();
           
           // Only call onEnd if this wasn't an intentional stop
           if (!this.isStoppedIntentionally && options.onEnd) {
+            console.log('🎤 BrowserSpeechProvider: Calling onEnd callback');
             options.onEnd();
+          } else if (this.isStoppedIntentionally) {
+            console.log('🎤 BrowserSpeechProvider: Skipping onEnd callback (intentional stop)');
           }
           
           this.currentOnEndCallback = null;

@@ -158,6 +158,14 @@ abstract class LLMTTSProvider implements TTSProvider {
   }
 
   async speak(text: string, options: SpeakOptions): Promise<void> {
+    console.log('🎯 DEBUG: Groq TTS received options object:', {
+      hasOnStart: !!options.onStart,
+      hasOnEnd: !!options.onEnd,
+      hasOnError: !!options.onError,
+      debugId: (options as any)._debugId || 'NO DEBUG ID!',
+      optionsObjId: Object.keys(options).join(',')
+    });
+    
     const apiBase = await getCachedApiBase();
     const voiceId = options.voice || this.defaultVoices[0]?.id || 'default';
     
@@ -241,10 +249,21 @@ abstract class LLMTTSProvider implements TTSProvider {
         }
 
         this.audio.onended = () => {
+          console.log(`🎵 ${this.name}: audio.onended fired - calling options.onEnd()`);
+          console.log(`   - audio.currentTime: ${this.audio?.currentTime}`);
+          console.log(`   - audio.duration: ${this.audio?.duration}`);
+          console.log(`   - audio.paused: ${this.audio?.paused}`);
+          console.log(`   - audio.ended: ${this.audio?.ended}`);
+          console.log(`   - hasOnEndCallback: ${!!options.onEnd}`);
+          
           if (options.onEnd) {
+            console.log(`✅ ${this.name}: Calling options.onEnd() now`);
             options.onEnd();
+          } else {
+            console.warn(`⚠️ ${this.name}: No onEnd callback provided!`);
           }
           this.audio = null;
+          console.log(`🧹 ${this.name}: Cleaned up audio element`);
         };
 
         this.audio.onerror = (error) => {

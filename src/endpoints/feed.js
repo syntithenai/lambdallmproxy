@@ -189,152 +189,25 @@ async function generateFeedItems(
     const userEmail = generationContext.userEmail || generationContext.email || 'system';
     const tavilyKey = generationContext.tavilyKey || null; // UI-provided Tavily key
     
-    // Perform web searches if search terms provided
+    // Skip web search - generate directly from LLM knowledge
+    // Notify UI that we're using direct LLM knowledge instead of web search
     let searchSummary = '';
     const searchResults = [];
     
     if (searchTerms && searchTerms.length > 0) {
-        // Use search terms as-is without modification
-        
         safeEventCallback('search_starting', { 
-            message: `Searching for: ${searchTerms.join(', ')}`,
+            message: `Generating content about: ${searchTerms.join(', ')}`,
             terms: searchTerms,
             termsCount: searchTerms.length
         });
         
-        // Search same number of results as items to generate (1:1 ratio)
-        const searchResultsPerTerm = count; // e.g., 3 items → 3 results per search
-        
-        for (const term of searchTerms.slice(0, 3)) { // Limit to 3 search terms
-            // Check if client disconnected
-            if (!isClientConnected()) {
-                console.log('🛑 Client disconnected during search, aborting generation');
-                throw new Error('Client disconnected');
-            }
-            
-            try {
-                safeEventCallback('search_term', { 
-                    message: `Searching for "${term}"...`,
-                    term: term
-                });
-                
-                // Use intelligent search with failover: Tavily (UI) → Brave → Tavily (env) → DuckDuckGo → Wikipedia
-                const searchResponse = await performDuckDuckGoSearch(term, searchResultsPerTerm, userEmail, tavilyKey);
-                
-                // searchWeb returns { results: [], provider: 'xxx' }
-                const results = searchResponse.results || searchResponse;
-                const provider = searchResponse.provider || 'unknown';
-                
-                // Defensive: Ensure results is an array before spreading
-                if (!Array.isArray(results)) {
-                    console.warn(`⚠️ Search results for "${term}" is not an array:`, typeof results, results);
-                    safeEventCallback('search_term_error', { 
-                        message: `Search failed for "${term}": Invalid results format (expected array, got ${typeof results})`,
-                        term: term,
-                        error: `Invalid results format: ${typeof results}`
-                    });
-                    continue; // Skip to next term
-                }
-                
-                // Scrape full content from ALL search results (3 per term)
-                safeEventCallback('scraping_started', {
-                    message: `Scraping content from ${results.length} URLs...`,
-                    term: term,
-                    urlCount: results.length
-                });
-                
-                for (let i = 0; i < results.length; i++) {
-                    // Check if client disconnected
-                    if (!isClientConnected()) {
-                        console.log('🛑 Client disconnected during scraping, aborting generation');
-                        throw new Error('Client disconnected');
-                    }
-                    
-                    const result = results[i];
-                    
-                    // Skip if result already has substantial content (from Tavily)
-                    if (result.content && result.content.length > 500) {
-                        continue;
-                    }
-                    
-                    try {
-                        safeEventCallback('scraping_url', {
-                            message: `Scraping ${i + 1}/${results.length}: ${result.url}`,
-                            url: result.url,
-                            index: i + 1,
-                            total: results.length
-                        });
-                        
-                        const scraped = await scrapeWithTierFallback(result.url, 15000); // 15 second timeout for thorough scraping
-                        
-                        if (scraped && scraped.content) {
-                            // Use MORE content for better quality (4000 chars instead of 2000)
-                            const contentPreview = scraped.content.substring(0, 4000);
-                            result.content = contentPreview;
-                            result.scrapedContent = true;
-                            
-                            console.log(`✅ Scraped content from ${result.url} (${scraped.content.length} chars, using ${contentPreview.length} chars)`);
-                        } else {
-                            console.log(`⚠️ No content scraped from ${result.url}`);
-                        }
-                    } catch (scrapeError) {
-                        console.warn(`Failed to scrape ${result.url}:`, scrapeError.message);
-                        // Continue with snippet only
-                    }
-                }
-                
-                searchResults.push(...results);
-                
-                safeEventCallback('search_term_complete', { 
-                    message: `Found ${results.length} results for "${term}" using ${provider}`,
-                    term: term,
-                    resultsCount: results.length,
-                    provider: provider,
-                    scrapedCount: results.filter(r => r.scrapedContent).length,
-                    results: results.slice(0, 3).map(r => ({ 
-                        title: r.title, 
-                        url: r.url, 
-                        snippet: r.snippet?.substring(0, 100),
-                        hasContent: !!r.content 
-                    }))
-                });
-            } catch (error) {
-                console.error(`Search failed for term "${term}":`, error);
-                safeEventCallback('search_term_error', { 
-                    message: `Search failed for "${term}": ${error.message}`,
-                    term: term,
-                    error: error.message
-                });
-            }
-        }
-        
-        // Build search summary with scraped content (prefer full content over snippet)
-        searchSummary = searchResults
-            .slice(0, 9) // Use up to 9 results (3 per search term)
-            .map(r => {
-                const title = r.title;
-                const url = r.url;
-                // Use scraped content if available, otherwise fall back to snippet
-                const content = r.content 
-                    ? r.content.substring(0, 3000) // Increased to 3000 chars per result for richer context
-                    : r.snippet || 'No description available';
-                
-                return `Title: ${title}\nURL: ${url}\nContent: ${content}\n`;
-            })
-            .join('\n---\n');
-        
-        const scrapedCount = searchResults.filter(r => r.scrapedContent).length;
+        // Skip web search entirely - use LLM's knowledge directly
         safeEventCallback('search_complete', { 
-            message: `Found ${searchResults.length} total results from ${searchTerms.length} search terms (${scrapedCount} with full content)`,
-            resultsCount: searchResults.length,
-            scrapedCount: scrapedCount,
+            message: `Using LLM knowledge for ${searchTerms.length} topics (no web search)`,
+            resultsCount: 0,
+            scrapedCount: 0,
             terms: searchTerms,
-            topResults: searchResults.slice(0, 5).map(r => ({ 
-                title: r.title, 
-                url: r.url, 
-                snippet: r.snippet?.substring(0, 100),
-                hasFullContent: !!r.scrapedContent
-            }))
+            topResults: []
         });
     }
     
@@ -343,22 +216,22 @@ async function generateFeedItems(
 
 INPUT CONTEXT:
 ${swagSummary ? `User's saved content:\n${swagSummary}\n\n` : ''}
-${searchSummary ? `Recent news/searches:\n${searchSummary}\n\n` : ''}
+${searchTerms && searchTerms.length > 0 ? `TOPICS TO EXPLORE: ${searchTerms.join(', ')}\n\n` : ''}
 ${likedTopics ? `✨ USER'S FAVORITE TOPICS (prioritize these): ${likedTopics}\n` : ''}
 ${dislikedTopics ? `🚫 USER DISLIKES (completely AVOID these): ${dislikedTopics}\n` : ''}
 
 ⚠️ MANDATORY: You MUST generate EXACTLY ${count} items. No more, no less. Responses with fewer than ${count} items will be rejected.
 
-TASK: Generate ${count} high-quality educational items${searchSummary ? ' based on the search results provided above' : ''} mixing:
-- "Did You Know" facts (70%) - surprising, educational facts${searchSummary ? ' drawn from the search results' : ''}
-- Question & Answer pairs (30%) - thought-provoking Q&A${searchSummary ? ' based on search findings' : ''}
+TASK: Generate ${count} high-quality educational items${searchTerms && searchTerms.length > 0 ? ' about the topics listed above' : ''} mixing:
+- "Did You Know" facts (70%) - surprising, educational facts${searchTerms && searchTerms.length > 0 ? ' related to the topics' : ''}
+- Question & Answer pairs (30%) - thought-provoking Q&A${searchTerms && searchTerms.length > 0 ? ' about the topics' : ''}
 
-${searchSummary ? '⚠️ CRITICAL: You MUST base your content on the "Recent news/searches" section above. Use the titles, snippets, and information from those search results as your primary source material. Do NOT generate generic facts - use the specific information provided in the search results.\n\n' : ''}${likedTopics ? '✨ PRIORITIZE USER INTERESTS: The user is particularly interested in: ' + likedTopics + '. Make sure to include content related to these topics whenever possible, even when working with search results.\n\n' : ''}CRITICAL REQUIREMENTS:
+${searchTerms && searchTerms.length > 0 ? '✨ FOCUS: Generate content about the topics listed above. Use your knowledge to create interesting, educational content that relates to these topics.\n\n' : ''}${likedTopics ? '✨ PRIORITIZE USER INTERESTS: The user is particularly interested in: ' + likedTopics + '. Make sure to include content related to these topics whenever possible.\n\n' : ''}CRITICAL REQUIREMENTS:
 1. Generate EXACTLY ${count} items (not fewer, not more)
 2. Each item MUST have:
    - **UNIQUE, DESCRIPTIVE TITLE** (max 80 characters) - NEVER use generic titles like "Feed1", "Fact 1", or "Item 2". Each title must be specific and engaging.
-   - Short summary (2-3 sentences) in "content"${searchSummary ? ' that references information from the search results' : ''}
-   - COMPREHENSIVE deep-dive article (8-12 paragraphs, 800+ words) in "expandedContent" with AT LEAST 8 fascinating facts, details, and insights${searchSummary ? ' drawn from the search results' : ''}
+   - Short summary (2-3 sentences) in "content"
+   - COMPREHENSIVE deep-dive article (8-12 paragraphs, 800+ words) in "expandedContent" with AT LEAST 8 fascinating facts, details, and insights
    - Creative mnemonic in "mnemonic" - use acronyms, rhymes, or surprising connections
    
 3. Mnemonics should be MEMORABLE:
@@ -367,7 +240,7 @@ ${searchSummary ? '⚠️ CRITICAL: You MUST base your content on the "Recent ne
    - Connections: Link to pop culture, celebrities, or surprising parallels
    
 3. Expanded content should be COMPREHENSIVE (8-12 paragraphs):
-   - Include specific numbers, dates, measurements, and statistics${searchSummary ? ' from the search results' : ''}
+   - Include specific numbers, dates, measurements, and statistics from your knowledge
    - Feature surprising comparisons, contrasts, and analogies
    - Cite historical context, modern relevance, and future implications
    - Use vivid, memorable details and storytelling
@@ -378,7 +251,7 @@ ${searchSummary ? '⚠️ CRITICAL: You MUST base your content on the "Recent ne
 
 4. Connect to user's interests when possible
 5. Avoid disliked topics completely
-6. Include specific topics/keywords for image search${searchSummary ? '\n7. ⚠️ Base ALL content on the search results provided - do NOT make up generic facts' : ''}
+6. Include specific topics/keywords for image search
 
 Generate exactly ${count} items. Return valid JSON.`;
 
@@ -640,8 +513,8 @@ Generate exactly ${count} items. Return valid JSON.`;
                             topics: itemData.topics || [],
                             searchTerms: searchTerms,
                             imageSearchTerms: itemData.imageSearchTerms || '',
-                            sources: searchResults.map(r => r.url).slice(0, 3),
-                            searchResults: searchResults
+                            sources: [], // No search results = no sources
+                            searchResults: []
                         };
                         
                         items.push(processedItem);
@@ -727,8 +600,8 @@ Generate exactly ${count} items. Return valid JSON.`;
                     topics: itemData.topics || [],
                     searchTerms: searchTerms,
                     imageSearchTerms: itemData.imageSearchTerms || '',
-                    sources: searchResults.map(r => r.url).slice(0, 3),
-                    searchResults: searchResults
+                    sources: [], // No search results = no sources
+                    searchResults: []
                 };
                 
                 items.push(processedItem);

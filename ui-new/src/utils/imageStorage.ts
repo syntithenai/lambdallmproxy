@@ -451,6 +451,13 @@ class ImageStorageService {
     console.log(`🗑️ Starting garbage collection...`);
     console.log(`🗑️ Checking ${allSnippetContents.length} snippets`);
     
+    // SAFETY: Don't run GC if we have no snippets loaded
+    // This prevents accidental deletion when data is still loading
+    if (allSnippetContents.length === 0) {
+      console.log(`🗑️ ⚠️ SKIPPING: No snippets loaded yet - not safe to garbage collect`);
+      return 0;
+    }
+    
     const allImages = await this.getAllImages();
     console.log(`🗑️ Found ${allImages.length} images in IndexedDB`);
     
@@ -468,8 +475,8 @@ class ImageStorageService {
       const isReferenced = allContent.includes(ref);
       // Protect images created very recently to avoid race conditions where
       // the snippet hasn't persisted or synced yet. This prevents immediate
-      // deletion when navigating quickly between pages.
-      const retentionMs = 2 * 60 * 1000; // 2 minutes
+      // deletion when navigating quickly between pages or importing snippets.
+      const retentionMs = 10 * 60 * 1000; // 10 minutes (increased from 2 for safety)
       const ageMs = Date.now() - (image.createdAt || 0);
 
       if (!isReferenced) {

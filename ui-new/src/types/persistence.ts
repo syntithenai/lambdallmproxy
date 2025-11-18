@@ -90,6 +90,7 @@ export interface VoiceSettings {
   sensitivity: number;          // Hotword sensitivity (0.0 - 1.0)
   speechTimeout: number;        // Silence duration to stop recording (seconds, float)
   conversationTimeout: number;  // Max conversation duration (milliseconds, int)
+  silenceThreshold: number;     // Audio level threshold for silence detection (0-255, default: 25)
   
   // Whisper transcription
   useLocalWhisper: boolean;     // Try local Whisper service first?

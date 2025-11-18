@@ -25,10 +25,11 @@ export function createDefaultSettings(userId: string): Settings {
     
     // Voice settings
     voice: {
-      hotword: 'Hey Google',
+      hotword: 'Jarvis',
       sensitivity: 0.5,
-      speechTimeout: 2.0,
+      speechTimeout: 3.5, // Increased from 2.0 to allow for natural pauses while speaking
       conversationTimeout: 10000,
+      silenceThreshold: 25,
       useLocalWhisper: false,
       localWhisperUrl: 'http://localhost:8000',
       whisperProvider: 'groq',

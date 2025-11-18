@@ -2376,8 +2376,8 @@ CRITICAL: ALWAYS return valid JSON with both fields. Keep voiceResponse concise 
                         // For capacity errors (TPM/context), we need to switch to HIGH-CAPACITY models
                         // These models have much higher TPM limits (100K-1M instead of 6K)
                         const highCapacityModels = {
-                            'groq': ['llama-3.3-70b-versatile', 'llama-3.2-90b-vision-preview'].filter(m => !BLOCKED_MODELS.has(m)), // 12K, 8K TPM
-                            'groq-free': ['llama-3.3-70b-versatile', 'llama-3.2-90b-vision-preview'].filter(m => !BLOCKED_MODELS.has(m)), // 12K, 8K TPM
+                            'groq': ['llama-3.3-70b-versatile', 'meta-llama/llama-4-maverick-17b-128e-instruct'].filter(m => !BLOCKED_MODELS.has(m)), // 12K, 6K TPM
+                            'groq-free': ['llama-3.3-70b-versatile', 'meta-llama/llama-4-maverick-17b-128e-instruct'].filter(m => !BLOCKED_MODELS.has(m)), // 12K, 6K TPM
                             'gemini': ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'], // 1M TPM, 2M context
                             'gemini-free': ['gemini-2.0-flash-exp', 'gemini-1.5-flash'], // 1M TPM
                             'openai': ['gpt-4o', 'gpt-4o-mini'], // High TPM

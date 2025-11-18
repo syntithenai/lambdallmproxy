@@ -18,7 +18,7 @@ import { ReadButton } from './ReadButton';
 import { FileUploadDialog } from './FileUploadDialog';
 import SnippetShareDialog from './SnippetShareDialog';
 import { QuizCard } from './QuizCard';
-import { Brain } from 'lucide-react';
+import { Brain, Rss, MessageSquare } from 'lucide-react';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
   createGoogleDocInFolder, 
@@ -1209,6 +1209,47 @@ export const SwagPage: React.FC = () => {
     }
   };
 
+  // Navigate to Feed page and generate items from snippet content
+  const handleGenerateFeedFromSnippet = (snippet: ContentSnippet) => {
+    // Extract meaningful search terms from snippet content
+    // Use title and first 200 chars of content as search criteria
+    const searchText = `${snippet.title || ''} ${snippet.content.substring(0, 200)}`.trim();
+    
+    // Store search criteria in localStorage for Feed page to pick up
+    const feedSearchCriteria = {
+      searchTerms: [searchText],
+      clearExisting: true, // Signal to clear existing feed items
+      fromSnippet: snippet.id
+    };
+    
+    localStorage.setItem('feed_generation_request', JSON.stringify(feedSearchCriteria));
+    
+    // Navigate to feed page
+    navigate('/feed');
+    
+    showSuccess('Generating feed from snippet...');
+  };
+
+  // Navigate to Chat page with snippet content as system message
+  const handleChatFromSnippet = (snippet: ContentSnippet) => {
+    // Create user query asking to expand and fact-check
+    const userQuery = `Please expand on the above content and fact-check the key claims. Provide additional context, verify the accuracy of the main points, and highlight any areas that may need further investigation or clarification.`;
+    
+    // Navigate to chat page with state
+    navigate('/chat', {
+      state: {
+        systemMessage: snippet.content,
+        initialQuery: userQuery,
+        autoSubmit: true,
+        clearChat: true,
+        fromSnippet: snippet.id,
+        snippetTitle: snippet.title
+      }
+    });
+    
+    showSuccess('Opening chat with snippet context...');
+  };
+
   const getSourceBadgeColor = (sourceType: string) => {
     switch (sourceType) {
       case 'user': return 'bg-blue-500';
@@ -1890,11 +1931,8 @@ export const SwagPage: React.FC = () => {
 
                 {/* Content */}
                 <div className="p-4 pt-10">
-                  {/* Source Badge and Similarity Score */}
+                  {/* Timestamp and Similarity Score */}
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <span className={`px-2 py-1 text-xs rounded-full text-white ${getSourceBadgeColor(snippet.sourceType)}`}>
-                      {snippet.sourceType}
-                    </span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {new Date(snippet.timestamp).toLocaleString()}
                     </span>
@@ -2005,247 +2043,279 @@ export const SwagPage: React.FC = () => {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2 items-center">
-                    {/* Share Button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSharingSnippet(snippet);
-                      }}
-                      className="p-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                      title="Share snippet"
-                      aria-label="Share"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                      </svg>
-                    </button>
-                    
-                    {/* Embedding Status Button */}
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        console.log('🔘 Embedding button clicked for snippet:', snippet.id);
-                        
-                        // Add to checking set
-                        setCheckingEmbeddingSet(prev => new Set(prev).add(snippet.id));
-                        
-                        try {
-                          console.log('📊 Checking embedding status...');
-                          const details = await getEmbeddingDetails(snippet.id);
-                          const isIndexed = details.hasEmbedding;
-                          console.log(`📊 Embedding status: ${isIndexed ? 'INDEXED' : 'NOT INDEXED'}`, details);
-                          
-                          setEmbeddingStatusMap(prev => ({
-                            ...prev,
-                            [snippet.id]: isIndexed
-                          }));
-                          
-                          if (isIndexed) {
-                            const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
-                            showSuccess(message);
-                          } else {
-                            // Not indexed - index it now
-                            console.log('🔄 Starting indexing process for snippet:', snippet.id);
-                            showSuccess('🔄 Indexing snippet...');
-                            try {
-                              const result = await generateEmbeddings([snippet.id]);
-                              console.log('📊 Indexing result:', result);
-                              
-                              // Check status again after indexing
-                              const updatedDetails = await getEmbeddingDetails(snippet.id);
-                              console.log('📊 Updated embedding status:', updatedDetails);
-                              setEmbeddingStatusMap(prev => ({
-                                ...prev,
-                                [snippet.id]: updatedDetails.hasEmbedding
-                              }));
-                              
-                              if (result.embedded > 0) {
-                                showSuccess(`✅ Snippet indexed: ${updatedDetails.chunkCount} chunk${updatedDetails.chunkCount !== 1 ? 's' : ''}`);
-                              } else if (result.failed > 0) {
-                                showError('Failed to index snippet');
-                              } else {
-                                console.warn('⚠️ Indexing completed but no embeddings created or failed');
-                                showWarning('Indexing completed but status unclear');
-                              }
-                            } catch (indexError) {
-                              console.error('❌ Failed to index snippet:', indexError);
-                              showError('Failed to index snippet');
+                  <div className="flex gap-2 items-center justify-between">
+                    {/* Left-aligned buttons: Feed, Chat, Quiz, Share */}
+                    <div className="flex gap-2">
+                      {/* Feed Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleGenerateFeedFromSnippet(snippet);
+                        }}
+                        className="p-2 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+                        title="Generate feed from snippet"
+                        aria-label="Generate feed"
+                      >
+                        <Rss className="w-5 h-5" />
+                      </button>
+                      
+                      {/* Chat Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleChatFromSnippet(snippet);
+                        }}
+                        className="p-2 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors"
+                        title="Expand and fact-check in chat"
+                        aria-label="Chat expand"
+                      >
+                        <MessageSquare className="w-5 h-5" />
+                      </button>
+                      
+                      {/* Quiz Button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          console.log('🧠 Quiz button clicked for snippet:', snippet.title);
+                          // Generate quiz directly from this snippet's content
+                          try {
+                            setIsGeneratingQuiz(true);
+                            
+                            const token = await getToken();
+                            if (!token) {
+                              console.error('❌ No token available');
+                              showError('Authentication required. Please sign in.');
+                              setIsGeneratingQuiz(false);
+                              return;
                             }
-                          }
-                        } catch (error) {
-                          console.error('❌ Failed to check embedding status:', error);
-                          showError('Failed to check embedding status');
-                        } finally {
-                          console.log('✅ Embedding check/index operation complete');
-                          // Remove from checking set
-                          setCheckingEmbeddingSet(prev => {
-                            const next = new Set(prev);
-                            next.delete(snippet.id);
-                            return next;
-                          });
-                        }
-                      }}
-                      className={`p-2 text-sm rounded transition-colors ${
-                        checkingEmbeddingSet.has(snippet.id)
-                          ? 'bg-yellow-500 text-white cursor-wait'
-                          : embeddingStatusMap[snippet.id] === true
-                          ? 'bg-green-600 text-white hover:bg-green-700' 
-                          : embeddingStatusMap[snippet.id] === false
-                          ? 'bg-gray-400 text-white hover:bg-gray-500'
-                          : 'bg-blue-500 text-white hover:bg-blue-600'
-                      }`}
-                      title={
-                        checkingEmbeddingSet.has(snippet.id)
-                          ? 'Processing...'
-                          : embeddingStatusMap[snippet.id] === true
-                          ? 'Has embeddings (click for details)'
-                          : embeddingStatusMap[snippet.id] === false
-                          ? 'No embeddings (click to index)'
-                          : 'Check embedding status (auto-index if needed)'
-                      }
-                      disabled={checkingEmbeddingSet.has(snippet.id)}
-                    >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
-                      </svg>
-                    </button>
-                    
-                    {/* Quiz Button */}
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        console.log('🧠 Quiz button clicked for snippet:', snippet.title);
-                        // Generate quiz directly from this snippet's content
-                        try {
-                          setIsGeneratingQuiz(true);
-                          
-                          const token = await getToken();
-                          if (!token) {
-                            console.error('❌ No token available');
-                            showError('Authentication required. Please sign in.');
-                            setIsGeneratingQuiz(false);
-                            return;
-                          }
-                          
-                          console.log('✅ Token obtained');
-                          
-                          // Get enabled providers from settings (empty array if none configured)
-                          // Backend will use environment providers if frontend providers are empty
-                          const enabledProviders = settings?.providers?.filter(p => p.enabled !== false) || [];
-                          
-                          if (enabledProviders.length > 0) {
-                            console.log(`✅ Using ${enabledProviders.length} frontend provider(s):`, 
-                              enabledProviders.map(p => p.type));
-                          } else {
-                            console.log('ℹ️ No frontend providers - backend will use environment providers');
-                          }
+                            
+                            console.log('✅ Token obtained');
+                            
+                            // Get enabled providers from settings (empty array if none configured)
+                            // Backend will use environment providers if frontend providers are empty
+                            const enabledProviders = settings?.providers?.filter(p => p.enabled !== false) || [];
+                            
+                            if (enabledProviders.length > 0) {
+                              console.log(`✅ Using ${enabledProviders.length} frontend provider(s):`, 
+                                enabledProviders.map(p => p.type));
+                            } else {
+                              console.log('ℹ️ No frontend providers - backend will use environment providers');
+                            }
 
-                          const content = `## ${snippet.title}\n\n${snippet.content}`;
-                          
-                          if (content.trim().length === 0) {
-                            showWarning('Snippet is empty. Please add content first.');
-                            setIsGeneratingQuiz(false);
-                            return;
-                          }
+                            const content = `## ${snippet.title}\n\n${snippet.content}`;
+                            
+                            if (content.trim().length === 0) {
+                              showWarning('Snippet is empty. Please add content first.');
+                              setIsGeneratingQuiz(false);
+                              return;
+                            }
 
-                          console.log(`🎯 Generating quiz from snippet: ${snippet.title}`);
-                          
-                          // Show toast notification that quiz generation has started
-                          showSuccess('Generating quiz...');
+                            console.log(`🎯 Generating quiz from snippet: ${snippet.title}`);
+                            
+                            // Show toast notification that quiz generation has started
+                            showSuccess('Generating quiz...');
 
-                          const enrichment = true;
-                          const startTime = Date.now();
-                          
-                          // Initialize quiz but DON'T open modal yet
-                          const quiz = {
-                            title: `Quiz: ${snippet.title}`,
-                            questions: []
-                          };
-                          
-                          // Set initial quiz state but keep modal closed
-                          setCurrentQuiz(quiz);
-                          
-                          // Generate quiz with streaming
-                          await generateQuizStreaming(
-                            content,
-                            enrichment,
-                            enabledProviders,
-                            token,
-                            (question) => {
-                              // Just update the UI state - don't save to DB yet
-                              setCurrentQuiz((prevQuiz: any) => {
-                                if (!prevQuiz) return prevQuiz;
-                                return {
-                                  ...prevQuiz,
-                                  questions: [...prevQuiz.questions, question]
-                                };
-                              });
-                            },
-                            async (questionsGenerated) => {
-                              console.log(`✅ Quiz complete: ${questionsGenerated} questions`);
-                              
-                              // Save the complete quiz to DB and set metadata
-                              await setCurrentQuiz((prevQuiz: any) => {
-                                if (prevQuiz && prevQuiz.questions.length > 0) {
-                                  quizDB.saveGeneratedQuiz(
-                                    prevQuiz.title,
-                                    [snippet.id],
-                                    prevQuiz.questions.length,
-                                    enrichment,
-                                    prevQuiz
-                                  ).then(id => {
-                                    console.log('✅ Quiz saved with ID:', id);
-                                    
-                                    // Set metadata so modal can open
-                                    setQuizMetadata({
-                                      snippetIds: [snippet.id],
-                                      startTime,
+                            const enrichment = true;
+                            const startTime = Date.now();
+                            
+                            // Initialize quiz but DON'T open modal yet
+                            const quiz = {
+                              title: `Quiz: ${snippet.title}`,
+                              questions: []
+                            };
+                            
+                            // Set initial quiz state but keep modal closed
+                            setCurrentQuiz(quiz);
+                            
+                            // Generate quiz with streaming
+                            await generateQuizStreaming(
+                              content,
+                              enrichment,
+                              enabledProviders,
+                              token,
+                              (question) => {
+                                // Just update the UI state - don't save to DB yet
+                                setCurrentQuiz((prevQuiz: any) => {
+                                  if (!prevQuiz) return prevQuiz;
+                                  return {
+                                    ...prevQuiz,
+                                    questions: [...prevQuiz.questions, question]
+                                  };
+                                });
+                              },
+                              async (questionsGenerated) => {
+                                console.log(`✅ Quiz complete: ${questionsGenerated} questions`);
+                                
+                                // Save the complete quiz to DB and set metadata
+                                await setCurrentQuiz((prevQuiz: any) => {
+                                  if (prevQuiz && prevQuiz.questions.length > 0) {
+                                    quizDB.saveGeneratedQuiz(
+                                      prevQuiz.title,
+                                      [snippet.id],
+                                      prevQuiz.questions.length,
                                       enrichment,
-                                      quizId: id
-                                    });
-                                  }).catch(err => console.error('Failed to save quiz to DB:', err));
-                                }
-                                return prevQuiz;
-                              });
-                              
-                              showSuccess(`Quiz ready with ${questionsGenerated} questions!`);
-                              setIsGeneratingQuiz(false);
-                              // Open the quiz modal now that generation is complete
-                              setShowQuizModal(true);
-                            },
-                            (error) => {
-                              console.error('Quiz generation error:', error);
-                              showError(error);
-                              setIsGeneratingQuiz(false);
-                              setShowQuizModal(false);
-                              setCurrentQuiz(null);
-                            }
-                          );
-                        } catch (error) {
-                          console.error('Failed to generate quiz:', error);
-                          showError('Failed to generate quiz');
-                          setIsGeneratingQuiz(false);
-                        }
-                      }}
-                      className="p-2 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors"
-                      title="Generate quiz from this snippet"
-                      aria-label="Generate Quiz"
-                    >
-                      <Brain className="w-5 h-5" />
-                    </button>
+                                      prevQuiz
+                                    ).then(id => {
+                                      console.log('✅ Quiz saved with ID:', id);
+                                      
+                                      // Set metadata so modal can open
+                                      setQuizMetadata({
+                                        snippetIds: [snippet.id],
+                                        startTime,
+                                        enrichment,
+                                        quizId: id
+                                      });
+                                    }).catch(err => console.error('Failed to save quiz to DB:', err));
+                                  }
+                                  return prevQuiz;
+                                });
+                                
+                                showSuccess(`Quiz ready with ${questionsGenerated} questions!`);
+                                setIsGeneratingQuiz(false);
+                                // Open the quiz modal now that generation is complete
+                                setShowQuizModal(true);
+                              },
+                              (error) => {
+                                console.error('Quiz generation error:', error);
+                                showError(error);
+                                setIsGeneratingQuiz(false);
+                                setShowQuizModal(false);
+                                setCurrentQuiz(null);
+                              }
+                            );
+                          } catch (error) {
+                            console.error('Failed to generate quiz:', error);
+                            showError('Failed to generate quiz');
+                            setIsGeneratingQuiz(false);
+                          }
+                        }}
+                        className="p-2 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
+                        title="Generate quiz from this snippet"
+                        aria-label="Generate Quiz"
+                      >
+                        <Brain className="w-5 h-5" />
+                      </button>
+                      
+                      {/* Share Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSharingSnippet(snippet);
+                        }}
+                        className="p-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                        title="Share snippet"
+                        aria-label="Share"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                      </button>
+                    </div>
                     
-                    {/* Edit Button */}
-                    <button
-                      onClick={() => handleEditSnippet(snippet)}
-                      className="p-2 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                      title="Edit snippet"
-                      aria-label="Edit"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
+                    {/* Right-aligned buttons: Index, Edit */}
+                    <div className="flex gap-2">
+                      {/* Embedding Status Button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          console.log('🔘 Embedding button clicked for snippet:', snippet.id);
+                          
+                          // Add to checking set
+                          setCheckingEmbeddingSet(prev => new Set(prev).add(snippet.id));
+                          
+                          try {
+                            console.log('📊 Checking embedding status...');
+                            const details = await getEmbeddingDetails(snippet.id);
+                            const isIndexed = details.hasEmbedding;
+                            console.log(`📊 Embedding status: ${isIndexed ? 'INDEXED' : 'NOT INDEXED'}`, details);
+                            
+                            setEmbeddingStatusMap(prev => ({
+                              ...prev,
+                              [snippet.id]: isIndexed
+                            }));
+                            
+                            if (isIndexed) {
+                              const message = `✅ Embeddings found: ${details.chunkCount} chunk${details.chunkCount !== 1 ? 's' : ''}`;
+                              showSuccess(message);
+                            } else {
+                              // Not indexed - index it now
+                              console.log('🔄 Starting indexing process for snippet:', snippet.id);
+                              showSuccess('🔄 Indexing snippet...');
+                              try {
+                                const result = await generateEmbeddings([snippet.id]);
+                                console.log('📊 Indexing result:', result);
+                                
+                                // Check status again after indexing
+                                const updatedDetails = await getEmbeddingDetails(snippet.id);
+                                console.log('📊 Updated embedding status:', updatedDetails);
+                                setEmbeddingStatusMap(prev => ({
+                                  ...prev,
+                                  [snippet.id]: updatedDetails.hasEmbedding
+                                }));
+                                
+                                if (result.embedded > 0) {
+                                  showSuccess(`✅ Snippet indexed: ${updatedDetails.chunkCount} chunk${updatedDetails.chunkCount !== 1 ? 's' : ''}`);
+                                } else if (result.failed > 0) {
+                                  showError('Failed to index snippet');
+                                } else {
+                                  console.warn('⚠️ Indexing completed but no embeddings created or failed');
+                                  showWarning('Indexing completed but status unclear');
+                                }
+                              } catch (indexError) {
+                                console.error('❌ Failed to index snippet:', indexError);
+                                showError('Failed to index snippet');
+                              }
+                            }
+                          } catch (error) {
+                            console.error('❌ Failed to check embedding status:', error);
+                            showError('Failed to check embedding status');
+                          } finally {
+                            console.log('✅ Embedding check/index operation complete');
+                            // Remove from checking set
+                            setCheckingEmbeddingSet(prev => {
+                              const next = new Set(prev);
+                              next.delete(snippet.id);
+                              return next;
+                            });
+                          }
+                        }}
+                        className={`p-2 text-sm rounded transition-colors ${
+                          checkingEmbeddingSet.has(snippet.id)
+                            ? 'bg-yellow-500 text-white cursor-wait'
+                            : embeddingStatusMap[snippet.id] === true
+                            ? 'bg-green-600 text-white hover:bg-green-700' 
+                            : embeddingStatusMap[snippet.id] === false
+                            ? 'bg-gray-400 text-white hover:bg-gray-500'
+                            : 'bg-blue-500 text-white hover:bg-blue-600'
+                        }`}
+                        title={
+                          checkingEmbeddingSet.has(snippet.id)
+                            ? 'Processing...'
+                            : embeddingStatusMap[snippet.id] === true
+                            ? 'Has embeddings (click for details)'
+                            : embeddingStatusMap[snippet.id] === false
+                            ? 'No embeddings (click to index)'
+                            : 'Check embedding status (auto-index if needed)'
+                        }
+                        disabled={checkingEmbeddingSet.has(snippet.id)}
+                      >
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/>
+                        </svg>
+                      </button>
+                      
+                      {/* Edit Button */}
+                      <button
+                        onClick={() => handleEditSnippet(snippet)}
+                        className="p-2 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        title="Edit snippet"
+                        aria-label="Edit"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2277,9 +2347,6 @@ export const SwagPage: React.FC = () => {
                     <h3 className="font-semibold text-gray-900 dark:text-white truncate">
                       {snippet.title || 'Untitled'}
                     </h3>
-                    <span className={`px-2 py-0.5 text-xs rounded-full text-white flex-shrink-0 ${getSourceBadgeColor(snippet.sourceType)}`}>
-                      {snippet.sourceType}
-                    </span>
                     {('_searchScore' in snippet) && (
                       <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 font-medium flex-shrink-0">
                         🎯 {(snippet as any)._searchScore.toFixed(3)}
@@ -2654,9 +2721,6 @@ export const SwagPage: React.FC = () => {
                   </h2>
                 )}
                 <div className="flex items-center gap-3">
-                  <span className={`px-2 py-1 text-xs rounded-full text-white ${getSourceBadgeColor(viewingSnippet.sourceType)}`}>
-                    {viewingSnippet.sourceType}
-                  </span>
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     {new Date(viewingSnippet.timestamp).toLocaleString()}
                   </span>

@@ -1186,8 +1186,8 @@ Brief answer with URLs:`;
                   : [
                       'groq:llama-3.3-70b-versatile',      // 64k TPM
                       'groq:llama-3.1-8b-instant',         // 120k TPM
-                      'groq:mixtral-8x7b-32768',           // 60k TPM
-                      'groq:llama-3.2-11b-vision-preview'  // 60k TPM
+                      'groq:meta-llama/llama-4-maverick-17b-128e-instruct',  // 6k TPM, vision
+                      'groq:meta-llama/llama-4-scout-17b-16e-instruct'       // 6k TPM, vision
                     ];
                 
                 console.log(`🔄 Model pool for load balancing: ${modelPool.join(', ')}`);

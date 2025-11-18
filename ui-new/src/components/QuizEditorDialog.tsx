@@ -278,17 +278,37 @@ const QuizEditorDialog: React.FC<QuizEditorDialogProps> = ({ quiz, onSave, onClo
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Question {currentQuestionIndex + 1} of {editedQuiz.questions.length}
               </span>
-              <select
-                value={currentQuestionIndex}
-                onChange={(e) => setCurrentQuestionIndex(parseInt(e.target.value))}
-                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-              >
-                {editedQuiz.questions.map((_, idx) => (
-                  <option key={idx} value={idx}>
-                    Question {idx + 1}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                {/* Previous Button */}
+                <button
+                  onClick={() => setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - 1))}
+                  disabled={currentQuestionIndex === 0}
+                  className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                  title="Previous question"
+                >
+                  ◀
+                </button>
+                <select
+                  value={currentQuestionIndex}
+                  onChange={(e) => setCurrentQuestionIndex(parseInt(e.target.value))}
+                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                >
+                  {editedQuiz.questions.map((_, idx) => (
+                    <option key={idx} value={idx}>
+                      Question {idx + 1}
+                    </option>
+                  ))}
+                </select>
+                {/* Next Button */}
+                <button
+                  onClick={() => setCurrentQuestionIndex(Math.min(editedQuiz.questions.length - 1, currentQuestionIndex + 1))}
+                  disabled={currentQuestionIndex === editedQuiz.questions.length - 1}
+                  className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                  title="Next question"
+                >
+                  ▶
+                </button>
+              </div>
             </div>
             <div className="flex gap-2">
               <button

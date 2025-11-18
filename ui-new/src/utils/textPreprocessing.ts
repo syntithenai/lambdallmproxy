@@ -166,3 +166,34 @@ export function detectGenderFromVoiceName(name: string): 'male' | 'female' | 'ne
   // Default to neutral if can't determine
   return 'neutral';
 }
+
+/**
+ * Extract the first N sentences from text for TTS
+ * Removes markdown formatting and handles abbreviations
+ */
+export function extractFirstSentences(text: string, count: number = 3): string {
+  // Remove markdown formatting
+  const plainText = text
+    .replace(/\*\*(.+?)\*\*/g, '$1')  // Bold
+    .replace(/\*(.+?)\*/g, '$1')      // Italic
+    .replace(/`(.+?)`/g, '$1')        // Code
+    .replace(/#+\s/g, '')             // Headers
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // Links
+  
+  // Split by sentence endings: . ! ?
+  // But preserve abbreviations like "Dr." or "U.S."
+  // Look for sentence endings followed by space and capital letter
+  const sentences = plainText
+    .split(/(?<=[.!?])\s+(?=[A-Z])/)
+    .filter(s => s.trim().length > 0);
+  
+  // If we have fewer sentences than requested, return all
+  if (sentences.length <= count) {
+    return plainText.trim();
+  }
+  
+    // Take first N sentences
+  const selected = sentences.slice(0, count).join(' ');
+  
+  return selected.trim();
+}

@@ -6,7 +6,13 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       // SECURITY: Use user-scoped storage
+      const currentUser = userStorage.getCurrentUser();
       const item = userStorage.getItem(key);
+      console.log(`💾 useLocalStorage("${key}") initializing:`, {
+        currentUser,
+        hasStoredValue: !!item,
+        willUseDefault: !item
+      });
       return item ? JSON.parse(item) : initialValue;
     } catch (error) {
       console.error(`Error loading localStorage key "${key}":`, error);
@@ -20,6 +26,12 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
       // Use the functional form of setStoredValue to ensure we always work with the latest state
       setStoredValue((currentValue) => {
         const valueToStore = value instanceof Function ? value(currentValue) : value;
+        
+        const currentUser = userStorage.getCurrentUser();
+        console.log(`💾 useLocalStorage("${key}") saving:`, {
+          currentUser,
+          valuePreview: typeof valueToStore === 'object' ? Object.keys(valueToStore as any).slice(0, 5) : valueToStore
+        });
         
         try {
           // SECURITY: Use user-scoped storage

@@ -232,13 +232,27 @@ class FallbackTTSProvider implements TTSProvider {
               console.log(`✅ FallbackTTSProvider: Using configured browser voice: ${browserVoice}`);
               fallbackOptions.voice = browserVoice;
             } else {
-              // No browser voice configured - get first available voice or use default
+              // No browser voice configured - try to find an English voice
               console.log(`🔄 FallbackTTSProvider: No browser voice configured, checking available voices...`);
               try {
                 const browserVoices = await fallback.getVoices();
                 if (browserVoices.length > 0) {
-                  console.log(`📢 FallbackTTSProvider: Using first available browser voice: ${browserVoices[0].name}`);
-                  fallbackOptions.voice = browserVoices[0].id;
+                  // Try to find an English voice first
+                  const englishVoice = browserVoices.find(v => {
+                    const nameLower = v.name.toLowerCase();
+                    return nameLower.includes('english') || 
+                           nameLower.includes('us ') || 
+                           nameLower.includes('uk ') ||
+                           nameLower.includes('en-');
+                  });
+                  
+                  if (englishVoice) {
+                    console.log(`📢 FallbackTTSProvider: Using English browser voice: ${englishVoice.name}`);
+                    fallbackOptions.voice = englishVoice.id;
+                  } else {
+                    console.log(`📢 FallbackTTSProvider: No English voice found, using first available: ${browserVoices[0].name}`);
+                    fallbackOptions.voice = browserVoices[0].id;
+                  }
                 } else {
                   console.log(`📢 FallbackTTSProvider: No voices available, will use system default`);
                   delete fallbackOptions.voice;

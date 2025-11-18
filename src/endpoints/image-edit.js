@@ -40,8 +40,7 @@ function isVisionCapableModel(modelName) {
         'gemini-2.0',       // Gemini 2.0 models have vision
         'gemini-2.5',       // Gemini 2.5 models have vision
         'gemini-pro-vision', // Legacy Gemini vision
-        'llama-3.2-11b-vision',  // Groq Llama 3.2 11B vision
-        'llama-3.2-90b-vision',  // Groq Llama 3.2 90B vision
+        'llama-3.2-11b-vision',  // Groq Llama 3.2 11B vision (deprecated)
         'llama-4-maverick',      // Llama 4 Maverick multimodal
         'llama-4-scout',         // Llama 4 Scout multimodal
         'llava',            // LLaVA vision models

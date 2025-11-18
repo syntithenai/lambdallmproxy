@@ -309,27 +309,31 @@ Generate a quiz with exactly 10 questions. Each question must test understanding
     let quiz;
     try {
         // Layer 1: Extract from tool calls (preferred)
-        if (result.tool_calls && result.tool_calls.length > 0) {
-            const toolCall = result.tool_calls[0];
-            if (toolCall.function && toolCall.function.name === 'generate_quiz') {
-                quiz = typeof toolCall.function.arguments === 'string'
-                    ? JSON.parse(toolCall.function.arguments)
-                    : toolCall.function.arguments;
+        if (result.output && result.output.length > 0) {
+            const toolCall = result.output[0];
+            if (toolCall.type === 'function_call' && toolCall.name === 'generate_quiz') {
+                quiz = typeof toolCall.arguments === 'string'
+                    ? JSON.parse(toolCall.arguments)
+                    : toolCall.arguments;
                 console.log('✅ Extracted quiz from tool call');
             }
         }
         
-        // Layer 2: Robust JSON parsing (fallback)
-        if (!quiz) {
-            const content = (result.content || result.text || '').trim();
+        // Layer 2: Robust JSON parsing from text field (fallback)
+        if (!quiz && result.text) {
+            const content = result.text.trim();
             quiz = tryParseJson(content, { logAttempts: true });
             
             if (quiz) {
-                console.log('✅ Parsed quiz using robust JSON parser');
+                console.log('✅ Parsed quiz using robust JSON parser from text field');
             }
         }
         
         if (!quiz) {
+            console.error('❌ No quiz data found in result');
+            console.error('Result keys:', Object.keys(result));
+            console.error('Result.output:', result.output);
+            console.error('Result.text length:', result.text?.length || 0);
             throw new Error('Failed to extract quiz data from response');
         }
     } catch (parseError) {

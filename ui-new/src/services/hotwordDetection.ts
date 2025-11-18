@@ -107,9 +107,28 @@ export class HotwordDetectionService {
         const lastResult = results[results.length - 1];
         const transcript = lastResult[0].transcript.toLowerCase().trim();
         
-        // Check if transcript contains the hotword
-        if (transcript.includes(this.currentHotword)) {
-          console.log('🎤 Hotword detected:', transcript);
+        // Check if transcript contains the hotword (best-effort, allow looser matches)
+        const hotwordPhrase = this.currentHotword;
+        const hotwordTokens = hotwordPhrase.split(/\s+/).filter(Boolean);
+
+        let matched = false;
+
+        // Exact phrase match is best
+        if (transcript.includes(hotwordPhrase)) {
+          matched = true;
+        } else if (hotwordTokens.length > 1) {
+          // Looser match: if the transcript contains at least one of the content words
+          // (helps in noisy environments where full phrase may not be recognized)
+          for (const token of hotwordTokens) {
+            if (token.length > 2 && transcript.includes(token)) {
+              matched = true;
+              break;
+            }
+          }
+        }
+
+        if (matched) {
+          console.log('🎤 Hotword detected (loose match):', transcript, 'hotword:', hotwordPhrase);
           this.callback?.();
         }
       };
@@ -162,6 +181,12 @@ export class HotwordDetectionService {
 
     this.isRestarting = true;
     console.log(`Speech recognition ${source}, restarting...`);
+    try {
+      // Emit a global event so UI components can react to noisy environments or frequent restarts
+      window.dispatchEvent(new CustomEvent('hotword:restart', { detail: { source } }));
+    } catch (e) {
+      // ignore
+    }
 
     // Use longer delay for errors, shorter for normal end
     const delay = source === 'error' ? 1000 : 200;
@@ -171,6 +196,11 @@ export class HotwordDetectionService {
         try {
           this.recognition.start();
           console.log('Speech recognition restarted successfully');
+          try {
+            window.dispatchEvent(new CustomEvent('hotword:restart_success', { detail: { source } }));
+          } catch (e) {
+            // ignore
+          }
         } catch (error) {
           console.error('Failed to restart speech recognition:', error);
           // If restart fails, reset the flag so we can try again later

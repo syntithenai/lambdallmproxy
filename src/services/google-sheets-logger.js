@@ -496,8 +496,8 @@ async function ensureSheetHeaders(sheetName, spreadsheetId, accessToken) {
                                     insertRes.on('data', chunk => insertData += chunk);
                                     insertRes.on('end', () => {
                                         if (insertRes.statusCode === 200) {
-                                            // Now write headers to A1:J1
-                                            const writeRange = `${sheetName}!A1:J1`;
+                                            // Now write headers to A1:N1 (14 columns)
+                                            const writeRange = `${sheetName}!A1:N1`;
                                             const writeOptions = {
                                                 hostname: 'sheets.googleapis.com',
                                                 // eslint-disable-next-line no-secrets/no-secrets

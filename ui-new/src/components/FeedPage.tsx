@@ -148,6 +148,39 @@ export default function FeedPage() {
   }, []);
 
   /**
+   * Handle feed generation request from SwagPage (via localStorage)
+   */
+  useEffect(() => {
+    const handleFeedRequest = async () => {
+      const feedRequest = localStorage.getItem('feed_generation_request');
+      if (!feedRequest) return;
+      
+      try {
+        const { searchTerms, clearExisting, fromSnippet } = JSON.parse(feedRequest);
+        console.log('🎯 Feed generation request from snippet:', { searchTerms, clearExisting, fromSnippet });
+        
+        // Clear existing items if requested
+        if (clearExisting) {
+          await clearAllItems();
+        }
+        
+        // Generate feed items with search terms
+        if (searchTerms && searchTerms.length > 0) {
+          await generateMore(searchTerms);
+        }
+        
+        // Clean up the request
+        localStorage.removeItem('feed_generation_request');
+      } catch (error) {
+        console.error('❌ Failed to process feed generation request:', error);
+        localStorage.removeItem('feed_generation_request');
+      }
+    };
+    
+    handleFeedRequest();
+  }, []); // Run once on mount
+
+  /**
    * Infinite scroll - load more when sentinel becomes visible
    */
   useEffect(() => {

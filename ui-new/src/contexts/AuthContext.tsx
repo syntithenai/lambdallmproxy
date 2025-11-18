@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthState, GoogleUser } from '../utils/auth';
 import { setCurrentUser, clearUserStorage, migrateToUserScoped, USER_SCOPED_KEYS } from '../utils/userStorage';
@@ -55,6 +55,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       isAuthenticated: isAuth
     };
   });
+
+  // CRITICAL: Set current user BEFORE first render of children
+  // useLayoutEffect runs synchronously after AuthProvider mounts but before children mount
+  // This ensures TTSProvider and other child providers can read user-scoped localStorage
+  useLayoutEffect(() => {
+    if (authState.user?.email) {
+      setCurrentUser(authState.user.email);
+      console.log('🔐 Set current user scope:', authState.user.email);
+    } else {
+      setCurrentUser(null);
+      console.log('🔐 Set current user scope: anonymous');
+    }
+  }, []); // Empty deps - only run once on mount
   
   // Check authentication state after token refresh completes
   useEffect(() => {
@@ -244,15 +257,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return token;
   }, [authState.isAuthenticated, logout]);
 
-  // Initialize user storage scope on mount
-  useEffect(() => {
-    if (authState.user?.email) {
-      setCurrentUser(authState.user.email);
-    } else {
-      setCurrentUser(null);
-    }
-  }, [authState.user]);
-
   // Cancel Google One Tap when authenticated to prevent popup spam
   useEffect(() => {
     if (authState.isAuthenticated && typeof google !== 'undefined' && google?.accounts?.id) {
@@ -265,23 +269,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [authState.isAuthenticated]);
 
-  // Automatic token validation check
+  // Auto-refresh token aggressively to keep user logged in
+  // Check every 30 seconds if token needs refresh
   useEffect(() => {
     if (!authState.isAuthenticated || !authState.accessToken) {
       return;
     }
 
-    // Check token validity every 2 minutes
-    const interval = setInterval(async () => {
+    console.log('🔄 Starting aggressive token refresh monitor (check every 30s)');
+
+    // Check immediately on mount
+    const checkAndRefresh = async () => {
       const token = await googleAuth.ensureValidToken();
       
       if (!token) {
         console.warn('⚠️ Token validation failed, logging out');
         logout();
+      } else {
+        // Update state with fresh token if it changed
+        const currentToken = googleAuth.getAccessToken();
+        if (currentToken !== authState.accessToken) {
+          const profile = googleAuth.getUserProfile();
+          if (profile) {
+            console.log('✅ Token refreshed, updating state');
+            setAuthState(prev => ({
+              ...prev,
+              accessToken: currentToken
+            }));
+          }
+        }
       }
-    }, 2 * 60 * 1000); // Check every 2 minutes
+    };
 
-    return () => clearInterval(interval);
+    // Check immediately
+    checkAndRefresh();
+
+    // Check every 30 seconds for aggressive refresh
+    const interval = setInterval(checkAndRefresh, 30 * 1000); // 30 seconds
+
+    return () => {
+      console.log('🛑 Stopping token refresh monitor');
+      clearInterval(interval);
+    };
   }, [authState.isAuthenticated, authState.accessToken, logout]);
 
   return (

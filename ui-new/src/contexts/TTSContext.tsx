@@ -27,8 +27,24 @@ import { extractSpeakableText } from '../utils/textPreprocessing';
 const TTSContext = createContext<TTSContextValue | undefined>(undefined);
 
 export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
-  const { settings } = useSettings();
-  const { ttsCapabilities } = useUsage(); // Get backend TTS capabilities
+  // Safely get settings - handle case where context might not be available yet
+  let settings = null;
+  let ttsCapabilities = null;
+  
+  try {
+    const settingsContext = useSettings();
+    settings = settingsContext.settings;
+  } catch (error) {
+    console.warn('TTSProvider: SettingsContext not available yet, using defaults');
+  }
+  
+  try {
+    const usageContext = useUsage();
+    ttsCapabilities = usageContext.ttsCapabilities;
+  } catch (error) {
+    console.warn('TTSProvider: UsageContext not available yet, using defaults');
+  }
+  
   const [ttsSettings, setTTSSettings] = useLocalStorage<TTSSettings>('tts_settings', DEFAULT_TTS_SETTINGS);
   
   // Helper to create clean stopped state
@@ -138,6 +154,53 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
       setTimeout(() => window.speechSynthesis.cancel(), 10);
       setTimeout(() => window.speechSynthesis.cancel(), 100);
     }
+    
+    // CRITICAL: Monitor audio elements for 'ended' event to immediately update isPlaying state
+    // This ensures the stop button disappears as soon as audio finishes, even if onEnd callbacks are delayed
+    const handleAudioEnded = (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      console.log('🎵 TTSContext: Audio element ended event detected', {
+        src: audio.src?.substring(0, 50),
+        currentTime: audio.currentTime,
+        duration: audio.duration
+      });
+      
+      // IMMEDIATE state update - don't wait for other audio checks
+      console.log('🛑 TTSContext: Immediately setting isPlaying=false on audio ended');
+      setState(prev => {
+        if (prev.isPlaying) {
+          console.log('🛑 TTSContext: isPlaying was true, setting to false NOW');
+          return { ...prev, isPlaying: false, currentText: null, activeProvider: null };
+        }
+        return prev;
+      });
+      
+      // Double-check after a small delay in case multiple audio elements
+      setTimeout(() => {
+        const allAudio = document.querySelectorAll('audio');
+        const anyPlaying = Array.from(allAudio).some(a => !a.paused && a.currentTime > 0 && a.currentTime < a.duration);
+        
+        if (!anyPlaying) {
+          console.log('🛑 TTSContext: Confirmed no audio playing after delay check');
+          setState(prev => {
+            if (prev.isPlaying) {
+              return { ...prev, isPlaying: false, currentText: null, activeProvider: null };
+            }
+            return prev;
+          });
+        } else {
+          console.log('⚠️ TTSContext: Other audio still playing, reverting isPlaying=true');
+          setState(prev => ({ ...prev, isPlaying: true }));
+        }
+      }, 50);
+    };
+    
+    // Listen for all audio 'ended' events
+    document.addEventListener('ended', handleAudioEnded, true); // Use capture phase
+    
+    return () => {
+      document.removeEventListener('ended', handleAudioEnded, true);
+    };
   }, []); // Run once on mount
 
   // Initialize providers when settings or backend capabilities change
@@ -379,14 +442,79 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
     // Get the voice for the current provider
     const currentVoice = state.providerVoices[state.currentProvider] || undefined;
 
+    console.log('🏗️ DEBUG: Creating speakOptions object NOW');
     const speakOptions: SpeakOptions = {
+      // Spread original options FIRST (so wrappers can override)
+      ...options,
+      // Then set specific values that should always be from state/current config
       voice: currentVoice,
       rate: state.rate,
       volume: state.volume,
+      // Finally, set wrapper callbacks that MUST override any passed callbacks
       onStart: () => {
+        console.log('🎬 DEBUG: TTSContext speakOptions.onStart wrapper EXECUTING NOW');
+        // Clear fallback timeout since speech has actually started
+        console.log('🎬 TTSContext speak onStart callback - speech started, clearing fallback timeout');
+        console.log('   activeProviderRef.current:', activeProviderRef.current?.name);
+        console.log('   Window.speechSynthesis.speaking:', window.speechSynthesis?.speaking);
+        if (fallbackTimeoutId) {
+          clearTimeout(fallbackTimeoutId);
+          setFallbackTimeoutId(null);
+        }
+        
+        // Start polling to detect when speech finishes (backup for unreliable onend events)
+        // This is especially important for Web Speech API which can fail to fire onend
+        let hasCalledOnEnd = false; // Flag to ensure onEnd is only called once
+        
+        // Wait 1 second before starting to poll to give speech time to actually start
+        setTimeout(() => {
+          const pollInterval = setInterval(() => {
+            // Check if using browser provider
+            const activeName = activeProviderRef.current?.name?.toLowerCase() || '';
+            const isBrowserProvider = activeName.includes('browser') || activeName.includes('speech');
+            
+            if (isBrowserProvider && window.speechSynthesis) {
+              const stillSpeaking = window.speechSynthesis.speaking;
+              console.log(`🔄 Polling speechSynthesis.speaking: ${stillSpeaking}`);
+              
+              if (!stillSpeaking && !hasCalledOnEnd) {
+                console.log('🎤 Polling detected speech finished - setting isPlaying=false IMMEDIATELY');
+                hasCalledOnEnd = true;
+                clearInterval(pollInterval);
+                
+                // Set state SYNCHRONOUSLY to ensure immediate update
+                setState(prev => {
+                  console.log('🎤 Polling: prev.isPlaying was:', prev.isPlaying);
+                  if (prev.isPlaying) {
+                    const newState = { ...prev, isPlaying: false, currentText: null, activeProvider: null };
+                    console.log('🎤 Polling: Setting new state with isPlaying=false');
+                    return newState;
+                  }
+                  console.log('🎤 Polling: isPlaying was already false, no change');
+                  return prev;
+                });
+                
+                // Verify the state was updated
+                setTimeout(() => {
+                  console.log('🎤 Polling: Verifying state update after 50ms...');
+                }, 50);
+                
+                // Call onEnd callback AFTER state update
+                console.log('🎤 Polling: About to call options.onEnd?.()');
+                options.onEnd?.();
+              }
+            } else {
+              // Not browser provider, stop polling
+              clearInterval(pollInterval);
+            }
+          }, 500); // Poll every 500ms
+          
+          // Stop polling after 60 seconds max to prevent memory leaks
+          setTimeout(() => clearInterval(pollInterval), 60000);
+        }, 1000); // Wait 1 second before starting to poll
+        
         // When speech ACTUALLY starts, update the activeProvider with the REAL provider being used
         // This handles FallbackTTSProvider fallback resolution
-        console.log('TTSContext speak onStart callback - speech started');
         console.log('🎚️ TTSContext: Current rate and volume from state:', {
           'state.rate': state.rate,
           'state.volume': state.volume,
@@ -426,6 +554,11 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
         options.onStart?.();
       },
       onEnd: () => {
+        console.log('📢 DEBUG: TTSContext speakOptions.onEnd wrapper IS EXECUTING NOW');
+        console.log('📢 TTSContext speak onEnd callback triggered');
+        console.log('   activeProviderRef.current:', activeProviderRef.current?.name);
+        console.log('   Window.speechSynthesis.speaking:', window.speechSynthesis?.speaking);
+        console.log('   isStoppingIntentionally.current:', isStoppingIntentionally.current);
         console.log('TTSContext speak onEnd callback - checking if intentional stop:', isStoppingIntentionally.current);
         
         // If this was an intentional stop, don't call the user's onEnd callback
@@ -475,8 +608,7 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
         activeProviderRef.current = null;
         options.onError?.(error);
       },
-      onBoundary: options.onBoundary,
-      ...options
+      onBoundary: options.onBoundary
     };
 
     // Try each provider in the fallback hierarchy
@@ -527,6 +659,19 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
         // The actual provider will be detected in the onStart callback
         // (after FallbackTTSProvider resolves which provider it's actually using)
+        
+        console.log('🔍 TTSContext: About to call provider.speak() with speakOptions:', {
+          hasOnStart: !!speakOptions.onStart,
+          hasOnEnd: !!speakOptions.onEnd,
+          hasOnError: !!speakOptions.onError,
+          rate: speakOptions.rate,
+          volume: speakOptions.volume,
+          speakOptionsObjId: (speakOptions as any)._debugId || 'no-id'
+        });
+        
+        // Add a debug marker to track this specific object
+        (speakOptions as any)._debugId = `speakOptions_${Date.now()}`;
+        console.log('🏷️ DEBUG: Tagged speakOptions with ID:', (speakOptions as any)._debugId);
         
         await provider.speak(speakableText, speakOptions);
         
@@ -686,15 +831,15 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
       };
       
       // Pre-generate first chunk ONLY (sequential, not parallel)
-      // If this fails, we want to know immediately before starting playback
+      // If this fails, we'll just play without pre-generation (slower but works)
       try {
         if (sentenceChunks.length > 0) {
           await pregenerateChunk(0);
         }
       } catch (error) {
-        console.error(`❌ TTS: Pre-generation failed for first chunk:`, error);
-        // Re-throw to trigger fallback provider immediately
-        throw error;
+        console.warn(`⚠️ TTS: Pre-generation failed for first chunk, will play without buffering:`, error);
+        // Don't re-throw - just continue without pre-generation
+        // Browser Speech doesn't support pre-generation anyway
       }
       
       for (let chunkIndex = 0; chunkIndex < sentenceChunks.length; chunkIndex++) {
@@ -888,6 +1033,13 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
               
               // First chunk starting - detect actual provider being used and clear loading
               if (chunkIndex === 0) {
+                // Clear fallback timeout since speech has actually started
+                console.log('TTS: First chunk started - clearing fallback timeout');
+                if (fallbackTimeoutId) {
+                  clearTimeout(fallbackTimeoutId);
+                  setFallbackTimeoutId(null);
+                }
+                
                 setState(prev => ({ ...prev, isLoadingAudio: false }));
                 
                 if ('getActiveProviderName' in provider && typeof (provider as any).getActiveProviderName === 'function') {
@@ -970,13 +1122,19 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
   // All chunks completed successfully
     console.log('TTS: All chunks played successfully');
   chunkedPlaybackState.current = null;
+  // Clear fallback timeout
+  if (fallbackTimeoutId) {
+    console.log('TTS: All chunks complete - clearing fallback timeout');
+    clearTimeout(fallbackTimeoutId);
+    setFallbackTimeoutId(null);
+  }
   // Clear refs for audio buffer and generation rates (revoke object URLs)
   try { revokeAndClearAudioBuffer(currentAudioBufferRef.current); } catch (e) { void e; }
   currentAudioBufferRef.current = null;
   generationRatesRef.current = null;
   setState(prev => ({ ...prev, ...createStoppedState() }));
   options.onEnd?.();
-  }, [state, providerFactory]);
+  }, [state, providerFactory, fallbackTimeoutId, setFallbackTimeoutId]);
 
   const stop = useCallback(() => {
     console.log('🛑 TTSContext.stop() called - INTENTIONAL STOP');
@@ -1069,8 +1227,21 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
         console.log('TTSContext.stop() - skipping duplicate stop call (same provider):', provider?.name);
       }
       
-      return { ...prev, isPlaying: false, currentText: null, activeProvider: null, chunks: [], currentChunkIndex: -1, totalChunks: 0 };
+      const newState = { ...prev, isPlaying: false, currentText: null, activeProvider: null, chunks: [], currentChunkIndex: -1, totalChunks: 0 };
+      console.log('TTSContext.stop() - setting isPlaying=false, new state:', newState);
+      return newState;
     });
+    
+    // Force a second state update to ensure React re-renders (workaround for batching)
+    setTimeout(() => {
+      setState(prev => {
+        if (prev.isPlaying) {
+          console.warn('⚠️ TTSContext.stop() - isPlaying was still true after 100ms, forcing false');
+          return { ...prev, isPlaying: false, currentText: null, activeProvider: null };
+        }
+        return prev;
+      });
+    }, 100);
     
     // Clear active provider ref
     activeProviderRef.current = null;
@@ -1375,11 +1546,9 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const setRate = useCallback((rate: number) => {
     console.log(`🎚️ TTSContext.setRate(${rate})`);
     
-    setState(prev => {
-      console.log(`   - prev.isPlaying: ${prev.isPlaying}`);
-      return { ...prev, rate };
-    });
+    // Update settings (which will trigger useEffect to update state)
     setTTSSettings(prev => ({ ...prev, rate }));
+    
     // Update refs for long-running playback loops
     const oldRate = currentRateRef.current;
     currentRateRef.current = rate;
@@ -1417,10 +1586,7 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const setVolume = useCallback((volume: number) => {
     console.log(`🔊 TTSContext.setVolume(${volume})`);
     
-    setState(prev => {
-      console.log(`   - prev.isPlaying: ${prev.isPlaying}`);
-      return { ...prev, volume };
-    });
+    // Update settings (which will trigger useEffect to update state)
     setTTSSettings(prev => ({ ...prev, volume }));
     
     // Apply real-time if playing - check via ref since it's more current than closure

@@ -10,7 +10,7 @@ import { useSwag } from '../contexts/SwagContext';
 import { useSwipeGesture } from '../hooks/useSwipeGesture';
 import { useToast } from './ToastManager';
 import { ReadButton } from './ReadButton';
-import FeedShareDialog from './FeedShareDialog';
+import SnippetShareDialog from './SnippetShareDialog';
 import type { FeedItem } from '../types/feed';
 import { feedDB } from '../db/feedDb';
 import { 
@@ -748,12 +748,38 @@ Please use this article as context to answer the user's questions. You can provi
         </div>
       )}
 
-      {/* Share Dialog */}
-      <FeedShareDialog
-        isOpen={showShareDialog}
-        onClose={() => setShowShareDialog(false)}
-        item={item}
-      />
+      {/* Share Dialog - Convert feed item to snippet format */}
+      {showShareDialog && (
+        <SnippetShareDialog
+          snippetId={item.id}
+          content={(() => {
+            // Build complete content with image, mnemonic, and expanded content
+            let fullContent = '';
+            
+            // Add image if available (prefer imageBase64, fallback to image URL)
+            if (item.imageBase64 || item.image) {
+              const imageUrl = item.imageBase64 || item.image;
+              const altText = item.title || 'Feed item image';
+              fullContent += `![${altText}](${imageUrl})\n\n`;
+            }
+            
+            // Add main content
+            fullContent += item.expandedContent || item.content;
+            
+            // Add mnemonic if available
+            if (item.mnemonic) {
+              fullContent += `\n\n**Memory Aid:** ${item.mnemonic}`;
+            }
+            
+            return fullContent;
+          })()}
+          title={item.title}
+          tags={item.topics || []}
+          sourceType="assistant"
+          timestamp={new Date(item.createdAt).getTime()}
+          onClose={() => setShowShareDialog(false)}
+        />
+      )}
     </div>
   );
 }

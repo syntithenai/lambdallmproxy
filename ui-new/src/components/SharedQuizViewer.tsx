@@ -16,12 +16,14 @@ import { quizDB } from '../db/quizDb';
 import { useAuth } from '../contexts/AuthContext';
 import { useProject } from '../contexts/ProjectContext';
 import { googleAuth } from '../services/googleAuth';
+import { useToast } from './ToastManager';
 
 export default function SharedQuizViewer() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { isAuthenticated, getToken } = useAuth();
   const { getCurrentProjectId } = useProject();
+  const { showSuccess } = useToast();
   const [sharedQuiz, setSharedQuiz] = useState<SharedQuiz | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,15 +196,11 @@ export default function SharedQuizViewer() {
         
         if (quizId) {
           console.log('✅ Auto-saved quiz to collection');
-          setSaved(true); // Show "Saved" indicator
-          
-          // Hide "Saved" indicator after 3 seconds
-          setTimeout(() => {
-            setSaved(false);
-          }, 3000);
+          // Show toast notification instead of button state
+          showSuccess('Quiz saved to your collection!');
         } else {
           console.log('ℹ️ Quiz already exists in collection, skipping save');
-          // Don't show saved indicator for duplicates
+          // Don't show notification for duplicates
         }
       } catch (error) {
         console.error('Failed to auto-save quiz:', error);
@@ -213,7 +211,7 @@ export default function SharedQuizViewer() {
     };
     
     autoSaveQuiz();
-  }, [currentQuiz, isAuthenticated, autoSaved, isSaving, getCurrentProjectId]);
+  }, [currentQuiz, isAuthenticated, autoSaved, isSaving, getCurrentProjectId, showSuccess]);
 
   const handleGrantDriveAccess = async () => {
     try {
@@ -308,12 +306,18 @@ export default function SharedQuizViewer() {
             This shared quiz is stored in Google Drive and requires you to sign in to view it.
           </p>
           <button
-            onClick={() => {
-              // Store current location for post-login redirect
-              sessionStorage.setItem('auth_redirect', window.location.hash);
-              // Flag that we need Drive access for Google Docs shares
-              sessionStorage.setItem('request_drive_access', 'true');
-              navigate('/login');
+            onClick={async () => {
+              try {
+                // Store current location for post-quiz-save redirect
+                sessionStorage.setItem('auth_redirect', window.location.hash.slice(1) || '/');
+                // Flag that we need Drive access for Google Docs shares
+                sessionStorage.setItem('request_drive_access', 'true');
+                // Trigger Google OAuth directly (no redirect to /login page)
+                await googleAuth.signInWithDriveAccess();
+                // Page will reload and quiz will auto-save via useEffect
+              } catch (error) {
+                console.error('❌ Sign-in failed:', error);
+              }
             }}
             className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mb-3"
           >
@@ -391,40 +395,26 @@ export default function SharedQuizViewer() {
             </div>
 
             <div>
-              {isAuthenticated ? (
+              {/* Only show Login button when not authenticated */}
+              {!isAuthenticated && (
                 <button
-                  onClick={handleSaveToCollection}
-                  disabled={isSaving || saved}
-                  className={`px-4 py-2 rounded-md transition-colors text-sm font-medium flex items-center gap-2 ${
-                    saved
-                      ? 'bg-green-600 text-white'
-                      : isSaving
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
+                  onClick={async () => {
+                    try {
+                      // Store current URL for redirect after login
+                      sessionStorage.setItem('auth_redirect', window.location.hash.slice(1) || '/');
+                      // Trigger Google OAuth directly (no redirect to /login page)
+                      await googleAuth.signIn();
+                      // Auto-save will trigger automatically via useEffect when isAuthenticated becomes true
+                    } catch (error) {
+                      console.error('❌ Sign-in failed:', error);
+                    }
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium flex items-center gap-2"
                 >
-                  {saved ? (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Saved!
-                    </>
-                  ) : isSaving ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      Saving...
-                    </>
-                  ) : (
-                    'Save to Collection'
-                  )}
-                </button>
-              ) : (
-                <button
-                  onClick={() => navigate('/login?redirect=' + encodeURIComponent(window.location.href))}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
-                >
-                  Login
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                  </svg>
+                  Login with Google
                 </button>
               )}
             </div>

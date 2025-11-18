@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -79,6 +79,9 @@ function AppContent() {
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Track which user we've loaded settings for to prevent duplicate loads
+  const loadedUserRef = useRef<string | null>(null);
   const [showMCPDialog, setShowMCPDialog] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
@@ -249,6 +252,36 @@ function AppContent() {
     ask_llm: false, // Recursive LLM agent - DISABLED by default due to high token usage
     generate_reasoning_chain: false // Deep reasoning chains - DISABLED by default due to EXTREME token usage
   });
+  
+  // Debug: Log enabled tools state on mount and changes
+  useEffect(() => {
+    console.log('🔧 App.tsx enabledTools state:', enabledTools);
+  }, [enabledTools]);
+  
+  // CRITICAL: Reload enabled tools when user authentication changes
+  // This fixes the race condition where enabledTools initializes before user scope is set
+  useEffect(() => {
+    if (user?.email && loadedUserRef.current !== user.email) {
+      console.log('🔄 User authenticated, reloading enabled tools from user-scoped storage');
+      loadedUserRef.current = user.email; // Mark this user as loaded
+      
+      // Directly access user-scoped key to bypass the race condition
+      const userScopedKey = `user:${user.email}:chat_enabled_tools`;
+      const storedValue = localStorage.getItem(userScopedKey);
+      if (storedValue) {
+        try {
+          const parsed = JSON.parse(storedValue);
+          console.log('✅ Reloaded user-scoped enabled tools:', parsed);
+          setEnabledTools(parsed);
+        } catch (error) {
+          console.error('Failed to parse user-scoped enabled tools:', error);
+        }
+      } else {
+        console.log('ℹ️ No user-scoped enabled tools found, using defaults');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email]); // Only re-run when user email changes (setEnabledTools is stable)
   
   // NOTE: search_knowledge_base is now independent from the local RAG system
   // Local RAG uses the "Use Knowledge Base Context" checkbox in chat

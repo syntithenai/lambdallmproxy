@@ -718,39 +718,64 @@ class GoogleAuthService {
   }
 
   /**
-   * Check if token is expiring soon (within 5 minutes)
+   * Check if token is expiring soon (within 10 minutes for aggressive refresh)
    */
   isTokenExpiringSoon(): boolean {
     const expirationStr = localStorage.getItem(TOKEN_KEYS.TOKEN_EXPIRATION);
     if (!expirationStr) return true; // Assume expiring if no expiration stored
 
     const expiration = parseInt(expirationStr, 10);
-    const fiveMinutes = 5 * 60 * 1000;
-    return Date.now() >= (expiration - fiveMinutes);
+    const tenMinutes = 10 * 60 * 1000; // Refresh when 10 minutes left (more aggressive)
+    return Date.now() >= (expiration - tenMinutes);
   }
 
   /**
    * Refresh access token (if refresh token available)
+   * Uses silent refresh to avoid disrupting the user
    */
   async refreshToken(): Promise<boolean> {
-    const refreshToken = localStorage.getItem(TOKEN_KEYS.REFRESH_TOKEN);
-    if (!refreshToken) {
-      console.warn('⚠️ No refresh token available');
-      return false;
-    }
-
+    console.log('🔄 Refreshing access token silently...');
+    
     try {
-      console.log('🔄 Refreshing access token...');
-      
-      // Note: Google Identity Services doesn't directly support refresh
-      // We'll need to prompt for re-auth
-      // In a production app, you'd use a backend to refresh tokens
-      
-      console.warn('⚠️ Token refresh requires re-authentication');
-      await this.signIn();
-      return true;
+      if (!this.tokenClient) {
+        console.warn('⚠️ Token client not initialized');
+        return false;
+      }
+
+      // Return a promise that resolves when token is refreshed
+      return new Promise((resolve) => {
+        // Store original callback
+        const originalCallback = this.tokenClient.callback;
+        
+        // Override callback temporarily to handle refresh
+        this.tokenClient.callback = (response: TokenResponse) => {
+          // Call the original handler
+          this.handleTokenResponse(response).then(() => {
+            console.log('✅ Token refreshed silently');
+            resolve(true);
+          }).catch((error) => {
+            console.error('❌ Token refresh failed:', error);
+            resolve(false);
+          }).finally(() => {
+            // Restore original callback
+            this.tokenClient.callback = originalCallback;
+          });
+        };
+        
+        // Request new token silently (no user interaction)
+        this.tokenClient.requestAccessToken({ 
+          prompt: '' // Empty string = silent refresh
+        });
+        
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          console.warn('⚠️ Token refresh timeout');
+          this.tokenClient.callback = originalCallback;
+          resolve(false);
+        }, 10000);
+      });
     } catch (error) {
-      console.error('Failed to refresh token:', error);
+      console.error('❌ Token refresh error:', error);
       return false;
     }
   }
@@ -766,7 +791,11 @@ class GoogleAuthService {
 
     if (this.isTokenExpiringSoon()) {
       console.log('⚠️ Token expiring soon, refreshing...');
-      await this.refreshToken();
+      const refreshed = await this.refreshToken();
+      if (!refreshed) {
+        console.warn('⚠️ Token refresh failed - user may need to re-authenticate');
+        return null;
+      }
     }
 
     return this.getAccessToken();

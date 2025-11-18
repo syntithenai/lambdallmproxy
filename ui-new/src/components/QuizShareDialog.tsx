@@ -319,29 +319,17 @@ const QuizShareDialog: React.FC<QuizShareDialogProps> = ({
             </p>
           </div>
 
-          {/* QR Code - Only show if URL is short enough */}
-          <div className="flex flex-col items-center">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Scan with Mobile Device
-            </label>
-            {shareUrl.length > 2000 ? (
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg text-center">
-                <svg className="w-12 h-12 mx-auto mb-2 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
-                  URL too long for QR code
-                </p>
-                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                  Use the "Copy" button above to share the link
-                </p>
-              </div>
-            ) : (
+          {/* QR Code - Only show if URL is short enough for QR codes */}
+          {shareUrl.length <= 2000 && (
+            <div className="flex flex-col items-center">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                Scan with Mobile Device
+              </label>
               <div className="p-4 bg-white rounded-lg border border-gray-200">
                 <QRCodeSVG value={shareUrl} size={200} level="L" />
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Share Buttons */}
           <div>

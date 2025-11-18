@@ -252,6 +252,13 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Periodic garbage collection of orphaned images
   useEffect(() => {
     if (!isLoaded) return;
+    
+    // SAFETY: Only run GC if we have snippets loaded
+    // This prevents accidental deletion when data hasn't loaded yet
+    if (allSnippets.length === 0) {
+      console.log(`🗑️ Skipping garbage collection - no snippets loaded yet`);
+      return;
+    }
 
     // Run garbage collection every 5 minutes
     const gcInterval = setInterval(async () => {
@@ -272,7 +279,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }, 5 * 60 * 1000); // 5 minutes
 
-    // Also run on mount after a short delay
+    // Also run on mount after a longer delay to ensure all snippets are loaded
     const initialGC = setTimeout(async () => {
       try {
         console.log(`🗑️ [Initial GC] Running with ${allSnippets.length} snippets`);
@@ -289,7 +296,7 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         console.error('Failed to run initial garbage collection:', error);
       }
-    }, 30000); // 30 seconds after load
+    }, 60000); // 60 seconds after load (increased from 30 for safety)
 
     return () => {
       clearInterval(gcInterval);

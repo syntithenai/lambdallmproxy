@@ -40,7 +40,9 @@ function getScopedKey(key: string): string {
  */
 export function getItem(key: string): string | null {
   const scopedKey = getScopedKey(key);
-  return localStorage.getItem(scopedKey);
+  const value = localStorage.getItem(scopedKey);
+  console.log(`📖 userStorage.getItem("${key}") → scopedKey: "${scopedKey}", hasValue: ${!!value}`);
+  return value;
 }
 
 /**
@@ -48,6 +50,7 @@ export function getItem(key: string): string | null {
  */
 export function setItem(key: string, value: string): void {
   const scopedKey = getScopedKey(key);
+  console.log(`💾 userStorage.setItem("${key}") → scopedKey: "${scopedKey}"`);
   localStorage.setItem(scopedKey, value);
 }
 

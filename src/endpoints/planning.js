@@ -306,7 +306,7 @@ async function generatePlan(query, providers = {}, requestedModel = null, eventC
                 
                 // Always prefer stable models for planning - avoid known problematic models
                 const problematicModels = ['llama-3.3-70b-versatile'];
-                const preferredModels = ['llama-3.1-70b-versatile', 'mixtral-8x7b-32768', 'llama-3.1-8b-instant'];
+                const preferredModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'meta-llama/llama-4-maverick-17b-128e-instruct'];
                 
                 // Check both name and id properties for model identification
                 const currentModelName = selectedModel.name || selectedModel.id;

@@ -12,7 +12,6 @@ import { FileText, Link as LinkIcon, ExternalLink } from 'lucide-react';
 import { createSnippetShareData, generateSnippetShareUrl } from '../utils/snippetShareUtils';
 import { estimateCompressedSize } from '../utils/shareUtils';
 import { createPublicShareDocument, requestGoogleAuth, removePublicSharing } from '../utils/googleDocs';
-import { LengthWarningBanner } from './LengthWarningBanner';
 import { useSwag } from '../contexts/SwagContext';
 import { useToast } from './ToastManager';
 import { 
@@ -32,6 +31,31 @@ interface SnippetShareDialogProps {
   sharedGoogleDocId?: string;  // Existing Google Doc ID if previously shared
   sharedGoogleDocUrl?: string; // Existing Google Doc URL if previously shared
   onClose: () => void;
+}
+
+// Error boundary class to catch QR code render errors (some payloads are too large)
+class QRRenderErrorBoundary extends React.Component<{children: React.ReactNode, fallback?: React.ReactNode}, {hasError: boolean}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any, info: any) {
+    // Log to console for diagnostics
+    console.error('An error occurred in the <QRCodeSVG> component.', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+          <p className="text-sm text-yellow-800 dark:text-yellow-200">QR code cannot be generated for this content.</p>
+        </div>
+      );
+    }
+    return this.props.children as React.ReactElement;
+  }
 }
 
 const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
@@ -58,6 +82,31 @@ const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
   const { updateSnippet } = useSwag();
   const { showSuccess, showError } = useToast();
 
+  // Error boundary class to catch QR code render errors (some payloads are too large)
+  class QRRenderErrorBoundary extends React.Component<{children: React.ReactNode, fallback?: React.ReactNode}, {hasError: boolean}> {
+    constructor(props: any) {
+      super(props);
+      this.state = { hasError: false };
+    }
+    static getDerivedStateFromError() {
+      return { hasError: true };
+    }
+    componentDidCatch(error: any, info: any) {
+      // Log to console for diagnostics
+      console.error('An error occurred in the <QRCodeSVG> component.', error, info);
+    }
+    render() {
+      if (this.state.hasError) {
+        return this.props.fallback || (
+          <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+            <p className="text-sm text-yellow-800 dark:text-yellow-200">QR code cannot be generated for this content.</p>
+          </div>
+        );
+      }
+      return this.props.children as React.ReactElement;
+    }
+  }
+
   // Load existing shared document on mount
   useEffect(() => {
     const existing = getSharedDocument('snippet', snippetId);
@@ -79,8 +128,8 @@ const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
         const { imageStorage } = await import('../utils/imageStorage');
         const contentWithImages = await imageStorage.processContentForDisplay(content);
         
-        // Create compressed share data with embedded images
-        const compressed = await createSnippetShareData(snippetId, content, title, tags, sourceType);
+        // Create compressed share data WITH embedded images (preserves full fidelity)
+        const compressed = await createSnippetShareData(snippetId, content, title, tags, sourceType, true);
         const url = generateSnippetShareUrl(compressed);
         setShareUrl(url);
         
@@ -104,6 +153,28 @@ const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
     
     generateShareData();
   }, [snippetId, content, title, tags, sourceType]);
+
+  // Utility: decide if it's safe to render a QR code for the given shareUrl
+  const isSafeForQRCode = (url: string | null | undefined) => {
+    if (!url) return false;
+    try {
+      // Quick checks to avoid rendering QR codes for embedded/base64 images or very large payloads
+      const lower = url.toLowerCase();
+      const hasEmbeddedImage = lower.includes('data:image') || lower.includes('base64,') || lower.includes('/samples/') || lower.includes('swag-image');
+      if (hasEmbeddedImage) return false;
+
+      // Use byte size (Blob) instead of character length for a conservative estimate
+      const bytes = new Blob([url]).size;
+      const QR_MAX_BYTES = 1200; // conservative limit to avoid qrcode lib failures
+      return bytes <= QR_MAX_BYTES;
+    } catch (err) {
+      // If anything goes wrong, be conservative and avoid rendering QR
+      return false;
+    }
+  };
+
+  // Determine QR safety once per render
+  const canRenderQR = isSafeForQRCode(shareUrl);
 
   const handleCreateGoogleDoc = async () => {
     if (googleDocsUrl || creatingGoogleDoc) return;
@@ -304,15 +375,6 @@ const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Size Warning Banner */}
-          {sizeEstimate && (
-            <LengthWarningBanner
-              compressedSize={sizeEstimate.compressedSize}
-              percentOfLimit={sizeEstimate.percentOfLimit}
-              shouldForceGoogleDocs={sizeEstimate.shouldForceGoogleDocs}
-            />
-          )}
-
           {/* Mode Switcher (only show if not forced to Google Docs and not too large for URL) */}
           {sizeEstimate && !sizeEstimate.shouldForceGoogleDocs && sizeEstimate.compressedSize <= 8200 && (
             <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
@@ -402,29 +464,33 @@ const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
                 </p>
               </div>
 
-              {/* QR Code */}
-              <div className="flex flex-col items-center">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                  Scan with Mobile Device
-                </label>
-                {shareUrl.length > 2953 ? (
-                  <div className="p-4 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg text-center">
-                    <svg className="w-12 h-12 mx-auto mb-2 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
-                      URL too long for QR code
-                    </p>
-                    <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                      Use the "Copy" button above to share the link
-                    </p>
-                  </div>
+              {/* QR Code - render only when it's safe (not embedded images and not too large) */}
+              {shareUrl && shareUrl.length > 0 && (
+                canRenderQR ? (
+                  <QRRenderErrorBoundary
+                    fallback={(
+                      <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                        <p className="text-sm text-yellow-800 dark:text-yellow-200">QR code could not be generated for this content.</p>
+                      </div>
+                    )}
+                  >
+                    <div className="flex flex-col items-center">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Scan with Mobile Device
+                      </label>
+                      <div className="p-4 bg-white rounded-lg border border-gray-200">
+                        <QRCodeSVG value={shareUrl} size={200} level="M" />
+                      </div>
+                    </div>
+                  </QRRenderErrorBoundary>
                 ) : (
-                  <div className="p-4 bg-white rounded-lg border border-gray-200">
-                    <QRCodeSVG value={shareUrl} size={200} level="M" />
+                  <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                      URL is too long or contains embedded images and cannot be represented as a QR code ({shareUrl.length.toLocaleString()} characters). Use the copy button or social sharing instead.
+                    </p>
                   </div>
-                )}
-              </div>
+                )
+              )}
             </>
           )}
 

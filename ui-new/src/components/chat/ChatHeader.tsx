@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Share2 } from 'lucide-react';
+import { Share2, Brain, Rss } from 'lucide-react';
 
 interface ChatHeaderProps {
   systemPrompt: string;
@@ -13,6 +13,8 @@ interface ChatHeaderProps {
   onToggleSnippetsPanel: () => void;
   onShowExamplesModal: () => void;
   onShowShareDialog: () => void;
+  onGenerateQuiz?: () => void;
+  onGenerateFeed?: () => void;
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -25,12 +27,14 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onToggleSnippetsPanel,
   onShowExamplesModal,
   onShowShareDialog,
+  onGenerateQuiz,
+  onGenerateFeed,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   return (
-    <div className="flex flex-wrap items-center gap-2 md:px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+    <div className="flex flex-wrap items-center justify-between gap-2 md:px-4 py-2 border-b border-gray-200 dark:border-gray-700">
       <div className="flex flex-wrap gap-2 flex-1">
         <button 
           onClick={onNewChat} 
@@ -100,6 +104,31 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               {selectedSnippetIds.size}
             </span>
           )}
+        </button>
+      </div>
+      
+      {/* Quiz and Feed buttons - aligned to the right */}
+      <div className="flex gap-2">
+        <button
+          onClick={onGenerateQuiz}
+          disabled={messageCount === 0}
+          className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Generate quiz from conversation"
+          aria-label="Generate quiz"
+        >
+          <Brain className="h-4 w-4" />
+          <span className="hidden md:inline">Quiz</span>
+        </button>
+        
+        <button
+          onClick={onGenerateFeed}
+          disabled={messageCount === 0}
+          className="btn-secondary text-sm p-2 md:px-3 md:py-1.5 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Generate feed from conversation"
+          aria-label="Generate feed"
+        >
+          <Rss className="h-4 w-4" />
+          <span className="hidden md:inline">Feed</span>
         </button>
       </div>
     </div>

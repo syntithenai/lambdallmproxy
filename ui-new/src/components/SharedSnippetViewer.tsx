@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { downloadFileContent } from '../utils/googleDocs';
 import { useSwag } from '../contexts/SwagContext';
 import { googleAuth } from '../services/googleAuth';
+import { useToast } from './ToastManager';
 
 /**
  * Convert image URLs in HTML to base64 data URLs
@@ -97,6 +98,7 @@ export const SharedSnippetViewer: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { isAuthenticated, getToken } = useAuth();
   const { addSnippet } = useSwag();
+  const { showSuccess } = useToast();
   const [snippet, setSnippet] = useState<SharedSnippet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -311,7 +313,9 @@ export const SharedSnippetViewer: React.FC = () => {
         );
         
         console.log('✅ Auto-saved snippet to collection');
-        setSaved(true); // Show "Saved" indicator
+        
+        // Show toast notification instead of button state
+        showSuccess('Content saved to your collection!');
         
         // Navigate to the saved snippet's single view page after a brief delay
         if (savedSnippet) {
@@ -328,7 +332,7 @@ export const SharedSnippetViewer: React.FC = () => {
     };
     
     autoSaveSnippet();
-  }, [snippet, isAuthenticated, autoSaved, isSaving, addSnippet, navigate, docId]);
+  }, [snippet, isAuthenticated, autoSaved, isSaving, addSnippet, navigate, docId, showSuccess]);
 
   const handleGrantDriveAccess = async () => {
     try {
@@ -384,6 +388,21 @@ export const SharedSnippetViewer: React.FC = () => {
       alert('Failed to save snippet to your collection. Please try again.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      // Store current URL for redirect after login
+      sessionStorage.setItem('auth_redirect', window.location.hash.slice(1) || '/');
+      
+      // Trigger Google OAuth directly (no redirect to /login page)
+      await googleAuth.signIn();
+      
+      // Note: Auto-save will trigger automatically via useEffect when isAuthenticated becomes true
+      // The useEffect will show the toast notification and redirect to saved snippet view
+    } catch (error) {
+      console.error('❌ Sign-in failed:', error);
     }
   };
 
@@ -497,44 +516,17 @@ export const SharedSnippetViewer: React.FC = () => {
             </div>
           </div>
           <div>
-            {isAuthenticated ? (
+            {/* Only show Login button when not authenticated */}
+            {!isAuthenticated && (
               <button
-                onClick={handleSaveToCollection}
-                disabled={isSaving || saved}
-                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ${
-                  saved
-                    ? 'bg-green-600 text-white cursor-default'
-                    : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed'
-                }`}
+                onClick={handleGoogleLogin}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-medium"
               >
-                {saved ? (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Saved!
-                  </>
-                ) : isSaving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                    </svg>
-                    Save to Collection
-                  </>
-                )}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+                Login with Google
               </button>
-            ) : (
-            <button
-              onClick={() => navigate('/login?redirect=' + encodeURIComponent(window.location.href))}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-medium"
-            >
-              Login
-            </button>
             )}
           </div>
         </div>
