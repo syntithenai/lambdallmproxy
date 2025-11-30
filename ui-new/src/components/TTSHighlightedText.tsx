@@ -31,7 +31,14 @@ export const TTSHighlightedText: React.FC<TTSHighlightedTextProps> = ({
   // Check if this is the text being spoken
   // Compare the cleaned/processed versions since TTSContext uses extractSpeakableText
   const speakableText = extractSpeakableText(text);
-  const isThisText = state.currentText?.trim() === speakableText.trim();
+  const currentText = state.currentText?.trim() || '';
+  
+  // Support partial matching for streaming responses:
+  // If currentText is a prefix of speakableText, consider it a match
+  // This handles early TTS where we start speaking before the full response arrives
+  const isExactMatch = currentText === speakableText.trim();
+  const isPartialMatch = speakableText.trim().startsWith(currentText) && currentText.length > 0;
+  const isThisText = isExactMatch || isPartialMatch;
 
   if (!isCurrentlyPlaying || !isThisText) {
     // Not playing this text - render normally

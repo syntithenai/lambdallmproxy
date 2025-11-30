@@ -98,6 +98,19 @@ export function ContinuousVoiceMode({
     console.log(`📊 isEnabled ref updated to: ${isEnabled}`);
   }, [isEnabled]);
 
+  // Create refs for action handlers to avoid stale closures
+  const onStopTTSRef = useRef(onStopTTS);
+  const handleSetEnabledRef = useRef(handleSetEnabled);
+  
+  // Update refs when functions change
+  useEffect(() => {
+    onStopTTSRef.current = onStopTTS;
+  }, [onStopTTS]);
+  
+  useEffect(() => {
+    handleSetEnabledRef.current = handleSetEnabled;
+  }, [handleSetEnabled]);
+
   // Phase 2: Debounced toast update function
   const previousStateRef = useRef<VoiceState | null>(null); // Track previous state for toast updates
   const updateToastMessage = useMemo(() => {
@@ -105,10 +118,24 @@ export function ContinuousVoiceMode({
     return (newState: VoiceState, message: string, forceNew: boolean = false) => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = window.setTimeout(() => {
+        // Don't create toasts if continuous mode has been disabled
+        if (!isEnabledRef.current) {
+          console.log('⚠️ updateToastMessage: Skipping because isEnabledRef is false (debounced call after disable)');
+          return;
+        }
+        
         // Determine action button label and handler based on state
+        // Use refs to avoid stale closures
+        // Both buttons now do comprehensive stop (TTS + LLM + disable continuous mode)
         const actionConfig = newState === 'SPEAKING' 
-          ? { label: 'Stop TTS', onClick: () => onStopTTS?.() }
-          : { label: 'Stop', onClick: () => handleSetEnabled(false) };
+          ? { label: 'Stop TTS', onClick: () => { 
+              console.log('🛑 Stop TTS clicked - comprehensive stop'); 
+              onStopTTSRef.current?.(); // Calls the comprehensive stop handler
+            }}
+          : { label: 'Stop', onClick: () => { 
+              console.log('🛑 Stop clicked - comprehensive stop'); 
+              onStopTTSRef.current?.(); // Also call comprehensive stop handler
+            }};
         
         // ALWAYS force new toast if state changed (different action button needed)
         const stateChanged = previousStateRef.current !== newState;
@@ -132,12 +159,20 @@ export function ContinuousVoiceMode({
         previousStateRef.current = newState;
       }, 100); // 100ms debounce
     };
-  }, [showPersistentToast, removeToast, updateToast, onStopTTS, handleSetEnabled]);
+  }, [showPersistentToast, removeToast, updateToast]);
 
   // Helper to update state and toast together
   const setStateWithToast = useCallback((newState: VoiceState | null, customMessage?: string, forceNewToast: boolean = false) => {
     const speechDetected = speechDetectedRef.current;
-    console.log(`🔄 setStateWithToast: ${state} → ${newState}, speechDetected: ${speechDetected}, customMessage: ${customMessage || 'none'}, forceNew: ${forceNewToast}`);
+    console.log(`🔄 setStateWithToast: ${state} → ${newState}, speechDetected: ${speechDetected}, customMessage: ${customMessage || 'none'}, forceNew: ${forceNewToast}, isEnabled: ${isEnabledRef.current}`);
+    
+    // Don't create toasts if continuous mode is disabled
+    if (!isEnabledRef.current) {
+      console.log('⚠️ setStateWithToast: Skipping because isEnabledRef is false');
+      setState(null);
+      return;
+    }
+    
     setState(newState);
     if (newState) {
       let message: string;
@@ -156,7 +191,7 @@ export function ContinuousVoiceMode({
       console.log(`📊 Toast message will be: "${message}"`);
       updateToastMessage(newState, message, forceNewToast);
     }
-  }, [updateToastMessage]);
+  }, [updateToastMessage, state]);
 
   // Phase 4: Helper to get access token (use the OAuth token, not Firebase ID token)
   // The backend /transcribe endpoint expects Google OAuth access token, not Firebase ID token
@@ -240,16 +275,23 @@ export function ContinuousVoiceMode({
     } else {
       console.log('🛑 Stopping continuous voice mode - beginning cleanup sequence');
       console.log(`   Current state: ${state}, toastId: ${toastIdRef.current}`);
+      
       // Clear state FIRST to prevent auto-restart
       setState(null);
       console.log('   ✓ State cleared to null');
       setIsSpeechDetected(false);
+      
+      // Clear previous state ref to prevent toast recreation
+      previousStateRef.current = null;
+      console.log('   ✓ Cleared previous state ref');
+      
       // Remove toast BEFORE cleanup to prevent flashing
       if (toastIdRef.current) {
         console.log(`   ✓ Removing toast: ${toastIdRef.current}`);
         removeToast(toastIdRef.current);
         toastIdRef.current = null;
       }
+      
       // Then cleanup resources
       console.log('   ✓ Starting cleanup()');
       cleanup();
@@ -299,6 +341,13 @@ export function ContinuousVoiceMode({
   async function startRecording() {
     try {
       console.log('🎙️ startRecording() called');
+      
+      // Don't start recording if continuous mode is disabled
+      if (!isEnabledRef.current) {
+        console.log('⚠️ startRecording: Skipping because isEnabledRef is false');
+        return;
+      }
+      
       audioChunksRef.current = [];
       
       const stream = await navigator.mediaDevices.getUserMedia({ 

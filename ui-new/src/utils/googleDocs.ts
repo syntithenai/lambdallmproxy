@@ -179,196 +179,32 @@ accessToken = localStorage.getItem(TOKEN_STORAGE_KEY);
 
 // Initialize Google Identity Services
 export const initGoogleAuth = () => {
-  return new Promise((resolve, reject) => {
-    console.log('🔐 Initializing Google Auth...');
-    console.log('📋 Client ID configured:', GOOGLE_CLIENT_ID ? 'YES' : 'NO');
-    console.log('📋 Client ID value:', GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.substring(0, 20) + '...' : 'MISSING');
-    
-    if (!GOOGLE_CLIENT_ID) {
-      const error = 'Google Client ID not configured. Please set VITE_GGL_CID in ui-new/.env';
-      console.error('❌', error);
-      reject(new Error(error));
-      return;
-    }
-
-    // Check if library already loaded
-    // @ts-ignore
-    if (typeof google !== 'undefined' && google.accounts) {
-      console.log('✅ Google Identity Services already loaded');
-      if (!tokenClient) {
-        // @ts-ignore
-        tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: GOOGLE_CLIENT_ID,
-          scope: SCOPES,
-          callback: (response: any) => {
-            console.log('🎫 Token callback received:', { 
-              hasToken: !!response.access_token, 
-              expiresIn: response.expires_in,
-              error: response.error 
-            });
-            if (response.access_token) {
-              // Sanitize token: remove whitespace and newlines before storing
-              const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
-              accessToken = sanitizedToken;
-              localStorage.setItem(TOKEN_STORAGE_KEY, sanitizedToken);
-              
-              // Store expiration time if provided
-              if (response.expires_in) {
-                const expirationTime = Date.now() + (response.expires_in * 1000);
-                localStorage.setItem(TOKEN_EXPIRATION_KEY, expirationTime.toString());
-              }
-              
-              console.log('✅ Access token received and stored:', sanitizedToken.substring(0, 20) + '...');
-              
-              // Trigger immediate sync after successful login (if cloud sync is enabled)
-              googleDriveSync.triggerImmediateSync().catch(err => {
-                console.warn('⚠️ Post-login sync failed:', err);
-              });
-              
-              resolve(sanitizedToken);
-            } else {
-              console.error('❌ No access token in response:', response);
-              reject(new Error('Failed to get access token'));
-            }
-          }
-        });
-      }
-      resolve(tokenClient);
-      return;
-    }
-
-    // Load the Google Identity Services library
-    console.log('📥 Loading Google Identity Services library...');
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.onload = () => {
-      console.log('✅ Google Identity Services library loaded');
-      // @ts-ignore
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: SCOPES,
-        callback: (response: any) => {
-          console.log('🎫 Token callback received:', { 
-            hasToken: !!response.access_token, 
-            expiresIn: response.expires_in,
-            error: response.error 
-          });
-          if (response.access_token) {
-            // Sanitize token: remove whitespace and newlines before storing
-            const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
-            accessToken = sanitizedToken;
-            localStorage.setItem(TOKEN_STORAGE_KEY, sanitizedToken);
-            
-            // Store expiration time if provided
-            if (response.expires_in) {
-              const expirationTime = Date.now() + (response.expires_in * 1000);
-              localStorage.setItem(TOKEN_EXPIRATION_KEY, expirationTime.toString());
-            }
-            
-            console.log('✅ Access token received and stored:', sanitizedToken.substring(0, 20) + '...');
-            
-            // Trigger immediate sync after successful login (if cloud sync is enabled)
-            googleDriveSync.triggerImmediateSync().catch(err => {
-              console.warn('⚠️ Post-login sync failed:', err);
-            });
-            
-            resolve(sanitizedToken);
-          } else {
-            console.error('❌ No access token in response:', response);
-            reject(new Error('Failed to get access token'));
-          }
-        }
-      });
-      console.log('✅ Token client initialized');
-      resolve(tokenClient);
-    };
-    script.onerror = () => {
-      console.error('❌ Failed to load Google Identity Services library');
-      reject(new Error('Failed to load Google Identity Services'));
-    };
-    document.head.appendChild(script);
-  });
+  console.log('ℹ️ initGoogleAuth() called - now using centralized googleAuth service, no action needed');
+  return Promise.resolve(null);
 };
 
 // Request access token
 export const requestGoogleAuth = async (): Promise<string> => {
-  console.log('🔑 Requesting Google Auth...');
-  console.log('� Call stack:', new Error().stack);
-  console.log('�📋 Current token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+  console.log('�� Requesting Google Auth from centralized googleAuth service...');
   
-  if (accessToken) {
-    // Verify token is still valid by testing it
-    console.log('🔍 Validating existing token...');
-    try {
-      const testResponse = await fetch('https://www.googleapis.com/drive/v3/about?fields=user', {
-        headers: { 'Authorization': 'Bearer ' + accessToken }
-      });
-      if (testResponse.ok) {
-        console.log('✅ Token is still valid');
-        return accessToken;
-      }
-      console.warn('⚠️ Token invalid, clearing...');
-      // Token expired, clear it
-      accessToken = null;
-    } catch (e) {
-      console.error('❌ Token validation failed:', e);
-      accessToken = null;
-    }
+  // Use the centralized googleAuth service instead of separate token client
+  const { googleAuth } = await import('../services/googleAuth');
+  
+  // Check if user is authenticated
+  if (!googleAuth.isAuthenticated()) {
+    console.error('❌ User not authenticated - please log in first');
+    throw new Error('Please log in with Google Drive first (Settings → Cloud Sync)');
   }
-
-  if (!tokenClient) {
-    console.log('🔧 Token client not initialized, initializing...');
-    await initGoogleAuth();
+  
+  // Get the access token from the centralized service
+  const token = googleAuth.getAccessToken();
+  if (!token) {
+    console.error('❌ No access token available');
+    throw new Error('No access token available - please reconnect Google Drive');
   }
-
-  return new Promise((resolve, reject) => {
-    try {
-      console.log('🎫 Setting up token callback...');
-      tokenClient.callback = (response: any) => {
-        console.log('📨 Token callback triggered:', { 
-          hasToken: !!response.access_token, 
-          error: response.error,
-          errorDescription: response.error_description 
-        });
-        
-        if (response.error) {
-          const errorMsg = 'Authentication failed: ' + response.error + (response.error_description ? ' - ' + response.error_description : '') + '. Please grant permissions and try again.';
-          console.error('❌', errorMsg);
-          reject(new Error(errorMsg));
-          return;
-        }
-        if (response.access_token) {
-          accessToken = response.access_token;
-          localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
-          console.log('✅ New access token received and stored:', response.access_token.substring(0, 20) + '...');
-          
-          // Trigger immediate sync after successful login (if cloud sync is enabled)
-          googleDriveSync.triggerImmediateSync().catch(err => {
-            console.warn('⚠️ Post-login sync failed:', err);
-          });
-          
-          resolve(response.access_token);
-        } else {
-          console.error('❌ No access token in response');
-          reject(new Error('No access token received. Please grant permissions and try again.'));
-        }
-      };
-      
-      console.log('🚀 Requesting access token from Google...');
-      console.log('📋 Scopes requested:', SCOPES);
-      console.log('📋 Using Client ID:', GOOGLE_CLIENT_ID?.substring(0, 30) + '...');
-      console.log('📋 Current origin:', window.location.origin);
-      
-      // Request with proper configuration
-      tokenClient.requestAccessToken({ 
-        prompt: ''  // Empty string for default behavior (select account + consent)
-      });
-      console.log('⏳ Waiting for user to grant permissions...');
-    } catch (error) {
-      console.error('❌ Failed to request access token:', error);
-      reject(new Error('Failed to request access token. Please grant permissions and try again.'));
-    }
-  });
+  
+  console.log('✅ Using access token from googleAuth service');
+  return token;
 };
 
 // Create a new Google Doc

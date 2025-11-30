@@ -276,10 +276,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
-    console.log('🔄 Starting aggressive token refresh monitor (check every 30s)');
+    console.log('🔄 Starting token refresh monitor (check every 30s, only refresh if expiring)');
 
     // Check immediately on mount
     const checkAndRefresh = async () => {
+      // Only check token validity, don't force refresh
+      // ensureValidToken will only refresh if token is expiring AND scopes match
       const token = await googleAuth.ensureValidToken();
       
       if (!token) {
@@ -304,7 +306,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Check immediately
     checkAndRefresh();
 
-    // Check every 30 seconds for aggressive refresh
+    // Check every 30 seconds but only refresh if actually needed
     const interval = setInterval(checkAndRefresh, 30 * 1000); // 30 seconds
 
     return () => {

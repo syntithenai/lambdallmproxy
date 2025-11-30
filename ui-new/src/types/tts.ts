@@ -101,6 +101,7 @@ export interface TTSContextValue {
   pause(): void;
   resume(): void;
   seekToChunk(chunkIndex: number): void; // Jump to specific chunk and start playing from there
+  updateCurrentText(newText: string): void; // Update current text during streaming (for progressive TTS)
   
   // Configuration methods
   setProvider(provider: TTSProviderType): void;

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { storage, StorageError } from '../utils/storage';
 import { useToast } from '../components/ToastManager';
 import { ragSyncService } from '../services/ragSyncService';
-import { isGoogleIdentityAvailable, appendRows, formatChunksForSheets, getAccessToken } from '../services/googleSheetsClient';
+import { isGoogleIdentityAvailable, appendRows, formatChunksForSheets } from '../services/googleSheetsClient';
 import type { SyncStatus } from '../services/ragSyncService';
 import { useAuth } from './AuthContext';
 import { useSettings } from './SettingsContext';
@@ -348,70 +348,23 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return cached;
       }
 
-      // Request Google Drive API OAuth access token
-      let authToken = localStorage.getItem('google_drive_access_token');
+      // Request Google Drive API OAuth access token using centralized service
+      console.log('🔑 Getting Google Drive API access token from googleAuth service...');
       
-      // If no token or token might be expired, request a new one
-      if (!authToken) {
-        console.log('🔑 Requesting Google Drive API access token...');
-        
-        // Check if Google Identity Services is available
-        if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2) {
-          console.error('❌ Google Identity Services not available. The library may not have loaded yet.');
-          console.log('💡 This usually happens if the page loads before Google GSI library is ready.');
-          console.log('💡 Try: 1) Refresh the page, 2) Check internet connection, 3) Check browser console for script loading errors');
-          throw new Error('Google Identity Services not available - library not loaded');
-        }
-        
-        try {
-          // Use Google Identity Services OAuth2 token client
-          const tokenClient = window.google.accounts.oauth2.initTokenClient({
-            client_id: import.meta.env.VITE_GGL_CID,
-            scope: 'https://www.googleapis.com/auth/drive.file', // Only files created by this app
-            callback: async (tokenResponse: any) => {
-              if (tokenResponse.access_token) {
-                // Sanitize token: remove whitespace and newlines before storing
-                const sanitizedToken = tokenResponse.access_token.trim().replace(/[\r\n]/g, '');
-                localStorage.setItem('google_drive_access_token', sanitizedToken);
-                console.log('✅ Got Drive API access token');
-              }
-            },
-          });
-          
-          if (!tokenClient) {
-            throw new Error('Failed to initialize Google token client');
-          }
-          
-          // Request access token - this will prompt user if needed
-          await new Promise<void>((resolve, reject) => {
-            (tokenClient as any).callback = (response: any) => {
-              if (response.error) {
-                console.error('OAuth error:', response.error);
-                reject(new Error(`OAuth error: ${response.error}`));
-                return;
-              }
-              if (response.access_token) {
-                // Sanitize token: remove whitespace and newlines before storing
-                const sanitizedToken = response.access_token.trim().replace(/[\r\n]/g, '');
-                authToken = sanitizedToken;
-                localStorage.setItem('google_drive_access_token', sanitizedToken);
-                console.log('✅ Got Drive API access token');
-                resolve();
-              } else {
-                reject(new Error('No access token received'));
-              }
-            };
-            
-            console.log('📋 Requesting Google Drive & Sheets permissions...');
-            tokenClient.requestAccessToken({ prompt: '' }); // Empty prompt = only show if needed
-          });
-        } catch (error) {
-          console.error('Failed to get Drive API token:', error);
-          throw new Error('Please grant access to Google Drive and Sheets to enable cloud sync');
-        }
-      } else {
-        console.log('✅ Using cached Drive API access token');
+      const { googleAuth } = await import('../services/googleAuth');
+      
+      if (!googleAuth.isAuthenticated()) {
+        console.error('❌ User not authenticated');
+        throw new Error('Please log in with Google Drive first (Settings → Cloud Sync)');
       }
+      
+      const authToken = googleAuth.getAccessToken();
+      if (!authToken) {
+        console.error('❌ No access token available');
+        throw new Error('No access token available - please reconnect Google Drive');
+      }
+      
+      console.log('✅ Using access token from googleAuth service');
       
       if (!authToken) {
         console.error('No Drive API access token available');
@@ -1616,11 +1569,17 @@ export const SwagProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log(`🔄 Syncing snippet #${snippetId} from Google Sheets...`);
       
-      // Get Drive access token for Google Sheets API
-      const driveToken = await getAccessToken();
+      // Get Drive access token from centralized googleAuth service
+      const { googleAuth } = await import('../services/googleAuth');
+      
+      if (!googleAuth.isAuthenticated()) {
+        throw new Error('Please log in with Google Drive first (Settings → Cloud Sync)');
+      }
+      
+      const driveToken = googleAuth.getAccessToken();
       
       if (!driveToken) {
-        throw new Error('No Drive access token available');
+        throw new Error('No Drive access token available - please reconnect Google Drive');
       }
       
       // Fetch the snippet from Google Sheets

@@ -109,7 +109,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const { showToast, showError, showWarning, showSuccess, clearAllToasts } = useToast();
   const { settings } = useSettings();
   const { addCost, usage } = useUsage();
-  const { state: ttsState, speak: ttsSpeak, stop: ttsStop } = useTTS();
+  const { state: ttsState, speak: ttsSpeak, stop: ttsStop, updateCurrentText: ttsUpdateCurrentText } = useTTS();
   const { isConnected: isCastConnected, sendMessages: sendCastMessages, sendScrollPosition } = useCast();
   const { location, isLoading: locationLoading, requestLocation, clearLocation } = useLocation();
   const { getCurrentProjectId } = useProject();
@@ -265,6 +265,12 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [sharingMessageIndex, setSharingMessageIndex] = useState<number | null>(null); // Track which assistant message is being shared
   const [chatQuiz, setChatQuiz] = useState<any>(null); // Quiz overlay state
+  
+  // Track if TTS has been triggered for the current response (for early TTS start)
+  // CRITICAL: Use ref instead of state to avoid race condition where multiple delta events
+  // trigger multiple TTS calls before state update completes
+  const ttsTriggeredForResponseRef = useRef<boolean>(false);
+  const accumulatedStreamingTextRef = useRef<string>(''); // Accumulate streaming text for early TTS
   
   // Chat history tracking
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -1635,6 +1641,18 @@ export const ChatTab: React.FC<ChatTabProps> = ({
       setContinuousVoiceEnabled(false);
     }
     
+    // Stop any active transcriptions
+    if (transcriptionProgress.size > 0) {
+      console.log('🛑 Stopping active transcriptions:', Array.from(transcriptionProgress.keys()));
+      transcriptionProgress.forEach((_, toolCallId) => {
+        handleStopTranscription(toolCallId).catch(err => {
+          console.error(`Failed to stop transcription ${toolCallId}:`, err);
+        });
+      });
+      // Clear transcription progress
+      setTranscriptionProgress(new Map());
+    }
+    
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -2153,6 +2171,10 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   };
 
   const handleSend = async (messageText?: string, overrideSystemPrompt?: string) => {
+    // Reset TTS state for new query
+    ttsTriggeredForResponseRef.current = false;
+    accumulatedStreamingTextRef.current = '';
+    
     const textToSend = messageText !== undefined ? messageText : input;
     if (!textToSend.trim() && attachedFiles.length === 0) return;
     if (isLoading) return;
@@ -2417,22 +2439,42 @@ ${finalSystemPrompt}`;
 - Use markdown image syntax: ![description](url) inline with your content where contextually appropriate`;
       }
       
-      // Add tool suggestions if tools are enabled
+      // Add tool suggestions if tools are enabled - only mention enabled tools
       if (tools.length > 0 && !isPlanningDerivedPrompt) {
         const toolNames = tools.map(t => t.function.name).join(', ');
-        finalSystemPrompt += `\n\nYou have access to these tools: ${toolNames}.
+        finalSystemPrompt += `\n\nYou have access to these tools: ${toolNames}. You may use these tools when they are helpful, but you can also respond directly based on your knowledge without using tools if appropriate.
 
 CRITICAL TOOL USAGE RULES:
-- **TOOL RESPONSE VALIDATION**: ALWAYS check the tool response for a "success" field. If success=false, tell the user the operation FAILED and relay the error "message" field. NEVER claim success when the tool returned success=false.
-- **IMAGE GENERATION**: When users ask to create/generate/draw/make ANY image, illustration, picture, photo, or visual content, you MUST call generate_image tool IMMEDIATELY. NEVER refuse or say "I cannot generate images" - you CAN by calling the tool. Examples: "draw a cat", "generate an image of...", "create a cartoon...", "show me a picture of...", "make an illustration of...", "visualize..." → ALL require calling generate_image.
-- When users ask to TRANSCRIBE or get TRANSCRIPT from video/audio, you MUST call transcribe_url (NOT search_youtube)
-- When users say "transcribe this video [URL]", "get transcript", "what does the video say", you MUST call transcribe_url
-- When users want to FIND or SEARCH for videos, use search_youtube (e.g., "find videos about X")
-- When users ask to "scrape", "get content from", "read", "fetch", "extract", "analyze", or "summarize" a website/URL, you MUST call the scrape_web_content tool
+- **TOOL RESPONSE VALIDATION**: ALWAYS check the tool response for a "success" field. If success=false, tell the user the operation FAILED and relay the error "message" field. NEVER claim success when the tool returned success=false.`;
+        
+        // Add specific tool usage instructions only for enabled tools
+        const enabledToolNames = tools.map(t => t.function.name);
+        
+        if (enabledToolNames.includes('generate_image')) {
+          finalSystemPrompt += `\n- **IMAGE GENERATION**: When users ask to create/generate/draw/make ANY image, illustration, picture, photo, or visual content, you MUST call generate_image tool IMMEDIATELY. NEVER refuse or say "I cannot generate images" - you CAN by calling the tool. Examples: "draw a cat", "generate an image of...", "create a cartoon...", "show me a picture of...", "make an illustration of...", "visualize..." → ALL require calling generate_image.`;
+        }
+        
+        if (enabledToolNames.includes('transcribe_url')) {
+          finalSystemPrompt += `\n- When users ask to TRANSCRIBE or get TRANSCRIPT from video/audio, you MUST call transcribe_url (NOT search_youtube)
+- When users say "transcribe this video [URL]", "get transcript", "what does the video say", you MUST call transcribe_url`;
+        }
+        
+        if (enabledToolNames.includes('search_youtube')) {
+          finalSystemPrompt += `\n- When users want to FIND or SEARCH for videos, use search_youtube (e.g., "find videos about X")`;
+        }
+        
+        if (enabledToolNames.includes('scrape_web_content')) {
+          finalSystemPrompt += `\n- When users ask to "scrape", "get content from", "read", "fetch", "extract", "analyze", or "summarize" a website/URL, you MUST call the scrape_web_content tool
 - When users provide ANY URL (http/https) and ask questions about it, you MUST call scrape_web_content with that URL FIRST
-- MANDATORY: If a message contains a URL and asks to extract/analyze/summarize/get key points, you MUST call scrape_web_content - DO NOT provide an answer without first fetching the content
-- When users ask for current information, news, or web content, you MUST use search_web
-- **execute_javascript USAGE RULES**:
+- MANDATORY: If a message contains a URL and asks to extract/analyze/summarize/get key points, you MUST call scrape_web_content - DO NOT provide an answer without first fetching the content`;
+        }
+        
+        if (enabledToolNames.includes('search_web')) {
+          finalSystemPrompt += `\n- When users ask for current information, news, or web content, you MUST use search_web`;
+        }
+        
+        if (enabledToolNames.includes('execute_javascript')) {
+          finalSystemPrompt += `\n- **execute_javascript USAGE RULES**:
   - ✅ USE for: Complex calculations requiring computation (factorial, fibonacci, statistics, algorithms)
   - ✅ USE for: Generating formatted tables/grids (multiplication tables, calendars, data matrices)
   - ✅ USE for: Data transformations, array processing, sorting, filtering large datasets
@@ -2442,35 +2484,21 @@ CRITICAL TOOL USAGE RULES:
   - ❌ DO NOT USE for: Just printing text or explanations
   - ❌ DO NOT USE for: Answers that don't require computation
   - ❌ DO NOT USE for: Simple arithmetic you can answer directly (like 2+2=4)
-  - Rule: Only use execute_javascript when the computation or formatting adds actual value
-- DO NOT output tool parameters as JSON text in your response (e.g., don't write {"url": "...", "timeout": 15})
+  - Rule: Only use execute_javascript when the computation or formatting adds actual value`;
+        }
+        
+        if (enabledToolNames.includes('manage_snippets')) {
+          finalSystemPrompt += `\n- "Save this to my snippets" / "Remember this" / "Add to knowledge base" → Call manage_snippets with action="insert" or "capture"
+- "Search my snippets for X" / "Find my saved notes about X" → Call manage_snippets with action="search" and payload.query="X"`;
+        }
+        
+        // General tool usage guidelines
+        finalSystemPrompt += `\n- DO NOT output tool parameters as JSON text in your response (e.g., don't write {"url": "...", "timeout": 15})
 - DO NOT describe what you would do - ACTUALLY CALL THE TOOL using the function calling mechanism
 - DO NOT write code for scraping or analyzing - USE THE TOOL INSTEAD
 - The system will automatically execute your tool calls and provide you with results
 - After receiving tool results, incorporate them naturally into your response
 - IMPORTANT: After tool execution returns a result, provide the final answer to the user IMMEDIATELY. Do NOT make additional tool calls unless absolutely necessary or the user asks a follow-up question.
-
-Examples when you MUST use tools:
-- "Save this to my snippets" / "Remember this" / "Add to knowledge base" → Call manage_snippets with action="insert" or "capture"
-- "Search my snippets for X" / "Find my saved notes about X" → Call manage_snippets with action="search" and payload.query="X"
-- "transcribe this video https://youtube.com/watch?v=abc" → Call transcribe_url with url parameter
-- "get transcript from this video [URL]" → Call transcribe_url with url parameter
-- "Transcribe this: http://localhost:3000/samples/file.mp3" → Call transcribe_url (localhost URLs work in local dev!)
-- "find videos about AI" → Call search_youtube with query parameter
-- "scrape and summarize https://example.com" → Call scrape_web_content with url parameter
-- "get content from https://github.com/user/repo" → Call scrape_web_content with url parameter
-- "Extract and analyze the key points from https://example.com/article" → Call scrape_web_content with url parameter
-- "What does this page say: https://example.com" → Call scrape_web_content with url parameter
-- "Summarize this article https://example.com/news" → Call scrape_web_content with url parameter
-- "Read and analyze https://en.wikipedia.org/wiki/Topic" → Call scrape_web_content with url parameter
-- "Find current news about X" → Call search_web with query parameter
-- "What's the latest on X" → Call search_web with query parameter
-- "calculate 5 factorial" → Call execute_javascript (requires computation)
-- "Generate a multiplication table for numbers 1-12" → Call execute_javascript (formatted table)
-- "Calculate compound interest on $10k at 7% for 15 years" → Call execute_javascript (complex calculation)
-- "Sort this array and find median: [45,23,67,12,89]" → Call execute_javascript (data processing)
-- "What is 2+2?" → Answer directly with "4" (DON'T use execute_javascript for trivial math)
-- "How do I deploy a Lambda?" → Answer directly (DON'T use execute_javascript to print explanations)
 
 Remember: Use the function calling mechanism, not text output. The API will handle execution automatically.`;
       }
@@ -2703,9 +2731,52 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               if (data.content) {
                 setStreamingContent(prev => prev + data.content);
                 
+                // Accumulate text for early TTS detection
+                accumulatedStreamingTextRef.current += data.content;
+                
+                // NOTE: We do NOT update TTS current text during early TTS streaming
+                // The early TTS plays only the first sentence, and the full response 
+                // will be handled after streaming completes. Updating during streaming
+                // would cause TTS to restart from the beginning on each chunk.
+                
                 // Announce to screen readers when response starts (only on first delta)
                 if (!streamingContent) {
                   setSrAnnouncement('Assistant is responding');
+                }
+                
+                // Early TTS: Start speaking as soon as we have the first complete sentence
+                // CRITICAL: Use ref to prevent race condition - check and set in one synchronous operation
+                if (continuousVoiceEnabled && !ttsTriggeredForResponseRef.current) {
+                  const accumulated = accumulatedStreamingTextRef.current;
+                  // Check if we have at least one complete sentence (. ! ? followed by space or end)
+                  const sentenceMatch = accumulated.match(/[.!?](\s|$)/);
+                  if (sentenceMatch && accumulated.length >= 20) { // Minimum 20 chars to avoid premature triggering
+                    console.log('🎙️ Early TTS: First sentence detected, starting TTS immediately');
+                    // Set flag IMMEDIATELY (synchronously) before async TTS call to prevent duplicate triggers
+                    ttsTriggeredForResponseRef.current = true;
+                    
+                    // Extract the first sentence for immediate playback
+                    const firstSentence = extractFirstSentences(accumulated, 1);
+                    if (firstSentence.trim()) {
+                      // Start TTS WITHOUT onEnd callback - we'll handle completion after streaming finishes
+                      // This allows TTS to start immediately while streaming continues
+                      ttsSpeak(firstSentence, {
+                        onStart: () => {
+                          console.log('🎙️ Early TTS started (first sentence)');
+                        },
+                        // NO onEnd callback here - completion will be handled after streaming finishes
+                        onError: (error: any) => {
+                          console.error('🎙️ Early TTS error:', error);
+                          // Reset flag on error so user can retry
+                          ttsTriggeredForResponseRef.current = false;
+                        }
+                      }).catch((error: any) => {
+                        console.error('🎙️ Failed to start early TTS:', error);
+                        // Reset flag on error so user can retry
+                        ttsTriggeredForResponseRef.current = false;
+                      });
+                    }
+                  }
                 }
                 
                 // Update or create the current streaming block
@@ -3715,13 +3786,21 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               // All processing complete
               console.log('Stream complete:', data);
               
-              // Handle voice mode - speak first 3 sentences only
+              // Handle voice mode - speak first 3 sentences with proper completion callback
               if (continuousVoiceEnabled) {
-                // Use the ref content stored in message_complete (state may not be updated yet)
                 const responseText = lastAssistantContentRef.current;
                 
                 if (responseText && responseText.trim()) {
-                  // Phase 5: Extract first 3 sentences for TTS
+                  // If early TTS was triggered, we need to:
+                  // 1. Stop the current TTS (which only had the first sentence)
+                  // 2. Start fresh with the full first 3 sentences
+                  // 3. Include onEnd callback for proper completion
+                  if (ttsTriggeredForResponseRef.current) {
+                    console.log('🎙️ Stopping early TTS and restarting with full response (first 3 sentences)');
+                    ttsStop(); // Stop the early single-sentence TTS
+                  }
+                  
+                  // Extract first 3 sentences for TTS (works whether early TTS fired or not)
                   const firstThreeSentences = extractFirstSentences(responseText, 3);
                   console.log(`🎙️ Speaking first 3 sentences (${firstThreeSentences.length} chars of ${responseText.length} total)`);
                   
@@ -8123,18 +8202,17 @@ Remember: Use the function calling mechanism, not text output. The API will hand
               }, 150);
             }}
             onStopTTS={() => {
-              console.log('🛑 Comprehensive stop triggered from continuous voice mode');
-              // Stop TTS playback
+              console.log('🛑 Comprehensive stop triggered from continuous voice mode toast');
+              // Stop TTS playback immediately
               ttsStop();
-              // If LLM is generating, abort it
+              // Stop any ongoing LLM generation (this aborts the server request)
               if (isLoading) {
                 console.log('🛑 Aborting LLM generation');
                 handleStop();
-              } else {
-                // If only TTS is playing but no LLM generation, just disable voice mode
-                console.log('🛑 Disabling continuous voice mode');
-                setContinuousVoiceEnabled(false);
               }
+              // ALWAYS disable continuous voice mode when stop button clicked
+              console.log('🛑 Disabling continuous voice mode');
+              setContinuousVoiceEnabled(false);
             }}
             accessToken={accessToken}
             apiEndpoint={apiEndpoint}

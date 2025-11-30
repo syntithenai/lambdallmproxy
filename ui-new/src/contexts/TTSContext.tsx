@@ -324,6 +324,16 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
     updateVoices();
   }, [ttsSettings.currentProvider]); // Use ttsSettings instead of state to prevent infinite loop
 
+  // Function to update the current text during streaming (for progressive TTS)
+  // This allows the highlighting view to show the full streaming text even when
+  // TTS was started with just the first sentence
+  const updateCurrentText = useCallback((newText: string) => {
+    if (state.isPlaying && state.currentText) {
+      const speakableText = extractSpeakableText(newText);
+      setState(prev => ({ ...prev, currentText: speakableText }));
+    }
+  }, [state.isPlaying, state.currentText]);
+
   const speak = useCallback(async (text: string, options: Partial<SpeakOptions> = {}): Promise<void> => {
     if (!state.isEnabled) {
       throw new Error('TTS is disabled');
@@ -1653,6 +1663,7 @@ export const TTSProvider: FC<{ children: ReactNode }> = ({ children }) => {
     pause,
     resume,
     seekToChunk,
+    updateCurrentText,
     setProvider,
     setVoice,
     setRate,

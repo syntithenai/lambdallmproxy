@@ -18,6 +18,7 @@ import { ReadButton } from './ReadButton';
 import { FileUploadDialog } from './FileUploadDialog';
 import SnippetShareDialog from './SnippetShareDialog';
 import { QuizCard } from './QuizCard';
+import { imageStorage } from '../utils/imageStorage';
 import { Brain, Rss, MessageSquare } from 'lucide-react';
 import type { ContentSnippet } from '../contexts/SwagContext';
 import { 
@@ -45,7 +46,7 @@ export const SwagPage: React.FC = () => {
   const { getCurrentProjectId } = useProject();
   
   // Handler for when user clicks edit button on an individual image
-  const handleImageEdit = (imageData: {
+  const handleImageEdit = async (imageData: {
     id: string;
     url: string;
     name: string;
@@ -57,11 +58,28 @@ export const SwagPage: React.FC = () => {
     format?: string;
     size?: number;
   }) => {
+    // Convert swag-image:// URLs to base64 before passing to image editor
+    let processedUrl = imageData.url;
+    if (imageData.url.startsWith('swag-image://')) {
+      console.log('🖼️ SwagPage: Converting swag-image:// URL to base64 for image editor...');
+      try {
+        processedUrl = await imageStorage.getImage(imageData.url);
+        console.log('✅ SwagPage: Converted to base64 successfully');
+      } catch (error) {
+        console.error('❌ SwagPage: Failed to load image from IndexedDB:', error);
+        showError('Failed to load image. It may have been deleted.');
+        return;
+      }
+    }
+    
     // Navigate to image editor with single image
     // Pass editingSnippet.id if currently editing a snippet
     navigate('/image-editor', { 
       state: { 
-        images: [imageData],
+        images: [{
+          ...imageData,
+          url: processedUrl // Use the processed (base64) URL
+        }],
         editingSnippetId: editingSnippet?.id // Pass the editing snippet ID if exists
       } 
     });

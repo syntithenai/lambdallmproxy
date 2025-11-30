@@ -1,7 +1,7 @@
 /**
  * Client-side Google Sheets API integration
- * Uses Google Identity Services (GIS) for OAuth 2.0 token flow
- * Allows direct browser → Sheets API calls (no backend Lambda needed)
+ * NOTE: OAuth is now handled by centralized googleAuth service
+ * This module provides Sheets-specific API wrappers
  */
 
 interface TokenResponse {
@@ -16,10 +16,8 @@ interface TokenClient {
   requestAccessToken: (options?: { prompt?: string }) => void;
 }
 
-// GIS token client (initialized once)
+// GIS token client (kept for backward compatibility but unused)
 let gisTokenClient: TokenClient | null = null;
-let cachedAccessToken: string | null = null;
-let tokenExpiresAt: number = 0;
 
 // Rate limiting to avoid Google Sheets quota issues
 // Google Sheets API: 60 write requests per minute per user
@@ -104,57 +102,33 @@ export function isGoogleIdentityAvailable(): boolean {
 
 /**
  * Get a valid access token (requests from user if needed)
- * Caches token and reuses until near expiration
+ * NOTE: This function is now a wrapper around the centralized googleAuth service
+ * to maintain backward compatibility with existing callers.
  */
-export async function getAccessToken(options?: { prompt?: string }): Promise<string> {
-  if (!gisTokenClient) {
-    throw new Error('Google Identity Services not initialized. Call initGoogleIdentity() first.');
+export async function getAccessToken(_options?: { prompt?: string }): Promise<string> {
+  console.log('🔑 googleSheetsClient.getAccessToken() called - redirecting to centralized googleAuth service');
+  
+  const { googleAuth } = await import('./googleAuth');
+  
+  if (!googleAuth.isAuthenticated()) {
+    throw new Error('Please log in with Google Drive first (Settings → Cloud Sync)');
   }
-
-  // Return cached token if still valid (with 1 minute buffer)
-  const now = Date.now();
-  if (cachedAccessToken && tokenExpiresAt > now + 60000) {
-    console.log('🔐 Using cached access token');
-    return cachedAccessToken;
+  
+  const token = googleAuth.getAccessToken();
+  if (!token) {
+    throw new Error('No access token available - please reconnect Google Drive');
   }
-
-  // Request new token
-  return new Promise<string>((resolve, reject) => {
-    if (!gisTokenClient) {
-      return reject(new Error('Token client not initialized'));
-    }
-
-    // Set callback for this specific request
-    gisTokenClient.callback = (response: TokenResponse | { error: string }) => {
-      if ('error' in response) {
-        console.error('❌ OAuth error:', response.error);
-        return reject(new Error(`OAuth error: ${response.error}`));
-      }
-
-      if (!response.access_token) {
-        return reject(new Error('No access token received'));
-      }
-
-      // Cache token
-      cachedAccessToken = response.access_token;
-      tokenExpiresAt = Date.now() + (response.expires_in * 1000);
-      
-      console.log('✅ Access token obtained (expires in', response.expires_in, 'seconds)');
-      resolve(response.access_token);
-    };
-
-    // Trigger OAuth consent flow
-    gisTokenClient.requestAccessToken(options);
-  });
+  
+  console.log('✅ Using access token from centralized googleAuth service');
+  return token;
 }
 
 /**
  * Clear cached token (useful for logout or re-auth)
+ * NOTE: Now a no-op since we use centralized googleAuth service
  */
 export function clearAccessToken(): void {
-  cachedAccessToken = null;
-  tokenExpiresAt = 0;
-  console.log('🔐 Access token cleared');
+  console.log('🔐 clearAccessToken() called - token managed by centralized googleAuth service');
 }
 
 /**

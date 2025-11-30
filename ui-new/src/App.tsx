@@ -28,6 +28,7 @@ import { BackgroundPlayer } from './components/BackgroundPlayer';
 import { ChatTab } from './components/ChatTab';
 import ProviderSetupGate from './components/ProviderSetupGate';
 import { GlobalTTSStopButton } from './components/ReadButton';
+import * as userStorage from './utils/userStorage';
 import { GitHubLink } from './components/GitHubLink';
 import { WelcomeWizard } from './components/WelcomeWizard';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
@@ -225,6 +226,48 @@ function AppContent() {
   }, [isChatLoading, showNavigationWarning]);
   
   // Tool configuration - shared between ChatTab and SettingsModal
+  // IMPORTANT: Check for existing saved settings before using defaults
+  const getInitialEnabledTools = () => {
+    try {
+      // Try to load from user-scoped storage first
+      const currentUser = userStorage.getCurrentUser();
+      if (currentUser) {
+        const userScopedKey = `user:${currentUser}:chat_enabled_tools`;
+        const storedValue = localStorage.getItem(userScopedKey);
+        if (storedValue) {
+          console.log('✅ Found existing tool settings for user:', currentUser);
+          return JSON.parse(storedValue);
+        }
+      }
+      
+      // Try non-scoped key for backwards compatibility
+      const legacyValue = localStorage.getItem('chat_enabled_tools');
+      if (legacyValue) {
+        console.log('✅ Found legacy tool settings, will migrate to user-scoped');
+        return JSON.parse(legacyValue);
+      }
+    } catch (error) {
+      console.error('Error loading initial tool settings:', error);
+    }
+    
+    // Fall back to defaults only if nothing found
+    console.log('ℹ️ No saved tool settings found, using defaults');
+    return {
+      web_search: true,
+      execute_js: false, // Disabled by default for security
+      scrape_url: true,
+      youtube: true,
+      transcribe: true,
+      generate_chart: true,
+      generate_image: true,
+      search_knowledge_base: false,
+      manage_todos: false, // Disabled by default (8B models can't handle it)
+      manage_snippets: true,
+      ask_llm: false,
+      generate_reasoning_chain: false
+    };
+  };
+  
   const [enabledTools, setEnabledTools] = useLocalStorage<{
     web_search: boolean;
     execute_js: boolean;
@@ -238,20 +281,7 @@ function AppContent() {
     manage_snippets: boolean;
     ask_llm: boolean;
     generate_reasoning_chain: boolean;
-  }>('chat_enabled_tools', {
-    web_search: true,
-    execute_js: true,
-    scrape_url: true,
-    youtube: true,
-    transcribe: true,
-    generate_chart: true,
-    generate_image: true,
-    search_knowledge_base: false, // Independent server-side knowledge base tool
-    manage_todos: true, // Backend todo queue management
-    manage_snippets: true, // Google Sheets snippets storage
-    ask_llm: false, // Recursive LLM agent - DISABLED by default due to high token usage
-    generate_reasoning_chain: false // Deep reasoning chains - DISABLED by default due to EXTREME token usage
-  });
+  }>('chat_enabled_tools', getInitialEnabledTools());
   
   // Debug: Log enabled tools state on mount and changes
   useEffect(() => {

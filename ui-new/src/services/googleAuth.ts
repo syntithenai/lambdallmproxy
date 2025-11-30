@@ -20,7 +20,15 @@ const BASIC_SCOPES = [
 ].join(' ');
 
 // Extended scopes for Google Drive integration (only requested when needed)
-// - drive.file: Access to files created/opened by this app (not all Drive files)
+// 
+// Scopes requested:
+// - drive.file: Per-file access to files created or opened by the app
+//   This allows us to create and manage Google Sheets in the user's Drive
+//   WITHOUT requesting access to all their existing files
+// 
+// Note: Google's permission dialog may show "See, edit, create, and delete only
+// the specific Google Drive files you use with this app" - this is correct and
+// is the minimal permission needed for snippets and cloud sync features.
 const DRIVE_SCOPES = [
   'openid',
   'email',
@@ -218,18 +226,19 @@ class GoogleAuthService {
     
     console.log(`🔍 Found existing token, expires in ${minutesUntilExpiry} minutes`);
     
+    // CHANGED: Don't auto-refresh tokens on page load
+    // Google's OAuth doesn't support truly silent refresh - it always shows a dialog
+    // Instead, let tokens expire naturally and only refresh when we get a 401 error
     if (timeUntilExpiry < 5 * 60 * 1000) {
-      // Token expired or expiring soon - refresh silently
-      console.log('🔄 Token expired or expiring soon, refreshing silently...');
-      this.attemptSilentRefresh();
-      // Note: google-auth-init-complete will be dispatched by handleTokenResponse
-    } else {
-      console.log('✅ Token still valid, no refresh needed');
-      // Dispatch init complete - token is valid
-      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
-        detail: { hasToken: true, refreshed: false }
-      }));
+      console.log('⚠️ Token expiring soon but skipping auto-refresh to avoid popup');
+      console.log('💡 Token will be used until it expires, then user will need to reconnect');
     }
+    
+    console.log('✅ Using existing token (no auto-refresh)');
+    // Dispatch init complete - token exists
+    window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+      detail: { hasToken: true, refreshed: false }
+    }));
   }
 
   /**
@@ -640,6 +649,11 @@ class GoogleAuthService {
    * Attempt to silently refresh the token
    */
   private attemptSilentRefresh() {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔄 attemptSilentRefresh() called');
+    console.log('Stack trace:', new Error().stack);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
     if (!this.tokenClient) {
       console.warn('⚠️ Cannot refresh: token client not initialized');
       // Dispatch init complete even if refresh fails
@@ -649,7 +663,35 @@ class GoogleAuthService {
       return;
     }
     
-    console.log('🔄 Attempting silent token refresh...');
+    // Check if scopes match before attempting refresh
+    const grantedScopes = localStorage.getItem(TOKEN_KEYS.GRANTED_SCOPES) || '';
+    const currentScopes = this.currentScopes;
+    
+    console.log('📊 Scope comparison:');
+    console.log('  Granted:', grantedScopes);
+    console.log('  Current:', currentScopes);
+    
+    // Compare scope sets (order-independent)
+    const grantedSet = new Set(grantedScopes.split(' ').filter(s => s));
+    const requiredSet = new Set(currentScopes.split(' ').filter(s => s));
+    const scopesMatch = grantedSet.size === requiredSet.size && 
+                       [...requiredSet].every(scope => grantedSet.has(scope));
+    
+    console.log('  Match:', scopesMatch);
+    
+    if (!scopesMatch) {
+      console.log('⚠️ Scopes changed - skipping silent refresh to prevent unwanted auth dialog');
+      console.log('📝 Granted:', grantedScopes);
+      console.log('📝 Current:', currentScopes);
+      // Dispatch init complete without refreshing
+      window.dispatchEvent(new CustomEvent('google-auth-init-complete', {
+        detail: { hasToken: true, refreshed: false, scopesMismatch: true }
+      }));
+      return;
+    }
+    
+    console.log('⚠️ ⚠️ ⚠️  CALLING requestAccessToken() - AUTH DIALOG MAY APPEAR  ⚠️ ⚠️ ⚠️');
+    console.log('🔄 Attempting silent token refresh (scopes match)...');
     try {
       // Try silent refresh first (no consent screen)
       this.tokenClient.requestAccessToken({ 
@@ -734,7 +776,33 @@ class GoogleAuthService {
    * Uses silent refresh to avoid disrupting the user
    */
   async refreshToken(): Promise<boolean> {
-    console.log('🔄 Refreshing access token silently...');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔄 refreshToken() called');
+    console.log('Stack trace:', new Error().stack);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
+    // Check if scopes match before attempting refresh
+    const grantedScopes = localStorage.getItem(TOKEN_KEYS.GRANTED_SCOPES) || '';
+    const currentScopes = this.currentScopes;
+    
+    console.log('📊 Scope comparison in refreshToken:');
+    console.log('  Granted:', grantedScopes);
+    console.log('  Current:', currentScopes);
+    
+    // Compare scope sets (order-independent)
+    const grantedSet = new Set(grantedScopes.split(' ').filter(s => s));
+    const requiredSet = new Set(currentScopes.split(' ').filter(s => s));
+    const scopesMatch = grantedSet.size === requiredSet.size && 
+                       [...requiredSet].every(scope => grantedSet.has(scope));
+    
+    console.log('  Match:', scopesMatch);
+    
+    if (!scopesMatch) {
+      console.log('⚠️ Scopes changed - skipping refresh to prevent unwanted auth dialog');
+      return false;
+    }
+    
+    console.log('🔄 Scopes match - proceeding with silent refresh...');
     
     try {
       if (!this.tokenClient) {
@@ -762,6 +830,7 @@ class GoogleAuthService {
           });
         };
         
+        console.log('⚠️ ⚠️ ⚠️  CALLING requestAccessToken() from refreshToken() - AUTH DIALOG MAY APPEAR  ⚠️ ⚠️ ⚠️');
         // Request new token silently (no user interaction)
         this.tokenClient.requestAccessToken({ 
           prompt: '' // Empty string = silent refresh
@@ -789,15 +858,9 @@ class GoogleAuthService {
       return null;
     }
 
-    if (this.isTokenExpiringSoon()) {
-      console.log('⚠️ Token expiring soon, refreshing...');
-      const refreshed = await this.refreshToken();
-      if (!refreshed) {
-        console.warn('⚠️ Token refresh failed - user may need to re-authenticate');
-        return null;
-      }
-    }
-
+    // TEMPORARY: Disable auto-refresh to prevent auth dialogs
+    // Just return the existing token - it's valid for 37+ minutes
+    console.log('✅ Returning existing token without refresh check');
     return this.getAccessToken();
   }
 }

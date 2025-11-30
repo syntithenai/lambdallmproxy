@@ -45,7 +45,8 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
   snippetTags = [],
   onImageEdit
 }) => {
-  const [displayValue, setDisplayValue] = useState(value);
+  const [displayValue, setDisplayValue] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
 
   // Helper function to detect if content is markdown (not HTML)
   const isMarkdown = (content: string): boolean => {
@@ -73,10 +74,12 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
     // First, load images from IndexedDB if present
     let processedContent = content;
     if (content.includes('swag-image://')) {
+      console.log('🖼️ TipTapEditor: Found swag-image:// refs, loading from IndexedDB...');
       try {
         processedContent = await imageStorage.processContentForDisplay(content);
+        console.log('✅ TipTapEditor: Loaded images successfully');
       } catch (error) {
-        console.error('Failed to load images:', error);
+        console.error('❌ TipTapEditor: Failed to load images:', error);
       }
     }
     
@@ -95,8 +98,10 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
   // Load images from IndexedDB when value changes
   useEffect(() => {
     const loadContent = async () => {
+      setIsLoading(true);
       const processed = await processContent(value);
       setDisplayValue(processed);
+      setIsLoading(false);
     };
     loadContent();
   }, [value]);
@@ -137,7 +142,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[200px] p-4'
       }
     }
-  });
+  }, [editable, placeholder]); // Only recreate if editable or placeholder changes
 
   // Update content when displayValue changes
   useEffect(() => {
@@ -201,6 +206,15 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
       editorElement.removeEventListener('click', handleClick);
     };
   }, [editor, onImageEdit]);
+
+  // Show loading state while processing images
+  if (isLoading) {
+    return (
+      <div className="p-4 text-gray-500 dark:text-gray-400 italic">
+        Loading images...
+      </div>
+    );
+  }
 
   if (!editor) {
     return null;
